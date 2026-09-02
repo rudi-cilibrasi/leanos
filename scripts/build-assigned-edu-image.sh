@@ -52,6 +52,8 @@ assigned_edu_negative_specs=(
 for spec in "${assigned_edu_negative_specs[@]}"; do
   IFS=: read -r fixture _fixture_macro <<<"$spec"
   assigned_outputs+=(
+    "build/boot/boot-page-plan-assigned-edu-${fixture}.h"
+    "build/boot/boot-page-plan-assigned-edu-${fixture}.final.h"
     "build/boot/kernel-assigned-edu-${fixture}.o"
     "build/boot/leanos-assigned-edu-${fixture}.map"
     "build/boot/leanos-assigned-edu-${fixture}.elf"
@@ -122,13 +124,31 @@ for spec in "${assigned_edu_negative_specs[@]}"; do
   IFS=: read -r fixture fixture_macro <<<"$spec"
   fixture_base="leanos-assigned-edu-${fixture}"
   fixture_iso_root="$build/iso-assigned-edu-${fixture}"
-  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-    -DLEANOS_ENTRY_HIGH_WATER=1 -DLEANOS_ASSIGNED_EDU_SCENARIO=1 \
-    -D"${fixture_macro}"=1 \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-assigned-edu.h"' \
-    -c boot/kernel.c -o "$build/kernel-assigned-edu-${fixture}.o"
-  link_assigned_edu "$fixture_base" \
-    "$build/kernel-assigned-edu-${fixture}.o"
+  fixture_plan="$build/boot-page-plan-assigned-edu-${fixture}.h"
+  fixture_final_plan="$build/boot-page-plan-assigned-edu-${fixture}.final.h"
+  cp "$assigned_plan" "$fixture_plan"
+  fixture_plan_converged=false
+  for pass in 1 2 3 4; do
+    "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+      -DLEANOS_ENTRY_HIGH_WATER=1 -DLEANOS_ASSIGNED_EDU_SCENARIO=1 \
+      -D"${fixture_macro}"=1 \
+      -DLEANOS_BOOT_PAGE_PLAN_HEADER="\"boot-page-plan-assigned-edu-${fixture}.h\"" \
+      -c boot/kernel.c -o "$build/kernel-assigned-edu-${fixture}.o"
+    link_assigned_edu "$fixture_base" \
+      "$build/kernel-assigned-edu-${fixture}.o"
+    ./scripts/generate-boot-page-plan.sh --assigned-edu \
+      "$build/${fixture_base}.elf" "$fixture_final_plan"
+    if cmp -s "$fixture_plan" "$fixture_final_plan"; then
+      fixture_plan_converged=true
+      break
+    fi
+    [[ "$pass" -lt 4 ]] || break
+    cp "$fixture_final_plan" "$fixture_plan"
+  done
+  [[ "$fixture_plan_converged" == true ]] || {
+    echo "error: assigned-EDU ${fixture} boot page-table plan did not converge" >&2
+    return 1
+  }
   if [[ "$fixture" == "omit-reuse-invalidation" ]]; then
     LEANOS_EXPECT_OMIT_REUSE_INVALIDATION=1 \
       ./scripts/check-image-policy.sh "$build/${fixture_base}.elf"

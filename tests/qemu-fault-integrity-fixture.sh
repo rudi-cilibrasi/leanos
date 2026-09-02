@@ -21,7 +21,11 @@ if [[ "$probe" == reserved-bit ]]; then
   cr2="$(symbol_value user_a_nx_fault_instruction)"
   printf -v expected_leaf '%u' \
     "$(( (1 << 63) | (cr2 / 4096) * 4096 | 7 ))"
-  record="LEANOS/14 PF-TERMINAL codec=1 case=reserved-bit vector=14 error=12 access=read cr2=${cr2} rip=user-a-reserved-fault-instruction expected-leaf=${expected_leaf} live-leaf=${expected_leaf} authorization=0 route=144115188075855874 halt=absorbing containment=0 cleanup=0 dispatch=0 return=none"
+  expected_live_leaf="$expected_leaf"
+  accelerator="${LEANOS_QEMU_ACCELERATOR:-tcg}"
+  expected_error=12
+  [[ "$accelerator" != kvm ]] || expected_error=13
+  record="LEANOS/14 PF-TERMINAL codec=1 case=reserved-bit vector=14 error=${expected_error} access=read cr2=${cr2} rip=user-a-reserved-fault-instruction expected-leaf=${expected_leaf} live-leaf=${expected_live_leaf} authorization=0 route=144115188075855874 halt=absorbing containment=0 cleanup=0 dispatch=0 return=none"
 else
   record='LEANOS/14 PF-TERMINAL codec=1 case=walk-mismatch vector=14 error=5 access=read cr2=0 rip=user-a-fault-instruction expected-leaf=9223372036854775809 live-leaf=9223372036854775811 authorization=1 route=144115188075855875 halt=absorbing containment=0 cleanup=0 dispatch=0 return=none'
 fi

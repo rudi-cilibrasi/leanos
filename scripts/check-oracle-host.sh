@@ -32,6 +32,12 @@ else
   exit 2
 fi
 
+if [[ "$(uname -s)" == Darwin ]]; then
+  gc_sections_flag="-Wl,-dead_strip"
+else
+  gc_sections_flag="-Wl,--gc-sections"
+fi
+
 rm -rf "$build"
 mkdir -p "$build"
 leanos_prepare_boundary_coverage "$build" "$exports"
@@ -178,7 +184,7 @@ if [[ "$mode" == sanitized ]]; then
   leanos_link_sanitized_host "$build/host" "$build/host.o" \
     "$build/boundary-coverage.o" "${objects[@]}"
 else
-  "$cc_command" -Wl,--gc-sections "${cflags[@]}" \
+  "$cc_command" "$gc_sections_flag" "${cflags[@]}" \
     "$build/host.o" "$build/boundary-coverage.o" "${objects[@]}" -o "$build/host"
 fi
 LEANOS_BOUNDARY_COVERAGE_FILE="$build/boundary-coverage.actual" \
@@ -213,12 +219,15 @@ else
     local define="$2"
     "$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" -Iinclude \
       "${cflags[@]}" "-D$define" -c "$harness" -o "$build/host-$name.o"
-    "$cc_command" -Wl,--gc-sections "${cflags[@]}" "$build/host-$name.o" \
+    "$cc_command" "$gc_sections_flag" "${cflags[@]}" "$build/host-$name.o" \
       "$build/boundary-coverage.o" "${objects[@]}" -o "$build/host-$name"
   }
   fixtures=(
     "truncated:LEANOS_FIXTURE_COMPOSITE_TRUNCATED:oracle malformed arity"
     "output-corruption:LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION:oracle mismatch"
+    "value-corruption:LEANOS_FIXTURE_COMPOSITE_VALUE_CORRUPTION:field=value"
+    "value-omission:LEANOS_FIXTURE_COMPOSITE_VALUE_OMISSION:field=value"
+    "value-leak:LEANOS_FIXTURE_COMPOSITE_VALUE_LEAK:field=value"
     "old-stateless:LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS:oracle mismatch"
     "wrong-version:LEANOS_FIXTURE_COMPOSITE_WRONG_VERSION:field=reply"
     "reserved-bits:LEANOS_FIXTURE_COMPOSITE_RESERVED_BITS:field=reply"
@@ -248,18 +257,18 @@ else
       >>"$build/negative-fixtures.tsv"
   done
   {
-    printf 'schema\tleanos-oracle-evidence-v1\n'
+    printf 'schema\tleanos-oracle-evidence-v2\n'
     printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
     printf 'generated_c_flags\t%s\n' \
       "-std=c11 -I<lean-prefix>/include -Ibuild/oracle -ffunction-sections -fdata-sections"
     printf 'host_c_flags\t%s\n' \
       "-std=c11 -Wall -Wextra -Werror -Ibuild/oracle -Iinclude"
-    printf 'link_flags\t%s\n' "-Wl,--gc-sections"
+    printf 'link_flags\t%s\n' "$gc_sections_flag"
     printf 'lean_version\t%s\n' "$(lake env lean --version | head -n 1)"
     printf 'cc_version\t%s\n' "$("$cc_command" --version | head -n 1)"
   } >"$build/toolchain-and-flags.tsv"
   {
-    printf 'schema\tleanos-oracle-manifest-v1\n'
+    printf 'schema\tleanos-oracle-manifest-v2\n'
     printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
     sha256sum \
       LeanOS/FrameBudgetScenario.lean \

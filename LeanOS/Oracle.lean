@@ -19,7 +19,7 @@ import LeanOS.IOTLB
 /-!
 # Bounded scalar boundary oracle
 
-This is the canonical, version-one corpus for the currently exported
+This is the canonical, version-two corpus for the currently exported
 fixed-width adapters.  Expected words are evaluated from the adapter
 definitions, not copied into a C harness.  The corpus is deliberately finite;
 it is differential integration evidence, not a refinement theorem.
@@ -34,6 +34,7 @@ structure Vector where
   adapter : String
   words : List UInt64
   expected : UInt64
+  expectedValue : UInt64 := 0
   deriving Repr
 
 structure AdapterSpec where
@@ -174,7 +175,8 @@ private def iotlbPublication (id : String)
 private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : Vector :=
   { id, adapter := "CompositeDispatcher.stateful",
     words := [state, tag, arg0, arg1, arg2, arg3],
-    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3 }
+    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3,
+    expectedValue := CompositeDispatcher.dispatchValue state tag arg0 arg1 arg2 arg3 }
 
 private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
   | .transferOffered => "composite.mixed-transfer-offer"
@@ -213,6 +215,64 @@ def mixedEdgeVector (edge : CompositeDispatcher.CanonicalMixedEdge) : Vector :=
 
 def mixedVectors : List Vector :=
   CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector
+
+private def capabilityTransferBootEdgeId :
+    CompositeDispatcher.CapabilityTransferBootCommandId → String
+  | .offer => "composite.boot-transfer-subject-one-offer"
+  | .switchToSubjectTwo => "composite.boot-transfer-switch-subject-two"
+  | .rejectSealedHandle => "composite.boot-transfer-sealed-denial"
+  | .accept => "composite.boot-transfer-subject-two-accept"
+  | .delegatedSend => "composite.boot-transfer-delegated-send"
+  | .rejectDelegatedReceive => "composite.boot-transfer-receive-denial"
+
+def capabilityTransferBootEdgeVector
+    (edge : CompositeDispatcher.CanonicalCapabilityTransferBootEdge) : Vector :=
+  let words :=
+    CompositeDispatcher.encodeCapabilityTransferBootCommand edge.command
+  composite (capabilityTransferBootEdgeId edge.command)
+    (CompositeDispatcher.encodeCapabilityTransferBootState edge.state)
+    words.tag words.arg0 words.arg1 words.arg2 words.arg3
+
+def capabilityTransferBootVectors : List Vector :=
+  CompositeDispatcher.capabilityTransferBootEdges.map
+    capabilityTransferBootEdgeVector
+
+private def inFlightRevocationEdgeId :
+    CompositeDispatcher.InFlightRevocationReplyId → String
+  | .childOffered => "composite.inflight-revocation-offer"
+  | .revocationWithoutAuthorityRejected =>
+      "composite.inflight-revocation-missing-authority-denial"
+  | .wrongLineageRootRejected => "composite.inflight-revocation-wrong-root-denial"
+  | .lineageRevoked => "composite.inflight-revocation-revoke"
+  | .repeatedRevocationRejected => "composite.inflight-revocation-repeat-denial"
+  | .offerAfterRevocationRejected => "composite.inflight-revocation-stale-offer-denial"
+  | .subjectTwoRestored => "composite.inflight-revocation-switch-subject-two"
+  | .canceledReceiptRejected => "composite.inflight-revocation-canceled-receipt-denial"
+  | .destinationReplaced => "composite.inflight-revocation-replace-slot"
+  | .canceledHandleReplayRejected =>
+      "composite.inflight-revocation-canceled-handle-denial"
+  | .replacementUsed => "composite.inflight-revocation-fresh-send"
+
+def inFlightRevocationEdgeVector
+    (edge : CompositeDispatcher.CanonicalInFlightRevocationEdge) : Vector :=
+  let words := CompositeDispatcher.encodeInFlightRevocationCommand edge.command
+  composite (inFlightRevocationEdgeId edge.reply)
+    (CompositeDispatcher.encodeInFlightRevocationState edge.state)
+    words.tag words.arg0 words.arg1 words.arg2 words.arg3
+
+def inFlightRevocationVectors : List Vector :=
+  CompositeDispatcher.inFlightRevocationCanonicalEdges.map inFlightRevocationEdgeVector
+
+/-- Hostile records for the in-flight revocation family: the revocation words
+replayed against the pre-offer seed token, the mixed corpus's post-receipt
+revocation spliced into this family's subject-2 state, and subject 2's receipt
+words presented while subject 1 is still the current subject.  None can select
+an edge; the state token, not the caller, decides who is acting. -/
+def inFlightRevocationNegativeVectors : List Vector := [
+  composite "composite.inflight-revocation-stale-state-replay" 0x6001 0x5201 2 1 1 0,
+  composite "composite.inflight-revocation-cross-trace-splice" 0x6301 0x2201 0 2 3 0,
+  composite "composite.inflight-revocation-receipt-before-switch" 0x6201 0x2101
+    0x30000 3 0 0]
 
 private def invalidationEdgeId :
     CompositeDispatcher.InvalidationReplyId → String
@@ -666,9 +726,11 @@ def vectors : List Vector := [
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
-    budgetVectors ++ iotlbPublicationVectors
+    budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
+    inFlightRevocationVectors ++
+    inFlightRevocationNegativeVectors
 
-theorem corpus_shape : vectors.length = 392 := by decide
+theorem corpus_shape : vectors.length = 412 := by decide
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -680,7 +742,54 @@ theorem hosted_budget_vectors_exact :
     (vectors.drop 359).take budgetVectors.length = budgetVectors := by rfl
 
 theorem hosted_iotlb_publication_vectors_exact :
-    vectors.drop 383 = iotlbPublicationVectors := by rfl
+    (vectors.drop 383).take iotlbPublicationVectors.length =
+      iotlbPublicationVectors := by rfl
+
+theorem hosted_capability_transfer_boot_vectors_exact :
+    (vectors.drop 392).take capabilityTransferBootVectors.length =
+      capabilityTransferBootVectors := by rfl
+
+/-- Oracle indices 398--408 are definitionally the in-flight revocation
+corpus: offer, two revocation-authority denials, accepted lineage revocation,
+repeated-revocation and stale-offer denials, the switch to subject 2, the
+canceled receipt denial, same-slot replacement, canceled-handle denial, and
+the fresh-handle send. -/
+theorem hosted_inFlight_revocation_vectors_exact :
+    vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors := by
+  rfl
+
+theorem hosted_inFlight_revocation_vectors_refine :
+    ∀ edge ∈ CompositeDispatcher.inFlightRevocationCanonicalEdges, edge.Refines :=
+  CompositeDispatcher.inFlightRevocationCanonicalEdges_refine
+
+theorem composite_inFlight_revocation_trace_agrees :
+    (vectors[398]).expected = 0x206101 ∧
+    (vectors[399]).expected = 0x506101 ∧
+    (vectors[400]).expected = 0x516101 ∧
+    (vectors[401]).expected = 0x526201 ∧
+    (vectors[402]).expected = 0x536201 ∧
+    (vectors[403]).expected = 0x546201 ∧
+    (vectors[404]).expected = 0x556301 ∧
+    (vectors[405]).expected = 0x216301 ∧
+    (vectors[406]).expected = 0x246401 ∧
+    (vectors[407]).expected = 0x566401 ∧
+    (vectors[408]).expected = 0x576501 := by
+  native_decide
+
+/-- Indices 409--411 reject the pre-offer replay of the revocation words as a
+wrong sequence, the spliced mixed-corpus revocation as an unknown command for
+this family, and the premature receipt as a wrong sequence. -/
+theorem composite_inFlight_revocation_negatives_reject :
+    (vectors[409]).expected = 0xff06 ∧
+    (vectors[410]).expected = 0xff04 ∧
+    (vectors[411]).expected = 0xff06 := by
+  native_decide
+
+/-- The canceled child never reaches result word one: every in-flight
+revocation record publishes the no-value word, including the denied receipt. -/
+theorem composite_inFlight_revocation_values_zero :
+    (vectors.drop 398).all (fun vector => vector.expectedValue = 0) = true := by
+  native_decide
 
 private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
   match vector.adapter, vector.words with
@@ -690,7 +799,8 @@ private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
   | _, _ => true
 
 theorem hosted_iotlb_publication_adapter_agrees :
-    (vectors.drop 383).all iotlbPublicationAdapterAgrees = true := by
+    ((vectors.drop 383).take iotlbPublicationVectors.length).all
+      iotlbPublicationAdapterAgrees = true := by
   native_decide
 
 theorem hosted_budget_canonical_sequence :
@@ -754,6 +864,18 @@ theorem composite_mixed_trace_agrees :
     (vectors[335]).expected = 0x452e01 ∧
     (vectors[336]).expected = 0x462e01 := by
   native_decide
+
+/-- Only the accepted hosted-mixed receipt and the independently modeled
+machine A-to-B receipt publish a value word. All data-only successes,
+scheduling edges, and rejections publish zero. -/
+theorem composite_result_values_exact :
+    (vectors[316]).id = "composite.mixed-transfer-accept" ∧
+    (vectors[316]).expectedValue = 0x60003 ∧
+    (vectors[395]).id = "composite.boot-transfer-subject-two-accept" ∧
+    (vectors[395]).expectedValue = 0x60003 ∧
+    (vectors.filter (fun vector => vector.expectedValue ≠ 0)).length = 2 := by
+  native_decide
+
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -1125,11 +1247,11 @@ private def wordsText : List UInt64 → String
   | word :: rest => toString word ++ "," ++ wordsText rest
 
 def line (index : Nat) (vector : Vector) : String :=
-  s!"{index}\t{vector.id}\t{vector.adapter}\t{wordsText vector.words}\t{vector.expected}"
+  s!"{index}\t{vector.id}\t{vector.adapter}\t{wordsText vector.words}\t{vector.expected}\t{vector.expectedValue}"
 
 def emit : IO Unit := do
   let revision := (← IO.getEnv "LEANOS_SOURCE_REVISION").getD "unknown"
-  IO.println "leanos-oracle\t1"
+  IO.println "leanos-oracle\t2"
   IO.println s!"source-revision\t{revision}"
   for entry in adapters do
     IO.println s!"adapter-id\t{entry.name}\t{entry.id}\t{entry.cSymbol}\t{entry.arity}"

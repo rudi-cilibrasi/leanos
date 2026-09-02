@@ -12,7 +12,6 @@ image="${1:-build/boot/leanos-${version}-x86_64-nmi.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/nmi.serial.log}"
 qmp_log="${LEANOS_QMP_LOG:-${log}.qmp.jsonl}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-monitor="${log}.monitor"
 scenario="${LEANOS_NMI_SCENARIO:-kernel-entry}"
 case "$scenario" in
   kernel-entry)
@@ -36,10 +35,13 @@ done
 [[ "$memory_mib" =~ ^(64|128)$ ]] || { echo "error: memory must be 64 or 128 MiB" >&2; exit 1; }
 [[ -f "$image" ]] || { echo "error: NMI image '$image' not found" >&2; exit 1; }
 
+# Keep the AF_UNIX endpoint independent of the checkout and evidence paths.
+# sockaddr_un is shorter on some hosted platforms than a nested serial path.
+monitor_dir="$(mktemp -d)"
+monitor="$monitor_dir/qmp"
 mkdir -p "$(dirname "$log")"
 : > "$log"
 : > "$qmp_log"
-rm -f "$monitor"
 command=()
 leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
 command+=(-qmp "unix:${monitor},server=on,wait=off")
@@ -53,7 +55,7 @@ set +e
 timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}" &
 qemu_job=$!
 set -e
-cleanup() { rm -f "$monitor"; kill "$qemu_job" 2>/dev/null || true; }
+cleanup() { rm -rf "$monitor_dir"; kill "$qemu_job" 2>/dev/null || true; }
 trap cleanup EXIT
 
 ready_seen=0
@@ -111,7 +113,20 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
     if "return" not in receive(stream):
         raise RuntimeError("QMP capabilities rejected")
     send(stream, {"execute": "inject-nmi"})
-    if "return" not in receive(stream):
+    # A terminal NMI can drive the guest through isa-debug-exit before QEMU
+    # flushes the inject-nmi response.  Accept only EOF/reset after the command
+    # write; the shell still requires exit status 41 and the exact guest
+    # terminal record, so a lost connection cannot manufacture success.
+    try:
+        line = stream.readline()
+    except ConnectionResetError:
+        line = b""
+    if line:
+        response = json.loads(line)
+        record("qemu-to-host", response)
+    else:
+        response = None
+    if response is not None and "return" not in response:
         raise RuntimeError("QMP NMI injection rejected")
 transcript.close()
 PY
@@ -127,7 +142,7 @@ wait "$qemu_job"
 status=$?
 set -e
 trap - EXIT
-rm -f "$monitor"
+rm -rf "$monitor_dir"
 
 if [[ $status -eq 124 || $status -eq 137 ]]; then
   echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2
@@ -156,9 +171,23 @@ import json
 import sys
 
 records = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
-commands = [record["message"].get("execute") for record in records
-            if record["direction"] == "host-to-qemu"]
-if commands != ["qmp_capabilities", "inject-nmi"] or len(records) != 5:
+if len(records) not in (4, 5):
+    raise SystemExit("failure_class=qmp-transcript: exact injection exchange not retained")
+directions = [record.get("direction") for record in records[:4]]
+messages = [record.get("message", {}) for record in records[:4]]
+if (
+    directions != ["qemu-to-host", "host-to-qemu",
+                   "qemu-to-host", "host-to-qemu"]
+    or "QMP" not in messages[0]
+    or messages[1] != {"execute": "qmp_capabilities"}
+    or "return" not in messages[2]
+    or messages[3] != {"execute": "inject-nmi"}
+):
+    raise SystemExit("failure_class=qmp-transcript: exact injection exchange not retained")
+if len(records) == 5 and (
+    records[4].get("direction") != "qemu-to-host"
+    or "return" not in records[4].get("message", {})
+):
     raise SystemExit("failure_class=qmp-transcript: exact injection exchange not retained")
 PY
 

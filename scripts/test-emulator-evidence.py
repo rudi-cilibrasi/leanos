@@ -359,6 +359,13 @@ def run_fixtures() -> None:
             not in build_image
         ):
             raise AssertionError("build-image does not route special final plans through selection")
+        if (
+            'converge_selected_graph_plan "$build/leanos-extended-state.elf"'
+            not in build_image
+        ):
+            raise AssertionError(
+                "build-image does not converge the shared extended-state plan"
+            )
         if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
             raise AssertionError("build-image does not restrict frame-budget convergence")
         if 'selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue' not in build_image:

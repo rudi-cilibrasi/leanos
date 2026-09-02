@@ -1582,6 +1582,8 @@ def check_workflows() -> None:
         "--shard-index ${{ matrix.shard }}",
         "--shard-count 4",
         "emulator-shard-${{ matrix.shard }}.json",
+        "cp build/ci/image-family/gcc-image-build-phases.tsv "
+        "build/ci/image-build-phases.tsv",
         "./scripts/run-emulator-evidence.py bundle",
         "--output build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
     ):
@@ -1688,6 +1690,7 @@ def check_workflows() -> None:
         "lean",
         "hosted-boundary",
         "clang-image",
+        "gcc-image-family",
         "clang-reproducibility-build",
         "clang-reproducibility",
         "emulator",
@@ -1695,6 +1698,7 @@ def check_workflows() -> None:
     expected_admission_env = {
         "PROMOTED": "${{ contains(github.event.pull_request.labels.*.name, "
         "'ci:full-admission') }}",
+        "GCC_IMAGE_FAMILY": "${{ needs.gcc-image-family.result }}",
         "CLANG_REPRO_COMPARE": "${{ needs.clang-reproducibility.result }}",
         "EMULATOR": "${{ needs.emulator.result }}",
     }

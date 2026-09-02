@@ -92,6 +92,25 @@ class ImageObjectGraphTests(unittest.TestCase):
             ),
         )
 
+    def test_assigned_edu_negatives_converge_their_own_boot_plans(self) -> None:
+        builder = ASSIGNED_EDU_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'fixture_plan="$build/boot-page-plan-assigned-edu-${fixture}.h"',
+            builder,
+        )
+        self.assertIn(
+            'fixture_final_plan="$build/boot-page-plan-assigned-edu-${fixture}.final.h"',
+            builder,
+        )
+        self.assertIn(
+            '-DLEANOS_BOOT_PAGE_PLAN_HEADER="\\"boot-page-plan-assigned-edu-${fixture}.h\\""',
+            builder,
+        )
+        self.assertIn(
+            './scripts/generate-boot-page-plan.sh --assigned-edu', builder
+        )
+        self.assertIn('[[ "$fixture_plan_converged" == true ]]', builder)
+
     def test_generate_lean_c_initializes_output_before_staging(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "generate_lean_c() {" + wrapper.split(
@@ -166,6 +185,7 @@ generate_lean_c {source!s} {output!s}
             "leanos-prelink",
             "leanos-malformed-handoff-prelink",
             "leanos-frame-budget-prelink",
+            "leanos-capability-transfer-prelink",
             "leanos-fault-containment-prelink",
             "leanos-fault-readonly-write-prelink",
             "leanos-fault-nx-execute-prelink",
@@ -811,7 +831,7 @@ compute_lean_c_signature {root!s}
             '[[ "$current_output_hash" == "$stored_output_hash" ]]', plan_script
         )
 
-    def test_bootstrap64_plan_converges_through_graph_target(self) -> None:
+    def test_boot_plan_convergence_relinks_selected_shared_targets(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "converge_selected_graph_plan() {" + wrapper.split(
             "converge_selected_graph_plan() {", 1
@@ -827,13 +847,19 @@ compute_lean_c_signature {root!s}
             expected = root / "plan.h"
             final = root / "plan.final.h"
             elf = root / "image.elf"
+            sibling = root / "sibling.elf"
+            outside_graph = root / "outside-graph.elf"
             graph = root / "graph.mk"
             expected.write_text("prelink-plan\n", encoding="utf-8")
             elf.write_text("linker-resolved-plan\n", encoding="utf-8")
+            sibling.write_text("stale-plan\n", encoding="utf-8")
+            outside_graph.write_text("copied-artifact\n", encoding="utf-8")
             graph.write_text(
-                f".PHONY: {elf!s}\n"
+                f".PHONY: {elf!s} {sibling!s}\n"
                 f"{elf!s}: {expected!s}\n"
-                f"\tcp {expected!s} {elf!s}\n",
+                f"\tcp {expected!s} {elf!s}\n"
+                f"{sibling!s}: {expected!s}\n"
+                f"\tcp {expected!s} {sibling!s}\n",
                 encoding="utf-8",
             )
             shell = f"""\
@@ -843,13 +869,18 @@ kernel_source_make_args=()
 LEANOS_BUILD_JOBS=1
 selected_final_enabled() {{ return 0; }}
 {function}
-converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture
+converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
+  {elf!s} {sibling!s}
 """
             subprocess.run(["bash", "-c", shell], check=True, cwd=root)
             self.assertEqual(
                 expected.read_text(encoding="utf-8"), "linker-resolved-plan\n"
             )
             self.assertEqual(final.read_bytes(), expected.read_bytes())
+            self.assertEqual(sibling.read_bytes(), expected.read_bytes())
+            self.assertEqual(
+                outside_graph.read_text(encoding="utf-8"), "copied-artifact\n"
+            )
 
     def test_boot_plan_cache_is_per_input_stage_and_checks_output(self) -> None:
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")

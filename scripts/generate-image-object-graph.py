@@ -71,6 +71,10 @@ KERNEL_VARIANTS = (
         "-DLEANOS_FRAME_BUDGET_SCENARIO=1",
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-frame-budget.h"',
     )),
+    ("kernel-capability-transfer", (
+        "-DLEANOS_CAPABILITY_TRANSFER_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-capability-transfer.h"',
+    )),
     ("kernel-fault-containment", (
         "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
@@ -137,6 +141,9 @@ ASSEMBLY_VARIANTS = (
     ("boot", "boot/boot.S", ()),
     ("boot-preemption", "boot/boot.S", ("-DLEANOS_PREEMPTION_SCENARIO=1",)),
     ("boot-frame-budget", "boot/boot.S", ("-DLEANOS_FRAME_BUDGET_SCENARIO=1",)),
+    ("boot-capability-transfer", "boot/boot.S", (
+        "-DLEANOS_CAPABILITY_TRANSFER_SCENARIO=1",
+    )),
     ("boot-fault-containment", "boot/boot.S", ("-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",)),
     ("boot-fault-readonly-write", "boot/boot.S", (
         "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
@@ -244,6 +251,12 @@ PRELINK_VARIANTS = (
     ),
     ("preemption", "boot-preemption", "kernel-preemption", ()),
     ("frame-budget", "boot-frame-budget", "kernel-frame-budget", ()),
+    (
+        "capability-transfer",
+        "boot-capability-transfer",
+        "kernel-capability-transfer",
+        (),
+    ),
     (
         "fault-containment",
         "boot-fault-containment",

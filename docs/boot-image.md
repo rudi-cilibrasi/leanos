@@ -323,7 +323,8 @@ The following new code and assumptions are trusted, not proved:
   handoff, and NMI non-delivery inside those two residual windows;
 - `boot/kernel.c`, including the bounded Multiboot2 byte parser, physical-frame
   scrub, UART polling, port I/O, QEMU debug-exit behavior, serial formatting,
-  the frame-budget canonical-token bridge, distinct boot/scenario frame
+  the frame-budget and bounded capability-transfer canonical-token bridges,
+  distinct boot/scenario frame
   selection, and retire-before-republication ordering,
   and the manual `lean_uint64_dec_eq` implementation;
 - the fast-entry CPU/MSR bridge: CPUID vendor/feature decoding, privileged
@@ -343,14 +344,19 @@ to the Lean model or verifies the boot chain.
 
 ## Linked page-table plan boundary
 
-`scripts/build-image.sh` now performs a size-stable two-pass link for each boot
-variant. The prelink uses fixed-size placeholder arrays solely to determine the
-final linker symbol addresses. `scripts/generate-boot-page-plan.sh` passes those
-addresses to the host-only `leanos-boot-plan` executable, which constructs all
-8,192 candidate leaves, both CR3 roots, all ancestor frames, and the validated
-boot reservation as one `BootPageTablePlan.Input`. It emits the canonical PTE
-arrays only when `BootPageTablePlan.compile` accepts that input. The final link
-is rejected if regenerating from its symbols changes the emitted arrays.
+`scripts/build-image.sh` starts each boot variant with a fixed-size placeholder
+plan, links the image, and derives a plan from the linker-resolved symbols.
+`scripts/generate-boot-page-plan.sh` passes those addresses to the host-only
+`leanos-boot-plan` executable, which constructs all 8,192 candidate leaves,
+both CR3 roots, all ancestor frames, and the validated boot reservation as one
+`BootPageTablePlan.Input`. It emits the canonical PTE arrays only when
+`BootPageTablePlan.compile` accepts that input. Variants whose compiled plan can
+move a page boundary are rebuilt to a bounded fixed point. Every selected,
+graph-owned ELF that shares the changed plan header is relinked before
+validation; copied and policy-linked evidence artifacts stay outside that Make
+invocation. Each assigned-EDU negative converges its own plan rather than
+assuming the canonical image's code extent also covers its fixture-only failure
+path. The build fails if any accepted plan does not stabilize within the bound.
 
 The early assembly still constructs paging before generated Lean code can run.
 After paging is active, the guest walker decodes both complete live hierarchies

@@ -77,11 +77,14 @@ jobs:
       - name: Test image-build timing evidence contract
         run: python3 scripts/test-build-timing.py
 
+      - name: Test aggregate-check timing evidence contract
+        run: python3 scripts/test-check-timing.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -90,6 +93,12 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Build and check proofs
         env:
@@ -117,6 +126,28 @@ jobs:
         with:
           name: frame-budget-negatives-${{ github.sha }}
           path: build/boot/frame-budget-negatives/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify capability-transfer negative evidence
+        if: always()
+        run: |
+          manifest=build/boot/capability-transfer-negatives/manifest.tsv
+          test -s "$manifest"
+          test "$(tail -n +2 "$manifest" | wc -l)" -eq 13
+          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
+            test "$status" -ne 0
+            test "$failure_class" != unexpected
+            test -s "build/boot/capability-transfer-negatives/$serial_log"
+            test -s "build/boot/capability-transfer-negatives/$output_log"
+          done < <(tail -n +2 "$manifest")
+
+      - name: Preserve capability-transfer negative evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: capability-transfer-negatives-${{ github.sha }}
+          path: build/boot/capability-transfer-negatives/
           if-no-files-found: error
           retention-days: 14
 
@@ -153,12 +184,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Preserve aggregate-check timing evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aggregate-check-timing-${{ github.sha }}
+          path: build/ci/check-phases.tsv
+          if-no-files-found: warn
+          retention-days: 14
+
   hosted-boundary:
     name: Hosted generated-boundary evidence
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -305,6 +345,38 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+
+  gcc-image-family:
+    name: GCC canonical image-family bundle
+    needs: repository-hygiene
+    runs-on: ubuntu-24.04
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Build canonical GCC image family
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
+        run: |
+          LEANOS_BUILD_TIMING_FILE=build/ci/gcc-image-build-phases.tsv \
+            LEANOS_EVIDENCE_TIER=all ./scripts/build-image.sh
+          ./scripts/image-bundle.sh create \
+            build/ci/leanos-image-bundle.tar.gz
+
+      - name: Preserve verified image-family bundle
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-image-family-${{ github.sha }}
+          path: |
+            build/ci/leanos-image-bundle.tar.gz
+            build/ci/leanos-image-bundle.tar.gz.sha256
+            build/ci/gcc-image-build-phases.tsv
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
   clang-reproducibility-build:
     name: Clang independent reproducibility build
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')
@@ -365,7 +437,7 @@ jobs:
 
   emulator:
     name: Deterministic QEMU smoke test (shard ${{ matrix.shard }})
-    needs: repository-hygiene
+    needs: [repository-hygiene, gcc-image-family]
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     strategy:
@@ -392,15 +464,31 @@ jobs:
       - name: Verify image-build failures propagate
         run: ./scripts/test-build-image.sh
 
+      - name: Download canonical image family
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: leanos-image-family-${{ github.sha }}
+          path: build/ci/image-family
+
       - name: Build and boot image
         run: |
           set -o pipefail
           mkdir -p build/ci
-          LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
-            LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
-            LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
-            LEANOS_EVIDENCE_SHARD_COUNT=4 \
-            ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then
+            ./scripts/image-bundle.sh verify \
+              build/ci/image-family/leanos-image-bundle.tar.gz \
+              "${{ github.sha }}"
+            cp build/ci/image-family/gcc-image-build-phases.tsv build/ci/image-build-phases.tsv
+            printf 'verified canonical image-family bundle for %s\n' \
+              "${{ github.sha }}" > build/ci/image-build.log
+          else
+            LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
+              LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
+              LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
+              LEANOS_EVIDENCE_SHARD_COUNT=4 \
+              ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          fi
           [[ ! -f build/boot/leanos-nmi.elf ]] || \
             ./scripts/test-nmi-image-policy.sh
           [[ ! -f build/boot/leanos.elf ]] || \
@@ -606,6 +694,7 @@ jobs:
       - lean
       - hosted-boundary
       - clang-image
+      - gcc-image-family
       - clang-reproducibility-build
       - clang-reproducibility
       - emulator
@@ -619,6 +708,7 @@ jobs:
           LEAN: ${{ needs.lean.result }}
           HOSTED_BOUNDARY: ${{ needs.hosted-boundary.result }}
           CLANG_IMAGE: ${{ needs.clang-image.result }}
+          GCC_IMAGE_FAMILY: ${{ needs.gcc-image-family.result }}
           CLANG_REPRO_BUILD: ${{ needs.clang-reproducibility-build.result }}
           CLANG_REPRO_COMPARE: ${{ needs.clang-reproducibility.result }}
           EMULATOR: ${{ needs.emulator.result }}
@@ -629,7 +719,7 @@ jobs:
           fi
           for result in \
             "$REPOSITORY_HYGIENE" "$LEAN" "$HOSTED_BOUNDARY" \
-            "$CLANG_IMAGE" "$CLANG_REPRO_BUILD" \
+            "$CLANG_IMAGE" "$GCC_IMAGE_FAMILY" "$CLANG_REPRO_BUILD" \
             "$CLANG_REPRO_COMPARE" "$EMULATOR"; do
             if [[ "$result" != success ]]; then
               echo "error: promoted full-evidence dependency concluded $result" >&2

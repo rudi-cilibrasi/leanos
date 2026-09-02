@@ -14,8 +14,11 @@ one-vCPU default, memory, device inventory, guest images, scenario timeouts,
 serial protocol, and result classifications. Because KVM otherwise inherits
 the physical host's CPUID vendor, the KVM construction explicitly adds
 `vendor=AuthenticAMD`. This preserves the existing vendor contract on both
-Intel and AMD hosted runners. KVM may still filter `max` features that the
-physical host or nested-virtualization layer cannot accelerate; those gaps stay
+Intel and AMD hosted runners. The peer-control negative records whether its
+forbidden pre-return CR4 mutation used PKE or OSXSAVE. Pinned TCG must use PKE;
+KVM may use OSXSAVE only when guest CPUID does not expose PKU. This is an
+explicit alternate validator input, not accelerator fallback or a claim that
+PKE executed on unsupported hardware. Other host-filtered feature gaps remain
 visible as scenario failures rather than skipped checks or emulated fallback.
 
 The runner selects exactly one accelerator through

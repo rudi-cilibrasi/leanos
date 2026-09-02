@@ -42,6 +42,17 @@ grep -Fq '(cr4 & required_cr4) != required_cr4 ||' "$kernel_source" &&
 grep -Fq 'fail("extended-state-denial-peer-controls");' "$kernel_source" || {
   echo "error: extended-state field=final-return-control-validation missing" >&2; exit 1;
 }
+grep -Fq 'test $(1 << 3), %ecx' boot/peer-pke-fixture.S &&
+grep -Fq 'test $(1 << 26), %ecx' boot/peer-pke-fixture.S &&
+grep -Fq 'or $(1 << 22), %eax' boot/peer-pke-fixture.S &&
+grep -Fq 'or $(1 << 18), %eax' boot/peer-pke-fixture.S &&
+grep -Fq 'event=peer-control-injected control=pke bit=22' "$kernel_source" &&
+grep -Fq 'event=peer-control-injected control=osxsave bit=18' "$kernel_source" &&
+grep -Fq 'pinned TCG peer-control image did not exercise PKE' \
+  scripts/run-extended-state-peer-pke.sh || {
+  echo "error: extended-state field=peer-control-adaptive-witness missing" >&2
+  exit 1
+}
 grep -Fq 'const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |' \
   "$kernel_source" || {
   echo "error: extended-state field=live-cr0-snapshot missing" >&2; exit 1;

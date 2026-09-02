@@ -77,6 +77,12 @@ blocking invariant: an accepted revoke cannot remove the endpoint authority
 that witnesses an indexed waiter's right to remain blocked. This conservative
 policy may reject removal even when redundant authority exists elsewhere.
 
+`revokeSubtree_accepted_target` records that an accepted transitive revocation
+located its lineage root in the victim's slot and published exactly that root's
+cleared subtree; the composite runtime uses the root identity to cancel sealed
+in-flight descendants in the same step (see
+[capability-transfer.md](capability-transfer.md)).
+
 Holder-facing authority uses the canonical generation-bound resolver described
 in [capability handles](capability-handles.md). A numeric slot is an internal
 table coordinate, not a durable authority reference: issuance pairs it with the

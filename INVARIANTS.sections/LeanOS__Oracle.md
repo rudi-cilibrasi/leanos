@@ -1,20 +1,22 @@
 # The frozen test corpus that cross-checks the generated C code
 
-LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 389 test rows — the "oracle" — where the answer expected for each row is computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The theorems here pin down the corpus's exact size and layout, prove that the exported number-level adapters agree with the richer authoritative models on every row, and confirm that each scenario's accept and reject answers are exactly the modeled ones. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
+LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 412 test rows — the "oracle" — where the control and optional value expected for each row are computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The theorems here pin down the corpus's exact size and layout, prove that the exported number-level adapters agree with the richer authoritative models on every row, and confirm that each scenario's accept and reject answers are exactly the modeled ones. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
 
 - `malformed_budget_state_is_wrong_version` — The frame-budget row whose state word carries the wrong interface version is answered with the exact wrong-version rejection code, so a version error can never be misread as a legitimate budget-continuity failure.
-- `corpus_shape` — The frozen corpus contains exactly 389 test rows.
-- `hosted_mixed_vectors_exact` — Rows 314 through 333 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario walk itself — not a second hand-maintained table that could drift out of step.
-- `hosted_budget_vectors_exact` — The 24 rows beginning at row 356 are exactly the frame-budget scenario's row list.
-- `hosted_iotlb_publication_vectors_exact` — The final nine hosted rows are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
+- `corpus_shape` — The frozen corpus contains exactly 412 test rows.
+- `hosted_mixed_vectors_exact` — Rows 314 through 336 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario edge set itself — not a second hand-maintained table that could drift out of step.
+- `hosted_budget_vectors_exact` — The 24 rows beginning at row 359 are exactly the frame-budget scenario's row list.
+- `hosted_iotlb_publication_vectors_exact` — The nine rows beginning at row 383 are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
+- `hosted_capability_transfer_boot_vectors_exact` — Rows 392 through 397 are exactly the dedicated boot capability-transfer trace, including its explicit subject switch and both state-preserving authority denials.
 - `hosted_iotlb_publication_adapter_agrees` — Every hosted IOTLB publication row agrees with the generated scalar adapter evaluated from the cache model.
 - `hosted_budget_canonical_sequence` — The frame-budget scenario's canonical command sequence, run from its starting state, really does end in its completed state.
 - `hosted_mixed_vectors_refine` — Every hosted mixed-scenario row is consequently backed by the separately proved, non-circular fact that its edge faithfully reflects the authoritative kernel model.
-- `hosted_invalidation_vectors_exact` — Rows 334 through 352 are exactly the stateful cache-invalidation protocol walk, including the independent unmap and switch-away/back branches, and rows 353 through 355 are its three deliberately bad requests: a malformed effect, a mismatched state, and a replayed stale ticket.
+- `hosted_invalidation_vectors_exact` — Rows 337 through 355 are exactly the stateful cache-invalidation protocol walk, including the independent unmap and switch-away/back branches, and rows 356 through 358 are its three deliberately bad requests: a malformed effect, a mismatched state, and a replayed stale ticket.
 - `hosted_invalidation_vectors_refine` — Every invalidation-protocol row is likewise backed by its own proved correspondence to the authoritative publication protocol.
 - `composite_invalidation_trace_agrees` — Each named step of the invalidation walk produces its exact expected result word, and the three hostile rows produce their exact rejection codes.
 - `composite_invalidation_same_effect_replay_rejected` — Replaying an old acknowledgement ticket as a later acknowledgement is rejected even though both acknowledgements ask for the same kind of cache flush.
 - `composite_mixed_trace_agrees` — Eight spot-checked steps of the mixed walk — including the transfer offer, the accepted map, the blocking receive, the fault cleanup, and the page-protection pair — produce their exact expected result words.
+- `composite_result_values_exact` — Exactly two corpus rows have a nonzero value word: the accepted attached receipt in each independently modeled transfer trace returns `0x60003`; every data-only result and rejection returns zero.
 - `boot_decoder_roundtrip_cold` — Encoding the boot model's cold starting state yields the number zero, the word the boot adapter starts from.
 - `boot_accept_agrees` — The one well-formed boot command in the corpus is accepted.
 - `every_rejection_agrees` — Every deliberately bad boot, system-call, and messaging row in the opening block is rejected with the answer zero.
@@ -62,3 +64,8 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `page_fault_smep_mutation_attested` — Changing only the control that stops the kernel executing user memory likewise changes the accepted answer.
 - `page_fault_smap_mutation_attested` — Changing only the control that stops the kernel reading user memory likewise changes the accepted answer.
 - `page_fault_authority_mutations_attested` — All seven facts combined: no authority-bearing input to the page-fault adapter can be dropped without visibly changing the accepted answer.
+- `hosted_inFlight_revocation_vectors_exact` — The final fourteen oracle records are, by definition, the eleven-edge in-flight revocation trace followed by its three hostile records, not a second hand-written table.
+- `hosted_inFlight_revocation_vectors_refine` — Every in-flight revocation record is backed by the step-by-step refinement of the authoritative gate.
+- `composite_inFlight_revocation_trace_agrees` — The expected control word of each in-flight revocation record is exactly the typed reply selector for that step.
+- `composite_inFlight_revocation_values_zero` — No in-flight revocation record publishes a value word: the cancelled child never becomes a returned handle.
+- `composite_inFlight_revocation_negatives_reject` — The three hostile in-flight revocation records — the revocation words replayed against the pre-offer seed, a spliced mixed-corpus revocation, and a receipt attempted before the switch — are all rejected before any kernel logic runs.

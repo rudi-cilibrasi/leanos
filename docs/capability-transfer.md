@@ -51,6 +51,24 @@ of the retired object;
 sealed descendants atomically. Thus a canceled identity cannot later become
 usable, even if a numeric slot or object identifier is reused.
 
+The composite runtime publishes the same rule. `publishSubtreeRevocation`
+takes the revoked capability store produced by the runtime-safe capability
+guard and cancels every sealed descendant of the lineage root
+(`descendsFromRoot`) in the same step, so `FailStop.gate`'s
+`capabilityRevokeSubtree` operation cannot clear an installed ancestor while
+leaving its sealed descendant receivable.
+`gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants` states the
+atomic cancellation of envelope and pending record,
+`gate_capabilityRevokeSubtree_accepted_authority_monotone` states that no
+retained sealed record or installed slot descends from the revoked root,
+`gate_capabilityRevokeSubtree_accepted_retains_history` keeps the canceled
+identity allocated forever, and
+`gate_capabilityRevokeSubtree_accepted_preserves_unrelated` leaves unrelated
+lineages, mailboxes, slots, contexts, and mappings exactly as they were. The
+composite operation names its authority and lineage root by raw slot index in
+the kernel-derived current subject; the generation-bound word forms remain the
+`revokeSubtreeWords` boundary of this model.
+
 Address-space authority can be sealed and received, but this composition does
 not yet carry `VirtualMapping.State`; therefore it has no atomic
 address-space-destruction adapter. Callers must not model address-space
@@ -82,8 +100,51 @@ no-sorries mode and rejects undocumented `axiom`, `constant`, `unsafe`,
 those trusted escapes.
 
 Concurrency, SMP, blocking, timeouts, fairness, move-only capabilities,
-multiple attachments, queues, broadcasts, capability merging, and a boot ABI
-are excluded. The Lean kernel, compiler, runtime representation, and any
-future machine adapter remain in the trusted computing base. Compilation or
-QEMU execution would be integration evidence, not verification of this model
-in a binary.
+multiple attachments, queues, broadcasts, capability merging, and a stable
+general userspace ABI remain excluded. The bounded composite adapter exposes
+the canonical accepted receipt's returned handle as result word one and has
+generated-C differential tests.
+
+## Bounded boot slice
+
+The `capability-transfer` boot image connects five user operations plus one
+kernel scheduling operation to a dedicated canonical trace. Subject A is
+formally bound to subject 1 and resolves its own generation-bound `0x20001`
+endpoint/source handle before offering a send-only descendant. An explicit
+authoritative resumable edge then selects subject 2; only its exact generated
+reply authorizes the existing complete-context return path to replace A's
+saved register bank and CR3 with the kernel-owned subject-B context. B first
+demonstrates that the sealed handle cannot send, accepts into slot 3, retains
+the returned `0x60003` word in a register, sends through that exact word, and
+receives a state-preserving denial when it tries the nondelegated receive
+right. A regression theorem checks the initial caller, source-handle
+resolution, sealed record `(sender = 1, parent = 2)`, and post-switch
+`(subject, address space) = (2, 2)` binding directly.
+
+C retains one opaque canonical state token. After each generated call it
+derives the next token from the generated control word; there is no C pending
+table, rights mask, child/parent record, destination installer, capability
+lookup, or mailbox policy. The control and value accessors receive the same
+six immutable words. In this dedicated image the entry stub carries canonical
+argument 3 from saved user RSI; other images retain their saved-RFLAGS entry
+contract.
+
+Run the real image with:
+
+```sh
+LEANOS_BOOT_SCENARIO=capability-transfer ./scripts/run-image.sh
+```
+
+`scripts/check-capability-transfer-machine.sh` inventories the two generated
+call sites, the fourth-word entry bridge, the one A and four B CPL3 syscall
+sites, and B's full-width returned-handle use in the final ELF.
+`scripts/test-run-capability-transfer.sh` checks the exact ordered protocol and
+controlled mutations for payload-selected authority, widened rights, early
+installation, truncated or replaced return values, stale A context, a
+stateless adapter label, trace splicing, missing/reordered records, forged
+success, guest error, and timeout.
+
+These checks are machine integration evidence, not a proof that C, assembly,
+the compiler, QEMU, or x86 execution refines Lean. The generated boundary,
+manual entry/scheduling glue, and diagnostic formatting remain in the trusted
+computing base.

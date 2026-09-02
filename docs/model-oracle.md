@@ -1,6 +1,6 @@
 # Model-oracle replay
 
-`LeanOS.Oracle` is the version-one, bounded corpus for every currently exported
+`LeanOS.Oracle` is the version-two, bounded corpus for every currently exported
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
 `Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
@@ -13,8 +13,8 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`,
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
-`CompositeDispatcher.dispatch`. Its stable
-392-vector order covers accepted calls,
+`CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`. Its stable
+412-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -45,7 +45,12 @@ the source models.
 
 The composite-dispatch records include the version-one traces
 for the shared stateful boundary. Six input words carry a canonical state token,
-command tag, and four scalar arguments. The seven positive sequence edges create
+command tag, and four scalar arguments. Two logical result words carry the
+validated control/reply token and an optional returned value. The value word is
+`0x60003` only for the accepted attached receipt and zero for every data-only
+success, rejection, malformed input, and other accepted edge. Zero is an
+unambiguous absence marker because capability-handle generation zero is reserved.
+The seven positive sequence edges create
 one subject, observe typed unknown-syscall and malformed-map rejections, run
 the scheduler observation, terminate the subject, enter a fatal kernel
 page-fault state, and verify that a subsequent scheduler request is rejected
@@ -82,7 +87,7 @@ direct-mapped pre-state accept a writable-to-read-only protection reduction
 with exact page effect and reject a later write-amplification attempt without
 mutation. Lean checks the exact typed result at each named boundary, including
 the timer-selected subject and the faulting subject's retired identity. The
-scalar export remains allocation-free; generated C and its calling convention
+scalar exports remain allocation-free; generated C and their calling convention
 remain trusted hosted-test boundaries.
 
 The final twenty-two records are the stateful invalidation-publication corpus.
@@ -118,6 +123,37 @@ words. `FrameBudgetScenario.step_refinement` connects every accepted edge to
 the exact admitted-budget transition, while the hosted generated-C harness
 reports the first mismatching operation and reply.
 
+Rows 392 through 397 are the dedicated machine A-to-B capability-transfer
+corpus for issue #174. Unlike the older mixed trace, this slice begins with
+subject 1 current, performs an explicit authoritative switch to subject 2,
+denies the sealed future handle before receipt, publishes `0x60003` only from
+the accepted receipt, accepts a send through the attenuated send-only handle,
+and rejects receive authority without changing the complete state.
+
+The final fourteen records are the in-flight revocation corpus for issue #175.
+Its seed is `FailStop.inFlightRevocationInitial`: from the shared two-subject
+dispatcher state, subject 2 delegates a revoke-only authority on endpoint 10
+into subject 1's slot 2 and the authoritative timer switch makes subject 1
+current, both as exact `authoritativeGate` steps. The trace then has subject 1
+seal a send-only generation-7 child of its own endpoint capability, denies a
+revocation attempted through the send-only capability and one naming a foreign
+lineage root, accepts transitive revocation of the exact ancestor, denies a
+repeated revocation and a later offer through the revoked capability, switches
+back to subject 2, denies subject 2's receipt with the typed empty rejection
+and no value word, copies a fresh generation-8 capability into the same
+destination slot, denies the canceled generation-7 handle as stale, and accepts
+a send through the generation-8 handle. Lean proves that the accepted
+revocation clears the pending record, the transfer mailbox, and the IPC
+mailbox in one step while the canceled identity remains in the append-only
+derivation history and the identity frontier does not move backwards, that
+subject 1's other slots, every subject-2 capability, the saved continuation,
+the ready queue, and the current subject are unchanged, and that no record in
+the family publishes a value word. Every denial is a complete-state stutter.
+Three hostile records replay the revocation words against the pre-offer seed
+token, splice the mixed corpus's post-receipt revocation into this family's
+subject-2 state, and present subject 2's receipt words while subject 1 is still
+current; each is rejected before any gate evaluation.
+
 The same hosted boundary exercises
 `leanos_frame_budget_invalidation_effect`. Exact canonical
 `bAllocated/terminateA` and `aAllocated/releaseA` pairs return distinct
@@ -141,27 +177,34 @@ negative fixtures. Its transfer prefix also attempts ordinary IPC through the
 future delivered handle while the descendant is still sealed. The generated
 dispatcher returns the typed stale-handle denial, preserves the complete
 authoritative state, and only the following atomic receipt exposes handle
-`0x60003` in the reviewed destination slot.
+`0x60003` in the reviewed destination slot and in result word one. The logical
+`DispatchResult` computes both words from one validated control result. The C ABI
+keeps the existing `leanos_composite_dispatch` control accessor and adds
+`leanos_composite_dispatch_value`; hosted replay invokes both with the same six
+immutable inputs.
 
 Every boot image retains that same generated `leanos_composite_dispatch` symbol
 and routes adapter 18 through it during the ordered oracle replay. Unknown
 adapter identifiers fail closed rather than falling through to another witness.
 
-The hosted replay also compiles eight deliberately invalid harness variants.
+The hosted replay also compiles deliberately invalid harness variants.
 They truncate the composite record arity, corrupt the generated dispatcher's
 result word, route the record through the old stateless syscall witness, or
 corrupt the ABI version, reserved bits, predecessor state, forged context
-argument, or canonical capability handle.
+argument, or canonical capability handle. Three additional variants corrupt the
+returned handle, omit it from the accepted receipt, or leak it from the preceding
+data-only transfer-offer result.
 Each variant must stop at the first malformed record or mismatch. Unknown
 adapter identifiers fail closed instead of falling through to the composite
-export. Every mismatch names the first operation and divergent reply field.
+export. Every mismatch names the first operation and divergent control or value
+field.
 Buffer aliasing, alignment, and partial-write fixtures do not apply to this
-six-scalar-input, one-scalar-result ABI, which owns no caller buffer or
-generated state cell.
+six-scalar-input, two-scalar-result ABI, which owns no caller buffer or generated
+state cell.
 
 The proof job preserves a reviewable `leanos-oracle-<commit>` artifact for this
 boundary. It contains the generated `CompositeDispatcher.c`, the public
-version-one scalar ABI header, the versioned corpus, exact per-step hosted
+version-one scalar ABI header, the version-two corpus, exact per-step hosted
 results and negative-fixture diagnostics, compiler flags and tool versions,
 and a SHA-256 manifest tied to the source revision. The manifest records
 reproducible differential evidence, not verified compilation: Lean code

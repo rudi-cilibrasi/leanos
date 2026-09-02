@@ -80,6 +80,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
     REGISTER_BOUNDARY(leanos_frame_budget_invalidation_effect);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
+    REGISTER_BOUNDARY(leanos_composite_dispatch_value);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
     REGISTER_BOUNDARY(leanos_validate_vtd_activation);
     REGISTER_BOUNDARY(leanos_validate_assigned_edu_projection);
@@ -381,6 +382,7 @@ int main(void) {
         dispatch_vector.words[4] = composite_arg2;
         dispatch_vector.words[5] = composite_arg3;
         uint64_t got;
+        uint64_t got_value = 0;
 #ifdef LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS
         if (v->adapter == 18) {
             got = leanos_syscall_demo(
@@ -391,9 +393,29 @@ int main(void) {
 #else
         got = leanos_oracle_dispatch(&dispatch_vector);
 #endif
+        if (v->adapter == 18) {
+            got_value = leanos_composite_dispatch_value(
+                composite_state, composite_tag, composite_arg0,
+                composite_arg1, composite_arg2, composite_arg3);
+        }
 #ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
         if (v->adapter == 18) {
             got ^= UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_VALUE_CORRUPTION
+        if (i == ORACLE_INDEX_COMPOSITE_MIXED_TRANSFER_ACCEPT) {
+            got_value ^= UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_VALUE_OMISSION
+        if (i == ORACLE_INDEX_COMPOSITE_MIXED_TRANSFER_ACCEPT) {
+            got_value = 0;
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_VALUE_LEAK
+        if (i == ORACLE_INDEX_COMPOSITE_MIXED_TRANSFER_OFFER) {
+            got_value = UINT64_C(0x60003);
         }
 #endif
 #ifdef LEANOS_FIXTURE_FRAME_BUDGET_RELABEL_SUCCESS
@@ -418,7 +440,14 @@ int main(void) {
                 v->expected, (unsigned long long)got);
             return 1;
         }
-        printf("ORACLE/%u id=%s result=%llu\n", i, v->id, (unsigned long long)got);
+        if (got_value != v->expected_value) {
+            fprintf(stderr,
+                "oracle mismatch: vector=%u operation=%s field=value expected=%llu got=%llu\n",
+                i, v->id, v->expected_value, (unsigned long long)got_value);
+            return 1;
+        }
+        printf("ORACLE/%u id=%s result=%llu value=%llu\n", i, v->id,
+            (unsigned long long)got, (unsigned long long)got_value);
     }
     if (leanos_page_fault_dispatch_regression_demo(0) != UINT64_C(2) ||
         leanos_page_fault_dispatch_regression_demo(1) != UINT64_C(2)) {
