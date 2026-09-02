@@ -1252,7 +1252,12 @@ isr80_cld:
     mov 96(%rsp), %rdx
     mov 88(%rsp), %rcx
     mov 128(%rsp), %r8
+#ifdef LEANOS_CAPABILITY_TRANSFER_SCENARIO
+    /* The dedicated transfer ABI uses saved user RSI as canonical arg3. */
+    mov 72(%rsp), %r9
+#else
     mov 136(%rsp), %r9
+#endif
     call syscall_handler
     cmp $0xbeef, %rax
     je 8f
@@ -1621,6 +1626,19 @@ user_a_entry:
     mov $7, %rdx
     int $0x80
     ud2
+#elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $26, %rax
+    mov $0x20001, %rbx
+    mov $0x20001, %rcx
+    mov $0xcafe, %rdx
+    mov $0xbeef, %rsi
+    int $0x80
+    ud2
+.global user_a_capability_transfer_end
+user_a_capability_transfer_end:
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     mov $0x1b, %ax
     mov %ax, %ds
@@ -2002,6 +2020,53 @@ user_b_entry:
 user_b_stale_translation_fault_instruction:
     mov (%r10), %rax
     ud2
+#elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
+    /* A complete fresh B register bank and B's CR3 were installed by the
+       existing 0xfeed scheduler return path before any transfer operation. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $27, %rax
+    mov $0x60003, %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $28, %rax
+    mov $0x30000, %rbx
+    mov $3, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    cmp $0x60003, %rax
+    jne 2f
+    mov %rax, %r14
+    mov $29, %rax
+    mov %r14, %rbx
+    mov $0xa174, %rcx
+    mov $0xb174, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $30, %rax
+    mov %r14, %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    ud2
+.global user_b_capability_transfer_end
+user_b_capability_transfer_end:
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     /* Every register must originate in the kernel-owned fresh B context.
        Any surviving subject-A register takes the controlled syscall-3

@@ -408,6 +408,13 @@ static uint64_t frame_budget_rescan_blocked;
 static uint64_t frame_budget_rescan_manifest;
 static uint64_t frame_budget_user_page = UINT64_MAX;
 #endif
+#ifdef LEANOS_CAPABILITY_TRANSFER_SCENARIO
+/* This is only the opaque canonical-state word returned by the generated
+   dispatcher.  The C bridge has no transfer table, capability projection,
+   rights mask, destination slot, child identity, or expected post-state. */
+static uint64_t capability_transfer_state =
+    LEANOS_COMPOSITE_STATE_BOOT_TRANSFER_SUBJECT_ONE;
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
 /* Exact generated-adapter result retained across the checked peer restore.
    This is an attestation, not a second mutable scheduler/lifecycle projection. */
@@ -3901,6 +3908,106 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_CAPABILITY_TRANSFER_SCENARIO
+    if (number >= 26 && number <= 30) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        const uint64_t expected_subject = number == 26 ? 1 : 2;
+        const uint64_t expected_cr3 = expected_subject == 1
+            ? (uint64_t)page_map_level_4_a : (uint64_t)page_map_level_4_b;
+        if (current_subject != expected_subject || cr3 != expected_cr3)
+            fail("capability-transfer-caller-context");
+
+        uint64_t command;
+        if (number == 26)
+            command = LEANOS_COMPOSITE_COMMAND_TRANSFER_OFFER;
+        else if (number == 27)
+            command = LEANOS_COMPOSITE_COMMAND_REJECT_SEALED_HANDLE_BEFORE_RECEIPT;
+        else if (number == 28)
+            command = LEANOS_COMPOSITE_COMMAND_TRANSFER_ACCEPT;
+        else if (number == 29)
+            command = LEANOS_COMPOSITE_COMMAND_USE_DELEGATED_SEND;
+        else
+            command = LEANOS_COMPOSITE_COMMAND_REJECT_DELEGATED_RECEIVE;
+
+        /* In this dedicated image saved_flags carries the fourth raw syscall
+           word saved from RSI by isr80.  Both result accessors receive the
+           same immutable six-word tuple. */
+        const uint64_t arg3 = saved_flags;
+        const uint64_t prestate = capability_transfer_state;
+        const uint64_t control = leanos_composite_dispatch(
+            prestate, command, arg0, arg1, arg2, arg3);
+        const uint64_t value = leanos_composite_dispatch_value(
+            prestate, command, arg0, arg1, arg2, arg3);
+        if ((control >> 24) != 0 || (control & UINT64_C(0xff)) != 1 ||
+            (control & UINT64_C(0xff0000)) == 0)
+            fail("capability-transfer-generated-rejection");
+        if ((command == LEANOS_COMPOSITE_COMMAND_TRANSFER_ACCEPT) !=
+            (value != LEANOS_COMPOSITE_NO_VALUE))
+            fail("capability-transfer-value-shape");
+        capability_transfer_state = control & UINT64_C(0xffff);
+
+        if (number == 26) {
+            if (control != LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_OFFERED ||
+                value != LEANOS_COMPOSITE_NO_VALUE)
+                fail("capability-transfer-offer-result");
+            serial_puts("LEANOS/22 OFFER subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=6 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2118145 value=0 result=PASS\n");
+
+            /* The caller change is itself an authoritative generated edge.
+               Only its exact typed resume result authorizes installation of
+               B's fixed kernel-owned register bank and CR3 below. */
+            const uint64_t switch_prestate = capability_transfer_state;
+            const uint64_t switch_command =
+                LEANOS_COMPOSITE_COMMAND_BOOT_TRANSFER_SWITCH_SUBJECT_TWO;
+            const uint64_t switch_control = leanos_composite_dispatch(
+                switch_prestate, switch_command, 0, 0, 0, 0);
+            const uint64_t switch_value = leanos_composite_dispatch_value(
+                switch_prestate, switch_command, 0, 0, 0, 0);
+            if (switch_control !=
+                    LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_SWITCHED ||
+                switch_value != LEANOS_COMPOSITE_NO_VALUE)
+                fail("capability-transfer-switch-result");
+            capability_transfer_state =
+                switch_control & UINT64_C(0xffff);
+            current_subject = 2;
+            serial_puts("LEANOS/22 DISPATCH subject=2 address-space=2 source=authoritative-resumable-context control=4870913 value=0 result=PASS\n");
+            return UINT64_C(0xfeed);
+        }
+        if (number == 27) {
+            if (control !=
+                    LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_SEALED_HANDLE_REJECTED ||
+                value != LEANOS_COMPOSITE_NO_VALUE)
+                fail("capability-transfer-sealed-result");
+            serial_puts("LEANOS/22 ENTER subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
+            serial_puts("LEANOS/22 SEALED-DENIAL subject=2 handle=393219 operation=send authorized=0 reason=not-installed state=unchanged control=4674305 value=0 result=PASS\n");
+            return value;
+        }
+        if (number == 28) {
+            if (control != LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_ACCEPTED ||
+                value != LEANOS_COMPOSITE_DELIVERED_HANDLE)
+                fail("capability-transfer-accept-result");
+            serial_puts("LEANOS/22 ACCEPT subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 child=6 generation=6 handle=393219 sealed=0 installed=1 exactly-once=1 control=2184193 value=393219 result=PASS\n");
+            return value;
+        }
+        if (number == 29) {
+            if (control !=
+                    LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_DELEGATED_SEND ||
+                value != LEANOS_COMPOSITE_NO_VALUE)
+                fail("capability-transfer-send-result");
+            serial_puts("LEANOS/22 DELEGATED-SEND subject=2 handle=393219 endpoint=3 payload0=41332 payload1=45428 right=send authorized=1 mailbox=filled control=4740353 value=0 result=PASS\n");
+            return value;
+        }
+        if (control !=
+                LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_DELEGATED_RECEIVE_REJECTED ||
+            value != LEANOS_COMPOSITE_NO_VALUE)
+            fail("capability-transfer-receive-result");
+        serial_puts("LEANOS/22 EXCESS-RIGHT-DENIAL subject=2 handle=393219 operation=receive authorized=0 reason=rights state=unchanged mailbox=filled control=4805889 value=0 result=PASS\n");
+        serial_puts("LEANOS/22 UNRELATED slots-a=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=delegated-message-only result=PASS\n");
+        serial_puts("LEANOS/22 FINAL status=PASS offer=1 sealed-denied=1 receipt=1 exact-handle=1 delegated-send=1 excess-right-denied=1 unrelated=unchanged\n");
+        finish(0x10);
+    }
+    fail("capability-transfer-syscall");
+#endif
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
     if (number >= 20 && number <= 25) {
         uint64_t cr3;
@@ -5038,6 +5145,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #ifdef LEANOS_NMI_PROBE
     int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
     serial_puts("LEANOS/17 BOOT target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
+#elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
+    serial_puts("LEANOS/22 BOOT target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite\n");
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     serial_puts("LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
@@ -5143,6 +5252,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
+    current_subject = 1;
+    activate_user_address_space(page_map_level_4_a);
+    check_selected_root_a();
+    serial_puts("LEANOS/22 ENTER subject=1 address-space=1 cpl=3 source=owned-context result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     current_subject = 1;

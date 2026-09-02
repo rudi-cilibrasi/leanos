@@ -14,7 +14,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`. Its stable
-406-vector order covers accepted calls,
+412-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns

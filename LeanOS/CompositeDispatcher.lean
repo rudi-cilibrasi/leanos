@@ -408,6 +408,37 @@ def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if 0x4a01 ≤ tag then 0xff02
   else 0xff04
 
+/-- Allocation-free scalar table for the machine-visible A-to-B transfer.
+Unlike the older mixed corpus, this slice has a distinct subject-1 pre-state
+and an explicit authoritative resumable switch before subject 2 can receive
+the sealed descendant. -/
+def capabilityTransferBootDispatchRaw
+    (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
+  if tag = 0x2001 then
+    if arg0 != 0x20001 || arg1 != 0x20001 ||
+        arg2 != 0xCAFE || arg3 != 0xBEEF then 0xff05
+    else if stateWord = 0x5101 then 0x205201 else 0xff06
+  else if tag = 0x4a01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5201 then 0x4a5301 else 0xff06
+  else if tag = 0x4701 then
+    if arg0 != 0x60003 || arg1 != 0xCAFE ||
+        arg2 != 0xBEEF || arg3 != 0 then 0xff05
+    else if stateWord = 0x5301 then 0x475301 else 0xff06
+  else if tag = 0x2101 then
+    if arg0 != 0x30000 || arg1 != 3 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5301 then 0x215401 else 0xff06
+  else if tag = 0x4801 then
+    if arg0 != 0x60003 || arg1 != 0xA174 ||
+        arg2 != 0xB174 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5401 then 0x485501 else 0xff06
+  else if tag = 0x4901 then
+    if arg0 != 0x60003 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5501 then 0x495501 else 0xff06
+  else if tag % 256 != abiVersion then 0xff01
+  else if 0x4b01 ≤ tag then 0xff02
+  else 0xff04
+
 /-- Allocation-free scalar table for the in-flight revocation trace (#175).
 Subject 1 seals a send-only child of its endpoint authority and then revokes
 that whole lineage before subject 2 can receive; the receipt, the canceled
@@ -532,6 +563,9 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if 0x4001 ≤ stateWord && stateWord ≤ 0x4b01 then
     if stateWord % 256 != abiVersion then 0xff01
     else FrameBudgetScenario.dispatch stateWord tag arg0 arg1 arg2 arg3
+  else if 0x5101 ≤ stateWord && stateWord ≤ 0x5501 then
+    if stateWord % 256 != abiVersion then 0xff01
+    else capabilityTransferBootDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if 0x6001 ≤ stateWord && stateWord ≤ 0x6501 then
     if stateWord % 256 != abiVersion then 0xff01
     else inFlightRevocationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
@@ -628,10 +662,10 @@ structure DispatchResult where
   deriving DecidableEq, Repr
 
 /-- Select the optional value word solely from the fully validated control
-word. The accepted attached-receipt selector is the only result allowed to
-publish a handle. -/
+word. Only the accepted attached-receipt selectors for the hosted and machine
+traces may publish a handle. -/
 def resultValue (control : UInt64) : UInt64 :=
-  if control = 0x210a01 then 0x60003 else 0
+  if control = 0x210a01 || control = 0x215401 then 0x60003 else 0
 
 def dispatchResult (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : DispatchResult :=
   let control := dispatch stateWord tag arg0 arg1 arg2 arg3
@@ -658,13 +692,16 @@ theorem dispatchResult_value_eq_dispatchValue stateWord tag arg0 arg1 arg2 arg3 
 word. This excludes every rejection, data-only success, and malformed input. -/
 theorem dispatchValue_eq_delivered_handle_iff stateWord tag arg0 arg1 arg2 arg3 :
     dispatchValue stateWord tag arg0 arg1 arg2 arg3 = 0x60003 ↔
-      dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x210a01 := by
-  simp [dispatchValue, resultValue]
+      dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x210a01 ∨
+        dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x215401 := by
+  unfold dispatchValue resultValue
+  split <;> simp_all
 
 /-- All non-receipt controls expose the canonical no-value word. -/
 theorem dispatchValue_eq_zero_iff stateWord tag arg0 arg1 arg2 arg3 :
     dispatchValue stateWord tag arg0 arg1 arg2 arg3 = 0 ↔
-      dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x210a01 := by
+      dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x210a01 ∧
+        dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x215401 := by
   simp [dispatchValue, resultValue]
 
 /-- The published receipt value is a canonical slot-3, generation-6 handle,
@@ -2056,6 +2093,222 @@ theorem mixedCanonicalEdges_refine :
     ∀ edge ∈ mixedCanonicalEdges, edge.Refines := by
   intro edge _hmembership
   exact canonicalMixedEdge_refines edge
+
+/-! ## Machine-bound subject-1 to subject-2 transfer
+
+The general hosted mixed corpus starts in subject 2.  The machine scenario has
+a separate canonical family because it claims a real A-to-B transfer: subject
+1 resolves and offers its `0x20001` endpoint authority, an explicit resumable
+transition restores subject 2, and only then may subject 2 inspect or accept
+the sealed descendant. -/
+
+inductive CapabilityTransferBootStateId where
+  | subjectOne
+  | offeredBySubjectOne
+  | subjectTwo
+  | acceptedBySubjectTwo
+  | delegatedSendBySubjectTwo
+  deriving DecidableEq, Repr
+
+def encodeCapabilityTransferBootState : CapabilityTransferBootStateId → UInt64
+  | .subjectOne => 0x5101
+  | .offeredBySubjectOne => 0x5201
+  | .subjectTwo => 0x5301
+  | .acceptedBySubjectTwo => 0x5401
+  | .delegatedSendBySubjectTwo => 0x5501
+
+inductive CapabilityTransferBootCommandId where
+  | offer
+  | switchToSubjectTwo
+  | rejectSealedHandle
+  | accept
+  | delegatedSend
+  | rejectDelegatedReceive
+  deriving DecidableEq, Repr
+
+def encodeCapabilityTransferBootCommand :
+    CapabilityTransferBootCommandId → CommandWords
+  | .offer =>
+      { tag := 0x2001, arg0 := 0x20001, arg1 := 0x20001,
+        arg2 := 0xCAFE, arg3 := 0xBEEF }
+  | .switchToSubjectTwo =>
+      { tag := 0x4a01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectSealedHandle =>
+      { tag := 0x4701, arg0 := 0x60003, arg1 := 0xCAFE,
+        arg2 := 0xBEEF, arg3 := 0 }
+  | .accept =>
+      { tag := 0x2101, arg0 := 0x30000, arg1 := 3, arg2 := 0, arg3 := 0 }
+  | .delegatedSend =>
+      { tag := 0x4801, arg0 := 0x60003, arg1 := 0xA174,
+        arg2 := 0xB174, arg3 := 0 }
+  | .rejectDelegatedReceive =>
+      { tag := 0x4901, arg0 := 0x60003, arg1 := 0, arg2 := 0, arg3 := 0 }
+
+def capabilityTransferBootOperation :
+    CapabilityTransferBootCommandId → AuthoritativeOperation
+  | .offer =>
+      .ordinary (.transferOffer 0x20001 0x20001 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true })
+  | .switchToSubjectTwo =>
+      .ordinary (.resumePreempt compositeDispatcherTimerFrame
+        compositeDispatcherTimerRegisters)
+  | .rejectSealedHandle =>
+      .ordinary (.ipc (.send 0x60003 0xCAFE 0xBEEF))
+  | .accept => .ordinary (.transferAccept 0x30000 3)
+  | .delegatedSend =>
+      .ordinary (.ipc (.send 0x60003 0xA174 0xB174))
+  | .rejectDelegatedReceive => .ordinary (.ipc (.receive 0x60003))
+
+def capabilityTransferBootPrefix :
+    CapabilityTransferBootStateId → List CapabilityTransferBootCommandId
+  | .subjectOne => []
+  | .offeredBySubjectOne => [.offer]
+  | .subjectTwo => [.offer, .switchToSubjectTwo]
+  | .acceptedBySubjectTwo => [.offer, .switchToSubjectTwo, .accept]
+  | .delegatedSendBySubjectTwo =>
+      [.offer, .switchToSubjectTwo, .accept, .delegatedSend]
+
+def capabilityTransferBootMaterialize
+    (id : CapabilityTransferBootStateId) : Except DecodeError CompositeState :=
+  match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+  | .error _ => .error .reservedBits
+  | .ok plan =>
+      .ok (runAuthoritativeOperations (capabilityTransferBootInitial plan)
+        ((capabilityTransferBootPrefix id).map capabilityTransferBootOperation))
+
+def capabilityTransferBootNext : CapabilityTransferBootStateId →
+    CapabilityTransferBootCommandId → Option CapabilityTransferBootStateId
+  | .subjectOne, .offer => some .offeredBySubjectOne
+  | .offeredBySubjectOne, .switchToSubjectTwo => some .subjectTwo
+  | .subjectTwo, .rejectSealedHandle => some .subjectTwo
+  | .subjectTwo, .accept => some .acceptedBySubjectTwo
+  | .acceptedBySubjectTwo, .delegatedSend => some .delegatedSendBySubjectTwo
+  | .delegatedSendBySubjectTwo, .rejectDelegatedReceive =>
+      some .delegatedSendBySubjectTwo
+  | _, _ => none
+
+def capabilityTransferBootReply : CapabilityTransferBootCommandId →
+    AuthoritativeGateResult
+  | .offer => .completed (.ordinary (.transferOffer .accepted))
+  | .switchToSubjectTwo =>
+      .completed (.ordinary (.resume
+        (some
+          { owner := 2, addressSpace := 2
+            frame := compositeDispatcherTimerFrame
+            registers := compositeDispatcherBlockingRegisters
+            kind := .suspended }) none))
+  | .rejectSealedHandle =>
+      .completed (.ordinary (.ipc (.syscall
+        (.sendHandleRejected (.denied .staleHandle)))))
+  | .accept =>
+      .completed (.ordinary (.transferAccept
+        (.delivered
+          { endpoint := 10, sender := 1,
+            payload := { word0 := 0xCAFE, word1 := 0xBEEF } })
+        (some 0x60003)))
+  | .delegatedSend => .completed (.ordinary (.ipc (.syscall .sent)))
+  | .rejectDelegatedReceive =>
+      .completed (.ordinary (.ipc (.syscall
+        (.receiveRejected .missingReceive))))
+
+structure CanonicalCapabilityTransferBootEdge where
+  state : CapabilityTransferBootStateId
+  command : CapabilityTransferBootCommandId
+  next : CapabilityTransferBootStateId
+  control : UInt64
+  next_exact : capabilityTransferBootNext state command = some next
+
+def capabilityTransferBootEdges : List CanonicalCapabilityTransferBootEdge :=
+  [{ state := .subjectOne, command := .offer,
+     next := .offeredBySubjectOne, control := 0x205201, next_exact := rfl },
+   { state := .offeredBySubjectOne, command := .switchToSubjectTwo,
+     next := .subjectTwo, control := 0x4a5301, next_exact := rfl },
+   { state := .subjectTwo, command := .rejectSealedHandle,
+     next := .subjectTwo, control := 0x475301, next_exact := rfl },
+   { state := .subjectTwo, command := .accept,
+     next := .acceptedBySubjectTwo, control := 0x215401, next_exact := rfl },
+   { state := .acceptedBySubjectTwo, command := .delegatedSend,
+     next := .delegatedSendBySubjectTwo, control := 0x485501, next_exact := rfl },
+   { state := .delegatedSendBySubjectTwo,
+     command := .rejectDelegatedReceive,
+     next := .delegatedSendBySubjectTwo, control := 0x495501,
+     next_exact := rfl }]
+
+def CanonicalCapabilityTransferBootEdge.Refines
+    (edge : CanonicalCapabilityTransferBootEdge) : Prop :=
+  let words := encodeCapabilityTransferBootCommand edge.command
+  ∃ pre post,
+    capabilityTransferBootMaterialize edge.state = .ok pre ∧
+    capabilityTransferBootMaterialize edge.next = .ok post ∧
+    dispatch (encodeCapabilityTransferBootState edge.state)
+      words.tag words.arg0 words.arg1 words.arg2 words.arg3 = edge.control ∧
+    authoritativeGate pre (capabilityTransferBootOperation edge.command) =
+      { state := post, result := capabilityTransferBootReply edge.command }
+
+theorem capabilityTransferBootEdges_refine :
+    ∀ edge ∈ capabilityTransferBootEdges, edge.Refines := by
+  intro edge hedge
+  simp only [capabilityTransferBootEdges, List.mem_cons, List.not_mem_nil,
+    or_false] at hedge
+  rcases hedge with rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals exact ⟨_, _, rfl, rfl, rfl, rfl⟩
+
+/-- Regression boundary for the review finding: the offer really resolves
+subject 1's generation-2 slot, and the explicit switch makes subject 2 the
+caller before either receipt operation. -/
+theorem capabilityTransferBoot_actor_binding_exact :
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state => state.execution.core.context.currentSubject) = some 1 ∧
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state =>
+          (CapabilityHandle.resolveCurrent state.capabilities
+            { caller := state.execution.core.context.currentSubject }
+            0x20001 .endpoint).toOption.map
+              (fun resolution => resolution.handle.slot)) = some (some 1) ∧
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state =>
+          (CapabilityHandle.resolveCurrent state.capabilities
+            { caller := state.execution.core.context.currentSubject }
+            0x20001 .endpoint).toOption.map
+              (fun resolution => resolution.handle.identity)) = some (some 2) ∧
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state =>
+          (CapabilityHandle.resolveCurrent state.capabilities
+            { caller := state.execution.core.context.currentSubject }
+            0x20001 .endpoint).toOption.map
+              (fun resolution => resolution.capability.object)) = some (some 10) ∧
+    (capabilityTransferBootMaterialize .offeredBySubjectOne).toOption.map
+        (fun state => (state.transfers.pending 10).map
+          (fun transfer => (transfer.sender, transfer.parent))) =
+        some (some (1, 2)) ∧
+    (capabilityTransferBootMaterialize .subjectTwo).toOption.map
+        (fun state =>
+          (state.execution.core.context.currentSubject,
+            state.execution.core.context.activeAddressSpace)) = some (2, 2) := by
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor <;> native_decide
+
+theorem capabilityTransferBootResults_exact :
+    dispatch 0x5101 0x2001 0x20001 0x20001 0xCAFE 0xBEEF = 0x205201 ∧
+    dispatchValue 0x5101 0x2001 0x20001 0x20001 0xCAFE 0xBEEF = 0 ∧
+    dispatch 0x5201 0x4a01 0 0 0 0 = 0x4a5301 ∧
+    dispatchValue 0x5201 0x4a01 0 0 0 0 = 0 ∧
+    dispatch 0x5301 0x4701 0x60003 0xCAFE 0xBEEF 0 = 0x475301 ∧
+    dispatchValue 0x5301 0x4701 0x60003 0xCAFE 0xBEEF 0 = 0 ∧
+    dispatch 0x5301 0x2101 0x30000 3 0 0 = 0x215401 ∧
+    dispatchValue 0x5301 0x2101 0x30000 3 0 0 = 0x60003 ∧
+    dispatch 0x5401 0x4801 0x60003 0xA174 0xB174 0 = 0x485501 ∧
+    dispatchValue 0x5401 0x4801 0x60003 0xA174 0xB174 0 = 0 ∧
+    dispatch 0x5501 0x4901 0x60003 0 0 0 = 0x495501 ∧
+    dispatchValue 0x5501 0x4901 0x60003 0 0 0 = 0 := by
+  native_decide
 
 theorem decodeMixedCompositeState_sound word state
     (_hdecode : decodeMixedCompositeState word = .ok state) :

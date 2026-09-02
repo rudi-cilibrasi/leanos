@@ -129,6 +129,28 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Verify capability-transfer negative evidence
+        if: always()
+        run: |
+          manifest=build/boot/capability-transfer-negatives/manifest.tsv
+          test -s "$manifest"
+          test "$(tail -n +2 "$manifest" | wc -l)" -eq 13
+          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
+            test "$status" -ne 0
+            test "$failure_class" != unexpected
+            test -s "build/boot/capability-transfer-negatives/$serial_log"
+            test -s "build/boot/capability-transfer-negatives/$output_log"
+          done < <(tail -n +2 "$manifest")
+
+      - name: Preserve capability-transfer negative evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: capability-transfer-negatives-${{ github.sha }}
+          path: build/boot/capability-transfer-negatives/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Preserve generated-oracle evidence
         if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

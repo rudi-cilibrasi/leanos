@@ -1,12 +1,13 @@
 # The frozen test corpus that cross-checks the generated C code
 
-LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 392 test rows — the "oracle" — where the control and optional value expected for each row are computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The theorems here pin down the corpus's exact size and layout, prove that the exported number-level adapters agree with the richer authoritative models on every row, and confirm that each scenario's accept and reject answers are exactly the modeled ones. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
+LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 398 test rows — the "oracle" — where the control and optional value expected for each row are computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The theorems here pin down the corpus's exact size and layout, prove that the exported number-level adapters agree with the richer authoritative models on every row, and confirm that each scenario's accept and reject answers are exactly the modeled ones. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
 
 - `malformed_budget_state_is_wrong_version` — The frame-budget row whose state word carries the wrong interface version is answered with the exact wrong-version rejection code, so a version error can never be misread as a legitimate budget-continuity failure.
-- `corpus_shape` — The frozen corpus contains exactly 392 test rows.
+- `corpus_shape` — The frozen corpus contains exactly 398 test rows.
 - `hosted_mixed_vectors_exact` — Rows 314 through 336 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario edge set itself — not a second hand-maintained table that could drift out of step.
 - `hosted_budget_vectors_exact` — The 24 rows beginning at row 359 are exactly the frame-budget scenario's row list.
-- `hosted_iotlb_publication_vectors_exact` — The final nine hosted rows are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
+- `hosted_iotlb_publication_vectors_exact` — The nine rows beginning at row 383 are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
+- `hosted_capability_transfer_boot_vectors_exact` — The final six hosted rows are exactly the dedicated boot capability-transfer trace, including its explicit subject switch and both state-preserving authority denials.
 - `hosted_iotlb_publication_adapter_agrees` — Every hosted IOTLB publication row agrees with the generated scalar adapter evaluated from the cache model.
 - `hosted_budget_canonical_sequence` — The frame-budget scenario's canonical command sequence, run from its starting state, really does end in its completed state.
 - `hosted_mixed_vectors_refine` — Every hosted mixed-scenario row is consequently backed by the separately proved, non-circular fact that its edge faithfully reflects the authoritative kernel model.
@@ -15,7 +16,7 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `composite_invalidation_trace_agrees` — Each named step of the invalidation walk produces its exact expected result word, and the three hostile rows produce their exact rejection codes.
 - `composite_invalidation_same_effect_replay_rejected` — Replaying an old acknowledgement ticket as a later acknowledgement is rejected even though both acknowledgements ask for the same kind of cache flush.
 - `composite_mixed_trace_agrees` — Eight spot-checked steps of the mixed walk — including the transfer offer, the accepted map, the blocking receive, the fault cleanup, and the page-protection pair — produce their exact expected result words.
-- `composite_result_values_exact` — Exactly one corpus row has a nonzero value word: the accepted attached receipt returns `0x60003`; every data-only result and rejection returns zero.
+- `composite_result_values_exact` — Exactly two corpus rows have a nonzero value word: the accepted attached receipt in each independently modeled transfer trace returns `0x60003`; every data-only result and rejection returns zero.
 - `boot_decoder_roundtrip_cold` — Encoding the boot model's cold starting state yields the number zero, the word the boot adapter starts from.
 - `boot_accept_agrees` — The one well-formed boot command in the corpus is accepted.
 - `every_rejection_agrees` — Every deliberately bad boot, system-call, and messaging row in the opening block is rejected with the answer zero.

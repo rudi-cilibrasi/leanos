@@ -43,6 +43,8 @@ elif [[ "$scenario" == stale-translation-denial ]]; then
   stale_translation_elf="build/boot/leanos-fault-stale-translation.elf"
 elif [[ "$scenario" == frame-budget ]]; then
   default_image="build/boot/leanos-${version}-x86_64-frame-budget.iso"
+elif [[ "$scenario" == capability-transfer ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-capability-transfer.iso"
 elif [[ "$scenario" == fault-containment ]]; then
   fault_scenario=1
   fault_probe=supervisor-read
@@ -179,6 +181,8 @@ elif [[ "$scenario" == stale-translation-denial ]]; then
   echo 'LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off' > "$expected"
 elif [[ "$scenario" == frame-budget ]]; then
   echo 'LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap' > "$expected"
+elif [[ "$scenario" == capability-transfer ]]; then
+  echo 'LEANOS/22 BOOT target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite' > "$expected"
 elif (( fault_scenario )); then
   echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
@@ -283,6 +287,19 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   "LEANOS/18 ${integer_fault_upper}-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS" \
   "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=${integer_fault_vector} reason=${integer_fault_kind} kernel-origin=fail-stop" >> "$expected"
+elif [[ "$scenario" == capability-transfer ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
+  'LEANOS/22 ENTER subject=1 address-space=1 cpl=3 source=owned-context result=PASS' \
+  'LEANOS/22 OFFER subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=6 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2118145 value=0 result=PASS' \
+  'LEANOS/22 DISPATCH subject=2 address-space=2 source=authoritative-resumable-context control=4870913 value=0 result=PASS' \
+  'LEANOS/22 ENTER subject=2 address-space=2 origin=cpl3 context=fresh result=PASS' \
+  'LEANOS/22 SEALED-DENIAL subject=2 handle=393219 operation=send authorized=0 reason=not-installed state=unchanged control=4674305 value=0 result=PASS' \
+  'LEANOS/22 ACCEPT subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 child=6 generation=6 handle=393219 sealed=0 installed=1 exactly-once=1 control=2184193 value=393219 result=PASS' \
+  'LEANOS/22 DELEGATED-SEND subject=2 handle=393219 endpoint=3 payload0=41332 payload1=45428 right=send authorized=1 mailbox=filled control=4740353 value=0 result=PASS' \
+  'LEANOS/22 EXCESS-RIGHT-DENIAL subject=2 handle=393219 operation=receive authorized=0 reason=rights state=unchanged mailbox=filled control=4805889 value=0 result=PASS' \
+  'LEANOS/22 UNRELATED slots-a=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=delegated-message-only result=PASS' \
+  'LEANOS/22 FINAL status=PASS offer=1 sealed-denied=1 receipt=1 exact-handle=1 delegated-send=1 excess-right-denied=1 unrelated=unchanged' >> "$expected"
 elif [[ "$scenario" == frame-budget ]]; then
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \

@@ -100,10 +100,51 @@ no-sorries mode and rejects undocumented `axiom`, `constant`, `unsafe`,
 those trusted escapes.
 
 Concurrency, SMP, blocking, timeouts, fairness, move-only capabilities,
-multiple attachments, queues, broadcasts, capability merging, and a boot
-syscall ABI are excluded. The bounded composite hosted adapter does expose the
-canonical accepted receipt's returned handle as a second scalar result and has
-generated-C differential tests; it is not wired into the boot syscall surface.
-The Lean kernel, compiler, runtime representation, and any future machine
-adapter remain in the trusted computing base. Compilation evidence does not
-verify this model in a binary.
+multiple attachments, queues, broadcasts, capability merging, and a stable
+general userspace ABI remain excluded. The bounded composite adapter exposes
+the canonical accepted receipt's returned handle as result word one and has
+generated-C differential tests.
+
+## Bounded boot slice
+
+The `capability-transfer` boot image connects five user operations plus one
+kernel scheduling operation to a dedicated canonical trace. Subject A is
+formally bound to subject 1 and resolves its own generation-bound `0x20001`
+endpoint/source handle before offering a send-only descendant. An explicit
+authoritative resumable edge then selects subject 2; only its exact generated
+reply authorizes the existing complete-context return path to replace A's
+saved register bank and CR3 with the kernel-owned subject-B context. B first
+demonstrates that the sealed handle cannot send, accepts into slot 3, retains
+the returned `0x60003` word in a register, sends through that exact word, and
+receives a state-preserving denial when it tries the nondelegated receive
+right. A regression theorem checks the initial caller, source-handle
+resolution, sealed record `(sender = 1, parent = 2)`, and post-switch
+`(subject, address space) = (2, 2)` binding directly.
+
+C retains one opaque canonical state token. After each generated call it
+derives the next token from the generated control word; there is no C pending
+table, rights mask, child/parent record, destination installer, capability
+lookup, or mailbox policy. The control and value accessors receive the same
+six immutable words. In this dedicated image the entry stub carries canonical
+argument 3 from saved user RSI; other images retain their saved-RFLAGS entry
+contract.
+
+Run the real image with:
+
+```sh
+LEANOS_BOOT_SCENARIO=capability-transfer ./scripts/run-image.sh
+```
+
+`scripts/check-capability-transfer-machine.sh` inventories the two generated
+call sites, the fourth-word entry bridge, the one A and four B CPL3 syscall
+sites, and B's full-width returned-handle use in the final ELF.
+`scripts/test-run-capability-transfer.sh` checks the exact ordered protocol and
+controlled mutations for payload-selected authority, widened rights, early
+installation, truncated or replaced return values, stale A context, a
+stateless adapter label, trace splicing, missing/reordered records, forged
+success, guest error, and timeout.
+
+These checks are machine integration evidence, not a proof that C, assembly,
+the compiler, QEMU, or x86 execution refines Lean. The generated boundary,
+manual entry/scheduling glue, and diagnostic formatting remain in the trusted
+computing base.

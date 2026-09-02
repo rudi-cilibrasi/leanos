@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v2
-# mandatory-count	62
+# mandatory-count	63
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason	tier
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-	pr
 multivcpu-rejection	multivcpu	controlled-rejection	30	leanos-@VERSION@-x86_64-multivcpu-rejection.iso	leanos-multivcpu-rejection.elf	multivcpu-rejection.serial.log	multivcpu-rejection	-	topology-non-singleton	pr
@@ -10,6 +10,7 @@ raw-selection-authority-mutation	malformed-handoff	controlled-rejection	30	leano
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-	evidence
 preemption	boot	accepted-boot	30	leanos-@VERSION@-x86_64-preemption.iso	leanos-preemption.elf	preemption.serial.log	preemption	-	-	evidence
 frame-budget	boot	accepted-boot	30	leanos-@VERSION@-x86_64-frame-budget.iso	leanos-frame-budget.elf	frame-budget.serial.log	frame-budget	-	-	evidence
+capability-transfer	boot	accepted-boot	30	leanos-@VERSION@-x86_64-capability-transfer.iso	leanos-capability-transfer.elf	capability-transfer.serial.log	capability-transfer	-	-	evidence
 fault-containment	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-containment.iso	leanos-fault-containment.elf	fault-containment.serial.log	fault-containment	-	-	evidence
 fault-readonly-write	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-readonly-write.iso	leanos-fault-readonly-write.elf	fault-readonly-write.serial.log	fault-readonly-write	-	-	evidence
 fault-nx-execute	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-nx-execute.iso	leanos-fault-nx-execute.elf	fault-nx-execute.serial.log	fault-nx-execute	-	-	evidence

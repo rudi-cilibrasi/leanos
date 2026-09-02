@@ -401,6 +401,7 @@ build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
 frame_budget_iso_root="$build/iso-frame-budget"
+capability_transfer_iso_root="$build/iso-capability-transfer"
 fault_containment_iso_root="$build/iso-fault-containment"
 fault_readonly_write_iso_root="$build/iso-fault-readonly-write"
 fault_nx_execute_iso_root="$build/iso-fault-nx-execute"
@@ -547,6 +548,7 @@ selected_final_enabled() {
 # their contents current while allowing unchanged packaged images to be reused.
 mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$frame_budget_iso_root/boot/grub" \
+  "$capability_transfer_iso_root/boot/grub" \
   "$fault_containment_iso_root/boot/grub" \
   "$fault_readonly_write_iso_root/boot/grub" \
   "$fault_nx_execute_iso_root/boot/grub" \
@@ -586,6 +588,7 @@ ensure_boot_plan_stub "$build/boot-page-plan-projection-authority-mutation.h"
 ensure_boot_plan_stub "$build/boot-page-plan-raw-selection-authority-mutation.h"
 ensure_boot_plan_stub "$build/boot-page-plan-preemption.h"
 ensure_boot_plan_stub "$build/boot-page-plan-frame-budget.h"
+ensure_boot_plan_stub "$build/boot-page-plan-capability-transfer.h"
 ensure_boot_plan_stub "$build/boot-page-plan-fault-containment.h"
 ensure_boot_plan_stub "$build/boot-page-plan-fault-nx-execute.h"
 for probe in "${fault_image_probes[@]}"; do
@@ -838,6 +841,8 @@ boot_plan_batch_args=(
   "$build/leanos-preemption-prelink.elf" "$build/boot-page-plan-preemption.h"
   "$build/leanos-frame-budget-prelink.elf"
   "$build/boot-page-plan-frame-budget.h"
+  "$build/leanos-capability-transfer-prelink.elf"
+  "$build/boot-page-plan-capability-transfer.h"
   "$build/leanos-fault-containment-prelink.elf"
   "$build/boot-page-plan-fault-containment.h"
   "$build/leanos-fault-readonly-write-prelink.elf"
@@ -1056,10 +1061,16 @@ converge_selected_graph_plan() {
   local expected_plan="$2"
   local final_plan="$3"
   local description="$4"
+  shift 4
+  local -a relink_targets=("$@")
   local converged=false
   local pass
 
   selected_final_enabled "$elf_path" || return 0
+  ((${#relink_targets[@]} > 0)) || {
+    echo "error: $description page-table convergence has no graph relink targets" >&2
+    exit 1
+  }
   for pass in 1 2 3 4; do
     ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
     if cmp -s "$expected_plan" "$final_plan"; then
@@ -1070,11 +1081,12 @@ converge_selected_graph_plan() {
 
     # A generated common object can move the final image across a page
     # boundary even when this variant's kernel source did not change. Feed the
-    # linker-resolved plan back through the graph-owned object and ELF target
-    # until the plan describes the ELF that actually embeds it.
+    # linker-resolved plan back through every selected graph-owned sibling that
+    # shares this plan/header. Some evidence ELFs are copied or linked outside
+    # the graph and must never be passed to this Makefile.
     cp "$final_plan" "$expected_plan"
     make -f "$object_graph" "${kernel_source_make_args[@]}" \
-      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" "$elf_path"
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" "${relink_targets[@]}"
   done
   [[ "$converged" == true ]] || {
     echo "error: $description page-table plan drifted after final link" >&2
@@ -1104,10 +1116,14 @@ validate_selected_final_plan "$build/leanos-bootstrap32-ud.elf" \
   "$build/boot-page-plan-bootstrap32-ud.final.h" "bootstrap32-ud probe"
 converge_selected_graph_plan "$build/leanos-bootstrap64-nmi.elf" \
   "$build/boot-page-plan-bootstrap64-nmi.h" \
-  "$build/boot-page-plan-bootstrap64-nmi.final.h" "bootstrap64-nmi probe"
+  "$build/boot-page-plan-bootstrap64-nmi.final.h" "bootstrap64-nmi probe" \
+  "$build/leanos-bootstrap64-nmi.elf"
 validate_selected_final_plan "$build/leanos-preemption.elf" \
   "$build/boot-page-plan-preemption.h" \
   "$build/boot-page-plan-preemption.final.h" preemption
+validate_selected_final_plan "$build/leanos-capability-transfer.elf" \
+  "$build/boot-page-plan-capability-transfer.h" \
+  "$build/boot-page-plan-capability-transfer.final.h" capability-transfer
 if selected_final_enabled "$build/leanos-frame-budget.elf"; then
   frame_budget_plan_converged=false
   for pass in 1 2 3 4; do
@@ -1197,9 +1213,21 @@ for probe in "${fault_image_probes[@]}"; do
     exit 1
   }
 done
-validate_selected_final_plan "$build/leanos-extended-state.elf" \
+extended_state_plan_targets=()
+for target in \
+  "$build/leanos-extended-state.elf" \
+  "$build/leanos-extended-state-mmx.elf" \
+  "$build/leanos-extended-state-sse.elf" \
+  "$build/leanos-extended-state-sse2.elf" \
+  "$build/leanos-extended-state-avx.elf" \
+  "$build/leanos-fast-entry-syscall.elf" \
+  "$build/leanos-fast-entry-sysenter.elf"; do
+  selected_final_enabled "$target" && extended_state_plan_targets+=("$target")
+done
+converge_selected_graph_plan "$build/leanos-extended-state.elf" \
   "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state.final.h" extended-state
+  "$build/boot-page-plan-extended-state.final.h" extended-state \
+  "${extended_state_plan_targets[@]}"
 validate_selected_final_plan "$build/leanos-extended-state-peer-pke.elf" \
   "$build/boot-page-plan-extended-state-peer-pke.h" \
   "$build/boot-page-plan-extended-state-peer-pke.final.h" peer-PKE
@@ -1447,6 +1475,7 @@ queue_image_policy raw-selection-authority-mutation \
   "$build/leanos-raw-selection-authority-mutation.elf"
 queue_image_policy preemption "$build/leanos-preemption.elf"
 queue_image_policy frame-budget "$build/leanos-frame-budget.elf"
+queue_image_policy capability-transfer "$build/leanos-capability-transfer.elf"
 queue_image_policy fault-containment "$build/leanos-fault-containment.elf"
 queue_image_policy fault-readonly-write "$build/leanos-fault-readonly-write.elf"
 queue_image_policy fault-nx-execute "$build/leanos-fault-nx-execute.elf"
@@ -1494,6 +1523,10 @@ done
 
 if selected_final_enabled "$build/leanos-frame-budget.elf"; then
   ./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
+fi
+if selected_final_enabled "$build/leanos-capability-transfer.elf"; then
+  ./scripts/test-capability-transfer-machine.sh \
+    "$build/leanos-capability-transfer.elf"
 fi
 if selected_final_enabled "$build/leanos-nmi.elf"; then
   ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
@@ -1794,6 +1827,8 @@ stage_selected_image "$build/leanos-raw-selection-authority-mutation.elf" \
   "$raw_selection_authority_iso_root" boot/grub.cfg
 stage_selected_image "$build/leanos-preemption.elf" "$preemption_iso_root" boot/grub.cfg
 stage_selected_image "$build/leanos-frame-budget.elf" "$frame_budget_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-capability-transfer.elf" \
+  "$capability_transfer_iso_root" boot/grub.cfg
 stage_selected_image "$build/leanos-fault-containment.elf" \
   "$fault_containment_iso_root" boot/grub.cfg
 stage_selected_image "$build/leanos-fault-readonly-write.elf" \
@@ -1881,6 +1916,8 @@ queue_iso "$build/leanos-${version}-x86_64-preemption.iso" \
   "$preemption_iso_root"
 queue_iso "$build/leanos-${version}-x86_64-frame-budget.iso" \
   "$frame_budget_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-capability-transfer.iso" \
+  "$capability_transfer_iso_root"
 queue_iso "$build/leanos-${version}-x86_64-fault-containment.iso" \
   "$fault_containment_iso_root"
 queue_iso "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
@@ -1976,6 +2013,7 @@ if [[ "$evidence_tier" == all && -z "$evidence_shard_index" ]]; then
   "$build/leanos-raw-selection-authority-mutation.map" \
   "$build/leanos-${version}-x86_64-preemption.iso" \
   "$build/leanos-${version}-x86_64-frame-budget.iso" \
+  "$build/leanos-${version}-x86_64-capability-transfer.iso" \
   "$build/leanos-${version}-x86_64-fault-containment.iso" \
   "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
   "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
@@ -1990,6 +2028,8 @@ if [[ "$evidence_tier" == all && -z "$evidence_shard_index" ]]; then
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
   "$build/leanos-frame-budget.elf" "$build/leanos-frame-budget.map" \
+  "$build/leanos-capability-transfer.elf" \
+  "$build/leanos-capability-transfer.map" \
   "$build/leanos-fault-containment.elf" \
   "$build/leanos-fault-containment.map" \
   "$build/leanos-fault-readonly-write.elf" \
