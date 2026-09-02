@@ -35,6 +35,7 @@ job_boundaries = (
     ("hosted-boundary", "clang-image", "Replay hosted generated boundaries"),
     ("clang-image", "gcc-image-family", "Verify selected compiler propagation"),
     ("gcc-image-family", "clang-reproducibility-build", "Build canonical GCC image family"),
+    ("emulator", "kvm-evidence", "Record tool versions"),
 )
 for job_name, next_job, next_step in job_boundaries:
     job = workflow.split(f"  {job_name}:\n", maxsplit=1)[1].split(
