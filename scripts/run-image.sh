@@ -45,6 +45,8 @@ elif [[ "$scenario" == frame-budget ]]; then
   default_image="build/boot/leanos-${version}-x86_64-frame-budget.iso"
 elif [[ "$scenario" == capability-transfer ]]; then
   default_image="build/boot/leanos-${version}-x86_64-capability-transfer.iso"
+elif [[ "$scenario" == inflight-revocation ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-inflight-revocation.iso"
 elif [[ "$scenario" == fault-containment ]]; then
   fault_scenario=1
   fault_probe=supervisor-read
@@ -183,6 +185,8 @@ elif [[ "$scenario" == frame-budget ]]; then
   echo 'LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap' > "$expected"
 elif [[ "$scenario" == capability-transfer ]]; then
   echo 'LEANOS/22 BOOT target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite' > "$expected"
+elif [[ "$scenario" == inflight-revocation ]]; then
+  echo 'LEANOS/23 BOOT target=x86_64-q35 subjects=2 schedule=inflight-revocation-v1 controls=wp,smep,smap boundary=generated-composite' > "$expected"
 elif (( fault_scenario )); then
   echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
@@ -300,6 +304,24 @@ printf '%s\n' \
   'LEANOS/22 EXCESS-RIGHT-DENIAL subject=2 handle=393219 operation=receive authorized=0 reason=rights state=unchanged mailbox=filled control=4805889 value=0 result=PASS' \
   'LEANOS/22 UNRELATED slots-a=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=delegated-message-only result=PASS' \
   'LEANOS/22 FINAL status=PASS offer=1 sealed-denied=1 receipt=1 exact-handle=1 delegated-send=1 excess-right-denied=1 unrelated=unchanged' >> "$expected"
+elif [[ "$scenario" == inflight-revocation ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
+  'LEANOS/23 ENTER subject=1 address-space=1 cpl=3 source=owned-context authority=slot2:revoke result=PASS' \
+  'LEANOS/23 OFFER subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=7 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2121985 value=0 result=PASS' \
+  'LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=1 root-slot=1 reason=missingRevoke state=unchanged control=5267713 value=0 result=PASS' \
+  'LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=2 root-slot=0 reason=objectMismatch state=unchanged control=5333249 value=0 result=PASS' \
+  'LEANOS/23 REVOKE subject=1 authority-slot=2 root-slot=1 root=2 descendant=7 installed-cleared=1 envelope=cleared pending=cleared history=retained next-identity=8 control=5399041 value=0 result=PASS' \
+  'LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=2 root-slot=1 reason=staleSlot state=unchanged control=5464577 value=0 result=PASS' \
+  'LEANOS/23 OFFER-DENIAL subject=1 source-handle=131073 reason=staleEndpoint state=unchanged control=5530113 value=0 result=PASS' \
+  'LEANOS/23 DISPATCH subject=2 address-space=2 source=authoritative-resumable-context control=5595905 value=0 result=PASS' \
+  'LEANOS/23 ENTER subject=2 address-space=2 origin=cpl3 context=fresh result=PASS' \
+  'LEANOS/23 CANCELED-RECEIPT subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 reason=empty delivered=0 installed=0 handle=none control=2188033 value=0 result=PASS' \
+  'LEANOS/23 REPLACE subject=2 source-slot=0 destination-slot=3 generation=8 canceled-generation=7 aliased=0 history=retained control=2384897 value=0 result=PASS' \
+  'LEANOS/23 CANCELED-HANDLE-DENIAL subject=2 handle=458755 operation=send authorized=0 reason=staleHandle state=unchanged control=5661697 value=0 result=PASS' \
+  'LEANOS/23 FRESH-SEND subject=2 handle=524291 endpoint-slot=3 payload0=4369 payload1=8738 right=send authorized=1 mailbox=filled control=5727489 value=0 result=PASS' \
+  'LEANOS/23 UNRELATED slots-a-except-1=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=fresh-message-only result=PASS' \
+  'LEANOS/23 FINAL status=PASS offer=1 revoke=1 envelope-and-pending=cleared canceled-receipt-denied=1 replacement-generation=8 canceled-handle-denied=1 fresh-send=1 unrelated=unchanged' >> "$expected"
 elif [[ "$scenario" == frame-budget ]]; then
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \

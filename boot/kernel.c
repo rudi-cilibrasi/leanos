@@ -415,6 +415,14 @@ static uint64_t frame_budget_user_page = UINT64_MAX;
 static uint64_t capability_transfer_state =
     LEANOS_COMPOSITE_STATE_BOOT_TRANSFER_SUBJECT_ONE;
 #endif
+#ifdef LEANOS_INFLIGHT_REVOCATION_SCENARIO
+/* Only the opaque canonical-state word returned by the generated dispatcher.
+   The revoked lineage root, the canceled in-flight descendant, the reused
+   destination and its replacement identity, and every expected post-state
+   are decided by Lean replay of this token; C keeps no second record. */
+static uint64_t inflight_revocation_state =
+    LEANOS_COMPOSITE_STATE_INFLIGHT_SUBJECT_ONE_ARMED;
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
 /* Exact generated-adapter result retained across the checked peer restore.
    This is an attestation, not a second mutable scheduler/lifecycle projection. */
@@ -4008,6 +4016,127 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
     fail("capability-transfer-syscall");
 #endif
+#ifdef LEANOS_INFLIGHT_REVOCATION_SCENARIO
+    if (number >= 31 && number <= 40) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        const uint64_t expected_subject = number <= 36 ? 1 : 2;
+        const uint64_t expected_cr3 = expected_subject == 1
+            ? (uint64_t)page_map_level_4_a : (uint64_t)page_map_level_4_b;
+        if (current_subject != expected_subject || cr3 != expected_cr3)
+            fail("inflight-revocation-caller-context");
+
+        uint64_t command;
+        uint64_t expected_control;
+        if (number == 31) {
+            command = LEANOS_COMPOSITE_COMMAND_TRANSFER_OFFER;
+            expected_control = LEANOS_COMPOSITE_REPLY_INFLIGHT_CHILD_OFFERED;
+        } else if (number == 32) {
+            command =
+                LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_REVOCATION_WITHOUT_AUTHORITY;
+            expected_control =
+                LEANOS_COMPOSITE_REPLY_INFLIGHT_REVOCATION_WITHOUT_AUTHORITY_REJECTED;
+        } else if (number == 33) {
+            command = LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_WRONG_LINEAGE_ROOT;
+            expected_control =
+                LEANOS_COMPOSITE_REPLY_INFLIGHT_WRONG_LINEAGE_ROOT_REJECTED;
+        } else if (number == 34) {
+            command = LEANOS_COMPOSITE_COMMAND_INFLIGHT_REVOKE_LINEAGE;
+            expected_control = LEANOS_COMPOSITE_REPLY_INFLIGHT_LINEAGE_REVOKED;
+        } else if (number == 35) {
+            command = LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_REPEATED_REVOCATION;
+            expected_control =
+                LEANOS_COMPOSITE_REPLY_INFLIGHT_REPEATED_REVOCATION_REJECTED;
+        } else if (number == 36) {
+            command =
+                LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_OFFER_AFTER_REVOCATION;
+            expected_control =
+                LEANOS_COMPOSITE_REPLY_INFLIGHT_OFFER_AFTER_REVOCATION_REJECTED;
+        } else if (number == 37) {
+            command = LEANOS_COMPOSITE_COMMAND_TRANSFER_ACCEPT;
+            expected_control =
+                LEANOS_COMPOSITE_REPLY_INFLIGHT_CANCELED_RECEIPT_REJECTED;
+        } else if (number == 38) {
+            command = LEANOS_COMPOSITE_COMMAND_COPY_FRESH_CAPABILITY;
+            expected_control = LEANOS_COMPOSITE_REPLY_INFLIGHT_DESTINATION_REPLACED;
+        } else if (number == 39) {
+            command =
+                LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_CANCELED_HANDLE_REPLAY;
+            expected_control =
+                LEANOS_COMPOSITE_REPLY_INFLIGHT_CANCELED_HANDLE_REPLAY_REJECTED;
+        } else {
+            command = LEANOS_COMPOSITE_COMMAND_INFLIGHT_USE_REPLACEMENT_HANDLE;
+            expected_control = LEANOS_COMPOSITE_REPLY_INFLIGHT_REPLACEMENT_USED;
+        }
+
+        /* Saved user RSI carries the fourth raw syscall word in this image.
+           Both result accessors receive the same immutable six-word tuple. */
+        const uint64_t arg3 = saved_flags;
+        const uint64_t prestate = inflight_revocation_state;
+        const uint64_t control = leanos_composite_dispatch(
+            prestate, command, arg0, arg1, arg2, arg3);
+        const uint64_t value = leanos_composite_dispatch_value(
+            prestate, command, arg0, arg1, arg2, arg3);
+        if ((control >> 24) != 0 || (control & UINT64_C(0xff)) != 1 ||
+            (control & UINT64_C(0xff0000)) == 0)
+            fail("inflight-revocation-generated-rejection");
+        /* No edge of this trace publishes a handle.  A nonzero value word
+           would mean the canceled child or a caller-chosen replacement had
+           reached result word one. */
+        if (value != LEANOS_COMPOSITE_NO_VALUE)
+            fail("inflight-revocation-value-shape");
+        if (control != expected_control)
+            fail("inflight-revocation-edge-result");
+        inflight_revocation_state = control & UINT64_C(0xffff);
+
+        if (number == 31) {
+            serial_puts("LEANOS/23 OFFER subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=7 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2121985 value=0 result=PASS\n");
+        } else if (number == 32) {
+            serial_puts("LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=1 root-slot=1 reason=missingRevoke state=unchanged control=5267713 value=0 result=PASS\n");
+        } else if (number == 33) {
+            serial_puts("LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=2 root-slot=0 reason=objectMismatch state=unchanged control=5333249 value=0 result=PASS\n");
+        } else if (number == 34) {
+            serial_puts("LEANOS/23 REVOKE subject=1 authority-slot=2 root-slot=1 root=2 descendant=7 installed-cleared=1 envelope=cleared pending=cleared history=retained next-identity=8 control=5399041 value=0 result=PASS\n");
+        } else if (number == 35) {
+            serial_puts("LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=2 root-slot=1 reason=staleSlot state=unchanged control=5464577 value=0 result=PASS\n");
+        } else if (number == 36) {
+            serial_puts("LEANOS/23 OFFER-DENIAL subject=1 source-handle=131073 reason=staleEndpoint state=unchanged control=5530113 value=0 result=PASS\n");
+
+            /* The caller change is itself an authoritative generated edge.
+               Only its exact typed resume result authorizes installation of
+               B's fixed kernel-owned register bank and CR3 below. */
+            const uint64_t switch_prestate = inflight_revocation_state;
+            const uint64_t switch_command =
+                LEANOS_COMPOSITE_COMMAND_INFLIGHT_SWITCH_TO_SUBJECT_TWO;
+            const uint64_t switch_control = leanos_composite_dispatch(
+                switch_prestate, switch_command, 0, 0, 0, 0);
+            const uint64_t switch_value = leanos_composite_dispatch_value(
+                switch_prestate, switch_command, 0, 0, 0, 0);
+            if (switch_control !=
+                    LEANOS_COMPOSITE_REPLY_INFLIGHT_SUBJECT_TWO_RESTORED ||
+                switch_value != LEANOS_COMPOSITE_NO_VALUE)
+                fail("inflight-revocation-switch-result");
+            inflight_revocation_state = switch_control & UINT64_C(0xffff);
+            current_subject = 2;
+            serial_puts("LEANOS/23 DISPATCH subject=2 address-space=2 source=authoritative-resumable-context control=5595905 value=0 result=PASS\n");
+            return UINT64_C(0xfeed);
+        } else if (number == 37) {
+            serial_puts("LEANOS/23 ENTER subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
+            serial_puts("LEANOS/23 CANCELED-RECEIPT subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 reason=empty delivered=0 installed=0 handle=none control=2188033 value=0 result=PASS\n");
+        } else if (number == 38) {
+            serial_puts("LEANOS/23 REPLACE subject=2 source-slot=0 destination-slot=3 generation=8 canceled-generation=7 aliased=0 history=retained control=2384897 value=0 result=PASS\n");
+        } else if (number == 39) {
+            serial_puts("LEANOS/23 CANCELED-HANDLE-DENIAL subject=2 handle=458755 operation=send authorized=0 reason=staleHandle state=unchanged control=5661697 value=0 result=PASS\n");
+        } else {
+            serial_puts("LEANOS/23 FRESH-SEND subject=2 handle=524291 endpoint-slot=3 payload0=4369 payload1=8738 right=send authorized=1 mailbox=filled control=5727489 value=0 result=PASS\n");
+            serial_puts("LEANOS/23 UNRELATED slots-a-except-1=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=fresh-message-only result=PASS\n");
+            serial_puts("LEANOS/23 FINAL status=PASS offer=1 revoke=1 envelope-and-pending=cleared canceled-receipt-denied=1 replacement-generation=8 canceled-handle-denied=1 fresh-send=1 unrelated=unchanged\n");
+            finish(0x10);
+        }
+        return value;
+    }
+    fail("inflight-revocation-syscall");
+#endif
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
     if (number >= 20 && number <= 25) {
         uint64_t cr3;
@@ -5147,6 +5276,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/17 BOOT target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
 #elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
     serial_puts("LEANOS/22 BOOT target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite\n");
+#elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    serial_puts("LEANOS/23 BOOT target=x86_64-q35 subjects=2 schedule=inflight-revocation-v1 controls=wp,smep,smap boundary=generated-composite\n");
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     serial_puts("LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
@@ -5258,6 +5389,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/22 ENTER subject=1 address-space=1 cpl=3 source=owned-context result=PASS\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    current_subject = 1;
+    activate_user_address_space(page_map_level_4_a);
+    check_selected_root_a();
+    serial_puts("LEANOS/23 ENTER subject=1 address-space=1 cpl=3 source=owned-context authority=slot2:revoke result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     current_subject = 1;
