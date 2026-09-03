@@ -279,6 +279,35 @@ from `corpus.tsv`, so a summary PASS cannot replace a missing, changed, or
 reordered vector. The corpus is finite, deterministic, contains only scalar
 words, and performs no allocation at the freestanding entry points.
 
+The same generator emits the rest of the boundary vocabulary, so the C side
+never restates a word it did not receive from Lean. `leanos-oracle tokens`
+prints `vocabulary.tsv` from `LeanOS.BoundaryVocabulary`: every canonical
+state selector, command selector, typed reply word, frame-budget flush
+authorization, closed error word, and corpus-shape scalar, each evaluated by
+the encoder or canonical-edge table the dispatcher proofs use, together with
+the exact C literal. `scripts/render-composite-tokens.awk` renders it as
+`composite-tokens.h`, which the checked-in
+`include/leanos/composite-dispatcher.h` includes; that header now carries
+prose only. The theorems in `LeanOS/BoundaryVocabulary.lean` prove the table
+is sound (no two states, replies, or errors share a word) and complete (every
+constructor of every state, command, reply, and error family is listed), so
+agreement between a C token and the model is by construction rather than by
+corpus coverage. `leanos-abi` walks the compiled Lean environment and lists
+every `@[export leanos_…]` declaration with its arity and parameter shape;
+`scripts/render-boundary-abi.awk` renders `boundary-abi.h`, the only
+declaration of the exported entry points that `boot/kernel.c`,
+`tests/oracle-host.c`, and the hosted decoder harnesses include. The two
+hosted-only exports that take a Lean byte array are emitted behind
+`LEANOS_BOUNDARY_ABI_OBJECTS` so a freestanding consumer cannot see them.
+`scripts/test-generate-boundary-vocabulary.sh` keeps the negatives: a
+renderer row whose literal does not denote its word, a duplicate name or
+symbol, an unsupported object parameter, an arity mismatch against the
+generated prototypes (a compile error), any hand-written token define or
+`leanos_` prototype in the C sources, and a stale or corrupted generated
+header, which the memoized generator replaces. Generation removes
+transcription error; the generator, the awk renderers, the C compiler, and
+the consumers remain trusted integration steps, exactly as for `corpus.h`.
+
 These comparisons test encoders, exported entry points, result decoding, ABI
 glue, and the bounded emulator path for the listed cases. They are reproducible
 integration evidence, not exhaustive exploration, semantic refinement,

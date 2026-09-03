@@ -37,6 +37,7 @@ done < <(find LeanOS/NegativeFixtures -type f -name '*.lean' | sort)
 lake build LeanOS.NegativeFixtures
 lake build leanos-boot-plan
 lake build leanos-vtd-plan
+./scripts/test-generate-boundary-vocabulary.sh
 
 ./scripts/check-security-claims.sh
 

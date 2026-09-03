@@ -328,6 +328,13 @@ The following new code and assumptions are trusted, not proved:
   distinct boot/scenario frame
   selection, and retire-before-republication ordering,
   and the manual `lean_uint64_dec_eq` implementation;
+- the generated `composite-tokens.h` and `boundary-abi.h` headers, rendered by
+  `scripts/generate-oracle.sh` from `LeanOS.BoundaryVocabulary` and from the
+  Lean `@[export]` attributes. They are the only declarations of the boundary
+  tokens and exported prototypes that `boot/kernel.c` and the hosted harnesses
+  compile against; `include/leanos/composite-dispatcher.h` carries prose only.
+  Generation removes transcription of a word or an arity; the generator, the
+  awk renderers, and the compiler remain trusted, as for `corpus.h`.
 - the fast-entry CPU/MSR bridge: CPUID vendor/feature decoding, privileged
   `rdmsr`/`wrmsr`, EFER reserved-bit handling, the assumed AMD long-mode
   `SYSCALL`/`SYSENTER` denial semantics and exception priority, vector-6 frame

@@ -2,33 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#define LEANOS_BOUNDARY_ABI_OBJECTS 1
+#include "boundary-abi.h"
 
-extern uint64_t leanos_boot_topology_query(lean_object *, uint64_t, uint64_t,
-                                           uint64_t);
-extern uint64_t leanos_boot_topology_fixture_query(uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_acpi_copy_budget_query(uint64_t, uint64_t,
-                                                            uint64_t);
-extern uint64_t leanos_boot_machine_acpi_copy_stream_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_acpi_copy_sequence_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_madt_envelope_byte_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t);
-extern uint64_t leanos_boot_machine_madt_local_apic_byte_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_madt_irrelevant_record_byte_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t);
-extern uint64_t leanos_boot_machine_madt_entry_stream_byte_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_topology_admission_result_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t);
 extern char **lean_setup_args(int, char **);
 extern void lean_initialize(void);
 extern lean_object *initialize_leanos_LeanOS_BootTopology(uint8_t);

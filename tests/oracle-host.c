@@ -2,48 +2,8 @@
 #include <stdio.h>
 #include "corpus.h"
 #include "leanos/composite-dispatcher.h"
-#include "../boot/generated-boundary-abi.h"
 
-extern uint64_t leanos_boot_transition(uint64_t, uint64_t);
-extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                                  uint64_t);
-extern uint64_t leanos_boot_consume_exact_projection(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                                   uint64_t, uint64_t);
-extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                                     uint64_t, uint64_t);
-extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                            uint64_t, uint64_t);
-extern uint64_t leanos_direct_port_io_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                            uint64_t, uint64_t);
-extern uint64_t leanos_nmi_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_phase_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                        uint64_t);
-extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                               uint64_t, uint64_t);
-extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                               uint64_t, uint64_t);
-extern uint64_t leanos_assigned_edu_reuse_publication(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_assigned_edu_reuse_protocol(
-    uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_assigned_edu_reuse_release_gate(
-    uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_assigned_edu_reuse_fresh_publication(uint64_t, uint64_t);
-extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                        uint64_t);
 #include "leanos/oracle-dispatch.h"
-extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
-extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
 extern void leanos_register_boundary_target(const char *, void *);
 #define REGISTER_BOUNDARY(symbol) \
     leanos_register_boundary_target(#symbol, (void *)(uintptr_t)&symbol)

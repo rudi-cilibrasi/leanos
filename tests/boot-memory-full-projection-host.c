@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "boundary-abi.h"
 
-extern uint64_t leanos_boot_full_projection_fixture_query(uint64_t, uint64_t);
 extern char **lean_setup_args(int, char **);
 extern void lean_initialize(void);
 extern lean_object *

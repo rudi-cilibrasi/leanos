@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "corpus.h"
-#include "generated-boundary-abi.h"
+#include "boundary-abi.h"
 #include "leanos/composite-dispatcher.h"
 
 /* GCC's noipa also blocks interprocedural transformations beyond noinline.
@@ -27,123 +27,9 @@
 #define PCI_COMMAND_BUS_MASTER (1u << 2)
 #define PCI_COMMAND_MODEL_MASK 0x07ffu
 
-extern uint64_t leanos_boot_transition(uint64_t state, uint64_t command);
-extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t,
-                                                  uint64_t, uint64_t);
-extern uint64_t leanos_boot_handoff_stream_init(uint64_t, uint64_t, uint64_t,
-                                                uint64_t, uint64_t);
-extern uint64_t leanos_boot_handoff_stream_step(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_acpi_copy_stream_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_acpi_copy_sequence_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_madt_envelope_byte_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t);
-extern uint64_t leanos_boot_machine_madt_entry_stream_byte_step_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_machine_topology_admission_result_query(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_init_v5(uint64_t, uint64_t, uint64_t,
-                                           uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_step_v5(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_projection_entry(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_projection_manifest(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_projection_free(uint64_t, uint64_t, uint64_t);
-#define LEANOS_U64_8 \
-    uint64_t, uint64_t, uint64_t, uint64_t, \
-    uint64_t, uint64_t, uint64_t, uint64_t
-#define LEANOS_U64_64 \
-    LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8, \
-    LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8
-extern uint64_t leanos_boot_projection_finish(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t,
-    LEANOS_U64_64);
-#undef LEANOS_U64_64
-#undef LEANOS_U64_8
-extern uint64_t leanos_boot_manifest_candidate(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_manifest_start(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_consume_exact_projection(uint64_t, uint64_t, uint64_t,
-                                        uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_publish_authority(uint64_t, uint64_t, uint64_t,
-                                               uint64_t, uint64_t, uint64_t,
-                                               uint64_t);
-extern uint64_t leanos_boot_authority_result(uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t);
-extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
-                                        uint64_t, uint64_t);
-extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
-                                          uint64_t, uint64_t);
-extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t);
-extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
-                                                   uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t,
-                                                     uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t,
-                                            uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_direct_port_io_demo(uint64_t, uint64_t, uint64_t,
-                                            uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_nmi_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                uint64_t);
-extern uint64_t leanos_boot_phase_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                       uint64_t);
-extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_assigned_edu_reuse_publication(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
-                                       uint64_t);
 #define LEANOS_ORACLE_DISPATCH_ATTRIBUTES __attribute__((noinline, noipa))
 #include "leanos/oracle-dispatch.h"
 #undef LEANOS_ORACLE_DISPATCH_ATTRIBUTES
-extern uint64_t leanos_authorize_page_fault_snapshot(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_page_fault_dispatch_transition(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);

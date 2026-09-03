@@ -38,6 +38,8 @@ mkdir -p "$build"
 leanos_prepare_boundary_coverage "$build" "$exports"
 lake build "$target"
 prefix="$(lake env lean --print-prefix)"
+generated="build/boundary-abi"
+./scripts/generate-oracle.sh "$generated"
 objects=()
 IFS=',' read -ra module_names <<<"$modules"
 if [[ "$mode" == sanitized ]]; then
@@ -62,7 +64,7 @@ for module in "${compiled_modules[@]}"; do
   objects+=("$build/$object_name.o")
 done
 "$cc_command" -std=c11 -Wall -Wextra -Werror -I"$prefix/include" \
-  "${cflags[@]}" -c "$harness" -o "$build/host.o"
+  -I"$generated" "${cflags[@]}" -c "$harness" -o "$build/host.o"
 "$cc_command" -std=c11 -Wall -Wextra -Werror \
   -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
 if [[ "$mode" == sanitized ]]; then

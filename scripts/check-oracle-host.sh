@@ -276,6 +276,10 @@ else
       "$generated/FrameBudgetScenario.c" \
       "$generated/CompositeDispatcher.c" \
       include/leanos/composite-dispatcher.h \
+      "$build/vocabulary.tsv" \
+      "$build/composite-tokens.h" \
+      "$build/boundary-abi.tsv" \
+      "$build/boundary-abi.h" \
       "$build/corpus.tsv" \
       "$build/host-results.txt" \
       "$build/negative-fixtures.tsv" \
