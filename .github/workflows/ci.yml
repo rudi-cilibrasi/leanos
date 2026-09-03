@@ -225,6 +225,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+
       - name: Replay hosted generated boundaries
         run: |
           lake build
@@ -282,6 +288,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Verify selected compiler propagation
         run: ./scripts/test-selected-compiler-propagation.sh
@@ -378,6 +390,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+
       - name: Build canonical GCC image family
         if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
         run: |
@@ -472,6 +490,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Record tool versions
         run: ./scripts/record-tool-versions.sh
