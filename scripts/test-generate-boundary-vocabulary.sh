@@ -89,29 +89,6 @@ if "$cc_command" -std=c11 -Wall -Wextra -Werror -fsyntax-only -I"$tmp" "$tmp/cal
   exit 1
 fi
 
-# No hand-maintained copy of a boundary token or an exported prototype may
-# remain in the C sources; the checked-in dispatcher header carries prose only.
-hand_copy_pattern='^[[:space:]]*(#define[[:space:]]+LEANOS_(COMPOSITE_(STATE|COMMAND|REPLY|ERROR)|FRAME_BUDGET)_|(extern[[:space:]]+)?uint64_t[[:space:]]+leanos_[a-z0-9_]+[[:space:]]*\()'
-reject_hand_copies() {
-  if grep -En "$hand_copy_pattern" "$@" > "$tmp/hand-copies"; then
-    cat "$tmp/hand-copies" >&2
-    echo "error: hand-maintained boundary vocabulary copy in C sources" >&2
-    return 1
-  fi
-}
-reject_hand_copies include/leanos/*.h boot/*.c boot/*.h tests/*.c
-[[ ! -e boot/generated-boundary-abi.h ]]
-printf '#define LEANOS_COMPOSITE_STATE_INITIAL UINT64_C(0x0001)\n' > "$tmp/mutated.h"
-if reject_hand_copies "$tmp/mutated.h" 2> /dev/null; then
-  echo "error: a hand-written token define was not rejected" >&2
-  exit 1
-fi
-printf 'extern uint64_t leanos_boot_transition(uint64_t, uint64_t);\n' > "$tmp/mutated.c"
-if reject_hand_copies "$tmp/mutated.c" 2> /dev/null; then
-  echo "error: a hand-written export prototype was not rejected" >&2
-  exit 1
-fi
-
 # The memoized generator replaces a stale or corrupted generated header.
 LEANOS_ORACLE_TOOL_SIGNATURE=test ./scripts/generate-oracle.sh "$tmp/out" > /dev/null
 cp "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
@@ -123,4 +100,58 @@ cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
 test "$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")" -eq 64
+
+# No hand-maintained copy of a boundary token or an exported prototype may
+# remain in the C sources; the checked-in dispatcher header carries prose
+# only.  The token names come from the generated vocabulary itself, so every
+# generated constant is covered exactly, and the family prefixes catch a
+# hand-written token that was never generated.  The scan runs over an
+# explicit list of existing files, and a grep error (a missing operand, for
+# example) fails the gate instead of passing as "no match".
+generated_names="$(awk -F '\t' '$1 == "token" { print $3 }' "$tmp/out/vocabulary.tsv" |
+  paste -sd '|')"
+test -n "$generated_names"
+hand_copy_pattern="^[[:space:]]*(#define[[:space:]]+LEANOS_(($generated_names)([^A-Za-z0-9_]|\$)|COMPOSITE_(STATE|COMMAND|REPLY|ERROR)_|FRAME_BUDGET_)|(extern[[:space:]]+)?uint64_t[[:space:]]+leanos_[a-z0-9_]+[[:space:]]*\()"
+reject_hand_copies() {
+  local status=0
+  grep -En "$hand_copy_pattern" "$@" > "$tmp/hand-copies" 2> "$tmp/hand-copies.error" ||
+    status=$?
+  if [[ $status -eq 0 ]]; then
+    cat "$tmp/hand-copies" >&2
+    echo "error: hand-maintained boundary vocabulary copy in C sources" >&2
+    return 1
+  elif [[ $status -ne 1 ]]; then
+    cat "$tmp/hand-copies.error" >&2
+    echo "error: hand-copy scan did not complete (grep status $status)" >&2
+    return 1
+  fi
+}
+mapfile -t c_sources < <(
+  find include boot tests -type f \( -name '*.c' -o -name '*.h' \) | sort
+)
+test "${#c_sources[@]}" -gt 0
+reject_hand_copies "${c_sources[@]}"
+[[ ! -e boot/generated-boundary-abi.h ]]
+for mutation in \
+  '#define LEANOS_COMPOSITE_STATE_INITIAL UINT64_C(0x0001)' \
+  '#define LEANOS_COMPOSITE_ABI_VERSION UINT64_C(1)' \
+  '#define LEANOS_COMPOSITE_DELIVERED_HANDLE UINT64_C(0x60003)' \
+  '#define LEANOS_COMPOSITE_STATE_COUNT 71U' \
+  '#define LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN UINT64_C(0xfb00444401)' \
+  '#define LEANOS_COMPOSITE_REPLY_NEVER_GENERATED UINT64_C(0x1)' \
+  'extern uint64_t leanos_boot_transition(uint64_t, uint64_t);' \
+  'uint64_t leanos_boot_transition(uint64_t, uint64_t);'; do
+  printf '%s\n' "$mutation" > "$tmp/mutated.c"
+  if reject_hand_copies "$tmp/mutated.c" 2> /dev/null; then
+    echo "error: a hand-written boundary copy was not rejected: $mutation" >&2
+    exit 1
+  fi
+done
+printf '#define LEANOS_COMPOSITE_DISPATCHER_H\n#define LEANOS_ORACLE_DISPATCH_ATTRIBUTES inline\n' \
+  > "$tmp/benign.h"
+reject_hand_copies "$tmp/benign.h"
+if reject_hand_copies "$tmp/benign.h" "$tmp/does-not-exist.h" 2> /dev/null; then
+  echo "error: a scan error (missing operand) was accepted as a clean scan" >&2
+  exit 1
+fi
 echo "Generated boundary vocabulary rejects drift and hand-maintained copies"
