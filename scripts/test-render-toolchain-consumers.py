@@ -15,6 +15,7 @@ with tempfile.TemporaryDirectory() as directory:
     (fixture / ".github/workflows").mkdir(parents=True)
     shutil.copy2(ROOT / "scripts/toolchain-profiles.json", fixture / "scripts")
     shutil.copy2(ROOT / "scripts/workflow_yaml.py", fixture / "scripts")
+    shutil.copy2(ROOT / "Containerfile.ci", fixture)
     for name in ("ci.yml", "release.yml"):
         shutil.copy2(ROOT / ".github/workflows" / name, fixture / ".github/workflows")
     ci = fixture / ".github/workflows/ci.yml"
@@ -50,5 +51,18 @@ with tempfile.TemporaryDirectory() as directory:
     )
     assert mapping_container.returncode == 1
     assert "must use scalar container syntax" in mapping_container.stderr
+
+    shutil.copy2(ROOT / ".github/workflows/ci.yml", ci)
+    containerfile = fixture / "Containerfile.ci"
+    containerfile.write_text(
+        containerfile.read_text().replace(
+            "binutils=2.42-4ubuntu2.10", "binutils=2.42-4ubuntu2.9", 1
+        )
+    )
+    stale_package = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert stale_package.returncode == 1
+    assert "apt package inventory differs" in stale_package.stderr
 
 print("Toolchain consumer render fixtures passed")

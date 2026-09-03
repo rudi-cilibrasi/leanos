@@ -73,6 +73,16 @@ def main() -> None:
     floating_compiler["profiles"][1]["compiler"]["version"] = "18"
     expect_failure(floating_compiler, "invalid compiler version")
 
+    duplicate_package = copy.deepcopy(manifest)
+    duplicate_package["canonical_apt_packages"].append(
+        duplicate_package["canonical_apt_packages"][0]
+    )
+    expect_failure(duplicate_package, "unique exact package pins")
+
+    floating_package = copy.deepcopy(manifest)
+    floating_package["canonical_apt_packages"][0] = "binutils=*"
+    expect_failure(floating_package, "unique exact package pins")
+
     selection = checker.artifact(
         checker.DEFAULT_MANIFEST,
         gcc,

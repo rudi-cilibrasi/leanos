@@ -18,6 +18,12 @@ IMAGE_RE = re.compile(
 )
 DIGEST_ENV_RE = re.compile(r"(?m)^(\s*LEANOS_CI_IMAGE_DIGEST:\s*)sha256:[0-9a-f]{64}$")
 WORKFLOWS = (Path(".github/workflows/ci.yml"), Path(".github/workflows/release.yml"))
+CONTAINERFILE = Path("Containerfile.ci")
+APT_BLOCK_RE = re.compile(
+    r"RUN apt-get update && apt-get install -y --no-install-recommends \\\n"
+    r"(?P<body>(?:\s+[^\n]+\\\n)+)"
+    r"\s+&& rm -rf /var/lib/apt/lists/\*"
+)
 REQUIRED_CONTAINER_JOBS = {
     Path(".github/workflows/ci.yml"): {
         "repository-hygiene",
@@ -43,6 +49,37 @@ def canonical_digest(root: Path) -> str:
     if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
         raise ValueError("canonical CI image digest is malformed")
     return digest
+
+
+def canonical_apt_packages(root: Path) -> list[str]:
+    data = json.loads((root / "scripts/toolchain-profiles.json").read_text())
+    packages = data.get("canonical_apt_packages")
+    if not isinstance(packages, list) or len(packages) != len(set(packages)):
+        raise ValueError("canonical apt package inventory is missing or duplicated")
+    if any(
+        not isinstance(package, str)
+        or re.fullmatch(r"[a-z0-9][a-z0-9+.-]*=[^\s=*]+", package) is None
+        for package in packages
+    ):
+        raise ValueError("canonical apt package inventory contains a floating package")
+    return packages
+
+
+def validate_container_packages(root: Path) -> None:
+    source = (root / CONTAINERFILE).read_text(encoding="utf-8")
+    match = APT_BLOCK_RE.search(source)
+    if match is None:
+        raise ValueError(f"{CONTAINERFILE}: canonical apt install block is missing")
+    observed = [
+        line.strip().removesuffix(" \\")
+        for line in match.group("body").splitlines()
+    ]
+    expected = canonical_apt_packages(root)
+    if observed != expected:
+        raise ValueError(
+            f"{CONTAINERFILE}: apt package inventory differs from "
+            "scripts/toolchain-profiles.json"
+        )
 
 
 def validate_workflow_containers(
@@ -112,6 +149,7 @@ def render(root: Path, check: bool) -> None:
             "stale generated toolchain consumers: " + ", ".join(stale)
             + "; run scripts/render-toolchain-consumers.py"
         )
+    validate_container_packages(root)
 
 
 def main() -> int:

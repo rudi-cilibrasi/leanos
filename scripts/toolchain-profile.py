@@ -28,6 +28,7 @@ ELF_LAYOUTS = {"gcc-reference-v1", "clang18-v1"}
 SHARED_TOOLS = {
     "binutils", "grub", "mtools", "xorriso", "qemu", "seabios", "coreutils"
 }
+APT_PACKAGE_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]*=[^\s=*]+$")
 
 
 class ProfileError(RuntimeError):
@@ -55,6 +56,16 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
     if not isinstance(data, dict) or data.get("schema") != "leanos-toolchain-profiles-v1":
         raise ProfileError("toolchain profile manifest has an unrecognized schema")
     default_profile = require_string(data.get("default_profile"), "default_profile")
+    apt_packages = data.get("canonical_apt_packages")
+    if not isinstance(apt_packages, list) or not apt_packages:
+        raise ProfileError("canonical_apt_packages must be a nonempty list")
+    if len(apt_packages) != len(set(apt_packages)) or any(
+        not isinstance(package, str) or APT_PACKAGE_RE.fullmatch(package) is None
+        for package in apt_packages
+    ):
+        raise ProfileError(
+            "canonical_apt_packages must contain unique exact package pins"
+        )
     profiles = data.get("profiles")
     if not isinstance(profiles, list) or len(profiles) < 2:
         raise ProfileError("toolchain profile manifest must define at least two profiles")
