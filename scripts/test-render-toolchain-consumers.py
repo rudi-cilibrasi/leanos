@@ -12,10 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as directory:
     fixture = Path(directory)
     (fixture / "scripts").mkdir()
+    (fixture / "docs").mkdir()
     (fixture / ".github/workflows").mkdir(parents=True)
     shutil.copy2(ROOT / "scripts/toolchain-profiles.json", fixture / "scripts")
     shutil.copy2(ROOT / "scripts/workflow_yaml.py", fixture / "scripts")
     shutil.copy2(ROOT / "Containerfile.ci", fixture)
+    shutil.copy2(ROOT / "docs/boot-image.md", fixture / "docs")
     for name in ("ci.yml", "release.yml"):
         shutil.copy2(ROOT / ".github/workflows" / name, fixture / ".github/workflows")
     ci = fixture / ".github/workflows/ci.yml"
@@ -74,5 +76,20 @@ with tempfile.TemporaryDirectory() as directory:
     )
     assert extra_install.returncode == 1
     assert "expected exactly one apt-get install site, found 2" in extra_install.stderr
+
+    shutil.copy2(ROOT / "Containerfile.ci", containerfile)
+    documentation = fixture / "docs/boot-image.md"
+    documentation.write_text(
+        documentation.read_text().replace(
+            "`binutils` | `2.42-4ubuntu2.10`",
+            "`binutils` | `0`",
+            1,
+        )
+    )
+    stale_documentation = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert stale_documentation.returncode == 1
+    assert "docs/boot-image.md" in stale_documentation.stderr
 
 print("Toolchain consumer render fixtures passed")
