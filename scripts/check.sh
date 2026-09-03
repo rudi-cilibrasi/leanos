@@ -95,6 +95,7 @@ record_check_phase hosted-boundary-and-boot-contracts
 ./scripts/test-run-preemption-image.sh
 ./scripts/test-run-frame-budget.sh
 ./scripts/test-run-capability-transfer.sh
+./scripts/test-run-inflight-revocation.sh
 
 ./scripts/test-run-fault-containment.sh
 ./scripts/test-run-fault-integrity.sh
