@@ -540,7 +540,7 @@ adversarial runner fixtures reject a direct-handler claim, mapped guard, stale
 `rsp0`, adjacent write, partial or reordered output, reset, triple fault, and
 hang. This is checked x86/QEMU evidence rather than a refinement proof. The stable
 `SC-PRIVILEGE-ENTRY-STACK` claim covers only accepted authorization in this
-Lean layout/budget model. [ADR 0010](adr/0010-guarded-privilege-entry-stack.md)
+Lean layout/budget model. [ADR 0015](adr/0015-guarded-privilege-entry-stack.md)
 records the separate checked machine evidence and its trusted boundary.
 
 ## Proof, tests, and trusted assumptions
