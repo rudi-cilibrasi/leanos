@@ -76,7 +76,12 @@ def validate_workflow_containers(
             continue
         assert isinstance(job, dict)
         container = job["container"]
-        image = container.get("image") if isinstance(container, dict) else container
+        if isinstance(container, dict):
+            raise ValueError(
+                f"{path}: job {job_name!r} must use scalar container syntax "
+                "for deterministic rendering"
+            )
+        image = container
         if not isinstance(image, str):
             raise ValueError(f"{path}: job {job_name!r} has a malformed container image")
         if image != expected_image:

@@ -37,4 +37,18 @@ with tempfile.TemporaryDirectory() as directory:
     assert wrong_image.returncode == 1
     assert "has a stale canonical image" in wrong_image.stderr
 
+    shutil.copy2(ROOT / ".github/workflows/ci.yml", ci)
+    ci.write_text(
+        ci.read_text().replace(
+            "    container: ghcr.io/",
+            "    container:\n      image: ghcr.io/",
+            1,
+        )
+    )
+    mapping_container = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert mapping_container.returncode == 1
+    assert "must use scalar container syntax" in mapping_container.stderr
+
 print("Toolchain consumer render fixtures passed")
