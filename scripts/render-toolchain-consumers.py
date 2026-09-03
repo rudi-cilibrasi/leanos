@@ -29,7 +29,10 @@ APT_BLOCK_RE = re.compile(
     r"(?P<body>(?:\s+[^\n]+\\\n)+)"
     r"\s+&& rm -rf /var/lib/apt/lists/\*"
 )
-APT_INSTALL_RE = re.compile(r"\bapt-get(?:\s|\\\s*)+install\b")
+APT_INSTALL_RE = re.compile(r"\bapt(?:-get)?(?:\s|\\\s*)+install\b")
+APT_PACKAGE_RE = re.compile(
+    r"^[a-z0-9][a-z0-9+.-]*=[0-9A-Za-z][0-9A-Za-z.+:~-]*$"
+)
 REQUIRED_CONTAINER_JOBS = {
     Path(".github/workflows/ci.yml"): {
         "repository-hygiene",
@@ -64,7 +67,7 @@ def canonical_apt_packages(root: Path) -> list[str]:
         raise ValueError("canonical apt package inventory is missing or duplicated")
     if any(
         not isinstance(package, str)
-        or re.fullmatch(r"[a-z0-9][a-z0-9+.-]*=[^\s=*]+", package) is None
+        or APT_PACKAGE_RE.fullmatch(package) is None
         for package in packages
     ):
         raise ValueError("canonical apt package inventory contains a floating package")
@@ -76,7 +79,7 @@ def validate_container_packages(root: Path) -> None:
     install_sites = APT_INSTALL_RE.findall(source)
     if len(install_sites) != 1:
         raise ValueError(
-            f"{CONTAINERFILE}: expected exactly one apt-get install site, "
+            f"{CONTAINERFILE}: expected exactly one apt install site, "
             f"found {len(install_sites)}"
         )
     match = APT_BLOCK_RE.search(source)

@@ -87,6 +87,12 @@ def main() -> None:
     floating_package["canonical_apt_packages"][0] = "binutils=*"
     expect_failure(floating_package, "unique exact package pins")
 
+    unsafe_package = copy.deepcopy(manifest)
+    unsafe_package["canonical_apt_packages"][1] = (
+        "ca-certificates=20260601~24.04.1;true"
+    )
+    expect_failure(unsafe_package, "unique exact package pins")
+
     compiler_package_drift = copy.deepcopy(manifest)
     compiler_package_drift["profiles"][0]["compiler"]["package"] = (
         "gcc=4:13.2.0-7ubuntu0 (GCC 13.3.0)"
@@ -98,6 +104,12 @@ def main() -> None:
         "binutils=2.42-4ubuntu2.9"
     )
     expect_failure(shared_package_drift, "shared tool binutils differs")
+
+    malformed_shared_package = copy.deepcopy(manifest)
+    malformed_shared_package["profiles"][0]["shared_tools"]["binutils"] = (
+        "binutils 2.42-4ubuntu2.10"
+    )
+    expect_failure(malformed_shared_package, "must use exact apt package pins")
 
     selection = checker.artifact(
         checker.DEFAULT_MANIFEST,

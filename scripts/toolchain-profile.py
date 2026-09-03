@@ -28,7 +28,10 @@ ELF_LAYOUTS = {"gcc-reference-v1", "clang18-v1"}
 SHARED_TOOLS = {
     "binutils", "grub", "mtools", "xorriso", "qemu", "seabios", "coreutils"
 }
-APT_PACKAGE_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]*=[^\s=*]+$")
+APT_PACKAGE_RE = re.compile(
+    r"^[a-z0-9][a-z0-9+.-]*=[0-9A-Za-z][0-9A-Za-z.+:~-]*$"
+)
+NON_APT_SHARED_TOOLS = {"seabios"}
 
 
 class ProfileError(RuntimeError):
@@ -152,9 +155,14 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
                 marker in pinned.lower() for marker in ("latest", "rolling", "*")
             ):
                 raise ProfileError(f"profile {profile_id} leaves {tool} unpinned")
+            if tool in NON_APT_SHARED_TOOLS:
+                continue
             for package_pin in pinned.split("; "):
                 if APT_PACKAGE_RE.fullmatch(package_pin) is None:
-                    continue
+                    raise ProfileError(
+                        f"profile {profile_id} shared tool {tool} must use exact "
+                        "apt package pins"
+                    )
                 package_name = package_pin.split("=", 1)[0]
                 if apt_packages_by_name.get(package_name) != package_pin:
                     raise ProfileError(
