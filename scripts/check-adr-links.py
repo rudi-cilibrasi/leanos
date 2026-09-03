@@ -20,25 +20,26 @@ def fail(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
 
 
-def main() -> int:
+def check(root: Path) -> int:
     errors = 0
+    adr_dir = root / "docs" / "adr"
     numbers: dict[str, list[Path]] = defaultdict(list)
 
-    for path in sorted(ADR_DIR.glob("*.md")):
+    for path in sorted(adr_dir.glob("*.md")):
         match = ADR_NAME.fullmatch(path.name)
         if match is None:
-            fail(f"malformed ADR filename: {path.relative_to(ROOT)}")
+            fail(f"malformed ADR filename: {path.relative_to(root)}")
             errors += 1
             continue
         numbers[match.group(1)].append(path)
 
     for number, paths in sorted(numbers.items()):
         if len(paths) > 1:
-            rendered = ", ".join(str(path.relative_to(ROOT)) for path in paths)
+            rendered = ", ".join(str(path.relative_to(root)) for path in paths)
             fail(f"duplicate ADR number {number}: {rendered}")
             errors += 1
 
-    for source in sorted(ROOT.rglob("*.md")):
+    for source in sorted(root.rglob("*.md")):
         if any(part in {".git", "build"} for part in source.parts):
             continue
         text = source.read_text(encoding="utf-8")
@@ -49,12 +50,12 @@ def main() -> int:
             decoded = unquote(target)
             resolved = (source.parent / decoded).resolve()
             try:
-                resolved.relative_to(ADR_DIR.resolve())
+                resolved.relative_to(adr_dir.resolve())
             except ValueError:
                 continue
             if not resolved.exists():
                 fail(
-                    f"broken ADR link in {source.relative_to(ROOT)}: {raw_target}"
+                    f"broken ADR link in {source.relative_to(root)}: {raw_target}"
                 )
                 errors += 1
 
@@ -62,6 +63,14 @@ def main() -> int:
         return 1
     print(f"ADR numbering and links OK ({len(numbers)} decisions)")
     return 0
+
+
+def main() -> int:
+    if len(sys.argv) > 2:
+        fail("usage: check-adr-links.py [repository-root]")
+        return 2
+    root = Path(sys.argv[1]).resolve() if len(sys.argv) == 2 else ROOT
+    return check(root)
 
 
 if __name__ == "__main__":

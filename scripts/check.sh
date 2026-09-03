@@ -128,6 +128,7 @@ python3 scripts/test-setup-lean-cache.py
 ./scripts/test-toolchain-profile.py
 
 python3 scripts/check-adr-links.py
+python3 scripts/test-adr-links.py
 
 ./scripts/test-build-timing.py
 
