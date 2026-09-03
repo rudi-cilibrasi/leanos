@@ -24,6 +24,7 @@ APT_BLOCK_RE = re.compile(
     r"(?P<body>(?:\s+[^\n]+\\\n)+)"
     r"\s+&& rm -rf /var/lib/apt/lists/\*"
 )
+APT_INSTALL_RE = re.compile(r"\bapt-get(?:\s|\\\s*)+install\b")
 REQUIRED_CONTAINER_JOBS = {
     Path(".github/workflows/ci.yml"): {
         "repository-hygiene",
@@ -67,6 +68,12 @@ def canonical_apt_packages(root: Path) -> list[str]:
 
 def validate_container_packages(root: Path) -> None:
     source = (root / CONTAINERFILE).read_text(encoding="utf-8")
+    install_sites = APT_INSTALL_RE.findall(source)
+    if len(install_sites) != 1:
+        raise ValueError(
+            f"{CONTAINERFILE}: expected exactly one apt-get install site, "
+            f"found {len(install_sites)}"
+        )
     match = APT_BLOCK_RE.search(source)
     if match is None:
         raise ValueError(f"{CONTAINERFILE}: canonical apt install block is missing")

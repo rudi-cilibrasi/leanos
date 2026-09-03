@@ -66,6 +66,14 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
         raise ProfileError(
             "canonical_apt_packages must contain unique exact package pins"
         )
+    apt_packages_by_name: dict[str, str] = {}
+    for package in apt_packages:
+        name = package.split("=", 1)[0]
+        if name in apt_packages_by_name:
+            raise ProfileError(
+                "canonical_apt_packages must contain unique package names"
+            )
+        apt_packages_by_name[name] = package
     profiles = data.get("profiles")
     if not isinstance(profiles, list) or len(profiles) < 2:
         raise ProfileError("toolchain profile manifest must define at least two profiles")
@@ -127,6 +135,13 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
             marker in package.lower() for marker in ("latest", "rolling", "*")
         ):
             raise ProfileError(f"profile {profile_id} compiler package is not pinned")
+        compiler_pin = package.split(maxsplit=1)[0]
+        compiler_name = compiler_pin.split("=", 1)[0]
+        if apt_packages_by_name.get(compiler_name) != compiler_pin:
+            raise ProfileError(
+                f"profile {profile_id} compiler package differs from "
+                "canonical_apt_packages"
+            )
 
         shared = profile.get("shared_tools")
         if not isinstance(shared, dict) or set(shared) != SHARED_TOOLS:
@@ -137,6 +152,15 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
                 marker in pinned.lower() for marker in ("latest", "rolling", "*")
             ):
                 raise ProfileError(f"profile {profile_id} leaves {tool} unpinned")
+            for package_pin in pinned.split("; "):
+                if APT_PACKAGE_RE.fullmatch(package_pin) is None:
+                    continue
+                package_name = package_pin.split("=", 1)[0]
+                if apt_packages_by_name.get(package_name) != package_pin:
+                    raise ProfileError(
+                        f"profile {profile_id} shared tool {tool} differs from "
+                        "canonical_apt_packages"
+                    )
 
         interfaces = profile.get("interfaces")
         if not isinstance(interfaces, dict):

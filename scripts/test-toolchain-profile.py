@@ -79,9 +79,25 @@ def main() -> None:
     )
     expect_failure(duplicate_package, "unique exact package pins")
 
+    duplicate_package_name = copy.deepcopy(manifest)
+    duplicate_package_name["canonical_apt_packages"].append("binutils=0")
+    expect_failure(duplicate_package_name, "unique package names")
+
     floating_package = copy.deepcopy(manifest)
     floating_package["canonical_apt_packages"][0] = "binutils=*"
     expect_failure(floating_package, "unique exact package pins")
+
+    compiler_package_drift = copy.deepcopy(manifest)
+    compiler_package_drift["profiles"][0]["compiler"]["package"] = (
+        "gcc=4:13.2.0-7ubuntu0 (GCC 13.3.0)"
+    )
+    expect_failure(compiler_package_drift, "compiler package differs")
+
+    shared_package_drift = copy.deepcopy(manifest)
+    shared_package_drift["profiles"][1]["shared_tools"]["binutils"] = (
+        "binutils=2.42-4ubuntu2.9"
+    )
+    expect_failure(shared_package_drift, "shared tool binutils differs")
 
     selection = checker.artifact(
         checker.DEFAULT_MANIFEST,

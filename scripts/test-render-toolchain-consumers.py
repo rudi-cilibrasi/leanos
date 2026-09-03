@@ -65,4 +65,14 @@ with tempfile.TemporaryDirectory() as directory:
     assert stale_package.returncode == 1
     assert "apt package inventory differs" in stale_package.stderr
 
+    shutil.copy2(ROOT / "Containerfile.ci", containerfile)
+    containerfile.write_text(
+        containerfile.read_text() + "\nRUN apt-get install -y curl\n"
+    )
+    extra_install = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert extra_install.returncode == 1
+    assert "expected exactly one apt-get install site, found 2" in extra_install.stderr
+
 print("Toolchain consumer render fixtures passed")
