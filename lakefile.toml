@@ -9,6 +9,7 @@ moreLeanArgs = ["-DwarningAsError=true"]
 [[lean_exe]]
 name = "leanos-oracle"
 root = "LeanOS.Oracle"
+moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
 name = "leanos-dma-corpus"
@@ -23,4 +24,9 @@ moreLeanArgs = ["-DwarningAsError=true"]
 [[lean_exe]]
 name = "leanos-vtd-plan"
 root = "LeanOS.VTdBootPlanGenerator"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-abi"
+root = "LeanOS.BoundaryABIGenerator"
 moreLeanArgs = ["-DwarningAsError=true"]

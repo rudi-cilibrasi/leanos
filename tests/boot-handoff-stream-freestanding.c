@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "boundary-abi.h"
 #ifdef LEANOS_HOSTED_REPLAY
 #include <stdio.h>
 #define RECORD_RESULT(name, value) \
@@ -49,57 +50,11 @@ extern void leanos_register_boundary_target(const char *, void *);
     if (check_result != (uint64_t)(expected)) return (failure); \
 } while (0)
 
-extern uint64_t leanos_boot_handoff_stream_init(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_handoff_stream_step(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_init(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_step(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_projection_entry(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_projection_manifest(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_projection_free(uint64_t, uint64_t, uint64_t);
 #define U64_8 uint64_t, uint64_t, uint64_t, uint64_t, \
               uint64_t, uint64_t, uint64_t, uint64_t
 #define U64_64 U64_8, U64_8, U64_8, U64_8, U64_8, U64_8, U64_8, U64_8
-extern uint64_t leanos_boot_projection_finish(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, U64_64);
 #undef U64_64
 #undef U64_8
-extern uint64_t leanos_boot_manifest_candidate(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_init_v5(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_step_v5(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_manifest_start(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_consume_exact_projection(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_publish_authority(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_authority_result(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t);
 
 struct stream_state {
     uint64_t word[7];

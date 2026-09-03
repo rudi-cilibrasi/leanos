@@ -754,7 +754,7 @@ compute_graph_make_input_signature() {
         sha256sum "$input"
       done
     find "$build" -maxdepth 1 -type f \
-      \( -name '*.c' -o \
+      \( -name '*.c' -o -name 'composite-tokens.h' -o -name 'boundary-abi.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
       while IFS= read -r -d '' input; do

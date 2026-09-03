@@ -2840,6 +2840,132 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.budgetCommand_covered",
+      "display": "budgetCommand_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.budgetStateId_covered",
+      "display": "budgetStateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.capabilityTransferBootCommandId_covered",
+      "display": "capabilityTransferBootCommandId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.capabilityTransferBootEdges_covered",
+      "display": "capabilityTransferBootEdges_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.capabilityTransferBootStateId_covered",
+      "display": "capabilityTransferBootStateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.commandId_covered",
+      "display": "commandId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.decodeError_covered",
+      "display": "decodeError_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.error_words_nodup",
+      "display": "error_words_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.inFlightRevocationCommandId_covered",
+      "display": "inFlightRevocationCommandId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.inFlightRevocationReplyId_covered",
+      "display": "inFlightRevocationReplyId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.inFlightRevocationStateId_covered",
+      "display": "inFlightRevocationStateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.invalidationCommandId_covered",
+      "display": "invalidationCommandId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.invalidationReplyId_covered",
+      "display": "invalidationReplyId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.invalidationStateId_covered",
+      "display": "invalidationStateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.mixedCommandId_covered",
+      "display": "mixedCommandId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.mixedReplyId_covered",
+      "display": "mixedReplyId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.mixedStateId_covered",
+      "display": "mixedStateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.reply_words_nodup",
+      "display": "reply_words_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.stateId_covered",
+      "display": "stateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.state_count_is_state_tokens",
+      "display": "state_count_is_state_tokens",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.state_words_nodup",
+      "display": "state_words_nodup",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/BoundedLifecycle.lean",
       "qualified": "LeanOS.BoundedLifecycle.address_space_create_accepted_registry",
       "display": "address_space_create_accepted_registry",

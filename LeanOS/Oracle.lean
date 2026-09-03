@@ -15,6 +15,7 @@ import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
+import LeanOS.BoundaryVocabulary
 
 /-!
 # Bounded scalar boundary oracle
@@ -1258,6 +1259,19 @@ def emit : IO Unit := do
   for entry in vectors.zipIdx do
     IO.println (line entry.2 entry.1)
 
+/-- The boundary vocabulary rows: one `token` line per generated C constant,
+rendered from the same encoders the corpus above is evaluated with. -/
+def emitTokens : IO Unit := do
+  let revision := (← IO.getEnv "LEANOS_SOURCE_REVISION").getD "unknown"
+  IO.println "leanos-vocabulary\t1"
+  IO.println s!"source-revision\t{revision}"
+  for token in BoundaryVocabulary.tokens do
+    IO.println s!"token\t{token.kind}\t{token.name}\t{token.word}\t{token.render}"
+
 end LeanOS.Oracle
 
-def main : IO Unit := LeanOS.Oracle.emit
+def main (args : List String) : IO Unit :=
+  match args with
+  | [] => LeanOS.Oracle.emit
+  | ["tokens"] => LeanOS.Oracle.emitTokens
+  | _ => throw <| IO.userError "usage: leanos-oracle [tokens]"

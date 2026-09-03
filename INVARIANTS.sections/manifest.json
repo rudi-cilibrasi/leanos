@@ -18,6 +18,7 @@
     "LeanOS/BootPageTablePlan.lean",
     "LeanOS/BootReservation.lean",
     "LeanOS/BootTopology.lean",
+    "LeanOS/BoundaryVocabulary.lean",
     "LeanOS/BoundedLifecycle.lean",
     "LeanOS/Capability.lean",
     "LeanOS/CapabilityHandle.lean",
