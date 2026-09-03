@@ -1,4 +1,4 @@
-# ADR 0010: Guarded privilege-entry stack and checked byte budget
+# ADR 0015: Guarded privilege-entry stack and checked byte budget
 
 - Status: Accepted
 - Date: 2026-07-18
