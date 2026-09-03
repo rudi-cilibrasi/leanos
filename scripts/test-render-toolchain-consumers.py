@@ -25,5 +25,9 @@ with tempfile.TemporaryDirectory() as directory:
     assert "stale generated toolchain consumers" in failed.stderr
     subprocess.run(command, check=True)
     subprocess.run(command + ["--check"], check=True)
+    ci.write_text(ci.read_text().replace("container:", "# container:", 1))
+    missing = subprocess.run(command + ["--check"], text=True, capture_output=True)
+    assert missing.returncode == 1
+    assert "expected 10 canonical workflow container sites" in missing.stderr
 
 print("Toolchain consumer render fixtures passed")
