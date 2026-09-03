@@ -18,6 +18,20 @@ IMAGE_RE = re.compile(
 )
 DIGEST_ENV_RE = re.compile(r"(?m)^(\s*LEANOS_CI_IMAGE_DIGEST:\s*)sha256:[0-9a-f]{64}$")
 WORKFLOWS = (Path(".github/workflows/ci.yml"), Path(".github/workflows/release.yml"))
+REQUIRED_CONTAINER_JOBS = {
+    Path(".github/workflows/ci.yml"): {
+        "repository-hygiene",
+        "lean",
+        "hosted-boundary",
+        "clang-image",
+        "gcc-image-family",
+        "clang-reproducibility-build",
+        "clang-reproducibility",
+        "emulator",
+        "serial-graph-parity",
+    },
+    Path(".github/workflows/release.yml"): {"gate"},
+}
 
 
 def canonical_digest(root: Path) -> str:
@@ -31,7 +45,12 @@ def canonical_digest(root: Path) -> str:
     return digest
 
 
-def workflow_container_count(path: Path, expected_image: str, expected_digest: str) -> int:
+def validate_workflow_containers(
+    path: Path,
+    relative: Path,
+    expected_image: str,
+    expected_digest: str,
+) -> None:
     document = load_workflow(path)
     env = document.get("env")
     if not isinstance(env, dict) or env.get("LEANOS_CI_IMAGE_DIGEST") != expected_digest:
@@ -39,25 +58,34 @@ def workflow_container_count(path: Path, expected_image: str, expected_digest: s
     jobs = document.get("jobs")
     if not isinstance(jobs, dict):
         raise ValueError(f"{path}: jobs mapping is missing")
-    count = 0
+    container_jobs = {
+        job_name
+        for job_name, job in jobs.items()
+        if isinstance(job, dict) and "container" in job
+    }
+    expected_jobs = REQUIRED_CONTAINER_JOBS[relative]
+    if container_jobs != expected_jobs:
+        missing = sorted(expected_jobs - container_jobs)
+        unexpected = sorted(container_jobs - expected_jobs)
+        raise ValueError(
+            f"{path}: canonical container job set drifted; "
+            f"missing={missing}, unexpected={unexpected}"
+        )
     for job_name, job in jobs.items():
-        if not isinstance(job, dict) or "container" not in job:
+        if job_name not in expected_jobs:
             continue
+        assert isinstance(job, dict)
         container = job["container"]
         image = container.get("image") if isinstance(container, dict) else container
         if not isinstance(image, str):
             raise ValueError(f"{path}: job {job_name!r} has a malformed container image")
-        if image.startswith("ghcr.io/rudi-cilibrasi/leanos-ci@"):
-            if image != expected_image:
-                raise ValueError(f"{path}: job {job_name!r} has a stale canonical image")
-            count += 1
-    return count
+        if image != expected_image:
+            raise ValueError(f"{path}: job {job_name!r} has a stale canonical image")
 
 
 def render(root: Path, check: bool) -> None:
     digest = canonical_digest(root)
     expected_image = f"ghcr.io/rudi-cilibrasi/leanos-ci@{digest}"
-    sites = 0
     stale: list[str] = []
     for relative in WORKFLOWS:
         path = root / relative
@@ -73,14 +101,12 @@ def render(root: Path, check: bool) -> None:
             path.write_text(rendered, encoding="utf-8")
         # Count only parsed jobs.<id>.container values. Text in comments or step
         # bodies cannot satisfy the consumer contract.
-        sites += workflow_container_count(path, expected_image, digest)
+        validate_workflow_containers(path, relative, expected_image, digest)
     if stale:
         raise ValueError(
             "stale generated toolchain consumers: " + ", ".join(stale)
             + "; run scripts/render-toolchain-consumers.py"
         )
-    if sites != 10:
-        raise ValueError(f"expected 10 canonical workflow container sites, found {sites}")
 
 
 def main() -> int:

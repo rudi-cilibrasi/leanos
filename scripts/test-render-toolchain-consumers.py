@@ -28,6 +28,13 @@ with tempfile.TemporaryDirectory() as directory:
     ci.write_text(ci.read_text().replace("container:", "# container:", 1))
     missing = subprocess.run(command + ["--check"], text=True, capture_output=True)
     assert missing.returncode == 1
-    assert "expected 10 canonical workflow container sites" in missing.stderr
+    assert "canonical container job set drifted" in missing.stderr
+
+    shutil.copy2(ROOT / ".github/workflows/ci.yml", ci)
+    source = ci.read_text()
+    ci.write_text(source.replace("container: ghcr.io/", "container: ubuntu@", 1))
+    wrong_image = subprocess.run(command + ["--check"], text=True, capture_output=True)
+    assert wrong_image.returncode == 1
+    assert "has a stale canonical image" in wrong_image.stderr
 
 print("Toolchain consumer render fixtures passed")
