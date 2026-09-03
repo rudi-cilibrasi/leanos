@@ -8,6 +8,9 @@
 # or data at load time.  The GitHub Pages workflow uploads this directory
 # unchanged after the offline harness fixtures pass.
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -98,7 +101,7 @@ json.dump({
     "qemu_wasm_wasm_sha256": wasm_sha,
     "site_bytes": int(site_bytes),
     "runtime": "qemu-wasm 8.2.0 prebuilt (ktock/qemu-wasm-demo 0208c86, images b7c549b)",
-    "acceptance": "boots the unchanged ISO to LEANOS/10 FINAL status=PASS and debug-exit 33 (validated natively by scripts/run-image.sh and in-browser by scripts/run-browser-boot.sh)",
+    "acceptance": "boots the unchanged ISO to ${LEANOS_SERIAL_10_FINAL} status=PASS and debug-exit 33 (validated natively by scripts/run-image.sh and in-browser by scripts/run-browser-boot.sh)",
 }, open(path, "w"), indent=2)
 open(path, "a").write("\n")
 PY

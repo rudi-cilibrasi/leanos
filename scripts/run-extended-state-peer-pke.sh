@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -37,24 +40,24 @@ set -e
   echo "error: peer-control image exited $status instead of typed guest failure 35" >&2
   exit 1
 }
-failure='LEANOS/3 FINAL status=FAIL reason=extended-state-denial-peer-controls'
+failure="${LEANOS_SERIAL_3_FINAL} status=FAIL reason=extended-state-denial-peer-controls"
 [[ $(grep -Fxc "$failure" "$log") -eq 1 ]] || {
   echo "error: peer-control image lacked its exact control-denial result" >&2
   exit 1
 }
-grep -Fq 'LEANOS/13 EXTENDED-STATE event=deny subject=1' "$log" || {
+grep -Fq "${LEANOS_SERIAL_13_EXTENDED_STATE} event=deny subject=1" "$log" || {
   echo "error: peer-control image did not reach authoritative peer dispatch" >&2
   exit 1
 }
 mapfile -t injected < <(
-  grep '^LEANOS/13 EXTENDED-STATE event=peer-control-injected ' "$log" || true
+  grep "^${LEANOS_SERIAL_13_EXTENDED_STATE} event=peer-control-injected " "$log" || true
 )
 [[ ${#injected[@]} -eq 1 ]] || {
   echo "error: peer-control image lacked one exact live-control witness" >&2
   exit 1
 }
-pke='LEANOS/13 EXTENDED-STATE event=peer-control-injected control=pke bit=22 live=1 stage=pre-iretq result=PASS'
-osxsave='LEANOS/13 EXTENDED-STATE event=peer-control-injected control=osxsave bit=18 live=1 stage=pre-iretq result=PASS'
+pke="${LEANOS_SERIAL_13_EXTENDED_STATE} event=peer-control-injected control=pke bit=22 live=1 stage=pre-iretq result=PASS"
+osxsave="${LEANOS_SERIAL_13_EXTENDED_STATE} event=peer-control-injected control=osxsave bit=18 live=1 stage=pre-iretq result=PASS"
 accelerator="$(leanos_qemu_accelerator)"
 if [[ "$accelerator" == tcg ]]; then
   [[ "${injected[0]}" == "$pke" ]] || {
@@ -65,7 +68,7 @@ elif [[ "${injected[0]}" != "$pke" && "${injected[0]}" != "$osxsave" ]]; then
   echo "error: KVM peer-control image reported an unreviewed control" >&2
   exit 1
 fi
-if grep -Eq '^LEANOS/13 EXTENDED-STATE event=peer-cpl3-entry|^LEANOS/13 EXTENDED-STATE event=peer |^LEANOS/13 FINAL status=PASS' "$log"; then
+if grep -Eq "^${LEANOS_SERIAL_13_EXTENDED_STATE} event=peer-cpl3-entry|^${LEANOS_SERIAL_13_EXTENDED_STATE} event=peer |^${LEANOS_SERIAL_13_FINAL} status=PASS" "$log"; then
   echo "error: peer-control image entered CPL3 or published success after a forbidden control" >&2
   exit 1
 fi

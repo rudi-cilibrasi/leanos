@@ -581,7 +581,7 @@ def render_graph(
     )
     assembly_flags = shell_join([
         "-m64", "-ffreestanding", f"-fdebug-prefix-map={source_root}=.",
-        f"-ffile-prefix-map={source_root}=.", "-g3",
+        f"-ffile-prefix-map={source_root}=.", "-g3", f"-I{build}",
     ])
     for name, source, definitions in ASSEMBLY_VARIANTS:
         target = f"{build}/{name}.o"

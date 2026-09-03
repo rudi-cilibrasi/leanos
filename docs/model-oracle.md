@@ -308,6 +308,30 @@ header, which the memoized generator replaces. Generation removes
 transcription error; the generator, the awk renderers, the C compiler, and
 the consumers remain trusted integration steps, exactly as for `corpus.h`.
 
+The serial protocol is single-sourced the same way. `LeanOS/SerialProtocol.lean`
+lists every versioned record identity the guest prints and the runners expect
+(20 families, 128 records, each a family version and an upper-case tag); its
+theorems prove the versions and identities are unique. `leanos-oracle serial`
+emits the table and `scripts/render-serial-protocol.awk` renders two views:
+`serial-protocol.h`, one string macro per record and per family, which
+`boot/kernel.c` and `boot/boot.S` consume through adjacent-literal
+concatenation so the emitted bytes are unchanged; and `serial-protocol.sh`,
+one shell variable per record and family plus the `leanos_serial`,
+`leanos_serial_re`, and `leanos_serial_family_re` lookups, which
+`scripts/run-image.sh`, the other runners, and the fake-guest fixtures source
+(from the directory holding `corpus.tsv`, or `LEANOS_SERIAL_PROTOCOL`). The
+Python checkers read `serial-protocol.tsv` (`LEANOS_SERIAL_PROTOCOL_TSV`).
+Every field after a record prefix remains scenario data owned by the
+scenario. `scripts/test-generate-serial-protocol.sh` rejects a renderer row
+whose prefix does not denote its identity, a duplicate or malformed record,
+a lookup of a record outside the vocabulary (an unbound variable under
+`set -u`), and any literal `LEANOS/<family>` identity in the kernel sources,
+the assembly, the runner scripts, the checkers, or the fixtures; a fixture may
+still forge a family the vocabulary does not name, which is how the stale
+version-2 transcripts stay adversarial. Family and tag names are a vocabulary,
+not a claim: no `LEANOS/N` line changed meaning, and the final images are
+byte-identical apart from debug information.
+
 These comparisons test encoders, exported entry points, result decoding, ABI
 glue, and the bounded emulator path for the listed cases. They are reproducible
 integration evidence, not exhaustive exploration, semantic refinement,

@@ -83,7 +83,7 @@ link_fixture() {
   cp boot/boot.S "$tmp/$name.S"
   sed -i "/^isr2:\$/a\\    $instruction" "$tmp/$name.S"
   "$cc" -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
-    -ffile-prefix-map="$root"=. -g3 -c "$tmp/$name.S" -o "$tmp/$name.o"
+    -ffile-prefix-map="$root"=. -g3 -I"$build" -c "$tmp/$name.S" -o "$tmp/$name.o"
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T "$linker" -o "$tmp/$name.elf" "$tmp/$name.o" \
     "$build/kernel-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
@@ -112,7 +112,7 @@ sed -i 's/\.section \.nmi_ist\.guard,"aw",@nobits/.section .nmi_ist.guard,"aw",@
 sed 's/\.nmi_ist_guard (NOLOAD)/.nmi_ist_guard/' boot/linker.ld \
   >"$tmp/nmi-mapped-guard.ld"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
-  -ffile-prefix-map="$root"=. -g3 -c "$tmp/nmi-mapped-guard.S" \
+  -ffile-prefix-map="$root"=. -g3 -I"$build" -c "$tmp/nmi-mapped-guard.S" \
   -o "$tmp/nmi-mapped-guard.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T "$tmp/nmi-mapped-guard.ld" -o "$tmp/nmi-mapped-guard.elf" \

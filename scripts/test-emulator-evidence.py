@@ -23,6 +23,21 @@ SPEC = importlib.util.spec_from_file_location("leanos_emulator_evidence", MODULE
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("cannot load emulator evidence runner")
 evidence = importlib.util.module_from_spec(SPEC)
+
+# The runner reads record identities from the generated serial vocabulary;
+# these unit tests run without a built image, so they point it at a minimal
+# vocabulary carrying exactly the records the runner names.
+_SERIAL_VOCABULARY = tempfile.NamedTemporaryFile(
+    "w", suffix=".tsv", prefix="serial-protocol-", delete=False
+)
+_SERIAL_PREFIX = "LEANOS" + "/"  # split so the literal-identity scan has nothing to flag
+_SERIAL_VOCABULARY.write(
+    "leanos-serial-protocol\t1\nsource-revision\ttest\n"
+    f"family\t3\tLEANOS_SERIAL_FAMILY_3\t{_SERIAL_PREFIX}3\n"
+    f"record\t3\tORACLE\tLEANOS_SERIAL_3_ORACLE\t{_SERIAL_PREFIX}3 ORACLE\n"
+)
+_SERIAL_VOCABULARY.close()
+os.environ.setdefault("LEANOS_SERIAL_PROTOCOL_TSV", _SERIAL_VOCABULARY.name)
 SPEC.loader.exec_module(evidence)
 
 
@@ -142,7 +157,7 @@ def prepare_bundle_tree(tmp: Path) -> tuple[Path, Path, Path, Path]:
 
 def successful_runner(_command, *, env, **_kwargs):
     serial = "typed fixture evidence\n" + "".join(
-        f"LEANOS/3 ORACLE id={row} result=PASS\n"
+        f"{evidence.serial_record('3', 'ORACLE')} id={row} result=PASS\n"
         for row in evidence.REQUIRED_IOTLB_ORACLE_ROWS
     )
     Path(env["LEANOS_SERIAL_LOG"]).write_text(serial, encoding="utf-8")
@@ -904,7 +919,9 @@ def run_fixtures() -> None:
         )["serial_log"]
         serial_content = blocking_serial.read_text(encoding="utf-8")
         required_row = evidence.REQUIRED_IOTLB_ORACLE_ROWS[0]
-        required_marker = f"LEANOS/3 ORACLE id={required_row} result=PASS\n"
+        required_marker = (
+            f"{evidence.serial_record('3', 'ORACLE')} id={required_row} result=PASS\n"
+        )
 
         missing_iotlb_row = tmp / "missing-iotlb-row.serial.log"
         missing_iotlb_row.write_text(

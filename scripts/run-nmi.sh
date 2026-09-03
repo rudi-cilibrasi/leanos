@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -15,12 +18,12 @@ memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 scenario="${LEANOS_NMI_SCENARIO:-kernel-entry}"
 case "$scenario" in
   kernel-entry)
-    ready='LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS'
-    terminal='LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none'
+    ready="${LEANOS_SERIAL_17_NMI_READY} origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS"
+    terminal="${LEANOS_SERIAL_17_NMI} reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none"
     ;;
   cpl3-spin)
-    ready='LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS'
-    terminal='LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none'
+    ready="${LEANOS_SERIAL_17_NMI_READY} origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS"
+    terminal="${LEANOS_SERIAL_17_NMI} reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none"
     ;;
   *) echo "error: NMI scenario must be kernel-entry or cpl3-spin" >&2; exit 1;;
 esac
@@ -71,7 +74,7 @@ if [[ "$ready_seen" -ne 1 ]]; then
   echo "failure_class=nmi-ready: guest did not publish the injection boundary" >&2
   exit 1
 fi
-if grep -q '^LEANOS/17 NMI reason=' "$log"; then
+if grep -q "^${LEANOS_SERIAL_17_NMI} reason=" "$log"; then
   echo "failure_class=injection-boundary: terminal record preceded host injection" >&2
   exit 1
 fi
@@ -161,8 +164,8 @@ if [[ "$(grep -Fxc "$ready" "$log")" -ne 1 || \
   echo "failure_class=terminal-record: exact ready and terminal records not observed" >&2
   exit 1
 fi
-if [[ "$(grep -c '^LEANOS/17 NMI reason=' "$log")" -ne 1 ]] || \
-   grep -Eq '^LEANOS/17 NMI status=FAIL|terminal=.*return=(iretq|resumed)|LEANOS/[0-9]+ FINAL ' "$log"; then
+if [[ "$(grep -c "^${LEANOS_SERIAL_17_NMI} reason=" "$log")" -ne 1 ]] || \
+   grep -Eq "^${LEANOS_SERIAL_17_NMI} status=FAIL|terminal=.*return=(iretq|resumed)|LEANOS/[0-9]+ FINAL " "$log"; then
   echo "failure_class=terminal-record: forged, failed, duplicate, or post-terminal output observed" >&2
   exit 1
 fi

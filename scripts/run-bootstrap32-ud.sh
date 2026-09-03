@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 source "$repo_root/scripts/q35-platform.sh"
 
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
@@ -11,7 +14,7 @@ version="${LEANOS_VERSION:-0.1.0}"
 image="${1:-build/boot/leanos-${version}-x86_64-bootstrap32-ud.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/bootstrap32-ud.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none'
+terminal="${LEANOS_SERIAL_18_EARLY_TERMINAL} phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none"
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -63,7 +66,7 @@ if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]]; then
   exit 1
 fi
 if [[ "$(grep -c . "$log")" -ne 1 ]] || \
-   grep -Eq 'status=FAIL|phase=bootstrap64|EARLY64-READY|LEANOS/17 |LEANOS/[0-9]+ (BOOT|FINAL) ' "$log"; then
+   grep -Eq "status=FAIL|phase=bootstrap64|EARLY64-READY|${LEANOS_SERIAL_FAMILY_17} |LEANOS/[0-9]+ (BOOT|FINAL) " "$log"; then
   echo "failure_class=terminal-record: forged, duplicate, long-mode, or post-terminal output observed" >&2
   exit 1
 fi

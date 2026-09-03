@@ -1,3 +1,5 @@
+#include "serial-protocol.h"
+
 .set MB2_MAGIC, 0xe85250d6
 .set MB2_ARCH, 0
 .set MB2_LENGTH, mb2_end - mb2_start
@@ -961,28 +963,28 @@ isr8_cld:
 
 .section .rodata,"a",@progbits
 nmi_kernel_handling_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+    .ascii LEANOS_SERIAL_17_NMI, " reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_kernel_handling_record_end:
 nmi_kernel_running_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running subject=1 address-space=1 purpose=kernel canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+    .ascii LEANOS_SERIAL_17_NMI, " reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running subject=1 address-space=1 purpose=kernel canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_kernel_running_record_end:
 nmi_user_running_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+    .ascii LEANOS_SERIAL_17_NMI, " reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_user_running_record_end:
 nmi_failure_record:
-    .ascii "LEANOS/17 NMI status=FAIL reason=terminal-frame-policy\n"
+    .ascii LEANOS_SERIAL_17_NMI, " status=FAIL reason=terminal-frame-policy\n"
 nmi_failure_record_end:
 df_success_record:
-    .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
+    .ascii LEANOS_SERIAL_8_TERMINAL, " reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
 df_success_record_end:
 entry_stack_overflow_record:
-    .ascii "LEANOS/11 ENTRY-STACK-OVERFLOW reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none\n"
+    .ascii LEANOS_SERIAL_11_ENTRY_STACK_OVERFLOW, " reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none\n"
 entry_stack_overflow_record_end:
 df_failure_record:
-    .ascii "LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL\n"
+    .ascii LEANOS_SERIAL_8_TERMINAL, " reason=double-fault evidence=invalid status=FAIL\n"
 df_failure_record_end:
 df_guard_mapped_record:
-    .ascii "LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
+    .ascii LEANOS_SERIAL_8_NEGATIVE, " reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
 df_guard_mapped_record_end:
 
 /* Bootstrap terminal stubs.  Both bootstrap IDTs below route every vector to
@@ -1091,21 +1093,21 @@ boot_early_catchall_64_end:
 
 .section .rodata,"a",@progbits
 early32_nmi_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
 early32_nmi_record_end:
 early32_fault_record:
 #ifdef LEANOS_BOOTSTRAP32_UD_PROBE
     /* The probe image narrows the catch-all record: its frame attestation
        admits only the reviewed no-error #UD delivery, so the fixed record
        may name vector 6 without reading any hardware state at runtime. */
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
 #else
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
 #endif
 early32_fault_record_end:
 #ifdef LEANOS_BOOTSTRAP32_UD_PROBE
 early32_probe_failure_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap32 reason=probe-frame-policy\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " status=FAIL phase=bootstrap32 reason=probe-frame-policy\n"
 early32_probe_failure_record_end:
 #endif
 early64_nmi_record:
@@ -1113,21 +1115,21 @@ early64_nmi_record:
     /* The probe image narrows the vector-2 record: its frame attestation
        admits only an IST-0 boot-stack delivery with IF clear, so the fixed
        record may claim the full five-word masked-window shape. */
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none\n"
 #else
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
 #endif
 early64_nmi_record_end:
 #ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
 early64_probe_failure_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap64 reason=probe-frame-policy\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " status=FAIL phase=bootstrap64 reason=probe-frame-policy\n"
 early64_probe_failure_record_end:
 early64_ready_record:
-    .ascii "LEANOS/18 EARLY64-READY phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS\n"
+    .ascii LEANOS_SERIAL_18_EARLY64_READY, " phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS\n"
 early64_ready_record_end:
 #endif
 early64_fault_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
 early64_fault_record_end:
 
 /* Statically initialized bootstrap descriptor tables.  Vector 2 is owned in

@@ -15194,6 +15194,24 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/SerialProtocol.lean",
+      "qualified": "LeanOS.SerialProtocol.families_nonempty",
+      "display": "families_nonempty",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SerialProtocol.lean",
+      "qualified": "LeanOS.SerialProtocol.family_versions_nodup",
+      "display": "family_versions_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SerialProtocol.lean",
+      "qualified": "LeanOS.SerialProtocol.records_nodup",
+      "display": "records_nodup",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/StaleTranslation.lean",
       "qualified": "LeanOS.StaleTranslation.accepted_destroy_space_absent",
       "display": "accepted_destroy_space_absent",

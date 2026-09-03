@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 elf="${1:-build/boot/leanos.elf}"
 [[ -f "$elf" ]] || { echo "error: missing ELF: $elf" >&2; exit 1; }
@@ -239,9 +242,9 @@ grep -Fq 'andl $~2, page_table_a(%eax)' boot/boot.S
 grep -Fq 'andl $~2, page_table_b(%eax)' boot/boot.S
 grep -Fq 'movl $0x80000000, 4(%edi)' boot/boot.S
 grep -Fq 'or $((1 << 8) | (1 << 11)), %eax' boot/boot.S
-grep -Fq 'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' boot/kernel.c
-grep -Fq 'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' boot/kernel.c
-grep -Fq 'LEANOS/8 PAGING root=B selected=1 result=PASS' boot/kernel.c
+grep -Fq 'LEANOS_SERIAL_8_PAGING " root=A selected=1 leaves=4096 policy=manifest result=PASS' boot/kernel.c
+grep -Fq 'LEANOS_SERIAL_8_PAGING " root=B selected=0 leaves=4096 policy=manifest result=PASS' boot/kernel.c
+grep -Fq 'LEANOS_SERIAL_8_PAGING " root=B selected=1 result=PASS' boot/kernel.c
 grep -Fq 'check_live_page_table_mutations();' boot/kernel.c
 grep -Fq 'fixture=wrong-cr3 root=A level=cr3' boot/kernel.c
 

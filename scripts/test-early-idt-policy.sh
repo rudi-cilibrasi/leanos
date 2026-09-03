@@ -16,7 +16,7 @@ trap 'rm -rf "$tmp"' EXIT
 link_fixture() {
   local name="$1"
   "$cc" -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
-    -ffile-prefix-map="$root"=. -g3 -c "$tmp/$name.S" -o "$tmp/$name.o"
+    -ffile-prefix-map="$root"=. -g3 -I"$build" -c "$tmp/$name.S" -o "$tmp/$name.o"
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -o "$tmp/$name.elf" "$tmp/$name.o" \
     "$build/kernel.o" "$build/KernelTransition.o" "$build/Syscall.o" \

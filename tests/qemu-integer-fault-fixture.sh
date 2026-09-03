@@ -12,6 +12,9 @@
 # forged serial PASS is still rejected when the guest debug-exit status is not
 # the accepted 33.
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 [[ "${1:-}" == --version ]] && { echo "QEMU integer-fault fixture version 1"; exit 0; }
 log=""; for arg in "$@"; do [[ "$arg" == file:* ]] && log="${arg#file:}"; done
 [[ -n "$log" ]] || exit 2
@@ -29,21 +32,21 @@ LEANOS_BOOT_SCENARIO=blocking-ipc LEANOS_QEMU_FIXTURE_MODE=success \
   "$here/qemu-fixture.sh" "$@"
 set -e
 sed -i \
-  -e "s|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/18 BOOT target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=${kind} contract=v1 controls=wp,smep,smap|" \
-  -e '/^LEANOS\/9 /d' -e '/^LEANOS\/10 /d' \
-  -e '/^LEANOS\/6 COPY /d' -e '/^LEANOS\/11 USER-FAULT /d' \
-  -e '/^LEANOS\/11 ENTRY-HIGH-WATER /d' \
-  -e '/^LEANOS\/8 PAGING root=B selected=1 result=PASS$/d' \
-  -e '/^LEANOS\/8 PAGING root=A selected=1 resumed=1 result=PASS$/d' "$log"
+  -e "s|${LEANOS_SERIAL_10_BOOT} target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|${LEANOS_SERIAL_18_BOOT} target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=${kind} contract=v1 controls=wp,smep,smap|" \
+  -e "/^$(leanos_serial_family_re 9) /d" -e "/^$(leanos_serial_family_re 10) /d" \
+  -e "/^$(leanos_serial_re 6 COPY) /d" -e "/^$(leanos_serial_re 11 USER-FAULT) /d" \
+  -e "/^$(leanos_serial_re 11 ENTRY-HIGH-WATER) /d" \
+  -e "/^$(leanos_serial_re 8 PAGING) root=B selected=1 result=PASS\$/d" \
+  -e "/^$(leanos_serial_re 8 PAGING) root=A selected=1 resumed=1 result=PASS\$/d" "$log"
 cat >> "$log" <<EOF
-LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
-LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned
-LEANOS/18 ${upper}-ENTRY vector=${vector} error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=${rip} subject=1 address-space=1 result=PASS
-LEANOS/18 ${upper}-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
-LEANOS/18 ${upper}-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned reason=${kind} result=PASS
-LEANOS/8 PAGING root=B selected=1 result=PASS
-LEANOS/18 ${upper}-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS
-LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=${vector} reason=${kind} kernel-origin=fail-stop
+${LEANOS_SERIAL_8_PAGING} root=A selected=1 resumed=1 result=PASS
+${LEANOS_SERIAL_18_ENTER} subject=1 address-space=1 cpl=3 resources=owned
+$(leanos_serial 18 "${upper}-ENTRY") vector=${vector} error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=${rip} subject=1 address-space=1 result=PASS
+$(leanos_serial 18 "${upper}-TERMINATE") subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
+$(leanos_serial 18 "${upper}-DISPATCH") subject=2 address-space=2 source=lean-scheduler context=owned reason=${kind} result=PASS
+${LEANOS_SERIAL_8_PAGING} root=B selected=1 result=PASS
+$(leanos_serial 18 "${upper}-PEER") subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS
+${LEANOS_SERIAL_18_FINAL} status=PASS faulting=terminated survivor=2 vector=${vector} reason=${kind} kernel-origin=fail-stop
 EOF
 
 case "$mode" in
@@ -61,7 +64,7 @@ case "$mode" in
   # A page-fault reason substituted for the real #DE/#BP reason.
   page-fault-reason-substituted) sed -i "s/reason=${kind}/reason=page-fault/g" "$log"; exit 33 ;;
   # RIP-rewrite recovery: A resumed instead of being retired.
-  rip-rewrite-recovery) sed -i "/^LEANOS\/18 ${upper}-TERMINATE /d; /^LEANOS\/18 ${upper}-DISPATCH /d" "$log"; exit 33 ;;
+  rip-rewrite-recovery) sed -i "/^$(leanos_serial_re 18 "${upper}-TERMINATE") /d; /^$(leanos_serial_re 18 "${upper}-DISPATCH") /d" "$log"; exit 33 ;;
   # Partial cleanup: a resumable context survived termination.
   partial-cleanup) sed -i 's/resumable=0/resumable=1/' "$log"; exit 33 ;;
   # An attacker-selected survivor rather than the scheduler-selected peer.
@@ -71,20 +74,20 @@ case "$mode" in
   # Corrupted peer register/stack canary.
   corrupt-peer-canary) sed -i 's/canaries=preserved/canaries=corrupt/' "$log"; exit 33 ;;
   # Nested entry: a second normalized entry before the first completed.
-  nested-entry) sed -i "/^LEANOS\/18 ${upper}-ENTRY /p" "$log"; exit 33 ;;
+  nested-entry) sed -i "/^$(leanos_serial_re 18 "${upper}-ENTRY") /p" "$log"; exit 33 ;;
   # C-only success without the real hardware entry and termination.
-  forged-pass) sed -i "/^LEANOS\/18 ${upper}-ENTRY /d; /^LEANOS\/18 ${upper}-TERMINATE /d" "$log"; exit 33 ;;
+  forged-pass) sed -i "/^$(leanos_serial_re 18 "${upper}-ENTRY") /d; /^$(leanos_serial_re 18 "${upper}-TERMINATE") /d" "$log"; exit 33 ;;
   # Reordered termination and dispatch records.
   reordered)
-    sed -i -e "s/^LEANOS\/18 ${upper}-TERMINATE /LEANOS\/18 __SWAP__ /" \
-      -e "s/^LEANOS\/18 ${upper}-DISPATCH /LEANOS\/18 ${upper}-TERMINATE /" \
-      -e "s/^LEANOS\/18 __SWAP__ /LEANOS\/18 ${upper}-DISPATCH /" "$log"
+    sed -i -e "s/^$(leanos_serial_re 18 "${upper}-TERMINATE") /$(leanos_serial_family_re 18) __SWAP__ /" \
+      -e "s/^$(leanos_serial_re 18 "${upper}-DISPATCH") /$(leanos_serial_re 18 "${upper}-TERMINATE") /" \
+      -e "s/^$(leanos_serial_family_re 18) __SWAP__ /$(leanos_serial_re 18 "${upper}-DISPATCH") /" "$log"
     exit 33 ;;
   # Forged serial PASS but the guest actually failed: the independent
   # debug-exit status is the accepted oracle and rejects it regardless.
   forged-pass-guest-error) exit 35 ;;
   guest-error)
-    sed -i "s/^LEANOS\/18 FINAL .*/LEANOS\/18 FINAL status=FAIL reason=kernel-fault/" "$log"
+    sed -i "s/^$(leanos_serial_re 18 FINAL) .*/$(leanos_serial_re 18 FINAL) status=FAIL reason=kernel-fault/" "$log"
     exit 35 ;;
   reset) exit 0 ;;
   triple-fault) exit 43 ;;

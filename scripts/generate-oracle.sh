@@ -9,8 +9,10 @@ signature_file="$out/generated-oracle.inputs.sha256"
 # corpus.tsv/corpus.h: the frozen scalar corpus and its C table.
 # vocabulary.tsv/composite-tokens.h: the Lean-owned boundary token vocabulary.
 # boundary-abi.tsv/boundary-abi.h: the @[export] prototype inventory.
+# serial-protocol.tsv/.h/.sh: the versioned serial record vocabulary.
 artifacts=(corpus.tsv corpus.h vocabulary.tsv composite-tokens.h
-  boundary-abi.tsv boundary-abi.h)
+  boundary-abi.tsv boundary-abi.h
+  serial-protocol.tsv serial-protocol.h serial-protocol.sh)
 artifact_hashes() {
   local artifact
   for artifact in "${artifacts[@]}"; do
@@ -24,7 +26,8 @@ if [[ -n "$tool_signature" ]]; then
     sha256sum "$root/scripts/generate-oracle.sh" \
       "$root/scripts/render-oracle-header.awk" \
       "$root/scripts/render-composite-tokens.awk" \
-      "$root/scripts/render-boundary-abi.awk"
+      "$root/scripts/render-boundary-abi.awk" \
+      "$root/scripts/render-serial-protocol.awk"
   } | sha256sum | awk '{print $1}')"
   if [[ -f "$signature_file" ]] &&
       read -r stored_signature stored_hashes < "$signature_file" &&
@@ -40,6 +43,11 @@ awk -f scripts/render-oracle-header.awk "$stage/corpus.tsv" > "$stage/corpus.h"
 LEANOS_SOURCE_REVISION="$revision" lake exe leanos-oracle tokens > "$stage/vocabulary.tsv"
 awk -f scripts/render-composite-tokens.awk "$stage/vocabulary.tsv" \
   > "$stage/composite-tokens.h"
+LEANOS_SOURCE_REVISION="$revision" lake exe leanos-oracle serial > "$stage/serial-protocol.tsv"
+awk -v target=h -f scripts/render-serial-protocol.awk "$stage/serial-protocol.tsv" \
+  > "$stage/serial-protocol.h"
+awk -v target=sh -f scripts/render-serial-protocol.awk "$stage/serial-protocol.tsv" \
+  > "$stage/serial-protocol.sh"
 # The export inventory walks the compiled LeanOS environment, so every library
 # module must be built before it runs; the oracle executable above only builds
 # its own imports.
