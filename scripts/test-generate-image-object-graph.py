@@ -800,8 +800,16 @@ compute_lean_c_signature {root!s}
         )
         self.assertIn('printf \'%s\\0%s\\0\' "$revision" "$tool_signature"', oracle)
         self.assertIn('sha256sum "$root/scripts/generate-oracle.sh"', oracle)
-        self.assertIn('stored_tsv_hash', oracle)
-        self.assertIn('stored_header_hash', oracle)
+        self.assertIn('"$root/scripts/render-composite-tokens.awk"', oracle)
+        self.assertIn('"$root/scripts/render-boundary-abi.awk"', oracle)
+        self.assertIn(
+            "artifacts=(corpus.tsv corpus.h vocabulary.tsv composite-tokens.h",
+            oracle,
+        )
+        self.assertIn('[[ "$stored_hashes" == "$(artifact_hashes)" ]]', oracle)
+        self.assertIn(
+            '(cd "$out" && sha256sum "${artifacts[@]}") | sha256sum', oracle
+        )
 
     def test_stub_plan_generation_preserves_unchanged_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
