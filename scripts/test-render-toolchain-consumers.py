@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import shutil
+import json
 import subprocess
 import tempfile
 
@@ -21,7 +22,12 @@ with tempfile.TemporaryDirectory() as directory:
     for name in ("ci.yml", "release.yml"):
         shutil.copy2(ROOT / ".github/workflows" / name, fixture / ".github/workflows")
     ci = fixture / ".github/workflows/ci.yml"
-    ci.write_text(ci.read_text().replace("sha256:6d483272", "sha256:aaaaaaaa", 1))
+    digest = next(
+        profile["reference_environment"]["ci_image_digest"]
+        for profile in json.loads((ROOT / "scripts/toolchain-profiles.json").read_text())["profiles"]
+        if profile["status"] == "canonical"
+    )
+    ci.write_text(ci.read_text().replace(digest, "sha256:" + "a" * 64, 1))
     command = [str(ROOT / "scripts/render-toolchain-consumers.py"), "--root", str(fixture)]
     failed = subprocess.run(command + ["--check"], text=True, capture_output=True)
     assert failed.returncode == 1
