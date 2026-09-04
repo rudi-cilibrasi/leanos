@@ -28,6 +28,10 @@ ELF_LAYOUTS = {"gcc-reference-v1", "clang18-v1"}
 SHARED_TOOLS = {
     "binutils", "grub", "mtools", "xorriso", "qemu", "seabios", "coreutils"
 }
+APT_PACKAGE_RE = re.compile(
+    r"^[a-z0-9][a-z0-9+.-]*=[0-9A-Za-z][0-9A-Za-z.+:~-]*$"
+)
+NON_APT_SHARED_TOOLS = {"seabios"}
 
 
 class ProfileError(RuntimeError):
@@ -55,6 +59,24 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
     if not isinstance(data, dict) or data.get("schema") != "leanos-toolchain-profiles-v1":
         raise ProfileError("toolchain profile manifest has an unrecognized schema")
     default_profile = require_string(data.get("default_profile"), "default_profile")
+    apt_packages = data.get("canonical_apt_packages")
+    if not isinstance(apt_packages, list) or not apt_packages:
+        raise ProfileError("canonical_apt_packages must be a nonempty list")
+    if len(apt_packages) != len(set(apt_packages)) or any(
+        not isinstance(package, str) or APT_PACKAGE_RE.fullmatch(package) is None
+        for package in apt_packages
+    ):
+        raise ProfileError(
+            "canonical_apt_packages must contain unique exact package pins"
+        )
+    apt_packages_by_name: dict[str, str] = {}
+    for package in apt_packages:
+        name = package.split("=", 1)[0]
+        if name in apt_packages_by_name:
+            raise ProfileError(
+                "canonical_apt_packages must contain unique package names"
+            )
+        apt_packages_by_name[name] = package
     profiles = data.get("profiles")
     if not isinstance(profiles, list) or len(profiles) < 2:
         raise ProfileError("toolchain profile manifest must define at least two profiles")
@@ -116,6 +138,13 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
             marker in package.lower() for marker in ("latest", "rolling", "*")
         ):
             raise ProfileError(f"profile {profile_id} compiler package is not pinned")
+        compiler_pin = package.split(maxsplit=1)[0]
+        compiler_name = compiler_pin.split("=", 1)[0]
+        if apt_packages_by_name.get(compiler_name) != compiler_pin:
+            raise ProfileError(
+                f"profile {profile_id} compiler package differs from "
+                "canonical_apt_packages"
+            )
 
         shared = profile.get("shared_tools")
         if not isinstance(shared, dict) or set(shared) != SHARED_TOOLS:
@@ -126,6 +155,20 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
                 marker in pinned.lower() for marker in ("latest", "rolling", "*")
             ):
                 raise ProfileError(f"profile {profile_id} leaves {tool} unpinned")
+            if tool in NON_APT_SHARED_TOOLS:
+                continue
+            for package_pin in pinned.split("; "):
+                if APT_PACKAGE_RE.fullmatch(package_pin) is None:
+                    raise ProfileError(
+                        f"profile {profile_id} shared tool {tool} must use exact "
+                        "apt package pins"
+                    )
+                package_name = package_pin.split("=", 1)[0]
+                if apt_packages_by_name.get(package_name) != package_pin:
+                    raise ProfileError(
+                        f"profile {profile_id} shared tool {tool} differs from "
+                        "canonical_apt_packages"
+                    )
 
         interfaces = profile.get("interfaces")
         if not isinstance(interfaces, dict):
