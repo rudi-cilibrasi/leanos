@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -12,6 +13,7 @@ import unittest
 
 
 SCRIPT = Path(__file__).with_name("generate-image-object-graph.py")
+ROOT = SCRIPT.resolve().parent.parent
 BUILD_SCRIPT = Path(__file__).with_name("build-image.sh")
 ASSIGNED_EDU_SCRIPT = Path(__file__).with_name("build-assigned-edu-image.sh")
 PLAN_SCRIPT = Path(__file__).with_name("generate-boot-page-plan.sh")
@@ -810,6 +812,67 @@ compute_lean_c_signature {root!s}
         self.assertIn(
             '(cd "$out" && sha256sum "${artifacts[@]}") | sha256sum', oracle
         )
+
+    def test_build_wiring_derives_from_the_scenario_manifest(self) -> None:
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8")
+        )
+        build = manifest["build"]
+        self.assertEqual(
+            [name for name, _ in MODULE.KERNEL_VARIANTS], list(build["kernel_objects"])
+        )
+        self.assertEqual(
+            [name for name, _, _ in MODULE.ASSEMBLY_VARIANTS], list(build["boot_objects"])
+        )
+        self.assertEqual(
+            [f"leanos-{name}" if name else "leanos" for name, _, _, _ in MODULE.PRELINK_VARIANTS],
+            list(build["images"]),
+        )
+        self.assertEqual(
+            [f"leanos-{name}" if name else "leanos" for name, _, _, _ in MODULE.FINAL_LINK_VARIANTS],
+            [stem for stem, entry in build["images"].items() if entry["final_link"]],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            def rejects(transform, diagnostic: str) -> None:
+                mutated = json.loads(json.dumps(manifest))
+                transform(mutated)
+                path = Path(directory) / "manifest.json"
+                path.write_text(json.dumps(mutated), encoding="utf-8")
+                result = subprocess.run(
+                    [
+                        "python3", str(SCRIPT), "--output", str(Path(directory) / "out.mk"),
+                        "--build-dir", directory, "--cc", "cc", "--lean-prefix", directory,
+                        "--source-root", str(ROOT), "--manifest", str(path),
+                    ],
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0, diagnostic)
+                self.assertIn(diagnostic, result.stderr)
+
+            def unknown_boot(m):
+                m["build"]["images"]["leanos-preemption"]["boot"] = "boot-never-assembled"
+
+            rejects(unknown_boot, "image leanos-preemption links unknown boot object 'boot-never-assembled'")
+
+            def unknown_kernel(m):
+                m["build"]["policy_fixtures"]["leanos-return-restore-fixture"]["kernel"] = "kernel-absent"
+
+            rejects(unknown_kernel, "image leanos-return-restore-fixture links unknown kernel object 'kernel-absent'")
+
+            def bad_flag(m):
+                m["build"]["kernel_objects"]["kernel-nmi"].append("LEANOS_NMI_PROBE=1")
+
+            rejects(bad_flag, "kernel object 'kernel-nmi' is malformed")
+
+            def bad_final(m):
+                m["build"]["images"]["leanos-nmi"]["final_link"] = "yes"
+
+            rejects(bad_final, "image leanos-nmi final_link must be true or false")
+
+            def no_build(m):
+                del m["build"]
+
+            rejects(no_build, "scenario manifest lacks a build section")
 
     def test_stub_plan_generation_preserves_unchanged_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
