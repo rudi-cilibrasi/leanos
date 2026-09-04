@@ -50,9 +50,10 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     # The lint step fetches markdownlint-cli2 through npx; a slow registry has
-    # exceeded the previous 5-minute budget in roughly a fifth of runs, so the
-    # npm cache is kept across runs and the budget leaves room for a cold one.
-    timeout-minutes: 10
+    # exceeded the previous 5-minute budget in roughly a fifth of runs (a cold
+    # fetch has taken 7 minutes), so the npm cache is kept across runs and the
+    # budget leaves room for a cold one.
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
