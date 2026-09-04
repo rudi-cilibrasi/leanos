@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+  LEANOS_CI_IMAGE_DIGEST: sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
   LEANOS_TOOLCHAIN_PROFILE: gcc-reference
   # Personal-account repositories cannot enable GitHub's merge queue. A
   # maintainer promotes a ready PR to the full tier with this reviewed label.
@@ -48,7 +48,7 @@ jobs:
   repository-hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     # The lint step fetches markdownlint-cli2 through npx; a slow registry has
     # exceeded the previous 5-minute budget in roughly a fifth of runs (a cold
     # fetch has taken 7 minutes), so the npm cache is kept across runs and the
@@ -93,7 +93,7 @@ jobs:
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 40
     steps:
       - name: Check out repository
@@ -209,7 +209,7 @@ jobs:
     name: Hosted generated-boundary evidence
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 40
     steps:
       - name: Check out repository
@@ -275,7 +275,7 @@ jobs:
     name: Clang canonical image evidence
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     # The independent reproducibility build runs in parallel below; this lane
     # retains the canonical boot and full evidence bundle.
     timeout-minutes: 60
@@ -381,7 +381,7 @@ jobs:
     name: GCC canonical image-family bundle
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 60
     steps:
       - name: Check out repository
@@ -419,7 +419,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
@@ -448,7 +448,7 @@ jobs:
     name: Clang cross-runner reproducibility
     needs: [clang-image, clang-reproducibility-build]
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 5
     steps:
       - name: Check out repository
@@ -476,7 +476,7 @@ jobs:
     name: Deterministic QEMU smoke test (shard ${{ matrix.shard }})
     needs: [repository-hygiene, gcc-image-family]
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     strategy:
       fail-fast: false
       matrix:
@@ -775,7 +775,7 @@ jobs:
     name: Serial vs graph image parity
     if: github.event_name == 'workflow_dispatch' && inputs.run_serial_graph_parity
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
