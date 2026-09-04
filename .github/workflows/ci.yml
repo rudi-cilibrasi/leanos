@@ -109,16 +109,7 @@ jobs:
 
       - name: Verify frame-budget negative evidence
         if: always()
-        run: |
-          manifest=build/boot/frame-budget-negatives/manifest.tsv
-          test -s "$manifest"
-          test "$(tail -n +2 "$manifest" | wc -l)" -eq 16
-          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
-            test "$status" -ne 0
-            test "$failure_class" = serial-protocol
-            test -s "build/boot/frame-budget-negatives/$serial_log"
-            test -s "build/boot/frame-budget-negatives/$output_log"
-          done < <(tail -n +2 "$manifest")
+        run: ./scripts/verify-negative-evidence.sh frame-budget
 
       - name: Preserve frame-budget negative evidence
         if: always()
@@ -131,16 +122,7 @@ jobs:
 
       - name: Verify capability-transfer negative evidence
         if: always()
-        run: |
-          manifest=build/boot/capability-transfer-negatives/manifest.tsv
-          test -s "$manifest"
-          test "$(tail -n +2 "$manifest" | wc -l)" -eq 13
-          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
-            test "$status" -ne 0
-            test "$failure_class" != unexpected
-            test -s "build/boot/capability-transfer-negatives/$serial_log"
-            test -s "build/boot/capability-transfer-negatives/$output_log"
-          done < <(tail -n +2 "$manifest")
+        run: ./scripts/verify-negative-evidence.sh capability-transfer
 
       - name: Preserve capability-transfer negative evidence
         if: always()
@@ -153,16 +135,7 @@ jobs:
 
       - name: Verify in-flight revocation negative evidence
         if: always()
-        run: |
-          manifest=build/boot/inflight-revocation-negatives/manifest.tsv
-          test -s "$manifest"
-          test "$(tail -n +2 "$manifest" | wc -l)" -eq 16
-          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
-            test "$status" -ne 0
-            test "$failure_class" != unexpected
-            test -s "build/boot/inflight-revocation-negatives/$serial_log"
-            test -s "build/boot/inflight-revocation-negatives/$output_log"
-          done < <(tail -n +2 "$manifest")
+        run: ./scripts/verify-negative-evidence.sh inflight-revocation
 
       - name: Preserve in-flight revocation negative evidence
         if: always()

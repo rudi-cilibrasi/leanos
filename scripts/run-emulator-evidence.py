@@ -57,145 +57,6 @@ BUNDLE_REQUIRED_FILES = (
     "build/evidence/q35-edu-dma.tsv",
     "build/evidence/q35-pci-construction.tsv",
 )
-REQUIRED_FAULT_RELEASE_ARTIFACTS = (
-    (
-        "build/boot/leanos-${version}-x86_64-fault-containment.iso",
-        "leanos-${version}-x86_64-fault-containment.iso",
-    ),
-    (
-        "build/boot/leanos-fault-containment.elf",
-        "leanos-${version}-x86_64-fault-containment.elf",
-    ),
-    (
-        "build/boot/leanos-fault-containment.map",
-        "leanos-${version}-x86_64-fault-containment.map",
-    ),
-    (
-        "build/boot/fault-containment.serial.log",
-        "leanos-${version}-fault-containment-serial.log",
-    ),
-    (
-        "build/boot/fault-containment.disassembly.txt",
-        "leanos-${version}-fault-containment-disassembly.txt",
-    ),
-    (
-        "build/boot/fault-containment-policy-report.txt",
-        "leanos-${version}-fault-containment-policy-report.txt",
-    ),
-    (
-        "build/boot/fault-containment-snapshot.txt",
-        "leanos-${version}-fault-containment-snapshot.txt",
-    ),
-    (
-        "build/boot/boot-page-plan-fault-containment.final.h",
-        "leanos-${version}-fault-containment-page-plan.h",
-    ),
-    (
-        "build/boot/leanos-${version}-x86_64-fault-readonly-write.iso",
-        "leanos-${version}-x86_64-fault-readonly-write.iso",
-    ),
-    (
-        "build/boot/leanos-fault-readonly-write.elf",
-        "leanos-${version}-x86_64-fault-readonly-write.elf",
-    ),
-    (
-        "build/boot/leanos-fault-readonly-write.map",
-        "leanos-${version}-x86_64-fault-readonly-write.map",
-    ),
-    (
-        "build/boot/fault-readonly-write.serial.log",
-        "leanos-${version}-fault-readonly-write-serial.log",
-    ),
-    (
-        "build/boot/fault-readonly-write.disassembly.txt",
-        "leanos-${version}-fault-readonly-write-disassembly.txt",
-    ),
-    (
-        "build/boot/fault-readonly-write-policy-report.txt",
-        "leanos-${version}-fault-readonly-write-policy-report.txt",
-    ),
-    (
-        "build/boot/fault-readonly-write-snapshot.txt",
-        "leanos-${version}-fault-readonly-write-snapshot.txt",
-    ),
-    (
-        "build/boot/boot-page-plan-fault-readonly-write.final.h",
-        "leanos-${version}-fault-readonly-write-page-plan.h",
-    ),
-    (
-        "build/boot/leanos-${version}-x86_64-fault-nx-execute.iso",
-        "leanos-${version}-x86_64-fault-nx-execute.iso",
-    ),
-    (
-        "build/boot/leanos-fault-nx-execute.elf",
-        "leanos-${version}-x86_64-fault-nx-execute.elf",
-    ),
-    (
-        "build/boot/leanos-fault-nx-execute.map",
-        "leanos-${version}-x86_64-fault-nx-execute.map",
-    ),
-    (
-        "build/boot/fault-nx-execute.serial.log",
-        "leanos-${version}-fault-nx-execute-serial.log",
-    ),
-    (
-        "build/boot/fault-nx-execute.disassembly.txt",
-        "leanos-${version}-fault-nx-execute-disassembly.txt",
-    ),
-    (
-        "build/boot/fault-nx-execute-policy-report.txt",
-        "leanos-${version}-fault-nx-execute-policy-report.txt",
-    ),
-    (
-        "build/boot/fault-nx-execute-snapshot.txt",
-        "leanos-${version}-fault-nx-execute-snapshot.txt",
-    ),
-    (
-        "build/boot/boot-page-plan-fault-nx-execute.final.h",
-        "leanos-${version}-fault-nx-execute-page-plan.h",
-    ),
-)
-REQUIRED_FAULT_RELEASE_ARTIFACTS += tuple(
-    (
-        source.replace("@PROBE@", probe),
-        destination.replace("@PROBE@", probe),
-    )
-    for probe in ("reserved-bit", "walk-mismatch")
-    for source, destination in (
-        (
-            "build/boot/leanos-${version}-x86_64-fault-@PROBE@.iso",
-            "leanos-${version}-x86_64-fault-@PROBE@.iso",
-        ),
-        (
-            "build/boot/leanos-fault-@PROBE@.elf",
-            "leanos-${version}-x86_64-fault-@PROBE@.elf",
-        ),
-        (
-            "build/boot/leanos-fault-@PROBE@.map",
-            "leanos-${version}-x86_64-fault-@PROBE@.map",
-        ),
-        (
-            "build/boot/fault-@PROBE@.serial.log",
-            "leanos-${version}-fault-@PROBE@-serial.log",
-        ),
-        (
-            "build/boot/fault-@PROBE@.disassembly.txt",
-            "leanos-${version}-fault-@PROBE@-disassembly.txt",
-        ),
-        (
-            "build/boot/fault-@PROBE@-policy-report.txt",
-            "leanos-${version}-fault-@PROBE@-policy-report.txt",
-        ),
-        (
-            "build/boot/fault-@PROBE@-terminal.txt",
-            "leanos-${version}-fault-@PROBE@-terminal.txt",
-        ),
-        (
-            "build/boot/boot-page-plan-fault-@PROBE@.final.h",
-            "leanos-${version}-fault-@PROBE@-page-plan.h",
-        ),
-    )
-)
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
 TIERS = {"pr", "evidence"}
 RUNNERS = {
@@ -239,110 +100,244 @@ REQUIRED_IOTLB_ORACLE_ROWS = (
     "iotlb.ack-exact",
     "iotlb.reject-completion-replay",
 )
-REQUIRED_FAST_ENTRY_ROWS = {
-    "fast-entry-syscall": {
-        "runner": "boot",
-        "result_class": "accepted-boot",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-fast-entry-syscall.iso",
-        "elf": "leanos-fast-entry-syscall.elf",
-        "serial_log": "fast-entry-syscall.serial.log",
-        "scenario": "fast-entry-syscall",
-        "mode": "-",
-        "reason": "-",
-    },
-    "fast-entry-sysenter": {
-        "runner": "boot",
-        "result_class": "accepted-boot",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-fast-entry-sysenter.iso",
-        "elf": "leanos-fast-entry-sysenter.elf",
-        "serial_log": "fast-entry-sysenter.serial.log",
-        "scenario": "fast-entry-sysenter",
-        "mode": "-",
-        "reason": "-",
-    },
-    "return-fast-entry-sce-relaxation": {
-        "runner": "return",
-        "result_class": "controlled-rejection",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-return-fast-entry-sce-relaxation.iso",
-        "elf": "leanos-return-fast-entry-sce-relaxation.elf",
-        "serial_log": "return-corruption-fast-entry-sce-relaxation.serial.log",
-        "scenario": "fast-entry-sce-relaxation",
-        "mode": "14",
-        "reason": "fast-entry-efer-readback",
-    },
-    "return-fast-entry-lstar-relaxation": {
-        "runner": "return",
-        "result_class": "controlled-rejection",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-return-fast-entry-lstar-relaxation.iso",
-        "elf": "leanos-return-fast-entry-lstar-relaxation.elf",
-        "serial_log": "return-corruption-fast-entry-lstar-relaxation.serial.log",
-        "scenario": "fast-entry-lstar-relaxation",
-        "mode": "15",
-        "reason": "fast-entry-target-readback",
-    },
-    "return-fast-entry-sysenter-eip-relaxation": {
-        "runner": "return",
-        "result_class": "controlled-rejection",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-return-fast-entry-sysenter-eip-relaxation.iso",
-        "elf": "leanos-return-fast-entry-sysenter-eip-relaxation.elf",
-        "serial_log": "return-corruption-fast-entry-sysenter-eip-relaxation.serial.log",
-        "scenario": "fast-entry-sysenter-eip-relaxation",
-        "mode": "16",
-        "reason": "fast-entry-target-readback",
-    },
-}
-REQUIRED_FAULT_INTEGRITY_ROWS = {
-    "fault-reserved-bit": {
-        "runner": "fault-integrity",
-        "result_class": "fail-stop",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-fault-reserved-bit.iso",
-        "elf": "leanos-fault-reserved-bit.elf",
-        "serial_log": "fault-reserved-bit.serial.log",
-        "scenario": "reserved-bit",
-        "mode": "-",
-        "reason": "page-table-integrity",
-    },
-    "fault-walk-mismatch": {
-        "runner": "fault-integrity",
-        "result_class": "fail-stop",
-        "timeout": "30",
-        "image": "leanos-@VERSION@-x86_64-fault-walk-mismatch.iso",
-        "elf": "leanos-fault-walk-mismatch.elf",
-        "serial_log": "fault-walk-mismatch.serial.log",
-        "scenario": "walk-mismatch",
-        "mode": "-",
-        "reason": "error-address-walk-disagreement",
-    },
-}
-for mechanism, mode in (
-    ("star", "17"),
-    ("cstar", "18"),
-    ("sfmask", "19"),
-    ("sysenter-cs", "20"),
-    ("sysenter-esp", "21"),
-):
-    scenario = f"fast-entry-{mechanism}-relaxation"
-    REQUIRED_FAST_ENTRY_ROWS[f"return-{scenario}"] = {
-        "runner": "return",
-        "result_class": "controlled-rejection",
-        "timeout": "30",
-        "image": f"leanos-@VERSION@-x86_64-return-{scenario}.iso",
-        "elf": f"leanos-return-{scenario}.elf",
-        "serial_log": f"return-corruption-{scenario}.serial.log",
-        "scenario": scenario,
-        "mode": mode,
-        "reason": "fast-entry-target-readback",
+class EvidenceError(RuntimeError):
+    pass
+
+
+DEFAULT_MANIFEST = ROOT / "scripts/scenario-manifest.json"
+MANIFEST_SCHEMA = "leanos-scenario-manifest-v1"
+ROW_TEMPLATE_KEYS = (
+    "runner", "timeout", "image", "elf", "serial_log", "scenario", "mode", "reason",
+)
+ARTIFACT_PLACEHOLDERS = (
+    "image", "elf", "elf_stem", "elf_suffix", "serial_log", "stem", "stem_dash", "scenario",
+)
+NEGATIVE_FAILURE_CLASSES = {"serial-protocol", "classified"}
+IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, object]:
+    """Load and validate the per-scenario manifest: the one declarative source
+    for what the matrix rows, artifact lists, and negative-evidence checks
+    restated by hand before."""
+    if not path.is_file():
+        raise EvidenceError(f"scenario manifest not found: {display_path(path)}")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise EvidenceError(f"scenario manifest is not valid JSON: {error}") from error
+    if manifest.get("schema") != MANIFEST_SCHEMA:
+        raise EvidenceError("scenario manifest has an unsupported schema")
+    families = manifest.get("families")
+    kinds = manifest.get("artifact_kinds")
+    scenarios = manifest.get("scenarios")
+    if not isinstance(families, dict) or not isinstance(kinds, dict) or not isinstance(scenarios, dict):
+        raise EvidenceError("scenario manifest lacks families, artifact_kinds, or scenarios")
+    for name, family in families.items():
+        row = family.get("row") if isinstance(family, dict) else None
+        if not IDENTIFIER.match(name) or not isinstance(row, dict):
+            raise EvidenceError(f"scenario manifest family {name!r} is malformed")
+        if set(row) != set(ROW_TEMPLATE_KEYS):
+            raise EvidenceError(f"scenario manifest family {name!r} does not template every row field")
+        if row["runner"] not in RUNNERS:
+            raise EvidenceError(f"scenario manifest family {name!r} names an unknown runner")
+    for name, kind in kinds.items():
+        if not isinstance(kind, dict) or set(kind) != {"source", "release"}:
+            raise EvidenceError(f"scenario manifest artifact kind {name!r} is malformed")
+    for key in ("release_extras", "reproducibility_extras"):
+        if not isinstance(manifest.get(key, []), list):
+            raise EvidenceError(f"scenario manifest {key} must be a list")
+    for scenario_id, entry in scenarios.items():
+        if not IDENTIFIER.match(scenario_id) or not isinstance(entry, dict):
+            raise EvidenceError(f"scenario manifest entry {scenario_id!r} is malformed")
+        family = entry.get("family")
+        if family is not None and family not in families:
+            raise EvidenceError(
+                f"scenario {scenario_id} names unknown family {family!r}"
+            )
+        for key in ("release_artifacts", "reproducibility_artifacts"):
+            for kind in entry.get(key, ()):
+                if kind not in kinds:
+                    raise EvidenceError(
+                        f"scenario {scenario_id} names unknown artifact kind {kind!r}"
+                    )
+        negative = entry.get("negative_evidence")
+        if negative is not None:
+            if (
+                not isinstance(negative, dict)
+                or set(negative) != {"directory", "count", "failure_class", "driver"}
+                or not IDENTIFIER.match(str(negative["directory"]))
+                or not isinstance(negative["count"], int)
+                or negative["count"] < 1
+                or negative["failure_class"] not in NEGATIVE_FAILURE_CLASSES
+            ):
+                raise EvidenceError(
+                    f"scenario {scenario_id} declares malformed negative evidence"
+                )
+            if not (ROOT / str(negative["driver"])).is_file():
+                raise EvidenceError(
+                    f"scenario {scenario_id} negative-evidence driver is missing: "
+                    f"{negative['driver']}"
+                )
+    return manifest
+
+
+def fill_template(template: str, values: dict[str, str]) -> str:
+    result = template
+    while True:
+        strip = re.search(r"\{id\|strip:([^}]*)\}", result)
+        if strip is None:
+            break
+        prefix = strip.group(1)
+        if not values["id"].startswith(prefix):
+            raise EvidenceError(
+                f"scenario {values['id']} does not carry the family prefix {prefix!r}"
+            )
+        result = result[: strip.start()] + values["id"][len(prefix):] + result[strip.end():]
+    for key, value in values.items():
+        result = result.replace("{" + key + "}", value)
+    unresolved = re.search(r"\{[a-z_|:-]+\}", result)
+    if unresolved is not None:
+        raise EvidenceError(
+            f"scenario {values.get('id', '?')} template placeholder is unresolved: "
+            f"{unresolved.group(0)}"
+        )
+    return result
+
+
+def derive_row(manifest: dict[str, object], scenario_id: str) -> dict[str, str] | None:
+    """The matrix row a manifest scenario must have, or None when its family
+    leaves the row free-form."""
+    entry = manifest["scenarios"][scenario_id]
+    family_name = entry.get("family")
+    if family_name is None:
+        return None
+    template = manifest["families"][family_name]["row"]
+    values = {"id": scenario_id}
+    values.update(
+        {key: value for key, value in entry.items() if isinstance(value, str) and key != "family"}
+    )
+    values["scenario"] = fill_template(template["scenario"], values)
+    row = {key: fill_template(template[key], values) for key in ROW_TEMPLATE_KEYS}
+    row["id"] = scenario_id
+    row["result_class"] = RUNNER_RESULT_CLASSES[row["runner"]]
+    return row
+
+
+def check_manifest_rows(
+    manifest: dict[str, object], rows_by_id: dict[str, dict[str, str]]
+) -> None:
+    for scenario_id, entry in manifest["scenarios"].items():
+        row = rows_by_id.get(scenario_id)
+        family = entry.get("family")
+        if row is None:
+            if family is None:
+                raise EvidenceError(f"manifest scenario is absent from the matrix: {scenario_id}")
+            raise EvidenceError(f"mandatory {family} scenario is absent: {scenario_id}")
+        expected = derive_row(manifest, scenario_id)
+        if expected is None:
+            continue
+        for key, value in expected.items():
+            if row[key] != value:
+                raise EvidenceError(
+                    f"mandatory {family} scenario {scenario_id} has "
+                    f"unexpected {key} {row[key]!r}"
+                )
+    for scenario_id in rows_by_id:
+        if scenario_id not in manifest["scenarios"]:
+            raise EvidenceError(
+                f"matrix scenario has no manifest entry: {scenario_id}"
+            )
+
+
+def artifact_values(row: dict[str, str]) -> dict[str, str]:
+    serial_log = row["serial_log"]
+    if serial_log == "serial.log":
+        stem = ""
+    elif serial_log.endswith(".serial.log"):
+        stem = serial_log[: -len(".serial.log")]
+    else:
+        raise EvidenceError(f"scenario {row['id']} serial log has no artifact stem")
+    elf_stem = row["elf"][: -len(".elf")] if row["elf"].endswith(".elf") else row["elf"]
+    return {
+        "image": row["image"],
+        "elf": row["elf"],
+        "elf_stem": elf_stem,
+        "elf_suffix": elf_stem[len("leanos"):],
+        "serial_log": serial_log,
+        "stem": stem,
+        "stem_dash": f"-{stem}-" if stem else "-",
+        "scenario": row["scenario"],
     }
 
 
-class EvidenceError(RuntimeError):
-    pass
+def scenario_artifacts(
+    manifest: dict[str, object], row: dict[str, str], kinds: list[str], version: str
+) -> list[tuple[str, str]]:
+    values = artifact_values(row)
+    pairs = []
+    for kind in kinds:
+        spec = manifest["artifact_kinds"][kind]
+        source = fill_template(spec["source"], values).replace("@VERSION@", version)
+        release = fill_template(spec["release"], values).replace("@VERSION@", version)
+        pairs.append((f"build/boot/{source}", release))
+    return pairs
+
+
+def release_artifacts(
+    manifest: dict[str, object], rows: list[dict[str, str]], version: str
+) -> list[tuple[str, str]]:
+    """Every (source, release name) copied into a release, in matrix order,
+    followed by the global extras."""
+    rows_by_id = {row["id"]: row for row in rows}
+    pairs = []
+    for scenario_id, entry in manifest["scenarios"].items():
+        kinds = entry.get("release_artifacts")
+        if kinds:
+            pairs.extend(scenario_artifacts(manifest, rows_by_id[scenario_id], kinds, version))
+    for extra in manifest.get("release_extras", []):
+        pairs.append(
+            (f"build/boot/{extra['source']}", extra["release"].replace("@VERSION@", version))
+        )
+    destinations = [destination for _, destination in pairs]
+    if len(destinations) != len(set(destinations)):
+        raise EvidenceError("derived release artifacts have duplicate destinations")
+    return pairs
+
+
+def reproducibility_artifacts(
+    manifest: dict[str, object], rows: list[dict[str, str]], version: str
+) -> list[str]:
+    """Every build/boot basename that must be byte-reproducible across
+    independent runners, in matrix order, with the global extras after the
+    canonical image."""
+    rows_by_id = {row["id"]: row for row in rows}
+    names: list[str] = []
+    for scenario_id, entry in manifest["scenarios"].items():
+        kinds = entry.get("reproducibility_artifacts")
+        if not kinds:
+            continue
+        for source, _ in scenario_artifacts(manifest, rows_by_id[scenario_id], kinds, version):
+            names.append(Path(source).name)
+        if scenario_id == rows[0]["id"]:
+            names.extend(manifest.get("reproducibility_extras", []))
+    if len(names) != len(set(names)):
+        raise EvidenceError("derived reproducibility artifacts are not unique")
+    return names
+
+
+def negative_evidence(manifest: dict[str, object]) -> dict[str, dict[str, object]]:
+    return {
+        scenario_id: entry["negative_evidence"]
+        for scenario_id, entry in manifest["scenarios"].items()
+        if "negative_evidence" in entry
+    }
+
+
+def check_artifacts_present(pairs: list[tuple[str, str]], root: Path) -> None:
+    for source, _ in pairs:
+        if not (root / source).is_file():
+            raise EvidenceError(f"derived artifact is missing from the build: {source}")
 
 
 def sha256(path: Path) -> str:
@@ -396,7 +391,9 @@ def qemu_accelerator(environment: dict[str, str]) -> str:
     return accelerator
 
 
-def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
+def parse_matrix(
+    path: Path, manifest_path: Path = DEFAULT_MANIFEST
+) -> tuple[str, list[dict[str, str]]]:
     if not path.is_file():
         raise EvidenceError(f"matrix not found: {display_path(path)}")
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -478,30 +475,7 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
         )
 
     rows_by_id = {row["id"]: row for row in rows}
-    for scenario_id, expected in REQUIRED_FAST_ENTRY_ROWS.items():
-        row = rows_by_id.get(scenario_id)
-        if row is None:
-            raise EvidenceError(
-                f"mandatory fast-entry scenario is absent: {scenario_id}"
-            )
-        for key, value in expected.items():
-            if row[key] != value:
-                raise EvidenceError(
-                    f"mandatory fast-entry scenario {scenario_id} has "
-                    f"unexpected {key} {row[key]!r}"
-                )
-    for scenario_id, expected in REQUIRED_FAULT_INTEGRITY_ROWS.items():
-        row = rows_by_id.get(scenario_id)
-        if row is None:
-            raise EvidenceError(
-                f"mandatory fault-integrity scenario is absent: {scenario_id}"
-            )
-        for key, value in expected.items():
-            if row[key] != value:
-                raise EvidenceError(
-                    f"mandatory fault-integrity scenario {scenario_id} has "
-                    f"unexpected {key} {row[key]!r}"
-                )
+    check_manifest_rows(load_manifest(manifest_path), rows_by_id)
 
     serials = [row["serial_log"] for row in rows]
     if len(serials) != len(set(serials)):
@@ -1352,36 +1326,20 @@ def build_evidence_bundle(report_path: Path, output: Path, root: Path = ROOT) ->
 
 
 def check_release_package(package: str) -> None:
-    normalized = package.replace("\\\n", " ")
-    commands = []
-    for line in normalized.splitlines():
-        try:
-            commands.append(shlex.split(line, comments=True, posix=True))
-        except ValueError as error:
-            raise EvidenceError(f"package-release.sh cannot be parsed: {error}") from error
-    copies = {
-        (tokens[1], tokens[2])
-        for tokens in commands
-        if len(tokens) == 3 and tokens[0] == "cp"
-    }
-    checksum_tokens = next(
-        (tokens for tokens in commands if "sha256sum" in tokens),
-        None,
-    )
-    if checksum_tokens is None:
-        raise EvidenceError("package-release.sh does not generate SHA256SUMS")
-    for source, destination in REQUIRED_FAULT_RELEASE_ARTIFACTS:
-        release_destination = f"$release/{destination}"
-        if (source, release_destination) not in copies:
-            raise EvidenceError(
-                "package-release.sh does not copy mandatory fault evidence "
-                f"{source} to {destination}"
-            )
-        if destination not in checksum_tokens:
-            raise EvidenceError(
-                "package-release.sh does not checksum mandatory fault evidence "
-                f"{destination}"
-            )
+    """The release packager must copy the derived artifact list and checksum
+    its destinations; it may not restate a build/boot artifact by hand."""
+    if "run-emulator-evidence.py release-artifacts" not in package:
+        raise EvidenceError(
+            "package-release.sh does not copy the derived release artifact list"
+        )
+    if re.search(r"^cp \"?build/boot/", package, re.M):
+        raise EvidenceError(
+            "package-release.sh restates a build/boot artifact instead of deriving it"
+        )
+    if "sha256sum" not in package or "release_destinations" not in package:
+        raise EvidenceError(
+            "package-release.sh does not checksum the derived release destinations"
+        )
 
 
 def workflow_step_runs(
@@ -1844,6 +1802,18 @@ def main() -> int:
     plan_parser = subparsers.add_parser("build-plan")
     bundle_parser = subparsers.add_parser("bundle")
     subparsers.add_parser("check")
+    release_parser = subparsers.add_parser("release-artifacts")
+    reproducibility_parser = subparsers.add_parser("reproducibility-artifacts")
+    negative_parser = subparsers.add_parser("negative-evidence")
+    negative_parser.add_argument("scenario", nargs="?")
+    for subparser in (release_parser, reproducibility_parser):
+        subparser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
+        subparser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+        subparser.add_argument("--version", default=os.environ.get("LEANOS_VERSION", "0.1.0"))
+        subparser.add_argument(
+            "--check", action="store_true",
+            help="require every derived source to exist under the repository build",
+        )
     for subparser in (run_parser, verify_parser):
         subparser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
         subparser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD)
@@ -1898,6 +1868,35 @@ def main() -> int:
             print_build_plan(args)
         elif args.operation == "bundle":
             build_evidence_bundle(args.report, args.output)
+        elif args.operation == "release-artifacts":
+            manifest = load_manifest(args.manifest)
+            _, rows = parse_matrix(args.matrix, args.manifest)
+            pairs = release_artifacts(manifest, rows, args.version)
+            if args.check:
+                check_artifacts_present(pairs, ROOT)
+            for source, destination in pairs:
+                print(f"{source}\t{destination}")
+        elif args.operation == "reproducibility-artifacts":
+            manifest = load_manifest(args.manifest)
+            _, rows = parse_matrix(args.matrix, args.manifest)
+            names = reproducibility_artifacts(manifest, rows, args.version)
+            if args.check:
+                check_artifacts_present([(f"build/boot/{name}", name) for name in names], ROOT)
+            for name in names:
+                print(name)
+        elif args.operation == "negative-evidence":
+            declared = negative_evidence(load_manifest())
+            if args.scenario is not None:
+                if args.scenario not in declared:
+                    raise EvidenceError(
+                        f"scenario {args.scenario} declares no negative evidence"
+                    )
+                declared = {args.scenario: declared[args.scenario]}
+            for scenario_id, entry in declared.items():
+                print(
+                    f"{scenario_id}\t{entry['directory']}\t{entry['count']}\t"
+                    f"{entry['failure_class']}\t{entry['driver']}"
+                )
         else:
             check_workflows()
     except EvidenceError as error:

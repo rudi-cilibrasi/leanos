@@ -1,0 +1,367 @@
+{
+  "schema": "leanos-scenario-manifest-v1",
+  "families": {
+    "fast-entry": {
+      "description": "Fast-entry denial boot images; the matrix row is derived from the scenario id.",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-{id}.iso",
+        "elf": "leanos-{id}.elf",
+        "serial_log": "{id}.serial.log",
+        "scenario": "{id}",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "fast-entry-relaxation": {
+      "description": "Return-path relaxation of one fast-entry control word; the mode is the corruption selector and the reason names the read-back that catches it.",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-{id}.iso",
+        "elf": "leanos-{id}.elf",
+        "serial_log": "return-corruption-{scenario}.serial.log",
+        "scenario": "{id|strip:return-}",
+        "mode": "{mode}",
+        "reason": "{reason}"
+      }
+    },
+    "fault-integrity": {
+      "description": "Page-table integrity fail-stop probes; the reason names the exact disagreement.",
+      "row": {
+        "runner": "fault-integrity",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-{id}.iso",
+        "elf": "leanos-{id}.elf",
+        "serial_log": "{id}.serial.log",
+        "scenario": "{id|strip:fault-}",
+        "mode": "-",
+        "reason": "{reason}"
+      }
+    }
+  },
+  "artifact_kinds": {
+    "iso": {
+      "source": "{image}",
+      "release": "{image}"
+    },
+    "elf": {
+      "source": "{elf}",
+      "release": "leanos-@VERSION@-x86_64{elf_suffix}.elf"
+    },
+    "map": {
+      "source": "{elf_stem}.map",
+      "release": "leanos-@VERSION@-x86_64{elf_suffix}.map"
+    },
+    "serial-log": {
+      "source": "{serial_log}",
+      "release": "leanos-@VERSION@{stem_dash}serial.log"
+    },
+    "disassembly": {
+      "source": "{stem}.disassembly.txt",
+      "release": "leanos-@VERSION@-{stem}-disassembly.txt"
+    },
+    "policy-report": {
+      "source": "{stem}-policy-report.txt",
+      "release": "leanos-@VERSION@-{stem}-policy-report.txt"
+    },
+    "snapshot": {
+      "source": "{stem}-snapshot.txt",
+      "release": "leanos-@VERSION@-{stem}-snapshot.txt"
+    },
+    "terminal": {
+      "source": "{stem}-terminal.txt",
+      "release": "leanos-@VERSION@-{stem}-terminal.txt"
+    },
+    "page-plan": {
+      "source": "boot-page-plan-{stem}.final.h",
+      "release": "leanos-@VERSION@-{stem}-page-plan.h"
+    },
+    "dma-snapshot": {
+      "source": "dma-quarantine-snapshot-{scenario}.tsv",
+      "release": "leanos-@VERSION@-dma-quarantine-snapshot.tsv"
+    }
+  },
+  "release_extras": [
+    {
+      "source": "corpus.tsv",
+      "release": "leanos-@VERSION@-oracle.tsv"
+    },
+    {
+      "source": "SOURCE_REVISION",
+      "release": "SOURCE_REVISION"
+    },
+    {
+      "source": "TOOLCHAIN_PROFILE.json",
+      "release": "TOOLCHAIN_PROFILE.json"
+    }
+  ],
+  "reproducibility_extras": [
+    "SOURCE_REVISION",
+    "TOOLCHAIN_PROFILE.json"
+  ],
+  "scenarios": {
+    "blocking-ipc": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log",
+        "dma-snapshot"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map"
+      ]
+    },
+    "multivcpu-rejection": {},
+    "assigned-edu-inventory": {},
+    "malformed-handoff": {},
+    "projection-authority-mutation": {},
+    "raw-selection-authority-mutation": {},
+    "entry-adversarial": {
+      "release_artifacts": [
+        "serial-log"
+      ]
+    },
+    "preemption": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ]
+    },
+    "frame-budget": {
+      "negative_evidence": {
+        "directory": "frame-budget-negatives",
+        "count": 16,
+        "failure_class": "serial-protocol",
+        "driver": "scripts/test-run-frame-budget.sh"
+      }
+    },
+    "capability-transfer": {
+      "negative_evidence": {
+        "directory": "capability-transfer-negatives",
+        "count": 13,
+        "failure_class": "classified",
+        "driver": "scripts/test-run-capability-transfer.sh"
+      }
+    },
+    "inflight-revocation": {
+      "negative_evidence": {
+        "directory": "inflight-revocation-negatives",
+        "count": 16,
+        "failure_class": "classified",
+        "driver": "scripts/test-run-inflight-revocation.sh"
+      }
+    },
+    "fault-containment": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log",
+        "disassembly",
+        "policy-report",
+        "snapshot",
+        "page-plan"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "page-plan",
+        "disassembly",
+        "policy-report"
+      ]
+    },
+    "fault-readonly-write": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log",
+        "disassembly",
+        "policy-report",
+        "snapshot",
+        "page-plan"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "page-plan",
+        "disassembly",
+        "policy-report"
+      ]
+    },
+    "fault-nx-execute": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log",
+        "disassembly",
+        "policy-report",
+        "snapshot",
+        "page-plan"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "page-plan",
+        "disassembly",
+        "policy-report"
+      ]
+    },
+    "fault-reserved-bit": {
+      "family": "fault-integrity",
+      "reason": "page-table-integrity",
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log",
+        "disassembly",
+        "policy-report",
+        "terminal",
+        "page-plan"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "page-plan",
+        "disassembly",
+        "policy-report"
+      ]
+    },
+    "fault-walk-mismatch": {
+      "family": "fault-integrity",
+      "reason": "error-address-walk-disagreement",
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log",
+        "disassembly",
+        "policy-report",
+        "terminal",
+        "page-plan"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "page-plan",
+        "disassembly",
+        "policy-report"
+      ]
+    },
+    "extended-state-denial": {},
+    "extended-state-denial-mmx": {},
+    "extended-state-denial-sse": {},
+    "extended-state-denial-sse2": {},
+    "extended-state-denial-avx": {},
+    "fast-entry-syscall": {
+      "family": "fast-entry"
+    },
+    "fast-entry-sysenter": {
+      "family": "fast-entry"
+    },
+    "extended-state-peer-pke": {},
+    "return-kernel-selector": {},
+    "return-wrong-stack-selector": {},
+    "return-noncanonical-rip": {},
+    "return-noncanonical-rsp": {},
+    "return-outside-code": {},
+    "return-outside-stack": {},
+    "return-flags-ac": {},
+    "return-flags-df": {},
+    "return-stale-cr3": {},
+    "return-stale-context": {},
+    "return-post-validation-mutation": {},
+    "return-blocking-context-canary": {},
+    "return-capability-reuse-generation": {},
+    "return-fast-entry-sce-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "14",
+      "reason": "fast-entry-efer-readback"
+    },
+    "return-fast-entry-lstar-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "15",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-fast-entry-sysenter-eip-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "16",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-fast-entry-star-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "17",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-fast-entry-cstar-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "18",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-fast-entry-sfmask-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "19",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-fast-entry-sysenter-cs-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "20",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-fast-entry-sysenter-esp-relaxation": {
+      "family": "fast-entry-relaxation",
+      "mode": "21",
+      "reason": "fast-entry-target-readback"
+    },
+    "return-direct-port-bitmap-relaxation": {},
+    "return-direct-port-limit-relaxation": {},
+    "return-direct-port-granularity-relaxation": {},
+    "return-dma-bus-master-reenable": {},
+    "return-vtd-translation-disable": {},
+    "double-fault": {
+      "release_artifacts": [
+        "serial-log"
+      ]
+    },
+    "entry-stack-overflow": {},
+    "nmi-terminal": {},
+    "nmi-terminal-cpl3": {},
+    "bootstrap32-ud": {},
+    "bootstrap64-nmi": {},
+    "double-fault-guard-mapped": {
+      "release_artifacts": [
+        "serial-log"
+      ]
+    },
+    "direct-port-serial": {},
+    "direct-port-debug": {},
+    "direct-port-in": {},
+    "direct-port-pic": {},
+    "divide-error": {},
+    "breakpoint": {},
+    "stale-translation": {
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "page-plan",
+        "disassembly",
+        "policy-report"
+      ]
+    }
+  }
+}

@@ -745,7 +745,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_fast_entry_mutation),
-            "mandatory fast-entry scenario is absent: return-fast-entry-sce-relaxation",
+            "mandatory fast-entry-relaxation scenario is absent: return-fast-entry-sce-relaxation",
         )
 
         missing_fast_entry_target_mutation = tmp / "missing-fast-entry-target-mutation.tsv"
@@ -763,7 +763,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_fast_entry_target_mutation),
-            "mandatory fast-entry scenario is absent: return-fast-entry-lstar-relaxation",
+            "mandatory fast-entry-relaxation scenario is absent: return-fast-entry-lstar-relaxation",
         )
 
         missing_fast_entry_sysenter_mutation = (
@@ -783,7 +783,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_fast_entry_sysenter_mutation),
-            "mandatory fast-entry scenario is absent: "
+            "mandatory fast-entry-relaxation scenario is absent: "
             "return-fast-entry-sysenter-eip-relaxation",
         )
 
@@ -802,7 +802,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_complete_live_inventory),
-            "mandatory fast-entry scenario is absent: "
+            "mandatory fast-entry-relaxation scenario is absent: "
             "return-fast-entry-sysenter-esp-relaxation",
         )
 
@@ -1019,25 +1019,93 @@ def run_fixtures() -> None:
 
         package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
         evidence.check_release_package(package)
-        missing_copy = package.replace(
-            "build/boot/fault-containment-snapshot.txt",
-            "build/boot/fault-containment-snapshot-omitted.txt",
-            1,
+        expect_failure(
+            lambda: evidence.check_release_package(
+                package.replace("run-emulator-evidence.py release-artifacts", "true")
+            ),
+            "does not copy the derived release artifact list",
         )
         expect_failure(
-            lambda: evidence.check_release_package(missing_copy),
-            "does not copy mandatory fault evidence "
+            lambda: evidence.check_release_package(
+                package + '\ncp build/boot/fault-containment-snapshot.txt "$release/extra.txt"\n'
+            ),
+            "restates a build/boot artifact instead of deriving it",
+        )
+
+        # The derivation layer: rows, artifact lists, and negatives come from
+        # the manifest; every deviation fails with a named diagnostic.
+        manifest = evidence.load_manifest()
+        _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
+        release_pairs = evidence.release_artifacts(manifest, matrix_rows, "${version}")
+        if (
             "build/boot/fault-containment-snapshot.txt",
-        )
-        missing_checksum = replace_last(
-            package,
-            '"leanos-${version}-fault-containment-snapshot.txt"',
-            '"leanos-${version}-fault-containment-snapshot-omitted.txt"',
-        )
-        expect_failure(
-            lambda: evidence.check_release_package(missing_checksum),
-            "does not checksum mandatory fault evidence "
             "leanos-${version}-fault-containment-snapshot.txt",
+        ) not in release_pairs:
+            raise AssertionError("derived release artifacts omit the fault-containment snapshot")
+        if len({destination for _, destination in release_pairs}) != len(release_pairs):
+            raise AssertionError("derived release destinations are not unique")
+        reproducibility = evidence.reproducibility_artifacts(manifest, matrix_rows, "0.1.0")
+        for name in ("leanos.elf", "boot-page-plan-fault-walk-mismatch.final.h", "SOURCE_REVISION"):
+            if name not in reproducibility:
+                raise AssertionError(f"derived reproducibility artifacts omit {name}")
+        negatives = evidence.negative_evidence(manifest)
+        if negatives["frame-budget"]["count"] != 16 or "inflight-revocation" not in negatives:
+            raise AssertionError("derived negative-evidence declarations are incomplete")
+        derived = evidence.derive_row(manifest, "return-fast-entry-sce-relaxation")
+        if derived["serial_log"] != "return-corruption-fast-entry-sce-relaxation.serial.log":
+            raise AssertionError("derived relaxation row does not name its serial log")
+
+        def mutated_manifest(transform):
+            content = json.loads((ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
+            transform(content)
+            target = tmp / "manifest.json"
+            target.write_text(json.dumps(content), encoding="utf-8")
+            return target
+
+        def drop_entry(content):
+            del content["scenarios"]["blocking-ipc"]
+
+        expect_failure(
+            lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(drop_entry)),
+            "matrix scenario has no manifest entry: blocking-ipc",
+        )
+
+        def orphan_entry(content):
+            content["scenarios"]["never-built"] = {}
+
+        expect_failure(
+            lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(orphan_entry)),
+            "manifest scenario is absent from the matrix: never-built",
+        )
+
+        def unknown_kind(content):
+            content["scenarios"]["fault-containment"]["release_artifacts"].append("core-dump")
+
+        expect_failure(
+            lambda: evidence.load_manifest(mutated_manifest(unknown_kind)),
+            "scenario fault-containment names unknown artifact kind 'core-dump'",
+        )
+
+        def missing_driver(content):
+            content["scenarios"]["frame-budget"]["negative_evidence"]["driver"] = "scripts/absent.sh"
+
+        expect_failure(
+            lambda: evidence.load_manifest(mutated_manifest(missing_driver)),
+            "scenario frame-budget negative-evidence driver is missing: scripts/absent.sh",
+        )
+
+        def drifted_family(content):
+            content["scenarios"]["fault-reserved-bit"]["reason"] = "page-table-drift"
+
+        expect_failure(
+            lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(drifted_family)),
+            "mandatory fault-integrity scenario fault-reserved-bit has unexpected reason",
+        )
+        expect_failure(
+            lambda: evidence.check_artifacts_present(
+                [("build/boot/deleted-artifact.txt", "deleted.txt")], tmp
+            ),
+            "derived artifact is missing from the build: build/boot/deleted-artifact.txt",
         )
 
         evidence.check_workflows()
