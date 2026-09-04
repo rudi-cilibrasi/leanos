@@ -239,6 +239,26 @@ integration-evidence class, timeout, image and ELF, serial log, and fixture
 metadata. New security-relevant QEMU work must register here; a reviewed matrix
 version change is required to alter the mandatory release inventory.
 
+`scripts/scenario-manifest.json` is the matrix's declarative sidecar. For each
+scenario it records only what the row cannot express: the family whose
+template the row must follow (fast-entry denial images, fast-entry return-path
+relaxations, page-table-integrity probes), the family parameters (a corruption
+mode, a rejection reason), which artifact kinds the scenario contributes to a
+release and to the byte-reproducibility set, and its controlled-negative
+evidence (directory, count, failure-class rule, driver). The evidence runner
+derives everything else: `parse_matrix` checks each mandatory row against the
+family template instead of a second hand-written copy and rejects a matrix
+scenario without a manifest entry, `run-emulator-evidence.py
+release-artifacts` and `reproducibility-artifacts` print the artifact lists
+that `scripts/package-release.sh` and `scripts/write-reproducibility-manifest.sh`
+iterate (neither names a `build/boot` artifact by hand), and
+`scripts/verify-negative-evidence.sh` checks a scenario's recorded negatives
+against the declared count and class, so the workflow no longer hard-codes
+those numbers. A missing manifest entry, an unknown artifact kind, a family
+parameter that disagrees with the matrix, a declared driver that does not
+exist, or a derived artifact absent from the build each fail with a named
+diagnostic; `scripts/test-emulator-evidence.py` exercises every one.
+
 `EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
 matrix and tool-inventory hashes, QEMU version and exact command, runner result,
 and hashes of the tested ISO, ELF, serial log, and command log. Packaging reruns

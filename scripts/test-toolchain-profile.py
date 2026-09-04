@@ -126,7 +126,12 @@ def main() -> None:
     reproducibility = (
         ROOT / "scripts" / "write-reproducibility-manifest.sh"
     ).read_text(encoding="utf-8")
-    if "TOOLCHAIN_PROFILE.json" not in reproducibility:
+    if "run-emulator-evidence.py\" reproducibility-artifacts" not in reproducibility:
+        raise AssertionError("reproducibility manifest does not derive its artifact list")
+    manifest = json.loads(
+        (ROOT / "scripts" / "scenario-manifest.json").read_text(encoding="utf-8")
+    )
+    if "TOOLCHAIN_PROFILE.json" not in manifest.get("reproducibility_extras", []):
         raise AssertionError("reproducibility manifest lost the selected profile")
     print("Toolchain profile regression fixtures passed")
 
