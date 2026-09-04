@@ -39,6 +39,7 @@ lake build leanos-boot-plan
 lake build leanos-vtd-plan
 ./scripts/test-generate-boundary-vocabulary.sh
 ./scripts/test-generate-serial-protocol.sh
+python3 ./scripts/test-scenario-manifest.py
 
 ./scripts/check-security-claims.sh
 

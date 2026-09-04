@@ -398,14 +398,6 @@ run_return_corruption_policy_check() {
 export -f run_return_corruption_policy_check
 
 build="$repo_root/build/boot"
-iso_root="$build/iso"
-preemption_iso_root="$build/iso-preemption"
-frame_budget_iso_root="$build/iso-frame-budget"
-capability_transfer_iso_root="$build/iso-capability-transfer"
-inflight_revocation_iso_root="$build/iso-inflight-revocation"
-fault_containment_iso_root="$build/iso-fault-containment"
-fault_readonly_write_iso_root="$build/iso-fault-readonly-write"
-fault_nx_execute_iso_root="$build/iso-fault-nx-execute"
 fault_fatal_probes=(reserved-bit walk-mismatch)
 fault_image_probes=("${fault_fatal_probes[@]}" stale-translation)
 declare -A fault_fatal_probe_flags=(
@@ -413,25 +405,6 @@ declare -A fault_fatal_probe_flags=(
   [walk-mismatch]="-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1"
   [stale-translation]="-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1"
 )
-extended_state_iso_root="$build/iso-extended-state"
-extended_state_mmx_iso_root="$build/iso-extended-state-mmx"
-extended_state_sse_iso_root="$build/iso-extended-state-sse"
-extended_state_sse2_iso_root="$build/iso-extended-state-sse2"
-extended_state_avx_iso_root="$build/iso-extended-state-avx"
-extended_state_peer_pke_iso_root="$build/iso-extended-state-peer-pke"
-fast_entry_syscall_iso_root="$build/iso-fast-entry-syscall"
-fast_entry_sysenter_iso_root="$build/iso-fast-entry-sysenter"
-df_iso_root="$build/iso-double-fault"
-df_negative_iso_root="$build/iso-double-fault-guard-mapped"
-entry_overflow_iso_root="$build/iso-entry-stack-overflow"
-entry_adversarial_iso_root="$build/iso-entry-adversarial"
-nmi_iso_root="$build/iso-nmi"
-nmi_cpl3_iso_root="$build/iso-nmi-cpl3"
-bootstrap32_ud_iso_root="$build/iso-bootstrap32-ud"
-bootstrap64_nmi_iso_root="$build/iso-bootstrap64-nmi"
-malformed_handoff_iso_root="$build/iso-malformed-handoff"
-projection_authority_iso_root="$build/iso-projection-authority-mutation"
-raw_selection_authority_iso_root="$build/iso-raw-selection-authority-mutation"
 # Direct-port-containment family (#130): one shared kernel object, one reviewed
 # raw CPL3 port instruction per probe selected by a boot.S -D variant.
 direct_port_probes=(serial debug in pic)
@@ -468,6 +441,17 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: LEANOS_VERSION must be MAJOR.MINOR.PATCH" >&2
   exit 1
 fi
+# The packaged image family (ISO, GRUB configuration, and final-ELF policy per
+# final ELF) and the page-plan stub set come from scripts/scenario-manifest.json;
+# nothing below names one by hand.
+mapfile -t packaged_images < <(
+  ./scripts/scenario-manifest.py packaged-images --version "$version"
+)
+[[ ${#packaged_images[@]} -gt 0 ]] || {
+  echo "error: the scenario manifest declares no packaged images" >&2
+  exit 1
+}
+mapfile -t page_plan_stubs < <(./scripts/scenario-manifest.py page-plans)
 if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   echo "error: LEANOS_SOURCE_REVISION must be a full lowercase Git commit" >&2
   exit 1
@@ -547,28 +531,9 @@ selected_final_enabled() {
 # Preserve graph-owned objects, dependency files, and ISO staging trees across
 # invocations. Re-copying the three deterministic staging inputs below keeps
 # their contents current while allowing unchanged packaged images to be reused.
-mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
-  "$frame_budget_iso_root/boot/grub" \
-  "$capability_transfer_iso_root/boot/grub" \
-  "$inflight_revocation_iso_root/boot/grub" \
-  "$fault_containment_iso_root/boot/grub" \
-  "$fault_readonly_write_iso_root/boot/grub" \
-  "$fault_nx_execute_iso_root/boot/grub" \
-  "$extended_state_iso_root/boot/grub" "$extended_state_mmx_iso_root/boot/grub" \
-  "$extended_state_sse_iso_root/boot/grub" \
-  "$extended_state_sse2_iso_root/boot/grub" \
-  "$extended_state_avx_iso_root/boot/grub" \
-  "$extended_state_peer_pke_iso_root/boot/grub" \
-  "$fast_entry_syscall_iso_root/boot/grub" \
-  "$fast_entry_sysenter_iso_root/boot/grub" \
-  "$df_iso_root/boot/grub" \
-  "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
-  "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub" \
-  "$nmi_cpl3_iso_root/boot/grub" "$bootstrap32_ud_iso_root/boot/grub" \
-  "$bootstrap64_nmi_iso_root/boot/grub" \
-  "$malformed_handoff_iso_root/boot/grub" \
-  "$projection_authority_iso_root/boot/grub" \
-  "$raw_selection_authority_iso_root/boot/grub"
+while IFS=$'\t' read -r _ _ packaged_root _ _ _ _; do
+  mkdir -p "$build/$packaged_root/boot/grub"
+done < <(printf '%s\n' "${packaged_images[@]}")
 for probe in "${fault_image_probes[@]}"; do
   mkdir -p "$build/iso-fault-${probe}/boot/grub"
 done
@@ -584,30 +549,9 @@ LEANOS_ORACLE_TOOL_SIGNATURE="$current_lean_c_signature" \
 ensure_boot_plan_stub() {
   [[ -f "$1" ]] || ./scripts/generate-boot-page-plan.sh --stub "$1"
 }
-ensure_boot_plan_stub "$build/boot-page-plan.h"
-ensure_boot_plan_stub "$build/boot-page-plan-malformed-handoff.h"
-ensure_boot_plan_stub "$build/boot-page-plan-projection-authority-mutation.h"
-ensure_boot_plan_stub "$build/boot-page-plan-raw-selection-authority-mutation.h"
-ensure_boot_plan_stub "$build/boot-page-plan-preemption.h"
-ensure_boot_plan_stub "$build/boot-page-plan-frame-budget.h"
-ensure_boot_plan_stub "$build/boot-page-plan-capability-transfer.h"
-ensure_boot_plan_stub "$build/boot-page-plan-inflight-revocation.h"
-ensure_boot_plan_stub "$build/boot-page-plan-fault-containment.h"
-ensure_boot_plan_stub "$build/boot-page-plan-fault-nx-execute.h"
-for probe in "${fault_image_probes[@]}"; do
-  ensure_boot_plan_stub "$build/boot-page-plan-fault-${probe}.h"
+for stub in "${page_plan_stubs[@]}"; do
+  ensure_boot_plan_stub "$build/$stub"
 done
-ensure_boot_plan_stub "$build/boot-page-plan-extended-state.h"
-ensure_boot_plan_stub "$build/boot-page-plan-extended-state-peer-pke.h"
-ensure_boot_plan_stub "$build/boot-page-plan-double-fault.h"
-ensure_boot_plan_stub "$build/boot-page-plan-entry-overflow.h"
-ensure_boot_plan_stub "$build/boot-page-plan-guard.h"
-ensure_boot_plan_stub "$build/boot-page-plan-entry-adversarial.h"
-ensure_boot_plan_stub "$build/boot-page-plan-nmi.h"
-ensure_boot_plan_stub "$build/boot-page-plan-bootstrap32-ud.h"
-ensure_boot_plan_stub "$build/boot-page-plan-bootstrap64-nmi.h"
-ensure_boot_plan_stub "$build/boot-page-plan-direct-port.h"
-ensure_boot_plan_stub "$build/boot-page-plan-integer-fault.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -1476,47 +1420,15 @@ queue_image_policy() {
     >> "$policy_task_file"
 }
 
-queue_image_policy canonical "$build/leanos.elf"
-queue_image_policy malformed-handoff "$build/leanos-malformed-handoff.elf"
-queue_image_policy projection-authority-mutation \
-  "$build/leanos-projection-authority-mutation.elf"
-queue_image_policy raw-selection-authority-mutation \
-  "$build/leanos-raw-selection-authority-mutation.elf"
-queue_image_policy preemption "$build/leanos-preemption.elf"
-queue_image_policy frame-budget "$build/leanos-frame-budget.elf"
-queue_image_policy capability-transfer "$build/leanos-capability-transfer.elf"
-queue_image_policy inflight-revocation "$build/leanos-inflight-revocation.elf"
-queue_image_policy fault-containment "$build/leanos-fault-containment.elf"
-queue_image_policy fault-readonly-write "$build/leanos-fault-readonly-write.elf"
-queue_image_policy fault-nx-execute "$build/leanos-fault-nx-execute.elf"
-for probe in "${fault_fatal_probes[@]}"; do
-  queue_image_policy "fault-$probe" "$build/leanos-fault-${probe}.elf" \
-    LEANOS_PAGE_FAULT_FATAL_PROBE "$probe"
-done
-queue_image_policy fault-stale-translation \
-  "$build/leanos-fault-stale-translation.elf"
-queue_image_policy extended-state "$build/leanos-extended-state.elf"
-queue_image_policy extended-state-mmx "$build/leanos-extended-state-mmx.elf"
-queue_image_policy extended-state-sse "$build/leanos-extended-state-sse.elf"
-queue_image_policy extended-state-sse2 "$build/leanos-extended-state-sse2.elf"
-queue_image_policy extended-state-avx "$build/leanos-extended-state-avx.elf"
-for mechanism in syscall sysenter; do
-  queue_image_policy "fast-entry-$mechanism" \
-    "$build/leanos-fast-entry-${mechanism}.elf" LEANOS_FAST_ENTRY_PROBE \
-    "$mechanism"
-done
-queue_image_policy double-fault "$build/leanos-double-fault.elf"
-queue_image_policy entry-stack-overflow "$build/leanos-entry-stack-overflow.elf"
-queue_image_policy entry-adversarial "$build/leanos-entry-adversarial.elf"
-for probe in "${direct_port_probes[@]}"; do
-  queue_image_policy "direct-port-$probe" \
-    "$build/leanos-direct-port-${probe}.elf"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  queue_image_policy "$probe" "$build/leanos-${probe}.elf"
-done
-queue_image_policy bootstrap32-ud "$build/leanos-bootstrap32-ud.elf"
-queue_image_policy bootstrap64-nmi "$build/leanos-bootstrap64-nmi.elf"
+while IFS=$'\t' read -r packaged_stem _ _ _ policy_key policy_env_name policy_env_value; do
+  [[ "$policy_key" != - ]] || continue
+  if [[ "$policy_env_name" != - ]]; then
+    queue_image_policy "$policy_key" "$build/$packaged_stem.elf" \
+      "$policy_env_name" "$policy_env_value"
+  else
+    queue_image_policy "$policy_key" "$build/$packaged_stem.elf"
+  fi
+done < <(printf '%s\n' "${packaged_images[@]}")
 
 export build
 if ! xargs -0 -r -n 4 -P "$policy_jobs" bash -c \
@@ -1834,64 +1746,10 @@ stage_selected_image() {
   cp "$build/TOOLCHAIN_PROFILE.json" \
     "$staging_root/boot/TOOLCHAIN_PROFILE.json"
 }
-stage_selected_image "$build/leanos.elf" "$iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-malformed-handoff.elf" \
-  "$malformed_handoff_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-projection-authority-mutation.elf" \
-  "$projection_authority_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-raw-selection-authority-mutation.elf" \
-  "$raw_selection_authority_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-preemption.elf" "$preemption_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-frame-budget.elf" "$frame_budget_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-capability-transfer.elf" \
-  "$capability_transfer_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-inflight-revocation.elf" \
-  "$inflight_revocation_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-fault-containment.elf" \
-  "$fault_containment_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-fault-readonly-write.elf" \
-  "$fault_readonly_write_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-fault-nx-execute.elf" \
-  "$fault_nx_execute_iso_root" boot/grub.cfg
-for probe in "${fault_image_probes[@]}"; do
-  stage_selected_image "$build/leanos-fault-${probe}.elf" \
-    "$build/iso-fault-${probe}" boot/grub.cfg
-done
-stage_selected_image "$build/leanos-extended-state.elf" \
-  "$extended_state_iso_root" boot/grub.cfg
-for variant in mmx sse sse2 avx; do
-  stage_selected_image "$build/leanos-extended-state-${variant}.elf" \
-    "$build/iso-extended-state-${variant}" boot/grub.cfg
-done
-stage_selected_image "$build/leanos-extended-state-peer-pke.elf" \
-  "$extended_state_peer_pke_iso_root" boot/grub.cfg
-for mechanism in syscall sysenter; do
-  stage_selected_image "$build/leanos-fast-entry-${mechanism}.elf" \
-    "$build/iso-fast-entry-${mechanism}" boot/grub.cfg
-done
-stage_selected_image "$build/leanos-double-fault.elf" "$df_iso_root" \
-  boot/grub-double-fault.cfg
-stage_selected_image "$build/leanos-double-fault-guard-mapped.elf" \
-  "$df_negative_iso_root" boot/grub-double-fault.cfg
-stage_selected_image "$build/leanos-entry-stack-overflow.elf" \
-  "$entry_overflow_iso_root" boot/grub-double-fault.cfg
-stage_selected_image "$build/leanos-entry-adversarial.elf" \
-  "$entry_adversarial_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-nmi.elf" "$nmi_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-nmi-cpl3.elf" "$nmi_cpl3_iso_root" \
-  boot/grub-nmi-cpl3.cfg
-stage_selected_image "$build/leanos-bootstrap32-ud.elf" \
-  "$bootstrap32_ud_iso_root" boot/grub.cfg
-stage_selected_image "$build/leanos-bootstrap64-nmi.elf" \
-  "$bootstrap64_nmi_iso_root" boot/grub.cfg
-for probe in "${direct_port_probes[@]}"; do
-  stage_selected_image "$build/leanos-direct-port-${probe}.elf" \
-    "$build/iso-direct-port-${probe}" boot/grub.cfg
-done
-for probe in "${integer_fault_probes[@]}"; do
-  stage_selected_image "$build/leanos-${probe}.elf" "$build/iso-${probe}" \
-    boot/grub.cfg
-done
+while IFS=$'\t' read -r packaged_stem _ packaged_root packaged_grub _ _ _; do
+  stage_selected_image "$build/$packaged_stem.elf" "$build/$packaged_root" \
+    "$packaged_grub"
+done < <(printf '%s\n' "${packaged_images[@]}")
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
@@ -1923,69 +1781,9 @@ queue_iso() {
   map="${elf%.elf}.map"
   [[ ! -f "$map" ]] || selected_checksum_paths+=("$map")
 }
-queue_iso "$build/leanos-${version}-x86_64.iso" "$iso_root"
-queue_iso "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
-  "$malformed_handoff_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-projection-authority-mutation.iso" \
-  "$projection_authority_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-raw-selection-authority-mutation.iso" \
-  "$raw_selection_authority_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-preemption.iso" \
-  "$preemption_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-frame-budget.iso" \
-  "$frame_budget_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-capability-transfer.iso" \
-  "$capability_transfer_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-inflight-revocation.iso" \
-  "$inflight_revocation_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-fault-containment.iso" \
-  "$fault_containment_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
-  "$fault_readonly_write_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
-  "$fault_nx_execute_iso_root"
-for probe in "${fault_image_probes[@]}"; do
-  queue_iso "$build/leanos-${version}-x86_64-fault-${probe}.iso" \
-    "$build/iso-fault-${probe}"
-done
-queue_iso "$build/leanos-${version}-x86_64-extended-state.iso" \
-  "$extended_state_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
-  "$extended_state_mmx_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
-  "$extended_state_sse_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-extended-state-sse2.iso" \
-  "$extended_state_sse2_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
-  "$extended_state_avx_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
-  "$extended_state_peer_pke_iso_root"
-for mechanism in syscall sysenter; do
-  queue_iso "$build/leanos-${version}-x86_64-fast-entry-${mechanism}.iso" \
-    "$build/iso-fast-entry-${mechanism}"
-done
-queue_iso "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
-  "$df_negative_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-entry-stack-overflow.iso" \
-  "$entry_overflow_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
-  "$entry_adversarial_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-nmi.iso" "$nmi_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-nmi-cpl3.iso" \
-  "$nmi_cpl3_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-bootstrap32-ud.iso" \
-  "$bootstrap32_ud_iso_root"
-queue_iso "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
-  "$bootstrap64_nmi_iso_root"
-for probe in "${direct_port_probes[@]}"; do
-  queue_iso "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
-    "$build/iso-direct-port-${probe}"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  queue_iso "$build/leanos-${version}-x86_64-${probe}.iso" \
-    "$build/iso-${probe}"
-done
+while IFS=$'\t' read -r _ packaged_iso packaged_root _ _ _ _; do
+  queue_iso "$build/$packaged_iso" "$build/$packaged_root"
+done < <(printf '%s\n' "${packaged_images[@]}")
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   queue_iso "$build/leanos-${version}-x86_64-return-${fixture}.iso" \

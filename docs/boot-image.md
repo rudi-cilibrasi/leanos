@@ -265,7 +265,17 @@ whether it receives a final page-plan link), and the policy-negative fixtures.
 `scripts/generate-image-object-graph.py` derives its compile and link rules
 from that section instead of Python literal tables, and it rejects an image
 that names an unknown object or a malformed macro set with a named
-diagnostic.
+diagnostic. The same section's `packaged_images` map declares, per final
+ELF, the ISO it is staged into, the GRUB configuration that boots it, and the
+final-ELF policy check queued for it (with an optional environment pair), and
+`page_plan_stub_extras` names the page-plan headers the hand-linked images
+need beyond those the kernel objects declare. `scripts/scenario-manifest.py`
+prints those views as tab-separated rows, and `scripts/build-image.sh` loops
+over them for the ISO staging roots, the page-plan stubs, the policy queue,
+the image staging, and the ISO queue instead of listing every image by hand;
+`scripts/test-scenario-manifest.py` rejects an invalid ISO name, an unknown
+GRUB configuration, a duplicate policy key, a malformed environment pair, an
+unknown kernel object, and a malformed stub name with named diagnostics.
 
 `EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
 matrix and tool-inventory hashes, QEMU version and exact command, runner result,
