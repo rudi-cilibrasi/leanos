@@ -27,7 +27,10 @@ jobs:
   build:
     name: Stage and verify the demo
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # A canonical image build on a cold Lake cache takes 28 to 30 minutes on
+    # the hosted runner and the browser acceptance follows it, so the budget
+    # leaves room for both; the cache below usually keeps it far shorter.
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
