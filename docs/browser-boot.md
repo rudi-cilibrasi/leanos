@@ -80,11 +80,14 @@ dependencies. The demo page routes serial to a MEMFS file and tails it into an
 xterm terminal, so a viewer watches the boot protocol live and sees
 `guest exited (status 33)` on success.
 
-`.github/workflows/pages.yml` builds the ISO, prepares and hash-verifies the
-runtime, boots the staged site in a browser as the acceptance gate
-(`scripts/run-browser-boot.sh`), and deploys the staged directory unchanged. It
-runs only on the default branch and manual dispatch, separate from
+`.github/workflows/pages.yml` builds the ISO inside the digest-pinned canonical
+CI image, transfers it to the hosted browser job in a minimal revision-bound
+bundle, prepares and hash-verifies the runtime, boots the staged site in a
+browser as the acceptance gate (`scripts/run-browser-boot.sh`), and deploys the
+staged directory unchanged. It runs only on the default branch and manual dispatch, separate from
 pull-request validation, with pinned actions and least-privilege permissions.
+The hosted browser job never resolves the canonical image toolchain from the
+runner's mutable apt index.
 Enabling Pages with source "GitHub Actions" is a one-time repository setting.
 Third-party redistribution licenses are inventoried in
 [browser-demo-licenses.md](browser-demo-licenses.md).

@@ -17,6 +17,7 @@ permissions:
   contents: read
 
 env:
+  LEANOS_CI_IMAGE_DIGEST: sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
   LEANOS_TOOLCHAIN_PROFILE: gcc-reference
 
 concurrency:
@@ -24,42 +25,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Stage and verify the demo
+  build-image:
+    name: Build revision-bound canonical image
     runs-on: ubuntu-24.04
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     # A canonical image build on a cold Lake cache takes 28 to 30 minutes on
-    # the hosted runner and the browser acceptance follows it, so the budget
-    # leaves room for both; the cache below usually keeps it far shorter.
+    # the hosted runner, so retain the release-equivalent budget even though
+    # the immutable cache below usually keeps it far shorter.
     timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Install pinned Lean toolchain
-        uses: ./.github/actions/setup-lean
-
-      - name: Install image tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc=4:13.2.0-7ubuntu1 \
-            binutils=2.42-4ubuntu2.10 \
-            grub-common=2.12-1ubuntu7.3 \
-            grub-pc-bin=2.12-1ubuntu7.3 \
-            mtools=4.0.43-1build1 \
-            xorriso=1:1.5.6-1.1ubuntu3 \
-            qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 \
-            coreutils=9.4-3ubuntu6.3
-
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
-          node-version: '22'
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
-      - name: Build canonical image
+      - name: Build and bundle the canonical image
         run: |
           LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
             ./scripts/build-image.sh
+          pages_source=build/ci/pages-image-source
+          mkdir -p "$pages_source/build/boot"
+          image="leanos-$(cat VERSION)-x86_64.iso"
+          for artifact in \
+            "$image" \
+            corpus.tsv \
+            serial-protocol.sh \
+            serial-protocol.tsv \
+            SOURCE_REVISION \
+            TOOLCHAIN_PROFILE.json; do
+            test -s "build/boot/$artifact"
+            cp "build/boot/$artifact" "$pages_source/build/boot/"
+          done
+          ./scripts/image-bundle.sh create \
+            build/ci/leanos-pages-image.tar.gz "$pages_source"
 
       - name: Preserve image-build timing evidence
         if: always()
@@ -69,6 +71,44 @@ jobs:
           path: build/ci/image-build-phases.tsv
           if-no-files-found: error
           retention-days: 14
+
+      - name: Preserve revision-bound canonical image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-pages-image-${{ github.sha }}
+          path: |
+            build/ci/leanos-pages-image.tar.gz
+            build/ci/leanos-pages-image.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  build:
+    name: Stage and verify the demo
+    needs: build-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Download revision-bound canonical image
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: leanos-pages-image-${{ github.sha }}
+          path: build/ci/pages-image
+
+      - name: Verify revision-bound canonical image
+        run: |
+          ./scripts/image-bundle.sh verify \
+            build/ci/pages-image/leanos-pages-image.tar.gz \
+            "${{ github.sha }}"
+          test -s "build/boot/leanos-$(cat VERSION)-x86_64.iso"
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
 
       - name: Prepare pinned browser runtime
         run: ./scripts/prepare-browser-runtime.sh

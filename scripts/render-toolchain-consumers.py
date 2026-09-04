@@ -17,7 +17,12 @@ IMAGE_RE = re.compile(
     r"ghcr\.io/rudi-cilibrasi/leanos-ci@sha256:[0-9a-f]{64}$"
 )
 DIGEST_ENV_RE = re.compile(r"(?m)^(\s*LEANOS_CI_IMAGE_DIGEST:\s*)sha256:[0-9a-f]{64}$")
-WORKFLOWS = (Path(".github/workflows/ci.yml"), Path(".github/workflows/release.yml"))
+PAGES_WORKFLOW = Path(".github/workflows/pages.yml")
+WORKFLOWS = (
+    Path(".github/workflows/ci.yml"),
+    Path(".github/workflows/release.yml"),
+    PAGES_WORKFLOW,
+)
 CONTAINERFILE = Path("Containerfile.ci")
 PACKAGE_DOC = Path("docs/boot-image.md")
 PACKAGE_DOC_RE = re.compile(
@@ -49,6 +54,7 @@ REQUIRED_CONTAINER_JOBS = {
         "serial-graph-parity",
     },
     Path(".github/workflows/release.yml"): {"gate"},
+    PAGES_WORKFLOW: {"build-image"},
 }
 
 
@@ -161,6 +167,78 @@ def validate_workflow_containers(
             raise ValueError(f"{path}: job {job_name!r} has a stale canonical image")
 
 
+def named_steps(job: object, path: Path, job_name: str) -> dict[str, dict[str, object]]:
+    if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+        raise ValueError(f"{path}: job {job_name!r} has no steps")
+    result: dict[str, dict[str, object]] = {}
+    for step in job["steps"]:
+        if not isinstance(step, dict):
+            raise ValueError(f"{path}: job {job_name!r} has a malformed step")
+        name = step.get("name")
+        if isinstance(name, str):
+            if name in result:
+                raise ValueError(f"{path}: job {job_name!r} duplicates step {name!r}")
+            result[name] = step
+    return result
+
+
+def validate_pages_pipeline(root: Path) -> None:
+    path = root / PAGES_WORKFLOW
+    document = load_workflow(path)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise ValueError(f"{path}: jobs mapping is missing")
+    build_image = jobs.get("build-image")
+    browser_build = jobs.get("build")
+    if not isinstance(browser_build, dict) or browser_build.get("needs") != "build-image":
+        raise ValueError(f"{path}: browser build must require the canonical image job")
+
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            command = step.get("run")
+            if isinstance(command, str) and re.search(
+                r"(?<![A-Za-z0-9_./-])apt(?:-get)?\b", command
+            ):
+                raise ValueError(f"{path}: mutable apt command in job {job_name!r}")
+
+    image_steps = named_steps(build_image, path, "build-image")
+    browser_steps = named_steps(browser_build, path, "build")
+    create = image_steps.get("Build and bundle the canonical image", {}).get("run")
+    upload = image_steps.get("Preserve revision-bound canonical image", {})
+    download = browser_steps.get("Download revision-bound canonical image", {})
+    verify = browser_steps.get("Verify revision-bound canonical image", {}).get("run")
+    artifact_name = "leanos-pages-image-${{ github.sha }}"
+    if not isinstance(create, str) or "image-bundle.sh create" not in create:
+        raise ValueError(f"{path}: canonical image bundle creation is missing")
+    for artifact in (
+        "corpus.tsv",
+        "serial-protocol.sh",
+        "serial-protocol.tsv",
+        "SOURCE_REVISION",
+        "TOOLCHAIN_PROFILE.json",
+    ):
+        if artifact not in create:
+            raise ValueError(f"{path}: browser image bundle omits {artifact}")
+    if not str(upload.get("uses", "")).startswith("actions/upload-artifact@"):
+        raise ValueError(f"{path}: canonical image artifact upload is missing")
+    if not isinstance(upload.get("with"), dict) or upload["with"].get("name") != artifact_name:
+        raise ValueError(f"{path}: canonical image artifact upload name drifted")
+    if not str(download.get("uses", "")).startswith("actions/download-artifact@"):
+        raise ValueError(f"{path}: canonical image artifact download is missing")
+    if not isinstance(download.get("with"), dict) or download["with"].get("name") != artifact_name:
+        raise ValueError(f"{path}: canonical image artifact download name drifted")
+    if (
+        not isinstance(verify, str)
+        or "image-bundle.sh verify" not in verify
+        or "${{ github.sha }}" not in verify
+    ):
+        raise ValueError(f"{path}: revision-bound image verification is missing")
+
+
 def render(root: Path, check: bool) -> None:
     digest = canonical_digest(root)
     packages = canonical_apt_packages(root)
@@ -189,6 +267,7 @@ def render(root: Path, check: bool) -> None:
             + "; run scripts/render-toolchain-consumers.py"
         )
     validate_container_packages(root)
+    validate_pages_pipeline(root)
 
 
 def main() -> int:
