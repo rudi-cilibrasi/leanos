@@ -30,7 +30,7 @@ APT_BLOCK_RE = re.compile(
     r"\s+&& rm -rf /var/lib/apt/lists/\*"
 )
 APT_INSTALL_RE = re.compile(
-    r"(?:^RUN\s+|&&\s+)apt(?:-get)?\b(?:(?!&&|\|\||;).)*?\binstall\b",
+    r"(?<![A-Za-z0-9_./-])apt(?:-get)?\b(?:(?!&&|\|\||;).)*?\binstall\b",
     re.DOTALL | re.MULTILINE,
 )
 APT_PACKAGE_RE = re.compile(
