@@ -1,0 +1,16 @@
+@22/BOOT@ target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@22/ENTER@ subject=1 address-space=1 cpl=3 source=owned-context result=PASS
+@22/OFFER@ subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=6 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2118145 value=0 result=PASS
+@22/DISPATCH@ subject=2 address-space=2 source=authoritative-resumable-context control=4870913 value=0 result=PASS
+@22/ENTER@ subject=2 address-space=2 origin=cpl3 context=fresh result=PASS
+@22/SEALED-DENIAL@ subject=2 handle=393219 operation=send authorized=0 reason=not-installed state=unchanged control=4674305 value=0 result=PASS
+@22/ACCEPT@ subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 child=6 generation=6 handle=393219 sealed=0 installed=1 exactly-once=1 control=2184193 value=393219 result=PASS
+@22/DELEGATED-SEND@ subject=2 handle=393219 endpoint=3 payload0=41332 payload1=45428 right=send authorized=1 mailbox=filled control=4740353 value=0 result=PASS
+@22/EXCESS-RIGHT-DENIAL@ subject=2 handle=393219 operation=receive authorized=0 reason=rights state=unchanged mailbox=filled control=4805889 value=0 result=PASS
+@22/UNRELATED@ slots-a=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=delegated-message-only result=PASS
+@22/FINAL@ status=PASS offer=1 sealed-denied=1 receipt=1 exact-handle=1 delegated-send=1 excess-right-denied=1 unrelated=unchanged

@@ -193,6 +193,31 @@ def main() -> None:
     for name in declared:
         if not (ROOT / "scripts" / name).is_file():
             raise AssertionError(f"declared port-sites inventory is missing: {name}")
+
+    def missing_template(m):
+        m["scenarios"]["blocking-ipc"]["expectations"] = "scripts/expectations/absent.transcript"
+
+    view_rejects("expectations", missing_template, "scenario blocking-ipc expectation template is missing: scripts/expectations/absent.transcript")
+
+    def bad_template(m):
+        m["scenarios"]["blocking-ipc"]["expectations"] = "expectations.txt"
+
+    view_rejects("expectations", bad_template, "scenario blocking-ipc names a malformed expectation template 'expectations.txt'")
+
+    def misnamed_template(m):
+        m["scenarios"]["preemption"]["expectations"] = "scripts/expectations/blocking-ipc.transcript"
+
+    view_rejects("expectations", misnamed_template, "must be named after its boot scenario 'preemption'")
+
+    def non_boot_template(m):
+        m["scenarios"]["double-fault"]["expectations"] = "scripts/expectations/blocking-ipc.transcript"
+
+    view_rejects("expectations", non_boot_template, "has an expectation template but is not a boot-runner row")
+
+    def unlisted_template(m):
+        del m["scenarios"]["blocking-ipc"]["expectations"]
+
+    view_rejects("expectations", unlisted_template, "boot-runner scenario blocking-ipc has no expectation template")
     print("Scenario manifest build query fixtures passed")
 
 

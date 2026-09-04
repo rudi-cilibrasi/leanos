@@ -1,0 +1,13 @@
+@18/BOOT@ target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@18/ENTER@ subject=1 address-space=1 cpl=3 resources=owned
+@18/BREAKPOINT-ENTRY@ vector=3 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=post-instruction subject=1 address-space=1 result=PASS
+@18/BREAKPOINT-TERMINATE@ subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
+@18/BREAKPOINT-DISPATCH@ subject=2 address-space=2 source=lean-scheduler context=owned reason=breakpoint result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@18/BREAKPOINT-PEER@ subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS
+@18/FINAL@ status=PASS faulting=terminated survivor=2 vector=3 reason=breakpoint kernel-origin=fail-stop

@@ -87,6 +87,7 @@ record_check_phase hosted-boundary-and-boot-contracts
 ./scripts/test-run-malformed-handoff.sh
 
 ./scripts/test-run-image.sh
+./scripts/check-expectation-templates.sh
 
 ./scripts/test-browser-boot.sh
 

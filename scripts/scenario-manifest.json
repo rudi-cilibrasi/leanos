@@ -1348,7 +1348,8 @@
         "iso",
         "elf",
         "map"
-      ]
+      ],
+      "expectations": "scripts/expectations/blocking-ipc.transcript"
     },
     "multivcpu-rejection": {},
     "assigned-edu-inventory": {},
@@ -1358,7 +1359,8 @@
     "entry-adversarial": {
       "release_artifacts": [
         "serial-log"
-      ]
+      ],
+      "expectations": "scripts/expectations/entry-adversarial.transcript"
     },
     "preemption": {
       "release_artifacts": [
@@ -1366,7 +1368,8 @@
         "elf",
         "map",
         "serial-log"
-      ]
+      ],
+      "expectations": "scripts/expectations/preemption.transcript"
     },
     "frame-budget": {
       "negative_evidence": {
@@ -1374,7 +1377,8 @@
         "count": 16,
         "failure_class": "serial-protocol",
         "driver": "scripts/test-run-frame-budget.sh"
-      }
+      },
+      "expectations": "scripts/expectations/frame-budget.transcript"
     },
     "capability-transfer": {
       "negative_evidence": {
@@ -1382,7 +1386,8 @@
         "count": 13,
         "failure_class": "classified",
         "driver": "scripts/test-run-capability-transfer.sh"
-      }
+      },
+      "expectations": "scripts/expectations/capability-transfer.transcript"
     },
     "inflight-revocation": {
       "negative_evidence": {
@@ -1390,7 +1395,8 @@
         "count": 16,
         "failure_class": "classified",
         "driver": "scripts/test-run-inflight-revocation.sh"
-      }
+      },
+      "expectations": "scripts/expectations/inflight-revocation.transcript"
     },
     "fault-containment": {
       "release_artifacts": [
@@ -1410,7 +1416,8 @@
         "page-plan",
         "disassembly",
         "policy-report"
-      ]
+      ],
+      "expectations": "scripts/expectations/fault-containment.transcript"
     },
     "fault-readonly-write": {
       "release_artifacts": [
@@ -1430,7 +1437,8 @@
         "page-plan",
         "disassembly",
         "policy-report"
-      ]
+      ],
+      "expectations": "scripts/expectations/fault-readonly-write.transcript"
     },
     "fault-nx-execute": {
       "release_artifacts": [
@@ -1450,7 +1458,8 @@
         "page-plan",
         "disassembly",
         "policy-report"
-      ]
+      ],
+      "expectations": "scripts/expectations/fault-nx-execute.transcript"
     },
     "fault-reserved-bit": {
       "family": "fault-integrity",
@@ -1496,16 +1505,28 @@
         "policy-report"
       ]
     },
-    "extended-state-denial": {},
-    "extended-state-denial-mmx": {},
-    "extended-state-denial-sse": {},
-    "extended-state-denial-sse2": {},
-    "extended-state-denial-avx": {},
+    "extended-state-denial": {
+      "expectations": "scripts/expectations/extended-state.transcript"
+    },
+    "extended-state-denial-mmx": {
+      "expectations": "scripts/expectations/extended-state-mmx.transcript"
+    },
+    "extended-state-denial-sse": {
+      "expectations": "scripts/expectations/extended-state-sse.transcript"
+    },
+    "extended-state-denial-sse2": {
+      "expectations": "scripts/expectations/extended-state-sse2.transcript"
+    },
+    "extended-state-denial-avx": {
+      "expectations": "scripts/expectations/extended-state-avx.transcript"
+    },
     "fast-entry-syscall": {
-      "family": "fast-entry"
+      "family": "fast-entry",
+      "expectations": "scripts/expectations/fast-entry-syscall.transcript"
     },
     "fast-entry-sysenter": {
-      "family": "fast-entry"
+      "family": "fast-entry",
+      "expectations": "scripts/expectations/fast-entry-sysenter.transcript"
     },
     "extended-state-peer-pke": {},
     "return-kernel-selector": {},
@@ -1581,12 +1602,24 @@
         "serial-log"
       ]
     },
-    "direct-port-serial": {},
-    "direct-port-debug": {},
-    "direct-port-in": {},
-    "direct-port-pic": {},
-    "divide-error": {},
-    "breakpoint": {},
+    "direct-port-serial": {
+      "expectations": "scripts/expectations/direct-port-serial.transcript"
+    },
+    "direct-port-debug": {
+      "expectations": "scripts/expectations/direct-port-debug.transcript"
+    },
+    "direct-port-in": {
+      "expectations": "scripts/expectations/direct-port-in.transcript"
+    },
+    "direct-port-pic": {
+      "expectations": "scripts/expectations/direct-port-pic.transcript"
+    },
+    "divide-error": {
+      "expectations": "scripts/expectations/divide-error.transcript"
+    },
+    "breakpoint": {
+      "expectations": "scripts/expectations/breakpoint.transcript"
+    },
     "stale-translation": {
       "reproducibility_artifacts": [
         "iso",
@@ -1595,7 +1628,8 @@
         "page-plan",
         "disassembly",
         "policy-report"
-      ]
+      ],
+      "expectations": "scripts/expectations/stale-translation-denial.transcript"
     }
   }
 }

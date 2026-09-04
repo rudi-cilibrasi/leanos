@@ -1,0 +1,25 @@
+@10/BOOT@ target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=enter subject=2 address-space=2 cpl=3 endpoint=10
+@9/CAPREUSE@ event=initial subject=2 handle=131072 endpoint=10 accepted=1
+@9/CAPREUSE@ event=clear slot=0 old-generation=2 result=PASS
+@9/CAPREUSE@ event=install slot=0 generation=3 endpoint=11 result=PASS
+@9/CAPREUSE@ event=stale-replay subject=2 handle=131072 rejected=1
+@9/CAPREUSE@ event=unchanged endpoint=11 mailbox=empty result=PASS
+@9/CAPREUSE@ event=fresh subject=2 handle=196608 endpoint=11 accepted=1
+@9/CAPREUSE@ status=PASS stale-effects=0 fresh-effects=1
+@10/IPC@ event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1
+@11/ENTRY-ADVERSARIAL@ attempted-vector=14 delivered=13 privileged-handler=unreached result=PASS
+@11/ENTRY-ADVERSARIAL@ attempted-vector=32 delivered=13 privileged-handler=unreached result=PASS
+@16/DIRECT-PORT-DENIAL@ subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS
+@16/DIRECT-PORT-TERMINATE@ subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
+@16/DIRECT-PORT-DISPATCH@ subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@16/DIRECT-PORT-PEER@ subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS
+@16/FINAL@ status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0

@@ -1,0 +1,10 @@
+@13/BOOT@ target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@13/EXTENDED-STATE@ cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS
+@common:controls@
+@13/EXTENDED-STATE@ event=enter subject=1 address-space=1 instruction=avx expected-vector=6
+@13/EXTENDED-STATE@ event=deny subject=1 vector=6 instruction=avx bank-write=prevented cleanup=complete peer=2
+@13/EXTENDED-STATE@ event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved
+@13/FINAL@ status=PASS denied=1 resumed-a=0 peer-ran=1

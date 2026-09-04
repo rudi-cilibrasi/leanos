@@ -1,0 +1,11 @@
+@14/BOOT@ target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@14/FAST-ENTRY@ cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS
+@13/EXTENDED-STATE@ cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS
+@common:controls@
+@14/FAST-ENTRY@ event=enter subject=1 address-space=1 instruction=sysenter expected-vector=6
+@14/FAST-ENTRY@ event=deny subject=1 vector=6 instruction=sysenter alternate-target=unreached cleanup=complete peer=2
+@14/FAST-ENTRY@ event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved
+@14/FINAL@ status=PASS denied=1 resumed-a=0 peer-ran=1 alternate-target=0

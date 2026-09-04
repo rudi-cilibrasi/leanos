@@ -52,8 +52,10 @@ extends the boot evidence with the ring-3 boundary described in
 [ADR 0003](adr/0003-ring3-syscall-fault-slice.md). It requires, in order, a
 CPL3 record, accepted and rejected syscall records, the expected vector-14
 classification, kernel resumption, and final success. The complete exact trace
-is encoded once in `scripts/run-image.sh`; reordered, missing, or extra records
-fail comparison. Version 1 below documents the preceding Phase 1 protocol.
+of each boot scenario is its template in `scripts/expectations/`, rendered by
+`scripts/run-image.sh` through the generated serial vocabulary; reordered,
+missing, or extra records fail comparison. Version 1 below documents the
+preceding Phase 1 protocol.
 
 Version 1 is exactly four newline-terminated ASCII records:
 
@@ -294,6 +296,28 @@ against; images that share a code layout share one inventory
 probes and the adversarial-entry image), the query tool rejects a missing or
 malformed inventory name, and the manifest test rejects two inventories with
 identical contents so a duplicate cannot reappear.
+
+Each boot-runner scenario also names its `expectations`: the template
+`scripts/expectations/<boot scenario>.transcript` that `scripts/run-image.sh`
+renders into the exact expected serial transcript. A template line is one
+record, written as `@<family>/<TAG>@` followed by the record body, so the
+serial vocabulary is spelled once in the generated `serial-protocol.sh` and
+never by hand in a template; `@var:<name>@` substitutes one of the few values
+the runner learns from the built image or the log (the frame-budget physical
+frames, the fault-containment page, leaf, and address, and the
+stale-translation CR3, RIP, and RSP), and the four markers `@common:prefix@`,
+`@common:oracle@`, `@common:pre-cpl3@`, and `@common:controls@` expand to the
+segments every boot scenario shares, which `scripts/expectation-template.sh`
+spells once. The query tool's `expectations` view rejects a template that is
+missing, misnamed, malformed, shared, or attached to a scenario that is not a
+boot-runner row, and it rejects a boot-runner row without a template;
+`scripts/check-expectation-templates.sh` renders every listed template without
+QEMU and rejects an unresolved placeholder, an unknown record or variable, a
+template that does not open with its BOOT record, or one whose common
+segments are missing, duplicated, or out of protocol order. The runner itself
+fails closed with `failure_class=runner-template` when a scenario has no
+template. Adding a boot scenario is therefore a matrix row, a manifest entry
+with its template, and the kernel fixture; the runner gains no new branch.
 
 `EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
 matrix and tool-inventory hashes, QEMU version and exact command, runner result,

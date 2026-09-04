@@ -258,6 +258,57 @@ def extended_state_policy_rows(manifest: dict) -> list[dict[str, str]]:
     return rows
 
 
+TEMPLATE_PATH = re.compile(r"^scripts/expectations/[a-z0-9-]+\.transcript$")
+
+
+DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
+
+
+def matrix_boot_scenarios(path: Path = DEFAULT_MATRIX) -> dict[str, str]:
+    """Matrix id -> boot scenario name for the rows the boot runner drives."""
+    rows = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) >= 8 and fields[1] == "boot":
+            rows[fields[0]] = fields[7]
+    return rows
+
+
+def expectation_rows(manifest: dict) -> list[dict[str, str]]:
+    """One row per scenario whose expected serial transcript is a template
+    file: the runner renders scripts/expectations/<boot scenario>.transcript
+    through the generated serial vocabulary instead of a hand-written
+    branch, so the template must carry the boot scenario's name."""
+    boot_scenarios = matrix_boot_scenarios()
+    rows = []
+    for scenario_id, entry in manifest.get("scenarios", {}).items():
+        template = entry.get("expectations")
+        if template is None:
+            continue
+        if not isinstance(template, str) or not TEMPLATE_PATH.match(template):
+            raise ManifestError(f"scenario {scenario_id} names a malformed expectation template {template!r}")
+        if not (ROOT / template).is_file():
+            raise ManifestError(f"scenario {scenario_id} expectation template is missing: {template}")
+        boot_scenario = boot_scenarios.get(scenario_id)
+        if boot_scenario is None:
+            raise ManifestError(f"scenario {scenario_id} has an expectation template but is not a boot-runner row")
+        if template != f"scripts/expectations/{boot_scenario}.transcript":
+            raise ManifestError(
+                f"scenario {scenario_id} expectation template must be named after its boot scenario {boot_scenario!r}"
+            )
+        rows.append({"scenario": scenario_id, "boot_scenario": boot_scenario, "template": template})
+    templates = [row["template"] for row in rows]
+    if len(templates) != len(set(templates)):
+        raise ManifestError("two scenarios share one expectation template")
+    covered = {row["scenario"] for row in rows}
+    for scenario_id in sorted(boot_scenarios):
+        if scenario_id not in covered:
+            raise ManifestError(f"boot-runner scenario {scenario_id} has no expectation template")
+    return rows
+
+
 COLUMNS = ("stem", "name", "boot", "kernel", "page_plan", "final_link")
 PACKAGED_COLUMNS = (
     "stem", "iso", "iso_root", "grub", "policy_key", "policy_env_name", "policy_env_value",
@@ -277,6 +328,8 @@ def main() -> int:
     sub.add_parser("disassemblies", help="final-ELF disassembly outputs")
     sub.add_parser("entry-policies", help="entry-policy checks queued per final ELF")
     sub.add_parser("extended-state-policies", help="extended-state policy runs per final ELF")
+    expectations = sub.add_parser("expectations", help="scenarios whose expected transcript is a template")
+    expectations.add_argument("scenario", nargs="?")
     args = parser.parse_args()
     try:
         manifest = load(args.manifest)
@@ -301,9 +354,15 @@ def main() -> int:
         elif args.operation == "entry-policies":
             for row in entry_policy_rows(manifest):
                 print("\t".join(row[c] for c in ("image", "key", "report", "env_name", "env_value")))
-        else:
+        elif args.operation == "extended-state-policies":
             for row in extended_state_policy_rows(manifest):
                 print(f"{row['image']}\t{row['variant']}\t{row['report']}")
+        else:
+            rows = expectation_rows(manifest)
+            if args.scenario is not None:
+                rows = [row for row in rows if row["scenario"] == args.scenario]
+            for row in rows:
+                print(f"{row['scenario']}\t{row['boot_scenario']}\t{row['template']}")
     except ManifestError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
