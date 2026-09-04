@@ -103,7 +103,15 @@ def packaged_rows(manifest: dict) -> list[dict[str, str]]:
             "policy_key": "-",
             "policy_env_name": "-",
             "policy_env_value": "-",
+            "port_sites": "-",
         }
+        port_sites = entry.get("port_sites")
+        if port_sites is not None:
+            if not re.match(r"^direct-port-sites(-[a-z0-9-]+)?\.tsv$", str(port_sites)):
+                raise ManifestError(f"packaged image {stem} names a malformed port-sites inventory {port_sites!r}")
+            if not (ROOT / "scripts" / port_sites).is_file():
+                raise ManifestError(f"packaged image {stem} port-sites inventory is missing: {port_sites}")
+            row["port_sites"] = port_sites
         policy = entry.get("policy")
         if policy is not None:
             if not isinstance(policy, dict) or not NAME.match(str(policy.get("key", ""))):
@@ -253,6 +261,7 @@ def extended_state_policy_rows(manifest: dict) -> list[dict[str, str]]:
 COLUMNS = ("stem", "name", "boot", "kernel", "page_plan", "final_link")
 PACKAGED_COLUMNS = (
     "stem", "iso", "iso_root", "grub", "policy_key", "policy_env_name", "policy_env_value",
+    "port_sites",
 )
 
 

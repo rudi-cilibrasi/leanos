@@ -860,64 +860,74 @@
         "grub": "boot/grub-double-fault.cfg",
         "policy": {
           "key": "entry-stack-overflow"
-        }
+        },
+        "port_sites": "direct-port-sites-entry-stack-overflow.tsv"
       },
       "leanos-entry-adversarial": {
         "iso": "leanos-@VERSION@-x86_64-entry-adversarial.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "entry-adversarial"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-nmi": {
         "iso": "leanos-@VERSION@-x86_64-nmi.iso",
-        "grub": "boot/grub.cfg"
+        "grub": "boot/grub.cfg",
+        "port_sites": "direct-port-sites-nmi.tsv"
       },
       "leanos-nmi-cpl3": {
         "iso": "leanos-@VERSION@-x86_64-nmi-cpl3.iso",
-        "grub": "boot/grub-nmi-cpl3.cfg"
+        "grub": "boot/grub-nmi-cpl3.cfg",
+        "port_sites": "direct-port-sites-nmi.tsv"
       },
       "leanos-bootstrap32-ud": {
         "iso": "leanos-@VERSION@-x86_64-bootstrap32-ud.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "bootstrap32-ud"
-        }
+        },
+        "port_sites": "direct-port-sites-bootstrap32-ud.tsv"
       },
       "leanos-bootstrap64-nmi": {
         "iso": "leanos-@VERSION@-x86_64-bootstrap64-nmi.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "bootstrap64-nmi"
-        }
+        },
+        "port_sites": "direct-port-sites-bootstrap64-nmi.tsv"
       },
       "leanos-direct-port-serial": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-serial.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-serial"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-direct-port-debug": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-debug.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-debug"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-direct-port-in": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-in.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-in"
-        }
+        },
+        "port_sites": "direct-port-sites-direct-port-in.tsv"
       },
       "leanos-direct-port-pic": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-pic.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-pic"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-divide-error": {
         "iso": "leanos-@VERSION@-x86_64-divide-error.iso",

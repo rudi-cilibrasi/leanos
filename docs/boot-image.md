@@ -287,7 +287,13 @@ unknown check kind, a convergence without graph targets or with a non-graph
 target, a duplicated final plan or output, a duplicated policy key, and a
 malformed variant, so the bespoke hand-linked double-fault family and the
 tier-dependent fault-probe validation are the only per-image steps the build
-script still spells out.
+script still spells out. A packaged image may also name its `port_sites`
+inventory, the reviewed final-ELF port-I/O site list the build checks it
+against; images that share a code layout share one inventory
+(`scripts/direct-port-sites-user-probe.tsv` serves the three direct-port
+probes and the adversarial-entry image), the query tool rejects a missing or
+malformed inventory name, and the manifest test rejects two inventories with
+identical contents so a duplicate cannot reappear.
 
 `EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
 matrix and tool-inventory hashes, QEMU version and exact command, runner result,

@@ -170,6 +170,29 @@ def main() -> None:
         m["build"]["extended_state_policies"][0]["variant"] = "x-87"
 
     view_rejects("extended-state-policies", bad_variant, "has a malformed variant or report")
+
+    def missing_port_sites(m):
+        m["build"]["packaged_images"]["leanos-nmi"]["port_sites"] = "direct-port-sites-absent.tsv"
+
+    expect_rejection(mutated(missing_port_sites), "packaged image leanos-nmi port-sites inventory is missing: direct-port-sites-absent.tsv")
+
+    def bad_port_sites(m):
+        m["build"]["packaged_images"]["leanos-nmi"]["port_sites"] = "ports.tsv"
+
+    expect_rejection(mutated(bad_port_sites), "packaged image leanos-nmi names a malformed port-sites inventory 'ports.tsv'")
+
+    import hashlib
+    inventories = sorted((ROOT / "scripts").glob("direct-port-sites*.tsv"))
+    digests = {}
+    for inventory in inventories:
+        digests.setdefault(hashlib.sha256(inventory.read_bytes()).hexdigest(), []).append(inventory.name)
+    duplicates = [names for names in digests.values() if len(names) > 1]
+    if duplicates:
+        raise AssertionError(f"byte-identical port-sites inventories must be shared: {duplicates}")
+    declared = {entry.get("port_sites") for entry in manifest["build"]["packaged_images"].values()} - {None}
+    for name in declared:
+        if not (ROOT / "scripts" / name).is_file():
+            raise AssertionError(f"declared port-sites inventory is missing: {name}")
     print("Scenario manifest build query fixtures passed")
 
 

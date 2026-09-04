@@ -452,6 +452,10 @@ mapfile -t packaged_images < <(
   exit 1
 }
 mapfile -t page_plan_stubs < <(./scripts/scenario-manifest.py page-plans)
+declare -A port_sites_lookup=()
+while IFS=$'\t' read -r packaged_stem _ _ _ _ _ _ packaged_port_sites; do
+  [[ "$packaged_port_sites" == - ]] || port_sites_lookup["$packaged_stem"]="$packaged_port_sites"
+done < <(printf '%s\n' "${packaged_images[@]}")
 if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   echo "error: LEANOS_SOURCE_REVISION must be a full lowercase Git commit" >&2
   exit 1
@@ -1512,40 +1516,11 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     continue
   fi
   direct_port_seen["$elf_path"]=1
-  manifest="scripts/direct-port-sites.tsv"
+  manifest="scripts/${port_sites_lookup[${elf_name%.elf}]:-direct-port-sites.tsv}"
   direct_port_args=()
-  case "$elf_name" in
-    leanos-entry-adversarial.elf)
-      manifest="scripts/direct-port-sites-entry-adversarial.tsv"
-      ;;
-    leanos-entry-stack-overflow.elf)
-      manifest="scripts/direct-port-sites-entry-stack-overflow.tsv"
-      ;;
-    leanos-nmi.elf|leanos-nmi-cpl3.elf)
-      manifest="scripts/direct-port-sites-nmi.tsv"
-      ;;
-    leanos-bootstrap32-ud.elf)
-      manifest="scripts/direct-port-sites-bootstrap32-ud.tsv"
-      ;;
-    leanos-bootstrap64-nmi.elf)
-      manifest="scripts/direct-port-sites-bootstrap64-nmi.tsv"
-      ;;
-    leanos-direct-port-serial.elf)
-      manifest="scripts/direct-port-sites-direct-port-serial.tsv"
-      ;;
-    leanos-direct-port-debug.elf)
-      manifest="scripts/direct-port-sites-direct-port-debug.tsv"
-      ;;
-    leanos-direct-port-in.elf)
-      manifest="scripts/direct-port-sites-direct-port-in.tsv"
-      ;;
-    leanos-direct-port-pic.elf)
-      manifest="scripts/direct-port-sites-direct-port-pic.tsv"
-      ;;
-    leanos-assigned-edu.elf)
-      direct_port_args+=(--assigned-edu)
-      ;;
-  esac
+  if [[ "$elf_name" == leanos-assigned-edu.elf ]]; then
+    direct_port_args+=(--assigned-edu)
+  fi
   direct_port_log="$direct_port_log_dir/$elf_name.log"
   direct_port_logs+=("$direct_port_log")
   assigned_edu=0
@@ -1585,7 +1560,7 @@ if [[ "$evidence_tier" == all ]]; then
   ./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
     | tee "$build/direct-port-sites-fixtures.log"
   ./scripts/test-direct-port-sites.sh "$build/leanos-entry-adversarial.elf" \
-    scripts/direct-port-sites-entry-adversarial.tsv \
+    "scripts/${port_sites_lookup[leanos-entry-adversarial]}" \
     | tee -a "$build/direct-port-sites-fixtures.log"
 fi
 
