@@ -200,7 +200,7 @@ grep -Eq 'source .*q35-platform\.sh' scripts/run-dma-unknown-device.sh &&
 grep -Eq 'source .*q35-platform\.sh' scripts/run-assigned-edu.sh &&
   grep -Eq 'leanos_q35_assigned_edu_command command ' \
     scripts/run-assigned-edu.sh &&
-  grep -Fq 'VTD-FAULT requester=16 domain=0 generation=1 direction=read' \
+  grep -Fq '${LEANOS_SERIAL_21_VTD_FAULT} requester=16 domain=0 generation=1 direction=read' \
     scripts/run-assigned-edu.sh || {
   echo "error: assigned-EDU positive bypasses its versioned platform builder" >&2
   exit 1

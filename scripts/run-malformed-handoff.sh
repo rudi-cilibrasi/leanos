@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 source "$repo_root/scripts/q35-platform.sh"
 
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
@@ -16,7 +19,7 @@ reason="${LEANOS_HANDOFF_REJECTION_REASON:-decode-rejected}"
   echo "error: handoff rejection reason must be a lowercase token" >&2
   exit 1
 }
-terminal="LEANOS/7 BOOTALLOC status=FAIL reason=$reason"
+terminal="${LEANOS_SERIAL_7_BOOTALLOC} status=FAIL reason=$reason"
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -59,13 +62,13 @@ if [[ $status -ne 35 ]]; then
   echo "failure_class=qemu-error: QEMU exit status $status (expected 35)" >&2
   exit 1
 fi
-mapfile -t allocation_records < <(grep '^LEANOS/7 ' "$log" || true)
+mapfile -t allocation_records < <(grep "^${LEANOS_SERIAL_FAMILY_7} " "$log" || true)
 if [[ ${#allocation_records[@]} -ne 1 ]] ||
    [[ "${allocation_records[0]:-}" != "$terminal" ]]; then
   echo "failure_class=malformed-handoff: exact decoder rejection not observed" >&2
   exit 1
 fi
-if grep -Eq '^LEANOS/7 (HANDOFF|MAP|ALLOC|SCRUB|PUBLISH)|^LEANOS/[0-9]+ FINAL .*status=PASS' \
+if grep -Eq "^${LEANOS_SERIAL_FAMILY_7} (HANDOFF|MAP|ALLOC|SCRUB|PUBLISH)|^LEANOS/[0-9]+ FINAL .*status=PASS" \
     "$log"; then
   echo "failure_class=authority-leak: rejected handoff exposed boot authority" >&2
   exit 1

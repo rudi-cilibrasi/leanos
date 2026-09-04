@@ -755,6 +755,7 @@ compute_graph_make_input_signature() {
       done
     find "$build" -maxdepth 1 -type f \
       \( -name '*.c' -o -name 'composite-tokens.h' -o -name 'boundary-abi.h' -o \
+      -name 'serial-protocol.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
       while IFS= read -r -d '' input; do
@@ -1552,10 +1553,12 @@ if [[ "$evidence_tier" == all ]]; then
   cp "$build/nmi.disassembly.txt" "$build/nmi-cpl3.disassembly.txt"
 fi
 if selected_final_enabled "$build/leanos-bootstrap32-ud.elf"; then
+  LEANOS_SERIAL_PROTOCOL_TSV="$build/serial-protocol.tsv" \
   ./scripts/check-early-probe-policy.py "$build/leanos-bootstrap32-ud.elf" \
     bootstrap32-ud | tee "$build/bootstrap32-ud-early-probe-policy.txt"
 fi
 if selected_final_enabled "$build/leanos-bootstrap64-nmi.elf"; then
+  LEANOS_SERIAL_PROTOCOL_TSV="$build/serial-protocol.tsv" \
   ./scripts/check-early-probe-policy.py "$build/leanos-bootstrap64-nmi.elf" \
     bootstrap64-nmi | tee "$build/bootstrap64-nmi-early-probe-policy.txt"
 fi

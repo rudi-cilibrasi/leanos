@@ -183,6 +183,13 @@ jobs:
             build/hosted-generated-sources/oracle/CompositeDispatcher.c
             include/leanos/composite-dispatcher.h
             build/oracle/corpus.tsv
+            build/oracle/vocabulary.tsv
+            build/oracle/composite-tokens.h
+            build/oracle/boundary-abi.tsv
+            build/oracle/boundary-abi.h
+            build/oracle/serial-protocol.tsv
+            build/oracle/serial-protocol.h
+            build/oracle/serial-protocol.sh
             build/oracle/host-results.txt
             build/oracle/host-*.txt
             build/oracle/negative-fixtures.tsv
@@ -251,6 +258,13 @@ jobs:
             build/hosted-generated-sources/oracle/CompositeDispatcher.c
             include/leanos/composite-dispatcher.h
             build/oracle/corpus.tsv
+            build/oracle/vocabulary.tsv
+            build/oracle/composite-tokens.h
+            build/oracle/boundary-abi.tsv
+            build/oracle/boundary-abi.h
+            build/oracle/serial-protocol.tsv
+            build/oracle/serial-protocol.h
+            build/oracle/serial-protocol.sh
             build/oracle/host-results.txt
             build/oracle/host-*.txt
             build/oracle/negative-fixtures.tsv

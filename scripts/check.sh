@@ -38,6 +38,7 @@ lake build LeanOS.NegativeFixtures
 lake build leanos-boot-plan
 lake build leanos-vtd-plan
 ./scripts/test-generate-boundary-vocabulary.sh
+./scripts/test-generate-serial-protocol.sh
 
 ./scripts/check-security-claims.sh
 

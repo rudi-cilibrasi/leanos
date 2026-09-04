@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -11,7 +14,7 @@ version="${LEANOS_VERSION:-0.1.0}"
 image="${1:-build/boot/leanos-${version}-x86_64.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/dma-unknown-device.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/3 FINAL status=FAIL reason=dma-inventory'
+terminal="${LEANOS_SERIAL_3_FINAL} status=FAIL reason=dma-inventory"
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -63,8 +66,8 @@ if [[ $status -ne 35 ]]; then
   exit 1
 fi
 if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]] ||
-    [[ "$(grep -c '^LEANOS/3 FINAL ' "$log")" -ne 1 ]] ||
-    grep -Eq '^LEANOS/15 DMA .*result=PASS|^LEANOS/5 ENTRY|status=PASS' "$log"; then
+    [[ "$(grep -c "^${LEANOS_SERIAL_3_FINAL} " "$log")" -ne 1 ]] ||
+    grep -Eq "^${LEANOS_SERIAL_15_DMA} .*result=PASS|^${LEANOS_SERIAL_5_ENTRY}|status=PASS" "$log"; then
   echo "failure_class=controlled-negative: exact pre-CPL3 DMA inventory rejection not observed" >&2
   exit 1
 fi

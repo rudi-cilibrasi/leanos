@@ -57,6 +57,7 @@
     "LeanOS/ScheduledObservation.lean",
     "LeanOS/Scheduler.lean",
     "LeanOS/SecurityClaims.lean",
+    "LeanOS/SerialProtocol.lean",
     "LeanOS/StaleTranslation.lean",
     "LeanOS/SubjectLifecycle.lean",
     "LeanOS/Syscall.lean",

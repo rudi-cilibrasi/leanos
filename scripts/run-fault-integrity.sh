@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 source "$repo_root/scripts/q35-platform.sh"
 
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
@@ -107,19 +110,19 @@ if [[ $status -ne 37 ]]; then
   exit 1
 fi
 
-terminal_pattern="^LEANOS/14 PF-TERMINAL codec=1 case=${probe} vector=14 error=${expected_error} access=${expected_access} cr2=${expected_cr2} rip=${expected_rip} expected-leaf=${expected_leaf} live-leaf=${expected_live_leaf} authorization=${expected_authorization} route=${expected_route} halt=absorbing containment=0 cleanup=0 dispatch=0 return=none$"
-mapfile -t terminal_lines < <(grep '^LEANOS/14 PF-TERMINAL ' "$log" || true)
+terminal_pattern="^${LEANOS_SERIAL_14_PF_TERMINAL} codec=1 case=${probe} vector=14 error=${expected_error} access=${expected_access} cr2=${expected_cr2} rip=${expected_rip} expected-leaf=${expected_leaf} live-leaf=${expected_live_leaf} authorization=${expected_authorization} route=${expected_route} halt=absorbing containment=0 cleanup=0 dispatch=0 return=none$"
+mapfile -t terminal_lines < <(grep "^${LEANOS_SERIAL_14_PF_TERMINAL} " "$log" || true)
 if [[ ${#terminal_lines[@]} -ne 1 ]] ||
    [[ ! "${terminal_lines[0]}" =~ $terminal_pattern ]]; then
   echo "failure_class=terminal-record: exact generated-policy fatal record not observed" >&2
   exit 1
 fi
-if grep -Eq '^LEANOS/14 (PF-SNAPSHOT|FAULT-ENTRY|TERMINATE|DISPATCH|PEER|FINAL) |^LEANOS/[0-9]+ FINAL ' "$log"; then
+if grep -Eq "^${LEANOS_SERIAL_FAMILY_14} (PF-SNAPSHOT|FAULT-ENTRY|TERMINATE|DISPATCH|PEER|FINAL) |^LEANOS/[0-9]+ FINAL " "$log"; then
   echo "failure_class=forbidden-record: containment, cleanup, B-dispatch, user-return, or normal success observed" >&2
   exit 1
 fi
-terminal_line_number="$(grep -n '^LEANOS/14 PF-TERMINAL ' "$log" | cut -d: -f1)"
-if tail -n "+$((terminal_line_number + 1))" "$log" | grep -Eq '^LEANOS/'; then
+terminal_line_number="$(grep -n "^${LEANOS_SERIAL_14_PF_TERMINAL} " "$log" | cut -d: -f1)"
+if tail -n "+$((terminal_line_number + 1))" "$log" | grep -Eq "^LEANOS/"; then
   echo "failure_class=post-terminal: protocol record observed after absorbing fatal result" >&2
   exit 1
 fi

@@ -995,13 +995,27 @@ def verify_hash(record: dict[str, object], label: str) -> None:
         raise EvidenceError(f"{label} hash differs: {path_value}")
 
 
+def serial_record(family: str, tag: str) -> str:
+    """The exact guest line prefix of a versioned serial record, read from the
+    generated vocabulary (LEANOS_SERIAL_PROTOCOL_TSV or the canonical build
+    directory) so this runner never spells a record identity itself."""
+    path = Path(
+        os.environ.get("LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv")
+    )
+    for line in path.read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t")
+        if fields[0] == "record" and fields[1] == family and fields[2] == tag:
+            return fields[4]
+    raise EvidenceError(f"serial record {family}/{tag} is not in {path}")
+
+
 def verify_iotlb_oracle_rows(path: Path, scenario_id: str) -> None:
     """Require the canonical QEMU boot to retain every bounded IOTLB row."""
     if scenario_id != "blocking-ipc":
         return
     serial = path.read_text(encoding="utf-8")
     for row in REQUIRED_IOTLB_ORACLE_ROWS:
-        marker = f"LEANOS/3 ORACLE id={row} result=PASS"
+        marker = f"{serial_record('3', 'ORACLE')} id={row} result=PASS"
         if serial.count(marker) != 1:
             raise EvidenceError(
                 f"scenario {scenario_id} must retain exactly one passing {row} row"

@@ -4,22 +4,43 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 import re
+
+
+def load_serial_protocol(path):
+    """Map "<family>/<TAG>" to the exact guest line prefix from the generated
+    serial vocabulary; the checker never spells a record identity itself."""
+    records = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t")
+        if fields[0] == "record":
+            records[f"{fields[1]}/{fields[2]}"] = fields[4]
+        elif fields[0] == "family":
+            records[fields[1]] = fields[3]
+    if not records:
+        raise SystemExit(f"error: empty serial protocol vocabulary: {path}")
+    return records
+
+
+SERIAL = load_serial_protocol(
+    os.environ.get("LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv")
+)
 
 
 TOPOLOGY = "0001000800020002"
 BUS_MASTER = 1 << 2
 COMMAND_MASK = 0x7FF
 FUNCTION_RE = re.compile(
-    rf"^LEANOS/15 DMA-FUNCTION manifest=1 topology={TOPOLOGY} "
+    "^" + re.escape(SERIAL["15/DMA-FUNCTION"]) + rf" manifest=1 topology={TOPOLOGY} "
     r"bdf=(\d+):(\d+)\.(\d+) present=([01]) vendor=(\d+) device=(\d+) "
     r"class=(\d+) command-before=(\d+) command-after=(\d+) assigned=0 "
     r"bridge=([01]) multifunction=([01]) policy=accepted$"
 )
 SUMMARY_RE = re.compile(
-    rf"^LEANOS/15 DMA snapshot=1 topology={TOPOLOGY} bus=0 scanned=256 "
+    "^" + re.escape(SERIAL["15/DMA"]) + rf" snapshot=1 topology={TOPOLOGY} bus=0 scanned=256 "
     r"present=5 optional-absent=1 writes=5 readbacks=5 "
     r"initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled "
     r"readback=exact generated-result=0 "

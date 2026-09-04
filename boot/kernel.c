@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "corpus.h"
+#include "serial-protocol.h"
 #include "boundary-abi.h"
 #include "leanos/composite-dispatcher.h"
 
@@ -363,7 +364,7 @@ static void record_extended_state_cpuid(void) {
         fail("extended-state-cpuid-contract");
     extended_state_features_accepted = 1;
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
-    serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
+    serial_puts(LEANOS_SERIAL_13_EXTENDED_STATE " cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
 #endif
 }
 
@@ -448,7 +449,7 @@ static __attribute__((noinline, noipa)) void check_direct_port_control(unsigned 
         tss.iomap != sizeof(tss) || ((flags >> 12) & 3u) != 0)
         fail("direct-port-control-readback");
     if (report) {
-        serial_puts("LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_CONTROL " tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS\n");
     }
 }
 
@@ -534,7 +535,7 @@ static void check_entry_manifest(void) {
         tss.ist[0] != (uint64_t)__df_ist_stack_end ||
         tss.ist[1] != (uint64_t)__nmi_ist_stack_end)
         fail("entry-tss-mismatch");
-    serial_puts("LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS\n");
+    serial_puts(LEANOS_SERIAL_17_ENTRY_MANIFEST " ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS\n");
 }
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL
@@ -579,15 +580,15 @@ uint64_t entry_adversarial_gp_handler(uint64_t error, uint64_t rip,
             fail("direct-port-fault-encoding");
         direct_port_fault_attestation = result;
         current_subject = selected;
-        serial_puts("LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
-        serial_puts("LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-        serial_puts("LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+        serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_DENIAL " subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_TERMINATE " subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+        serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_DISPATCH " subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
         ++entry_adversarial_step;
         return 2;
     }
     if (error != expected_error[entry_adversarial_step])
         fail("entry-adversarial-gp");
-    serial_puts("LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=");
+    serial_puts(LEANOS_SERIAL_11_ENTRY_ADVERSARIAL " attempted-vector=");
     serial_u64(entry_adversarial_step == 0 ? 14 : 32);
     serial_puts(" delivered=13 privileged-handler=unreached result=PASS\n");
     ++entry_adversarial_step;
@@ -661,7 +662,7 @@ static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
     if ((root[0] & ~PTE_ACCESSED) != ((uint64_t)pdpt | 7u) ||
         (pdpt[0] & ~PTE_ACCESSED) != ((uint64_t)pd | 7u)) {
         if (report_mismatch) {
-            serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+            serial_puts(LEANOS_SERIAL_8_PAGING " mismatch root="); serial_u64(space);
             serial_puts(" level=ancestor root-expected="); serial_u64((uint64_t)pdpt | 7u);
             serial_puts(" root-actual="); serial_u64(root[0]);
             serial_puts(" pdpt-expected="); serial_u64((uint64_t)pd | 7u);
@@ -675,7 +676,7 @@ static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
         uint64_t expected = i < BOOT_PT_COUNT ? (uint64_t)(pt + i * 512u) | 7u : 0;
         if ((pd[i] & ~PTE_ACCESSED) != expected) {
             if (report_mismatch) {
-                serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+                serial_puts(LEANOS_SERIAL_8_PAGING " mismatch root="); serial_u64(space);
                 serial_puts(" level=pd index="); serial_u64(i);
                 serial_puts(" expected="); serial_u64(expected);
                 serial_puts(" actual="); serial_u64(pd[i]); serial_putc('\n');
@@ -690,7 +691,7 @@ static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
         if (!relation_defined ||
             (actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
             if (report_mismatch) {
-                serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+                serial_puts(LEANOS_SERIAL_8_PAGING " mismatch root="); serial_u64(space);
                 serial_puts(" page="); serial_u64(page);
                 serial_puts(" expected="); serial_u64(expected);
                 serial_puts(" actual="); serial_u64(actual);
@@ -714,7 +715,7 @@ static void expect_live_mutation_rejected(const char *fixture,
     *slot = saved;
     __asm__ volatile ("" ::: "memory");
     if (accepted) fail("pt-live-mutation-accepted");
-    serial_puts("LEANOS/8 PAGING fixture="); serial_puts(fixture);
+    serial_puts(LEANOS_SERIAL_8_PAGING " fixture="); serial_puts(fixture);
     serial_puts(" root=B level="); serial_puts(level);
     serial_puts(" page="); serial_u64(page);
     serial_puts(" expected="); serial_u64(saved);
@@ -735,7 +736,7 @@ static void expect_runtime_relation_rejected(const char *fixture,
     runtime_mapping_state = saved_state;
     __asm__ volatile ("" ::: "memory");
     if (accepted) fail("pt-runtime-relation-accepted");
-    serial_puts("LEANOS/8 PAGING fixture="); serial_puts(fixture);
+    serial_puts(LEANOS_SERIAL_8_PAGING " fixture="); serial_puts(fixture);
     serial_puts(" root=B level=pt page="); serial_u64(RUNTIME_MAPPING_PAGE);
     serial_puts(" expected="); serial_u64(expected);
     serial_puts(" actual="); serial_u64(replacement);
@@ -781,7 +782,7 @@ static void check_live_page_table_mutations(void) {
     page_table_b[user_text] = saved_b;
     __asm__ volatile ("" ::: "memory");
     if (swapped_accepted) fail("pt-swapped-leaves-accepted");
-    serial_puts("LEANOS/8 PAGING fixture=swapped-user-leaves root=B level=pt page=");
+    serial_puts(LEANOS_SERIAL_8_PAGING " fixture=swapped-user-leaves root=B level=pt page=");
     serial_u64(user_text); serial_puts(" expected="); serial_u64(saved_b);
     serial_puts(" actual="); serial_u64(saved_a);
     serial_puts(" result=REJECTED\n");
@@ -827,7 +828,7 @@ static void check_live_page_table_mutations(void) {
     __asm__ volatile ("mov %0, %%cr3" :: "r"(selected) : "memory");
     if ((wrong_selected & PTE_ADDRESS) == (uint64_t)page_map_level_4_a)
         fail("pt-cr3-fixture-accepted");
-    serial_puts("LEANOS/8 PAGING fixture=wrong-cr3 root=A level=cr3 page=0 expected=");
+    serial_puts(LEANOS_SERIAL_8_PAGING " fixture=wrong-cr3 root=A level=cr3 page=0 expected=");
     serial_u64((uint64_t)page_map_level_4_a);
     serial_puts(" actual="); serial_u64(wrong_selected & PTE_ADDRESS);
     serial_puts(" result=REJECTED\n");
@@ -840,10 +841,10 @@ static void check_boot_page_tables(void) {
         &page_map_level_4_a[0] == &page_map_level_4_b[0]) fail("pt-root-a");
     if (!decoded_root_matches(1, page_map_level_4_a, page_directory_pointer_a,
                               page_directory_a, page_table_a, 1)) fail("pt-decode-a");
-    serial_puts("LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS\n");
+    serial_puts(LEANOS_SERIAL_8_PAGING " root=A selected=1 leaves=4096 policy=manifest result=PASS\n");
     if (!decoded_root_matches(2, page_map_level_4_b, page_directory_pointer_b,
                               page_directory_b, page_table_b, 1)) fail("pt-decode-b");
-    serial_puts("LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS\n");
+    serial_puts(LEANOS_SERIAL_8_PAGING " root=B selected=0 leaves=4096 policy=manifest result=PASS\n");
     check_live_page_table_mutations();
 }
 
@@ -978,7 +979,7 @@ static void check_runtime_mapping_invalidation(void) {
     if (*window != RUNTIME_MAPPING_AFTER ||
         runtime_invlpg_publication != canonical_reply)
         fail("runtime-invlpg-reuse");
-    serial_puts("LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_19_TLB " path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\n");
 
     page_table_b[RUNTIME_MAPPING_PAGE] =
         runtime_mapping_leaf(runtime_mapping_frame_before);
@@ -1000,7 +1001,7 @@ static void check_runtime_mapping_invalidation(void) {
     if (*window != RUNTIME_MAPPING_AFTER ||
         runtime_cr3_publication != canonical_reply)
         fail("runtime-cr3-reuse");
-    serial_puts("LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_19_TLB " path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\n");
 
     page_table_b[RUNTIME_MAPPING_PAGE] = boot_leaf;
     runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
@@ -1009,8 +1010,8 @@ static void check_runtime_mapping_invalidation(void) {
                       : "r"((uint64_t)page_map_level_4_a) : "memory");
     if (page_table_b[RUNTIME_MAPPING_PAGE] != boot_leaf)
         fail("runtime-window-restore");
-    serial_puts("LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\n");
-    serial_puts("LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS\n");
+    serial_puts(LEANOS_SERIAL_19_TLB " authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\n");
+    serial_puts(LEANOS_SERIAL_19_TLB " mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS\n");
 }
 
 #ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
@@ -1032,14 +1033,14 @@ static void check_selected_root_b(void) {
     uint64_t cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b) fail("pt-root-b");
-    serial_puts("LEANOS/8 PAGING root=B selected=1 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_8_PAGING " root=B selected=1 result=PASS\n");
 }
 
 static void check_selected_root_a(void) {
     uint64_t cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a) fail("pt-root-a-resume");
-    serial_puts("LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_8_PAGING " root=A selected=1 resumed=1 result=PASS\n");
 }
 
 __attribute__((noinline, used))
@@ -1076,7 +1077,7 @@ static void report_page_fault_snapshot(
         snapshot->rflags, snapshot->user_rsp, snapshot->user_ss,
         snapshot->stack_identity, snapshot->reserved
     };
-    serial_puts("LEANOS/14 PF-WALK page="); serial_u64(snapshot->fault_page);
+    serial_puts(LEANOS_SERIAL_14_PF_WALK " page="); serial_u64(snapshot->fault_page);
     serial_puts(" expected-leaf="); serial_u64(expected_leaf);
     serial_puts(" live-leaf="); serial_u64(live_leaf);
     serial_puts(page_fault_probe_class == 2
@@ -1084,7 +1085,7 @@ static void report_page_fault_snapshot(
         : page_fault_probe_class == 1
         ? " cause=not-writable denial=not-writable result=PASS\n"
         : " cause=supervisor denial=supervisor result=PASS\n");
-    serial_puts("LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=");
+    serial_puts(LEANOS_SERIAL_14_PF_SNAPSHOT " codec=1 width=19 words=");
     for (unsigned i = 0; i < 19; ++i) {
         if (i != 0) serial_putc(',');
         serial_u64(words[i]);
@@ -1097,7 +1098,7 @@ static void report_page_fault_snapshot(
 static __attribute__((noreturn)) void report_page_fault_terminal(
     const struct page_fault_entry_record *snapshot, uint64_t authorization,
     uint64_t route, uint64_t expected_leaf, uint64_t live_leaf) {
-    serial_puts("LEANOS/14 PF-TERMINAL codec=1 case=");
+    serial_puts(LEANOS_SERIAL_14_PF_TERMINAL " codec=1 case=");
     serial_puts(page_fault_probe_class == 3 ? "reserved-bit" : "walk-mismatch");
     serial_puts(" vector=14 error="); serial_u64(snapshot->error);
     serial_puts(" access="); serial_puts(snapshot->access == 2 ? "execute" :
@@ -1200,7 +1201,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 0) return;
     if (mode == 12 && !(current_subject == 2 && blocking_ipc_step == 4)) return;
     if (mode == 13) return;
-    serial_puts("LEANOS/9 RETURN fixture=");
+    serial_puts(LEANOS_SERIAL_9_RETURN " fixture=");
     serial_puts(return_corruption_name(mode));
     serial_puts(mode >= 14 && mode <= 26
         ? " stage=machine-control result=INJECTED\n"
@@ -1366,8 +1367,8 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
         if (injected != (1ull << 22) && injected != (1ull << 18))
             fail("extended-state-peer-control-witness");
         serial_puts(injected == (1ull << 22)
-            ? "LEANOS/13 EXTENDED-STATE event=peer-control-injected control=pke bit=22 live=1 stage=pre-iretq result=PASS\n"
-            : "LEANOS/13 EXTENDED-STATE event=peer-control-injected control=osxsave bit=18 live=1 stage=pre-iretq result=PASS\n");
+            ? LEANOS_SERIAL_13_EXTENDED_STATE " event=peer-control-injected control=pke bit=22 live=1 stage=pre-iretq result=PASS\n"
+            : LEANOS_SERIAL_13_EXTENDED_STATE " event=peer-control-injected control=osxsave bit=18 live=1 stage=pre-iretq result=PASS\n");
     }
 #endif
     if ((cr0 & required_cr0) != required_cr0 ||
@@ -1387,7 +1388,7 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
 }
 
 static __attribute__((noreturn)) void handoff_fail(const char *reason) {
-    serial_puts("LEANOS/7 BOOTALLOC status=FAIL reason="); serial_puts(reason);
+    serial_puts(LEANOS_SERIAL_7_BOOTALLOC " status=FAIL reason="); serial_puts(reason);
     serial_putc('\n'); finish(0x11);
 }
 
@@ -2275,20 +2276,20 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
         handoff_fail("frame-budget-projection-authority");
 #endif
 
-    serial_puts("LEANOS/7 HANDOFF magic=valid info-bytes="); serial_u64(total);
+    serial_puts(LEANOS_SERIAL_7_HANDOFF " magic=valid info-bytes="); serial_u64(total);
     serial_puts(" mmap-entries="); serial_u64(authority.word[5]);
     serial_puts(" result=PASS\n");
-    serial_puts("LEANOS/7 MAP boot-pages=4096");
+    serial_puts(LEANOS_SERIAL_7_MAP " boot-pages=4096");
     serial_puts(" reported-top-mib=");
     serial_u64(authority.word[6] / (1024u * 1024u));
     serial_puts(" precedence=reserved result=PASS\n");
-    serial_puts("LEANOS/7 ALLOC frame="); serial_u64(selected);
+    serial_puts(LEANOS_SERIAL_7_ALLOC " frame="); serial_u64(selected);
     serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 projection=scalar-checked result=PASS\n");
-    serial_puts("LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS\n");
-    serial_puts("LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS\n");
-    serial_puts("LEANOS/7 BOOTALLOC status=PASS\n");
+    serial_puts(LEANOS_SERIAL_7_SCRUB " bytes=4096 zero=1 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_7_PUBLISH " object=1 owner=1 stale-object=denied result=PASS\n");
+    serial_puts(LEANOS_SERIAL_7_BOOTALLOC " status=PASS\n");
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
-    serial_puts("LEANOS/20 FRAME physical-frame=");
+    serial_puts(LEANOS_SERIAL_20_FRAME " physical-frame=");
     serial_u64(frame_budget_physical_frame);
     serial_puts(" boot-published-frame=");
     serial_u64(frame_budget_boot_published_frame);
@@ -2347,7 +2348,7 @@ static void exercise_copy_policy(void) {
     smap_copy_from(&after_user, user_a_stack, 1);
     if (ac_is_set()) fail("policy-canary-ac-set");
     if (after_user != before_user) fail("copy-reject-user-partial");
-    serial_puts("LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS\n");
+    serial_puts(LEANOS_SERIAL_6_POLICY " zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS\n");
 }
 
 /* Keep each privileged port instruction in one named final-ELF wrapper.  The
@@ -2575,7 +2576,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
         const struct pci_manifest_entry *entry = &q35_pci_manifest[i];
-        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology="
+        serial_puts(LEANOS_SERIAL_15_DMA_FUNCTION " manifest=1 topology="
             Q35_TOPOLOGY_TEXT " bdf=0:");
         serial_u64(entry->device);
         serial_putc('.');
@@ -2600,7 +2601,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         serial_u64(entry->multifunction);
         serial_puts(" policy=accepted\n");
     }
-    serial_puts("LEANOS/15 DMA snapshot=1 topology=" Q35_TOPOLOGY_TEXT
+    serial_puts(LEANOS_SERIAL_15_DMA " snapshot=1 topology=" Q35_TOPOLOGY_TEXT
         " bus=0 scanned=256 present=");
     serial_u64(present);
     serial_puts(" optional-absent=1 writes=");
@@ -2856,7 +2857,7 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
 #endif
             fault_status, fault_low, fault_high);
     if (fault_binding != 0) {
-        serial_puts("LEANOS/21 VTD-FAULT binding=");
+        serial_puts(LEANOS_SERIAL_21_VTD_FAULT " binding=");
         serial_u64(fault_binding);
         serial_puts(" fsts="); serial_u64(fault_status);
         serial_puts(" low="); serial_u64(fault_low);
@@ -2905,7 +2906,7 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     edu_wait_transfer();
     if (write_buffer[0] != sentinel0 || write_buffer[1] != sentinel1)
         fail("vtd-assigned-sentinel-record");
-    serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
+    serial_puts(LEANOS_SERIAL_21_VTD_FAULT " requester=16 domain=0 generation=1"
         " direction=read iova=4096 reason=6 sid=16 sentinel=unchanged"
         " victim=unchanged state=current result=PASS\n");
 
@@ -2930,7 +2931,7 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
             LEANOS_VTD_ASSIGNED_GENERATION, 0, 2,
             fault_status, fault_low, fault_high);
     if (fault_binding != 0) {
-        serial_puts("LEANOS/21 VTD-WRITE-FAULT binding=");
+        serial_puts(LEANOS_SERIAL_21_VTD_WRITE_FAULT " binding=");
         serial_u64(fault_binding);
         serial_puts(" fsts="); serial_u64(fault_status);
         serial_puts(" low="); serial_u64(fault_low);
@@ -2956,7 +2957,7 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     edu_wait_transfer();
     if (write_buffer[0] != sentinel0 || write_buffer[1] != sentinel1)
         fail("vtd-assigned-write-fault-sentinel");
-    serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
+    serial_puts(LEANOS_SERIAL_21_VTD_FAULT " requester=16 domain=0 generation=1"
         " direction=write iova=0 reason=5 sid=16 sentinel=unchanged"
         " victim=unchanged state=current result=PASS\n");
 
@@ -2981,7 +2982,7 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
             LEANOS_VTD_ASSIGNED_GENERATION, 2 * PAGE_BYTES, 1,
             fault_status, fault_low, fault_high);
     if (fault_binding != 0) {
-        serial_puts("LEANOS/21 VTD-UNMAPPED-FAULT binding=");
+        serial_puts(LEANOS_SERIAL_21_VTD_UNMAPPED_FAULT " binding=");
         serial_u64(fault_binding);
         serial_puts(" fsts="); serial_u64(fault_status);
         serial_puts(" low="); serial_u64(fault_low);
@@ -3023,7 +3024,7 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
                 leanos_vtd_assigned_second_level_table[word])
             fail("vtd-assigned-protected-vtd-second-level");
     }
-    serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
+    serial_puts(LEANOS_SERIAL_21_VTD_FAULT " requester=16 domain=0 generation=1"
         " direction=read iova=8192 reason=6 sid=16"
         " protected=subject,kernel,cpu-page-tables,remapping-tables,guards"
         " records=complete,unchanged"
@@ -3118,13 +3119,13 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     ((volatile uint64_t *)vtd_second_level_table)[2] = 0;
     __asm__ volatile("" ::: "memory");
     vtd_invalidate_global_iotlb();
-    serial_puts("LEANOS/21 VTD-REUSE requester=16 domain=0"
+    serial_puts(LEANOS_SERIAL_21_VTD_REUSE " requester=16 domain=0"
         " old-generation=1 old-iova=0 old-access=denied"
         " invalidation=complete scrub=complete fresh-lifetime=2"
         " fresh-iova=8192 canary=preserved fresh-transfer=PASS"
         " reset=0 result=PASS\n");
 
-    serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"
+    serial_puts(LEANOS_SERIAL_21_VTD_TRANSFER " requester=16 domain=0 generation=1"
         " read-iova=0 write-iova=4096 bytes=16 payload=exact"
         " guards=unchanged fsts=0 result=PASS\n");
 }
@@ -3273,13 +3274,13 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
             fail("vtd-assigned-plan-shape");
     }
     vtd_journal_record(1);
-    serial_puts("LEANOS/21 VTD unit=0 mmio=");
+    serial_puts(LEANOS_SERIAL_21_VTD " unit=0 mmio=");
     serial_u64(LEANOS_VTD_MMIO_BASE);
     serial_puts(" version="); serial_u64(version);
     serial_puts(" cap="); serial_u64(capability);
     serial_puts(" ecap="); serial_u64(extended_capability);
     serial_puts(" gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS\n");
-    serial_puts("LEANOS/21 VTD-PLAN root-frame=");
+    serial_puts(LEANOS_SERIAL_21_VTD_PLAN " root-frame=");
     serial_u64(LEANOS_VTD_ROOT_TABLE_FRAME);
     serial_puts(" context-frame=");
     serial_u64(LEANOS_VTD_CONTEXT_TABLE_FRAME);
@@ -3344,7 +3345,7 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
 #endif
     }
     vtd_journal_record(3);
-    serial_puts("LEANOS/21 VTD-TABLES root-frame=");
+    serial_puts(LEANOS_SERIAL_21_VTD_TABLES " root-frame=");
     serial_u64(LEANOS_VTD_ROOT_TABLE_FRAME);
     serial_puts(" context-frame=");
     serial_u64(LEANOS_VTD_CONTEXT_TABLE_FRAME);
@@ -3403,13 +3404,13 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     q35_live_pci_snapshot.functions[6].command_after =
         assigned_command_readback;
     run_assigned_edu_transfers();
-    serial_puts("LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=");
+    serial_puts(LEANOS_SERIAL_21_VTD_ASSIGN " bdf=0:2.0 requester=16 domain=");
     serial_u64(LEANOS_VTD_ASSIGNED_DOMAIN);
     serial_puts(" tables=generated-readback bar=4271898624 mmio-id=16777453"
         " command=6 memory=enabled bus-master=enabled"
         " stage=post-translation result=PASS\n");
 #endif
-    serial_puts("LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,"
+    serial_puts(LEANOS_SERIAL_21_VTD_ACTIVATE " order=validate,scrub,construct,publish,"
         "invalidate-context,invalidate-iotlb,enable,verify journal=");
     serial_u64(vtd_journal);
     serial_puts(" gsts="); serial_u64(enabled_status);
@@ -3489,9 +3490,9 @@ static void replay_oracle(void) {
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
         uint64_t got = leanos_oracle_dispatch(v);
-        serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
+        serial_puts(LEANOS_SERIAL_3_ORACLE " id="); serial_puts(v->id);
         if (got != v->expected) {
-            serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
+            serial_puts(" result=FAIL\n" LEANOS_SERIAL_3_FINAL " status=FAIL reason=oracle\n");
             finish(0x11);
         }
         serial_puts(" result=PASS\n");
@@ -3506,7 +3507,7 @@ static __attribute__((noreturn)) void finish(uint8_t value) {
 }
 
 static __attribute__((noreturn)) void fail(const char *reason) {
-    serial_puts("LEANOS/3 FINAL status=FAIL reason=");
+    serial_puts(LEANOS_SERIAL_3_FINAL " status=FAIL reason=");
     serial_puts(reason);
     serial_putc('\n');
     finish(0x11);
@@ -3616,7 +3617,7 @@ static __attribute__((noinline)) void report_entry_stack_high_water(
         (uint64_t)__entry_stack_start;
     if (used < 176 || used > usable || usable - used < 4096)
         fail("entry-stack-high-water");
-    serial_puts("LEANOS/11 ENTRY-HIGH-WATER path="); serial_puts(path);
+    serial_puts(LEANOS_SERIAL_11_ENTRY_HIGH_WATER " path="); serial_puts(path);
     serial_puts(" observed-bytes="); serial_u64(used);
     serial_puts(" usable-bytes="); serial_u64(usable);
     serial_puts(" margin-bytes="); serial_u64(usable - used);
@@ -3704,8 +3705,8 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
     current_subject = peer;
     extended_state_selected_cr3 = (uint64_t)page_map_level_4_b;
     serial_puts(extended_state_probe_class >= 5
-        ? "LEANOS/14 FAST-ENTRY event=deny subject=1 vector="
-        : "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
+        ? LEANOS_SERIAL_14_FAST_ENTRY " event=deny subject=1 vector="
+        : LEANOS_SERIAL_13_EXTENDED_STATE " event=deny subject=1 vector=");
     serial_u64(vector);
     serial_puts(" instruction=");
     serial_puts(extended_state_probe_class == 0 ? "x87" :
@@ -3845,7 +3846,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             if (control != LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_OFFERED ||
                 value != LEANOS_COMPOSITE_NO_VALUE)
                 fail("capability-transfer-offer-result");
-            serial_puts("LEANOS/22 OFFER subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=6 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2118145 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_22_OFFER " subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=6 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2118145 value=0 result=PASS\n");
 
             /* The caller change is itself an authoritative generated edge.
                Only its exact typed resume result authorizes installation of
@@ -3864,7 +3865,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             capability_transfer_state =
                 switch_control & UINT64_C(0xffff);
             current_subject = 2;
-            serial_puts("LEANOS/22 DISPATCH subject=2 address-space=2 source=authoritative-resumable-context control=4870913 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_22_DISPATCH " subject=2 address-space=2 source=authoritative-resumable-context control=4870913 value=0 result=PASS\n");
             return UINT64_C(0xfeed);
         }
         if (number == 27) {
@@ -3872,15 +3873,15 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                     LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_SEALED_HANDLE_REJECTED ||
                 value != LEANOS_COMPOSITE_NO_VALUE)
                 fail("capability-transfer-sealed-result");
-            serial_puts("LEANOS/22 ENTER subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
-            serial_puts("LEANOS/22 SEALED-DENIAL subject=2 handle=393219 operation=send authorized=0 reason=not-installed state=unchanged control=4674305 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_22_ENTER " subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
+            serial_puts(LEANOS_SERIAL_22_SEALED_DENIAL " subject=2 handle=393219 operation=send authorized=0 reason=not-installed state=unchanged control=4674305 value=0 result=PASS\n");
             return value;
         }
         if (number == 28) {
             if (control != LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_ACCEPTED ||
                 value != LEANOS_COMPOSITE_DELIVERED_HANDLE)
                 fail("capability-transfer-accept-result");
-            serial_puts("LEANOS/22 ACCEPT subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 child=6 generation=6 handle=393219 sealed=0 installed=1 exactly-once=1 control=2184193 value=393219 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_22_ACCEPT " subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 child=6 generation=6 handle=393219 sealed=0 installed=1 exactly-once=1 control=2184193 value=393219 result=PASS\n");
             return value;
         }
         if (number == 29) {
@@ -3888,16 +3889,16 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                     LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_DELEGATED_SEND ||
                 value != LEANOS_COMPOSITE_NO_VALUE)
                 fail("capability-transfer-send-result");
-            serial_puts("LEANOS/22 DELEGATED-SEND subject=2 handle=393219 endpoint=3 payload0=41332 payload1=45428 right=send authorized=1 mailbox=filled control=4740353 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_22_DELEGATED_SEND " subject=2 handle=393219 endpoint=3 payload0=41332 payload1=45428 right=send authorized=1 mailbox=filled control=4740353 value=0 result=PASS\n");
             return value;
         }
         if (control !=
                 LEANOS_COMPOSITE_REPLY_BOOT_TRANSFER_DELEGATED_RECEIVE_REJECTED ||
             value != LEANOS_COMPOSITE_NO_VALUE)
             fail("capability-transfer-receive-result");
-        serial_puts("LEANOS/22 EXCESS-RIGHT-DENIAL subject=2 handle=393219 operation=receive authorized=0 reason=rights state=unchanged mailbox=filled control=4805889 value=0 result=PASS\n");
-        serial_puts("LEANOS/22 UNRELATED slots-a=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=delegated-message-only result=PASS\n");
-        serial_puts("LEANOS/22 FINAL status=PASS offer=1 sealed-denied=1 receipt=1 exact-handle=1 delegated-send=1 excess-right-denied=1 unrelated=unchanged\n");
+        serial_puts(LEANOS_SERIAL_22_EXCESS_RIGHT_DENIAL " subject=2 handle=393219 operation=receive authorized=0 reason=rights state=unchanged mailbox=filled control=4805889 value=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_22_UNRELATED " slots-a=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=delegated-message-only result=PASS\n");
+        serial_puts(LEANOS_SERIAL_22_FINAL " status=PASS offer=1 sealed-denied=1 receipt=1 exact-handle=1 delegated-send=1 excess-right-denied=1 unrelated=unchanged\n");
         finish(0x10);
     }
     fail("capability-transfer-syscall");
@@ -3976,17 +3977,17 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         inflight_revocation_state = control & UINT64_C(0xffff);
 
         if (number == 31) {
-            serial_puts("LEANOS/23 OFFER subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=7 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2121985 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_OFFER " subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=7 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2121985 value=0 result=PASS\n");
         } else if (number == 32) {
-            serial_puts("LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=1 root-slot=1 reason=missingRevoke state=unchanged control=5267713 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_REVOKE_DENIAL " subject=1 authority-slot=1 root-slot=1 reason=missingRevoke state=unchanged control=5267713 value=0 result=PASS\n");
         } else if (number == 33) {
-            serial_puts("LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=2 root-slot=0 reason=objectMismatch state=unchanged control=5333249 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_REVOKE_DENIAL " subject=1 authority-slot=2 root-slot=0 reason=objectMismatch state=unchanged control=5333249 value=0 result=PASS\n");
         } else if (number == 34) {
-            serial_puts("LEANOS/23 REVOKE subject=1 authority-slot=2 root-slot=1 root=2 descendant=7 installed-cleared=1 envelope=cleared pending=cleared history=retained next-identity=8 control=5399041 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_REVOKE " subject=1 authority-slot=2 root-slot=1 root=2 descendant=7 installed-cleared=1 envelope=cleared pending=cleared history=retained next-identity=8 control=5399041 value=0 result=PASS\n");
         } else if (number == 35) {
-            serial_puts("LEANOS/23 REVOKE-DENIAL subject=1 authority-slot=2 root-slot=1 reason=staleSlot state=unchanged control=5464577 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_REVOKE_DENIAL " subject=1 authority-slot=2 root-slot=1 reason=staleSlot state=unchanged control=5464577 value=0 result=PASS\n");
         } else if (number == 36) {
-            serial_puts("LEANOS/23 OFFER-DENIAL subject=1 source-handle=131073 reason=staleEndpoint state=unchanged control=5530113 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_OFFER_DENIAL " subject=1 source-handle=131073 reason=staleEndpoint state=unchanged control=5530113 value=0 result=PASS\n");
 
             /* The caller change is itself an authoritative generated edge.
                Only its exact typed resume result authorizes installation of
@@ -4004,19 +4005,19 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 fail("inflight-revocation-switch-result");
             inflight_revocation_state = switch_control & UINT64_C(0xffff);
             current_subject = 2;
-            serial_puts("LEANOS/23 DISPATCH subject=2 address-space=2 source=authoritative-resumable-context control=5595905 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_DISPATCH " subject=2 address-space=2 source=authoritative-resumable-context control=5595905 value=0 result=PASS\n");
             return UINT64_C(0xfeed);
         } else if (number == 37) {
-            serial_puts("LEANOS/23 ENTER subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
-            serial_puts("LEANOS/23 CANCELED-RECEIPT subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 reason=empty delivered=0 installed=0 handle=none control=2188033 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_ENTER " subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_CANCELED_RECEIPT " subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 reason=empty delivered=0 installed=0 handle=none control=2188033 value=0 result=PASS\n");
         } else if (number == 38) {
-            serial_puts("LEANOS/23 REPLACE subject=2 source-slot=0 destination-slot=3 generation=8 canceled-generation=7 aliased=0 history=retained control=2384897 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_REPLACE " subject=2 source-slot=0 destination-slot=3 generation=8 canceled-generation=7 aliased=0 history=retained control=2384897 value=0 result=PASS\n");
         } else if (number == 39) {
-            serial_puts("LEANOS/23 CANCELED-HANDLE-DENIAL subject=2 handle=458755 operation=send authorized=0 reason=staleHandle state=unchanged control=5661697 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_CANCELED_HANDLE_DENIAL " subject=2 handle=458755 operation=send authorized=0 reason=staleHandle state=unchanged control=5661697 value=0 result=PASS\n");
         } else {
-            serial_puts("LEANOS/23 FRESH-SEND subject=2 handle=524291 endpoint-slot=3 payload0=4369 payload1=8738 right=send authorized=1 mailbox=filled control=5727489 value=0 result=PASS\n");
-            serial_puts("LEANOS/23 UNRELATED slots-a-except-1=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=fresh-message-only result=PASS\n");
-            serial_puts("LEANOS/23 FINAL status=PASS offer=1 revoke=1 envelope-and-pending=cleared canceled-receipt-denied=1 replacement-generation=8 canceled-handle-denied=1 fresh-send=1 unrelated=unchanged\n");
+            serial_puts(LEANOS_SERIAL_23_FRESH_SEND " subject=2 handle=524291 endpoint-slot=3 payload0=4369 payload1=8738 right=send authorized=1 mailbox=filled control=5727489 value=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_UNRELATED " slots-a-except-1=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=fresh-message-only result=PASS\n");
+            serial_puts(LEANOS_SERIAL_23_FINAL " status=PASS offer=1 revoke=1 envelope-and-pending=cleared canceled-receipt-denied=1 replacement-generation=8 canceled-handle-denied=1 fresh-send=1 unrelated=unchanged\n");
             finish(0x10);
         }
         return value;
@@ -4050,7 +4051,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             frame_budget_require_publication_authority();
             frame_budget_publish_mapping(page_table_a, frame_budget_user_page,
                 frame_budget_physical_frame);
-            serial_puts("LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=");
+            serial_puts(LEANOS_SERIAL_20_A_ALLOC " subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=");
             serial_u64(frame_budget_physical_frame);
             serial_puts(" user-page="); serial_u64(frame_budget_user_page);
             serial_puts(" source=generated-mapping prior-publications=0 accepted=1\n");
@@ -4064,7 +4065,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 before_leaf != page_table_a[frame_budget_user_page])
                 fail("frame-budget-a-rejection-mutated");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_EXHAUSTED;
-            serial_puts("LEANOS/20 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201\n");
+            serial_puts(LEANOS_SERIAL_20_A_REJECT " subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201\n");
             return 1;
         }
         if (number == 22 && current_subject == 1) {
@@ -4074,20 +4075,20 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 fail("frame-budget-select-b");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_SELECTED;
             current_subject = 2;
-            serial_puts("LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS\n");
+            serial_puts(LEANOS_SERIAL_20_DISPATCH " subject=2 address-space=2 source=generated-current result=PASS\n");
             return 0xfeed;
         }
         if (number == 23 && current_subject == 2) {
             if (arg0 != UINT64_C(0xb2b2f11251a7e55e) ||
                 arg1 != UINT64_C(0x030201) || arg2 != UINT64_C(0x51a7))
                 fail("frame-budget-b-context-canary");
-            serial_puts("LEANOS/20 B-CONTEXT subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS\n");
+            serial_puts(LEANOS_SERIAL_20_B_CONTEXT " subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS\n");
             uint64_t got = leanos_composite_dispatch(frame_budget_state,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_B, 20, 0, 0, 0);
             if (got != UINT64_C(0x434401))
                 fail("frame-budget-b-allocation");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_ALLOCATED;
-            serial_puts("LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1\n");
+            serial_puts(LEANOS_SERIAL_20_B_ALLOC " subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1\n");
             return UINT64_C(0x20000);
         }
         if (number == 24 && current_subject == 2) {
@@ -4107,7 +4108,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 frame_budget_publication_live)
                 fail("frame-budget-retirement-publication");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED;
-            serial_puts("LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 effect=flush invalidation=cr3 order=store,cr3,ack,publish checked=1\n");
+            serial_puts(LEANOS_SERIAL_20_CLEANUP " subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 effect=flush invalidation=cr3 order=store,cr3,ack,publish checked=1\n");
 
             volatile uint8_t *reclaimed =
                 (volatile uint8_t *)(frame_budget_physical_frame * PAGE_BYTES);
@@ -4119,7 +4120,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
                 if (reclaimed[i] != 0)
                     fail("frame-budget-incomplete-scrub");
-            serial_puts("LEANOS/20 SCRUB physical-frame=");
+            serial_puts(LEANOS_SERIAL_20_SCRUB " physical-frame=");
             serial_u64(frame_budget_physical_frame);
             serial_puts(" bytes=4096 complete=1 before-publication=1\n");
 
@@ -4138,7 +4139,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 fail("frame-budget-generated-mapping-drift");
             frame_budget_publish_mapping(page_table_b, fresh_page,
                 frame_budget_physical_frame);
-            serial_puts("LEANOS/20 B-PUBLISH subject=2 object=21 handle=196609 generation=3 physical-frame=");
+            serial_puts(LEANOS_SERIAL_20_B_PUBLISH " subject=2 object=21 handle=196609 generation=3 physical-frame=");
             serial_u64(frame_budget_physical_frame);
             serial_puts(" user-page="); serial_u64(fresh_page);
             serial_puts(" source=generated-mapping fresh-lifetime=1\n");
@@ -4148,7 +4149,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             if (got != UINT64_C(0x464701))
                 fail("frame-budget-stale-denial");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_STALE_DENIED;
-            serial_puts("LEANOS/20 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation\n");
+            serial_puts(LEANOS_SERIAL_20_STALE " handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation\n");
             return fresh_page * PAGE_BYTES;
         }
         if (number == 25 && current_subject == 2) {
@@ -4160,8 +4161,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             if (got != UINT64_C(0x474801))
                 fail("frame-budget-complete");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_COMPLETE;
-            serial_puts("LEANOS/20 CANARY subject=2 origin=cpl3 access=direct first=0 last=0 old=165 denied=1 result=PASS\n");
-            serial_puts("LEANOS/20 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1 ring3-reuse=1\n");
+            serial_puts(LEANOS_SERIAL_20_CANARY " subject=2 origin=cpl3 access=direct first=0 last=0 old=165 denied=1 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_20_FINAL " status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1 ring3-reuse=1\n");
             finish(0x10);
         }
         fail("frame-budget-sequence");
@@ -4175,8 +4176,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             arg0 != UINT64_C(0xb2b2d13e51a7e55e) ||
             arg1 != UINT64_C(0x030201) || arg2 != UINT64_C(0x51a7))
             fail("direct-port-peer-state");
-        serial_puts("LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
-        serial_puts("LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
+        serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_PEER " subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts(LEANOS_SERIAL_16_FINAL " status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
         finish(0x10);
     }
 #endif
@@ -4192,7 +4193,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             (page_table_b[RUNTIME_MAPPING_PAGE] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
                 runtime_mapping_leaf(runtime_mapping_frame_before))
             fail("stale-translation-prefill-binding");
-        serial_puts("LEANOS/19 TLB-CPL3 event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS\n");
+        serial_puts(LEANOS_SERIAL_19_TLB_CPL3 " event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS\n");
         const uint64_t canonical_reply = leanos_composite_dispatch(
             LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,
             LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,
@@ -4200,11 +4201,11 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         runtime_unmap_page7_invlpg(canonical_reply);
         if (runtime_invlpg_publication != canonical_reply)
             fail("stale-translation-unmap-publication");
-        serial_puts("LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS\n");
+        serial_puts(LEANOS_SERIAL_19_TLB_CPL3 " event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS\n");
         runtime_reuse_page7_frame(canonical_reply);
         if (runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY)
             fail("stale-translation-reuse-publication");
-        serial_puts("LEANOS/19 TLB-CPL3 event=reuse frame=same old-owner=2 old-lifetime=1 new-owner=1 new-lifetime=2 old-address-space=2 old-page=7 old-pte=absent new-address-space=1 new-page=7 new-pte=present-user scrub=complete canary=308959202 model=post-reuse-old-page-absent order=unmap,invlpg,publish-unmap,scrub,allocate,write-canary,map-new-owner,publish-reuse result=PASS\n");
+        serial_puts(LEANOS_SERIAL_19_TLB_CPL3 " event=reuse frame=same old-owner=2 old-lifetime=1 new-owner=1 new-lifetime=2 old-address-space=2 old-page=7 old-pte=absent new-address-space=1 new-page=7 new-pte=present-user scrub=complete canary=308959202 model=post-reuse-old-page-absent order=unmap,invlpg,publish-unmap,scrub,allocate,write-canary,map-new-owner,publish-reuse result=PASS\n");
         return canonical_reply;
     }
     if (number == 20 && current_subject == 1 &&
@@ -4224,8 +4225,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             runtime_mapping_frame_before[0] != RUNTIME_MAPPING_AFTER)
             fail("stale-translation-new-owner-binding");
         require_runtime_mapping_relation("stale-translation-new-owner-relation");
-        serial_puts("LEANOS/19 TLB-CPL3 event=new-owner-read subject=1 address-space=1 page=7 address=28672 access=read frame=same lifetime=2 canary=308959202 old-address-space=2 old-pte=absent result=PASS\n");
-        serial_puts("LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 same-frame-reuse=1 scrub=complete new-owner-cpl3-read=1 replacement-canary=intact stale-access=page-fault old-observation=denied containment=1 incidental-cr3-reload=0\n");
+        serial_puts(LEANOS_SERIAL_19_TLB_CPL3 " event=new-owner-read subject=1 address-space=1 page=7 address=28672 access=read frame=same lifetime=2 canary=308959202 old-address-space=2 old-pte=absent result=PASS\n");
+        serial_puts(LEANOS_SERIAL_19_FINAL " status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 same-frame-reuse=1 scrub=complete new-owner-cpl3-read=1 replacement-canary=intact stale-access=page-fault old-observation=denied containment=1 incidental-cr3-reload=0\n");
         finish(0x10);
     }
     if (number == 14 && current_subject == 2) {
@@ -4234,8 +4235,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             arg2 != 0x51a7 ||
             fault_dispatch_attestation != UINT64_C(0x00000000ff020202))
             fail("fault-peer-state");
-        serial_puts("LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
-        serial_puts("LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop\n");
+        serial_puts(LEANOS_SERIAL_14_PEER " subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts(LEANOS_SERIAL_14_FINAL " status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop\n");
         finish(0x10);
     }
 #endif
@@ -4256,10 +4257,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             uint8_t observed_pic_mask = in8(0x21);
             if (observed_pic_mask != 0xffu)
                 fail("direct-port-pic-canary");
-            serial_puts("LEANOS/16 DIRECT-PORT-CANARY register=pic-mask port=33 programmed=255 observed=255 device-mutation=0 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_CANARY " register=pic-mask port=33 programmed=255 observed=255 device-mutation=0 result=PASS\n");
         }
-        serial_puts("LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
-        serial_puts("LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
+        serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_PEER " subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts(LEANOS_SERIAL_16_FINAL " status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
         finish(0x10);
     }
 #endif
@@ -4272,18 +4273,18 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 ? UINT64_C(0x00000200ff020202) : UINT64_C(0x00000100ff020202)))
             fail("integer-fault-peer-state");
         serial_puts(integer_fault_probe_class == 1
-            ? "LEANOS/18 BREAKPOINT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n"
-            : "LEANOS/18 DIVIDE-ERROR-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+            ? LEANOS_SERIAL_18_BREAKPOINT_PEER " subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n"
+            : LEANOS_SERIAL_18_DIVIDE_ERROR_PEER " subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
         serial_puts(integer_fault_probe_class == 1
-            ? "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=3 reason=breakpoint kernel-origin=fail-stop\n"
-            : "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=0 reason=divide-error kernel-origin=fail-stop\n");
+            ? LEANOS_SERIAL_18_FINAL " status=PASS faulting=terminated survivor=2 vector=3 reason=breakpoint kernel-origin=fail-stop\n"
+            : LEANOS_SERIAL_18_FINAL " status=PASS faulting=terminated survivor=2 vector=0 reason=divide-error kernel-origin=fail-stop\n");
         finish(0x10);
     }
 #endif
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject == 2 && number == 13) {
 #ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
-        serial_puts("LEANOS/13 EXTENDED-STATE event=peer-cpl3-entry subject=2\n");
+        serial_puts(LEANOS_SERIAL_13_EXTENDED_STATE " event=peer-cpl3-entry subject=2\n");
 #endif
         uint64_t cr0, cr4, cr3;
         __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
@@ -4296,11 +4297,11 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             cr3 != (uint64_t)page_map_level_4_b)
             fail("extended-state-denial-peer-controls");
         serial_puts(extended_state_probe_class >= 5
-            ? "LEANOS/14 FAST-ENTRY event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n"
-            : "LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
+            ? LEANOS_SERIAL_14_FAST_ENTRY " event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n"
+            : LEANOS_SERIAL_13_EXTENDED_STATE " event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
         serial_puts(extended_state_probe_class >= 5
-            ? "LEANOS/14 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 alternate-target=0\n"
-            : "LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
+            ? LEANOS_SERIAL_14_FINAL " status=PASS denied=1 resumed-a=0 peer-ran=1 alternate-target=0\n"
+            : LEANOS_SERIAL_13_FINAL " status=PASS denied=1 resumed-a=0 peer-ran=1\n");
         finish(0x10);
     }
 #endif
@@ -4318,7 +4319,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             event != 1 || next_state != 1 || evidence != 11 || checked_word != arg0)
             fail("capability-reuse-initial");
         capability_reuse_state = next_state;
-        serial_puts("LEANOS/9 CAPREUSE event=initial subject="); serial_u64(current_subject);
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " event=initial subject="); serial_u64(current_subject);
         serial_puts(" handle="); serial_u64(checked_word);
         serial_puts(" endpoint="); serial_u64(endpoint);
         serial_puts(" accepted="); serial_u64(evidence & 1u); serial_putc('\n');
@@ -4336,10 +4337,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             event != 2 || next_state != 2 || evidence != 15)
             fail("capability-reuse-replace");
         capability_reuse_state = next_state;
-        serial_puts("LEANOS/9 CAPREUSE event=clear slot="); serial_u64(checked_word & 0xffffu);
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " event=clear slot="); serial_u64(checked_word & 0xffffu);
         serial_puts(" old-generation="); serial_u64(checked_word / 65536u);
         serial_puts(" result="); serial_puts((evidence & 1u) ? "PASS\n" : "FAIL\n");
-        serial_puts("LEANOS/9 CAPREUSE event=install slot="); serial_u64(slot);
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " event=install slot="); serial_u64(slot);
         serial_puts(" generation="); serial_u64(fresh_generation);
         serial_puts(" endpoint="); serial_u64(endpoint);
         serial_puts(" result="); serial_puts((evidence & 14u) == 14u ? "PASS\n" : "FAIL\n");
@@ -4348,7 +4349,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if (capability_reuse_state == 2 && current_subject == 2 && number == 11) {
         uint64_t checked_word = arg0;
 #if LEANOS_RETURN_CORRUPTION_MODE == 13
-        serial_puts("LEANOS/9 CAPREUSE fixture=capability-reuse-generation stage=word-boundary result=INJECTED\n");
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " fixture=capability-reuse-generation stage=word-boundary result=INJECTED\n");
         /* A valid slot with generation 2 in the low 32 bits. Any accidental
          * 48-to-32-bit truncation aliases the live stale handle and would
          * accept; the full-width adapter must reject it. */
@@ -4367,10 +4368,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             event != 3 || next_state != 3 || evidence != 8 || returned_word != checked_word)
             fail("capability-reuse-generation");
         capability_reuse_state = next_state;
-        serial_puts("LEANOS/9 CAPREUSE event=stale-replay subject="); serial_u64(current_subject);
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " event=stale-replay subject="); serial_u64(current_subject);
         serial_puts(" handle="); serial_u64(returned_word);
         serial_puts(" rejected="); serial_u64((evidence & 1u) == 0); serial_putc('\n');
-        serial_puts("LEANOS/9 CAPREUSE event=unchanged endpoint="); serial_u64(endpoint);
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " event=unchanged endpoint="); serial_u64(endpoint);
         serial_puts(" mailbox="); serial_puts((evidence & 8u) ? "empty" : "changed");
         serial_puts(" result="); serial_puts((evidence & 8u) ? "PASS\n" : "FAIL\n");
         return 0;
@@ -4389,11 +4390,11 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             event != 4 || next_state != 4 || evidence != 5 || returned_word != arg0)
             fail("capability-reuse-fresh");
         capability_reuse_state = next_state;
-        serial_puts("LEANOS/9 CAPREUSE event=fresh subject="); serial_u64(current_subject);
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " event=fresh subject="); serial_u64(current_subject);
         serial_puts(" handle="); serial_u64(returned_word);
         serial_puts(" endpoint="); serial_u64(endpoint);
         serial_puts(" accepted="); serial_u64(evidence & 1u); serial_putc('\n');
-        serial_puts("LEANOS/9 CAPREUSE status=PASS stale-effects=");
+        serial_puts(LEANOS_SERIAL_9_CAPREUSE " status=PASS stale-effects=");
         serial_u64((evidence & 8u) != 0);
         serial_puts(" fresh-effects="); serial_u64((evidence & 4u) != 0); serial_putc('\n');
         return evidence & 1u;
@@ -4405,7 +4406,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             fail("blocking-ipc-model-block");
         blocking_ipc_step = 1;
         current_subject = 1;
-        serial_puts("LEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\n");
         return 0xbeef;
     }
     if (current_subject == 1 && number == 4) {
@@ -4419,27 +4420,27 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             if (arg2 != 4 || copy_buffer[0] != 0x5a || copy_buffer[1] != 0xa5 ||
                 copy_buffer[2] != 0x3c || copy_buffer[3] != 0xc3) fail("copy-in-data");
             copy_step = 1;
-            serial_puts("LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS\n");
+            serial_puts(LEANOS_SERIAL_6_COPY " direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS\n");
             return 0;
         }
         if (arg0 == 1 && copy_step == 1) {
             smap_copy_to((void *)start, copy_buffer, arg2);
             if (ac_is_set()) fail("copy-out-ac-set");
             copy_step = 2;
-            serial_puts("LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS\n");
+            serial_puts(LEANOS_SERIAL_6_COPY " direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS\n");
             return 0;
         }
         fail("copy-sequence");
     }
     if (preemption_step == 0 && current_subject == 1 && number == 1) {
         if (copy_step != 2) fail("copy-missing");
-        serial_puts("LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0\n");
+        serial_puts(LEANOS_SERIAL_5_ENTRY " subject=1 address-space=1 cpl=3 yielding=0\n");
         preemption_step = 1;
         arm_timer();
         return 0;
     }
     if (preemption_step == 3 && current_subject == 2 && number == 2) {
-        serial_puts("LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved\n");
+        serial_puts(LEANOS_SERIAL_5_SYSCALL " subject=2 caller=2 address-space=2 authorized=1 canaries=preserved\n");
         preemption_step = 4;
         arm_timer();
         return 0;
@@ -4457,19 +4458,19 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             fail("blocking-ipc-model-send");
         blocking_ipc_step = 3;
         current_subject = 2;
-        serial_puts("LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\n");
-        serial_puts("LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\n");
         return 0xcafe;
     }
     if (blocking_ipc_step == 4 && current_subject == 2 && number == 9) {
         uint64_t got = leanos_blocking_ipc_demo(3, 4, 2, arg0, arg1);
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected || arg2 != 1)
             fail("blocking-ipc-model-delivery");
-        serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
 #ifdef LEANOS_ENTRY_HIGH_WATER
         report_entry_stack_high_water("syscall");
 #endif
-        serial_puts("LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS blocks=1 wakes=1 deliveries=1\n");
         finish(0x10);
     }
     if (preemption_step == 6 && current_subject == 1 && number == 5) {
@@ -4489,8 +4490,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 #ifdef LEANOS_ENTRY_HIGH_WATER
         report_entry_stack_high_water("timer-context-switch");
 #endif
-        serial_puts("LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
-        serial_puts("LEANOS/5 FINAL status=PASS ticks=2\n");
+        serial_puts(LEANOS_SERIAL_5_RESUME " subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
+        serial_puts(LEANOS_SERIAL_5_FINAL " status=PASS ticks=2\n");
         finish(0x10);
     }
     if (number == 3) fail("register-canary");
@@ -4516,11 +4517,11 @@ uint64_t timer_handler(uint64_t saved_cs) {
     if (next_subject != queued || next_address_space != queued) fail("modeled-tick");
     ++timer_accepted;
     serial_puts(timer_accepted == 1
-        ? "LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1\n"
-        : "LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1\n");
+        ? LEANOS_SERIAL_5_TIMER " vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1\n"
+        : LEANOS_SERIAL_5_TIMER " vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1\n");
     serial_puts(old_subject == 1
-        ? "LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n"
-        : "LEANOS/5 CONTEXT old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin\n");
+        ? LEANOS_SERIAL_5_CONTEXT " old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n"
+        : LEANOS_SERIAL_5_CONTEXT " old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin\n");
     current_subject = next_subject;
     preemption_step = next_subject == 2 ? 2 : 5;
     return next_subject;
@@ -4576,7 +4577,7 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
         check_original_frame(saved_context_b, saved_context_b_original_rip,
             saved_context_b_original_flags, saved_context_b_original_rsp, 2);
         blocking_ipc_step = 2;
-        serial_puts("LEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1\n");
         return;
     }
     if (current_subject == 2 && blocking_ipc_step == 3) {
@@ -4585,7 +4586,7 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
         check_original_frame(target, saved_context_b_original_rip,
             saved_context_b_original_flags, saved_context_b_original_rsp, 2);
         blocking_ipc_step = 4;
-        serial_puts("LEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 reservation=owned trusted=1\n");
         return;
     }
     if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
@@ -4597,7 +4598,7 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
         check_resumable_witness(1, target, saved_context_a, target_owner, saved_owner,
             ORACLE_INDEX_RESUMABLE_A_TO_B);
         preemption_step = 3;
-        serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=initial contexts=separate\n");
+        serial_puts(LEANOS_SERIAL_5_SWITCH " subject=2 address-space=2 cr3=switched stack=initial contexts=separate\n");
         return;
     }
     if (current_subject == 1 && preemption_step == 5 && timer_accepted == 2) {
@@ -4611,7 +4612,7 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
         check_resumable_witness(2, target, saved_context_b, target_owner, saved_owner,
             ORACLE_INDEX_RESUMABLE_B_TO_A);
         preemption_step = 6;
-        serial_puts("LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\n");
+        serial_puts(LEANOS_SERIAL_5_SWITCH " subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\n");
         return;
     }
     fail("switch-binding");
@@ -4678,7 +4679,7 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
                 runtime_mapping_leaf(runtime_mapping_frame_before) ||
             runtime_mapping_frame_before[0] != RUNTIME_MAPPING_AFTER)
             fail("stale-translation-fault-binding");
-        serial_puts("LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent replacement-owner=1 replacement-lifetime=2 replacement-canary=308959202 replacement-canary-intact=1 route=contain handoff=new-owner cr3-reload-since-unmap=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_19_TLB_CPL3 " event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent replacement-owner=1 replacement-lifetime=2 replacement-canary=308959202 replacement-canary-intact=1 route=contain handoff=new-owner cr3-reload-since-unmap=0 result=PASS\n");
         current_subject = 1;
         return 3;
     }
@@ -4732,20 +4733,20 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             selected != saved_context_owner_b || address_space != 2)
             fail("fault-model-encoding");
         if (page_fault_probe_class == 2) {
-            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=21 access=execute protection=1 cr2=");
+            serial_puts(LEANOS_SERIAL_14_FAULT_ENTRY " vector=14 error=21 access=execute protection=1 cr2=");
             serial_u64((uint64_t)user_a_nx_fault_instruction);
             serial_puts(" rip=user-a-nx-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 payload-canary=armed result=PASS\n");
         } else if (page_fault_probe_class == 1) {
-            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=7 access=write protection=1 cr2=");
+            serial_puts(LEANOS_SERIAL_14_FAULT_ENTRY " vector=14 error=7 access=write protection=1 cr2=");
             serial_u64((uint64_t)user_a_write_target);
             serial_puts(" rip=user-a-write-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 write-canary=unchanged result=PASS\n");
         } else {
-            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS\n");
+            serial_puts(LEANOS_SERIAL_14_FAULT_ENTRY " vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS\n");
         }
         fault_dispatch_attestation = result;
         current_subject = selected;
-        serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-        serial_puts("LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+        serial_puts(LEANOS_SERIAL_14_TERMINATE " subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+        serial_puts(LEANOS_SERIAL_14_DISPATCH " subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
         return 2;
     }
 #endif
@@ -4755,7 +4756,7 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
 #ifdef LEANOS_ENTRY_HIGH_WATER
     report_entry_stack_high_water("user-page-fault");
 #endif
-    serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_11_USER_FAULT " vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
     return (uint64_t)user_a_fault_recovered;
 }
 
@@ -4772,11 +4773,11 @@ uint64_t page_fault_diagnostic_handler(
         fail("page-fault-diagnostic-bypass");
     supervisor_probe = (unsigned)completed_state;
     if (completed_state == 2) {
-        serial_puts("LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS\n");
+        serial_puts(LEANOS_SERIAL_4_PROBE " kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS\n");
     } else if (completed_state == 4) {
-        serial_puts("LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS\n");
+        serial_puts(LEANOS_SERIAL_4_PROBE " kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS\n");
     } else {
-        serial_puts("LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_6_PROBE " kind=smap-direct vector=14 origin=kernel ac=0 result=PASS\n");
     }
     return recovery;
 }
@@ -5063,14 +5064,14 @@ uint64_t direct_port_containment_gp_handler(uint64_t error, uint64_t rip,
     direct_port_fault_attestation = result;
     current_subject = selected;
     serial_puts(direct_port_probe_class == 1
-        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
+        ? LEANOS_SERIAL_16_DIRECT_PORT_DENIAL " subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
         : direct_port_probe_class == 2
-        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1021 direction=in width=byte purpose=user device-mutation=0 result=PASS\n"
+        ? LEANOS_SERIAL_16_DIRECT_PORT_DENIAL " subject=1 vector=13 error=0 origin=cpl3 port=1021 direction=in width=byte purpose=user device-mutation=0 result=PASS\n"
         : direct_port_probe_class == 3
-        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=33 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
-        : "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1016 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
-    serial_puts("LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-    serial_puts("LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+        ? LEANOS_SERIAL_16_DIRECT_PORT_DENIAL " subject=1 vector=13 error=0 origin=cpl3 port=33 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
+        : LEANOS_SERIAL_16_DIRECT_PORT_DENIAL " subject=1 vector=13 error=0 origin=cpl3 port=1016 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_TERMINATE " subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts(LEANOS_SERIAL_16_DIRECT_PORT_DISPATCH " subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
     return 2;
 }
 #endif
@@ -5091,7 +5092,7 @@ uint64_t divide_error_handler(uint64_t rip, uint64_t saved_cs) {
         cr3 != (uint64_t)page_map_level_4_a || saved_context_owner_b != 2 ||
         !initial_b_frame_valid(initial_context_b))
         fail("divide-error-binding");
-    serial_puts("LEANOS/18 DIVIDE-ERROR-ENTRY vector=0 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=faulting-instruction subject=1 address-space=1 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_18_DIVIDE_ERROR_ENTRY " vector=0 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=faulting-instruction subject=1 address-space=1 result=PASS\n");
     uint64_t result = leanos_fault_dispatch_demo(0, saved_cs & 3u,
         current_subject, current_subject, saved_context_owner_b,
         saved_context_owner_b);
@@ -5106,8 +5107,8 @@ uint64_t divide_error_handler(uint64_t rip, uint64_t saved_cs) {
         fail("divide-error-encoding");
     integer_fault_attestation = result;
     current_subject = selected;
-    serial_puts("LEANOS/18 DIVIDE-ERROR-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-    serial_puts("LEANOS/18 DIVIDE-ERROR-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned reason=divide-error result=PASS\n");
+    serial_puts(LEANOS_SERIAL_18_DIVIDE_ERROR_TERMINATE " subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts(LEANOS_SERIAL_18_DIVIDE_ERROR_DISPATCH " subject=2 address-space=2 source=lean-scheduler context=owned reason=divide-error result=PASS\n");
     return 0;
 #else
     (void)rip;
@@ -5125,7 +5126,7 @@ uint64_t breakpoint_handler(uint64_t rip, uint64_t saved_cs) {
         cr3 != (uint64_t)page_map_level_4_a || saved_context_owner_b != 2 ||
         !initial_b_frame_valid(initial_context_b))
         fail("breakpoint-binding");
-    serial_puts("LEANOS/18 BREAKPOINT-ENTRY vector=3 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=post-instruction subject=1 address-space=1 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_18_BREAKPOINT_ENTRY " vector=3 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=post-instruction subject=1 address-space=1 result=PASS\n");
     uint64_t result = leanos_fault_dispatch_demo(3, saved_cs & 3u,
         current_subject, current_subject, saved_context_owner_b,
         saved_context_owner_b);
@@ -5140,8 +5141,8 @@ uint64_t breakpoint_handler(uint64_t rip, uint64_t saved_cs) {
         fail("breakpoint-encoding");
     integer_fault_attestation = result;
     current_subject = selected;
-    serial_puts("LEANOS/18 BREAKPOINT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-    serial_puts("LEANOS/18 BREAKPOINT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned reason=breakpoint result=PASS\n");
+    serial_puts(LEANOS_SERIAL_18_BREAKPOINT_TERMINATE " subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts(LEANOS_SERIAL_18_BREAKPOINT_DISPATCH " subject=2 address-space=2 source=lean-scheduler context=owned reason=breakpoint result=PASS\n");
     return 0;
 #else
     (void)rip;
@@ -5159,45 +5160,45 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
 #ifdef LEANOS_NMI_PROBE
     int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
-    serial_puts("LEANOS/17 BOOT target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
+    serial_puts(LEANOS_SERIAL_17_BOOT " target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
 #elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
-    serial_puts("LEANOS/22 BOOT target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite\n");
+    serial_puts(LEANOS_SERIAL_22_BOOT " target=x86_64-q35 subjects=2 schedule=capability-transfer-v1 controls=wp,smep,smap boundary=generated-composite\n");
 #elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
-    serial_puts("LEANOS/23 BOOT target=x86_64-q35 subjects=2 schedule=inflight-revocation-v1 controls=wp,smep,smap boundary=generated-composite\n");
+    serial_puts(LEANOS_SERIAL_23_BOOT " target=x86_64-q35 subjects=2 schedule=inflight-revocation-v1 controls=wp,smep,smap boundary=generated-composite\n");
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
-    serial_puts("LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap\n");
+    serial_puts(LEANOS_SERIAL_20_BOOT " target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     serial_puts(extended_state_probe_class >= 5
-        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
-        : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
+        ? LEANOS_SERIAL_14_BOOT " target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
+        : LEANOS_SERIAL_13_BOOT " target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     serial_puts(page_fault_probe_class == 5
-        ? "LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off\n"
+        ? LEANOS_SERIAL_19_BOOT " target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off\n"
         : page_fault_probe_class == 4
-        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=walk-mismatch contract=v1 controls=wp,smep,smap\n"
+        ? LEANOS_SERIAL_14_BOOT " target=x86_64-q35 subjects=2 schedule=fault-integrity probe=walk-mismatch contract=v1 controls=wp,smep,smap\n"
         : page_fault_probe_class == 3
-        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=reserved-bit contract=v1 controls=wp,smep,smap\n"
+        ? LEANOS_SERIAL_14_BOOT " target=x86_64-q35 subjects=2 schedule=fault-integrity probe=reserved-bit contract=v1 controls=wp,smep,smap\n"
         : page_fault_probe_class == 2
-        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=nx-execute contract=v1 controls=wp,smep,smap\n"
+        ? LEANOS_SERIAL_14_BOOT " target=x86_64-q35 subjects=2 schedule=fault-containment probe=nx-execute contract=v1 controls=wp,smep,smap\n"
         : page_fault_probe_class == 1
-        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=readonly-write contract=v1 controls=wp,smep,smap\n"
-        : "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=supervisor-read contract=v1 controls=wp,smep,smap\n");
+        ? LEANOS_SERIAL_14_BOOT " target=x86_64-q35 subjects=2 schedule=fault-containment probe=readonly-write contract=v1 controls=wp,smep,smap\n"
+        : LEANOS_SERIAL_14_BOOT " target=x86_64-q35 subjects=2 schedule=fault-containment probe=supervisor-read contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     serial_puts(direct_port_probe_class == 1
-        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap\n"
+        ? LEANOS_SERIAL_16_BOOT " target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap\n"
         : direct_port_probe_class == 2
-        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-in contract=v1 controls=wp,smep,smap\n"
+        ? LEANOS_SERIAL_16_BOOT " target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-in contract=v1 controls=wp,smep,smap\n"
         : direct_port_probe_class == 3
-        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=pic-mask contract=v1 controls=wp,smep,smap\n"
-        : "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-out contract=v1 controls=wp,smep,smap\n");
+        ? LEANOS_SERIAL_16_BOOT " target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=pic-mask contract=v1 controls=wp,smep,smap\n"
+        : LEANOS_SERIAL_16_BOOT " target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-out contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
     serial_puts(integer_fault_probe_class == 1
-        ? "LEANOS/18 BOOT target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
-        : "LEANOS/18 BOOT target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
+        ? LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
+        : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
-    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
+    serial_puts(LEANOS_SERIAL_6_BOOT " target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
-    serial_puts("LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
 #endif
 
     quarantine_q35_pci_dma();
@@ -5218,7 +5219,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
        cross the interrupt mask and use the dedicated IST2 gate. */
     if (!nmi_cpl3) {
         ordinary_entry_active = 1;
-        serial_puts("LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS\n");
+        serial_puts(LEANOS_SERIAL_17_NMI_READY " origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
 #endif
@@ -5227,7 +5228,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #ifdef LEANOS_NMI_PROBE
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     if (extended_state_probe_class >= 5)
-        serial_puts("LEANOS/14 FAST-ENTRY cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS\n");
+        serial_puts(LEANOS_SERIAL_14_FAST_ENTRY " cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS\n");
 #endif
 #ifdef LEANOS_DOUBLE_FAULT_PROBE
     run_double_fault_probe();
@@ -5246,7 +5247,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         fail("supervisor-controls");
     }
     record_extended_state_cpuid();
-    serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
+    serial_puts(LEANOS_SERIAL_6_CONTROL " cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
     supervisor_probe = 1;
     run_wp_probe();
     if (supervisor_probe != 2) fail("wp-no-fault");
@@ -5261,32 +5262,32 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     if (!ac_is_set()) fail("cleanup-probe-undetected");
     smap_force_clac();
     if (ac_is_set()) fail("cleanup-recovery");
-    serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
+    serial_puts(LEANOS_SERIAL_6_CLEANUP " omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
 #ifdef LEANOS_NMI_PROBE
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
+    serial_puts(LEANOS_SERIAL_17_NMI_READY " origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/22 ENTER subject=1 address-space=1 cpl=3 source=owned-context result=PASS\n");
+    serial_puts(LEANOS_SERIAL_22_ENTER " subject=1 address-space=1 cpl=3 source=owned-context result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/23 ENTER subject=1 address-space=1 cpl=3 source=owned-context authority=slot2:revoke result=PASS\n");
+    serial_puts(LEANOS_SERIAL_23_ENTER " subject=1 address-space=1 cpl=3 source=owned-context authority=slot2:revoke result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0\n");
+    serial_puts(LEANOS_SERIAL_20_ENTER " subject=1 address-space=1 cpl=3 budget=1 usage=0\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     current_subject = 1;
@@ -5294,8 +5295,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     if (extended_state_probe_class > 6)
         fail("extended-state-probe-class");
     serial_puts(extended_state_probe_class >= 5
-        ? "LEANOS/14 FAST-ENTRY event=enter subject=1 address-space=1 instruction="
-        : "LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
+        ? LEANOS_SERIAL_14_FAST_ENTRY " event=enter subject=1 address-space=1 instruction="
+        : LEANOS_SERIAL_13_EXTENDED_STATE " event=enter subject=1 address-space=1 instruction=");
     serial_puts(extended_state_probe_class == 0 ? "x87" :
         extended_state_probe_class == 1 ? "mmx" :
         extended_state_probe_class == 2 ? "sse" :
@@ -5339,10 +5340,10 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     }
 #endif
     serial_puts(page_fault_probe_class == 5
-        ? "LEANOS/19 ENTER subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438\n"
+        ? LEANOS_SERIAL_19_ENTER " subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438\n"
         : page_fault_probe_class >= 3
-        ? "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
-        : "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+        ? LEANOS_SERIAL_14_ENTER " subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
+        : LEANOS_SERIAL_14_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
 #ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
     enter_user(user_b_entry, user_b_stack_top);
 #else
@@ -5352,13 +5353,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/16 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+    serial_puts(LEANOS_SERIAL_16_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+    serial_puts(LEANOS_SERIAL_18_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     enter_user(user_a_entry, user_a_stack_top);
@@ -5366,7 +5367,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     current_subject = 2;
     activate_user_address_space(page_map_level_4_b);
     check_selected_root_b();
-    serial_puts("LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     enter_user(user_b_entry, user_b_stack_top);
 #endif
     fail("iret-returned");

@@ -17,44 +17,65 @@ rejected.  This is final-ELF evidence, not a proof of x86 delivery.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+def load_serial_protocol(path):
+    """Map "<family>/<TAG>" to the exact guest line prefix from the generated
+    serial vocabulary; the checker never spells a record identity itself."""
+    records = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t")
+        if fields[0] == "record":
+            records[f"{fields[1]}/{fields[2]}"] = fields[4]
+        elif fields[0] == "family":
+            records[fields[1]] = fields[3]
+    if not records:
+        raise SystemExit(f"error: empty serial protocol vocabulary: {path}")
+    return records
+
+
+SERIAL = load_serial_protocol(
+    os.environ.get("LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv")
+)
+
+
 INSTRUCTION_RE = re.compile(r"^\s*([0-9a-f]+):\s+([a-z][a-z0-9.]*)\s*(.*?)\s*$")
 UD_TERMINAL_RECORD = (
-    "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 "
+    SERIAL["18/EARLY-TERMINAL"] + " phase=bootstrap32 table=bootstrap32 "
     "width=legacy8 vector=6 reason=invalid-opcode error=none "
     "frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
 )
 UD_FAILURE_RECORD = (
-    "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap32 "
+    SERIAL["18/EARLY-TERMINAL"] + " status=FAIL phase=bootstrap32 "
     "reason=probe-frame-policy\n"
 )
 NMI_TERMINAL_RECORD = (
-    "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 "
+    SERIAL["18/EARLY-TERMINAL"] + " phase=bootstrap64 table=bootstrap64 "
     "width=long16 vector=2 reason=non-maskable-interrupt error=none "
     "frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal "
     "return=none\n"
 )
 NMI_FAILURE_RECORD = (
-    "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap64 "
+    SERIAL["18/EARLY-TERMINAL"] + " status=FAIL phase=bootstrap64 "
     "reason=probe-frame-policy\n"
 )
 NMI_READY_RECORD = (
-    "LEANOS/18 EARLY64-READY phase=bootstrap64 table=bootstrap64 "
+    SERIAL["18/EARLY64-READY"] + " phase=bootstrap64 table=bootstrap64 "
     "width=long16 stack=boot if=0 tss=none runtime-idt=unpublished "
     "result=PASS\n"
 )
 CATCHALL32_PRODUCTION_RECORD = (
-    "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 "
+    SERIAL["18/EARLY-TERMINAL"] + " phase=bootstrap32 table=bootstrap32 "
     "width=legacy8 vector=other class=exception stack=boot target=stub32 "
     "latch=terminal return=none\n"
 )
 ISR2_64_PRODUCTION_RECORD = (
-    "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 "
+    SERIAL["18/EARLY-TERMINAL"] + " phase=bootstrap64 table=bootstrap64 "
     "width=long16 vector=2 class=nmi stack=boot target=stub64 "
     "latch=terminal return=none\n"
 )
@@ -518,11 +539,11 @@ def main() -> int:
     match_tail(tail, symbols, probe=args.probe == "bootstrap64-nmi")
 
     check_record(args.elf, sections, symbols, "early32_nmi_record",
-                 "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 "
+                 SERIAL["18/EARLY-TERMINAL"] + " phase=bootstrap32 "
                  "table=bootstrap32 width=legacy8 vector=2 class=nmi "
                  "stack=boot target=stub32 latch=terminal return=none\n")
     check_record(args.elf, sections, symbols, "early64_fault_record",
-                 "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 "
+                 SERIAL["18/EARLY-TERMINAL"] + " phase=bootstrap64 "
                  "table=bootstrap64 width=long16 vector=other "
                  "class=exception stack=boot target=stub64 latch=terminal "
                  "return=none\n")

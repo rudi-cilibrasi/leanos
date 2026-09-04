@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 [[ "${1:-}" == --version ]] && {
   echo "QEMU double-fault fixture version 1"
@@ -10,7 +13,7 @@ for arg in "$@"; do
   [[ "$arg" == file:* ]] && log="${arg#file:}"
 done
 [[ -n "$log" ]] || exit 2
-terminal='LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none'
+terminal="${LEANOS_SERIAL_8_TERMINAL} reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none"
 
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   success) echo "$terminal" > "$log"; exit 37 ;;
@@ -22,8 +25,8 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   ordinary-stack) echo "${terminal/normal-stack=unmapped/normal-stack=mapped}" > "$log"; exit 37 ;;
   direct-handler) echo "${terminal/reason=double-fault/reason=direct-handler}" > "$log"; exit 37 ;;
   returned) echo "${terminal/return=none/return=iretq}" > "$log"; exit 37 ;;
-  forged-pass) printf '%s\n' "$terminal" 'LEANOS/8 TERMINAL status=PASS' > "$log"; exit 37 ;;
-  guest-evidence) echo 'LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL' > "$log"; exit 39 ;;
+  forged-pass) printf '%s\n' "$terminal" "${LEANOS_SERIAL_8_TERMINAL} status=PASS" > "$log"; exit 37 ;;
+  guest-evidence) echo "${LEANOS_SERIAL_8_TERMINAL} reason=double-fault evidence=invalid status=FAIL" > "$log"; exit 39 ;;
   reset) : > "$log"; exit 0 ;;
   hang) sleep 10 ;;
   *) exit 2 ;;

@@ -16,6 +16,7 @@ import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
 import LeanOS.BoundaryVocabulary
+import LeanOS.SerialProtocol
 
 /-!
 # Bounded scalar boundary oracle
@@ -1268,10 +1269,24 @@ def emitTokens : IO Unit := do
   for token in BoundaryVocabulary.tokens do
     IO.println s!"token\t{token.kind}\t{token.name}\t{token.word}\t{token.render}"
 
+/-- The serial protocol rows: one `record` line per versioned record identity
+with its C/shell symbol and the exact guest line prefix. -/
+def emitSerial : IO Unit := do
+  let revision := (← IO.getEnv "LEANOS_SOURCE_REVISION").getD "unknown"
+  IO.println "leanos-serial-protocol\t1"
+  IO.println s!"source-revision\t{revision}"
+  for family in SerialProtocol.families do
+    IO.println
+      s!"family\t{family.version}\tLEANOS_SERIAL_FAMILY_{family.version}\tLEANOS/{family.version}"
+  for record in SerialProtocol.records do
+    IO.println
+      s!"record\t{record.1}\t{record.2}\t{SerialProtocol.symbolName record}\t{SerialProtocol.prefixText record}"
+
 end LeanOS.Oracle
 
 def main (args : List String) : IO Unit :=
   match args with
   | [] => LeanOS.Oracle.emit
   | ["tokens"] => LeanOS.Oracle.emitTokens
-  | _ => throw <| IO.userError "usage: leanos-oracle [tokens]"
+  | ["serial"] => LeanOS.Oracle.emitSerial
+  | _ => throw <| IO.userError "usage: leanos-oracle [tokens|serial]"
