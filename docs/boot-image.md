@@ -257,7 +257,15 @@ against the declared count and class, so the workflow no longer hard-codes
 those numbers. A missing manifest entry, an unknown artifact kind, a family
 parameter that disagrees with the matrix, a declared driver that does not
 exist, or a derived artifact absent from the build each fail with a named
-diagnostic; `scripts/test-emulator-evidence.py` exercises every one.
+diagnostic; `scripts/test-emulator-evidence.py` exercises every one. The
+manifest's `build` section declares the image wiring the same way: each kernel
+object with its macro set, each boot object with its source and macro set,
+each image as the boot and kernel objects it links (plus extra objects and
+whether it receives a final page-plan link), and the policy-negative fixtures.
+`scripts/generate-image-object-graph.py` derives its compile and link rules
+from that section instead of Python literal tables, and it rejects an image
+that names an unknown object or a malformed macro set with a named
+diagnostic.
 
 `EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
 matrix and tool-inventory hashes, QEMU version and exact command, runner result,

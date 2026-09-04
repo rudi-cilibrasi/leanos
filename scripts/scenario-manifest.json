@@ -101,6 +101,577 @@
     "SOURCE_REVISION",
     "TOOLCHAIN_PROFILE.json"
   ],
+  "build": {
+    "kernel_objects": {
+      "kernel": [
+        "-DLEANOS_ENTRY_HIGH_WATER=1"
+      ],
+      "kernel-malformed-handoff": [
+        "-DLEANOS_MALFORMED_HANDOFF_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-malformed-handoff.h\""
+      ],
+      "kernel-projection-authority-mutation": [
+        "-DLEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-projection-authority-mutation.h\""
+      ],
+      "kernel-raw-selection-authority-mutation": [
+        "-DLEANOS_RAW_SELECTION_MUTATION_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-raw-selection-authority-mutation.h\""
+      ],
+      "kernel-preemption": [
+        "-DLEANOS_PREEMPTION_SCENARIO=1",
+        "-DLEANOS_ENTRY_HIGH_WATER=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-preemption.h\""
+      ],
+      "kernel-frame-budget": [
+        "-DLEANOS_FRAME_BUDGET_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-frame-budget.h\""
+      ],
+      "kernel-capability-transfer": [
+        "-DLEANOS_CAPABILITY_TRANSFER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-capability-transfer.h\""
+      ],
+      "kernel-inflight-revocation": [
+        "-DLEANOS_INFLIGHT_REVOCATION_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-inflight-revocation.h\""
+      ],
+      "kernel-fault-containment": [
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-containment.h\""
+      ],
+      "kernel-fault-reserved-bit": [
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-reserved-bit.h\""
+      ],
+      "kernel-fault-walk-mismatch": [
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-walk-mismatch.h\""
+      ],
+      "kernel-fault-stale-translation": [
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-stale-translation.h\""
+      ],
+      "kernel-extended-state": [
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-extended-state.h\""
+      ],
+      "kernel-extended-state-peer-pke": [
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+        "-DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-extended-state-peer-pke.h\""
+      ],
+      "kernel-double-fault": [
+        "-DLEANOS_DOUBLE_FAULT_PROBE=1"
+      ],
+      "kernel-entry-stack-overflow": [
+        "-DLEANOS_DOUBLE_FAULT_PROBE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-entry-overflow.h\""
+      ],
+      "kernel-double-fault-guard-mapped": [
+        "-DLEANOS_DOUBLE_FAULT_PROBE=1",
+        "-DLEANOS_DF_MAP_GUARD=1"
+      ],
+      "kernel-entry-adversarial": [
+        "-DLEANOS_ENTRY_ADVERSARIAL=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-entry-adversarial.h\""
+      ],
+      "kernel-nmi": [
+        "-DLEANOS_NMI_PROBE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-nmi.h\""
+      ],
+      "kernel-bootstrap32-ud": [
+        "-DLEANOS_ENTRY_HIGH_WATER=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-bootstrap32-ud.h\""
+      ],
+      "kernel-bootstrap64-nmi": [
+        "-DLEANOS_ENTRY_HIGH_WATER=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-bootstrap64-nmi.h\""
+      ],
+      "kernel-direct-port": [
+        "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-direct-port.h\""
+      ],
+      "kernel-integer-fault": [
+        "-DLEANOS_INTEGER_FAULT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-integer-fault.h\""
+      ]
+    },
+    "boot_objects": {
+      "boot": {
+        "source": "boot/boot.S",
+        "definitions": []
+      },
+      "boot-preemption": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_PREEMPTION_SCENARIO=1"
+        ]
+      },
+      "boot-frame-budget": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FRAME_BUDGET_SCENARIO=1"
+        ]
+      },
+      "boot-capability-transfer": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_CAPABILITY_TRANSFER_SCENARIO=1"
+        ]
+      },
+      "boot-inflight-revocation": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_INFLIGHT_REVOCATION_SCENARIO=1"
+        ]
+      },
+      "boot-fault-containment": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1"
+        ]
+      },
+      "boot-fault-readonly-write": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_PAGE_FAULT_PROBE_READONLY_WRITE=1"
+        ]
+      },
+      "boot-fault-nx-execute": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_PAGE_FAULT_PROBE_NX_EXECUTE=1"
+        ]
+      },
+      "boot-fault-reserved-bit": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1"
+        ]
+      },
+      "boot-fault-walk-mismatch": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1"
+        ]
+      },
+      "boot-fault-stale-translation": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1"
+        ]
+      },
+      "boot-extended-state": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1"
+        ]
+      },
+      "boot-extended-state-mmx": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_EXTENDED_STATE_MMX_PROBE=1"
+        ]
+      },
+      "boot-extended-state-sse": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_EXTENDED_STATE_SSE_PROBE=1"
+        ]
+      },
+      "boot-extended-state-sse2": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_EXTENDED_STATE_SSE2_PROBE=1"
+        ]
+      },
+      "boot-extended-state-avx": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_EXTENDED_STATE_AVX_PROBE=1"
+        ]
+      },
+      "boot-extended-state-peer-pke": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1"
+        ]
+      },
+      "boot-fast-entry-syscall": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_FAST_ENTRY_SYSCALL_PROBE=1"
+        ]
+      },
+      "boot-fast-entry-sysenter": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+          "-DLEANOS_FAST_ENTRY_SYSENTER_PROBE=1"
+        ]
+      },
+      "peer-pke-fixture": {
+        "source": "boot/peer-pke-fixture.S",
+        "definitions": []
+      },
+      "boot-return-restore-fixture": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_RETURN_RESTORE_FIXTURE=1"
+        ]
+      },
+      "boot-return-branch-fixture": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_RETURN_BRANCH_FIXTURE=1"
+        ]
+      },
+      "boot-return-indirect-fixture": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_RETURN_INDIRECT_FIXTURE=1"
+        ]
+      },
+      "boot-return-initial-indirect-fixture": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_RETURN_INITIAL_INDIRECT_FIXTURE=1"
+        ]
+      },
+      "boot-return-post-validation-qemu": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE=1"
+        ]
+      },
+      "boot-df-guard-mapped": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_DF_MAP_GUARD=1"
+        ]
+      },
+      "boot-entry-stack-overflow": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_ENTRY_STACK_OVERFLOW_PROBE=1"
+        ]
+      },
+      "boot-entry-adversarial": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_ENTRY_ADVERSARIAL=1"
+        ]
+      },
+      "boot-nmi": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_NMI_PROBE=1"
+        ]
+      },
+      "boot-bootstrap32-ud": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_BOOTSTRAP32_UD_PROBE=1"
+        ]
+      },
+      "boot-bootstrap64-nmi": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_BOOTSTRAP64_NMI_PROBE=1"
+        ]
+      },
+      "boot-direct-port-serial": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1"
+        ]
+      },
+      "boot-direct-port-debug": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_DIRECT_PORT_PROBE_DEBUG=1"
+        ]
+      },
+      "boot-direct-port-in": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_DIRECT_PORT_PROBE_IN=1"
+        ]
+      },
+      "boot-direct-port-pic": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",
+          "-DLEANOS_DIRECT_PORT_PROBE_PIC=1"
+        ]
+      },
+      "boot-divide-error": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_INTEGER_FAULT_SCENARIO=1"
+        ]
+      },
+      "boot-breakpoint": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_INTEGER_FAULT_SCENARIO=1",
+          "-DLEANOS_INTEGER_FAULT_PROBE_BP=1"
+        ]
+      }
+    },
+    "images": {
+      "leanos": {
+        "boot": "boot",
+        "kernel": "kernel",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-malformed-handoff": {
+        "boot": "boot",
+        "kernel": "kernel-malformed-handoff",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-projection-authority-mutation": {
+        "boot": "boot",
+        "kernel": "kernel-projection-authority-mutation",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-raw-selection-authority-mutation": {
+        "boot": "boot",
+        "kernel": "kernel-raw-selection-authority-mutation",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-preemption": {
+        "boot": "boot-preemption",
+        "kernel": "kernel-preemption",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-frame-budget": {
+        "boot": "boot-frame-budget",
+        "kernel": "kernel-frame-budget",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-capability-transfer": {
+        "boot": "boot-capability-transfer",
+        "kernel": "kernel-capability-transfer",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-inflight-revocation": {
+        "boot": "boot-inflight-revocation",
+        "kernel": "kernel-inflight-revocation",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fault-containment": {
+        "boot": "boot-fault-containment",
+        "kernel": "kernel-fault-containment",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fault-readonly-write": {
+        "boot": "boot-fault-readonly-write",
+        "kernel": "kernel-fault-containment",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fault-nx-execute": {
+        "boot": "boot-fault-nx-execute",
+        "kernel": "kernel-fault-containment",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fault-reserved-bit": {
+        "boot": "boot-fault-reserved-bit",
+        "kernel": "kernel-fault-reserved-bit",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fault-walk-mismatch": {
+        "boot": "boot-fault-walk-mismatch",
+        "kernel": "kernel-fault-walk-mismatch",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fault-stale-translation": {
+        "boot": "boot-fault-stale-translation",
+        "kernel": "kernel-fault-stale-translation",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-extended-state": {
+        "boot": "boot-extended-state",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-extended-state-mmx": {
+        "boot": "boot-extended-state-mmx",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-extended-state-sse": {
+        "boot": "boot-extended-state-sse",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-extended-state-sse2": {
+        "boot": "boot-extended-state-sse2",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-extended-state-avx": {
+        "boot": "boot-extended-state-avx",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-extended-state-peer-pke": {
+        "boot": "boot-extended-state-peer-pke",
+        "kernel": "kernel-extended-state-peer-pke",
+        "extra_objects": [
+          "peer-pke-fixture"
+        ],
+        "final_link": true
+      },
+      "leanos-fast-entry-syscall": {
+        "boot": "boot-fast-entry-syscall",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-fast-entry-sysenter": {
+        "boot": "boot-fast-entry-sysenter",
+        "kernel": "kernel-extended-state",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-double-fault": {
+        "boot": "boot",
+        "kernel": "kernel-double-fault",
+        "extra_objects": [],
+        "final_link": false
+      },
+      "leanos-entry-stack-overflow": {
+        "boot": "boot-entry-stack-overflow",
+        "kernel": "kernel-double-fault",
+        "extra_objects": [],
+        "final_link": false
+      },
+      "leanos-entry-adversarial": {
+        "boot": "boot-entry-adversarial",
+        "kernel": "kernel-entry-adversarial",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-direct-port-serial": {
+        "boot": "boot-direct-port-serial",
+        "kernel": "kernel-direct-port",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-direct-port-debug": {
+        "boot": "boot-direct-port-debug",
+        "kernel": "kernel-direct-port",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-direct-port-in": {
+        "boot": "boot-direct-port-in",
+        "kernel": "kernel-direct-port",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-direct-port-pic": {
+        "boot": "boot-direct-port-pic",
+        "kernel": "kernel-direct-port",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-divide-error": {
+        "boot": "boot-divide-error",
+        "kernel": "kernel-integer-fault",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-breakpoint": {
+        "boot": "boot-breakpoint",
+        "kernel": "kernel-integer-fault",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-nmi": {
+        "boot": "boot-nmi",
+        "kernel": "kernel-nmi",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-bootstrap32-ud": {
+        "boot": "boot-bootstrap32-ud",
+        "kernel": "kernel-bootstrap32-ud",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-bootstrap64-nmi": {
+        "boot": "boot-bootstrap64-nmi",
+        "kernel": "kernel-bootstrap64-nmi",
+        "extra_objects": [],
+        "final_link": true
+      },
+      "leanos-guard": {
+        "boot": "boot-df-guard-mapped",
+        "kernel": "kernel-double-fault-guard-mapped",
+        "extra_objects": [],
+        "final_link": false
+      }
+    },
+    "policy_fixtures": {
+      "leanos-return-restore-fixture": {
+        "boot": "boot-return-restore-fixture",
+        "kernel": "kernel",
+        "extra_objects": []
+      },
+      "leanos-return-branch-fixture": {
+        "boot": "boot-return-branch-fixture",
+        "kernel": "kernel",
+        "extra_objects": []
+      },
+      "leanos-return-indirect-fixture": {
+        "boot": "boot-return-indirect-fixture",
+        "kernel": "kernel",
+        "extra_objects": []
+      },
+      "leanos-return-initial-indirect-fixture": {
+        "boot": "boot-return-initial-indirect-fixture",
+        "kernel": "kernel",
+        "extra_objects": []
+      }
+    }
+  },
   "scenarios": {
     "blocking-ipc": {
       "release_artifacts": [
