@@ -33,6 +33,14 @@ def main() -> None:
     first_check = "./scripts/test-generate-oracle-adapter-map.sh"
     if aggregate_check.index(timing_header) > aggregate_check.index(first_check):
         raise AssertionError("timing evidence must exist before the first aggregate check")
+    for contract in (
+        "trap record_check_failure EXIT",
+        "check-failure.tsv",
+        "phase\\tphase_seconds\\ttotal_seconds\\texit_code",
+        "trap - EXIT",
+    ):
+        if contract not in aggregate_check:
+            raise AssertionError(f"aggregate check failure timing contract is missing: {contract}")
 
     with tempfile.TemporaryDirectory(prefix="leanos-check-timing-") as directory:
         path = Path(directory) / "timing.tsv"
@@ -53,6 +61,35 @@ def main() -> None:
                     raise AssertionError(f"missing diagnostic {needle!r}: {error}") from error
             else:
                 raise AssertionError(f"invalid fixture passed: {needle}")
+
+        failure = Path(directory) / "failure.tsv"
+        failure.write_text(
+            checker.FAILURE_HEADER
+            + "\nimage-and-emulator-contracts\t7\t19\t2\n",
+            encoding="utf-8",
+        )
+        if checker.validate_failure(failure) != (
+            "image-and-emulator-contracts",
+            7,
+            19,
+            2,
+        ):
+            raise AssertionError("valid failure timing evidence changed")
+        for content, needle in (
+            (failure.read_text().replace("\t2\n", "\t0\n"), "range"),
+            (failure.read_text().replace("image-and-emulator-contracts", "unknown"), "phase"),
+            (failure.read_text().replace("\t7\t19", "\t20\t19"), "range"),
+        ):
+            failure.write_text(content, encoding="utf-8")
+            try:
+                checker.validate_failure(failure)
+            except ValueError as error:
+                if needle not in str(error):
+                    raise AssertionError(
+                        f"missing failure diagnostic {needle!r}: {error}"
+                    ) from error
+            else:
+                raise AssertionError(f"invalid failure fixture passed: {needle}")
     print("Aggregate check timing evidence fixtures passed")
 
 

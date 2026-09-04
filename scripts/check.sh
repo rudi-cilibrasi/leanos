@@ -5,10 +5,27 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 check_timing_file="${LEANOS_CHECK_TIMING_FILE:-build/ci/check-phases.tsv}"
+check_failure_timing_file="${LEANOS_CHECK_FAILURE_TIMING_FILE:-build/ci/check-failure.tsv}"
 mkdir -p "$(dirname "$check_timing_file")"
+mkdir -p "$(dirname "$check_failure_timing_file")"
+rm -f "$check_failure_timing_file"
 printf 'phase\tphase_seconds\ttotal_seconds\n' >"$check_timing_file"
 check_started_at=$SECONDS
 check_phase_started_at=$SECONDS
+check_phase="lean-and-generated-contracts"
+
+record_check_failure() {
+  local status=$?
+  if ((status != 0)); then
+    local now=$SECONDS
+    printf 'phase\tphase_seconds\ttotal_seconds\texit_code\n%s\t%s\t%s\t%s\n' \
+      "$check_phase" "$((now - check_phase_started_at))" \
+      "$((now - check_started_at))" "$status" >"$check_failure_timing_file"
+  fi
+  exit "$status"
+}
+
+trap record_check_failure EXIT
 
 record_check_phase() {
   local phase="$1"
@@ -50,6 +67,7 @@ python3 ./scripts/test-scenario-manifest.py
 ./scripts/check-invariants.sh
 
 record_check_phase lean-and-generated-contracts
+check_phase="security-and-platform-contracts"
 
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
@@ -77,6 +95,7 @@ fi
 ./scripts/check-firmware-corpus.sh
 
 record_check_phase security-and-platform-contracts
+check_phase="hosted-boundary-and-boot-contracts"
 
 ./scripts/check-boot-memory-full-projection.sh
 
@@ -85,6 +104,7 @@ record_check_phase security-and-platform-contracts
 ./scripts/test-selected-compiler-propagation.sh
 
 record_check_phase hosted-boundary-and-boot-contracts
+check_phase="image-and-emulator-contracts"
 
 ./scripts/test-run-malformed-handoff.sh
 
@@ -148,6 +168,7 @@ python3 scripts/test-check-timing.py
 ./scripts/run-emulator-evidence.py check
 
 record_check_phase image-and-emulator-contracts
+check_phase="proof-integrity-and-negative-fixtures"
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
@@ -258,5 +279,6 @@ fi
 
 record_check_phase proof-integrity-and-negative-fixtures
 python3 scripts/check-check-timing.py "$check_timing_file"
+trap - EXIT
 
 echo "Lean build, proof-integrity, and negative regression checks passed"

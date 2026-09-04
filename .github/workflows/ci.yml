@@ -201,7 +201,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: aggregate-check-timing-${{ github.sha }}
-          path: build/ci/check-phases.tsv
+          path: build/ci/check-*.tsv
           if-no-files-found: warn
           retention-days: 14
 

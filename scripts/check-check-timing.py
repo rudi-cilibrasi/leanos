@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 HEADER = "phase\tphase_seconds\ttotal_seconds"
+FAILURE_HEADER = "phase\tphase_seconds\ttotal_seconds\texit_code"
 PHASES = (
     "lean-and-generated-contracts",
     "security-and-platform-contracts",
@@ -36,6 +37,27 @@ def validate(path: Path) -> int:
             raise ValueError(f"line {number}: invalid cumulative timing")
         previous_total = total_seconds
     return previous_total
+
+
+def validate_failure(path: Path) -> tuple[str, int, int, int]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if len(lines) != 2 or lines[0] != FAILURE_HEADER:
+        raise ValueError("failure timing header or row count is invalid")
+    fields = lines[1].split("\t")
+    if len(fields) != 4 or fields[0] not in PHASES:
+        raise ValueError("failure timing phase is unrecognized")
+    try:
+        phase_seconds, total_seconds, exit_code = map(int, fields[1:])
+    except ValueError as error:
+        raise ValueError("failure timing values must be integers") from error
+    if (
+        phase_seconds < 0
+        or total_seconds < phase_seconds
+        or exit_code < 1
+        or exit_code > 255
+    ):
+        raise ValueError("failure timing values are out of range")
+    return fields[0], phase_seconds, total_seconds, exit_code
 
 
 def main() -> int:
