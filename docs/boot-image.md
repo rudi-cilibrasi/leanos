@@ -275,7 +275,19 @@ over them for the ISO staging roots, the page-plan stubs, the policy queue,
 the image staging, and the ISO queue instead of listing every image by hand;
 `scripts/test-scenario-manifest.py` rejects an invalid ISO name, an unknown
 GRUB configuration, a duplicate policy key, a malformed environment pair, an
-unknown kernel object, and a malformed stub name with named diagnostics.
+unknown kernel object, and a malformed stub name with named diagnostics. Four
+ordered lists in the same section drive the remaining per-image steps in the
+order the build runs them: `plan_checks` (a validate compares an image's
+linker-resolved page-table plan with its expected header; a converge feeds
+the resolved plan back through the listed graph targets until it is stable),
+`disassemblies`, `entry_policies` (the entry-policy check queued per final
+ELF with its report and optional environment pair), and
+`extended_state_policies`; the query tool rejects an unpackaged image, an
+unknown check kind, a convergence without graph targets or with a non-graph
+target, a duplicated final plan or output, a duplicated policy key, and a
+malformed variant, so the bespoke hand-linked double-fault family and the
+tier-dependent fault-probe validation are the only per-image steps the build
+script still spells out.
 
 `EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
 matrix and tool-inventory hashes, QEMU version and exact command, runner result,

@@ -561,15 +561,26 @@ validation_tool_signature={signature}
         )
         self.assertIn('export -f run_entry_policy_check', wrapper)
         self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
+        self.assertIn('./scripts/scenario-manifest.py entry-policies', wrapper)
         self.assertIn(
-            'queue_entry_policy canonical "$build/leanos.elf"', wrapper
+            'queue_entry_policy "$entry_key" "$build/$entry_image.elf"', wrapper
         )
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8")
+        )
+        entry_policies = manifest["build"]["entry_policies"]
+        self.assertEqual(entry_policies[0]["key"], "canonical")
         self.assertIn(
-            'queue_entry_policy "fast-entry-$mechanism"', wrapper
+            {"image": "leanos-fault-nx-execute", "key": "fault-nx-execute",
+             "report": "fault-nx-execute-policy-report.txt",
+             "environment": ["LEANOS_PAGE_FAULT_PROBE", "nx-execute"]},
+            entry_policies,
         )
-        self.assertIn(
-            'queue_entry_policy fault-stale-translation', wrapper
+        self.assertEqual(
+            [entry["key"] for entry in entry_policies if entry["key"].startswith("fast-entry-")],
+            ["fast-entry-syscall", "fast-entry-sysenter"],
         )
+        self.assertIn("fault-stale-translation", [entry["key"] for entry in entry_policies])
         self.assertIn(
             'echo "error: one or more entry policy checks failed"', wrapper
         )
@@ -919,7 +930,7 @@ compute_lean_c_signature {root!s}
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "converge_selected_graph_plan() {" + wrapper.split(
             "converge_selected_graph_plan() {", 1
-        )[1].split("\n}\n\nvalidate_selected_final_plan", 1)[0] + "\n}"
+        )[1].split("\n}\n", 1)[0] + "\n}"
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

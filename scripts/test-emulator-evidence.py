@@ -367,20 +367,33 @@ def run_fixtures() -> None:
             raise AssertionError("build-image does not restrict PR return policy checks")
         if 'selected_final_enabled "$elf_path" || return 0' not in build_image:
             raise AssertionError("build-image does not restrict final-plan checks to selected images")
-        if 'validate_selected_final_plan "$build/leanos.elf"' not in build_image:
-            raise AssertionError("build-image does not route the canonical final plan through selection")
-        if (
-            'converge_selected_graph_plan "$build/leanos-bootstrap64-nmi.elf"'
-            not in build_image
+        if 'validate_selected_final_plan "$build/$plan_image.elf"' not in build_image:
+            raise AssertionError("build-image does not route the final plans through selection")
+        if 'converge_selected_graph_plan "$build/$plan_image.elf"' not in build_image:
+            raise AssertionError("build-image does not converge shared graph plans")
+        if "./scripts/scenario-manifest.py plan-checks" not in build_image:
+            raise AssertionError("build-image does not derive its plan checks from the manifest")
+        plan_checks = evidence.load_manifest()["build"]["plan_checks"]
+        canonical_plan = next((entry for entry in plan_checks if entry["image"] == "leanos"), None)
+        if canonical_plan is None or canonical_plan["check"] != "validate":
+            raise AssertionError("manifest does not validate the canonical final plan")
+        converge = [entry for entry in plan_checks if entry["check"] == "converge"]
+        if {entry["image"] for entry in converge} != {"leanos-bootstrap64-nmi", "leanos-extended-state"}:
+            raise AssertionError("manifest does not converge the shared graph plans")
+        for image, expected in (
+            ("leanos-direct-port-serial", "boot-page-plan-direct-port.h"),
+            ("leanos-direct-port-pic", "boot-page-plan-direct-port.h"),
+            ("leanos-divide-error", "boot-page-plan-integer-fault.h"),
+            ("leanos-breakpoint", "boot-page-plan-integer-fault.h"),
         ):
-            raise AssertionError("build-image does not route special final plans through selection")
-        if (
-            'converge_selected_graph_plan "$build/leanos-extended-state.elf"'
-            not in build_image
-        ):
-            raise AssertionError(
-                "build-image does not converge the shared extended-state plan"
-            )
+            entry = next((check for check in plan_checks if check["image"] == image), None)
+            if entry is None or entry["check"] != "validate" or entry["expected"] != expected:
+                raise AssertionError(f"manifest does not validate {image} against its shared plan")
+        build = evidence.load_manifest()["build"]
+        if {row["image"] for row in build["disassemblies"]} < {"leanos-bootstrap32-ud", "leanos-breakpoint"}:
+            raise AssertionError("manifest does not list the selected disassembly reports")
+        if [row["variant"] for row in build["extended_state_policies"]] != ["x87", "mmx", "sse", "sse2", "avx"]:
+            raise AssertionError("manifest does not list the extended-state policy variants in order")
         if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
             raise AssertionError("build-image does not restrict frame-budget convergence")
         if 'selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue' not in build_image:
@@ -402,8 +415,6 @@ def run_fixtures() -> None:
                 raise AssertionError(
                     f"build-image does not restrict {final_elf} final relink"
                 )
-        if 'selected_final_enabled "$build/leanos-${probe}.elf" || continue' not in build_image:
-            raise AssertionError("build-image does not restrict integer-fault final plans")
         if 'selected_final_enabled "$elf" || return 0' not in build_image:
             raise AssertionError("build-image does not restrict image-policy jobs")
         if 'selected_final_lookup["$build/leanos-double-fault.elf"]=1' not in build_image:
@@ -416,9 +427,9 @@ def run_fixtures() -> None:
             raise AssertionError("build-image does not checksum only selected PR artifacts")
         if 'if selected_final_enabled "$build/leanos.elf"; then' not in build_image:
             raise AssertionError("build-image does not gate canonical-only validation")
-        if 'write_selected_disassembly "$build/leanos-bootstrap32-ud.elf"' not in build_image:
+        if 'write_selected_disassembly "$build/$disassembly_image.elf"' not in build_image:
             raise AssertionError("build-image does not gate selected disassembly reports")
-        if 'run_selected_extended_state_policy x87' not in build_image:
+        if 'run_selected_extended_state_policy "$policy_variant"' not in build_image:
             raise AssertionError("build-image does not gate extended-state policy reports")
         if 'if [[ "$evidence_tier" == all ]]; then\n  queue_return_fixture restore' not in build_image:
             raise AssertionError("build-image does not reserve negative policy fixtures for full evidence")
