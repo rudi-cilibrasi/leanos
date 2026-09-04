@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 
@@ -90,6 +92,50 @@ def main() -> None:
                     ) from error
             else:
                 raise AssertionError(f"invalid failure fixture passed: {needle}")
+
+        injected_log = Path(directory) / "negative-fixture.log"
+        injected_log.write_text("sentinel\n", encoding="utf-8")
+        injected_failure = Path(directory) / "injected-failure.tsv"
+        injected_phases = Path(directory) / "injected-phases.tsv"
+        injected = aggregate_check.replace(
+            first_check,
+            "\n".join(
+                (
+                    f'negative_log={str(injected_log)!r}',
+                    'check_phase="proof-integrity-and-negative-fixtures"',
+                    "exit 37",
+                )
+            ),
+            1,
+        )
+        injected_script = ROOT / "scripts" / ".check-timing-injected.sh"
+        try:
+            injected_script.write_text(injected, encoding="utf-8")
+            result = subprocess.run(
+                ["bash", str(injected_script)],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "LEANOS_CHECK_TIMING_FILE": str(injected_phases),
+                    "LEANOS_CHECK_FAILURE_TIMING_FILE": str(injected_failure),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            injected_script.unlink(missing_ok=True)
+        if result.returncode != 37:
+            raise AssertionError(
+                f"injected aggregate failure returned {result.returncode}: {result.stderr}"
+            )
+        if injected_log.exists():
+            raise AssertionError("aggregate failure handler left its negative log behind")
+        phase, _phase_seconds, _total_seconds, exit_code = checker.validate_failure(
+            injected_failure
+        )
+        if phase != "proof-integrity-and-negative-fixtures" or exit_code != 37:
+            raise AssertionError("final-phase failure timing lost its phase or exit code")
     print("Aggregate check timing evidence fixtures passed")
 
 

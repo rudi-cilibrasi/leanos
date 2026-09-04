@@ -13,9 +13,13 @@ printf 'phase\tphase_seconds\ttotal_seconds\n' >"$check_timing_file"
 check_started_at=$SECONDS
 check_phase_started_at=$SECONDS
 check_phase="lean-and-generated-contracts"
+negative_log=""
 
 record_check_failure() {
   local status=$?
+  if [[ -n "$negative_log" ]]; then
+    rm -f "$negative_log"
+  fi
   if ((status != 0)); then
     local now=$SECONDS
     printf 'phase\tphase_seconds\ttotal_seconds\texit_code\n%s\t%s\t%s\t%s\n' \
@@ -207,7 +211,6 @@ fi
 rm -f "$trusted_scan_log"
 
 negative_log="$(mktemp)"
-trap 'rm -f "$negative_log"' EXIT
 
 if lake env lean -DwarningAsError=true tests/negative/Sorry.lean \
     >"$negative_log" 2>&1; then
@@ -277,6 +280,8 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
+rm -f "$negative_log"
+negative_log=""
 record_check_phase proof-integrity-and-negative-fixtures
 python3 scripts/check-check-timing.py "$check_timing_file"
 trap - EXIT
