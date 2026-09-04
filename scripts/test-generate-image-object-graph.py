@@ -140,7 +140,11 @@ generate_lean_c {source!s} {output!s}
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('rm -rf "$build"\n', wrapper)
         self.assertNotIn("-type d -name 'iso*'", wrapper)
-        self.assertIn('ensure_boot_plan_stub "$build/boot-page-plan.h"', wrapper)
+        self.assertIn(
+            'mapfile -t page_plan_stubs < <(./scripts/scenario-manifest.py page-plans)',
+            wrapper,
+        )
+        self.assertIn('ensure_boot_plan_stub "$build/$stub"', wrapper)
         self.assertIn('mktemp -d "$build/.lean-c.XXXXXX"', wrapper)
         self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
         self.assertIn('signature_file="${output}.inputs.sha256"', wrapper)
@@ -374,12 +378,20 @@ test ! -e {output!s}.inputs.sha256
         self.assertIn('xargs -0 -r -n 4 -P "$policy_jobs"', wrapper)
         self.assertIn('export -f run_image_policy_check', wrapper)
         self.assertIn(
-            'queue_image_policy canonical "$build/leanos.elf"', wrapper
+            './scripts/scenario-manifest.py packaged-images --version "$version"',
+            wrapper,
         )
         self.assertIn(
-            'queue_image_policy bootstrap64-nmi '
-            '"$build/leanos-bootstrap64-nmi.elf"',
-            wrapper,
+            'queue_image_policy "$policy_key" "$build/$packaged_stem.elf"', wrapper
+        )
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8")
+        )
+        packaged = manifest["build"]["packaged_images"]
+        self.assertEqual(packaged["leanos-bootstrap64-nmi"]["policy"]["key"], "bootstrap64-nmi")
+        self.assertEqual(
+            packaged["leanos-fault-reserved-bit"]["policy"]["environment"],
+            ["LEANOS_PAGE_FAULT_FATAL_PROBE", "reserved-bit"],
         )
         self.assertIn(
             'echo "error: one or more image policy checks failed"', wrapper

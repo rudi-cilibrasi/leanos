@@ -670,6 +670,269 @@
         "kernel": "kernel",
         "extra_objects": []
       }
+    },
+    "page_plan_stub_extras": [
+      "boot-page-plan-fault-nx-execute.h",
+      "boot-page-plan-double-fault.h",
+      "boot-page-plan-guard.h"
+    ],
+    "packaged_images": {
+      "leanos": {
+        "iso": "leanos-@VERSION@-x86_64.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "canonical"
+        }
+      },
+      "leanos-malformed-handoff": {
+        "iso": "leanos-@VERSION@-x86_64-malformed-handoff.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "malformed-handoff"
+        }
+      },
+      "leanos-projection-authority-mutation": {
+        "iso": "leanos-@VERSION@-x86_64-projection-authority-mutation.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "projection-authority-mutation"
+        }
+      },
+      "leanos-raw-selection-authority-mutation": {
+        "iso": "leanos-@VERSION@-x86_64-raw-selection-authority-mutation.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "raw-selection-authority-mutation"
+        }
+      },
+      "leanos-preemption": {
+        "iso": "leanos-@VERSION@-x86_64-preemption.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "preemption"
+        }
+      },
+      "leanos-frame-budget": {
+        "iso": "leanos-@VERSION@-x86_64-frame-budget.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "frame-budget"
+        }
+      },
+      "leanos-capability-transfer": {
+        "iso": "leanos-@VERSION@-x86_64-capability-transfer.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "capability-transfer"
+        }
+      },
+      "leanos-inflight-revocation": {
+        "iso": "leanos-@VERSION@-x86_64-inflight-revocation.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "inflight-revocation"
+        }
+      },
+      "leanos-fault-containment": {
+        "iso": "leanos-@VERSION@-x86_64-fault-containment.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-containment"
+        }
+      },
+      "leanos-fault-readonly-write": {
+        "iso": "leanos-@VERSION@-x86_64-fault-readonly-write.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-readonly-write"
+        }
+      },
+      "leanos-fault-nx-execute": {
+        "iso": "leanos-@VERSION@-x86_64-fault-nx-execute.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-nx-execute"
+        }
+      },
+      "leanos-fault-reserved-bit": {
+        "iso": "leanos-@VERSION@-x86_64-fault-reserved-bit.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-reserved-bit",
+          "environment": [
+            "LEANOS_PAGE_FAULT_FATAL_PROBE",
+            "reserved-bit"
+          ]
+        }
+      },
+      "leanos-fault-walk-mismatch": {
+        "iso": "leanos-@VERSION@-x86_64-fault-walk-mismatch.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-walk-mismatch",
+          "environment": [
+            "LEANOS_PAGE_FAULT_FATAL_PROBE",
+            "walk-mismatch"
+          ]
+        }
+      },
+      "leanos-fault-stale-translation": {
+        "iso": "leanos-@VERSION@-x86_64-fault-stale-translation.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-stale-translation"
+        }
+      },
+      "leanos-extended-state": {
+        "iso": "leanos-@VERSION@-x86_64-extended-state.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "extended-state"
+        }
+      },
+      "leanos-extended-state-mmx": {
+        "iso": "leanos-@VERSION@-x86_64-extended-state-mmx.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "extended-state-mmx"
+        }
+      },
+      "leanos-extended-state-sse": {
+        "iso": "leanos-@VERSION@-x86_64-extended-state-sse.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "extended-state-sse"
+        }
+      },
+      "leanos-extended-state-sse2": {
+        "iso": "leanos-@VERSION@-x86_64-extended-state-sse2.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "extended-state-sse2"
+        }
+      },
+      "leanos-extended-state-avx": {
+        "iso": "leanos-@VERSION@-x86_64-extended-state-avx.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "extended-state-avx"
+        }
+      },
+      "leanos-extended-state-peer-pke": {
+        "iso": "leanos-@VERSION@-x86_64-extended-state-peer-pke.iso",
+        "grub": "boot/grub.cfg"
+      },
+      "leanos-fast-entry-syscall": {
+        "iso": "leanos-@VERSION@-x86_64-fast-entry-syscall.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fast-entry-syscall",
+          "environment": [
+            "LEANOS_FAST_ENTRY_PROBE",
+            "syscall"
+          ]
+        }
+      },
+      "leanos-fast-entry-sysenter": {
+        "iso": "leanos-@VERSION@-x86_64-fast-entry-sysenter.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fast-entry-sysenter",
+          "environment": [
+            "LEANOS_FAST_ENTRY_PROBE",
+            "sysenter"
+          ]
+        }
+      },
+      "leanos-double-fault": {
+        "iso": "leanos-@VERSION@-x86_64-double-fault.iso",
+        "grub": "boot/grub-double-fault.cfg",
+        "policy": {
+          "key": "double-fault"
+        }
+      },
+      "leanos-double-fault-guard-mapped": {
+        "iso": "leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso",
+        "grub": "boot/grub-double-fault.cfg"
+      },
+      "leanos-entry-stack-overflow": {
+        "iso": "leanos-@VERSION@-x86_64-entry-stack-overflow.iso",
+        "grub": "boot/grub-double-fault.cfg",
+        "policy": {
+          "key": "entry-stack-overflow"
+        }
+      },
+      "leanos-entry-adversarial": {
+        "iso": "leanos-@VERSION@-x86_64-entry-adversarial.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "entry-adversarial"
+        }
+      },
+      "leanos-nmi": {
+        "iso": "leanos-@VERSION@-x86_64-nmi.iso",
+        "grub": "boot/grub.cfg"
+      },
+      "leanos-nmi-cpl3": {
+        "iso": "leanos-@VERSION@-x86_64-nmi-cpl3.iso",
+        "grub": "boot/grub-nmi-cpl3.cfg"
+      },
+      "leanos-bootstrap32-ud": {
+        "iso": "leanos-@VERSION@-x86_64-bootstrap32-ud.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "bootstrap32-ud"
+        }
+      },
+      "leanos-bootstrap64-nmi": {
+        "iso": "leanos-@VERSION@-x86_64-bootstrap64-nmi.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "bootstrap64-nmi"
+        }
+      },
+      "leanos-direct-port-serial": {
+        "iso": "leanos-@VERSION@-x86_64-direct-port-serial.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "direct-port-serial"
+        }
+      },
+      "leanos-direct-port-debug": {
+        "iso": "leanos-@VERSION@-x86_64-direct-port-debug.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "direct-port-debug"
+        }
+      },
+      "leanos-direct-port-in": {
+        "iso": "leanos-@VERSION@-x86_64-direct-port-in.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "direct-port-in"
+        }
+      },
+      "leanos-direct-port-pic": {
+        "iso": "leanos-@VERSION@-x86_64-direct-port-pic.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "direct-port-pic"
+        }
+      },
+      "leanos-divide-error": {
+        "iso": "leanos-@VERSION@-x86_64-divide-error.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "divide-error"
+        }
+      },
+      "leanos-breakpoint": {
+        "iso": "leanos-@VERSION@-x86_64-breakpoint.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "breakpoint"
+        }
+      }
     }
   },
   "scenarios": {
