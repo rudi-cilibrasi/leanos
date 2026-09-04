@@ -173,4 +173,32 @@ with tempfile.TemporaryDirectory() as directory:
     assert incomplete_bundle.returncode == 1
     assert "browser image bundle omits corpus.tsv" in incomplete_bundle.stderr
 
+    shutil.copy2(ROOT / ".github/workflows/pages.yml", pages)
+    pages.write_text(
+        pages.read_text().replace(
+            "            build/ci/leanos-pages-image.tar.gz.sha256\n",
+            "            build/ci/wrong-image.tar.gz.sha256\n",
+            1,
+        )
+    )
+    wrong_upload_path = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert wrong_upload_path.returncode == 1
+    assert "artifact upload path drifted" in wrong_upload_path.stderr
+
+    shutil.copy2(ROOT / ".github/workflows/pages.yml", pages)
+    pages.write_text(
+        pages.read_text().replace(
+            "          path: build/ci/pages-image\n",
+            "          path: build/ci/wrong-pages-image\n",
+            1,
+        )
+    )
+    wrong_download_path = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert wrong_download_path.returncode == 1
+    assert "artifact download path drifted" in wrong_download_path.stderr
+
 print("Toolchain consumer render fixtures passed")

@@ -212,7 +212,14 @@ def validate_pages_pipeline(root: Path) -> None:
     download = browser_steps.get("Download revision-bound canonical image", {})
     verify = browser_steps.get("Verify revision-bound canonical image", {}).get("run")
     artifact_name = "leanos-pages-image-${{ github.sha }}"
-    if not isinstance(create, str) or "image-bundle.sh create" not in create:
+    bundle_path = "build/ci/leanos-pages-image.tar.gz"
+    download_path = "build/ci/pages-image"
+    downloaded_bundle = f"{download_path}/leanos-pages-image.tar.gz"
+    if (
+        not isinstance(create, str)
+        or "image-bundle.sh create" not in create
+        or bundle_path not in create
+    ):
         raise ValueError(f"{path}: canonical image bundle creation is missing")
     for artifact in (
         "corpus.tsv",
@@ -227,13 +234,22 @@ def validate_pages_pipeline(root: Path) -> None:
         raise ValueError(f"{path}: canonical image artifact upload is missing")
     if not isinstance(upload.get("with"), dict) or upload["with"].get("name") != artifact_name:
         raise ValueError(f"{path}: canonical image artifact upload name drifted")
+    upload_paths = upload["with"].get("path")
+    if not isinstance(upload_paths, str) or upload_paths.splitlines() != [
+        bundle_path,
+        f"{bundle_path}.sha256",
+    ]:
+        raise ValueError(f"{path}: canonical image artifact upload path drifted")
     if not str(download.get("uses", "")).startswith("actions/download-artifact@"):
         raise ValueError(f"{path}: canonical image artifact download is missing")
     if not isinstance(download.get("with"), dict) or download["with"].get("name") != artifact_name:
         raise ValueError(f"{path}: canonical image artifact download name drifted")
+    if download["with"].get("path") != download_path:
+        raise ValueError(f"{path}: canonical image artifact download path drifted")
     if (
         not isinstance(verify, str)
         or "image-bundle.sh verify" not in verify
+        or downloaded_bundle not in verify
         or "${{ github.sha }}" not in verify
     ):
         raise ValueError(f"{path}: revision-bound image verification is missing")
