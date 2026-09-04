@@ -86,6 +86,16 @@ with tempfile.TemporaryDirectory() as directory:
     assert "expected exactly one apt install site, found 2" in extra_apt_install.stderr
 
     shutil.copy2(ROOT / "Containerfile.ci", containerfile)
+    containerfile.write_text(
+        containerfile.read_text() + "\nRUN apt-get -y install curl\n"
+    )
+    option_before_install = subprocess.run(
+        command + ["--check"], text=True, capture_output=True
+    )
+    assert option_before_install.returncode == 1
+    assert "expected exactly one apt install site, found 2" in option_before_install.stderr
+
+    shutil.copy2(ROOT / "Containerfile.ci", containerfile)
     documentation = fixture / "docs/boot-image.md"
     documentation.write_text(
         documentation.read_text().replace(
