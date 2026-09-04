@@ -106,6 +106,93 @@ def main() -> None:
         del m["build"]
 
     expect_rejection(mutated(no_build), "scenario manifest lacks build images")
+
+    for view, expected_count in (("plan-checks", len(manifest["build"]["plan_checks"])), ("disassemblies", len(manifest["build"]["disassemblies"])), ("entry-policies", len(manifest["build"]["entry_policies"])), ("extended-state-policies", len(manifest["build"]["extended_state_policies"]))):
+        result = run(manifest, view)
+        if result.returncode != 0 or len(result.stdout.splitlines()) != expected_count:
+            raise AssertionError(f"{view} view does not mirror the manifest: {result.stderr}")
+    converge = [row for row in MODULE.plan_check_rows(manifest) if row["check"] == "converge"]
+    if not converge or any(row["targets"] == "-" for row in converge):
+        raise AssertionError("plan convergence rows lack their graph targets")
+
+    def view_rejects(view: str, transform, diagnostic: str) -> None:
+        result = run(mutated(transform), view)
+        if result.returncode == 0 or diagnostic not in result.stderr:
+            raise AssertionError(f"{view}: expected {diagnostic!r}, got {result.stderr!r}")
+
+    def unpackaged_plan(m):
+        m["build"]["plan_checks"][0]["image"] = "leanos-never-packaged"
+
+    view_rejects("plan-checks", unpackaged_plan, "build plan_checks names an unpackaged image 'leanos-never-packaged'")
+
+    def bad_kind(m):
+        m["build"]["plan_checks"][0]["check"] = "compare"
+
+    view_rejects("plan-checks", bad_kind, "has unknown kind 'compare'")
+
+    def converge_without_targets(m):
+        for entry in m["build"]["plan_checks"]:
+            if entry["check"] == "converge":
+                entry["targets"] = []
+                break
+
+    view_rejects("plan-checks", converge_without_targets, "lists no graph targets")
+
+    def non_graph_target(m):
+        for entry in m["build"]["plan_checks"]:
+            if entry["check"] == "converge":
+                entry["targets"].append("leanos-double-fault-guard-mapped")
+                break
+
+    view_rejects("plan-checks", non_graph_target, "names a non-graph target 'leanos-double-fault-guard-mapped'")
+
+    def duplicate_final(m):
+        m["build"]["plan_checks"][1]["final"] = m["build"]["plan_checks"][0]["final"]
+
+    view_rejects("plan-checks", duplicate_final, "write the same final plan twice")
+
+    def duplicate_output(m):
+        m["build"]["disassemblies"][1]["output"] = m["build"]["disassemblies"][0]["output"]
+
+    view_rejects("disassemblies", duplicate_output, "write the same output twice")
+
+    def duplicate_entry_key(m):
+        m["build"]["entry_policies"][1]["key"] = m["build"]["entry_policies"][0]["key"]
+
+    view_rejects("entry-policies", duplicate_entry_key, "keys are not unique")
+
+    def bad_entry_environment(m):
+        m["build"]["entry_policies"][0]["environment"] = ["probe"]
+
+    view_rejects("entry-policies", bad_entry_environment, "environment must be a [name, value] pair")
+
+    def bad_variant(m):
+        m["build"]["extended_state_policies"][0]["variant"] = "x-87"
+
+    view_rejects("extended-state-policies", bad_variant, "has a malformed variant or report")
+
+    def missing_port_sites(m):
+        m["build"]["packaged_images"]["leanos-nmi"]["port_sites"] = "direct-port-sites-absent.tsv"
+
+    expect_rejection(mutated(missing_port_sites), "packaged image leanos-nmi port-sites inventory is missing: direct-port-sites-absent.tsv")
+
+    def bad_port_sites(m):
+        m["build"]["packaged_images"]["leanos-nmi"]["port_sites"] = "ports.tsv"
+
+    expect_rejection(mutated(bad_port_sites), "packaged image leanos-nmi names a malformed port-sites inventory 'ports.tsv'")
+
+    import hashlib
+    inventories = sorted((ROOT / "scripts").glob("direct-port-sites*.tsv"))
+    digests = {}
+    for inventory in inventories:
+        digests.setdefault(hashlib.sha256(inventory.read_bytes()).hexdigest(), []).append(inventory.name)
+    duplicates = [names for names in digests.values() if len(names) > 1]
+    if duplicates:
+        raise AssertionError(f"byte-identical port-sites inventories must be shared: {duplicates}")
+    declared = {entry.get("port_sites") for entry in manifest["build"]["packaged_images"].values()} - {None}
+    for name in declared:
+        if not (ROOT / "scripts" / name).is_file():
+            raise AssertionError(f"declared port-sites inventory is missing: {name}")
     print("Scenario manifest build query fixtures passed")
 
 

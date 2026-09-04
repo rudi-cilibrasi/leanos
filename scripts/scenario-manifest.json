@@ -860,64 +860,74 @@
         "grub": "boot/grub-double-fault.cfg",
         "policy": {
           "key": "entry-stack-overflow"
-        }
+        },
+        "port_sites": "direct-port-sites-entry-stack-overflow.tsv"
       },
       "leanos-entry-adversarial": {
         "iso": "leanos-@VERSION@-x86_64-entry-adversarial.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "entry-adversarial"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-nmi": {
         "iso": "leanos-@VERSION@-x86_64-nmi.iso",
-        "grub": "boot/grub.cfg"
+        "grub": "boot/grub.cfg",
+        "port_sites": "direct-port-sites-nmi.tsv"
       },
       "leanos-nmi-cpl3": {
         "iso": "leanos-@VERSION@-x86_64-nmi-cpl3.iso",
-        "grub": "boot/grub-nmi-cpl3.cfg"
+        "grub": "boot/grub-nmi-cpl3.cfg",
+        "port_sites": "direct-port-sites-nmi.tsv"
       },
       "leanos-bootstrap32-ud": {
         "iso": "leanos-@VERSION@-x86_64-bootstrap32-ud.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "bootstrap32-ud"
-        }
+        },
+        "port_sites": "direct-port-sites-bootstrap32-ud.tsv"
       },
       "leanos-bootstrap64-nmi": {
         "iso": "leanos-@VERSION@-x86_64-bootstrap64-nmi.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "bootstrap64-nmi"
-        }
+        },
+        "port_sites": "direct-port-sites-bootstrap64-nmi.tsv"
       },
       "leanos-direct-port-serial": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-serial.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-serial"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-direct-port-debug": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-debug.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-debug"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-direct-port-in": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-in.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-in"
-        }
+        },
+        "port_sites": "direct-port-sites-direct-port-in.tsv"
       },
       "leanos-direct-port-pic": {
         "iso": "leanos-@VERSION@-x86_64-direct-port-pic.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "direct-port-pic"
-        }
+        },
+        "port_sites": "direct-port-sites-user-probe.tsv"
       },
       "leanos-divide-error": {
         "iso": "leanos-@VERSION@-x86_64-divide-error.iso",
@@ -933,7 +943,397 @@
           "key": "breakpoint"
         }
       }
-    }
+    },
+    "plan_checks": [
+      {
+        "image": "leanos",
+        "check": "validate",
+        "expected": "boot-page-plan.h",
+        "final": "boot-page-plan.final.h",
+        "description": "linker-resolved"
+      },
+      {
+        "image": "leanos-malformed-handoff",
+        "check": "validate",
+        "expected": "boot-page-plan-malformed-handoff.h",
+        "final": "boot-page-plan-malformed-handoff.final.h",
+        "description": "malformed-handoff"
+      },
+      {
+        "image": "leanos-projection-authority-mutation",
+        "check": "validate",
+        "expected": "boot-page-plan-projection-authority-mutation.h",
+        "final": "boot-page-plan-projection-authority-mutation.final.h",
+        "description": "projection-authority mutation"
+      },
+      {
+        "image": "leanos-raw-selection-authority-mutation",
+        "check": "validate",
+        "expected": "boot-page-plan-raw-selection-authority-mutation.h",
+        "final": "boot-page-plan-raw-selection-authority-mutation.final.h",
+        "description": "raw-selection authority mutation"
+      },
+      {
+        "image": "leanos-nmi",
+        "check": "validate",
+        "expected": "boot-page-plan-nmi.h",
+        "final": "boot-page-plan-nmi.final.h",
+        "description": "NMI probe"
+      },
+      {
+        "image": "leanos-bootstrap32-ud",
+        "check": "validate",
+        "expected": "boot-page-plan-bootstrap32-ud.h",
+        "final": "boot-page-plan-bootstrap32-ud.final.h",
+        "description": "bootstrap32-ud probe"
+      },
+      {
+        "image": "leanos-bootstrap64-nmi",
+        "check": "converge",
+        "expected": "boot-page-plan-bootstrap64-nmi.h",
+        "final": "boot-page-plan-bootstrap64-nmi.final.h",
+        "description": "bootstrap64-nmi probe",
+        "targets": [
+          "leanos-bootstrap64-nmi"
+        ]
+      },
+      {
+        "image": "leanos-preemption",
+        "check": "validate",
+        "expected": "boot-page-plan-preemption.h",
+        "final": "boot-page-plan-preemption.final.h",
+        "description": "preemption"
+      },
+      {
+        "image": "leanos-capability-transfer",
+        "check": "validate",
+        "expected": "boot-page-plan-capability-transfer.h",
+        "final": "boot-page-plan-capability-transfer.final.h",
+        "description": "capability-transfer"
+      },
+      {
+        "image": "leanos-inflight-revocation",
+        "check": "validate",
+        "expected": "boot-page-plan-inflight-revocation.h",
+        "final": "boot-page-plan-inflight-revocation.final.h",
+        "description": "inflight-revocation"
+      },
+      {
+        "image": "leanos-fault-containment",
+        "check": "validate",
+        "expected": "boot-page-plan-fault-containment.h",
+        "final": "boot-page-plan-fault-containment.final.h",
+        "description": "fault-containment"
+      },
+      {
+        "image": "leanos-fault-readonly-write",
+        "check": "validate",
+        "expected": "boot-page-plan-fault-containment.h",
+        "final": "boot-page-plan-fault-readonly-write.final.h",
+        "description": "read-only-write"
+      },
+      {
+        "image": "leanos-fault-nx-execute",
+        "check": "validate",
+        "expected": "boot-page-plan-fault-containment.h",
+        "final": "boot-page-plan-fault-nx-execute.final.h",
+        "description": "NX-execute"
+      },
+      {
+        "image": "leanos-extended-state",
+        "check": "converge",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-extended-state.final.h",
+        "description": "extended-state",
+        "targets": [
+          "leanos-extended-state",
+          "leanos-extended-state-mmx",
+          "leanos-extended-state-sse",
+          "leanos-extended-state-sse2",
+          "leanos-extended-state-avx",
+          "leanos-fast-entry-syscall",
+          "leanos-fast-entry-sysenter"
+        ]
+      },
+      {
+        "image": "leanos-extended-state-peer-pke",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state-peer-pke.h",
+        "final": "boot-page-plan-extended-state-peer-pke.final.h",
+        "description": "peer-PKE"
+      },
+      {
+        "image": "leanos-fast-entry-syscall",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-fast-entry-syscall.final.h",
+        "description": "fast-entry syscall"
+      },
+      {
+        "image": "leanos-fast-entry-sysenter",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-fast-entry-sysenter.final.h",
+        "description": "fast-entry sysenter"
+      },
+      {
+        "image": "leanos-extended-state-mmx",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-extended-state-mmx.final.h",
+        "description": "MMX extended-state"
+      },
+      {
+        "image": "leanos-extended-state-sse",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-extended-state-sse.final.h",
+        "description": "SSE extended-state"
+      },
+      {
+        "image": "leanos-extended-state-sse2",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-extended-state-sse2.final.h",
+        "description": "SSE2 extended-state"
+      },
+      {
+        "image": "leanos-extended-state-avx",
+        "check": "validate",
+        "expected": "boot-page-plan-extended-state.h",
+        "final": "boot-page-plan-extended-state-avx.final.h",
+        "description": "AVX extended-state"
+      },
+      {
+        "image": "leanos-entry-adversarial",
+        "check": "validate",
+        "expected": "boot-page-plan-entry-adversarial.h",
+        "final": "boot-page-plan-entry-adversarial.final.h",
+        "description": "entry-adversarial"
+      },
+      {
+        "image": "leanos-direct-port-serial",
+        "check": "validate",
+        "expected": "boot-page-plan-direct-port.h",
+        "final": "boot-page-plan-direct-port-serial.final.h",
+        "description": "direct-port serial"
+      },
+      {
+        "image": "leanos-direct-port-debug",
+        "check": "validate",
+        "expected": "boot-page-plan-direct-port.h",
+        "final": "boot-page-plan-direct-port-debug.final.h",
+        "description": "direct-port debug"
+      },
+      {
+        "image": "leanos-direct-port-in",
+        "check": "validate",
+        "expected": "boot-page-plan-direct-port.h",
+        "final": "boot-page-plan-direct-port-in.final.h",
+        "description": "direct-port in"
+      },
+      {
+        "image": "leanos-direct-port-pic",
+        "check": "validate",
+        "expected": "boot-page-plan-direct-port.h",
+        "final": "boot-page-plan-direct-port-pic.final.h",
+        "description": "direct-port pic"
+      },
+      {
+        "image": "leanos-divide-error",
+        "check": "validate",
+        "expected": "boot-page-plan-integer-fault.h",
+        "final": "boot-page-plan-divide-error.final.h",
+        "description": "integer-fault divide-error"
+      },
+      {
+        "image": "leanos-breakpoint",
+        "check": "validate",
+        "expected": "boot-page-plan-integer-fault.h",
+        "final": "boot-page-plan-breakpoint.final.h",
+        "description": "integer-fault breakpoint"
+      }
+    ],
+    "disassemblies": [
+      {
+        "image": "leanos-bootstrap32-ud",
+        "output": "bootstrap32-ud.disassembly.txt"
+      },
+      {
+        "image": "leanos-bootstrap64-nmi",
+        "output": "bootstrap64-nmi.disassembly.txt"
+      },
+      {
+        "image": "leanos-fault-containment",
+        "output": "fault-containment.disassembly.txt"
+      },
+      {
+        "image": "leanos-fault-readonly-write",
+        "output": "fault-readonly-write.disassembly.txt"
+      },
+      {
+        "image": "leanos-fault-nx-execute",
+        "output": "fault-nx-execute.disassembly.txt"
+      },
+      {
+        "image": "leanos-fault-reserved-bit",
+        "output": "fault-reserved-bit.disassembly.txt"
+      },
+      {
+        "image": "leanos-fault-walk-mismatch",
+        "output": "fault-walk-mismatch.disassembly.txt"
+      },
+      {
+        "image": "leanos-fault-stale-translation",
+        "output": "fault-stale-translation.disassembly.txt"
+      },
+      {
+        "image": "leanos-extended-state",
+        "output": "extended-state.disassembly.txt"
+      },
+      {
+        "image": "leanos-extended-state-mmx",
+        "output": "extended-state-mmx.disassembly.txt"
+      },
+      {
+        "image": "leanos-extended-state-sse",
+        "output": "extended-state-sse.disassembly.txt"
+      },
+      {
+        "image": "leanos-extended-state-sse2",
+        "output": "extended-state-sse2.disassembly.txt"
+      },
+      {
+        "image": "leanos-extended-state-avx",
+        "output": "extended-state-avx.disassembly.txt"
+      },
+      {
+        "image": "leanos-direct-port-serial",
+        "output": "direct-port-serial.disassembly.txt"
+      },
+      {
+        "image": "leanos-direct-port-debug",
+        "output": "direct-port-debug.disassembly.txt"
+      },
+      {
+        "image": "leanos-direct-port-in",
+        "output": "direct-port-in.disassembly.txt"
+      },
+      {
+        "image": "leanos-direct-port-pic",
+        "output": "direct-port-pic.disassembly.txt"
+      },
+      {
+        "image": "leanos-divide-error",
+        "output": "divide-error.disassembly.txt"
+      },
+      {
+        "image": "leanos-breakpoint",
+        "output": "breakpoint.disassembly.txt"
+      }
+    ],
+    "entry_policies": [
+      {
+        "image": "leanos",
+        "key": "canonical",
+        "report": "entry-policy-report.txt"
+      },
+      {
+        "image": "leanos-fast-entry-syscall",
+        "key": "fast-entry-syscall",
+        "report": "fast-entry-syscall-policy-report.txt",
+        "environment": [
+          "LEANOS_FAST_ENTRY_PROBE",
+          "syscall"
+        ]
+      },
+      {
+        "image": "leanos-fast-entry-sysenter",
+        "key": "fast-entry-sysenter",
+        "report": "fast-entry-sysenter-policy-report.txt",
+        "environment": [
+          "LEANOS_FAST_ENTRY_PROBE",
+          "sysenter"
+        ]
+      },
+      {
+        "image": "leanos-fault-containment",
+        "key": "fault-containment",
+        "report": "fault-containment-policy-report.txt",
+        "environment": [
+          "LEANOS_PAGE_FAULT_PROBE",
+          "supervisor-read"
+        ]
+      },
+      {
+        "image": "leanos-fault-readonly-write",
+        "key": "fault-readonly-write",
+        "report": "fault-readonly-write-policy-report.txt",
+        "environment": [
+          "LEANOS_PAGE_FAULT_PROBE",
+          "readonly-write"
+        ]
+      },
+      {
+        "image": "leanos-fault-nx-execute",
+        "key": "fault-nx-execute",
+        "report": "fault-nx-execute-policy-report.txt",
+        "environment": [
+          "LEANOS_PAGE_FAULT_PROBE",
+          "nx-execute"
+        ]
+      },
+      {
+        "image": "leanos-fault-reserved-bit",
+        "key": "fault-reserved-bit",
+        "report": "fault-reserved-bit-policy-report.txt",
+        "environment": [
+          "LEANOS_PAGE_FAULT_FATAL_PROBE",
+          "reserved-bit"
+        ]
+      },
+      {
+        "image": "leanos-fault-walk-mismatch",
+        "key": "fault-walk-mismatch",
+        "report": "fault-walk-mismatch-policy-report.txt",
+        "environment": [
+          "LEANOS_PAGE_FAULT_FATAL_PROBE",
+          "walk-mismatch"
+        ]
+      },
+      {
+        "image": "leanos-fault-stale-translation",
+        "key": "fault-stale-translation",
+        "report": "fault-stale-translation-policy-report.txt"
+      }
+    ],
+    "extended_state_policies": [
+      {
+        "image": "leanos-extended-state",
+        "variant": "x87",
+        "report": "extended-state-policy-report.txt"
+      },
+      {
+        "image": "leanos-extended-state-mmx",
+        "variant": "mmx",
+        "report": "extended-state-mmx-policy-report.txt"
+      },
+      {
+        "image": "leanos-extended-state-sse",
+        "variant": "sse",
+        "report": "extended-state-sse-policy-report.txt"
+      },
+      {
+        "image": "leanos-extended-state-sse2",
+        "variant": "sse2",
+        "report": "extended-state-sse2-policy-report.txt"
+      },
+      {
+        "image": "leanos-extended-state-avx",
+        "variant": "avx",
+        "report": "extended-state-avx-policy-report.txt"
+      }
+    ]
   },
   "scenarios": {
     "blocking-ipc": {
