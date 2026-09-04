@@ -44,10 +44,10 @@ static lean_object *run_host(int argc, char **argv) {
         "region-2-start", "region-2-count", "region-2-kind",
     };
     char name[96];
+    /* The export consumes its byte-array argument. */
     lean_object *empty = lean_mk_empty_byte_array(lean_box(0));
     expect("production-empty-buffer.abi-version",
            leanos_boot_handoff_query(0, 0, empty, 0), 1);
-    lean_dec(empty);
 
     for (size_t word = 0; word < sizeof(expected) / sizeof(expected[0]); ++word) {
         snprintf(name, sizeof(name), "accepted.%s", fields[word]);

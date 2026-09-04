@@ -362,6 +362,13 @@ The bounded [Multiboot2 memory-map model](docs/boot-memory-map.md) validates a
 typed handoff, conservatively normalizes page intervals, proves usable-frame
 soundness, and refines its output into the physical-frame allocator.
 
+The [firmware handoff corpus](docs/firmware-handoff-corpus.md) replays
+captured real-firmware E820 maps and MADTs (Hyper-V UEFI, SeaBIOS, and OVMF
+today) through the same Multiboot2 and topology decoders, converted
+deterministically with provenance and pinned expectations, and holds both the
+Lean definitions and the generated C to every result word, including fourteen
+derived mutations per capture.
+
 The [boot-reservation overlay](docs/boot-reservations.md) checks a finite
 boot-artifact manifest and gives its frames unconditional precedence before
 allocator initialization.

@@ -74,6 +74,8 @@ if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-sanitizer-negatives.sh
 fi
 
+./scripts/check-firmware-corpus.sh
+
 record_check_phase security-and-platform-contracts
 
 ./scripts/check-boot-memory-full-projection.sh

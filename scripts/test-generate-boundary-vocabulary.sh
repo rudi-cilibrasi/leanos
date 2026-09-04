@@ -99,7 +99,7 @@ LEANOS_ORACLE_TOOL_SIGNATURE=test ./scripts/generate-oracle.sh "$tmp/out" > /dev
 cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
-test "$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")" -eq 64
+test "$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")" -eq 65
 
 # No hand-maintained copy of a boundary token or an exported prototype may
 # remain in the C sources; the checked-in dispatcher header carries prose

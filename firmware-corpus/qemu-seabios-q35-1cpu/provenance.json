@@ -1,0 +1,33 @@
+{
+  "capture_tool": "scripts/capture-firmware-handoff.sh",
+  "capture_tool_sha256": "4032be2288e0ba8e5950ccc91a36441926fcb35c8ac99f9aec56675d3d96cce6",
+  "captured_at": "2026-09-04T15:14:08Z",
+  "kernel": "6.8.0-139-generic",
+  "memory_map_source": "/sys/firmware/memmap",
+  "acpi_table_source": "/sys/firmware/acpi/tables",
+  "root_tables": "unavailable",
+  "processor_count": 1,
+  "machine": {
+    "sys_vendor": "QEMU",
+    "product_name": "Standard PC (Q35 + ICH9, 2009)",
+    "bios_vendor": "SeaBIOS",
+    "bios_version": "1.16.3-debian-1.16.3-2",
+    "bios_date": "04/01/2014"
+  },
+  "files": {
+    "acpi/APIC.bin": "730d87a32397365641ca2c58beb3832119c66813e98774fb482571f08668143c",
+    "executing-apic-id.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "memmap.tsv": "846e7d6e9f06aae958d8925ab6bec7528d9190e8e08779e778546392f7e4cad1"
+  },
+  "guest": {
+    "emulator": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+    "machine": "q35",
+    "firmware": "seabios",
+    "cpus": 1,
+    "memory_mib": 1024,
+    "kernel_package": "linux-image-6.8.0-139-generic 6.8.0-139.139",
+    "kernel_sha256": "0066409132868538bc0c9076f60131025775d5bbd8617df074d059f91b584918",
+    "busybox_package": "busybox-static 1:1.36.1-6ubuntu3.1",
+    "busybox_sha256": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14"
+  }
+}
