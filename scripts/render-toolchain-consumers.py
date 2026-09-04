@@ -18,6 +18,24 @@ IMAGE_RE = re.compile(
 )
 DIGEST_ENV_RE = re.compile(r"(?m)^(\s*LEANOS_CI_IMAGE_DIGEST:\s*)sha256:[0-9a-f]{64}$")
 WORKFLOWS = (Path(".github/workflows/ci.yml"), Path(".github/workflows/release.yml"))
+CONTAINERFILE = Path("Containerfile.ci")
+PACKAGE_DOC = Path("docs/boot-image.md")
+PACKAGE_DOC_RE = re.compile(
+    r"(?s)(<!-- BEGIN GENERATED CANONICAL APT PACKAGES -->\n).*?"
+    r"(<!-- END GENERATED CANONICAL APT PACKAGES -->)"
+)
+APT_BLOCK_RE = re.compile(
+    r"RUN apt-get update && apt-get install -y --no-install-recommends \\\n"
+    r"(?P<body>(?:\s+[^\n]+\\\n)+)"
+    r"\s+&& rm -rf /var/lib/apt/lists/\*"
+)
+APT_INSTALL_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])apt(?:-get)?\b(?:(?!&&|\|\||;).)*?\binstall\b",
+    re.DOTALL | re.MULTILINE,
+)
+APT_PACKAGE_RE = re.compile(
+    r"^[a-z0-9][a-z0-9+.-]*=[0-9A-Za-z][0-9A-Za-z.+:~-]*$"
+)
 REQUIRED_CONTAINER_JOBS = {
     Path(".github/workflows/ci.yml"): {
         "repository-hygiene",
@@ -43,6 +61,61 @@ def canonical_digest(root: Path) -> str:
     if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
         raise ValueError("canonical CI image digest is malformed")
     return digest
+
+
+def canonical_apt_packages(root: Path) -> list[str]:
+    data = json.loads((root / "scripts/toolchain-profiles.json").read_text())
+    packages = data.get("canonical_apt_packages")
+    if not isinstance(packages, list) or len(packages) != len(set(packages)):
+        raise ValueError("canonical apt package inventory is missing or duplicated")
+    if any(
+        not isinstance(package, str)
+        or APT_PACKAGE_RE.fullmatch(package) is None
+        for package in packages
+    ):
+        raise ValueError("canonical apt package inventory contains a floating package")
+    return packages
+
+
+def validate_container_packages(root: Path) -> None:
+    source = (root / CONTAINERFILE).read_text(encoding="utf-8")
+    install_sites = APT_INSTALL_RE.findall(source)
+    if len(install_sites) != 1:
+        raise ValueError(
+            f"{CONTAINERFILE}: expected exactly one apt install site, "
+            f"found {len(install_sites)}"
+        )
+    match = APT_BLOCK_RE.search(source)
+    if match is None:
+        raise ValueError(f"{CONTAINERFILE}: canonical apt install block is missing")
+    observed = [
+        line.strip().removesuffix(" \\")
+        for line in match.group("body").splitlines()
+    ]
+    expected = canonical_apt_packages(root)
+    if observed != expected:
+        raise ValueError(
+            f"{CONTAINERFILE}: apt package inventory differs from "
+            "scripts/toolchain-profiles.json"
+        )
+
+
+def render_package_docs(root: Path, packages: list[str], check: bool) -> bool:
+    path = root / PACKAGE_DOC
+    source = path.read_text(encoding="utf-8")
+    rows = ["| Package | Version |", "| --- | --- |"]
+    rows.extend(
+        f"| `{name}` | `{version}` |"
+        for name, version in (package.split("=", 1) for package in packages)
+    )
+    generated = "\n".join(rows) + "\n"
+    rendered, count = PACKAGE_DOC_RE.subn(rf"\g<1>{generated}\g<2>", source)
+    if count != 1:
+        raise ValueError(f"{PACKAGE_DOC}: expected one generated package table")
+    if check:
+        return rendered != source
+    path.write_text(rendered, encoding="utf-8")
+    return False
 
 
 def validate_workflow_containers(
@@ -90,6 +163,7 @@ def validate_workflow_containers(
 
 def render(root: Path, check: bool) -> None:
     digest = canonical_digest(root)
+    packages = canonical_apt_packages(root)
     expected_image = f"ghcr.io/rudi-cilibrasi/leanos-ci@{digest}"
     stale: list[str] = []
     for relative in WORKFLOWS:
@@ -107,11 +181,14 @@ def render(root: Path, check: bool) -> None:
         # Count only parsed jobs.<id>.container values. Text in comments or step
         # bodies cannot satisfy the consumer contract.
         validate_workflow_containers(path, relative, expected_image, digest)
+    if render_package_docs(root, packages, check):
+        stale.append(str(PACKAGE_DOC))
     if stale:
         raise ValueError(
             "stale generated toolchain consumers: " + ", ".join(stale)
             + "; run scripts/render-toolchain-consumers.py"
         )
+    validate_container_packages(root)
 
 
 def main() -> int:
