@@ -1,0 +1,20 @@
+@6/BOOT@ target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@6/COPY@ direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS
+@6/COPY@ direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS
+@11/USER-FAULT@ vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS
+@5/ENTRY@ subject=1 address-space=1 cpl=3 yielding=0
+@5/TIMER@ vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1
+@5/CONTEXT@ old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin
+@8/PAGING@ root=B selected=1 result=PASS
+@5/SWITCH@ subject=2 address-space=2 cr3=switched stack=initial contexts=separate
+@5/SYSCALL@ subject=2 caller=2 address-space=2 authorized=1 canaries=preserved
+@5/TIMER@ vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1
+@5/CONTEXT@ old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@5/SWITCH@ subject=1 address-space=1 cr3=switched stack=resumed contexts=separate
+@5/RESUME@ subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate
+@5/FINAL@ status=PASS ticks=2

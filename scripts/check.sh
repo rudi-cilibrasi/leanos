@@ -1,9 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
-./scripts/test-generate-oracle-adapter-map.sh
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+
+check_timing_file="${LEANOS_CHECK_TIMING_FILE:-build/ci/check-phases.tsv}"
+check_failure_timing_file="${LEANOS_CHECK_FAILURE_TIMING_FILE:-build/ci/check-failure.tsv}"
+mkdir -p "$(dirname "$check_timing_file")"
+mkdir -p "$(dirname "$check_failure_timing_file")"
+rm -f "$check_failure_timing_file"
+printf 'phase\tphase_seconds\ttotal_seconds\n' >"$check_timing_file"
+check_started_at=$SECONDS
+check_phase_started_at=$SECONDS
+check_phase="lean-and-generated-contracts"
+negative_log=""
+
+record_check_failure() {
+  local status=$?
+  if [[ -n "$negative_log" ]]; then
+    rm -f "$negative_log"
+  fi
+  if ((status != 0)); then
+    local now=$SECONDS
+    printf 'phase\tphase_seconds\ttotal_seconds\texit_code\n%s\t%s\t%s\t%s\n' \
+      "$check_phase" "$((now - check_phase_started_at))" \
+      "$((now - check_started_at))" "$status" >"$check_failure_timing_file"
+  fi
+  exit "$status"
+}
+
+trap record_check_failure EXIT
+
+record_check_phase() {
+  local phase="$1"
+  local now=$SECONDS
+  printf '%s\t%s\t%s\n' \
+    "$phase" "$((now - check_phase_started_at))" "$((now - check_started_at))" \
+    >>"$check_timing_file"
+  check_phase_started_at=$now
+}
+
+./scripts/test-generate-oracle-adapter-map.sh
 
 ./scripts/test-native-decide-policy.sh
 ./scripts/check-native-decide-policy.py
@@ -21,6 +58,9 @@ done < <(find LeanOS/NegativeFixtures -type f -name '*.lean' | sort)
 lake build LeanOS.NegativeFixtures
 lake build leanos-boot-plan
 lake build leanos-vtd-plan
+./scripts/test-generate-boundary-vocabulary.sh
+./scripts/test-generate-serial-protocol.sh
+python3 ./scripts/test-scenario-manifest.py
 
 ./scripts/check-security-claims.sh
 
@@ -29,6 +69,9 @@ lake build leanos-vtd-plan
 ./scripts/test-generate-invariants.sh
 
 ./scripts/check-invariants.sh
+
+record_check_phase lean-and-generated-contracts
+check_phase="security-and-platform-contracts"
 
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
@@ -53,15 +96,24 @@ if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-sanitizer-negatives.sh
 fi
 
+./scripts/check-firmware-corpus.sh
+
+record_check_phase security-and-platform-contracts
+check_phase="hosted-boundary-and-boot-contracts"
+
 ./scripts/check-boot-memory-full-projection.sh
 
 ./scripts/check-boot-handoff-stream.sh
 
 ./scripts/test-selected-compiler-propagation.sh
 
+record_check_phase hosted-boundary-and-boot-contracts
+check_phase="image-and-emulator-contracts"
+
 ./scripts/test-run-malformed-handoff.sh
 
 ./scripts/test-run-image.sh
+./scripts/check-expectation-templates.sh
 
 ./scripts/test-browser-boot.sh
 
@@ -72,6 +124,8 @@ fi
 
 ./scripts/test-run-preemption-image.sh
 ./scripts/test-run-frame-budget.sh
+./scripts/test-run-capability-transfer.sh
+./scripts/test-run-inflight-revocation.sh
 
 ./scripts/test-run-fault-containment.sh
 ./scripts/test-run-fault-integrity.sh
@@ -103,12 +157,22 @@ python3 scripts/test-setup-lean-cache.py
 ./scripts/test-main-ruleset-policy.py
 
 ./scripts/test-toolchain-profile.py
+./scripts/render-toolchain-consumers.py --check
+./scripts/test-render-toolchain-consumers.py
+
+python3 scripts/check-adr-links.py
+python3 scripts/test-adr-links.py
 
 ./scripts/test-build-timing.py
+
+python3 scripts/test-check-timing.py
 
 ./scripts/test-image-bundle.sh
 
 ./scripts/run-emulator-evidence.py check
+
+record_check_phase image-and-emulator-contracts
+check_phase="proof-integrity-and-negative-fixtures"
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
@@ -147,7 +211,6 @@ fi
 rm -f "$trusted_scan_log"
 
 negative_log="$(mktemp)"
-trap 'rm -f "$negative_log"' EXIT
 
 if lake env lean -DwarningAsError=true tests/negative/Sorry.lean \
     >"$negative_log" 2>&1; then
@@ -216,5 +279,11 @@ if ! grep -Fq 'has type' "$negative_log" ||
   cat "$negative_log" >&2
   exit 1
 fi
+
+rm -f "$negative_log"
+negative_log=""
+record_check_phase proof-integrity-and-negative-fixtures
+python3 scripts/check-check-timing.py "$check_timing_file"
+trap - EXIT
 
 echo "Lean build, proof-integrity, and negative regression checks passed"

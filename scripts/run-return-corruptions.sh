@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -68,7 +71,7 @@ for spec in "${specs[@]}"; do
     exit 1
   }
   if [[ "$fixture" == capability-reuse-generation ]]; then
-    grep -Fxq "LEANOS/9 CAPREUSE fixture=${fixture} stage=word-boundary result=INJECTED" \
+    grep -Fxq "${LEANOS_SERIAL_9_CAPREUSE} fixture=${fixture} stage=word-boundary result=INJECTED" \
       "$log" || {
       echo "error: fixture '$fixture' lacked its word-boundary injection record" >&2
       exit 1
@@ -86,29 +89,29 @@ for spec in "${specs[@]}"; do
       "$fixture" == direct-port-granularity-relaxation ||
       "$fixture" == dma-bus-master-reenable ||
       "$fixture" == vtd-translation-disable ]]; then
-    grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=machine-control result=INJECTED" \
+    grep -Fxq "${LEANOS_SERIAL_9_RETURN} fixture=${fixture} stage=machine-control result=INJECTED" \
       "$log" || {
       echo "error: fixture '$fixture' lacked its machine-control injection record" >&2
       exit 1
     }
   else
-    grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=outgoing-frame result=INJECTED" \
+    grep -Fxq "${LEANOS_SERIAL_9_RETURN} fixture=${fixture} stage=outgoing-frame result=INJECTED" \
       "$log" || {
       echo "error: fixture '$fixture' lacked its outgoing-frame injection record" >&2
       exit 1
     }
   fi
-  grep -Fxq "LEANOS/3 FINAL status=FAIL reason=${reason}" "$log" || {
+  grep -Fxq "${LEANOS_SERIAL_3_FINAL} status=FAIL reason=${reason}" "$log" || {
     echo "error: fixture '$fixture' lacked typed rejection reason '$reason'" >&2
     exit 1
   }
   if [[ "$fixture" != capability-reuse-generation ]] &&
-      grep -Eq '^LEANOS/5 ENTRY|^LEANOS/5 FINAL status=PASS' "$log"; then
+      grep -Eq "^${LEANOS_SERIAL_5_ENTRY}|^${LEANOS_SERIAL_5_FINAL} status=PASS" "$log"; then
     echo "error: fixture '$fixture' reached CPL3 or normal completion" >&2
     exit 1
   fi
   if [[ "$fixture" == capability-reuse-generation ]] &&
-      grep -Eq '^LEANOS/9 CAPREUSE status=PASS|^LEANOS/10 FINAL status=PASS' "$log"; then
+      grep -Eq "^${LEANOS_SERIAL_9_CAPREUSE} status=PASS|^${LEANOS_SERIAL_10_FINAL} status=PASS" "$log"; then
     echo "error: fixture '$fixture' reached capability-reuse completion" >&2
     exit 1
   fi

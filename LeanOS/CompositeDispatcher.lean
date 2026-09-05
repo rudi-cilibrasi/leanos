@@ -408,6 +408,84 @@ def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if 0x4a01 ≤ tag then 0xff02
   else 0xff04
 
+/-- Allocation-free scalar table for the machine-visible A-to-B transfer.
+Unlike the older mixed corpus, this slice has a distinct subject-1 pre-state
+and an explicit authoritative resumable switch before subject 2 can receive
+the sealed descendant. -/
+def capabilityTransferBootDispatchRaw
+    (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
+  if tag = 0x2001 then
+    if arg0 != 0x20001 || arg1 != 0x20001 ||
+        arg2 != 0xCAFE || arg3 != 0xBEEF then 0xff05
+    else if stateWord = 0x5101 then 0x205201 else 0xff06
+  else if tag = 0x4a01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5201 then 0x4a5301 else 0xff06
+  else if tag = 0x4701 then
+    if arg0 != 0x60003 || arg1 != 0xCAFE ||
+        arg2 != 0xBEEF || arg3 != 0 then 0xff05
+    else if stateWord = 0x5301 then 0x475301 else 0xff06
+  else if tag = 0x2101 then
+    if arg0 != 0x30000 || arg1 != 3 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5301 then 0x215401 else 0xff06
+  else if tag = 0x4801 then
+    if arg0 != 0x60003 || arg1 != 0xA174 ||
+        arg2 != 0xB174 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5401 then 0x485501 else 0xff06
+  else if tag = 0x4901 then
+    if arg0 != 0x60003 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x5501 then 0x495501 else 0xff06
+  else if tag % 256 != abiVersion then 0xff01
+  else if 0x4b01 ≤ tag then 0xff02
+  else 0xff04
+
+/-- Allocation-free scalar table for the in-flight revocation trace (#175).
+Subject 1 seals a send-only child of its endpoint authority and then revokes
+that whole lineage before subject 2 can receive; the receipt, the canceled
+handle, and the same-slot replacement are all decided by the exact
+authoritative gate replay named by each state token. -/
+def inFlightRevocationDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
+  if tag = 0x2001 then
+    if arg0 != 0x20001 || arg1 != 0x20001 ||
+        arg2 != 0xCAFE || arg3 != 0xBEEF then 0xff05
+    else if stateWord = 0x6001 then 0x206101 else 0xff06
+  else if tag = 0x5001 then
+    if arg0 != 1 || arg1 != 1 || arg2 != 1 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6101 then 0x506101 else 0xff06
+  else if tag = 0x5101 then
+    if arg0 != 2 || arg1 != 1 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6101 then 0x516101 else 0xff06
+  else if tag = 0x5201 then
+    if arg0 != 2 || arg1 != 1 || arg2 != 1 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6101 then 0x526201 else 0xff06
+  else if tag = 0x5301 then
+    if arg0 != 2 || arg1 != 1 || arg2 != 1 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6201 then 0x536201 else 0xff06
+  else if tag = 0x5401 then
+    if arg0 != 0x20001 || arg1 != 0x20001 ||
+        arg2 != 0xCAFE || arg3 != 0xBEEF then 0xff05
+    else if stateWord = 0x6201 then 0x546201 else 0xff06
+  else if tag = 0x5501 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6201 then 0x556301 else 0xff06
+  else if tag = 0x2101 then
+    if arg0 != 0x30000 || arg1 != 3 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6301 then 0x216301 else 0xff06
+  else if tag = 0x2401 then
+    if arg0 != 0 || arg1 != 2 || arg2 != 3 || arg3 != 4 then 0xff05
+    else if stateWord = 0x6301 then 0x246401 else 0xff06
+  else if tag = 0x5601 then
+    if arg0 != 0x70003 || arg1 != 0xAAAA ||
+        arg2 != 0xBBBB || arg3 != 0 then 0xff05
+    else if stateWord = 0x6401 then 0x566401 else 0xff06
+  else if tag = 0x5701 then
+    if arg0 != 0x80003 || arg1 != 0x1111 ||
+        arg2 != 0x2222 || arg3 != 0 then 0xff05
+    else if stateWord = 0x6401 then 0x576501 else 0xff06
+  else if tag % 256 != abiVersion then 0xff01
+  else if 0x5801 ≤ tag then 0xff02
+  else 0xff04
+
 /-- Allocation-free scalar table for the canonical invalidation publication
 protocol.  Pending state tokens retain the complete published pre-state; only
 an exact acknowledgement advances to the logical successor. -/
@@ -485,6 +563,12 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if 0x4001 ≤ stateWord && stateWord ≤ 0x4b01 then
     if stateWord % 256 != abiVersion then 0xff01
     else FrameBudgetScenario.dispatch stateWord tag arg0 arg1 arg2 arg3
+  else if 0x5101 ≤ stateWord && stateWord ≤ 0x5501 then
+    if stateWord % 256 != abiVersion then 0xff01
+    else capabilityTransferBootDispatchRaw stateWord tag arg0 arg1 arg2 arg3
+  else if 0x6001 ≤ stateWord && stateWord ≤ 0x6501 then
+    if stateWord % 256 != abiVersion then 0xff01
+    else inFlightRevocationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
       stateWord = 0x0b01 || stateWord = 0x0c01 || stateWord = 0x0d01 ||
       stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||
@@ -578,10 +662,10 @@ structure DispatchResult where
   deriving DecidableEq, Repr
 
 /-- Select the optional value word solely from the fully validated control
-word. The accepted attached-receipt selector is the only result allowed to
-publish a handle. -/
+word. Only the accepted attached-receipt selectors for the hosted and machine
+traces may publish a handle. -/
 def resultValue (control : UInt64) : UInt64 :=
-  if control = 0x210a01 then 0x60003 else 0
+  if control = 0x210a01 || control = 0x215401 then 0x60003 else 0
 
 def dispatchResult (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : DispatchResult :=
   let control := dispatch stateWord tag arg0 arg1 arg2 arg3
@@ -608,13 +692,16 @@ theorem dispatchResult_value_eq_dispatchValue stateWord tag arg0 arg1 arg2 arg3 
 word. This excludes every rejection, data-only success, and malformed input. -/
 theorem dispatchValue_eq_delivered_handle_iff stateWord tag arg0 arg1 arg2 arg3 :
     dispatchValue stateWord tag arg0 arg1 arg2 arg3 = 0x60003 ↔
-      dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x210a01 := by
-  simp [dispatchValue, resultValue]
+      dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x210a01 ∨
+        dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x215401 := by
+  unfold dispatchValue resultValue
+  split <;> simp_all
 
 /-- All non-receipt controls expose the canonical no-value word. -/
 theorem dispatchValue_eq_zero_iff stateWord tag arg0 arg1 arg2 arg3 :
     dispatchValue stateWord tag arg0 arg1 arg2 arg3 = 0 ↔
-      dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x210a01 := by
+      dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x210a01 ∧
+        dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x215401 := by
   simp [dispatchValue, resultValue]
 
 /-- The published receipt value is a canonical slot-3, generation-6 handle,
@@ -2007,6 +2094,222 @@ theorem mixedCanonicalEdges_refine :
   intro edge _hmembership
   exact canonicalMixedEdge_refines edge
 
+/-! ## Machine-bound subject-1 to subject-2 transfer
+
+The general hosted mixed corpus starts in subject 2.  The machine scenario has
+a separate canonical family because it claims a real A-to-B transfer: subject
+1 resolves and offers its `0x20001` endpoint authority, an explicit resumable
+transition restores subject 2, and only then may subject 2 inspect or accept
+the sealed descendant. -/
+
+inductive CapabilityTransferBootStateId where
+  | subjectOne
+  | offeredBySubjectOne
+  | subjectTwo
+  | acceptedBySubjectTwo
+  | delegatedSendBySubjectTwo
+  deriving DecidableEq, Repr
+
+def encodeCapabilityTransferBootState : CapabilityTransferBootStateId → UInt64
+  | .subjectOne => 0x5101
+  | .offeredBySubjectOne => 0x5201
+  | .subjectTwo => 0x5301
+  | .acceptedBySubjectTwo => 0x5401
+  | .delegatedSendBySubjectTwo => 0x5501
+
+inductive CapabilityTransferBootCommandId where
+  | offer
+  | switchToSubjectTwo
+  | rejectSealedHandle
+  | accept
+  | delegatedSend
+  | rejectDelegatedReceive
+  deriving DecidableEq, Repr
+
+def encodeCapabilityTransferBootCommand :
+    CapabilityTransferBootCommandId → CommandWords
+  | .offer =>
+      { tag := 0x2001, arg0 := 0x20001, arg1 := 0x20001,
+        arg2 := 0xCAFE, arg3 := 0xBEEF }
+  | .switchToSubjectTwo =>
+      { tag := 0x4a01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectSealedHandle =>
+      { tag := 0x4701, arg0 := 0x60003, arg1 := 0xCAFE,
+        arg2 := 0xBEEF, arg3 := 0 }
+  | .accept =>
+      { tag := 0x2101, arg0 := 0x30000, arg1 := 3, arg2 := 0, arg3 := 0 }
+  | .delegatedSend =>
+      { tag := 0x4801, arg0 := 0x60003, arg1 := 0xA174,
+        arg2 := 0xB174, arg3 := 0 }
+  | .rejectDelegatedReceive =>
+      { tag := 0x4901, arg0 := 0x60003, arg1 := 0, arg2 := 0, arg3 := 0 }
+
+def capabilityTransferBootOperation :
+    CapabilityTransferBootCommandId → AuthoritativeOperation
+  | .offer =>
+      .ordinary (.transferOffer 0x20001 0x20001 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true })
+  | .switchToSubjectTwo =>
+      .ordinary (.resumePreempt compositeDispatcherTimerFrame
+        compositeDispatcherTimerRegisters)
+  | .rejectSealedHandle =>
+      .ordinary (.ipc (.send 0x60003 0xCAFE 0xBEEF))
+  | .accept => .ordinary (.transferAccept 0x30000 3)
+  | .delegatedSend =>
+      .ordinary (.ipc (.send 0x60003 0xA174 0xB174))
+  | .rejectDelegatedReceive => .ordinary (.ipc (.receive 0x60003))
+
+def capabilityTransferBootPrefix :
+    CapabilityTransferBootStateId → List CapabilityTransferBootCommandId
+  | .subjectOne => []
+  | .offeredBySubjectOne => [.offer]
+  | .subjectTwo => [.offer, .switchToSubjectTwo]
+  | .acceptedBySubjectTwo => [.offer, .switchToSubjectTwo, .accept]
+  | .delegatedSendBySubjectTwo =>
+      [.offer, .switchToSubjectTwo, .accept, .delegatedSend]
+
+def capabilityTransferBootMaterialize
+    (id : CapabilityTransferBootStateId) : Except DecodeError CompositeState :=
+  match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+  | .error _ => .error .reservedBits
+  | .ok plan =>
+      .ok (runAuthoritativeOperations (capabilityTransferBootInitial plan)
+        ((capabilityTransferBootPrefix id).map capabilityTransferBootOperation))
+
+def capabilityTransferBootNext : CapabilityTransferBootStateId →
+    CapabilityTransferBootCommandId → Option CapabilityTransferBootStateId
+  | .subjectOne, .offer => some .offeredBySubjectOne
+  | .offeredBySubjectOne, .switchToSubjectTwo => some .subjectTwo
+  | .subjectTwo, .rejectSealedHandle => some .subjectTwo
+  | .subjectTwo, .accept => some .acceptedBySubjectTwo
+  | .acceptedBySubjectTwo, .delegatedSend => some .delegatedSendBySubjectTwo
+  | .delegatedSendBySubjectTwo, .rejectDelegatedReceive =>
+      some .delegatedSendBySubjectTwo
+  | _, _ => none
+
+def capabilityTransferBootReply : CapabilityTransferBootCommandId →
+    AuthoritativeGateResult
+  | .offer => .completed (.ordinary (.transferOffer .accepted))
+  | .switchToSubjectTwo =>
+      .completed (.ordinary (.resume
+        (some
+          { owner := 2, addressSpace := 2
+            frame := compositeDispatcherTimerFrame
+            registers := compositeDispatcherBlockingRegisters
+            kind := .suspended }) none))
+  | .rejectSealedHandle =>
+      .completed (.ordinary (.ipc (.syscall
+        (.sendHandleRejected (.denied .staleHandle)))))
+  | .accept =>
+      .completed (.ordinary (.transferAccept
+        (.delivered
+          { endpoint := 10, sender := 1,
+            payload := { word0 := 0xCAFE, word1 := 0xBEEF } })
+        (some 0x60003)))
+  | .delegatedSend => .completed (.ordinary (.ipc (.syscall .sent)))
+  | .rejectDelegatedReceive =>
+      .completed (.ordinary (.ipc (.syscall
+        (.receiveRejected .missingReceive))))
+
+structure CanonicalCapabilityTransferBootEdge where
+  state : CapabilityTransferBootStateId
+  command : CapabilityTransferBootCommandId
+  next : CapabilityTransferBootStateId
+  control : UInt64
+  next_exact : capabilityTransferBootNext state command = some next
+
+def capabilityTransferBootEdges : List CanonicalCapabilityTransferBootEdge :=
+  [{ state := .subjectOne, command := .offer,
+     next := .offeredBySubjectOne, control := 0x205201, next_exact := rfl },
+   { state := .offeredBySubjectOne, command := .switchToSubjectTwo,
+     next := .subjectTwo, control := 0x4a5301, next_exact := rfl },
+   { state := .subjectTwo, command := .rejectSealedHandle,
+     next := .subjectTwo, control := 0x475301, next_exact := rfl },
+   { state := .subjectTwo, command := .accept,
+     next := .acceptedBySubjectTwo, control := 0x215401, next_exact := rfl },
+   { state := .acceptedBySubjectTwo, command := .delegatedSend,
+     next := .delegatedSendBySubjectTwo, control := 0x485501, next_exact := rfl },
+   { state := .delegatedSendBySubjectTwo,
+     command := .rejectDelegatedReceive,
+     next := .delegatedSendBySubjectTwo, control := 0x495501,
+     next_exact := rfl }]
+
+def CanonicalCapabilityTransferBootEdge.Refines
+    (edge : CanonicalCapabilityTransferBootEdge) : Prop :=
+  let words := encodeCapabilityTransferBootCommand edge.command
+  ∃ pre post,
+    capabilityTransferBootMaterialize edge.state = .ok pre ∧
+    capabilityTransferBootMaterialize edge.next = .ok post ∧
+    dispatch (encodeCapabilityTransferBootState edge.state)
+      words.tag words.arg0 words.arg1 words.arg2 words.arg3 = edge.control ∧
+    authoritativeGate pre (capabilityTransferBootOperation edge.command) =
+      { state := post, result := capabilityTransferBootReply edge.command }
+
+theorem capabilityTransferBootEdges_refine :
+    ∀ edge ∈ capabilityTransferBootEdges, edge.Refines := by
+  intro edge hedge
+  simp only [capabilityTransferBootEdges, List.mem_cons, List.not_mem_nil,
+    or_false] at hedge
+  rcases hedge with rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals exact ⟨_, _, rfl, rfl, rfl, rfl⟩
+
+/-- Regression boundary for the review finding: the offer really resolves
+subject 1's generation-2 slot, and the explicit switch makes subject 2 the
+caller before either receipt operation. -/
+theorem capabilityTransferBoot_actor_binding_exact :
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state => state.execution.core.context.currentSubject) = some 1 ∧
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state =>
+          (CapabilityHandle.resolveCurrent state.capabilities
+            { caller := state.execution.core.context.currentSubject }
+            0x20001 .endpoint).toOption.map
+              (fun resolution => resolution.handle.slot)) = some (some 1) ∧
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state =>
+          (CapabilityHandle.resolveCurrent state.capabilities
+            { caller := state.execution.core.context.currentSubject }
+            0x20001 .endpoint).toOption.map
+              (fun resolution => resolution.handle.identity)) = some (some 2) ∧
+    (capabilityTransferBootMaterialize .subjectOne).toOption.map
+        (fun state =>
+          (CapabilityHandle.resolveCurrent state.capabilities
+            { caller := state.execution.core.context.currentSubject }
+            0x20001 .endpoint).toOption.map
+              (fun resolution => resolution.capability.object)) = some (some 10) ∧
+    (capabilityTransferBootMaterialize .offeredBySubjectOne).toOption.map
+        (fun state => (state.transfers.pending 10).map
+          (fun transfer => (transfer.sender, transfer.parent))) =
+        some (some (1, 2)) ∧
+    (capabilityTransferBootMaterialize .subjectTwo).toOption.map
+        (fun state =>
+          (state.execution.core.context.currentSubject,
+            state.execution.core.context.activeAddressSpace)) = some (2, 2) := by
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor <;> native_decide
+
+theorem capabilityTransferBootResults_exact :
+    dispatch 0x5101 0x2001 0x20001 0x20001 0xCAFE 0xBEEF = 0x205201 ∧
+    dispatchValue 0x5101 0x2001 0x20001 0x20001 0xCAFE 0xBEEF = 0 ∧
+    dispatch 0x5201 0x4a01 0 0 0 0 = 0x4a5301 ∧
+    dispatchValue 0x5201 0x4a01 0 0 0 0 = 0 ∧
+    dispatch 0x5301 0x4701 0x60003 0xCAFE 0xBEEF 0 = 0x475301 ∧
+    dispatchValue 0x5301 0x4701 0x60003 0xCAFE 0xBEEF 0 = 0 ∧
+    dispatch 0x5301 0x2101 0x30000 3 0 0 = 0x215401 ∧
+    dispatchValue 0x5301 0x2101 0x30000 3 0 0 = 0x60003 ∧
+    dispatch 0x5401 0x4801 0x60003 0xA174 0xB174 0 = 0x485501 ∧
+    dispatchValue 0x5401 0x4801 0x60003 0xA174 0xB174 0 = 0 ∧
+    dispatch 0x5501 0x4901 0x60003 0 0 0 = 0x495501 ∧
+    dispatchValue 0x5501 0x4901 0x60003 0 0 0 = 0 := by
+  native_decide
+
 theorem decodeMixedCompositeState_sound word state
     (_hdecode : decodeMixedCompositeState word = .ok state) :
     mixedMaterialize state.id = .ok state.state := by
@@ -2244,6 +2547,605 @@ theorem mixed_rejected_protect_amplification_inert :
   constructor
   · native_decide
   · rfl
+
+/-! ## In-flight revocation before receipt
+
+The mixed corpus above revokes a delegated generation only after receipt.  The
+family below is the #175 trace: subject 1 holds a delegated revoke-only
+authority on endpoint 10 (`FailStop.inFlightRevocationInitial`), seals a
+send-only child of its own endpoint capability, and then revokes that whole
+lineage before subject 2 can receive.  Every successor is exact
+`authoritativeGate` replay: the accepted revocation cancels the sealed child
+together with its envelope, subject 2's receipt is the typed empty rejection
+with no handle, the reused destination slot receives a strictly newer
+generation, and the canceled generation-bound handle is denied.  Probes at
+each state cover missing revoke authority, a wrong lineage root, repeated
+revocation, and an offer through the revoked capability. -/
+
+inductive InFlightRevocationStateId where
+  | subjectOneArmed
+  | childOffered
+  | lineageRevoked
+  | subjectTwoRestored
+  | destinationReplaced
+  | replacementUsed
+  deriving DecidableEq, Repr
+
+def encodeInFlightRevocationState : InFlightRevocationStateId → UInt64
+  | .subjectOneArmed => 0x6001
+  | .childOffered => 0x6101
+  | .lineageRevoked => 0x6201
+  | .subjectTwoRestored => 0x6301
+  | .destinationReplaced => 0x6401
+  | .replacementUsed => 0x6501
+
+def decodeInFlightRevocationState (word : UInt64) :
+    Except DecodeError InFlightRevocationStateId :=
+  if word = 0x6001 then .ok .subjectOneArmed
+  else if word = 0x6101 then .ok .childOffered
+  else if word = 0x6201 then .ok .lineageRevoked
+  else if word = 0x6301 then .ok .subjectTwoRestored
+  else if word = 0x6401 then .ok .destinationReplaced
+  else if word = 0x6501 then .ok .replacementUsed
+  else if word % 256 != abiVersion then .error .wrongVersion
+  else if 0x6601 ≤ word then .error .reservedBits
+  else .error .unknownState
+
+theorem decode_encode_inFlightRevocation_state state :
+    decodeInFlightRevocationState (encodeInFlightRevocationState state) = .ok state := by
+  cases state <;> rfl
+
+theorem inFlightRevocation_state_encoding_injective first second
+    (hequal : encodeInFlightRevocationState first = encodeInFlightRevocationState second) :
+    first = second := by
+  cases first <;> cases second <;> simp_all [encodeInFlightRevocationState]
+
+inductive InFlightRevocationCommandId where
+  | offerChild
+  | rejectRevocationWithoutAuthority
+  | rejectWrongLineageRoot
+  | revokeLineage
+  | rejectRepeatedRevocation
+  | rejectOfferAfterRevocation
+  | switchToSubjectTwo
+  | rejectCanceledReceipt
+  | replaceDestinationSlot
+  | rejectCanceledHandleReplay
+  | useReplacementHandle
+  deriving DecidableEq, Repr
+
+def encodeInFlightRevocationCommand : InFlightRevocationCommandId → CommandWords
+  | .offerChild =>
+      { tag := 0x2001, arg0 := 0x20001, arg1 := 0x20001,
+        arg2 := 0xCAFE, arg3 := 0xBEEF }
+  | .rejectRevocationWithoutAuthority =>
+      { tag := 0x5001, arg0 := 1, arg1 := 1, arg2 := 1, arg3 := 0 }
+  | .rejectWrongLineageRoot =>
+      { tag := 0x5101, arg0 := 2, arg1 := 1, arg2 := 0, arg3 := 0 }
+  | .revokeLineage =>
+      { tag := 0x5201, arg0 := 2, arg1 := 1, arg2 := 1, arg3 := 0 }
+  | .rejectRepeatedRevocation =>
+      { tag := 0x5301, arg0 := 2, arg1 := 1, arg2 := 1, arg3 := 0 }
+  | .rejectOfferAfterRevocation =>
+      { tag := 0x5401, arg0 := 0x20001, arg1 := 0x20001,
+        arg2 := 0xCAFE, arg3 := 0xBEEF }
+  | .switchToSubjectTwo =>
+      { tag := 0x5501, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectCanceledReceipt =>
+      { tag := 0x2101, arg0 := 0x30000, arg1 := 3, arg2 := 0, arg3 := 0 }
+  | .replaceDestinationSlot =>
+      { tag := 0x2401, arg0 := 0, arg1 := 2, arg2 := 3, arg3 := 4 }
+  | .rejectCanceledHandleReplay =>
+      { tag := 0x5601, arg0 := 0x70003, arg1 := 0xAAAA,
+        arg2 := 0xBBBB, arg3 := 0 }
+  | .useReplacementHandle =>
+      { tag := 0x5701, arg0 := 0x80003, arg1 := 0x1111,
+        arg2 := 0x2222, arg3 := 0 }
+
+def decodeInFlightRevocationCommand (words : CommandWords) :
+    Except DecodeError InFlightRevocationCommandId :=
+  if words = encodeInFlightRevocationCommand .offerChild then .ok .offerChild
+  else if words = encodeInFlightRevocationCommand .rejectRevocationWithoutAuthority then
+    .ok .rejectRevocationWithoutAuthority
+  else if words = encodeInFlightRevocationCommand .rejectWrongLineageRoot then
+    .ok .rejectWrongLineageRoot
+  else if words = encodeInFlightRevocationCommand .revokeLineage then .ok .revokeLineage
+  else if words = encodeInFlightRevocationCommand .rejectRepeatedRevocation then
+    .ok .rejectRepeatedRevocation
+  else if words = encodeInFlightRevocationCommand .rejectOfferAfterRevocation then
+    .ok .rejectOfferAfterRevocation
+  else if words = encodeInFlightRevocationCommand .switchToSubjectTwo then
+    .ok .switchToSubjectTwo
+  else if words = encodeInFlightRevocationCommand .rejectCanceledReceipt then
+    .ok .rejectCanceledReceipt
+  else if words = encodeInFlightRevocationCommand .replaceDestinationSlot then
+    .ok .replaceDestinationSlot
+  else if words = encodeInFlightRevocationCommand .rejectCanceledHandleReplay then
+    .ok .rejectCanceledHandleReplay
+  else if words = encodeInFlightRevocationCommand .useReplacementHandle then
+    .ok .useReplacementHandle
+  else if words.tag % 256 != abiVersion then .error .wrongVersion
+  else if 0x5801 ≤ words.tag then .error .reservedBits
+  else .error .noncanonicalArguments
+
+theorem decode_encode_inFlightRevocation_command command :
+    decodeInFlightRevocationCommand (encodeInFlightRevocationCommand command) =
+      .ok command := by
+  cases command <;> rfl
+
+theorem inFlightRevocation_command_encoding_injective first second
+    (hequal : encodeInFlightRevocationCommand first =
+      encodeInFlightRevocationCommand second) :
+    first = second := by
+  cases first <;> cases second <;> simp_all [encodeInFlightRevocationCommand]
+
+/-- Every command is a public raw-slot or generation-bound word operation.  The
+revoking actor, the receiving subject, the lineage root's identity, and the
+replacement generation all come from the reconstructed composite state. -/
+def inFlightRevocationOperation : InFlightRevocationCommandId → AuthoritativeOperation
+  | .offerChild =>
+      .ordinary (.transferOffer 0x20001 0x20001 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true })
+  | .rejectRevocationWithoutAuthority => .ordinary (.capabilityRevokeSubtree 1 1 1)
+  | .rejectWrongLineageRoot => .ordinary (.capabilityRevokeSubtree 2 1 0)
+  | .revokeLineage => .ordinary (.capabilityRevokeSubtree 2 1 1)
+  | .rejectRepeatedRevocation => .ordinary (.capabilityRevokeSubtree 2 1 1)
+  | .rejectOfferAfterRevocation =>
+      .ordinary (.transferOffer 0x20001 0x20001 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true })
+  | .switchToSubjectTwo =>
+      .ordinary (.resumePreempt compositeDispatcherTimerFrame
+        compositeDispatcherTimerRegisters)
+  | .rejectCanceledReceipt => .ordinary (.transferAccept 0x30000 3)
+  | .replaceDestinationSlot => .ordinary (.capabilityCopy 0 2 3 { send := true })
+  | .rejectCanceledHandleReplay => .ordinary (.ipc (.send 0x70003 0xAAAA 0xBBBB))
+  | .useReplacementHandle => .ordinary (.ipc (.send 0x80003 0x1111 0x2222))
+
+def inFlightRevocationNextState :
+    InFlightRevocationStateId → InFlightRevocationCommandId →
+      Option InFlightRevocationStateId
+  | .subjectOneArmed, .offerChild => some .childOffered
+  | .childOffered, .rejectRevocationWithoutAuthority => some .childOffered
+  | .childOffered, .rejectWrongLineageRoot => some .childOffered
+  | .childOffered, .revokeLineage => some .lineageRevoked
+  | .lineageRevoked, .rejectRepeatedRevocation => some .lineageRevoked
+  | .lineageRevoked, .rejectOfferAfterRevocation => some .lineageRevoked
+  | .lineageRevoked, .switchToSubjectTwo => some .subjectTwoRestored
+  | .subjectTwoRestored, .rejectCanceledReceipt => some .subjectTwoRestored
+  | .subjectTwoRestored, .replaceDestinationSlot => some .destinationReplaced
+  | .destinationReplaced, .rejectCanceledHandleReplay => some .destinationReplaced
+  | .destinationReplaced, .useReplacementHandle => some .replacementUsed
+  | _, _ => none
+
+def inFlightRevocationExpectedReply :
+    InFlightRevocationStateId → InFlightRevocationCommandId → Option UInt64
+  | .subjectOneArmed, .offerChild => some 0x206101
+  | .childOffered, .rejectRevocationWithoutAuthority => some 0x506101
+  | .childOffered, .rejectWrongLineageRoot => some 0x516101
+  | .childOffered, .revokeLineage => some 0x526201
+  | .lineageRevoked, .rejectRepeatedRevocation => some 0x536201
+  | .lineageRevoked, .rejectOfferAfterRevocation => some 0x546201
+  | .lineageRevoked, .switchToSubjectTwo => some 0x556301
+  | .subjectTwoRestored, .rejectCanceledReceipt => some 0x216301
+  | .subjectTwoRestored, .replaceDestinationSlot => some 0x246401
+  | .destinationReplaced, .rejectCanceledHandleReplay => some 0x566401
+  | .destinationReplaced, .useReplacementHandle => some 0x576501
+  | _, _ => none
+
+inductive InFlightRevocationReplyId where
+  | childOffered
+  | revocationWithoutAuthorityRejected
+  | wrongLineageRootRejected
+  | lineageRevoked
+  | repeatedRevocationRejected
+  | offerAfterRevocationRejected
+  | subjectTwoRestored
+  | canceledReceiptRejected
+  | destinationReplaced
+  | canceledHandleReplayRejected
+  | replacementUsed
+  deriving DecidableEq, Repr
+
+def encodeInFlightRevocationReply : InFlightRevocationReplyId → UInt64
+  | .childOffered => 0x206101
+  | .revocationWithoutAuthorityRejected => 0x506101
+  | .wrongLineageRootRejected => 0x516101
+  | .lineageRevoked => 0x526201
+  | .repeatedRevocationRejected => 0x536201
+  | .offerAfterRevocationRejected => 0x546201
+  | .subjectTwoRestored => 0x556301
+  | .canceledReceiptRejected => 0x216301
+  | .destinationReplaced => 0x246401
+  | .canceledHandleReplayRejected => 0x566401
+  | .replacementUsed => 0x576501
+
+def decodeInFlightRevocationReply (word : UInt64) :
+    Except DecodeError InFlightRevocationReplyId :=
+  if word = 0x206101 then .ok .childOffered
+  else if word = 0x506101 then .ok .revocationWithoutAuthorityRejected
+  else if word = 0x516101 then .ok .wrongLineageRootRejected
+  else if word = 0x526201 then .ok .lineageRevoked
+  else if word = 0x536201 then .ok .repeatedRevocationRejected
+  else if word = 0x546201 then .ok .offerAfterRevocationRejected
+  else if word = 0x556301 then .ok .subjectTwoRestored
+  else if word = 0x216301 then .ok .canceledReceiptRejected
+  else if word = 0x246401 then .ok .destinationReplaced
+  else if word = 0x566401 then .ok .canceledHandleReplayRejected
+  else if word = 0x576501 then .ok .replacementUsed
+  else if word % 256 != abiVersion then .error .wrongVersion
+  else if 0x580001 ≤ word then .error .reservedBits
+  else .error .unknownCommand
+
+theorem decode_encode_inFlightRevocation_reply reply :
+    decodeInFlightRevocationReply (encodeInFlightRevocationReply reply) = .ok reply := by
+  cases reply <;> rfl
+
+theorem inFlightRevocation_reply_encoding_injective first second
+    (hequal : encodeInFlightRevocationReply first = encodeInFlightRevocationReply second) :
+    first = second := by
+  cases first <;> cases second <;> simp_all [encodeInFlightRevocationReply]
+
+def inFlightRevocationReplyId :
+    InFlightRevocationStateId → InFlightRevocationCommandId →
+      Option InFlightRevocationReplyId
+  | .subjectOneArmed, .offerChild => some .childOffered
+  | .childOffered, .rejectRevocationWithoutAuthority =>
+      some .revocationWithoutAuthorityRejected
+  | .childOffered, .rejectWrongLineageRoot => some .wrongLineageRootRejected
+  | .childOffered, .revokeLineage => some .lineageRevoked
+  | .lineageRevoked, .rejectRepeatedRevocation => some .repeatedRevocationRejected
+  | .lineageRevoked, .rejectOfferAfterRevocation => some .offerAfterRevocationRejected
+  | .lineageRevoked, .switchToSubjectTwo => some .subjectTwoRestored
+  | .subjectTwoRestored, .rejectCanceledReceipt => some .canceledReceiptRejected
+  | .subjectTwoRestored, .replaceDestinationSlot => some .destinationReplaced
+  | .destinationReplaced, .rejectCanceledHandleReplay =>
+      some .canceledHandleReplayRejected
+  | .destinationReplaced, .useReplacementHandle => some .replacementUsed
+  | _, _ => none
+
+/-- The full typed meaning of each reply selector, independent of `dispatch`
+and `authoritativeGate`.  The canceled receipt is the typed empty rejection
+with no delivered word; no reply in this family publishes a handle. -/
+def inFlightRevocationReplyResult : InFlightRevocationReplyId → AuthoritativeGateResult
+  | .childOffered => .completed (.ordinary (.transferOffer .accepted))
+  | .revocationWithoutAuthorityRejected =>
+      .completed (.ordinary (.capability (.rejected .missingRevoke)))
+  | .wrongLineageRootRejected =>
+      .completed (.ordinary (.capability (.rejected .objectMismatch)))
+  | .lineageRevoked => .completed (.ordinary (.capability .accepted))
+  | .repeatedRevocationRejected =>
+      .completed (.ordinary (.capability (.rejected .staleSlot)))
+  | .offerAfterRevocationRejected =>
+      .completed (.ordinary (.transferOffer (.rejected .staleEndpoint)))
+  | .subjectTwoRestored =>
+      .completed (.ordinary (.resume
+        (some
+          { owner := 2, addressSpace := 2
+            frame := compositeDispatcherTimerFrame
+            registers := compositeDispatcherBlockingRegisters
+            kind := .suspended })
+        none))
+  | .canceledReceiptRejected =>
+      .completed (.ordinary (.transferAccept (.rejected .empty) none))
+  | .destinationReplaced => .completed (.ordinary (.capability .accepted))
+  | .canceledHandleReplayRejected =>
+      .completed (.ordinary (.ipc (.syscall
+        (.sendHandleRejected (.denied .staleHandle)))))
+  | .replacementUsed => .completed (.ordinary (.ipc (.syscall .sent)))
+
+theorem inFlightRevocationExpectedReply_uses_canonical_codec state command :
+    inFlightRevocationExpectedReply state command =
+      (inFlightRevocationReplyId state command).map encodeInFlightRevocationReply := by
+  cases state <;> cases command <;> rfl
+
+theorem inFlightRevocation_dispatch_canonical state command :
+    let words := encodeInFlightRevocationCommand command
+    dispatch (encodeInFlightRevocationState state)
+      words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+      (inFlightRevocationExpectedReply state command).getD (errorWord .invalidSequence) := by
+  cases state <;> cases command <;> native_decide
+
+def inFlightRevocationCanonicalCommands : List InFlightRevocationCommandId :=
+  [.offerChild, .revokeLineage, .switchToSubjectTwo, .replaceDestinationSlot,
+   .useReplacementHandle]
+
+def inFlightRevocationPrefix :
+    InFlightRevocationStateId → List InFlightRevocationCommandId
+  | .subjectOneArmed => []
+  | .childOffered => inFlightRevocationCanonicalCommands.take 1
+  | .lineageRevoked => inFlightRevocationCanonicalCommands.take 2
+  | .subjectTwoRestored => inFlightRevocationCanonicalCommands.take 3
+  | .destinationReplaced => inFlightRevocationCanonicalCommands.take 4
+  | .replacementUsed => inFlightRevocationCanonicalCommands
+
+def inFlightRevocationInitialState : Except DecodeError CompositeState :=
+  match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+  | .ok plan => .ok (inFlightRevocationInitial plan)
+  | .error _ => .error .reservedBits
+
+/-- Materialization is exact authoritative replay from the kernel-owned seed. -/
+def inFlightRevocationMaterialize (id : InFlightRevocationStateId) :
+    Except DecodeError CompositeState := do
+  let initial ← inFlightRevocationInitialState
+  pure (runAuthoritativeOperations initial
+    ((inFlightRevocationPrefix id).map inFlightRevocationOperation))
+
+/-- Every accepted scalar edge decodes to an independently specified reply
+meaning and the exact next authoritative state. -/
+theorem inFlightRevocation_dispatch_decodes_authoritative_edge
+    (state : InFlightRevocationStateId) (command : InFlightRevocationCommandId)
+    (next : InFlightRevocationStateId) (reply : InFlightRevocationReplyId)
+    (hnext : inFlightRevocationNextState state command = some next)
+    (hreply : inFlightRevocationReplyId state command = some reply) :
+    let words := encodeInFlightRevocationCommand command
+    ∃ pre post,
+      inFlightRevocationMaterialize state = .ok pre ∧
+      inFlightRevocationMaterialize next = .ok post ∧
+      decodeInFlightRevocationReply
+          (dispatch (encodeInFlightRevocationState state)
+            words.tag words.arg0 words.arg1 words.arg2 words.arg3) =
+        .ok reply ∧
+      authoritativeGate pre (inFlightRevocationOperation command) =
+        { state := post, result := inFlightRevocationReplyResult reply } := by
+  cases state <;> cases command <;> simp [inFlightRevocationNextState] at hnext
+  all_goals subst next
+  all_goals simp [inFlightRevocationReplyId] at hreply
+  all_goals subst reply
+  all_goals refine ⟨_, _, rfl, rfl, ?_, ?_⟩
+  all_goals rfl
+
+structure CanonicalInFlightRevocationEdge where
+  state : InFlightRevocationStateId
+  command : InFlightRevocationCommandId
+  next : InFlightRevocationStateId
+  reply : InFlightRevocationReplyId
+  next_exact : inFlightRevocationNextState state command = some next
+  reply_exact : inFlightRevocationReplyId state command = some reply
+
+def inFlightRevocationCanonicalEdges : List CanonicalInFlightRevocationEdge :=
+  [{ state := .subjectOneArmed, command := .offerChild,
+     next := .childOffered, reply := .childOffered,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .childOffered, command := .rejectRevocationWithoutAuthority,
+     next := .childOffered, reply := .revocationWithoutAuthorityRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .childOffered, command := .rejectWrongLineageRoot,
+     next := .childOffered, reply := .wrongLineageRootRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .childOffered, command := .revokeLineage,
+     next := .lineageRevoked, reply := .lineageRevoked,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .lineageRevoked, command := .rejectRepeatedRevocation,
+     next := .lineageRevoked, reply := .repeatedRevocationRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .lineageRevoked, command := .rejectOfferAfterRevocation,
+     next := .lineageRevoked, reply := .offerAfterRevocationRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .lineageRevoked, command := .switchToSubjectTwo,
+     next := .subjectTwoRestored, reply := .subjectTwoRestored,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .subjectTwoRestored, command := .rejectCanceledReceipt,
+     next := .subjectTwoRestored, reply := .canceledReceiptRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .subjectTwoRestored, command := .replaceDestinationSlot,
+     next := .destinationReplaced, reply := .destinationReplaced,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .destinationReplaced, command := .rejectCanceledHandleReplay,
+     next := .destinationReplaced, reply := .canceledHandleReplayRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .destinationReplaced, command := .useReplacementHandle,
+     next := .replacementUsed, reply := .replacementUsed,
+     next_exact := rfl, reply_exact := rfl }]
+
+def CanonicalInFlightRevocationEdge.Refines (edge : CanonicalInFlightRevocationEdge) : Prop :=
+  let words := encodeInFlightRevocationCommand edge.command
+  ∃ pre post,
+    inFlightRevocationMaterialize edge.state = .ok pre ∧
+    inFlightRevocationMaterialize edge.next = .ok post ∧
+    decodeInFlightRevocationReply
+        (dispatch (encodeInFlightRevocationState edge.state)
+          words.tag words.arg0 words.arg1 words.arg2 words.arg3) =
+      .ok edge.reply ∧
+    authoritativeGate pre (inFlightRevocationOperation edge.command) =
+      { state := post, result := inFlightRevocationReplyResult edge.reply }
+
+theorem canonicalInFlightRevocationEdge_refines (edge : CanonicalInFlightRevocationEdge) :
+    edge.Refines :=
+  inFlightRevocation_dispatch_decodes_authoritative_edge
+    edge.state edge.command edge.next edge.reply edge.next_exact edge.reply_exact
+
+/-- The eleven-edge corpus inherits its state/result meaning solely from the
+scalar-to-authoritative bridge above. -/
+theorem inFlightRevocationCanonicalEdges_refine :
+    ∀ edge ∈ inFlightRevocationCanonicalEdges, edge.Refines := by
+  intro edge _hmembership
+  exact canonicalInFlightRevocationEdge_refines edge
+
+def inFlightRevocationOutcomeAt (state : InFlightRevocationStateId)
+    (command : InFlightRevocationCommandId) :
+    Except DecodeError AuthoritativeGateOutcome := do
+  let pre ← inFlightRevocationMaterialize state
+  pure (authoritativeGate pre (inFlightRevocationOperation command))
+
+/-- The seed is kernel-owned: subject 1 is current, its slot 2 holds the
+delegated revoke-only authority on endpoint 10 as identity 6, and the next
+identity is 7, so the sealed child below is generation 7. -/
+theorem inFlightRevocation_seed_shape :
+    (inFlightRevocationMaterialize .subjectOneArmed).toOption.map
+        (fun state => state.execution.core.context.currentSubject) = some 1 ∧
+    (inFlightRevocationMaterialize .subjectOneArmed).toOption.map
+        (fun state =>
+          (state.capabilities.slots 1 2).map
+            (fun capability =>
+              (capability.identity, capability.object, capability.rights.revoke))) =
+      some (some (6, 10, true)) ∧
+    (inFlightRevocationMaterialize .subjectOneArmed).toOption.map
+        (fun state => state.capabilities.nextIdentity) = some 7 ∧
+    (inFlightRevocationMaterialize .subjectOneArmed).toOption.map
+        (fun state => (state.transfers.pending 10).isSome) = some false := by
+  native_decide
+
+/-- The offered descendant is sealed, not installed: it is generation 7 of
+endpoint 10, derived from subject 1's slot-1 capability (identity 2), with an
+envelope in the mailbox and no slot anywhere. -/
+theorem inFlightRevocation_offer_seals_child :
+    (inFlightRevocationOutcomeAt .subjectOneArmed .offerChild).toOption.map (·.result) =
+      some (inFlightRevocationReplyResult .childOffered) ∧
+    (inFlightRevocationMaterialize .childOffered).toOption.map
+        (fun state =>
+          (state.transfers.pending 10).map
+            (fun transfer => (transfer.identity, transfer.parent, transfer.sender))) =
+      some (some (7, 2, 1)) ∧
+    (inFlightRevocationMaterialize .childOffered).toOption.map
+        (fun state => (state.transfers.mailbox 10).isSome) = some true ∧
+    (inFlightRevocationMaterialize .childOffered).toOption.map
+        (fun state => (state.capabilities.slots 2 3).isSome) = some false ∧
+    (inFlightRevocationMaterialize .childOffered).toOption.map
+        (fun state => state.capabilities.nextIdentity) = some 8 := by
+  native_decide
+
+/-- Only the exact delegated revoke authority over the exact lineage root is
+accepted; a send-only authority and a foreign root are typed denials that
+leave the complete state unchanged. -/
+theorem inFlightRevocation_revocation_authority_exact :
+    (inFlightRevocationOutcomeAt .childOffered .rejectRevocationWithoutAuthority).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .revocationWithoutAuthorityRejected) ∧
+    (inFlightRevocationOutcomeAt .childOffered .rejectWrongLineageRoot).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .wrongLineageRootRejected) ∧
+    (inFlightRevocationOutcomeAt .childOffered .revokeLineage).toOption.map (·.result) =
+      some (inFlightRevocationReplyResult .lineageRevoked) := by
+  native_decide
+
+theorem inFlightRevocation_denied_revocations_inert :
+    (inFlightRevocationOutcomeAt .childOffered .rejectRevocationWithoutAuthority).toOption.map
+        (·.state) = (inFlightRevocationMaterialize .childOffered).toOption ∧
+    (inFlightRevocationOutcomeAt .childOffered .rejectWrongLineageRoot).toOption.map
+        (·.state) = (inFlightRevocationMaterialize .childOffered).toOption := by
+  exact ⟨rfl, rfl⟩
+
+/-- Accepted revocation reaches the in-flight child: the pending record, the
+transfer mailbox, and the IPC mailbox are cleared in the same step that clears
+subject 1's revoked slot, while the canceled generation stays recorded in the
+append-only derivation history and the identity frontier does not move
+backwards. -/
+theorem inFlightRevocation_revocation_cancels_in_flight :
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => (state.transfers.pending 10).isSome) = some false ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => (state.transfers.mailbox 10).isSome) = some false ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => (state.ipc.endpoints.mailbox 10).isSome) = some false ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => (state.capabilities.slots 1 1).isSome) = some false ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => state.capabilities.derivations 7) =
+      some (some (some 2, 10, .endpoint, { send := true })) ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => state.capabilities.nextIdentity) = some 8 ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => state.transfers.trace.events 10) =
+      some [.offered 10 7 1 { word0 := 0xCAFE, word1 := 0xBEEF }, .canceled 10 7] := by
+  native_decide
+
+/-- Unrelated authority survives the revocation exactly: subject 1's address
+space and delegated revoke authority, every subject-2 capability, the saved
+subject-2 continuation, the ready queue, and the current subject are the
+pre-revocation values. -/
+theorem inFlightRevocation_unrelated_authority_preserved :
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state =>
+          ((state.capabilities.slots 1 0).map (·.identity),
+            (state.capabilities.slots 1 2).map (·.identity),
+            (state.capabilities.slots 2 0).map (·.identity),
+            (state.capabilities.slots 2 1).map (·.identity),
+            (state.capabilities.slots 2 2).map (·.identity))) =
+      some (some 1, some 6, some 3, some 4, some 5) ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => state.resumable.contexts.map (·.owner)) =
+      (inFlightRevocationMaterialize .childOffered).toOption.map
+        (fun state => state.resumable.contexts.map (·.owner)) ∧
+    (inFlightRevocationMaterialize .lineageRevoked).toOption.map
+        (fun state => (state.scheduler.ready, state.lifecycle.current)) =
+      (inFlightRevocationMaterialize .childOffered).toOption.map
+        (fun state => (state.scheduler.ready, state.lifecycle.current)) := by
+  native_decide
+
+/-- After revocation, subject 1 can neither revoke again nor offer through the
+revoked capability; both are typed denials with the complete state unchanged. -/
+theorem inFlightRevocation_post_revocation_probes :
+    (inFlightRevocationOutcomeAt .lineageRevoked .rejectRepeatedRevocation).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .repeatedRevocationRejected) ∧
+    (inFlightRevocationOutcomeAt .lineageRevoked .rejectOfferAfterRevocation).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .offerAfterRevocationRejected) := by
+  native_decide
+
+theorem inFlightRevocation_post_revocation_probes_inert :
+    (inFlightRevocationOutcomeAt .lineageRevoked .rejectRepeatedRevocation).toOption.map
+        (·.state) = (inFlightRevocationMaterialize .lineageRevoked).toOption ∧
+    (inFlightRevocationOutcomeAt .lineageRevoked .rejectOfferAfterRevocation).toOption.map
+        (·.state) = (inFlightRevocationMaterialize .lineageRevoked).toOption := by
+  exact ⟨rfl, rfl⟩
+
+/-- The authoritative switch restores subject 2's saved continuation, and its
+receipt through the endpoint that carried the offer is the typed empty
+rejection: no handle is delivered and nothing is installed in slot 3. -/
+theorem inFlightRevocation_stale_receipt_denied :
+    (inFlightRevocationOutcomeAt .lineageRevoked .switchToSubjectTwo).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .subjectTwoRestored) ∧
+    (inFlightRevocationMaterialize .subjectTwoRestored).toOption.map
+        (fun state => state.execution.core.context.currentSubject) = some 2 ∧
+    (inFlightRevocationOutcomeAt .subjectTwoRestored .rejectCanceledReceipt).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .canceledReceiptRejected) ∧
+    (inFlightRevocationOutcomeAt .subjectTwoRestored .rejectCanceledReceipt).toOption.map
+        (fun outcome => (outcome.state.capabilities.slots 2 3).isSome) = some false := by
+  native_decide
+
+theorem inFlightRevocation_stale_receipt_inert :
+    (inFlightRevocationOutcomeAt .subjectTwoRestored .rejectCanceledReceipt).toOption.map
+        (·.state) = (inFlightRevocationMaterialize .subjectTwoRestored).toOption := by
+  rfl
+
+/-- Reusing the destination slot installs a strictly newer generation: slot 3
+now holds identity 8, the canceled generation-7 handle is denied as stale
+without state drift, and the fresh generation-8 handle carries live send
+authority. -/
+theorem inFlightRevocation_slot_reuse_distinct_generation :
+    (inFlightRevocationOutcomeAt .subjectTwoRestored .replaceDestinationSlot).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .destinationReplaced) ∧
+    (inFlightRevocationMaterialize .destinationReplaced).toOption.map
+        (fun state => (state.capabilities.slots 2 3).map (·.identity)) = some (some 8) ∧
+    (inFlightRevocationMaterialize .destinationReplaced).toOption.map
+        (fun state => (state.capabilities.derivations 7).isSome) = some true ∧
+    (inFlightRevocationOutcomeAt .destinationReplaced .rejectCanceledHandleReplay).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .canceledHandleReplayRejected) ∧
+    (inFlightRevocationOutcomeAt .destinationReplaced .useReplacementHandle).toOption.map
+        (·.result) = some (inFlightRevocationReplyResult .replacementUsed) ∧
+    (inFlightRevocationMaterialize .replacementUsed).toOption.map
+        (fun state => (state.transfers.mailbox 10).map (·.sender)) = some (some 2) := by
+  native_decide
+
+theorem inFlightRevocation_canceled_handle_replay_inert :
+    (inFlightRevocationOutcomeAt .destinationReplaced .rejectCanceledHandleReplay).toOption.map
+        (·.state) = (inFlightRevocationMaterialize .destinationReplaced).toOption := by
+  rfl
+
+/-- No edge of this family publishes a handle in result word one; the canceled
+child never becomes a returned value. -/
+theorem inFlightRevocation_no_handle_published :
+    inFlightRevocationCanonicalEdges.all (fun edge =>
+      let words := encodeInFlightRevocationCommand edge.command
+      dispatchValue (encodeInFlightRevocationState edge.state)
+        words.tag words.arg0 words.arg1 words.arg2 words.arg3 = 0) = true := by
+  native_decide
+
+/-- The canceled handle words name exactly slot 3 / generation 7 and the
+replacement names slot 3 / generation 8: the same bounded slot index, distinct
+generations, so slot-only or truncated-generation resolution has an observable
+consequence. -/
+theorem inFlightRevocation_handles_decode :
+    CapabilityHandle.decode 0x70003 = .ok { slot := 3, identity := 7 } ∧
+    CapabilityHandle.decode 0x80003 = .ok { slot := 3, identity := 8 } := by
+  exact ⟨rfl, rfl⟩
 
 /-! ## Stateful invalidation publication branch
 

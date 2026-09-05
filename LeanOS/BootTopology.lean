@@ -2221,6 +2221,14 @@ def exportedTopologyQuery
     (bytes : ByteArray) (bspId executingId word : UInt64) : UInt64 :=
   topologyQuery bytes bspId executingId word
 
+/-- Hosted replay of one complete copied MADT (SDT envelope, fixed header,
+entry stream, and admission) with the ordinary topology result words; the
+firmware handoff corpus drives real-firmware tables through it. -/
+@[export leanos_boot_complete_topology_query]
+def exportedCompleteTopologyQuery
+    (bytes : ByteArray) (bspId executingId word : UInt64) : UInt64 :=
+  completeTopologyQuery bytes bspId executingId word
+
 def topologyFixture (fixture : UInt64) : List UInt8 × UInt64 × UInt64 :=
   if fixture == 0 then (mixedQ35MadtBytes, 0, 0)
   else if fixture == 1 then

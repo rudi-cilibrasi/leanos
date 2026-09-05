@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+  LEANOS_CI_IMAGE_DIGEST: sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
   LEANOS_TOOLCHAIN_PROFILE: gcc-reference
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: safe.directory
@@ -23,7 +23,7 @@ jobs:
   gate:
     name: Prove, reproduce, and collect release evidence
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     # The gate intentionally performs the proof suite, two clean
     # reproducibility builds, a final image build, and the full QEMU matrix.
     # A fresh hosted runner currently needs more than 20 minutes for that

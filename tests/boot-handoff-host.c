@@ -2,9 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#define LEANOS_BOUNDARY_ABI_OBJECTS 1
+#include "boundary-abi.h"
 
-extern uint64_t leanos_boot_handoff_fixture_query(uint64_t, uint64_t);
-extern uint64_t leanos_boot_handoff_query(uint64_t, uint64_t, lean_object *, uint64_t);
 extern char **lean_setup_args(int, char **);
 extern void lean_initialize(void);
 extern lean_object *initialize_leanos_LeanOS_BootMemoryMapDecoderABI(uint8_t);
@@ -44,10 +44,10 @@ static lean_object *run_host(int argc, char **argv) {
         "region-2-start", "region-2-count", "region-2-kind",
     };
     char name[96];
+    /* The export consumes its byte-array argument. */
     lean_object *empty = lean_mk_empty_byte_array(lean_box(0));
     expect("production-empty-buffer.abi-version",
            leanos_boot_handoff_query(0, 0, empty, 0), 1);
-    lean_dec(empty);
 
     for (size_t word = 0; word < sizeof(expected) / sizeof(expected[0]); ++word) {
         snprintf(name, sizeof(name), "accepted.%s", fields[word]);

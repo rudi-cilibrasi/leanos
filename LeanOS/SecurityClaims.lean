@@ -884,6 +884,52 @@ theorem composite_gate_data_receive_preserves_runtimeWellFormed
     state handleWord sender word0 word1 hstate hmode
   simpa [FailStop.operationReply] using hdelivered
 
+/-- SC-COMPOSITE-INFLIGHT-REVOCATION: an accepted transitive revocation
+through the public composite gate reaches authority that is still in flight.
+Every sealed descendant of the revoked lineage root loses its envelope, its
+pending record, and its IPC mailbox entry in the same step that clears the
+installed descendants; afterwards no retained sealed record and no installed
+slot descends from that root; and the derivation history and identity frontier
+are unchanged, so the canceled generation can never be reissued.  The concrete
+#175 trace `CompositeDispatcher.inFlightRevocationCanonicalEdges` exercises
+this contract end to end, including the typed empty receipt and the distinct
+replacement generation. -/
+theorem composite_subtree_revocation_reaches_in_flight_authority
+    state authoritySlot victim victimSlot next target published
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hlookup : Capability.lookup state.capabilities victim victimSlot = .found target)
+    (hpublished : published =
+      (FailStop.gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state) :
+    (∀ endpoint transfer, state.transfers.pending endpoint = some transfer →
+      CapabilityTransfer.descendsFromRoot state.transfers.capabilities target.identity
+        transfer = true →
+      published.transfers.pending endpoint = none ∧
+        published.transfers.mailbox endpoint = none ∧
+        published.ipc.endpoints.mailbox endpoint = none) ∧
+    (∀ endpoint transfer, published.transfers.pending endpoint = some transfer →
+      CapabilityTransfer.descendsFromRoot state.transfers.capabilities target.identity
+        transfer = false) ∧
+    (∀ subject slot capability,
+      published.capabilities.slots subject slot = some capability →
+        Capability.descendsFrom state.capabilities capability.identity target.identity
+          state.capabilities.nextIdentity = false) ∧
+    published.capabilities.derivations = state.capabilities.derivations ∧
+    published.capabilities.nextIdentity = state.capabilities.nextIdentity := by
+  obtain ⟨hpendingMonotone, hslotsMonotone⟩ :=
+    FailStop.gate_capabilityRevokeSubtree_accepted_authority_monotone state authoritySlot
+      victim victimSlot next target published hmode haccepted hlookup hpublished
+  obtain ⟨hderivations, hnextIdentity⟩ :=
+    FailStop.gate_capabilityRevokeSubtree_accepted_retains_history state authoritySlot
+      victim victimSlot next published hmode haccepted hpublished
+  refine ⟨?_, hpendingMonotone, hslotsMonotone, hderivations, hnextIdentity⟩
+  intro endpoint transfer hpending hdescendant
+  exact FailStop.gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants state
+    authoritySlot victim victimSlot next target endpoint transfer published hmode haccepted
+    hlookup hpublished hpending hdescendant
+
 /-- Every typed block, wake, cancellation,
 ordinary rejection, and execution-latch rejection preserves the exact
 waiter/saved-context agreement.  Successful wake and cancellation additionally

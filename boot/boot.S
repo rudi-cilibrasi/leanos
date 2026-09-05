@@ -1,3 +1,5 @@
+#include "serial-protocol.h"
+
 .set MB2_MAGIC, 0xe85250d6
 .set MB2_ARCH, 0
 .set MB2_LENGTH, mb2_end - mb2_start
@@ -961,28 +963,28 @@ isr8_cld:
 
 .section .rodata,"a",@progbits
 nmi_kernel_handling_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+    .ascii LEANOS_SERIAL_17_NMI, " reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_kernel_handling_record_end:
 nmi_kernel_running_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running subject=1 address-space=1 purpose=kernel canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+    .ascii LEANOS_SERIAL_17_NMI, " reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running subject=1 address-space=1 purpose=kernel canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_kernel_running_record_end:
 nmi_user_running_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+    .ascii LEANOS_SERIAL_17_NMI, " reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_user_running_record_end:
 nmi_failure_record:
-    .ascii "LEANOS/17 NMI status=FAIL reason=terminal-frame-policy\n"
+    .ascii LEANOS_SERIAL_17_NMI, " status=FAIL reason=terminal-frame-policy\n"
 nmi_failure_record_end:
 df_success_record:
-    .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
+    .ascii LEANOS_SERIAL_8_TERMINAL, " reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
 df_success_record_end:
 entry_stack_overflow_record:
-    .ascii "LEANOS/11 ENTRY-STACK-OVERFLOW reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none\n"
+    .ascii LEANOS_SERIAL_11_ENTRY_STACK_OVERFLOW, " reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none\n"
 entry_stack_overflow_record_end:
 df_failure_record:
-    .ascii "LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL\n"
+    .ascii LEANOS_SERIAL_8_TERMINAL, " reason=double-fault evidence=invalid status=FAIL\n"
 df_failure_record_end:
 df_guard_mapped_record:
-    .ascii "LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
+    .ascii LEANOS_SERIAL_8_NEGATIVE, " reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
 df_guard_mapped_record_end:
 
 /* Bootstrap terminal stubs.  Both bootstrap IDTs below route every vector to
@@ -1091,21 +1093,21 @@ boot_early_catchall_64_end:
 
 .section .rodata,"a",@progbits
 early32_nmi_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
 early32_nmi_record_end:
 early32_fault_record:
 #ifdef LEANOS_BOOTSTRAP32_UD_PROBE
     /* The probe image narrows the catch-all record: its frame attestation
        admits only the reviewed no-error #UD delivery, so the fixed record
        may name vector 6 without reading any hardware state at runtime. */
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
 #else
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
 #endif
 early32_fault_record_end:
 #ifdef LEANOS_BOOTSTRAP32_UD_PROBE
 early32_probe_failure_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap32 reason=probe-frame-policy\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " status=FAIL phase=bootstrap32 reason=probe-frame-policy\n"
 early32_probe_failure_record_end:
 #endif
 early64_nmi_record:
@@ -1113,21 +1115,21 @@ early64_nmi_record:
     /* The probe image narrows the vector-2 record: its frame attestation
        admits only an IST-0 boot-stack delivery with IF clear, so the fixed
        record may claim the full five-word masked-window shape. */
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none\n"
 #else
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
 #endif
 early64_nmi_record_end:
 #ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
 early64_probe_failure_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap64 reason=probe-frame-policy\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " status=FAIL phase=bootstrap64 reason=probe-frame-policy\n"
 early64_probe_failure_record_end:
 early64_ready_record:
-    .ascii "LEANOS/18 EARLY64-READY phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS\n"
+    .ascii LEANOS_SERIAL_18_EARLY64_READY, " phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS\n"
 early64_ready_record_end:
 #endif
 early64_fault_record:
-    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
+    .ascii LEANOS_SERIAL_18_EARLY_TERMINAL, " phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
 early64_fault_record_end:
 
 /* Statically initialized bootstrap descriptor tables.  Vector 2 is owned in
@@ -1252,7 +1254,13 @@ isr80_cld:
     mov 96(%rsp), %rdx
     mov 88(%rsp), %rcx
     mov 128(%rsp), %r8
+#if defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO) || \
+    defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    /* The dedicated transfer ABIs use saved user RSI as canonical arg3. */
+    mov 72(%rsp), %r9
+#else
     mov 136(%rsp), %r9
+#endif
     call syscall_handler
     cmp $0xbeef, %rax
     je 8f
@@ -1621,6 +1629,77 @@ user_a_entry:
     mov $7, %rdx
     int $0x80
     ud2
+#elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $26, %rax
+    mov $0x20001, %rbx
+    mov $0x20001, %rcx
+    mov $0xcafe, %rdx
+    mov $0xbeef, %rsi
+    int $0x80
+    ud2
+.global user_a_capability_transfer_end
+user_a_capability_transfer_end:
+#elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    /* Subject A: offer a send-only child of its own generation-bound
+       endpoint handle, probe two invalid revocations, revoke the whole
+       lineage through its delegated revoke-only slot 2, then probe a repeated
+       revocation and an offer through the revoked handle.  Every reply must be
+       the no-value word; anything else takes the controlled failure path. */
+    mov $31, %rax
+    mov $0x20001, %rbx
+    mov $0x20001, %rcx
+    mov $0xcafe, %rdx
+    mov $0xbeef, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $32, %rax
+    mov $1, %rbx
+    mov $1, %rcx
+    mov $1, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $33, %rax
+    mov $2, %rbx
+    mov $1, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $34, %rax
+    mov $2, %rbx
+    mov $1, %rcx
+    mov $1, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $35, %rax
+    mov $2, %rbx
+    mov $1, %rcx
+    mov $1, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $36, %rax
+    mov $0x20001, %rbx
+    mov $0x20001, %rcx
+    mov $0xcafe, %rdx
+    mov $0xbeef, %rsi
+    int $0x80
+    ud2
+.global user_a_inflight_revocation_end
+user_a_inflight_revocation_end:
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     mov $0x1b, %ax
     mov %ax, %ds
@@ -2002,6 +2081,105 @@ user_b_entry:
 user_b_stale_translation_fault_instruction:
     mov (%r10), %rax
     ud2
+#elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
+    /* A complete fresh B register bank and B's CR3 were installed by the
+       existing 0xfeed scheduler return path before any transfer operation. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $27, %rax
+    mov $0x60003, %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $28, %rax
+    mov $0x30000, %rbx
+    mov $3, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    cmp $0x60003, %rax
+    jne 2f
+    mov %rax, %r14
+    mov $29, %rax
+    mov %r14, %rbx
+    mov $0xa174, %rcx
+    mov $0xb174, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $30, %rax
+    mov %r14, %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    ud2
+.global user_b_capability_transfer_end
+user_b_capability_transfer_end:
+#elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    /* A complete fresh B register bank and B's CR3 were installed by the
+       existing 0xfeed scheduler return path after A's lineage revocation. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    /* Receipt through the endpoint that carried the canceled offer.  A
+       delivered handle here would be a resurrected child; only the no-value
+       word may continue. */
+    mov $37, %rax
+    mov $0x30000, %rbx
+    mov $3, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    /* Reuse destination slot 3 with a fresh generation of B's own endpoint
+       authority, then replay the canceled generation-7 word and use the
+       generation-8 word. */
+    mov $38, %rax
+    xor %rbx, %rbx
+    mov $2, %rcx
+    mov $3, %rdx
+    mov $4, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $39, %rax
+    mov $0x70003, %rbx
+    mov $0xaaaa, %rcx
+    mov $0xbbbb, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $40, %rax
+    mov $0x80003, %rbx
+    mov $0x1111, %rcx
+    mov $0x2222, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    ud2
+.global user_b_inflight_revocation_end
+user_b_inflight_revocation_end:
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     /* Every register must originate in the kernel-owned fresh B context.
        Any surviving subject-A register takes the controlled syscall-3

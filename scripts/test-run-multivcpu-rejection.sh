@@ -6,6 +6,9 @@ cd "$repo_root"
 fixture="$repo_root/tests/qemu-multivcpu-rejection-fixture.py"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+./scripts/generate-oracle.sh "$tmp/oracle" > /dev/null
+export LEANOS_SERIAL_PROTOCOL="$tmp/oracle/serial-protocol.sh"
+export LEANOS_SERIAL_PROTOCOL_TSV="$tmp/oracle/serial-protocol.tsv"
 touch "$tmp/image.iso"
 
 run() {

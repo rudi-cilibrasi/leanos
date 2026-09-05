@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+  LEANOS_CI_IMAGE_DIGEST: sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
   LEANOS_TOOLCHAIN_PROFILE: gcc-reference
   # Personal-account repositories cannot enable GitHub's merge queue. A
   # maintainer promotes a ready PR to the full tier with this reviewed label.
@@ -48,8 +48,12 @@ jobs:
   repository-hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-    timeout-minutes: 5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
+    # The lint step fetches markdownlint-cli2 through npx; a slow registry has
+    # exceeded the previous 5-minute budget in roughly a fifth of runs (a cold
+    # fetch has taken 7 minutes), so the npm cache is kept across runs and the
+    # budget leaves room for a cold one.
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -58,6 +62,12 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+
+      - name: Restore the npm cache for markdownlint
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v4
+        with:
+          path: ~/.npm
+          key: npm-markdownlint-cli2-0.23.0
 
       - name: Lint Markdown
         run: ./scripts/check-markdown.sh
@@ -77,11 +87,14 @@ jobs:
       - name: Test image-build timing evidence contract
         run: python3 scripts/test-build-timing.py
 
+      - name: Test aggregate-check timing evidence contract
+        run: python3 scripts/test-check-timing.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-    timeout-minutes: 25
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -90,6 +103,12 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Build and check proofs
         env:
@@ -100,16 +119,7 @@ jobs:
 
       - name: Verify frame-budget negative evidence
         if: always()
-        run: |
-          manifest=build/boot/frame-budget-negatives/manifest.tsv
-          test -s "$manifest"
-          test "$(tail -n +2 "$manifest" | wc -l)" -eq 16
-          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
-            test "$status" -ne 0
-            test "$failure_class" = serial-protocol
-            test -s "build/boot/frame-budget-negatives/$serial_log"
-            test -s "build/boot/frame-budget-negatives/$output_log"
-          done < <(tail -n +2 "$manifest")
+        run: ./scripts/verify-negative-evidence.sh frame-budget
 
       - name: Preserve frame-budget negative evidence
         if: always()
@@ -117,6 +127,32 @@ jobs:
         with:
           name: frame-budget-negatives-${{ github.sha }}
           path: build/boot/frame-budget-negatives/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify capability-transfer negative evidence
+        if: always()
+        run: ./scripts/verify-negative-evidence.sh capability-transfer
+
+      - name: Preserve capability-transfer negative evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: capability-transfer-negatives-${{ github.sha }}
+          path: build/boot/capability-transfer-negatives/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify in-flight revocation negative evidence
+        if: always()
+        run: ./scripts/verify-negative-evidence.sh inflight-revocation
+
+      - name: Preserve in-flight revocation negative evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: inflight-revocation-negatives-${{ github.sha }}
+          path: build/boot/inflight-revocation-negatives/
           if-no-files-found: error
           retention-days: 14
 
@@ -130,6 +166,13 @@ jobs:
             build/hosted-generated-sources/oracle/CompositeDispatcher.c
             include/leanos/composite-dispatcher.h
             build/oracle/corpus.tsv
+            build/oracle/vocabulary.tsv
+            build/oracle/composite-tokens.h
+            build/oracle/boundary-abi.tsv
+            build/oracle/boundary-abi.h
+            build/oracle/serial-protocol.tsv
+            build/oracle/serial-protocol.h
+            build/oracle/serial-protocol.sh
             build/oracle/host-results.txt
             build/oracle/host-*.txt
             build/oracle/negative-fixtures.tsv
@@ -153,15 +196,30 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Preserve aggregate-check timing evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aggregate-check-timing-${{ github.sha }}
+          path: build/ci/check-*.tsv
+          if-no-files-found: warn
+          retention-days: 14
+
   hosted-boundary:
     name: Hosted generated-boundary evidence
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-    timeout-minutes: 25
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Replay hosted generated boundaries
         run: |
@@ -183,6 +241,13 @@ jobs:
             build/hosted-generated-sources/oracle/CompositeDispatcher.c
             include/leanos/composite-dispatcher.h
             build/oracle/corpus.tsv
+            build/oracle/vocabulary.tsv
+            build/oracle/composite-tokens.h
+            build/oracle/boundary-abi.tsv
+            build/oracle/boundary-abi.h
+            build/oracle/serial-protocol.tsv
+            build/oracle/serial-protocol.h
+            build/oracle/serial-protocol.sh
             build/oracle/host-results.txt
             build/oracle/host-*.txt
             build/oracle/negative-fixtures.tsv
@@ -210,7 +275,7 @@ jobs:
     name: Clang canonical image evidence
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     # The independent reproducibility build runs in parallel below; this lane
     # retains the canonical boot and full evidence bundle.
     timeout-minutes: 60
@@ -220,6 +285,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Verify selected compiler propagation
         run: ./scripts/test-selected-compiler-propagation.sh
@@ -310,11 +381,17 @@ jobs:
     name: GCC canonical image-family bundle
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Build canonical GCC image family
         if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
@@ -342,7 +419,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
@@ -371,7 +448,7 @@ jobs:
     name: Clang cross-runner reproducibility
     needs: [clang-image, clang-reproducibility-build]
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 5
     steps:
       - name: Check out repository
@@ -399,7 +476,7 @@ jobs:
     name: Deterministic QEMU smoke test (shard ${{ matrix.shard }})
     needs: [repository-hygiene, gcc-image-family]
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     strategy:
       fail-fast: false
       matrix:
@@ -410,6 +487,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
 
       - name: Record tool versions
         run: ./scripts/record-tool-versions.sh
@@ -692,7 +775,7 @@ jobs:
     name: Serial vs graph image parity
     if: github.event_name == 'workflow_dispatch' && inputs.run_serial_graph_parity
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18

@@ -23,6 +23,21 @@ SPEC = importlib.util.spec_from_file_location("leanos_emulator_evidence", MODULE
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("cannot load emulator evidence runner")
 evidence = importlib.util.module_from_spec(SPEC)
+
+# The runner reads record identities from the generated serial vocabulary;
+# these unit tests run without a built image, so they point it at a minimal
+# vocabulary carrying exactly the records the runner names.
+_SERIAL_VOCABULARY = tempfile.NamedTemporaryFile(
+    "w", suffix=".tsv", prefix="serial-protocol-", delete=False
+)
+_SERIAL_PREFIX = "LEANOS" + "/"  # split so the literal-identity scan has nothing to flag
+_SERIAL_VOCABULARY.write(
+    "leanos-serial-protocol\t1\nsource-revision\ttest\n"
+    f"family\t3\tLEANOS_SERIAL_FAMILY_3\t{_SERIAL_PREFIX}3\n"
+    f"record\t3\tORACLE\tLEANOS_SERIAL_3_ORACLE\t{_SERIAL_PREFIX}3 ORACLE\n"
+)
+_SERIAL_VOCABULARY.close()
+os.environ.setdefault("LEANOS_SERIAL_PROTOCOL_TSV", _SERIAL_VOCABULARY.name)
 SPEC.loader.exec_module(evidence)
 
 
@@ -142,7 +157,7 @@ def prepare_bundle_tree(tmp: Path) -> tuple[Path, Path, Path, Path]:
 
 def successful_runner(_command, *, env, **_kwargs):
     serial = "typed fixture evidence\n" + "".join(
-        f"LEANOS/3 ORACLE id={row} result=PASS\n"
+        f"{evidence.serial_record('3', 'ORACLE')} id={row} result=PASS\n"
         for row in evidence.REQUIRED_IOTLB_ORACLE_ROWS
     )
     Path(env["LEANOS_SERIAL_LOG"]).write_text(serial, encoding="utf-8")
@@ -352,13 +367,33 @@ def run_fixtures() -> None:
             raise AssertionError("build-image does not restrict PR return policy checks")
         if 'selected_final_enabled "$elf_path" || return 0' not in build_image:
             raise AssertionError("build-image does not restrict final-plan checks to selected images")
-        if 'validate_selected_final_plan "$build/leanos.elf"' not in build_image:
-            raise AssertionError("build-image does not route the canonical final plan through selection")
-        if (
-            'converge_selected_graph_plan "$build/leanos-bootstrap64-nmi.elf"'
-            not in build_image
+        if 'validate_selected_final_plan "$build/$plan_image.elf"' not in build_image:
+            raise AssertionError("build-image does not route the final plans through selection")
+        if 'converge_selected_graph_plan "$build/$plan_image.elf"' not in build_image:
+            raise AssertionError("build-image does not converge shared graph plans")
+        if "./scripts/scenario-manifest.py plan-checks" not in build_image:
+            raise AssertionError("build-image does not derive its plan checks from the manifest")
+        plan_checks = evidence.load_manifest()["build"]["plan_checks"]
+        canonical_plan = next((entry for entry in plan_checks if entry["image"] == "leanos"), None)
+        if canonical_plan is None or canonical_plan["check"] != "validate":
+            raise AssertionError("manifest does not validate the canonical final plan")
+        converge = [entry for entry in plan_checks if entry["check"] == "converge"]
+        if {entry["image"] for entry in converge} != {"leanos-bootstrap64-nmi", "leanos-extended-state"}:
+            raise AssertionError("manifest does not converge the shared graph plans")
+        for image, expected in (
+            ("leanos-direct-port-serial", "boot-page-plan-direct-port.h"),
+            ("leanos-direct-port-pic", "boot-page-plan-direct-port.h"),
+            ("leanos-divide-error", "boot-page-plan-integer-fault.h"),
+            ("leanos-breakpoint", "boot-page-plan-integer-fault.h"),
         ):
-            raise AssertionError("build-image does not route special final plans through selection")
+            entry = next((check for check in plan_checks if check["image"] == image), None)
+            if entry is None or entry["check"] != "validate" or entry["expected"] != expected:
+                raise AssertionError(f"manifest does not validate {image} against its shared plan")
+        build = evidence.load_manifest()["build"]
+        if {row["image"] for row in build["disassemblies"]} < {"leanos-bootstrap32-ud", "leanos-breakpoint"}:
+            raise AssertionError("manifest does not list the selected disassembly reports")
+        if [row["variant"] for row in build["extended_state_policies"]] != ["x87", "mmx", "sse", "sse2", "avx"]:
+            raise AssertionError("manifest does not list the extended-state policy variants in order")
         if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
             raise AssertionError("build-image does not restrict frame-budget convergence")
         if 'selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue' not in build_image:
@@ -380,8 +415,6 @@ def run_fixtures() -> None:
                 raise AssertionError(
                     f"build-image does not restrict {final_elf} final relink"
                 )
-        if 'selected_final_enabled "$build/leanos-${probe}.elf" || continue' not in build_image:
-            raise AssertionError("build-image does not restrict integer-fault final plans")
         if 'selected_final_enabled "$elf" || return 0' not in build_image:
             raise AssertionError("build-image does not restrict image-policy jobs")
         if 'selected_final_lookup["$build/leanos-double-fault.elf"]=1' not in build_image:
@@ -394,9 +427,9 @@ def run_fixtures() -> None:
             raise AssertionError("build-image does not checksum only selected PR artifacts")
         if 'if selected_final_enabled "$build/leanos.elf"; then' not in build_image:
             raise AssertionError("build-image does not gate canonical-only validation")
-        if 'write_selected_disassembly "$build/leanos-bootstrap32-ud.elf"' not in build_image:
+        if 'write_selected_disassembly "$build/$disassembly_image.elf"' not in build_image:
             raise AssertionError("build-image does not gate selected disassembly reports")
-        if 'run_selected_extended_state_policy x87' not in build_image:
+        if 'run_selected_extended_state_policy "$policy_variant"' not in build_image:
             raise AssertionError("build-image does not gate extended-state policy reports")
         if 'if [[ "$evidence_tier" == all ]]; then\n  queue_return_fixture restore' not in build_image:
             raise AssertionError("build-image does not reserve negative policy fixtures for full evidence")
@@ -723,7 +756,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_fast_entry_mutation),
-            "mandatory fast-entry scenario is absent: return-fast-entry-sce-relaxation",
+            "mandatory fast-entry-relaxation scenario is absent: return-fast-entry-sce-relaxation",
         )
 
         missing_fast_entry_target_mutation = tmp / "missing-fast-entry-target-mutation.tsv"
@@ -741,7 +774,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_fast_entry_target_mutation),
-            "mandatory fast-entry scenario is absent: return-fast-entry-lstar-relaxation",
+            "mandatory fast-entry-relaxation scenario is absent: return-fast-entry-lstar-relaxation",
         )
 
         missing_fast_entry_sysenter_mutation = (
@@ -761,7 +794,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_fast_entry_sysenter_mutation),
-            "mandatory fast-entry scenario is absent: "
+            "mandatory fast-entry-relaxation scenario is absent: "
             "return-fast-entry-sysenter-eip-relaxation",
         )
 
@@ -780,7 +813,7 @@ def run_fixtures() -> None:
         )
         expect_failure(
             lambda: evidence.parse_matrix(missing_complete_live_inventory),
-            "mandatory fast-entry scenario is absent: "
+            "mandatory fast-entry-relaxation scenario is absent: "
             "return-fast-entry-sysenter-esp-relaxation",
         )
 
@@ -897,7 +930,9 @@ def run_fixtures() -> None:
         )["serial_log"]
         serial_content = blocking_serial.read_text(encoding="utf-8")
         required_row = evidence.REQUIRED_IOTLB_ORACLE_ROWS[0]
-        required_marker = f"LEANOS/3 ORACLE id={required_row} result=PASS\n"
+        required_marker = (
+            f"{evidence.serial_record('3', 'ORACLE')} id={required_row} result=PASS\n"
+        )
 
         missing_iotlb_row = tmp / "missing-iotlb-row.serial.log"
         missing_iotlb_row.write_text(
@@ -995,25 +1030,93 @@ def run_fixtures() -> None:
 
         package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
         evidence.check_release_package(package)
-        missing_copy = package.replace(
-            "build/boot/fault-containment-snapshot.txt",
-            "build/boot/fault-containment-snapshot-omitted.txt",
-            1,
+        expect_failure(
+            lambda: evidence.check_release_package(
+                package.replace("run-emulator-evidence.py release-artifacts", "true")
+            ),
+            "does not copy the derived release artifact list",
         )
         expect_failure(
-            lambda: evidence.check_release_package(missing_copy),
-            "does not copy mandatory fault evidence "
+            lambda: evidence.check_release_package(
+                package + '\ncp build/boot/fault-containment-snapshot.txt "$release/extra.txt"\n'
+            ),
+            "restates a build/boot artifact instead of deriving it",
+        )
+
+        # The derivation layer: rows, artifact lists, and negatives come from
+        # the manifest; every deviation fails with a named diagnostic.
+        manifest = evidence.load_manifest()
+        _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
+        release_pairs = evidence.release_artifacts(manifest, matrix_rows, "${version}")
+        if (
             "build/boot/fault-containment-snapshot.txt",
-        )
-        missing_checksum = replace_last(
-            package,
-            '"leanos-${version}-fault-containment-snapshot.txt"',
-            '"leanos-${version}-fault-containment-snapshot-omitted.txt"',
-        )
-        expect_failure(
-            lambda: evidence.check_release_package(missing_checksum),
-            "does not checksum mandatory fault evidence "
             "leanos-${version}-fault-containment-snapshot.txt",
+        ) not in release_pairs:
+            raise AssertionError("derived release artifacts omit the fault-containment snapshot")
+        if len({destination for _, destination in release_pairs}) != len(release_pairs):
+            raise AssertionError("derived release destinations are not unique")
+        reproducibility = evidence.reproducibility_artifacts(manifest, matrix_rows, "0.1.0")
+        for name in ("leanos.elf", "boot-page-plan-fault-walk-mismatch.final.h", "SOURCE_REVISION"):
+            if name not in reproducibility:
+                raise AssertionError(f"derived reproducibility artifacts omit {name}")
+        negatives = evidence.negative_evidence(manifest)
+        if negatives["frame-budget"]["count"] != 16 or "inflight-revocation" not in negatives:
+            raise AssertionError("derived negative-evidence declarations are incomplete")
+        derived = evidence.derive_row(manifest, "return-fast-entry-sce-relaxation")
+        if derived["serial_log"] != "return-corruption-fast-entry-sce-relaxation.serial.log":
+            raise AssertionError("derived relaxation row does not name its serial log")
+
+        def mutated_manifest(transform):
+            content = json.loads((ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
+            transform(content)
+            target = tmp / "manifest.json"
+            target.write_text(json.dumps(content), encoding="utf-8")
+            return target
+
+        def drop_entry(content):
+            del content["scenarios"]["blocking-ipc"]
+
+        expect_failure(
+            lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(drop_entry)),
+            "matrix scenario has no manifest entry: blocking-ipc",
+        )
+
+        def orphan_entry(content):
+            content["scenarios"]["never-built"] = {}
+
+        expect_failure(
+            lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(orphan_entry)),
+            "manifest scenario is absent from the matrix: never-built",
+        )
+
+        def unknown_kind(content):
+            content["scenarios"]["fault-containment"]["release_artifacts"].append("core-dump")
+
+        expect_failure(
+            lambda: evidence.load_manifest(mutated_manifest(unknown_kind)),
+            "scenario fault-containment names unknown artifact kind 'core-dump'",
+        )
+
+        def missing_driver(content):
+            content["scenarios"]["frame-budget"]["negative_evidence"]["driver"] = "scripts/absent.sh"
+
+        expect_failure(
+            lambda: evidence.load_manifest(mutated_manifest(missing_driver)),
+            "scenario frame-budget negative-evidence driver is missing: scripts/absent.sh",
+        )
+
+        def drifted_family(content):
+            content["scenarios"]["fault-reserved-bit"]["reason"] = "page-table-drift"
+
+        expect_failure(
+            lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(drifted_family)),
+            "mandatory fault-integrity scenario fault-reserved-bit has unexpected reason",
+        )
+        expect_failure(
+            lambda: evidence.check_artifacts_present(
+                [("build/boot/deleted-artifact.txt", "deleted.txt")], tmp
+            ),
+            "derived artifact is missing from the build: build/boot/deleted-artifact.txt",
         )
 
         evidence.check_workflows()

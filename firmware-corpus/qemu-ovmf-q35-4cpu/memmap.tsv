@@ -1,0 +1,20 @@
+index	start	end	type
+0	0x0	0x9ffff	System RAM
+1	0x100000	0x7fffff	System RAM
+2	0x800000	0x807fff	ACPI Non-volatile Storage
+3	0x808000	0x80afff	System RAM
+4	0x80b000	0x80bfff	ACPI Non-volatile Storage
+5	0x80c000	0x80ffff	System RAM
+6	0x810000	0x8fffff	ACPI Non-volatile Storage
+7	0x900000	0x7e93efff	System RAM
+8	0x7e93f000	0x7e9fffff	Reserved
+9	0x7ea00000	0x7f4ecfff	System RAM
+10	0x7f4ed000	0x7f76cfff	Reserved
+11	0x7f76d000	0x7f77efff	ACPI Tables
+12	0x7f77f000	0x7f7fefff	ACPI Non-volatile Storage
+13	0x7f7ff000	0x7fedbfff	System RAM
+14	0x7fedc000	0x7ff5ffff	Reserved
+15	0x7ff60000	0x7fffffff	ACPI Non-volatile Storage
+16	0xe0000000	0xefffffff	Reserved
+17	0xffc00000	0xffffffff	Reserved
+18	0xfd00000000	0xffffffffff	Reserved

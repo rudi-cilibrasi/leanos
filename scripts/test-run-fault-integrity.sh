@@ -6,6 +6,9 @@ cc="${LEANOS_CC:-gcc}"
 cd "$root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+./scripts/generate-oracle.sh "$tmp/oracle" > /dev/null
+export LEANOS_SERIAL_PROTOCOL="$tmp/oracle/serial-protocol.sh"
+export LEANOS_SERIAL_PROTOCOL_TSV="$tmp/oracle/serial-protocol.tsv"
 touch "$tmp/image.iso"
 cat > "$tmp/symbols.c" <<'EOF'
 char user_a_nx_fault_instruction[16];

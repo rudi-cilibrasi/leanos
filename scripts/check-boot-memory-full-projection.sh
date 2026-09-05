@@ -47,6 +47,8 @@ modules=(
   BootMemoryMapFullProjectionABI
 )
 cflags=(-O2 -ffunction-sections -fdata-sections -I"$prefix/include")
+generated="build/boundary-abi"
+./scripts/generate-oracle.sh "$generated"
 
 for pass in pass1 pass2; do
   objects=()
@@ -57,7 +59,7 @@ for pass in pass1 pass2; do
     objects+=("$build/$pass/${module}.o")
   done
   "$cc" -std=c11 -O2 -Wall -Wextra -Werror -I"$prefix/include" \
-    -ffunction-sections -fdata-sections \
+    -I"$generated" -ffunction-sections -fdata-sections \
     -c tests/boot-memory-full-projection-host.c -o "$build/$pass/host.o"
   lake env leanc -Wl,--gc-sections -Wl,--build-id=none \
     "$build/$pass/host.o" \

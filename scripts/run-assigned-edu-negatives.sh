@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -37,7 +40,7 @@ for spec in "${specs[@]}"; do
   IFS=: read -r fixture reason <<<"$spec"
   image="build/boot/leanos-${version}-x86_64-assigned-edu-${fixture}.iso"
   log="build/boot/assigned-edu-${fixture}.serial.log"
-  terminal="LEANOS/3 FINAL status=FAIL reason=${reason}"
+  terminal="${LEANOS_SERIAL_3_FINAL} status=FAIL reason=${reason}"
   [[ -f "$image" ]] || {
     echo "error: image '$image' not found; run ./scripts/build-image.sh first" >&2
     exit 1
@@ -55,8 +58,8 @@ for spec in "${specs[@]}"; do
   fi
   if [[ $status -ne 35 ]] ||
       [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]] ||
-      [[ "$(grep -c '^LEANOS/3 FINAL ' "$log")" -ne 1 ]] ||
-      grep -Eq '^LEANOS/21 VTD-ASSIGN .*result=PASS|^LEANOS/10 FINAL status=PASS' "$log"; then
+      [[ "$(grep -c "^${LEANOS_SERIAL_3_FINAL} " "$log")" -ne 1 ]] ||
+      grep -Eq "^${LEANOS_SERIAL_21_VTD_ASSIGN} .*result=PASS|^${LEANOS_SERIAL_10_FINAL} status=PASS" "$log"; then
     echo "failure_class=controlled-negative: $fixture did not fail exactly at $reason" >&2
     exit 1
   fi

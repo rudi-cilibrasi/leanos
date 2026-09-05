@@ -1,0 +1,13 @@
+@16/BOOT@ target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@16/ENTER@ subject=1 address-space=1 cpl=3 resources=owned
+@16/DIRECT-PORT-DENIAL@ subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS
+@16/DIRECT-PORT-TERMINATE@ subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
+@16/DIRECT-PORT-DISPATCH@ subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@16/DIRECT-PORT-PEER@ subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS
+@16/FINAL@ status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0

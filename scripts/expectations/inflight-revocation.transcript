@@ -1,0 +1,21 @@
+@23/BOOT@ target=x86_64-q35 subjects=2 schedule=inflight-revocation-v1 controls=wp,smep,smap boundary=generated-composite
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@23/ENTER@ subject=1 address-space=1 cpl=3 source=owned-context authority=slot2:revoke result=PASS
+@23/OFFER@ subject=1 address-space=1 origin=cpl3 source-handle=131073 transfer-endpoint=131073 child=7 parent=2 rights=send sealed=1 installed=0 payload0=51966 payload1=48879 control=2121985 value=0 result=PASS
+@23/REVOKE-DENIAL@ subject=1 authority-slot=1 root-slot=1 reason=missingRevoke state=unchanged control=5267713 value=0 result=PASS
+@23/REVOKE-DENIAL@ subject=1 authority-slot=2 root-slot=0 reason=objectMismatch state=unchanged control=5333249 value=0 result=PASS
+@23/REVOKE@ subject=1 authority-slot=2 root-slot=1 root=2 descendant=7 installed-cleared=1 envelope=cleared pending=cleared history=retained next-identity=8 control=5399041 value=0 result=PASS
+@23/REVOKE-DENIAL@ subject=1 authority-slot=2 root-slot=1 reason=staleSlot state=unchanged control=5464577 value=0 result=PASS
+@23/OFFER-DENIAL@ subject=1 source-handle=131073 reason=staleEndpoint state=unchanged control=5530113 value=0 result=PASS
+@23/DISPATCH@ subject=2 address-space=2 source=authoritative-resumable-context control=5595905 value=0 result=PASS
+@23/ENTER@ subject=2 address-space=2 origin=cpl3 context=fresh result=PASS
+@23/CANCELED-RECEIPT@ subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 reason=empty delivered=0 installed=0 handle=none control=2188033 value=0 result=PASS
+@23/REPLACE@ subject=2 source-slot=0 destination-slot=3 generation=8 canceled-generation=7 aliased=0 history=retained control=2384897 value=0 result=PASS
+@23/CANCELED-HANDLE-DENIAL@ subject=2 handle=458755 operation=send authorized=0 reason=staleHandle state=unchanged control=5661697 value=0 result=PASS
+@23/FRESH-SEND@ subject=2 handle=524291 endpoint-slot=3 payload0=4369 payload1=8738 right=send authorized=1 mailbox=filled control=5727489 value=0 result=PASS
+@23/UNRELATED@ slots-a-except-1=unchanged slots-b-except-3=unchanged contexts=unchanged canaries=preserved mailbox=fresh-message-only result=PASS
+@23/FINAL@ status=PASS offer=1 revoke=1 envelope-and-pending=cleared canceled-receipt-denied=1 replacement-generation=8 canceled-handle-denied=1 fresh-send=1 unrelated=unchanged

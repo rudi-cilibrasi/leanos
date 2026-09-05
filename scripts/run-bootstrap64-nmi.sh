@@ -3,6 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 source "$repo_root/scripts/q35-platform.sh"
 
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
@@ -15,8 +18,8 @@ memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 # 108-byte AF_UNIX path limit regardless of the checkout location.
 monitor_dir="$(mktemp -d)"
 monitor="$monitor_dir/qmp"
-ready='LEANOS/18 EARLY64-READY phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS'
-terminal='LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none'
+ready="${LEANOS_SERIAL_18_EARLY64_READY} phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS"
+terminal="${LEANOS_SERIAL_18_EARLY_TERMINAL} phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none"
 
 for tool in "$qemu" timeout python3; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -113,7 +116,7 @@ fi
 if [[ "$(grep -c . "$log")" -ne 2 || \
       "$(head -n 1 "$log")" != "$ready" || \
       "$(sed -n '2p' "$log")" != "$terminal" ]] || \
-   grep -Eq 'status=FAIL|phase=bootstrap32|NMI-READY|LEANOS/17 |LEANOS/[0-9]+ (BOOT|FINAL) ' "$log"; then
+   grep -Eq "status=FAIL|phase=bootstrap32|NMI-READY|${LEANOS_SERIAL_FAMILY_17} |LEANOS/[0-9]+ (BOOT|FINAL) " "$log"; then
   echo "failure_class=terminal-record: forged, reordered, duplicate, runtime, or post-terminal output observed" >&2
   exit 1
 fi

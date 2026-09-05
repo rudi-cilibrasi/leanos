@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -12,6 +13,7 @@ import unittest
 
 
 SCRIPT = Path(__file__).with_name("generate-image-object-graph.py")
+ROOT = SCRIPT.resolve().parent.parent
 BUILD_SCRIPT = Path(__file__).with_name("build-image.sh")
 ASSIGNED_EDU_SCRIPT = Path(__file__).with_name("build-assigned-edu-image.sh")
 PLAN_SCRIPT = Path(__file__).with_name("generate-boot-page-plan.sh")
@@ -92,6 +94,25 @@ class ImageObjectGraphTests(unittest.TestCase):
             ),
         )
 
+    def test_assigned_edu_negatives_converge_their_own_boot_plans(self) -> None:
+        builder = ASSIGNED_EDU_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'fixture_plan="$build/boot-page-plan-assigned-edu-${fixture}.h"',
+            builder,
+        )
+        self.assertIn(
+            'fixture_final_plan="$build/boot-page-plan-assigned-edu-${fixture}.final.h"',
+            builder,
+        )
+        self.assertIn(
+            '-DLEANOS_BOOT_PAGE_PLAN_HEADER="\\"boot-page-plan-assigned-edu-${fixture}.h\\""',
+            builder,
+        )
+        self.assertIn(
+            './scripts/generate-boot-page-plan.sh --assigned-edu', builder
+        )
+        self.assertIn('[[ "$fixture_plan_converged" == true ]]', builder)
+
     def test_generate_lean_c_initializes_output_before_staging(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "generate_lean_c() {" + wrapper.split(
@@ -119,7 +140,11 @@ generate_lean_c {source!s} {output!s}
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('rm -rf "$build"\n', wrapper)
         self.assertNotIn("-type d -name 'iso*'", wrapper)
-        self.assertIn('ensure_boot_plan_stub "$build/boot-page-plan.h"', wrapper)
+        self.assertIn(
+            'mapfile -t page_plan_stubs < <(./scripts/scenario-manifest.py page-plans)',
+            wrapper,
+        )
+        self.assertIn('ensure_boot_plan_stub "$build/$stub"', wrapper)
         self.assertIn('mktemp -d "$build/.lean-c.XXXXXX"', wrapper)
         self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
         self.assertIn('signature_file="${output}.inputs.sha256"', wrapper)
@@ -166,6 +191,8 @@ generate_lean_c {source!s} {output!s}
             "leanos-prelink",
             "leanos-malformed-handoff-prelink",
             "leanos-frame-budget-prelink",
+            "leanos-capability-transfer-prelink",
+            "leanos-inflight-revocation-prelink",
             "leanos-fault-containment-prelink",
             "leanos-fault-readonly-write-prelink",
             "leanos-fault-nx-execute-prelink",
@@ -351,12 +378,20 @@ test ! -e {output!s}.inputs.sha256
         self.assertIn('xargs -0 -r -n 4 -P "$policy_jobs"', wrapper)
         self.assertIn('export -f run_image_policy_check', wrapper)
         self.assertIn(
-            'queue_image_policy canonical "$build/leanos.elf"', wrapper
+            './scripts/scenario-manifest.py packaged-images --version "$version"',
+            wrapper,
         )
         self.assertIn(
-            'queue_image_policy bootstrap64-nmi '
-            '"$build/leanos-bootstrap64-nmi.elf"',
-            wrapper,
+            'queue_image_policy "$policy_key" "$build/$packaged_stem.elf"', wrapper
+        )
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8")
+        )
+        packaged = manifest["build"]["packaged_images"]
+        self.assertEqual(packaged["leanos-bootstrap64-nmi"]["policy"]["key"], "bootstrap64-nmi")
+        self.assertEqual(
+            packaged["leanos-fault-reserved-bit"]["policy"]["environment"],
+            ["LEANOS_PAGE_FAULT_FATAL_PROBE", "reserved-bit"],
         )
         self.assertIn(
             'echo "error: one or more image policy checks failed"', wrapper
@@ -526,15 +561,26 @@ validation_tool_signature={signature}
         )
         self.assertIn('export -f run_entry_policy_check', wrapper)
         self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
+        self.assertIn('./scripts/scenario-manifest.py entry-policies', wrapper)
         self.assertIn(
-            'queue_entry_policy canonical "$build/leanos.elf"', wrapper
+            'queue_entry_policy "$entry_key" "$build/$entry_image.elf"', wrapper
         )
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8")
+        )
+        entry_policies = manifest["build"]["entry_policies"]
+        self.assertEqual(entry_policies[0]["key"], "canonical")
         self.assertIn(
-            'queue_entry_policy "fast-entry-$mechanism"', wrapper
+            {"image": "leanos-fault-nx-execute", "key": "fault-nx-execute",
+             "report": "fault-nx-execute-policy-report.txt",
+             "environment": ["LEANOS_PAGE_FAULT_PROBE", "nx-execute"]},
+            entry_policies,
         )
-        self.assertIn(
-            'queue_entry_policy fault-stale-translation', wrapper
+        self.assertEqual(
+            [entry["key"] for entry in entry_policies if entry["key"].startswith("fast-entry-")],
+            ["fast-entry-syscall", "fast-entry-sysenter"],
         )
+        self.assertIn("fault-stale-translation", [entry["key"] for entry in entry_policies])
         self.assertIn(
             'echo "error: one or more entry policy checks failed"', wrapper
         )
@@ -779,8 +825,77 @@ compute_lean_c_signature {root!s}
         )
         self.assertIn('printf \'%s\\0%s\\0\' "$revision" "$tool_signature"', oracle)
         self.assertIn('sha256sum "$root/scripts/generate-oracle.sh"', oracle)
-        self.assertIn('stored_tsv_hash', oracle)
-        self.assertIn('stored_header_hash', oracle)
+        self.assertIn('"$root/scripts/render-composite-tokens.awk"', oracle)
+        self.assertIn('"$root/scripts/render-boundary-abi.awk"', oracle)
+        self.assertIn(
+            "artifacts=(corpus.tsv corpus.h vocabulary.tsv composite-tokens.h",
+            oracle,
+        )
+        self.assertIn('[[ "$stored_hashes" == "$(artifact_hashes)" ]]', oracle)
+        self.assertIn(
+            '(cd "$out" && sha256sum "${artifacts[@]}") | sha256sum', oracle
+        )
+
+    def test_build_wiring_derives_from_the_scenario_manifest(self) -> None:
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8")
+        )
+        build = manifest["build"]
+        self.assertEqual(
+            [name for name, _ in MODULE.KERNEL_VARIANTS], list(build["kernel_objects"])
+        )
+        self.assertEqual(
+            [name for name, _, _ in MODULE.ASSEMBLY_VARIANTS], list(build["boot_objects"])
+        )
+        self.assertEqual(
+            [f"leanos-{name}" if name else "leanos" for name, _, _, _ in MODULE.PRELINK_VARIANTS],
+            list(build["images"]),
+        )
+        self.assertEqual(
+            [f"leanos-{name}" if name else "leanos" for name, _, _, _ in MODULE.FINAL_LINK_VARIANTS],
+            [stem for stem, entry in build["images"].items() if entry["final_link"]],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            def rejects(transform, diagnostic: str) -> None:
+                mutated = json.loads(json.dumps(manifest))
+                transform(mutated)
+                path = Path(directory) / "manifest.json"
+                path.write_text(json.dumps(mutated), encoding="utf-8")
+                result = subprocess.run(
+                    [
+                        "python3", str(SCRIPT), "--output", str(Path(directory) / "out.mk"),
+                        "--build-dir", directory, "--cc", "cc", "--lean-prefix", directory,
+                        "--source-root", str(ROOT), "--manifest", str(path),
+                    ],
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0, diagnostic)
+                self.assertIn(diagnostic, result.stderr)
+
+            def unknown_boot(m):
+                m["build"]["images"]["leanos-preemption"]["boot"] = "boot-never-assembled"
+
+            rejects(unknown_boot, "image leanos-preemption links unknown boot object 'boot-never-assembled'")
+
+            def unknown_kernel(m):
+                m["build"]["policy_fixtures"]["leanos-return-restore-fixture"]["kernel"] = "kernel-absent"
+
+            rejects(unknown_kernel, "image leanos-return-restore-fixture links unknown kernel object 'kernel-absent'")
+
+            def bad_flag(m):
+                m["build"]["kernel_objects"]["kernel-nmi"].append("LEANOS_NMI_PROBE=1")
+
+            rejects(bad_flag, "kernel object 'kernel-nmi' is malformed")
+
+            def bad_final(m):
+                m["build"]["images"]["leanos-nmi"]["final_link"] = "yes"
+
+            rejects(bad_final, "image leanos-nmi final_link must be true or false")
+
+            def no_build(m):
+                del m["build"]
+
+            rejects(no_build, "scenario manifest lacks a build section")
 
     def test_stub_plan_generation_preserves_unchanged_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -811,11 +926,11 @@ compute_lean_c_signature {root!s}
             '[[ "$current_output_hash" == "$stored_output_hash" ]]', plan_script
         )
 
-    def test_bootstrap64_plan_converges_through_graph_target(self) -> None:
+    def test_boot_plan_convergence_relinks_selected_shared_targets(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "converge_selected_graph_plan() {" + wrapper.split(
             "converge_selected_graph_plan() {", 1
-        )[1].split("\n}\n\nvalidate_selected_final_plan", 1)[0] + "\n}"
+        )[1].split("\n}\n", 1)[0] + "\n}"
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -827,13 +942,19 @@ compute_lean_c_signature {root!s}
             expected = root / "plan.h"
             final = root / "plan.final.h"
             elf = root / "image.elf"
+            sibling = root / "sibling.elf"
+            outside_graph = root / "outside-graph.elf"
             graph = root / "graph.mk"
             expected.write_text("prelink-plan\n", encoding="utf-8")
             elf.write_text("linker-resolved-plan\n", encoding="utf-8")
+            sibling.write_text("stale-plan\n", encoding="utf-8")
+            outside_graph.write_text("copied-artifact\n", encoding="utf-8")
             graph.write_text(
-                f".PHONY: {elf!s}\n"
+                f".PHONY: {elf!s} {sibling!s}\n"
                 f"{elf!s}: {expected!s}\n"
-                f"\tcp {expected!s} {elf!s}\n",
+                f"\tcp {expected!s} {elf!s}\n"
+                f"{sibling!s}: {expected!s}\n"
+                f"\tcp {expected!s} {sibling!s}\n",
                 encoding="utf-8",
             )
             shell = f"""\
@@ -843,13 +964,18 @@ kernel_source_make_args=()
 LEANOS_BUILD_JOBS=1
 selected_final_enabled() {{ return 0; }}
 {function}
-converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture
+converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
+  {elf!s} {sibling!s}
 """
             subprocess.run(["bash", "-c", shell], check=True, cwd=root)
             self.assertEqual(
                 expected.read_text(encoding="utf-8"), "linker-resolved-plan\n"
             )
             self.assertEqual(final.read_bytes(), expected.read_bytes())
+            self.assertEqual(sibling.read_bytes(), expected.read_bytes())
+            self.assertEqual(
+                outside_graph.read_text(encoding="utf-8"), "copied-artifact\n"
+            )
 
     def test_boot_plan_cache_is_per_input_stage_and_checks_output(self) -> None:
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")

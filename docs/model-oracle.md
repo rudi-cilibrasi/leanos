@@ -14,7 +14,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`. Its stable
-392-vector order covers accepted calls,
+412-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -122,6 +122,37 @@ state replay and cross-trace splicing, unknown/reserved operations, and maximum
 words. `FrameBudgetScenario.step_refinement` connects every accepted edge to
 the exact admitted-budget transition, while the hosted generated-C harness
 reports the first mismatching operation and reply.
+
+Rows 392 through 397 are the dedicated machine A-to-B capability-transfer
+corpus for issue #174. Unlike the older mixed trace, this slice begins with
+subject 1 current, performs an explicit authoritative switch to subject 2,
+denies the sealed future handle before receipt, publishes `0x60003` only from
+the accepted receipt, accepts a send through the attenuated send-only handle,
+and rejects receive authority without changing the complete state.
+
+The final fourteen records are the in-flight revocation corpus for issue #175.
+Its seed is `FailStop.inFlightRevocationInitial`: from the shared two-subject
+dispatcher state, subject 2 delegates a revoke-only authority on endpoint 10
+into subject 1's slot 2 and the authoritative timer switch makes subject 1
+current, both as exact `authoritativeGate` steps. The trace then has subject 1
+seal a send-only generation-7 child of its own endpoint capability, denies a
+revocation attempted through the send-only capability and one naming a foreign
+lineage root, accepts transitive revocation of the exact ancestor, denies a
+repeated revocation and a later offer through the revoked capability, switches
+back to subject 2, denies subject 2's receipt with the typed empty rejection
+and no value word, copies a fresh generation-8 capability into the same
+destination slot, denies the canceled generation-7 handle as stale, and accepts
+a send through the generation-8 handle. Lean proves that the accepted
+revocation clears the pending record, the transfer mailbox, and the IPC
+mailbox in one step while the canceled identity remains in the append-only
+derivation history and the identity frontier does not move backwards, that
+subject 1's other slots, every subject-2 capability, the saved continuation,
+the ready queue, and the current subject are unchanged, and that no record in
+the family publishes a value word. Every denial is a complete-state stutter.
+Three hostile records replay the revocation words against the pre-offer seed
+token, splice the mixed corpus's post-receipt revocation into this family's
+subject-2 state, and present subject 2's receipt words while subject 1 is still
+current; each is rejected before any gate evaluation.
 
 The same hosted boundary exercises
 `leanos_frame_budget_invalidation_effect`. Exact canonical
@@ -247,6 +278,59 @@ before its guest success signal. The runner constructs its expected transcript
 from `corpus.tsv`, so a summary PASS cannot replace a missing, changed, or
 reordered vector. The corpus is finite, deterministic, contains only scalar
 words, and performs no allocation at the freestanding entry points.
+
+The same generator emits the rest of the boundary vocabulary, so the C side
+never restates a word it did not receive from Lean. `leanos-oracle tokens`
+prints `vocabulary.tsv` from `LeanOS.BoundaryVocabulary`: every canonical
+state selector, command selector, typed reply word, frame-budget flush
+authorization, closed error word, and corpus-shape scalar, each evaluated by
+the encoder or canonical-edge table the dispatcher proofs use, together with
+the exact C literal. `scripts/render-composite-tokens.awk` renders it as
+`composite-tokens.h`, which the checked-in
+`include/leanos/composite-dispatcher.h` includes; that header now carries
+prose only. The theorems in `LeanOS/BoundaryVocabulary.lean` prove the table
+is sound (no two states, replies, or errors share a word) and complete (every
+constructor of every state, command, reply, and error family is listed), so
+agreement between a C token and the model is by construction rather than by
+corpus coverage. `leanos-abi` walks the compiled Lean environment and lists
+every `@[export leanos_…]` declaration with its arity and parameter shape;
+`scripts/render-boundary-abi.awk` renders `boundary-abi.h`, the only
+declaration of the exported entry points that `boot/kernel.c`,
+`tests/oracle-host.c`, and the hosted decoder harnesses include. The two
+hosted-only exports that take a Lean byte array are emitted behind
+`LEANOS_BOUNDARY_ABI_OBJECTS` so a freestanding consumer cannot see them.
+`scripts/test-generate-boundary-vocabulary.sh` keeps the negatives: a
+renderer row whose literal does not denote its word, a duplicate name or
+symbol, an unsupported object parameter, an arity mismatch against the
+generated prototypes (a compile error), any hand-written token define or
+`leanos_` prototype in the C sources, and a stale or corrupted generated
+header, which the memoized generator replaces. Generation removes
+transcription error; the generator, the awk renderers, the C compiler, and
+the consumers remain trusted integration steps, exactly as for `corpus.h`.
+
+The serial protocol is single-sourced the same way. `LeanOS/SerialProtocol.lean`
+lists every versioned record identity the guest prints and the runners expect
+(20 families, 128 records, each a family version and an upper-case tag); its
+theorems prove the versions and identities are unique. `leanos-oracle serial`
+emits the table and `scripts/render-serial-protocol.awk` renders two views:
+`serial-protocol.h`, one string macro per record and per family, which
+`boot/kernel.c` and `boot/boot.S` consume through adjacent-literal
+concatenation so the emitted bytes are unchanged; and `serial-protocol.sh`,
+one shell variable per record and family plus the `leanos_serial`,
+`leanos_serial_re`, and `leanos_serial_family_re` lookups, which
+`scripts/run-image.sh`, the other runners, and the fake-guest fixtures source
+(from the directory holding `corpus.tsv`, or `LEANOS_SERIAL_PROTOCOL`). The
+Python checkers read `serial-protocol.tsv` (`LEANOS_SERIAL_PROTOCOL_TSV`).
+Every field after a record prefix remains scenario data owned by the
+scenario. `scripts/test-generate-serial-protocol.sh` rejects a renderer row
+whose prefix does not denote its identity, a duplicate or malformed record,
+a lookup of a record outside the vocabulary (an unbound variable under
+`set -u`), and any literal `LEANOS/<family>` identity in the kernel sources,
+the assembly, the runner scripts, the checkers, or the fixtures; a fixture may
+still forge a family the vocabulary does not name, which is how the stale
+version-2 transcripts stay adversarial. Family and tag names are a vocabulary,
+not a claim: no `LEANOS/N` line changed meaning, and the final images are
+byte-identical apart from debug information.
 
 These comparisons test encoders, exported entry points, result decoding, ABI
 glue, and the bounded emulator path for the listed cases. They are reproducible

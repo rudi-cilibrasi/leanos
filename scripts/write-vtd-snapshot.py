@@ -4,30 +4,51 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import re
 import sys
 
 
+def load_serial_protocol(path):
+    """Map "<family>/<TAG>" to the exact guest line prefix from the generated
+    serial vocabulary; the checker never spells a record identity itself."""
+    records = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t")
+        if fields[0] == "record":
+            records[f"{fields[1]}/{fields[2]}"] = fields[4]
+        elif fields[0] == "family":
+            records[fields[1]] = fields[3]
+    if not records:
+        raise SystemExit(f"error: empty serial protocol vocabulary: {path}")
+    return records
+
+
+SERIAL = load_serial_protocol(
+    os.environ.get("LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv")
+)
+
+
 TOPOLOGY = "0001000800020002"
 PAGE_BYTES = 4096
 UNIT_RE = re.compile(
-    r"^LEANOS/21 VTD unit=0 mmio=4275634176 version=16 "
+    "^" + re.escape(SERIAL["21/VTD"]) + r" unit=0 mmio=4275634176 version=16 "
     r"cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 "
     r"stage=pre-activation result=PASS$"
 )
 PLAN_RE = re.compile(
-    r"^LEANOS/21 VTD-PLAN root-frame=([1-9]\d*) context-frame=([1-9]\d*) "
+    "^" + re.escape(SERIAL["21/VTD-PLAN"]) + r" root-frame=([1-9]\d*) context-frame=([1-9]\d*) "
     r"root-words=512 context-words=512 present-root-entries=1 "
     r"present-context-entries=0 translation=disabled deny-all=1 result=PASS$"
 )
 TABLES_RE = re.compile(
-    r"^LEANOS/21 VTD-TABLES root-frame=([1-9]\d*) context-frame=([1-9]\d*) "
+    "^" + re.escape(SERIAL["21/VTD-TABLES"]) + r" root-frame=([1-9]\d*) context-frame=([1-9]\d*) "
     r"scrub=verified construct=verified root-words=512 context-words=512 "
     r"result=PASS$"
 )
 ACTIVATE_RE = re.compile(
-    r"^LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,"
+    "^" + re.escape(SERIAL["21/VTD-ACTIVATE"]) + r" order=validate,scrub,construct,publish,"
     r"invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 "
     r"gsts=3221225472 fsts=0 rtaddr=([1-9]\d*) generated-result=0 "
     r"stage=pre-cpl3 result=PASS$"
@@ -38,7 +59,7 @@ def parse(serial_log: Path) -> tuple[int, int, int]:
     lines = [
         line
         for line in serial_log.read_text(encoding="utf-8", errors="strict").splitlines()
-        if line.startswith("LEANOS/21 ")
+        if line.startswith(SERIAL["21"] + " ")
     ]
     if len(lines) != 4:
         raise ValueError(f"expected exactly 4 VT-d records, found {len(lines)}")

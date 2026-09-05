@@ -52,6 +52,8 @@ import LeanOS.UserCopyWindow
 import LeanOS.StaleTranslation
 import LeanOS.SubjectLifecycle
 import LeanOS.Oracle
+import LeanOS.BoundaryVocabulary
+import LeanOS.SerialProtocol
 import LeanOS.Scheduler
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable

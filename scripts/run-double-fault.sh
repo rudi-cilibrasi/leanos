@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -11,8 +14,8 @@ version="${LEANOS_VERSION:-0.1.0}"
 image="${1:-build/boot/leanos-${version}-x86_64-double-fault.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/double-fault.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none'
-negative='LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL'
+terminal="${LEANOS_SERIAL_8_TERMINAL} reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none"
+negative="${LEANOS_SERIAL_8_NEGATIVE} reason=guard-mapped vector=13 double-fault=absent status=FAIL"
 expect_guard_mapped="${LEANOS_EXPECT_GUARD_MAPPED:-0}"
 
 for tool in "$qemu" timeout; do
@@ -54,7 +57,7 @@ if [[ $status -eq 124 || $status -eq 137 ]]; then
 fi
 if [[ "$expect_guard_mapped" == 1 ]]; then
   if [[ $status -ne 39 ]] || [[ "$(grep -Fxc "$negative" "$log")" -ne 1 ]] || \
-     grep -Fq 'LEANOS/8 TERMINAL reason=double-fault' "$log"; then
+     grep -Fq "${LEANOS_SERIAL_8_TERMINAL} reason=double-fault" "$log"; then
     echo "failure_class=negative-guard: mapped guard did not prevent double-fault success" >&2
     exit 1
   fi
@@ -73,8 +76,8 @@ if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]]; then
   echo "failure_class=terminal-record: exactly one typed double-fault record not observed" >&2
   exit 1
 fi
-if [[ "$(grep -c '^LEANOS/8 TERMINAL ' "$log")" -ne 1 ]] ||
-   grep -Eq 'LEANOS/8 TERMINAL .*status=(PASS|FAIL)|LEANOS/[0-9]+ FINAL ' "$log"; then
+if [[ "$(grep -c "^${LEANOS_SERIAL_8_TERMINAL} " "$log")" -ne 1 ]] ||
+   grep -Eq "${LEANOS_SERIAL_8_TERMINAL} .*status=(PASS|FAIL)|LEANOS/[0-9]+ FINAL " "$log"; then
   echo "failure_class=terminal-record: duplicate, forged, or post-terminal record observed" >&2
   exit 1
 fi

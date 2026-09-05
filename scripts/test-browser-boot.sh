@@ -25,6 +25,8 @@ echo "ok - source-built staging excludes prebuilt emulator outputs"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
+# shellcheck source=/dev/null
+source "$tmp/oracle/serial-protocol.sh"
 
 # A marker that merely blesses substituted bytes must not authenticate itself.
 for name in out.js qemu-system-x86_64.wasm qemu-system-x86_64.worker.js; do
@@ -87,8 +89,8 @@ EOF
 chmod +x "$mock"
 
 firmware_only=$'SeaBIOS (version rel-1.16.3)\nBooting from DVD/CD...\n'
-truncated=$'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\nLEANOS/15 DMA snapshot=1 topology=0001000800020002 bus=0\n'
-guest_fail=$'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\nLEANOS/3 FINAL status=FAIL reason=vtd-live-status\n'
+truncated="${LEANOS_SERIAL_10_BOOT} target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap"$'\n"\"${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020002 bus=0\"\$"\n'""
+guest_fail="${LEANOS_SERIAL_10_BOOT} target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap"$'\n"\"${LEANOS_SERIAL_3_FINAL} status=FAIL reason=vtd-live-status\"\$"\n'""
 
 run_mock() {  # mode serial exitcode ; echoes run-image failure_class line
   local serial="$1" exit="$2"

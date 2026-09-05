@@ -660,6 +660,190 @@ theorem cancelSenderOffers_pending state subject endpoint transfer
       if transfer.sender = subject then none else some transfer := by
   simp [cancelSenderOffers, cancelWhere, h]
 
+/-- Sealed descendants of one lineage root, decided against the authoritative
+derivation graph with the same bounded ancestry walk that clears installed
+slots.  The root itself is never sealed, so this selects strictly younger
+identities derived from it. -/
+def descendsFromRoot (capabilities : Capability.State) (root : Nat) (transfer : Sealed) :
+    Bool :=
+  Capability.descendsFrom capabilities transfer.identity root capabilities.nextIdentity
+
+/-- Publish one accepted transitive revocation.  Every sealed descendant of
+`root` loses its envelope and pending record in the same step that installs
+the revoked capability store `capabilities`; nothing else in the mailbox or
+in-flight store changes.  Derivation history lives in that store and is
+retained, so a canceled identity stays allocated and can never be reissued. -/
+def publishSubtreeRevocation (state : State) (root : Nat)
+    (capabilities : Capability.State) : State :=
+  { cancelWhere state (descendsFromRoot state.capabilities root) with capabilities }
+
+@[simp] theorem publishSubtreeRevocation_capabilities state root capabilities :
+    (publishSubtreeRevocation state root capabilities).capabilities = capabilities := rfl
+
+@[simp] theorem publishSubtreeRevocation_sendHistory state root capabilities :
+    (publishSubtreeRevocation state root capabilities).sendHistory = state.sendHistory := rfl
+
+@[simp] theorem publishSubtreeRevocation_issued state root capabilities :
+    (publishSubtreeRevocation state root capabilities).issued = state.issued := rfl
+
+@[simp] theorem publishSubtreeRevocation_allocator state root capabilities :
+    (publishSubtreeRevocation state root capabilities).allocator = state.allocator := rfl
+
+@[simp] theorem publishSubtreeRevocation_binding state root capabilities :
+    (publishSubtreeRevocation state root capabilities).binding = state.binding := rfl
+
+@[simp] theorem publishSubtreeRevocation_issuedAddressSpace state root capabilities :
+    (publishSubtreeRevocation state root capabilities).issuedAddressSpace =
+      state.issuedAddressSpace := rfl
+
+theorem publishSubtreeRevocation_pending state root capabilities endpoint :
+    (publishSubtreeRevocation state root capabilities).pending endpoint =
+      match state.pending endpoint with
+      | some transfer =>
+          if descendsFromRoot state.capabilities root transfer then none else some transfer
+      | none => none := by
+  cases hpending : state.pending endpoint <;>
+    simp [publishSubtreeRevocation, cancelWhere, hpending]
+
+theorem publishSubtreeRevocation_mailbox state root capabilities endpoint :
+    (publishSubtreeRevocation state root capabilities).mailbox endpoint =
+      match state.pending endpoint with
+      | some transfer =>
+          if descendsFromRoot state.capabilities root transfer then none
+          else state.mailbox endpoint
+      | none => state.mailbox endpoint := by
+  cases hpending : state.pending endpoint <;>
+    simp [publishSubtreeRevocation, cancelWhere, hpending]
+
+/-- Every sealed descendant of the revoked root loses both of its
+representations in the same step: there is no post-state with an envelope but
+no pending record or the reverse. -/
+theorem publishSubtreeRevocation_cancels state root capabilities endpoint transfer
+    (hpending : state.pending endpoint = some transfer)
+    (hdescendant : descendsFromRoot state.capabilities root transfer = true) :
+    (publishSubtreeRevocation state root capabilities).pending endpoint = none ∧
+      (publishSubtreeRevocation state root capabilities).mailbox endpoint = none := by
+  simp [publishSubtreeRevocation_pending, publishSubtreeRevocation_mailbox, hpending,
+    hdescendant]
+
+/-- A retained pending record is an unselected pre-state record, and its
+endpoint keeps the exact pre-state envelope. -/
+theorem publishSubtreeRevocation_pending_some state root capabilities endpoint transfer
+    (hpending : (publishSubtreeRevocation state root capabilities).pending endpoint =
+      some transfer) :
+    state.pending endpoint = some transfer ∧
+      descendsFromRoot state.capabilities root transfer = false ∧
+      (publishSubtreeRevocation state root capabilities).mailbox endpoint =
+        state.mailbox endpoint := by
+  rw [publishSubtreeRevocation_pending] at hpending
+  rw [publishSubtreeRevocation_mailbox]
+  cases hold : state.pending endpoint with
+  | none => simp [hold] at hpending
+  | some old =>
+      simp only [hold] at hpending ⊢
+      by_cases hdescendant : descendsFromRoot state.capabilities root old = true
+      · simp [hdescendant] at hpending
+      · simp only [Bool.not_eq_true] at hdescendant
+        simp only [hdescendant, Bool.false_eq_true, if_false, Option.some.injEq] at hpending
+        subst hpending
+        exact ⟨rfl, hdescendant, by simp [hdescendant]⟩
+
+/-- No retained sealed record descends from the revoked root. -/
+theorem publishSubtreeRevocation_no_descendant_pending state root capabilities endpoint
+    transfer
+    (hpending : (publishSubtreeRevocation state root capabilities).pending endpoint =
+      some transfer) :
+    descendsFromRoot state.capabilities root transfer = false :=
+  (publishSubtreeRevocation_pending_some state root capabilities endpoint transfer
+    hpending).2.1
+
+/-- Publication can only clear mailboxes; it never manufactures an envelope. -/
+theorem publishSubtreeRevocation_mailbox_some state root capabilities endpoint envelope
+    (hmailbox : (publishSubtreeRevocation state root capabilities).mailbox endpoint =
+      some envelope) :
+    state.mailbox endpoint = some envelope := by
+  rw [publishSubtreeRevocation_mailbox] at hmailbox
+  cases hold : state.pending endpoint with
+  | none => simpa [hold] using hmailbox
+  | some old =>
+      simp only [hold] at hmailbox
+      by_cases hdescendant : descendsFromRoot state.capabilities root old = true
+      · simp [hdescendant] at hmailbox
+      · simp only [Bool.not_eq_true] at hdescendant
+        simpa [hdescendant] using hmailbox
+
+/-- An endpoint whose pending record, if any, is unrelated to the root keeps
+its exact pre-state envelope. -/
+theorem publishSubtreeRevocation_mailbox_unrelated state root capabilities endpoint
+    (hunrelated : ∀ transfer, state.pending endpoint = some transfer →
+      descendsFromRoot state.capabilities root transfer = false) :
+    (publishSubtreeRevocation state root capabilities).mailbox endpoint =
+      state.mailbox endpoint := by
+  rw [publishSubtreeRevocation_mailbox]
+  cases hold : state.pending endpoint with
+  | none => rfl
+  | some old => simp [hunrelated old hold]
+
+/-- An unrelated pending record is retained exactly. -/
+theorem publishSubtreeRevocation_pending_unrelated state root capabilities endpoint transfer
+    (hpending : state.pending endpoint = some transfer)
+    (hunrelated : descendsFromRoot state.capabilities root transfer = false) :
+    (publishSubtreeRevocation state root capabilities).pending endpoint = some transfer := by
+  simp [publishSubtreeRevocation_pending, hpending, hunrelated]
+
+/-- Publishing an accepted transitive revocation preserves the complete
+transfer invariant whenever the revoked store keeps the object registry,
+kinds, identity frontier, and derivation history and only removes slots. -/
+theorem publishSubtreeRevocation_preserves_wellFormed state root next
+    (hstate : WellFormed state)
+    (hnext : Capability.WellFormed next)
+    (hobjects : next.objects = state.capabilities.objects)
+    (hkinds : next.kinds = state.capabilities.kinds)
+    (hnextIdentity : next.nextIdentity = state.capabilities.nextIdentity)
+    (hderivations : next.derivations = state.capabilities.derivations)
+    (hslots : ∀ subject slot capability, next.slots subject slot = some capability →
+      state.capabilities.slots subject slot = some capability) :
+    WellFormed (publishSubtreeRevocation state root next) := by
+  rcases hstate with ⟨⟨_hcapabilities, hissued, hmailbox, hdead, hhistory⟩, hpending⟩
+  refine ⟨⟨hnext, ?_, ?_, ?_, ?_⟩, ?_⟩
+  · intro object hlive hkind
+    apply hissued object
+    · simpa [hobjects] using hlive
+    · simpa [hkinds] using hkind
+  · intro object envelope hmail
+    obtain ⟨hlive, hkind, hendpoint, hsent⟩ := hmailbox object envelope
+      (publishSubtreeRevocation_mailbox_some state root next object envelope hmail)
+    exact ⟨by simpa [hobjects] using hlive, by simpa [hkinds] using hkind, hendpoint,
+      by simpa using hsent⟩
+  · intro object hretired
+    have hold : state.mailbox object = none := hdead object (by simpa [hobjects] using hretired)
+    rw [publishSubtreeRevocation_mailbox]
+    cases hpendingOld : state.pending object with
+    | none => exact hold
+    | some old =>
+        by_cases hdescendant : descendsFromRoot state.capabilities root old = true
+        · simp [hdescendant]
+        · simp only [Bool.not_eq_true] at hdescendant
+          simp [hdescendant, hold]
+  · simpa using hhistory
+  · intro endpoint transfer hpendingNew
+    obtain ⟨hpendingOld, _hunrelated, hmailboxSame⟩ :=
+      publishSubtreeRevocation_pending_some state root next endpoint transfer hpendingNew
+    obtain ⟨⟨envelope, henvelope, hendpoint, hsender⟩, hlive, hkind, hrights, hderivation,
+      ⟨parentParent, parentRights, hparentDerivation, hsubset⟩, hparentIdentity,
+      hidentity, habsent, hunique⟩ := hpending endpoint transfer hpendingOld
+    refine ⟨⟨envelope, by rw [hmailboxSame]; exact henvelope, hendpoint, hsender⟩,
+      by simpa [hobjects] using hlive, by simpa [hkinds] using hkind, hrights,
+      by simpa [hderivations] using hderivation,
+      ⟨parentParent, parentRights, by simpa [hderivations] using hparentDerivation, hsubset⟩,
+      hparentIdentity, by simpa [hnextIdentity] using hidentity, ?_, ?_⟩
+    · intro subject slot capability hslot
+      exact habsent subject slot capability (hslots subject slot capability hslot)
+    · intro other otherTransfer hother hsame
+      exact hunique other otherTransfer
+        (publishSubtreeRevocation_pending_some state root next other otherTransfer hother).1
+        hsame
+
 /-- Retire a memory object through the authoritative allocator/lifetime
 transition, then cancel its sealed descendants only when release succeeds. -/
 def retireObject (state : State) (subject : SubjectId) (slot : SlotId) :

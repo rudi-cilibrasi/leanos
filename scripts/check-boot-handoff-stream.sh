@@ -234,6 +234,8 @@ fi
 IFS=',' read -ra targets <<<"$target"
 lake build "${targets[@]}" LeanOS.BootMemoryMapStreamPipeline
 prefix="$(lake env lean --print-prefix)"
+generated="build/boundary-abi"
+./scripts/generate-oracle.sh "$generated"
 
 if [[ "$mode" == sanitized ]]; then
   leanos_prepare_boundary_coverage "$build" "$exports"
@@ -258,7 +260,7 @@ if [[ "$mode" == sanitized ]]; then
   "$leanos_host_cc" -std=c11 -Wall -Wextra -Werror \
     "${leanos_host_sanitizer_flags[@]}" -finstrument-functions \
     -DLEANOS_HOSTED_REPLAY=1 -DLEANOS_HOSTED_SANITIZER=1 \
-    -c "$harness" -o "$build/host.o"
+    -I"$generated" -c "$harness" -o "$build/host.o"
   "$leanos_host_cc" -std=c11 -Wall -Wextra -Werror \
     -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
   leanos_link_sanitized_host "$build/host" "$build/host.o" \
@@ -300,9 +302,10 @@ lake env leanc "${cflags[@]}" -I"$prefix/include" \
   -c .lake/build/ir/LeanOS/BootMemoryMapStreaming.c -o "$build/stream.o"
 lake env leanc "${cflags[@]}" -I"$prefix/include" \
   -c .lake/build/ir/LeanOS/BootMemoryMapStreamAuthority.c -o "$build/authority.o"
-"$cc" "${cflags[@]}" -c tests/boot-handoff-stream-freestanding.c -o "$build/test.o"
+"$cc" "${cflags[@]}" -I"$generated" \
+  -c tests/boot-handoff-stream-freestanding.c -o "$build/test.o"
 "$cc" -m64 -std=c11 -O2 -Wall -Wextra -Werror \
-  -DLEANOS_HOSTED_REPLAY=1 \
+  -DLEANOS_HOSTED_REPLAY=1 -I"$generated" \
   -c tests/boot-handoff-stream-freestanding.c -o "$build/host.o"
 "$cc" -m64 -nostdlib -static -no-pie -Wl,--gc-sections -Wl,-e,_start \
   "$build/test.o" "$build/stream.o" "$build/authority.o" -o "$build/stream.elf"

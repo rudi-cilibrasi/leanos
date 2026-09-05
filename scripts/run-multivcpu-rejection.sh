@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -13,7 +16,7 @@ log="${LEANOS_SERIAL_LOG:-build/boot/multivcpu-rejection.serial.log}"
 qmp_log="${LEANOS_QMP_LOG:-${log}.qmp.jsonl}"
 inventory="${LEANOS_MULTIVCPU_INVENTORY:-${log}.qmp.tsv}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/7 BOOTALLOC status=FAIL reason=topology-madt-generated-entries'
+terminal="${LEANOS_SERIAL_7_BOOTALLOC} status=FAIL reason=topology-madt-generated-entries"
 
 for tool in "$qemu" timeout python3; do
   command -v "$tool" >/dev/null 2>&1 || {

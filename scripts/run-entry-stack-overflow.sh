@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+serial_protocol="${LEANOS_SERIAL_PROTOCOL:-$(dirname "${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}")/serial-protocol.sh}"
+# shellcheck source=/dev/null
+source "$serial_protocol"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -11,7 +14,7 @@ version="${LEANOS_VERSION:-0.1.0}"
 image="${1:-build/boot/leanos-${version}-x86_64-entry-stack-overflow.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/entry-stack-overflow.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/11 ENTRY-STACK-OVERFLOW reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none'
+terminal="${LEANOS_SERIAL_11_ENTRY_STACK_OVERFLOW} reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none"
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -62,8 +65,8 @@ if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]]; then
   echo "failure_class=terminal-record: exactly one typed entry-stack overflow record not observed" >&2
   exit 1
 fi
-if [[ "$(grep -c '^LEANOS/11 ENTRY-STACK-OVERFLOW ' "$log")" -ne 1 ]] ||
-   grep -Eq 'LEANOS/11 ENTRY-STACK-OVERFLOW .*status=(PASS|FAIL)|LEANOS/[0-9]+ FINAL |LEANOS/11 ENTRY-HIGH-WATER ' "$log"; then
+if [[ "$(grep -c "^${LEANOS_SERIAL_11_ENTRY_STACK_OVERFLOW} " "$log")" -ne 1 ]] ||
+   grep -Eq "${LEANOS_SERIAL_11_ENTRY_STACK_OVERFLOW} .*status=(PASS|FAIL)|LEANOS/[0-9]+ FINAL |${LEANOS_SERIAL_11_ENTRY_HIGH_WATER} " "$log"; then
   echo "failure_class=terminal-record: duplicate, forged, handler, or post-terminal record observed" >&2
   exit 1
 fi
