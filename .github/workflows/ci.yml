@@ -414,6 +414,37 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+  reproducibility-plan:
+    name: Reproducibility partition plan
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')
+    needs: repository-hygiene
+    runs-on: ubuntu-24.04
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Generate immutable partition plan
+        run: |
+          mkdir -p build/reproducibility
+          ./scripts/write-reproducibility-manifest.sh --list \
+            > build/reproducibility/artifacts.txt
+          python3 scripts/reproducibility-partitions.py plan \
+            build/reproducibility/artifacts.txt \
+            --partitions 4 \
+            --source-revision "${{ github.sha }}" \
+            --toolchain-id "clang-reference@${LEANOS_CI_IMAGE_DIGEST}" \
+            > build/reproducibility/plan.json
+
+      - name: Preserve partition plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-reproducibility-plan-${{ github.sha }}
+          path: build/reproducibility/plan.json
+          if-no-files-found: error
+          retention-days: 14
+
   clang-reproducibility-build:
     name: Clang independent reproducibility build
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')
@@ -744,6 +775,7 @@ jobs:
       - hosted-boundary
       - clang-image
       - gcc-image-family
+      - reproducibility-plan
       - clang-reproducibility-build
       - clang-reproducibility
       - emulator
@@ -758,6 +790,7 @@ jobs:
           HOSTED_BOUNDARY: ${{ needs.hosted-boundary.result }}
           CLANG_IMAGE: ${{ needs.clang-image.result }}
           GCC_IMAGE_FAMILY: ${{ needs.gcc-image-family.result }}
+          REPRODUCIBILITY_PLAN: ${{ needs.reproducibility-plan.result }}
           CLANG_REPRO_BUILD: ${{ needs.clang-reproducibility-build.result }}
           CLANG_REPRO_COMPARE: ${{ needs.clang-reproducibility.result }}
           EMULATOR: ${{ needs.emulator.result }}
@@ -768,7 +801,8 @@ jobs:
           fi
           for result in \
             "$REPOSITORY_HYGIENE" "$LEAN" "$HOSTED_BOUNDARY" \
-            "$CLANG_IMAGE" "$GCC_IMAGE_FAMILY" "$CLANG_REPRO_BUILD" \
+            "$CLANG_IMAGE" "$GCC_IMAGE_FAMILY" "$REPRODUCIBILITY_PLAN" \
+            "$CLANG_REPRO_BUILD" \
             "$CLANG_REPRO_COMPARE" "$EMULATOR"; do
             if [[ "$result" != success ]]; then
               echo "error: promoted full-evidence dependency concluded $result" >&2
