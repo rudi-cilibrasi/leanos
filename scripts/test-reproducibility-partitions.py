@@ -140,16 +140,19 @@ with tempfile.TemporaryDirectory() as directory:
         path.write_text(json.dumps(result))
         result_paths.append(path)
 
-    aggregate = run("verify", plan_path, *result_paths).stdout.splitlines()
-    if len(aggregate) != 4 or aggregate != sorted(aggregate, key=lambda line: line[66:]):
-        raise AssertionError("aggregate manifest is incomplete or non-deterministic")
+    verification = ("verify", plan_path, *result_paths, "--artifacts", artifacts)
+    aggregate = run(*verification).stdout.splitlines()
+    if [line[66:] for line in aggregate] != artifacts.read_text().splitlines():
+        raise AssertionError("aggregate manifest does not preserve authoritative order")
 
-    reject("verify", plan_path, result_paths[0], diagnostic="missing partition results")
+    reject("verify", plan_path, result_paths[0], "--artifacts", artifacts,
+           diagnostic="missing partition results")
     reject(
         "verify",
         plan_path,
         result_paths[0],
         result_paths[0],
+        "--artifacts", artifacts,
         diagnostic="duplicate partition result",
     )
     mismatched = json.loads(result_paths[1].read_text())
@@ -159,7 +162,92 @@ with tempfile.TemporaryDirectory() as directory:
         "verify",
         plan_path,
         *result_paths,
+        "--artifacts", artifacts,
         diagnostic="sourceRevision mismatch",
     )
+
+    mismatched["sourceRevision"] = revision
+    result_paths[1].write_text(json.dumps(mismatched))
+    baseline_result = result_paths[1].read_text()
+
+    # Match every emitted provenance field against the plan, and reject damaged
+    # digests or an incomplete/extra artifact set independently of plan validity.
+    for field in ("sourceRevision", "toolchainId", "artifactManifestDigest", "planDigest"):
+        for value in (None, "wrong"):
+            changed = json.loads(baseline_result)
+            changed[field] = value
+            result_paths[1].write_text(json.dumps(changed))
+            reject(*verification, diagnostic=f"{field} mismatch")
+    for value in (None, "", "g" * 64, "a" * 63):
+        changed = json.loads(baseline_result)
+        changed["artifacts"]["b.iso"] = value
+        result_paths[1].write_text(json.dumps(changed))
+        reject(*verification, diagnostic="invalid digest")
+    for extra in (False, True):
+        changed = json.loads(baseline_result)
+        if extra:
+            changed["artifacts"]["extra.iso"] = "a" * 64
+        else:
+            changed["artifacts"].pop("b.iso")
+        result_paths[1].write_text(json.dumps(changed))
+        reject(*verification, diagnostic="artifact set mismatch")
+    changed = json.loads(baseline_result)
+    changed["partition"] = True
+    result_paths[1].write_text(json.dumps(changed))
+    reject(*verification, diagnostic="unknown partition")
+    result_paths[1].write_text(baseline_result)
+
+    # A self-consistent plan digest is not a substitute for required metadata.
+    def pin_plan(value):
+        value.pop("planDigest", None)
+        value["planDigest"] = hashlib.sha256(
+            json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+        ).hexdigest()
+        plan_path.write_text(json.dumps(value))
+
+    def reject_plan(value, diagnostic):
+        pin_plan(value)
+        reject("result", plan_path, "--partition", 0, "--build-root", build_root,
+               diagnostic=diagnostic)
+        reject(*verification, diagnostic=diagnostic)
+
+    for field, diagnostic in (("sourceRevision", "invalid source revision"),
+                              ("toolchainId", "invalid toolchain identity")):
+        for value in (None, "", 1, "invalid value"):
+            changed = json.loads(json.dumps(plan))
+            changed[field] = value
+            reject_plan(changed, diagnostic)
+        changed = json.loads(json.dumps(plan))
+        changed.pop(field)
+        reject_plan(changed, diagnostic)
+    for identifier in (True, 0, -1, 2, "1"):
+        changed = json.loads(json.dumps(plan))
+        changed["partitions"][1]["id"] = identifier
+        diagnostic = "contiguous" if identifier == 2 else "invalid partition id"
+        reject_plan(changed, diagnostic)
+    for artifact in ("../escape", "/absolute", "a/../b", "./a.elf", "a//b",
+                     "", "a\nb", "a\\b", "a\x00b", "a\tb", "a b"):
+        changed = json.loads(json.dumps(plan))
+        changed["partitions"][0]["artifacts"][0] = artifact
+        reject_plan(changed, "invalid artifact path")
+
+    pin_plan(json.loads(json.dumps(plan)))
+    source = plan_path.read_text()
+    plan_path.write_text(source.replace('"sourceRevision":', '"sourceRevision": null, "sourceRevision":', 1))
+    reject(*verification, diagnostic="duplicate JSON key")
+    plan_path.write_text(source)
+    result_paths[1].write_text(baseline_result.replace('"b.iso":', '"b.iso": null, "b.iso":', 1))
+    reject(*verification, diagnostic="duplicate JSON key")
+    result_paths[1].write_text(baseline_result)
+
+    # Dropping an artifact and recomputing both digests still cannot change the
+    # revision-owned artifact inventory that the verifier is asked to consume.
+    changed = json.loads(json.dumps(plan))
+    changed["partitions"][0]["artifacts"].remove("a.elf")
+    changed["artifactManifestDigest"] = hashlib.sha256(b"b.iso\nm.map\nz.iso\n").hexdigest()
+    pin_plan(changed)
+    reject(*verification, diagnostic="authoritative artifact list")
+    pin_plan(json.loads(json.dumps(plan)))
+    run(*verification)
 
 print("Reproducibility partition planning and aggregation fail closed")
