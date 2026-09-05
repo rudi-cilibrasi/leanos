@@ -48,6 +48,7 @@ REQUIRED_CONTAINER_JOBS = {
         "hosted-boundary",
         "clang-image",
         "gcc-image-family",
+        "reproducibility-plan",
         "clang-reproducibility-build",
         "clang-reproducibility",
         "emulator",
