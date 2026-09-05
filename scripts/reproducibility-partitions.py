@@ -92,11 +92,23 @@ def make_result(args: argparse.Namespace) -> dict[str, object]:
     ):
         fail("partition has invalid artifacts")
     digests: dict[str, str] = {}
+    build_root = args.build_root.resolve(strict=True)
     for artifact in artifacts:
-        path = args.build_root / artifact
-        if not path.is_file():
+        path = build_root / artifact
+        cursor = build_root
+        for component in Path(artifact).parts:
+            cursor /= component
+            if cursor.is_symlink():
+                fail(f"partition artifact is a symlink: {artifact}")
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError:
             fail(f"partition artifact is missing: {artifact}")
-        digests[artifact] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if not resolved.is_relative_to(build_root):
+            fail(f"partition artifact escapes the build root: {artifact}")
+        if not resolved.is_file():
+            fail(f"partition artifact is not a regular file: {artifact}")
+        digests[artifact] = hashlib.sha256(resolved.read_bytes()).hexdigest()
     return {
         "partition": args.partition,
         "sourceRevision": plan.get("sourceRevision"),

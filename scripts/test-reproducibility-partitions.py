@@ -91,6 +91,21 @@ with tempfile.TemporaryDirectory() as directory:
         build_root,
         diagnostic="unknown partition",
     )
+    external = fixture / "external"
+    external.write_text("not a partition artifact")
+    (build_root / "m.map").unlink()
+    (build_root / "m.map").symlink_to(external)
+    reject(
+        "result",
+        plan_path,
+        "--partition",
+        0,
+        "--build-root",
+        build_root,
+        diagnostic="partition artifact is a symlink",
+    )
+    (build_root / "m.map").unlink()
+    (build_root / "m.map").write_text("m.map")
 
     result_paths = []
     for partition in plan["partitions"]:
