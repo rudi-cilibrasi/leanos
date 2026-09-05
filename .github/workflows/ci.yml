@@ -541,9 +541,6 @@ jobs:
           ./scripts/check-q35-edu-dma.py \
             --output build/evidence/q35-edu-dma.tsv
 
-      - name: Verify image-build failures propagate
-        run: ./scripts/test-build-image.sh
-
       - name: Download canonical image family
         if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

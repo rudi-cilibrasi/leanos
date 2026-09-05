@@ -476,9 +476,53 @@ def run_fixtures() -> None:
 
         ci_workflow = evidence.ROOT / ".github/workflows/ci.yml"
         original_ci = ci_workflow.read_text(encoding="utf-8")
+        aggregate_path = evidence.ROOT / "scripts/check.sh"
+        original_aggregate = aggregate_path.read_text(encoding="utf-8")
+        failure_fixture = "./scripts/test-build-image.sh"
+        fixture_contract = (
+            "CI must run the image-build failure fixture once through the required Lean aggregate"
+        )
+        for before, after in (
+            ("  lean:\n", "  lean:\n    if: github.event_name == 'push'\n"),
+            ("  lean:\n", "  lean:\n    continue-on-error: true\n"),
+            ("  lean:\n", "  lean:\n    strategy:\n      matrix:\n        copy: [0, 1]\n"),
+            ("        run: ./scripts/check.sh\n", "        run: 'true'\n"),
+            ("        run: ./scripts/check.sh\n",
+             "        if: github.event_name == 'push'\n        run: ./scripts/check.sh\n"),
+            ("        run: ./scripts/check.sh\n",
+             "        continue-on-error: true\n        run: ./scripts/check.sh\n"),
+            ("      - name: Download canonical image family\n",
+             "      - name: Duplicated aggregate\n"
+             "        run: ./scripts/check.sh\n\n"
+             "      - name: Download canonical image family\n"),
+            ("      - name: Download canonical image family\n",
+             "      - name: Duplicated failure fixture\n"
+             f"        run: {failure_fixture}\n\n"
+             "      - name: Download canonical image family\n"),
+        ):
+            changed_ci = original_ci.replace(before, after, 1)
+            if changed_ci == original_ci:
+                raise AssertionError(f"failure-fixture test did not mutate {before!r}")
+            try:
+                ci_workflow.write_text(changed_ci, encoding="utf-8")
+                expect_failure(evidence.check_workflows, fixture_contract)
+            finally:
+                ci_workflow.write_text(original_ci, encoding="utf-8")
+        for replacement in ("", failure_fixture + " || true", (failure_fixture + "\n") * 2):
+            try:
+                aggregate_path.write_text(
+                    original_aggregate.replace(failure_fixture, replacement, 1),
+                    encoding="utf-8",
+                )
+                expect_failure(evidence.check_workflows, fixture_contract)
+            finally:
+                aggregate_path.write_text(original_aggregate, encoding="utf-8")
         # A dependency must be awaited, read from needs, and included in the
         # result loop. Keeping any two of those three is insufficient.
         for before, after in (
+            ("      - lean\n", ""),
+            ("LEAN: ${{ needs.lean.result }}", "LEAN: success"),
+            (' "$LEAN"', ""),
             ("      - reproducibility-plan\n", ""),
             ("REPRODUCIBILITY_PLAN: ${{ needs.reproducibility-plan.result }}",
              "REPRODUCIBILITY_PLAN: success"),
@@ -497,21 +541,24 @@ def run_fixtures() -> None:
                 ci_workflow.write_text(original_ci, encoding="utf-8")
 
         # Execute the real gate with every other dependency green. A failed,
-        # cancelled, skipped, or absent plan result must block admission.
+        # cancelled, skipped, or absent plan/Lean result must block admission.
         admission = evidence.load_workflow(ci_workflow)["jobs"]["premerge-admission"]
         gate = next(step for step in admission["steps"] if "run" in step)
         gate_env = {key: "success" for key in gate["env"]}
         gate_env["PROMOTED"] = "true"
-        for plan_result in ("success", "failure", "cancelled", "skipped", ""):
-            result = subprocess.run(
-                ["bash", "-e", "-c", gate["run"]],
-                env={**os.environ, **gate_env, "REPRODUCIBILITY_PLAN": plan_result},
-                text=True, capture_output=True,
-            )
-            if (result.returncode == 0) != (plan_result == "success"):
-                raise AssertionError(f"admission mishandled plan result {plan_result!r}")
-            if result.returncode and "dependency concluded" not in result.stderr:
-                raise AssertionError(f"unexpected admission failure: {result.stderr}")
+        for dependency in ("REPRODUCIBILITY_PLAN", "LEAN"):
+            for conclusion in ("success", "failure", "cancelled", "skipped", ""):
+                result = subprocess.run(
+                    ["bash", "-e", "-c", gate["run"]],
+                    env={**os.environ, **gate_env, dependency: conclusion},
+                    text=True, capture_output=True,
+                )
+                if (result.returncode == 0) != (conclusion == "success"):
+                    raise AssertionError(
+                        f"admission mishandled {dependency} result {conclusion!r}"
+                    )
+                if result.returncode and "dependency concluded" not in result.stderr:
+                    raise AssertionError(f"unexpected admission failure: {result.stderr}")
         try:
             ci_workflow.write_text(
                 original_ci.replace(

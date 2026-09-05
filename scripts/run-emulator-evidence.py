@@ -1537,6 +1537,40 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must parallelize complete hosted evidence for pull requests and merge groups"
         )
+    # The real image-build failure fixture belongs to the canonical aggregate
+    # check, which runs once in the required Lean lane on every CI event.
+    # Emulator consumers must not repeat its Lean/C bootstrap after the image
+    # producer has finished. Do not permit a conditional or advisory owner.
+    lean_job = workflow_job(ci_workflow, ".github/workflows/ci.yml", "lean")
+    lean_steps = workflow_job_steps(lean_job, ".github/workflows/ci.yml", "lean")
+    aggregate_steps = [
+        step for step in lean_steps if step.get("run") == "./scripts/check.sh"
+    ]
+    aggregate = (ROOT / "scripts/check.sh").read_text(encoding="utf-8")
+    failure_fixture = "./scripts/test-build-image.sh"
+    if (
+        "if" in lean_job
+        or "continue-on-error" in lean_job
+        or "strategy" in lean_job
+        or len(aggregate_steps) != 1
+        or any(
+            key in step
+            for step in aggregate_steps
+            for key in ("if", "continue-on-error")
+        )
+        or aggregate.splitlines().count(failure_fixture) != 1
+        or sum(
+            "./scripts/check.sh" in run
+            for _, run in workflow_step_runs(ci_workflow, ".github/workflows/ci.yml")
+        ) != 1
+        or any(
+            failure_fixture in run
+            for _, run in workflow_step_runs(ci_workflow, ".github/workflows/ci.yml")
+        )
+    ):
+        raise EvidenceError(
+            "CI must run the image-build failure fixture once through the required Lean aggregate"
+        )
     ci_emulator = workflow_job(
         ci_workflow, ".github/workflows/ci.yml", "emulator"
     )
