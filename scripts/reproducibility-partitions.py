@@ -26,14 +26,28 @@ def canonical_digest(value: object) -> str:
 
 
 def read_artifacts(path: Path) -> list[str]:
-    artifacts = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    artifacts = path.read_text().splitlines()
     if not artifacts:
         fail("artifact list is empty")
     if len(artifacts) != len(set(artifacts)):
         fail("artifact list contains duplicates")
-    if any(item.startswith("/") or ".." in Path(item).parts for item in artifacts):
-        fail("artifact path escapes the build root")
-    return sorted(artifacts)
+    for artifact in artifacts:
+        validate_artifact_path(artifact)
+    return artifacts
+
+
+def validate_artifact_path(artifact: str) -> None:
+    if (
+        not artifact
+        or artifact.startswith("/")
+        or any(part in ("", ".", "..") for part in artifact.split("/"))
+        or "\\" in artifact
+        or any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in artifact
+        )
+    ):
+        fail(f"invalid artifact path: {artifact!r}")
 
 
 def make_plan(args: argparse.Namespace) -> dict[str, object]:
@@ -41,7 +55,7 @@ def make_plan(args: argparse.Namespace) -> dict[str, object]:
         fail("invalid source revision")
     if not args.toolchain_id or any(character.isspace() for character in args.toolchain_id):
         fail("invalid toolchain identity")
-    artifacts = read_artifacts(args.artifacts)
+    artifacts = sorted(read_artifacts(args.artifacts))
     if args.partitions < 1 or args.partitions > len(artifacts):
         fail("partition count must be between one and the artifact count")
     artifact_manifest_digest = hashlib.sha256(
@@ -63,7 +77,15 @@ def make_plan(args: argparse.Namespace) -> dict[str, object]:
 
 
 def load_json(path: Path) -> dict[str, object]:
-    value = json.loads(path.read_text())
+    def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                fail(f"{path}: duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    value = json.loads(path.read_text(), object_pairs_hook=unique_object)
     if not isinstance(value, dict):
         fail(f"{path}: expected a JSON object")
     return value
@@ -83,6 +105,8 @@ def verify_artifact_manifest(
             or not all(isinstance(artifact, str) for artifact in partition_artifacts)
         ):
             fail("partition has invalid artifacts")
+        for artifact in partition_artifacts:
+            validate_artifact_path(artifact)
         artifacts.extend(partition_artifacts)
     if len(artifacts) != len(set(artifacts)):
         fail("partition plan contains duplicate artifacts")
@@ -93,17 +117,40 @@ def verify_artifact_manifest(
         fail("artifact manifest digest mismatch")
 
 
-def make_result(args: argparse.Namespace) -> dict[str, object]:
-    plan = load_json(args.plan)
+def load_plan(path: Path) -> dict[str, object]:
+    plan = load_json(path)
     plan_digest = plan.pop("planDigest", None)
     if not isinstance(plan_digest, str) or plan_digest != canonical_digest(plan):
         fail("plan digest mismatch")
     if plan.get("schemaVersion") != SCHEMA:
         fail("unsupported plan schema")
+    revision = plan.get("sourceRevision")
+    if not isinstance(revision, str) or not REVISION.fullmatch(revision):
+        fail("invalid source revision")
+    toolchain = plan.get("toolchainId")
+    if not isinstance(toolchain, str) or not toolchain or any(
+        character.isspace() for character in toolchain
+    ):
+        fail("invalid toolchain identity")
     partitions = plan.get("partitions")
-    if not isinstance(partitions, list):
+    if not isinstance(partitions, list) or not partitions:
         fail("plan has no partitions")
     verify_artifact_manifest(plan, partitions)
+    identifiers: set[int] = set()
+    for partition in partitions:
+        identifier = partition.get("id")
+        if type(identifier) is not int or identifier < 0 or identifier in identifiers:
+            fail("duplicate or invalid partition id")
+        identifiers.add(identifier)
+    if identifiers != set(range(len(partitions))):
+        fail("partition ids must be contiguous from zero")
+    plan["planDigest"] = plan_digest
+    return plan
+
+
+def make_result(args: argparse.Namespace) -> dict[str, object]:
+    plan = load_plan(args.plan)
+    partitions = plan["partitions"]
     matches = [
         partition
         for partition in partitions
@@ -139,40 +186,29 @@ def make_result(args: argparse.Namespace) -> dict[str, object]:
         "sourceRevision": plan.get("sourceRevision"),
         "toolchainId": plan.get("toolchainId"),
         "artifactManifestDigest": plan.get("artifactManifestDigest"),
-        "planDigest": plan_digest,
+        "planDigest": plan["planDigest"],
         "artifacts": digests,
     }
 
 
 def verify(args: argparse.Namespace) -> str:
-    plan = load_json(args.plan)
-    plan_digest = plan.pop("planDigest", None)
-    if not isinstance(plan_digest, str) or plan_digest != canonical_digest(plan):
-        fail("plan digest mismatch")
-    if plan.get("schemaVersion") != SCHEMA:
-        fail("unsupported plan schema")
-    partitions = plan.get("partitions")
-    if not isinstance(partitions, list) or not partitions:
-        fail("plan has no partitions")
-    verify_artifact_manifest(plan, partitions)
-    expected = {}
-    for partition in partitions:
-        if not isinstance(partition, dict):
-            fail("invalid partition")
-        identifier = partition.get("id")
-        artifacts = partition.get("artifacts")
-        if not isinstance(identifier, int) or identifier in expected:
-            fail("duplicate or invalid partition id")
-        if not isinstance(artifacts, list) or not artifacts:
-            fail("partition has no artifacts")
-        expected[identifier] = artifacts
+    plan = load_plan(args.plan)
+    expected = {partition["id"]: partition["artifacts"] for partition in plan["partitions"]}
+    # This list comes from the source revision's scenario manifest, independently
+    # of the downloaded plan. Preserve its order for the existing byte comparison.
+    artifact_order = read_artifacts(args.artifacts)
+    planned_artifacts = {
+        artifact for artifacts in expected.values() for artifact in artifacts
+    }
+    if set(artifact_order) != planned_artifacts:
+        fail("plan artifact set differs from authoritative artifact list")
 
     observed: dict[str, str] = {}
     seen: set[int] = set()
     for result_path in args.results:
         result = load_json(result_path)
         identifier = result.get("partition")
-        if not isinstance(identifier, int) or identifier not in expected:
+        if type(identifier) is not int or identifier not in expected:
             fail(f"{result_path}: unknown partition")
         if identifier in seen:
             fail(f"duplicate partition result: {identifier}")
@@ -184,7 +220,7 @@ def verify(args: argparse.Namespace) -> str:
         ):
             if result.get(field) != plan.get(field):
                 fail(f"partition {identifier}: {field} mismatch")
-        if result.get("planDigest") != plan_digest:
+        if result.get("planDigest") != plan["planDigest"]:
             fail(f"partition {identifier}: planDigest mismatch")
         artifacts = result.get("artifacts")
         if not isinstance(artifacts, dict) or sorted(artifacts) != sorted(expected[identifier]):
@@ -198,7 +234,7 @@ def verify(args: argparse.Namespace) -> str:
     missing = sorted(set(expected) - seen)
     if missing:
         fail(f"missing partition results: {','.join(map(str, missing))}")
-    return "".join(f"{observed[path]}  {path}\n" for path in sorted(observed))
+    return "".join(f"{observed[path]}  {path}\n" for path in artifact_order)
 
 
 def main() -> int:
@@ -216,6 +252,12 @@ def main() -> int:
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("plan", type=Path)
     verify_parser.add_argument("results", type=Path, nargs="+")
+    verify_parser.add_argument(
+        "--artifacts",
+        type=Path,
+        required=True,
+        help="authoritative artifact list from write-reproducibility-manifest.sh --list",
+    )
     args = parser.parse_args()
     try:
         if args.command == "plan":
