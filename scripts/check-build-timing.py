@@ -73,21 +73,54 @@ def parse_timing(path: Path) -> list[Timing]:
     return timings
 
 
+def github_summary(timings: list[Timing]) -> str:
+    """Render every validated phase for the GitHub job summary."""
+
+    rows = [
+        "### Image-build phase timing",
+        "",
+        "| Phase | Duration (s) | Cumulative (s) |",
+        "| --- | ---: | ---: |",
+    ]
+    rows.extend(
+        f"| `{timing.phase}` | {timing.phase_seconds} | {timing.total_seconds} |"
+        for timing in timings
+    )
+    slowest = max(timings, key=lambda timing: timing.phase_seconds)
+    rows.extend(
+        (
+            "",
+            f"Total: **{timings[-1].total_seconds}s**; "
+            f"slowest phase: `{slowest.phase}` (**{slowest.phase_seconds}s**).",
+        )
+    )
+    return "\n".join(rows)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("timing_file", type=Path)
+    parser.add_argument(
+        "--format",
+        choices=("text", "github"),
+        default="text",
+        help="render a concise text result or a complete GitHub summary table",
+    )
     args = parser.parse_args()
     try:
         timings = parse_timing(args.timing_file)
     except TimingError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    slowest = max(timings, key=lambda timing: timing.phase_seconds)
-    print(
-        "Build phase timing evidence passed "
-        f"(total={timings[-1].total_seconds}s, "
-        f"slowest={slowest.phase}:{slowest.phase_seconds}s)"
-    )
+    if args.format == "github":
+        print(github_summary(timings))
+    else:
+        slowest = max(timings, key=lambda timing: timing.phase_seconds)
+        print(
+            "Build phase timing evidence passed "
+            f"(total={timings[-1].total_seconds}s, "
+            f"slowest={slowest.phase}:{slowest.phase_seconds}s)"
+        )
     return 0
 
 

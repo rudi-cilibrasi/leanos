@@ -434,6 +434,12 @@ jobs:
             ./scripts/build-image.sh
           ./scripts/write-reproducibility-manifest.sh
 
+      - name: Publish independent build phase summary
+        run: |
+          python3 scripts/check-build-timing.py \
+            build/boot/clang-repro-build-phases.tsv --format github \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - name: Preserve independent reproducibility manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

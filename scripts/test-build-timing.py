@@ -51,6 +51,12 @@ def main() -> None:
         observed = checker.parse_timing(path)
         if observed[-1].total_seconds != sum(durations):
             raise AssertionError("valid timing evidence lost its cumulative duration")
+        summary = checker.github_summary(observed)
+        for phase, duration in zip(checker.PHASES, durations, strict=True):
+            if f"| `{phase}` | {duration} |" not in summary:
+                raise AssertionError(f"GitHub summary omitted phase timing: {phase}")
+        if f"Total: **{sum(durations)}s**" not in summary:
+            raise AssertionError("GitHub summary omitted the total duration")
 
         expect_failure(path, render(rows, "phase,duration,total"), "header")
         expect_failure(path, render(rows[:-1]), "expected 6 build phases")
@@ -80,6 +86,16 @@ def main() -> None:
     ):
         if contract not in reproducibility:
             raise AssertionError(f"reproducibility timing contract is missing: {contract}")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    for contract in (
+        "Publish independent build phase summary",
+        "build/boot/clang-repro-build-phases.tsv --format github",
+        '>> "$GITHUB_STEP_SUMMARY"',
+    ):
+        if contract not in workflow:
+            raise AssertionError(f"independent timing summary is missing: {contract}")
     print("Build phase timing evidence fixtures passed")
 
 
