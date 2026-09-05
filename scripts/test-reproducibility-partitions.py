@@ -55,6 +55,43 @@ with tempfile.TemporaryDirectory() as directory:
     ]:
         raise AssertionError("partition plan is not deterministic")
 
+    build_root = fixture / "build"
+    build_root.mkdir()
+    for artifact in ("a.elf", "m.map"):
+        (build_root / artifact).write_text(artifact)
+    emitted = json.loads(
+        run(
+            "result",
+            plan_path,
+            "--partition",
+            0,
+            "--build-root",
+            build_root,
+        ).stdout
+    )
+    if emitted["partition"] != 0 or sorted(emitted["artifacts"]) != ["a.elf", "m.map"]:
+        raise AssertionError("partition result does not contain its exact artifact set")
+    if emitted["planDigest"] != plan["planDigest"]:
+        raise AssertionError("partition result is not bound to its plan")
+    reject(
+        "result",
+        plan_path,
+        "--partition",
+        1,
+        "--build-root",
+        build_root,
+        diagnostic="partition artifact is missing",
+    )
+    reject(
+        "result",
+        plan_path,
+        "--partition",
+        9,
+        "--build-root",
+        build_root,
+        diagnostic="unknown partition",
+    )
+
     result_paths = []
     for partition in plan["partitions"]:
         result = {

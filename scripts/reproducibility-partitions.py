@@ -69,6 +69,44 @@ def load_json(path: Path) -> dict[str, object]:
     return value
 
 
+def make_result(args: argparse.Namespace) -> dict[str, object]:
+    plan = load_json(args.plan)
+    plan_digest = plan.pop("planDigest", None)
+    if not isinstance(plan_digest, str) or plan_digest != canonical_digest(plan):
+        fail("plan digest mismatch")
+    if plan.get("schemaVersion") != SCHEMA:
+        fail("unsupported plan schema")
+    partitions = plan.get("partitions")
+    if not isinstance(partitions, list):
+        fail("plan has no partitions")
+    matches = [
+        partition
+        for partition in partitions
+        if isinstance(partition, dict) and partition.get("id") == args.partition
+    ]
+    if len(matches) != 1:
+        fail(f"unknown partition: {args.partition}")
+    artifacts = matches[0].get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts or not all(
+        isinstance(artifact, str) for artifact in artifacts
+    ):
+        fail("partition has invalid artifacts")
+    digests: dict[str, str] = {}
+    for artifact in artifacts:
+        path = args.build_root / artifact
+        if not path.is_file():
+            fail(f"partition artifact is missing: {artifact}")
+        digests[artifact] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {
+        "partition": args.partition,
+        "sourceRevision": plan.get("sourceRevision"),
+        "toolchainId": plan.get("toolchainId"),
+        "artifactManifestDigest": plan.get("artifactManifestDigest"),
+        "planDigest": plan_digest,
+        "artifacts": digests,
+    }
+
+
 def verify(args: argparse.Namespace) -> str:
     plan = load_json(args.plan)
     plan_digest = plan.pop("planDigest", None)
@@ -133,6 +171,10 @@ def main() -> int:
     plan_parser.add_argument("--partitions", type=int, required=True)
     plan_parser.add_argument("--source-revision", required=True)
     plan_parser.add_argument("--toolchain-id", required=True)
+    result_parser = subparsers.add_parser("result")
+    result_parser.add_argument("plan", type=Path)
+    result_parser.add_argument("--partition", type=int, required=True)
+    result_parser.add_argument("--build-root", type=Path, required=True)
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("plan", type=Path)
     verify_parser.add_argument("results", type=Path, nargs="+")
@@ -140,6 +182,8 @@ def main() -> int:
     try:
         if args.command == "plan":
             print(json.dumps(make_plan(args), indent=2, sort_keys=True))
+        elif args.command == "result":
+            print(json.dumps(make_result(args), indent=2, sort_keys=True))
         else:
             sys.stdout.write(verify(args))
     except (OSError, ValueError, json.JSONDecodeError) as error:
