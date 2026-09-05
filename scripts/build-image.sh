@@ -10,6 +10,26 @@ if [[ -n "${LEANOS_BUILD_TIMING_FILE:-}" ]]; then
   mkdir -p "$(dirname -- "$LEANOS_BUILD_TIMING_FILE")"
   printf 'phase\tphase_seconds\ttotal_seconds\n' > "$LEANOS_BUILD_TIMING_FILE"
 fi
+bootstrap_timing_file=""
+bootstrap_phase_started_at="$build_profile_started_at"
+if [[ -n "${LEANOS_BUILD_TIMING_FILE:-}" ]]; then
+  bootstrap_timing_file="${LEANOS_BUILD_TIMING_FILE%.tsv}-bootstrap.tsv"
+  printf 'phase\tphase_seconds\ttotal_seconds\tmode\n' > "$bootstrap_timing_file"
+fi
+record_bootstrap_phase() {
+  local phase="$1"
+  local mode="${2:-measured}"
+  local now="$SECONDS"
+  local phase_seconds="$((now - bootstrap_phase_started_at))"
+  local total_seconds="$((now - build_profile_started_at))"
+  printf 'build-bootstrap\t%s\tphase_seconds=%s\ttotal_seconds=%s\tmode=%s\n' \
+    "$phase" "$phase_seconds" "$total_seconds" "$mode"
+  if [[ -n "$bootstrap_timing_file" ]]; then
+    printf '%s\t%s\t%s\t%s\n' "$phase" "$phase_seconds" "$total_seconds" "$mode" \
+      >> "$bootstrap_timing_file"
+  fi
+  bootstrap_phase_started_at="$now"
+}
 record_build_phase() {
   local phase="$1"
   local now="$SECONDS"
@@ -548,19 +568,23 @@ for probe in "${integer_fault_probes[@]}"; do
   mkdir -p "$build/iso-${probe}/boot/grub"
 done
 current_lean_c_signature="$(compute_lean_c_signature "$repo_root")"
+record_bootstrap_phase setup-and-signatures
 LEANOS_ORACLE_TOOL_SIGNATURE="$current_lean_c_signature" \
   ./scripts/generate-oracle.sh "$build"
+record_bootstrap_phase oracle-generation
 ensure_boot_plan_stub() {
   [[ -f "$1" ]] || ./scripts/generate-boot-page-plan.sh --stub "$1"
 }
 for stub in "${page_plan_stubs[@]}"; do
   ensure_boot_plan_stub "$build/$stub"
 done
+record_bootstrap_phase boot-plan-stubs
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
 # previous proof-check job's workspace.
 lake build
+record_bootstrap_phase lake-build
 generate_lean_c() {
   local source="$1"
   local output="$2"
@@ -589,16 +613,23 @@ fi
 for module in "${lean_c_modules[@]}"; do
   [[ -f "$build/$module.c" ]] || reuse_lean_c=0
 done
+record_bootstrap_phase lean-c-cache-check
 if ((reuse_lean_c == 0)); then
   lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
   trap 'rm -rf "$lean_c_stage"' EXIT
   for module in "${lean_c_modules[@]}"; do
     generate_lean_c "LeanOS/$module.lean" "$build/$module.c"
+    record_bootstrap_phase "lean-c-$module" generated
   done
   printf '%s\n' "$current_lean_c_signature" > "$lean_c_signature"
   rm -rf "$lean_c_stage"
   trap - EXIT
+else
+  for module in "${lean_c_modules[@]}"; do
+    record_bootstrap_phase "lean-c-$module" reused
+  done
 fi
+record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
