@@ -170,8 +170,18 @@ def load_plan(path: Path) -> dict[str, object]:
     return plan
 
 
+def verify_consumer_provenance(plan: dict[str, object], args: argparse.Namespace) -> None:
+    # These values must come from the consumer checkout/container, never from
+    # the downloaded plan. A self-consistent plan digest is not provenance.
+    if plan["sourceRevision"] != args.source_revision:
+        fail("plan source revision differs from consumer checkout")
+    if plan["toolchainId"] != args.toolchain_id:
+        fail("plan toolchain identity differs from consumer toolchain")
+
+
 def make_result(args: argparse.Namespace) -> dict[str, object]:
     plan = load_plan(args.plan)
+    verify_consumer_provenance(plan, args)
     partitions = plan["partitions"]
     matches = [
         partition
@@ -215,6 +225,7 @@ def make_result(args: argparse.Namespace) -> dict[str, object]:
 
 def verify(args: argparse.Namespace) -> str:
     plan = load_plan(args.plan)
+    verify_consumer_provenance(plan, args)
     expected = {partition["id"]: partition["artifacts"] for partition in plan["partitions"]}
     # This list comes from the source revision's scenario manifest, independently
     # of the downloaded plan. Preserve its order for the existing byte comparison.
@@ -281,6 +292,15 @@ def main() -> int:
         required=True,
         help="authoritative artifact list from write-reproducibility-manifest.sh --list",
     )
+    for consumer in (result_parser, verify_parser):
+        consumer.add_argument(
+            "--source-revision", required=True,
+            help="independently observed consumer checkout revision, not plan metadata",
+        )
+        consumer.add_argument(
+            "--toolchain-id", required=True,
+            help="independently observed consumer toolchain identity, not plan metadata",
+        )
     args = parser.parse_args()
     try:
         if args.command == "plan":

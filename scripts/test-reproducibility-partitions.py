@@ -15,6 +15,9 @@ SCRIPT = ROOT / "scripts/reproducibility-partitions.py"
 
 
 def run(*arguments: object, check: bool = True) -> subprocess.CompletedProcess[str]:
+    if arguments and arguments[0] in ("result", "verify"):
+        arguments += ("--source-revision", "a" * 40,
+                      "--toolchain-id", "clang-reference@18.1.3")
     result = subprocess.run(
         ["python3", str(SCRIPT), *(str(argument) for argument in arguments)],
         text=True,
@@ -27,7 +30,7 @@ def run(*arguments: object, check: bool = True) -> subprocess.CompletedProcess[s
 
 def reject(*arguments: object, diagnostic: str) -> None:
     result = run(*arguments, check=False)
-    if result.returncode == 0 or diagnostic not in result.stderr:
+    if result.returncode == 0 or diagnostic not in result.stderr or result.stdout:
         raise AssertionError(f"expected {diagnostic!r}, got {result.stderr!r}")
 
 
@@ -141,6 +144,36 @@ with tempfile.TemporaryDirectory() as directory:
         result_paths.append(path)
 
     verification = ("verify", plan_path, *result_paths, "--artifacts", artifacts)
+    # Even a freshly rehashed plan and matching result provenance cannot replace
+    # the consumer's independently observed checkout/container identity.
+    for field, changed_value, diagnostic in (
+        ("sourceRevision", "b" * 40, "differs from consumer checkout"),
+        ("toolchainId", "other-toolchain", "differs from consumer toolchain"),
+    ):
+        changed = json.loads(json.dumps(plan))
+        changed[field] = changed_value
+        changed.pop("planDigest")
+        changed["planDigest"] = hashlib.sha256(
+            json.dumps(changed, separators=(",", ":"), sort_keys=True).encode()
+        ).hexdigest()
+        plan_path.write_text(json.dumps(changed))
+        reject("result", plan_path, "--partition", 0, "--build-root", build_root,
+               diagnostic=diagnostic)
+        reject(*verification, diagnostic=diagnostic)
+    plan_path.write_text(json.dumps(plan))
+    for command in (
+        ("result", plan_path, "--partition", 0, "--build-root", build_root),
+        verification,
+    ):
+        for flags in ((), ("--source-revision", revision),
+                      ("--toolchain-id", "clang-reference@18.1.3")):
+            missing = subprocess.run(
+                ["python3", str(SCRIPT), *map(str, command + flags)],
+                capture_output=True, text=True,
+            )
+            if missing.returncode == 0 or missing.stdout:
+                raise AssertionError("consumer accepted missing independent provenance")
+
     aggregate = run(*verification).stdout.splitlines()
     if [line[66:] for line in aggregate] != artifacts.read_text().splitlines():
         raise AssertionError("aggregate manifest does not preserve authoritative order")

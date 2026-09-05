@@ -25,12 +25,15 @@ results=()
 for partition in 0 1 2 3; do
   result="$fixture/result-$partition.json"
   python3 "$repo_root/scripts/reproducibility-partitions.py" result \
-    "$fixture/plan.json" --partition "$partition" --build-root "$fixture" > "$result"
+    "$fixture/plan.json" --partition "$partition" --build-root "$fixture" \
+    --source-revision 0123456789012345678901234567890123456789 \
+    --toolchain-id clang-reference@18.1.3 > "$result"
   results+=("$result")
 done
 python3 "$repo_root/scripts/reproducibility-partitions.py" verify \
   "$fixture/plan.json" "${results[@]}" --artifacts "$fixture/artifacts.txt" \
-  > "$fixture/aggregate"
+  --source-revision 0123456789012345678901234567890123456789 \
+  --toolchain-id clang-reference@18.1.3 > "$fixture/aggregate"
 "$repo_root/scripts/compare-reproducibility-manifests.sh" \
   "$fixture/first" "$fixture/aggregate"
 

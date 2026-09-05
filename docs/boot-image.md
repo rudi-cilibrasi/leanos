@@ -236,9 +236,16 @@ duplicate, unknown, or malformed group entries. It deterministically balances
 whole groups by artifact count; this is a fallback heuristic, not measured build
 time. The default artifact-stride mode remains compatible for existing callers.
 
+Both `reproducibility-partitions.py result` and `verify` require explicit
+`--source-revision` and `--toolchain-id` values from the consumer's checkout and
+pinned build environment. They reject a plan that disagrees before hashing
+artifacts or emitting an aggregate, even if its own digest is valid. Never derive
+these arguments from the downloaded plan: callers must independently obtain the
+checkout SHA and admitted toolchain/container identity. This comparison binds
+metadata; it does not attest that a compiler actually produced the files.
+
 This planning interface does not yet change CI build execution, share compiled
-canonical output, verify checkout/toolchain provenance against the caller, or
-prove a sub-15-minute build. Shared graph prerequisites, independent cold builds,
+canonical output, or prove a sub-15-minute build. Shared graph prerequisites, independent cold builds,
 complete aggregation and representative timing evidence remain required before
 switching the reproducibility execution lane.
 
