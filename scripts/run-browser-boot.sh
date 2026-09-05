@@ -49,7 +49,7 @@ fi
 }
 export LEANOS_BROWSER="$browser"
 
-image="${LEANOS_IMAGE:-build/boot/leanos-$(cat VERSION 2>/dev/null || echo 0.1.0)-x86_64.iso}"
+image="${LEANOS_IMAGE:-build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso}"
 [[ -f "$image" ]] || { echo "error: missing canonical ISO: $image; run ./scripts/build-image.sh" >&2; exit 1; }
 iso_sha="$(sha256sum "$image" | cut -d' ' -f1)"
 wasm_sha="$(sha256sum "$runtime_dir/qemu-system-x86_64.wasm" | cut -d' ' -f1)"

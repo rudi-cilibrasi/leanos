@@ -54,7 +54,7 @@ jobs:
             ./scripts/build-image.sh
           pages_source=build/ci/pages-image-source
           mkdir -p "$pages_source/build/boot"
-          image="leanos-$(cat VERSION)-x86_64.iso"
+          image="leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso"
           for artifact in \
             "$image" \
             corpus.tsv \
@@ -108,7 +108,7 @@ jobs:
           ./scripts/image-bundle.sh verify \
             build/ci/pages-image/leanos-pages-image.tar.gz \
             "${{ github.sha }}"
-          test -s "build/boot/leanos-$(cat VERSION)-x86_64.iso"
+          test -s "build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso"
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -142,6 +142,8 @@ jobs:
 
   deploy:
     name: Deploy to Pages
+    # Manual branch runs validate the image and browser; publish only main.
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10

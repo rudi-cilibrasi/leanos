@@ -46,3 +46,4 @@ if ./scripts/image-bundle.sh verify "$scratch/unsafe-archive.tar.gz" "$revision"
 fi
 
 echo "Image bundle regression checks passed"
+python3 "$repo_root/scripts/test-pages-image-pipeline.py"
