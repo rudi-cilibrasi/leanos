@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -73,6 +74,24 @@ with tempfile.TemporaryDirectory() as directory:
         raise AssertionError("partition result does not contain its exact artifact set")
     if emitted["planDigest"] != plan["planDigest"]:
         raise AssertionError("partition result is not bound to its plan")
+    mismatched_manifest = dict(plan)
+    mismatched_manifest["artifactManifestDigest"] = "f" * 64
+    unsigned = dict(mismatched_manifest)
+    unsigned.pop("planDigest")
+    mismatched_manifest["planDigest"] = hashlib.sha256(
+        json.dumps(unsigned, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    mismatched_manifest_path = fixture / "mismatched-manifest-plan.json"
+    mismatched_manifest_path.write_text(json.dumps(mismatched_manifest))
+    reject(
+        "result",
+        mismatched_manifest_path,
+        "--partition",
+        0,
+        "--build-root",
+        build_root,
+        diagnostic="artifact manifest digest mismatch",
+    )
     reject(
         "result",
         plan_path,

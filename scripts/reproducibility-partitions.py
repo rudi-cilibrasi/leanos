@@ -69,6 +69,30 @@ def load_json(path: Path) -> dict[str, object]:
     return value
 
 
+def verify_artifact_manifest(
+    plan: dict[str, object], partitions: list[object]
+) -> None:
+    artifacts: list[str] = []
+    for partition in partitions:
+        if not isinstance(partition, dict):
+            fail("invalid partition")
+        partition_artifacts = partition.get("artifacts")
+        if (
+            not isinstance(partition_artifacts, list)
+            or not partition_artifacts
+            or not all(isinstance(artifact, str) for artifact in partition_artifacts)
+        ):
+            fail("partition has invalid artifacts")
+        artifacts.extend(partition_artifacts)
+    if len(artifacts) != len(set(artifacts)):
+        fail("partition plan contains duplicate artifacts")
+    expected = hashlib.sha256(
+        ("\n".join(sorted(artifacts)) + "\n").encode()
+    ).hexdigest()
+    if plan.get("artifactManifestDigest") != expected:
+        fail("artifact manifest digest mismatch")
+
+
 def make_result(args: argparse.Namespace) -> dict[str, object]:
     plan = load_json(args.plan)
     plan_digest = plan.pop("planDigest", None)
@@ -79,6 +103,7 @@ def make_result(args: argparse.Namespace) -> dict[str, object]:
     partitions = plan.get("partitions")
     if not isinstance(partitions, list):
         fail("plan has no partitions")
+    verify_artifact_manifest(plan, partitions)
     matches = [
         partition
         for partition in partitions
@@ -129,6 +154,7 @@ def verify(args: argparse.Namespace) -> str:
     partitions = plan.get("partitions")
     if not isinstance(partitions, list) or not partitions:
         fail("plan has no partitions")
+    verify_artifact_manifest(plan, partitions)
     expected = {}
     for partition in partitions:
         if not isinstance(partition, dict):
