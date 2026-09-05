@@ -272,6 +272,24 @@ def run_fixtures() -> None:
             row["id"] for row in matrix_rows
         ):
             raise AssertionError("stable shards do not cover the matrix exactly once")
+        weighted_rows = [
+            {"id": f"weighted-{index}", "timeout": str(weight)}
+            for index, weight in enumerate((9, 8, 7, 6, 5, 4))
+        ]
+        weighted_shards = [
+            evidence.select_rows(weighted_rows, None, "all", index, 2)
+            for index in range(2)
+        ]
+        if [[row["id"] for row in shard] for shard in weighted_shards] != [
+            ["weighted-0", "weighted-3", "weighted-4"],
+            ["weighted-1", "weighted-2", "weighted-5"],
+        ]:
+            raise AssertionError("duration-bound shard assignment is not deterministic")
+        weighted_totals = [
+            sum(int(row["timeout"]) for row in shard) for shard in weighted_shards
+        ]
+        if weighted_totals != [20, 19]:
+            raise AssertionError("duration-bound shard assignment is not balanced")
         expect_failure(
             lambda: evidence.select_rows(matrix_rows, "blocking-ipc", "all", 0, 4),
             "cannot be combined with sharding",

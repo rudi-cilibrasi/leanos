@@ -491,7 +491,7 @@ def select_rows(
     rows: list[dict[str, str]], scenario: str | None, tier: str,
     shard_index: int | None, shard_count: int | None,
 ) -> list[dict[str, str]]:
-    """Select one scenario or a stable matrix-order shard."""
+    """Select one scenario or a deterministic duration-bound-weighted shard."""
     if scenario is not None and tier != "all":
         raise EvidenceError("scenario selection cannot be combined with tier selection")
     if scenario is not None and (shard_index is not None or shard_count is not None):
@@ -513,7 +513,27 @@ def select_rows(
         raise EvidenceError("shard count must be a positive integer")
     if shard_index < 0 or shard_index >= shard_count:
         raise EvidenceError("shard index must be between zero and count minus one")
-    selected = rows[shard_index::shard_count]
+    # Matrix timeouts are checked-in upper bounds for scenario duration. Use
+    # them as deterministic fallback weights until representative measured
+    # durations are promoted into the matrix. Longest-processing-time-first
+    # assignment avoids the fixed-stride bias while stable source indexes and
+    # shard indexes make ties reproducible.
+    assignments: list[list[tuple[int, dict[str, str]]]] = [
+        [] for _ in range(shard_count)
+    ]
+    assigned_weights = [0] * shard_count
+    weighted_rows = sorted(
+        enumerate(rows), key=lambda item: (-int(item[1]["timeout"]), item[0])
+    )
+    for source_index, row in weighted_rows:
+        destination = min(
+            range(shard_count), key=lambda index: (assigned_weights[index], index)
+        )
+        assignments[destination].append((source_index, row))
+        assigned_weights[destination] += int(row["timeout"])
+    selected = [
+        row for _source_index, row in sorted(assignments[shard_index])
+    ]
     if not selected:
         raise EvidenceError("selected shard is empty")
     return selected
