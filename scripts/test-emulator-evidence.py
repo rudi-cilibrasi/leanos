@@ -476,6 +476,42 @@ def run_fixtures() -> None:
 
         ci_workflow = evidence.ROOT / ".github/workflows/ci.yml"
         original_ci = ci_workflow.read_text(encoding="utf-8")
+        # A dependency must be awaited, read from needs, and included in the
+        # result loop. Keeping any two of those three is insufficient.
+        for before, after in (
+            ("      - reproducibility-plan\n", ""),
+            ("REPRODUCIBILITY_PLAN: ${{ needs.reproducibility-plan.result }}",
+             "REPRODUCIBILITY_PLAN: success"),
+            (' "$REPRODUCIBILITY_PLAN"', ""),
+        ):
+            changed_ci = original_ci.replace(before, after, 1)
+            if changed_ci == original_ci:
+                raise AssertionError(f"admission fixture did not mutate {before!r}")
+            try:
+                ci_workflow.write_text(changed_ci, encoding="utf-8")
+                expect_failure(
+                    evidence.check_workflows,
+                    "CI job 'premerge-admission' must fail closed",
+                )
+            finally:
+                ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        # Execute the real gate with every other dependency green. A failed,
+        # cancelled, skipped, or absent plan result must block admission.
+        admission = evidence.load_workflow(ci_workflow)["jobs"]["premerge-admission"]
+        gate = next(step for step in admission["steps"] if "run" in step)
+        gate_env = {key: "success" for key in gate["env"]}
+        gate_env["PROMOTED"] = "true"
+        for plan_result in ("success", "failure", "cancelled", "skipped", ""):
+            result = subprocess.run(
+                ["bash", "-e", "-c", gate["run"]],
+                env={**os.environ, **gate_env, "REPRODUCIBILITY_PLAN": plan_result},
+                text=True, capture_output=True,
+            )
+            if (result.returncode == 0) != (plan_result == "success"):
+                raise AssertionError(f"admission mishandled plan result {plan_result!r}")
+            if result.returncode and "dependency concluded" not in result.stderr:
+                raise AssertionError(f"unexpected admission failure: {result.stderr}")
         try:
             ci_workflow.write_text(
                 original_ci.replace(
