@@ -61,10 +61,32 @@ def make_plan(args: argparse.Namespace) -> dict[str, object]:
     artifact_manifest_digest = hashlib.sha256(
         ("\n".join(artifacts) + "\n").encode()
     ).hexdigest()
-    partitions = [
-        {"id": index, "artifacts": artifacts[index :: args.partitions]}
-        for index in range(args.partitions)
-    ]
+    if args.artifact_groups is None:
+        partitions = [
+            {"id": index, "artifacts": artifacts[index :: args.partitions]}
+            for index in range(args.partitions)
+        ]
+    else:
+        groups = load_json(args.artifact_groups)
+        if not groups or any(
+            not name or not isinstance(group, list) or not group
+            or not all(isinstance(artifact, str) for artifact in group)
+            for name, group in groups.items()
+        ):
+            fail("invalid artifact groups")
+        grouped = [artifact for group in groups.values() for artifact in group]
+        if len(grouped) != len(set(grouped)) or sorted(grouped) != artifacts:
+            fail("artifact groups must cover the authoritative list exactly once")
+        if args.partitions > len(groups):
+            fail("partition count exceeds producer group count")
+        partitions = [{"id": index, "artifacts": []} for index in range(args.partitions)]
+        # Artifact count is a deterministic fallback weight, not measured build
+        # time. Never split a producer to improve this heuristic's balance.
+        for name in sorted(groups, key=lambda name: (-len(groups[name]), name)):
+            destination = min(partitions, key=lambda part: (len(part["artifacts"]), part["id"]))
+            destination["artifacts"].extend(sorted(groups[name]))
+        for partition in partitions:
+            partition["artifacts"].sort()
     plan: dict[str, object] = {
         "schemaVersion": SCHEMA,
         "sourceRevision": args.source_revision,
@@ -243,6 +265,7 @@ def main() -> int:
     plan_parser = subparsers.add_parser("plan")
     plan_parser.add_argument("artifacts", type=Path)
     plan_parser.add_argument("--partitions", type=int, required=True)
+    plan_parser.add_argument("--artifact-groups", type=Path, help="producer groups from reproducibility-groups; never split a group")
     plan_parser.add_argument("--source-revision", required=True)
     plan_parser.add_argument("--toolchain-id", required=True)
     result_parser = subparsers.add_parser("result")

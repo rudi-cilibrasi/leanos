@@ -630,6 +630,19 @@ def select_reproducibility_rows(
     return selected
 
 
+def reproducibility_groups(
+    manifest: dict[str, object], rows: list[dict[str, str]], version: str,
+) -> dict[str, list[str]]:
+    """Keep every artifact produced by one scenario in one cold-build group."""
+    groups: dict[str, list[str]] = {}
+    for artifact in reproducibility_artifacts(manifest, rows, version):
+        producers = select_reproducibility_rows(manifest, rows, version, [artifact])
+        if len(producers) != 1:
+            raise EvidenceError(f"artifact has ambiguous producers: {artifact}")
+        groups.setdefault(producers[0]["id"], []).append(artifact)
+    return groups
+
+
 def print_build_plan(args: argparse.Namespace) -> None:
     """Emit a machine-readable build boundary before image construction."""
     _matrix_id, rows = parse_matrix(args.matrix.resolve())
@@ -1890,9 +1903,10 @@ def main() -> int:
     subparsers.add_parser("check")
     release_parser = subparsers.add_parser("release-artifacts")
     reproducibility_parser = subparsers.add_parser("reproducibility-artifacts")
+    groups_parser = subparsers.add_parser("reproducibility-groups")
     negative_parser = subparsers.add_parser("negative-evidence")
     negative_parser.add_argument("scenario", nargs="?")
-    for subparser in (release_parser, reproducibility_parser):
+    for subparser in (release_parser, reproducibility_parser, groups_parser):
         subparser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
         subparser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
         subparser.add_argument("--version", default=os.environ.get("LEANOS_VERSION", "0.1.0"))
@@ -1974,6 +1988,16 @@ def main() -> int:
                 check_artifacts_present([(f"build/boot/{name}", name) for name in names], ROOT)
             for name in names:
                 print(name)
+        elif args.operation == "reproducibility-groups":
+            manifest = load_manifest(args.manifest)
+            _, rows = parse_matrix(args.matrix, args.manifest)
+            groups = reproducibility_groups(manifest, rows, args.version)
+            if args.check:
+                check_artifacts_present([
+                    (f"build/boot/{name}", name)
+                    for names in groups.values() for name in names
+                ], ROOT)
+            print(json.dumps(groups, indent=2, sort_keys=True))
         elif args.operation == "negative-evidence":
             declared = negative_evidence(load_manifest())
             if args.scenario is not None:

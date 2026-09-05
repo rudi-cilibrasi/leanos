@@ -228,6 +228,20 @@ produce them:
   --reproducibility-selection build/reproducibility/partition-artifacts.txt
 ```
 
+For a producer-preserving cold-build plan, first emit `reproducibility-groups`
+from `run-emulator-evidence.py`, then pass that JSON file as `--artifact-groups`
+to `reproducibility-partitions.py plan`. The planner keeps every scenario's
+outputs together, including canonical provenance extras, and rejects missing,
+duplicate, unknown, or malformed group entries. It deterministically balances
+whole groups by artifact count; this is a fallback heuristic, not measured build
+time. The default artifact-stride mode remains compatible for existing callers.
+
+This planning interface does not yet change CI build execution, share compiled
+canonical output, verify checkout/toolchain provenance against the caller, or
+prove a sub-15-minute build. Shared graph prerequisites, independent cold builds,
+complete aggregation and representative timing evidence remain required before
+switching the reproducibility execution lane.
+
 The input is one exact artifact basename per line for the selected image version.
 Unknown, duplicate, empty, or wrong-version selections fail before any TSV output.
 The selector derives ownership from the scenario manifest (including canonical
@@ -236,11 +250,11 @@ once even when several of its artifacts are requested. It cannot be combined
 with PR-tier or emulator-shard filtering, which could silently omit an artifact.
 
 This is a selection contract only: CI still runs the existing complete independent
-cold build. Before wiring parallel execution, group all artifacts from the same
-producer into one partition, account for shared graph prerequisites without
+cold build. Before wiring parallel execution, select producer-preserving groups
+instead of the legacy artifact-stride plan, account for shared graph prerequisites without
 reusing canonical compiled outputs, validate downloaded plan provenance against
 the checked-out revision/toolchain, and aggregate every artifact against the
-independent authoritative list. The current round-robin artifact plan can split
+independent authoritative list. The default round-robin artifact plan can split
 one producer across partitions; using these selectors independently without
 family grouping would duplicate compilation. No sub-15-minute timing or
 partitioned-build claim is made by this contract alone.

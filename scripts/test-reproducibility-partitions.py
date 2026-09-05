@@ -250,4 +250,58 @@ with tempfile.TemporaryDirectory() as directory:
     pin_plan(json.loads(json.dumps(plan)))
     run(*verification)
 
+# Exercise the revision-owned producer inventory through the real CLI. A
+# partition may group producers, but must never split any producer's outputs.
+with tempfile.TemporaryDirectory() as directory:
+    fixture = Path(directory)
+    evidence = ROOT / "scripts/run-emulator-evidence.py"
+    groups = json.loads(subprocess.check_output(
+        ["python3", str(evidence), "reproducibility-groups"], text=True,
+    ))
+    artifact_text = subprocess.check_output(
+        ["python3", str(evidence), "reproducibility-artifacts"], text=True,
+    )
+    artifacts = fixture / "artifacts.txt"
+    artifacts.write_text(artifact_text)
+    group_path = fixture / "groups.json"
+    group_path.write_text(json.dumps(groups))
+    command = ("plan", artifacts, "--partitions", 4, "--source-revision", "a" * 40,
+               "--toolchain-id", "fixture-only", "--artifact-groups", group_path)
+    original = run(*command).stdout
+    plan = json.loads(original)
+    ownership = {
+        artifact: partition["id"]
+        for partition in plan["partitions"] for artifact in partition["artifacts"]
+    }
+    if sorted(ownership) != sorted(artifact_text.splitlines()):
+        raise AssertionError("grouped plan lost authoritative artifacts")
+    if any(len({ownership[artifact] for artifact in group}) != 1
+           for group in groups.values()):
+        raise AssertionError("one producer was split across cold builds")
+    if any(not partition["artifacts"] for partition in plan["partitions"]):
+        raise AssertionError("grouped planner emitted an empty partition")
+    group_path.write_text(json.dumps(dict(reversed(list(groups.items())))))
+    if run(*command).stdout != original:
+        raise AssertionError("JSON object order changed grouped partition assignment")
+    for mutation in ("missing", "duplicate", "unknown", "invalid", "empty"):
+        changed = json.loads(json.dumps(groups))
+        first = next(iter(changed))
+        if mutation == "missing":
+            changed[first].pop()
+        elif mutation == "duplicate":
+            changed[first].append(changed[first][0])
+        elif mutation == "unknown":
+            changed[first][0] = "unknown.elf"
+        elif mutation == "invalid":
+            changed[first] = "not-a-list"
+        else:
+            changed = {}
+        group_path.write_text(json.dumps(changed))
+        rejected = run(*command, check=False)
+        if rejected.returncode == 0 or rejected.stdout:
+            raise AssertionError(f"{mutation} groups emitted a usable partial plan")
+    group_path.write_text(json.dumps(groups))
+    reject(*command, "--partitions", len(groups) + 1,
+           diagnostic="producer group count")
+
 print("Reproducibility partition planning and aggregation fail closed")
