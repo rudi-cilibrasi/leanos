@@ -28,4 +28,5 @@ if "$repo_root/scripts/write-reproducibility-manifest.sh" \
   echo "error: missing artifact was accepted" >&2
   exit 1
 fi
+python3 "$repo_root/scripts/test-reproducibility-partitions.py"
 echo "Reproducibility manifest is stable, complete, and change-sensitive"
