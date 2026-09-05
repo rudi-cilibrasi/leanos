@@ -219,6 +219,32 @@ part of `REPRODUCIBILITY-SHA256SUMS`, and matching durations are not required
 for byte reproducibility. Hosted scheduling, cache state, and runner load can
 change them even when every admitted artifact remains identical.
 
+The next #266 contract slice maps an exact subset of the authoritative
+reproducibility artifact names back to the scenarios and Make targets that
+produce them:
+
+```sh
+./scripts/run-emulator-evidence.py build-plan \
+  --reproducibility-selection build/reproducibility/partition-artifacts.txt
+```
+
+The input is one exact artifact basename per line for the selected image version.
+Unknown, duplicate, empty, or wrong-version selections fail before any TSV output.
+The selector derives ownership from the scenario manifest (including canonical
+source/toolchain provenance), preserves matrix order, and selects each producer
+once even when several of its artifacts are requested. It cannot be combined
+with PR-tier or emulator-shard filtering, which could silently omit an artifact.
+
+This is a selection contract only: CI still runs the existing complete independent
+cold build. Before wiring parallel execution, group all artifacts from the same
+producer into one partition, account for shared graph prerequisites without
+reusing canonical compiled outputs, validate downloaded plan provenance against
+the checked-out revision/toolchain, and aggregate every artifact against the
+independent authoritative list. The current round-robin artifact plan can split
+one producer across partitions; using these selectors independently without
+family grouping would duplicate compilation. No sub-15-minute timing or
+partitioned-build claim is made by this contract alone.
+
 The primary Clang lane builds and boots the canonical guest scenario with the pinned
 Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent full-build
 lanes set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler
