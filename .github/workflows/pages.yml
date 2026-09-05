@@ -37,6 +37,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - name: Trust the container checkout for build steps
+        # Checkout configures Git under a temporary HOME; subsequent container
+        # steps need the mounted workspace trusted in their own Git config.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Restore immutable Lake build cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
