@@ -110,6 +110,10 @@ check_phase="hosted-boundary-and-boot-contracts"
 record_check_phase hosted-boundary-and-boot-contracts
 check_phase="image-and-emulator-contracts"
 
+# Run the compiler-failure fixture once in the required proof lane, not in
+# every image-consuming QEMU shard. Keep it sequential with other build users.
+./scripts/test-build-image.sh
+
 ./scripts/test-run-malformed-handoff.sh
 
 ./scripts/test-run-image.sh

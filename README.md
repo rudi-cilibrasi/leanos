@@ -618,7 +618,11 @@ LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
 ./scripts/run-emulator-evidence.py bundle
 ```
 
-The first command requires Node.js/npm. The final command writes one tarball
+The first command requires Node.js/npm. `check.sh` also runs the controlled
+image-build compiler-failure fixture, so it requires the image-building tools
+listed below even though that fixture intentionally stops before packaging.
+CI runs this fixture once in the required Lean lane, not in each QEMU shard.
+The final command writes one tarball
 whose internal manifest hashes the retained evidence and rejects missing
 report-bound files. Image building and QEMU prerequisites,
 the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
