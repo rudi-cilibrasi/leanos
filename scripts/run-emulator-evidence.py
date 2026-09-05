@@ -1683,6 +1683,7 @@ def check_workflows() -> None:
         "hosted-boundary",
         "clang-image",
         "gcc-image-family",
+        "reproducibility-plan",
         "clang-reproducibility-build",
         "clang-reproducibility",
         "emulator",
@@ -1690,7 +1691,13 @@ def check_workflows() -> None:
     expected_admission_env = {
         "PROMOTED": "${{ contains(github.event.pull_request.labels.*.name, "
         "'ci:full-admission') }}",
+        "REPOSITORY_HYGIENE": "${{ needs.repository-hygiene.result }}",
+        "LEAN": "${{ needs.lean.result }}",
+        "HOSTED_BOUNDARY": "${{ needs.hosted-boundary.result }}",
+        "CLANG_IMAGE": "${{ needs.clang-image.result }}",
         "GCC_IMAGE_FAMILY": "${{ needs.gcc-image-family.result }}",
+        "REPRODUCIBILITY_PLAN": "${{ needs.reproducibility-plan.result }}",
+        "CLANG_REPRO_BUILD": "${{ needs.clang-reproducibility-build.result }}",
         "CLANG_REPRO_COMPARE": "${{ needs.clang-reproducibility.result }}",
         "EMULATOR": "${{ needs.emulator.result }}",
     }
@@ -1698,6 +1705,14 @@ def check_workflows() -> None:
         (step for step in admission_steps if isinstance(step.get("run"), str)), None
     )
     admission_env = admission_step.get("env") if admission_step is not None else None
+    result_loop = re.search(r"for result in\s+(.*?);\s*do", admission_runs, re.DOTALL)
+    try:
+        result_inputs = (
+            shlex.split(result_loop.group(1).replace("\\\n", ""))
+            if result_loop else []
+        )
+    except ValueError:
+        result_inputs = []
     if (
         admission.get("name") != "Pre-merge full admission"
         or admission.get("if") != "always() && github.event_name == 'pull_request'"
@@ -1709,6 +1724,9 @@ def check_workflows() -> None:
         )
         or 'if [[ "$PROMOTED" != true ]]; then' not in admission_runs
         or 'if [[ "$result" != success ]]; then' not in admission_runs
+        or result_inputs != [
+            f"${key}" for key in expected_admission_env if key != "PROMOTED"
+        ]
     ):
         raise EvidenceError(
             "CI job 'premerge-admission' must fail closed on labeled complete "
