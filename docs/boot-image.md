@@ -236,6 +236,23 @@ duplicate, unknown, or malformed group entries. It deterministically balances
 whole groups by artifact count; this is a fallback heuristic, not measured build
 time. The default artifact-stride mode remains compatible for existing callers.
 
+Before a future executor starts compilation, `reproducibility-partitions.py select`
+validates the downloaded plan against independently generated, revision-owned
+`reproducibility-groups` output and the consumer's source/toolchain identity:
+
+```sh
+python3 scripts/reproducibility-partitions.py select plan.json --partition 0 \
+  --artifact-groups groups.json --source-revision "$revision" --toolchain-id "$toolchain"
+```
+
+Generate `groups.json` from the reviewed consumer checkout, not downloaded plan
+metadata. Selection emits only the validated partition's producer names and
+artifact paths. A rehashed plan that splits a producer, adds/removes artifacts,
+or differs from consumer provenance fails before any selection is emitted.
+This command does not compile anything, prove a cold build, or replace the full
+independent build. Executor isolation and shared-prerequisite accounting remain
+required before CI may consume the selection for compilation.
+
 Both `reproducibility-partitions.py result` and `verify` require explicit
 `--source-revision` and `--toolchain-id` values from the consumer's checkout and
 pinned build environment. They reject a plan that disagrees before hashing

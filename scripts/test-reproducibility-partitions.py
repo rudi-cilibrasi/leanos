@@ -313,6 +313,30 @@ with tempfile.TemporaryDirectory() as directory:
         raise AssertionError("one producer was split across cold builds")
     if any(not partition["artifacts"] for partition in plan["partitions"]):
         raise AssertionError("grouped planner emitted an empty partition")
+    plan_path = fixture / "grouped-plan.json"
+    plan_path.write_text(original)
+    selection = ("select", plan_path, "--partition", 0, "--artifact-groups", group_path,
+                 "--source-revision", "a" * 40, "--toolchain-id", "fixture-only")
+    selected = json.loads(run(*selection).stdout)
+    expected_producers = sorted(name for name, group in groups.items() if ownership[group[0]] == 0)
+    if selected["producers"] != expected_producers or selected["artifacts"] != sorted(plan["partitions"][0]["artifacts"]):
+        raise AssertionError("selection differs from exact revision-owned producers")
+    reject(*selection, "--source-revision", "b" * 40, diagnostic="consumer checkout")
+    reject(*selection, "--toolchain-id", "wrong", diagnostic="consumer toolchain")
+    reject(*selection, "--partition", 999, diagnostic="unknown partition")
+    changed = json.loads(original)
+    # Preserve coverage and rehash the plan while deliberately splitting a real
+    # producer. Self-consistent downloaded metadata cannot authorize this build.
+    multi = next(group for group in groups.values() if len(group) > 1)
+    owner = ownership[multi[0]]
+    destination = (owner + 1) % len(changed["partitions"])
+    changed["partitions"][owner]["artifacts"].remove(multi[0])
+    changed["partitions"][destination]["artifacts"].append(multi[0])
+    changed.pop("planDigest")
+    changed["planDigest"] = hashlib.sha256(json.dumps(changed, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+    plan_path.write_text(json.dumps(changed))
+    reject(*selection, diagnostic="splits an authoritative producer")
+    plan_path.write_text(original)
     group_path.write_text(json.dumps(dict(reversed(list(groups.items())))))
     if run(*command).stdout != original:
         raise AssertionError("JSON object order changed grouped partition assignment")
@@ -330,6 +354,9 @@ with tempfile.TemporaryDirectory() as directory:
         else:
             changed = {}
         group_path.write_text(json.dumps(changed))
+        rejected_selection = run(*selection, check=False)
+        if rejected_selection.returncode == 0 or rejected_selection.stdout:
+            raise AssertionError(f"{mutation} groups emitted a usable build selection")
         rejected = run(*command, check=False)
         if rejected.returncode == 0 or rejected.stdout:
             raise AssertionError(f"{mutation} groups emitted a usable partial plan")
