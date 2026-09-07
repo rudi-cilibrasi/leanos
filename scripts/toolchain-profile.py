@@ -43,8 +43,16 @@ def sha256(path: Path) -> str:
 
 
 def load_json(path: Path) -> Any:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ProfileError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
     except (OSError, json.JSONDecodeError) as error:
         raise ProfileError(f"cannot read {path}: {error}") from error
 
@@ -55,6 +63,18 @@ def require_string(value: Any, field: str) -> str:
     return value
 
 
+def package_inventory(packages: Any, field: str) -> dict[str, str]:
+    if not isinstance(packages, list) or not packages or any(
+        not isinstance(pin, str) or APT_PACKAGE_RE.fullmatch(pin) is None
+        for pin in packages
+    ) or len(packages) != len(set(packages)):
+        raise ProfileError(f"{field} must contain unique exact package pins")
+    inventory = {pin.split("=", 1)[0]: pin for pin in packages}
+    if len(inventory) != len(packages):
+        raise ProfileError(f"{field} must contain unique package names")
+    return inventory
+
+
 def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, Any]:
     if not isinstance(data, dict) or data.get("schema") != "leanos-toolchain-profiles-v1":
         raise ProfileError("toolchain profile manifest has an unrecognized schema")
@@ -62,10 +82,10 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
     apt_packages = data.get("canonical_apt_packages")
     if not isinstance(apt_packages, list) or not apt_packages:
         raise ProfileError("canonical_apt_packages must be a nonempty list")
-    if len(apt_packages) != len(set(apt_packages)) or any(
+    if any(
         not isinstance(package, str) or APT_PACKAGE_RE.fullmatch(package) is None
         for package in apt_packages
-    ):
+    ) or len(apt_packages) != len(set(apt_packages)):
         raise ProfileError(
             "canonical_apt_packages must contain unique exact package pins"
         )
@@ -98,6 +118,8 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
             )
         if status == "canonical":
             canonical.append(profile_id)
+        if profile.get("evidence_tier") != "compatibility-v1":
+            raise ProfileError(f"profile {profile_id} has an unknown or missing evidence tier")
 
         environment = profile.get("reference_environment")
         if not isinstance(environment, dict):
@@ -111,10 +133,18 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
         )
         if not DIGEST_RE.fullmatch(digest):
             raise ProfileError(f"profile {profile_id} has a floating CI image reference")
+        inventory = package_inventory(profile.get("apt_packages", apt_packages),
+                                      f"{profile_id}.apt_packages")
+        if set(inventory) != set(apt_packages_by_name):
+            raise ProfileError(f"profile {profile_id} has an incomplete package inventory")
+        if status == "canonical" and inventory != apt_packages_by_name:
+            raise ProfileError("canonical profile cannot override canonical_apt_packages")
 
         selected_lean = require_string(
             profile.get("lean_toolchain"), f"{profile_id}.lean_toolchain"
         )
+        if re.fullmatch(r"leanprover/lean4:v\d+\.\d+\.\d+", selected_lean) is None:
+            raise ProfileError(f"profile {profile_id} has a floating Lean toolchain")
         if lean_toolchain is not None and selected_lean != lean_toolchain:
             raise ProfileError(
                 f"profile {profile_id} Lean toolchain differs from lean-toolchain"
@@ -140,10 +170,10 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
             raise ProfileError(f"profile {profile_id} compiler package is not pinned")
         compiler_pin = package.split(maxsplit=1)[0]
         compiler_name = compiler_pin.split("=", 1)[0]
-        if apt_packages_by_name.get(compiler_name) != compiler_pin:
+        if inventory.get(compiler_name) != compiler_pin:
             raise ProfileError(
                 f"profile {profile_id} compiler package differs from "
-                "canonical_apt_packages"
+                "selected apt package inventory"
             )
 
         shared = profile.get("shared_tools")
@@ -164,10 +194,10 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
                         "apt package pins"
                     )
                 package_name = package_pin.split("=", 1)[0]
-                if apt_packages_by_name.get(package_name) != package_pin:
+                if inventory.get(package_name) != package_pin:
                     raise ProfileError(
                         f"profile {profile_id} shared tool {tool} differs from "
-                        "canonical_apt_packages"
+                        "selected apt package inventory"
                     )
 
         interfaces = profile.get("interfaces")
@@ -177,6 +207,9 @@ def check_manifest(data: Any, lean_toolchain: str | None = None) -> dict[str, An
             raise ProfileError(f"profile {profile_id} has an unsupported Lean/C interface")
         if interfaces.get("direct_port_elf") not in ELF_LAYOUTS:
             raise ProfileError(f"profile {profile_id} has an unknown ELF normalization")
+        expected_layout = {("gcc", 13): "gcc-reference-v1", ("clang", 18): "clang18-v1"}
+        if interfaces["direct_port_elf"] != expected_layout.get((family, major)):
+            raise ProfileError(f"profile {profile_id} compiler cannot borrow this ELF normalization")
         by_id[profile_id] = profile
 
     if canonical != [default_profile]:
