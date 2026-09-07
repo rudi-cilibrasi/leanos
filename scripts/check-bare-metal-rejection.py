@@ -74,10 +74,14 @@ def load_manifest(path: Path) -> dict:
         "expectedPrefix", "expectedTerminal", "machine",
     } or value["schemaVersion"] != 1:
         raise ClassificationError("manifest-invalid", "unsupported manifest shape")
-    if not HEX40.fullmatch(value["sourceRevision"]):
+    if not isinstance(value["sourceRevision"], str) or not HEX40.fullmatch(
+        value["sourceRevision"]
+    ):
         raise ClassificationError("manifest-invalid", "invalid source revision")
-    if not all(HEX64.fullmatch(value[field]) for field in (
-            "isoSha256", "elfSha256", "serialProtocolSha256")):
+    if not all(
+        isinstance(value[field], str) and HEX64.fullmatch(value[field])
+        for field in ("isoSha256", "elfSha256", "serialProtocolSha256")
+    ):
         raise ClassificationError("manifest-invalid", "invalid artifact digest")
     prefix = value["expectedPrefix"]
     if (not isinstance(prefix, list) or len(prefix) > 256

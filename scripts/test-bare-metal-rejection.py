@@ -153,6 +153,17 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.iso.write_bytes(b"changed")
         self.assert_result("digest-mismatch", self.terminal.encode())
 
+    def test_rejects_non_string_revision_and_digest_fields(self):
+        for field in (
+            "sourceRevision",
+            "isoSha256",
+            "elfSha256",
+            "serialProtocolSha256",
+        ):
+            with self.subTest(field=field):
+                self.write_manifest(**{field: 1})
+                self.assert_result("manifest-invalid", self.terminal.encode())
+
     def test_rejects_protocol_revision_and_row_contract_drift(self):
         self.protocol.write_text(
             self.protocol.read_text(encoding="utf-8").replace(
