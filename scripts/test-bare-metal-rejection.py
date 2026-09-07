@@ -12,6 +12,7 @@ SCRIPT = Path(__file__).with_name("check-bare-metal-rejection.py")
 SPEC = importlib.util.spec_from_file_location("bare_metal_rejection", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+PROTOCOL_PREFIX = "LEANOS" + "/"
 
 
 class BareMetalRejectionTest(unittest.TestCase):
@@ -69,7 +70,11 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assert_result("malformed-protocol", b"not a terminal\n")
         self.assert_result("wrong-rejection", b"LEANOS/1 BOOTALLOC status=FAIL reason=other\n")
         self.assert_result("unexpected-success", b"LEANOS/1 CPL3 status=READY\n" + self.terminal.encode())
-        self.assert_result("unexpected-success", b"LEANOS/22 ENTER origin=cpl3\n" + self.terminal.encode())
+        self.assert_result(
+            "unexpected-success",
+            f"{PROTOCOL_PREFIX}22 ENTER origin=cpl3\n".encode()
+            + self.terminal.encode(),
+        )
         self.assert_result(
             "malformed-protocol",
             b"LEANOS/1 SERIAL status=READY\nLEANOS/1 UNKNOWN value=1\n"
