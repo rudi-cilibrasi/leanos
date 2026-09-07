@@ -30,9 +30,9 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.protocol.write_text(
             "record\t1\tSERIAL\tserial\tLEANOS/1 SERIAL\n"
             "record\t1\tBOOTALLOC\tbootalloc\tLEANOS/1 BOOTALLOC\n"
-            "record\t8\tTERMINAL\tterminal\tLEANOS/8 TERMINAL\n"
-            "record\t22\tENTER\tenter\tLEANOS/22 ENTER\n"
-            "record\t22\tOFFER\toffer\tLEANOS/22 OFFER\n",
+            f"record\t8\tTERMINAL\tterminal\t{PROTOCOL_PREFIX}8 TERMINAL\n"
+            f"record\t22\tENTER\tenter\t{PROTOCOL_PREFIX}22 ENTER\n"
+            f"record\t22\tOFFER\toffer\t{PROTOCOL_PREFIX}22 OFFER\n",
             encoding="utf-8",
         )
         self.revision = "1" * 40
