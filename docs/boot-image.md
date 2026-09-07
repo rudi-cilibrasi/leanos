@@ -207,6 +207,23 @@ cumulative duration in whole seconds. `scripts/check-build-timing.py` rejects a
 missing, reordered, malformed, or arithmetically inconsistent record before a
 timed build can succeed. Controlled fixtures exercise those failures.
 
+A timed build also writes a diagnostic sibling named
+`<timing-file-without-.tsv>-bootstrap.tsv`. Its four columns are `phase`,
+`phase_seconds`, `total_seconds`, and `mode`. It separates setup/signatures,
+oracle generation (including its own Lake builds), boot-plan stubs, the explicit
+Lake build, C-cache checking, and each generated Lean C module. Module rows
+distinguish `generated` from `reused`; a cache hit is not evidence of a cold
+compilation. Matching `build-bootstrap` records also appear in the build log.
+The existing six-phase timing format is unchanged.
+
+Rows describe successfully completed work. A failed command keeps its original
+failure status and leaves a prefix without `complete`; do not interpret a
+partial file as a successful bootstrap. The independent Clang lane retains
+this diagnostic even on failure, separately from its reproducibility manifest.
+The diagnostic does not change compilation order, cache policy, runner count,
+or the independent cold-build requirement. It is not a new admission gate or
+an end-to-end performance improvement claim.
+
 Required CI image producers set this path explicitly. Emulator shards bind the
 record into their evidence tarballs; the primary and independent Clang builds,
 release reproducibility builds, release gate, browser build, and optional
