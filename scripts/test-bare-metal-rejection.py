@@ -94,6 +94,17 @@ class BareMetalRejectionTest(unittest.TestCase):
 
         self.assertEqual(result["result"], "exact-typed-rejection")
 
+    def test_classifies_a_different_production_final_reason_as_wrong_rejection(self):
+        final_identity = PROTOCOL_PREFIX + "3 FINAL"
+        self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"
+        self.write_manifest()
+
+        self.assert_result(
+            "wrong-rejection",
+            ("LEANOS/1 SERIAL status=READY\n" +
+             f"{final_identity} status=FAIL reason=other\n").encode(),
+        )
+
     def test_rejects_relabelled_nonterminal_protocol_identity(self):
         self.write_manifest(
             expectedTerminal="LEANOS/3 ORACLE status=FAIL reason=made-up"

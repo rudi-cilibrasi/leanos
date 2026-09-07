@@ -162,6 +162,17 @@ def require_protocol_record(line: str, identities: frozenset[str]) -> None:
         )
 
 
+def is_platform_rejection(line: str) -> bool:
+    identity = RECORD_IDENTITY.match(line)
+    return (
+        identity is not None
+        and identity.group(1) in REJECTION_TERMINAL_IDENTITIES
+        and re.fullmatch(
+            r"LEANOS/[0-9]+ [A-Z0-9_-]+ status=FAIL reason=[a-z0-9-]+", line
+        ) is not None
+    )
+
+
 def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
              source_revision: str, serial_protocol: Path | None = None) -> dict:
     manifest = load_manifest(manifest_path)
@@ -207,7 +218,10 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     terminal_indexes = [index for index, line in enumerate(lines) if " status=FAIL reason=" in line]
     if any(
         FORBIDDEN.match(line)
-        and not (index == len(lines) - 1 and line == expected)
+        and not (
+            index == len(lines) - 1
+            and (line == expected or is_platform_rejection(line))
+        )
         for index, line in enumerate(lines)
     ):
         raise ClassificationError("unexpected-success", "runtime authority record observed")
