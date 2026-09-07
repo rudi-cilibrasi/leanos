@@ -27,6 +27,12 @@ RECORD_IDENTITY = re.compile(r"^(LEANOS/[0-9]+ [A-Z0-9_-]+)(?:\s|$)")
 PRETERMINAL_AUTHORITY = re.compile(
     r"(?:^|\s)(?:origin=cpl3|cpl=3|(?:status|result)=(?:PASS|FAIL))(?:\s|$)"
 )
+# These are the only production record families emitted as ordinary
+# platform-admission failures before CPL3. Generated-protocol membership alone
+# is insufficient: another real record identity must not be relabeled FAIL.
+REJECTION_TERMINAL_IDENTITIES = frozenset(
+    ("LEANOS/3 FINAL", "LEANOS/7 BOOTALLOC")
+)
 
 
 class ClassificationError(Exception):
@@ -174,6 +180,14 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
                 "manifest-invalid", "pre-terminal authority record is forbidden"
             )
     require_protocol_record(manifest["expectedTerminal"], protocol)
+    terminal_identity = RECORD_IDENTITY.match(manifest["expectedTerminal"])
+    if (
+        terminal_identity is None
+        or terminal_identity.group(1) not in REJECTION_TERMINAL_IDENTITIES
+    ):
+        raise ClassificationError(
+            "manifest-invalid", "terminal identity is not a platform rejection"
+        )
     if sha256(iso) != manifest["isoSha256"] or sha256(elf) != manifest["elfSha256"]:
         raise ClassificationError("digest-mismatch", "artifact digest mismatch")
     data = read_bounded(

@@ -32,14 +32,16 @@ class BareMetalRejectionTest(unittest.TestCase):
             "leanos-serial-protocol\t1\n"
             f"source-revision\t{self.revision}\n"
             "record\t1\tSERIAL\tLEANOS_SERIAL_1_SERIAL\tLEANOS/1 SERIAL\n"
-            "record\t1\tBOOTALLOC\tLEANOS_SERIAL_1_BOOTALLOC\tLEANOS/1 BOOTALLOC\n"
+            "record\t3\tFINAL\tLEANOS_SERIAL_3_FINAL\tLEANOS/3 FINAL\n"
+            "record\t3\tORACLE\tLEANOS_SERIAL_3_ORACLE\tLEANOS/3 ORACLE\n"
+            "record\t7\tBOOTALLOC\tLEANOS_SERIAL_7_BOOTALLOC\tLEANOS/7 BOOTALLOC\n"
             f"record\t8\tTERMINAL\tLEANOS_SERIAL_8_TERMINAL\t{PROTOCOL_PREFIX}8 TERMINAL\n"
             f"record\t22\tENTER\tLEANOS_SERIAL_22_ENTER\t{PROTOCOL_PREFIX}22 ENTER\n"
             f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n"
             f"record\t10\tIPC\tLEANOS_SERIAL_10_IPC\t{PROTOCOL_PREFIX}10 IPC\n",
             encoding="utf-8",
         )
-        self.terminal = "LEANOS/1 BOOTALLOC status=FAIL reason=platform-inventory"
+        self.terminal = "LEANOS/7 BOOTALLOC status=FAIL reason=platform-inventory"
         self.write_manifest()
 
     def tearDown(self):
@@ -83,10 +85,6 @@ class BareMetalRejectionTest(unittest.TestCase):
 
     def test_accepts_production_final_failure_as_the_expected_terminal(self):
         final_identity = PROTOCOL_PREFIX + "3 FINAL"
-        with self.protocol.open("a", encoding="utf-8") as stream:
-            stream.write(
-                f"record\t3\tFINAL\tLEANOS_SERIAL_3_FINAL\t{final_identity}\n"
-            )
         self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"
         self.write_manifest()
 
@@ -96,10 +94,17 @@ class BareMetalRejectionTest(unittest.TestCase):
 
         self.assertEqual(result["result"], "exact-typed-rejection")
 
+    def test_rejects_relabelled_nonterminal_protocol_identity(self):
+        self.write_manifest(
+            expectedTerminal="LEANOS/3 ORACLE status=FAIL reason=made-up"
+        )
+
+        self.assert_result("manifest-invalid", self.terminal.encode())
+
     def test_distinguishes_controlled_nonpassing_classes(self):
         self.assert_result("silence-timeout", b"")
         self.assert_result("malformed-protocol", b"not a terminal\n")
-        self.assert_result("wrong-rejection", b"LEANOS/1 BOOTALLOC status=FAIL reason=other\n")
+        self.assert_result("wrong-rejection", b"LEANOS/7 BOOTALLOC status=FAIL reason=other\n")
         self.assert_result("unexpected-success", b"LEANOS/1 CPL3 status=READY\n" + self.terminal.encode())
         self.assert_result(
             "unexpected-success",
