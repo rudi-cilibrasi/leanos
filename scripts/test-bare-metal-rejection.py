@@ -35,7 +35,8 @@ class BareMetalRejectionTest(unittest.TestCase):
             "record\t1\tBOOTALLOC\tLEANOS_SERIAL_1_BOOTALLOC\tLEANOS/1 BOOTALLOC\n"
             f"record\t8\tTERMINAL\tLEANOS_SERIAL_8_TERMINAL\t{PROTOCOL_PREFIX}8 TERMINAL\n"
             f"record\t22\tENTER\tLEANOS_SERIAL_22_ENTER\t{PROTOCOL_PREFIX}22 ENTER\n"
-            f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n",
+            f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n"
+            f"record\t10\tIPC\tLEANOS_SERIAL_10_IPC\t{PROTOCOL_PREFIX}10 IPC\n",
             encoding="utf-8",
         )
         self.terminal = "LEANOS/1 BOOTALLOC status=FAIL reason=platform-inventory"
@@ -108,6 +109,11 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.write_manifest(expectedPrefix=[
             "LEANOS/1 SERIAL status=READY",
             f"{PROTOCOL_PREFIX}22 OFFER origin=cpl3 result=PASS",
+        ])
+        self.assert_result("manifest-invalid", self.terminal.encode())
+        self.write_manifest(expectedPrefix=[
+            "LEANOS/1 SERIAL status=READY",
+            f"{PROTOCOL_PREFIX}10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10",
         ])
         self.assert_result("manifest-invalid", self.terminal.encode())
         self.write_manifest(expectedPrefix=[

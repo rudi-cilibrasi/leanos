@@ -25,7 +25,7 @@ FORBIDDEN = re.compile(
 MACHINE_FIELDS = ("model", "cpu", "firmware", "uart", "captureAdapter")
 RECORD_IDENTITY = re.compile(r"^(LEANOS/[0-9]+ [A-Z0-9_-]+)(?:\s|$)")
 PRETERMINAL_AUTHORITY = re.compile(
-    r"(?:^|\s)(?:origin=cpl3|(?:status|result)=(?:PASS|FAIL))(?:\s|$)"
+    r"(?:^|\s)(?:origin=cpl3|cpl=3|(?:status|result)=(?:PASS|FAIL))(?:\s|$)"
 )
 
 
