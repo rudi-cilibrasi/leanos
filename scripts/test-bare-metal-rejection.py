@@ -78,6 +78,18 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(result["captureBytes"], self.capture.stat().st_size)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
+    def test_accepts_production_final_failure_as_the_expected_terminal(self):
+        with self.protocol.open("a", encoding="utf-8") as stream:
+            stream.write("record\t3\tFINAL\tfinal\tLEANOS/3 FINAL\n")
+        self.terminal = "LEANOS/3 FINAL status=FAIL reason=dma-required-missing"
+        self.write_manifest()
+
+        result = self.classify(
+            ("LEANOS/1 SERIAL status=READY\n" + self.terminal + "\n").encode()
+        )
+
+        self.assertEqual(result["result"], "exact-typed-rejection")
+
     def test_distinguishes_controlled_nonpassing_classes(self):
         self.assert_result("silence-timeout", b"")
         self.assert_result("malformed-protocol", b"not a terminal\n")

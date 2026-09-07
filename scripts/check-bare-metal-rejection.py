@@ -148,7 +148,11 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines()
     expected = manifest["expectedTerminal"]
     terminal_indexes = [index for index, line in enumerate(lines) if " status=FAIL reason=" in line]
-    if any(FORBIDDEN.match(line) for line in lines):
+    if any(
+        FORBIDDEN.match(line)
+        and not (index == len(lines) - 1 and line == expected)
+        for index, line in enumerate(lines)
+    ):
         raise ClassificationError("unexpected-success", "runtime authority record observed")
     if expected not in lines:
         result = "wrong-rejection" if terminal_indexes else "malformed-protocol"
