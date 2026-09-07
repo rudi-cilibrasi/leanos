@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Classify a bounded bare-metal serial capture against a named manifest."""
+"""Classify a bounded bare-metal serial capture against a named manifest.
+
+Operator procedure and evidence-bundle requirements are documented in
+``docs/bare-metal-rejection-capture.md``.
+"""
 
 import argparse
 import hashlib
