@@ -24,8 +24,17 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.elf = self.root / "kernel.elf"
         self.capture = self.root / "serial.log"
         self.manifest = self.root / "machine.json"
+        self.protocol = self.root / "serial-protocol.tsv"
         self.iso.write_bytes(b"iso")
         self.elf.write_bytes(b"elf")
+        self.protocol.write_text(
+            "record\t1\tSERIAL\tserial\tLEANOS/1 SERIAL\n"
+            "record\t1\tBOOTALLOC\tbootalloc\tLEANOS/1 BOOTALLOC\n"
+            "record\t8\tTERMINAL\tterminal\tLEANOS/8 TERMINAL\n"
+            "record\t22\tENTER\tenter\tLEANOS/22 ENTER\n"
+            "record\t22\tOFFER\toffer\tLEANOS/22 OFFER\n",
+            encoding="utf-8",
+        )
         self.revision = "1" * 40
         self.terminal = "LEANOS/1 BOOTALLOC status=FAIL reason=platform-inventory"
         self.write_manifest()
@@ -39,6 +48,9 @@ class BareMetalRejectionTest(unittest.TestCase):
             "sourceRevision": self.revision,
             "isoSha256": hashlib.sha256(self.iso.read_bytes()).hexdigest(),
             "elfSha256": hashlib.sha256(self.elf.read_bytes()).hexdigest(),
+            "serialProtocolSha256": hashlib.sha256(
+                self.protocol.read_bytes()
+            ).hexdigest(),
             "expectedPrefix": ["LEANOS/1 SERIAL status=READY"],
             "expectedTerminal": self.terminal,
             "machine": {
@@ -53,7 +65,7 @@ class BareMetalRejectionTest(unittest.TestCase):
     def classify(self, text, **kwargs):
         self.capture.write_bytes(text)
         return MODULE.classify(self.manifest, self.iso, self.elf, self.capture,
-                               kwargs.get("revision", self.revision))
+                               kwargs.get("revision", self.revision), self.protocol)
 
     def assert_result(self, result, text, **kwargs):
         with self.assertRaises(MODULE.ClassificationError) as caught:
@@ -76,6 +88,17 @@ class BareMetalRejectionTest(unittest.TestCase):
             f"{PROTOCOL_PREFIX}22 ENTER origin=cpl3\n".encode()
             + self.terminal.encode(),
         )
+        self.write_manifest(expectedPrefix=[
+            "LEANOS/1 SERIAL status=READY",
+            f"{PROTOCOL_PREFIX}22 OFFER origin=cpl3 result=PASS",
+        ])
+        self.assert_result("manifest-invalid", self.terminal.encode())
+        self.write_manifest(expectedPrefix=[
+            "LEANOS/1 SERIAL status=READY",
+            f"{PROTOCOL_PREFIX}8 TERMINAL status=FAIL",
+        ])
+        self.assert_result("manifest-invalid", self.terminal.encode())
+        self.write_manifest()
         self.assert_result(
             "malformed-protocol",
             b"LEANOS/1 SERIAL status=READY\nLEANOS/1 UNKNOWN value=1\n"

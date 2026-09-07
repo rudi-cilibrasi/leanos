@@ -8,6 +8,7 @@ Operator procedure and evidence-bundle requirements are documented in
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -21,6 +22,10 @@ FORBIDDEN = re.compile(
     r"^LEANOS/[0-9]+ (CPL3|ENTER|ENTRY|TIMER|CONTEXT|SWITCH|SYSCALL|PEER|TLB-CPL3|FINAL)(?:\s|$)"
 )
 MACHINE_FIELDS = ("model", "cpu", "firmware", "uart", "captureAdapter")
+RECORD_IDENTITY = re.compile(r"^(LEANOS/[0-9]+ [A-Z0-9_-]+)(?:\s|$)")
+PRETERMINAL_AUTHORITY = re.compile(
+    r"(?:^|\s)(?:origin=cpl3|(?:status|result)=(?:PASS|FAIL))(?:\s|$)"
+)
 
 
 class ClassificationError(Exception):
@@ -58,12 +63,14 @@ def load_manifest(path: Path) -> dict:
         ) from error
     if not isinstance(value, dict) or set(value) != {
         "schemaVersion", "sourceRevision", "isoSha256", "elfSha256",
+        "serialProtocolSha256",
         "expectedPrefix", "expectedTerminal", "machine",
     } or value["schemaVersion"] != 1:
         raise ClassificationError("manifest-invalid", "unsupported manifest shape")
     if not HEX40.fullmatch(value["sourceRevision"]):
         raise ClassificationError("manifest-invalid", "invalid source revision")
-    if not all(HEX64.fullmatch(value[field]) for field in ("isoSha256", "elfSha256")):
+    if not all(HEX64.fullmatch(value[field]) for field in (
+            "isoSha256", "elfSha256", "serialProtocolSha256")):
         raise ClassificationError("manifest-invalid", "invalid artifact digest")
     prefix = value["expectedPrefix"]
     if (not isinstance(prefix, list) or len(prefix) > 256
@@ -87,9 +94,41 @@ def load_manifest(path: Path) -> dict:
     return value
 
 
+def load_protocol(path: Path) -> frozenset[str]:
+    identities = {
+        fields[4]
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if len(fields := line.split("\t")) >= 5 and fields[0] == "record"
+    }
+    if not identities:
+        raise ClassificationError("manifest-invalid", "serial protocol is empty")
+    return frozenset(identities)
+
+
+def require_protocol_record(line: str, identities: frozenset[str]) -> None:
+    match = RECORD_IDENTITY.match(line)
+    if match is None or match.group(1) not in identities:
+        raise ClassificationError(
+            "manifest-invalid", "manifest record is outside generated protocol"
+        )
+
+
 def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
-             source_revision: str) -> dict:
+             source_revision: str, serial_protocol: Path | None = None) -> dict:
     manifest = load_manifest(manifest_path)
+    protocol_path = serial_protocol or Path(os.environ.get(
+        "LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv"
+    ))
+    if sha256(protocol_path) != manifest["serialProtocolSha256"]:
+        raise ClassificationError("digest-mismatch", "serial protocol digest mismatch")
+    protocol = load_protocol(protocol_path)
+    for line in manifest["expectedPrefix"]:
+        require_protocol_record(line, protocol)
+        if PRETERMINAL_AUTHORITY.search(line):
+            raise ClassificationError(
+                "manifest-invalid", "pre-terminal authority record is forbidden"
+            )
+    require_protocol_record(manifest["expectedTerminal"], protocol)
     if source_revision != manifest["sourceRevision"]:
         raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(iso) != manifest["isoSha256"] or sha256(elf) != manifest["elfSha256"]:
@@ -128,6 +167,7 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         "sourceRevision": source_revision,
         "isoSha256": manifest["isoSha256"],
         "elfSha256": manifest["elfSha256"],
+        "serialProtocolSha256": manifest["serialProtocolSha256"],
         "captureSha256": hashlib.sha256(data).hexdigest(),
         "captureBytes": len(data),
         "machine": manifest["machine"],
@@ -141,11 +181,12 @@ def main() -> int:
     parser.add_argument("iso", type=Path)
     parser.add_argument("elf", type=Path)
     parser.add_argument("capture", type=Path)
+    parser.add_argument("--serial-protocol", type=Path)
     parser.add_argument("--source-revision", required=True)
     args = parser.parse_args()
     try:
         result = classify(args.manifest, args.iso, args.elf, args.capture,
-                          args.source_revision)
+                          args.source_revision, args.serial_protocol)
     except ClassificationError as error:
         print(json.dumps({"schemaVersion": 1, "result": error.result,
                           "detail": error.detail}, sort_keys=True))

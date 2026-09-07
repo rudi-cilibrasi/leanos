@@ -32,8 +32,10 @@ or proofs.
    for 115200 baud, 8 data bits, no parity, one stop bit, and no flow control.
 4. Create a manifest accepted by
    `scripts/check-bare-metal-rejection.py`. `expectedPrefix` must list every
-   expected pre-terminal protocol record in order. `expectedTerminal` must be
-   the one rejection predicted from the recorded platform inventory.
+   expected pre-terminal protocol record in order and every identity must exist
+   in the revision's generated `serial-protocol.tsv`. `expectedTerminal` must
+   be the one generated rejection identity predicted from the recorded platform
+   inventory. Record the generated protocol file's SHA-256 digest.
 5. Write the verified ISO to removable media. Confirm its digest again after
    writing or retain an independently read-back image digest.
 
@@ -45,6 +47,7 @@ Example manifest shape (placeholder values are deliberately not valid evidence):
   "sourceRevision": "<40 lowercase hex characters>",
   "isoSha256": "<64 lowercase hex characters>",
   "elfSha256": "<64 lowercase hex characters>",
+  "serialProtocolSha256": "<64 lowercase hex characters>",
   "expectedPrefix": ["LEANOS/1 SERIAL status=READY"],
   "expectedTerminal": "LEANOS/1 BOOTALLOC status=FAIL reason=platform-inventory",
   "machine": {
@@ -78,6 +81,7 @@ Classify a copied snapshot of those bytes:
 ```sh
 python3 scripts/check-bare-metal-rejection.py \
   machine.json build/leanos.iso build/leanos.elf serial.raw \
+  --serial-protocol build/boot/serial-protocol.tsv \
   --source-revision "$(git rev-parse HEAD)" > classification.json
 ```
 
@@ -92,7 +96,8 @@ Retain these files together without editing the raw capture:
 
 - manifest and classification JSON;
 - raw serial bytes and a separately named CRLF-to-LF normalized transcript;
-- ISO, ELF, source revision, toolchain profile, and their SHA-256 digests;
+- ISO, ELF, generated serial protocol, source revision, toolchain profile, and
+  their SHA-256 digests;
 - build command/configuration and capture command/configuration;
 - bounded machine/firmware/PCI inventory and firmware-setting record;
 - operator identifier, UTC observation interval, redaction note, and reset result.
