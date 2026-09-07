@@ -1,0 +1,100 @@
+name: Toolchain compatibility
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'LeanOS.lean'
+      - 'LeanOS/**'
+      - 'boot/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'lean-toolchain'
+      - 'lakefile.toml'
+      - 'lake-manifest.json'
+      - 'Containerfile.ci'
+
+# This workflow is observational, not a release or required-admission input.
+# Failures remain red and retain diagnostics; do not turn them into success.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: toolchain-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: safe.directory
+  GIT_CONFIG_VALUE_0: ${{ github.workspace }}
+
+jobs:
+  profiles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.registry.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Validate the registry and evidence contract
+        run: |
+          python3 scripts/test-toolchain-profile.py
+          python3 scripts/test-toolchain-compatibility.py
+      - name: Select every registered profile
+        id: registry
+        run: |
+          matrix="$(python3 scripts/toolchain-compatibility.py matrix)"
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  evidence:
+    name: Compatibility evidence (${{ matrix.profile }})
+    needs: profiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.profiles.outputs.matrix) }}
+    container: ${{ matrix.image }}
+    env:
+      LEANOS_CI_IMAGE_DIGEST: ${{ matrix.digest }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Restore profile-isolated Lean cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-compatibility-v1-${{ matrix.profile }}-${{ matrix.digest }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+      - name: Run bounded fail-closed compatibility evidence
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: python3 scripts/toolchain-compatibility.py run --profile "$PROFILE"
+      - name: Retain contracts and diagnostics, including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: toolchain-compatibility-${{ matrix.profile }}
+          path: build/compatibility/
+          if-no-files-found: error
+          retention-days: 30
+
+  compare:
+    name: Cross-profile semantic comparison
+    needs: [profiles, evidence]
+    if: ${{ always() && needs.profiles.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: toolchain-compatibility-*
+          path: build/compatibility-download
+      - name: Require complete same-revision semantic agreement
+        run: python3 scripts/toolchain-compatibility.py compare build/compatibility-download/*/report.json

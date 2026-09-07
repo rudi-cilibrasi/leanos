@@ -161,6 +161,7 @@ python3 scripts/test-setup-lean-cache.py
 ./scripts/test-main-ruleset-policy.py
 
 ./scripts/test-toolchain-profile.py
+python3 scripts/test-toolchain-compatibility.py
 ./scripts/render-toolchain-consumers.py --check
 ./scripts/test-render-toolchain-consumers.py
 

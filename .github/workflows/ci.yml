@@ -82,7 +82,9 @@ jobs:
         run: python3 scripts/test-main-ruleset-policy.py
 
       - name: Test toolchain profile contract
-        run: python3 scripts/test-toolchain-profile.py
+        run: |
+          python3 scripts/test-toolchain-profile.py
+          python3 scripts/test-toolchain-compatibility.py
 
       - name: Test image-build timing evidence contract
         run: python3 scripts/test-build-timing.py

@@ -2,9 +2,9 @@
 
 ## Status
 
-Accepted incrementally; this first slice records the existing GCC and Clang
-lanes. Candidate-profile automation and promotion history remain future work in
-issue #275.
+Accepted incrementally. The registry records the existing GCC and Clang lanes;
+the compatibility workflow adds scheduled observation and a bounded evidence
+tier. New component versions still require reviewed, immutable profiles.
 
 ## Decision
 
@@ -59,9 +59,28 @@ Changing a pin creates a reviewed profile change; it does not silently widen an
 existing profile. Promoting a future candidate requires a separate pull request
 that records its evidence history, makes its required lanes blocking, and
 reviews any new interface policy. Replacing the canonical profile additionally
-requires an explicit release/reproducibility migration. The larger scheduled
-candidate matrix should be coordinated with issue #266 so it does not recreate
-unbounded per-commit CI cost.
+requires an explicit release/reproducibility migration.
+
+The `compatibility-v1` tier runs all Lean library modules, controlled proof and
+adapter failures, hosted generated boundaries, a selected image build with
+profile-bound final-ELF policy, ELF and serial-validator negatives, and PR-tier
+emulator shard 0 of 4. The workflow runs daily and on relevant pull-request
+changes. It compares same-revision oracle results, protocol vocabulary, and the
+reviewed ELF ownership policy only after each profile passes the production
+validators. Exact guest transcripts and debug-exit status are checked by the
+existing scenario runners; binary hashes and address-bearing transcript bytes
+are not compared across compilers. This is bounded integration evidence, not
+equivalence of every execution or every release scenario.
+
+Promotion requires at least 14 consecutive UTC days of successful scheduled
+evidence for unchanged profile pins and adapters. Missing, canceled, or failed
+days do not count; a changed profile or failed day restarts the window. The
+promotion review records run links, profile and registry identities, source
+revisions, and measured runtime within the 60-minute lane budget. Before making
+a new profile required, run the complete integration tier and review its runner
+availability and worst observed runtime. Do not add candidate job names to
+required checks. Detailed admission and retirement steps are in the
+[compatibility guide](../toolchain-compatibility.md).
 
 ## Consequences
 
@@ -72,8 +91,9 @@ cannot pass by accidentally borrowing another compiler's ELF exceptions.
 
 The registry does not prove compiler correctness, cross-compiler semantic
 equivalence, or compatibility with arbitrary patch releases. The current
-profiles still share most of one pinned container stack, and mutable external
-publishing inputs such as the Pages dependency installation need their own
-follow-up hardening. Adding profiles increases evidence and maintenance cost,
+profiles still share most of one pinned container stack. Pages now builds in the
+pinned canonical environment and deploys a revision-bound bundle, rather than
+independently reinstalling exact apt packages on a mutable runner. Adding
+profiles increases evidence and maintenance cost,
 so each one needs a stated purpose and explicit interfaces rather than a broad
 version range.

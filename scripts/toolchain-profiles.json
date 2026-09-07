@@ -24,6 +24,7 @@
   "profiles": [
     {
       "id": "gcc-reference",
+      "evidence_tier": "compatibility-v1",
       "status": "canonical",
       "claim": "byte-reproducible-reference",
       "reference_environment": {
@@ -55,6 +56,7 @@
     },
     {
       "id": "clang-reference",
+      "evidence_tier": "compatibility-v1",
       "status": "supported",
       "claim": "semantic-compatibility",
       "reference_environment": {
