@@ -15,6 +15,7 @@ import sys
 
 MAX_CAPTURE_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024
+MAX_PROTOCOL_BYTES = 1024 * 1024
 MAX_MACHINE_FIELD_CHARS = 512
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -94,12 +95,54 @@ def load_manifest(path: Path) -> dict:
     return value
 
 
-def load_protocol(path: Path) -> frozenset[str]:
-    identities = {
-        fields[4]
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if len(fields := line.split("\t")) >= 5 and fields[0] == "record"
-    }
+def load_protocol(path: Path, source_revision: str) -> frozenset[str]:
+    try:
+        lines = read_bounded(
+            path, MAX_PROTOCOL_BYTES, "manifest-invalid",
+            "serial protocol exceeds byte bound",
+        ).decode("utf-8").splitlines()
+    except UnicodeDecodeError as error:
+        raise ClassificationError(
+            "manifest-invalid", "serial protocol is not UTF-8"
+        ) from error
+    if lines[:2] != [
+        "leanos-serial-protocol\t1",
+        f"source-revision\t{source_revision}",
+    ]:
+        raise ClassificationError(
+            "manifest-invalid", "serial protocol header or source revision differs"
+        )
+    identities = set()
+    symbols = set()
+    for line in lines[2:]:
+        fields = line.split("\t")
+        if fields[0] == "family" and len(fields) == 4:
+            version, symbol, identity = fields[1:]
+            valid = (
+                version.isdigit()
+                and symbol == f"LEANOS_SERIAL_FAMILY_{version}"
+                and identity == f"LEANOS/{version}"
+            )
+        elif fields[0] == "record" and len(fields) == 5:
+            version, tag, symbol, identity = fields[1:]
+            valid = (
+                version.isdigit()
+                and re.fullmatch(r"[A-Z][A-Z0-9-]*", tag) is not None
+                and symbol == f"LEANOS_SERIAL_{version}_{tag.replace('-', '_')}"
+                and identity == f"LEANOS/{version} {tag}"
+            )
+            if valid:
+                if identity in identities:
+                    valid = False
+                identities.add(identity)
+        else:
+            valid = False
+            symbol = ""
+        if not valid or symbol in symbols:
+            raise ClassificationError(
+                "manifest-invalid", "malformed or duplicate serial protocol row"
+            )
+        symbols.add(symbol)
     if not identities:
         raise ClassificationError("manifest-invalid", "serial protocol is empty")
     return frozenset(identities)
@@ -119,9 +162,11 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     protocol_path = serial_protocol or Path(os.environ.get(
         "LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv"
     ))
+    if source_revision != manifest["sourceRevision"]:
+        raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(protocol_path) != manifest["serialProtocolSha256"]:
         raise ClassificationError("digest-mismatch", "serial protocol digest mismatch")
-    protocol = load_protocol(protocol_path)
+    protocol = load_protocol(protocol_path, manifest["sourceRevision"])
     for line in manifest["expectedPrefix"]:
         require_protocol_record(line, protocol)
         if PRETERMINAL_AUTHORITY.search(line):
@@ -129,8 +174,6 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
                 "manifest-invalid", "pre-terminal authority record is forbidden"
             )
     require_protocol_record(manifest["expectedTerminal"], protocol)
-    if source_revision != manifest["sourceRevision"]:
-        raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(iso) != manifest["isoSha256"] or sha256(elf) != manifest["elfSha256"]:
         raise ClassificationError("digest-mismatch", "artifact digest mismatch")
     data = read_bounded(

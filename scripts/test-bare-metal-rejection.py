@@ -27,15 +27,17 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.protocol = self.root / "serial-protocol.tsv"
         self.iso.write_bytes(b"iso")
         self.elf.write_bytes(b"elf")
+        self.revision = "1" * 40
         self.protocol.write_text(
-            "record\t1\tSERIAL\tserial\tLEANOS/1 SERIAL\n"
-            "record\t1\tBOOTALLOC\tbootalloc\tLEANOS/1 BOOTALLOC\n"
-            f"record\t8\tTERMINAL\tterminal\t{PROTOCOL_PREFIX}8 TERMINAL\n"
-            f"record\t22\tENTER\tenter\t{PROTOCOL_PREFIX}22 ENTER\n"
-            f"record\t22\tOFFER\toffer\t{PROTOCOL_PREFIX}22 OFFER\n",
+            "leanos-serial-protocol\t1\n"
+            f"source-revision\t{self.revision}\n"
+            "record\t1\tSERIAL\tLEANOS_SERIAL_1_SERIAL\tLEANOS/1 SERIAL\n"
+            "record\t1\tBOOTALLOC\tLEANOS_SERIAL_1_BOOTALLOC\tLEANOS/1 BOOTALLOC\n"
+            f"record\t8\tTERMINAL\tLEANOS_SERIAL_8_TERMINAL\t{PROTOCOL_PREFIX}8 TERMINAL\n"
+            f"record\t22\tENTER\tLEANOS_SERIAL_22_ENTER\t{PROTOCOL_PREFIX}22 ENTER\n"
+            f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n",
             encoding="utf-8",
         )
-        self.revision = "1" * 40
         self.terminal = "LEANOS/1 BOOTALLOC status=FAIL reason=platform-inventory"
         self.write_manifest()
 
@@ -81,7 +83,9 @@ class BareMetalRejectionTest(unittest.TestCase):
     def test_accepts_production_final_failure_as_the_expected_terminal(self):
         final_identity = PROTOCOL_PREFIX + "3 FINAL"
         with self.protocol.open("a", encoding="utf-8") as stream:
-            stream.write(f"record\t3\tFINAL\tfinal\t{final_identity}\n")
+            stream.write(
+                f"record\t3\tFINAL\tLEANOS_SERIAL_3_FINAL\t{final_identity}\n"
+            )
         self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"
         self.write_manifest()
 
@@ -126,6 +130,16 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assert_result("digest-mismatch", self.terminal.encode(), revision="2" * 40)
         self.iso.write_bytes(b"changed")
         self.assert_result("digest-mismatch", self.terminal.encode())
+
+    def test_rejects_protocol_revision_and_row_contract_drift(self):
+        self.protocol.write_text(
+            self.protocol.read_text(encoding="utf-8").replace(
+                self.revision, "2" * 40
+            ),
+            encoding="utf-8",
+        )
+        self.write_manifest()
+        self.assert_result("manifest-invalid", self.terminal.encode())
 
     def test_rejects_incomplete_machine_identity(self):
         self.write_manifest(machine={})
