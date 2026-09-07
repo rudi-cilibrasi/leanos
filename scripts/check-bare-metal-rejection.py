@@ -9,6 +9,8 @@ import re
 import sys
 
 MAX_CAPTURE_BYTES = 1024 * 1024
+MAX_MANIFEST_BYTES = 64 * 1024
+MAX_MACHINE_FIELD_CHARS = 512
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 FORBIDDEN = re.compile(
@@ -32,9 +34,25 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def read_bounded(path: Path, limit: int, result: str, detail: str) -> bytes:
+    with path.open("rb") as stream:
+        value = stream.read(limit + 1)
+    if len(value) > limit:
+        raise ClassificationError(result, detail)
+    return value
+
+
 def load_manifest(path: Path) -> dict:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if set(value) != {
+    raw = read_bounded(
+        path, MAX_MANIFEST_BYTES, "manifest-invalid", "manifest exceeds byte bound"
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ClassificationError(
+            "manifest-invalid", "manifest is not valid UTF-8 JSON"
+        ) from error
+    if not isinstance(value, dict) or set(value) != {
         "schemaVersion", "sourceRevision", "isoSha256", "elfSha256",
         "expectedPrefix", "expectedTerminal", "machine",
     } or value["schemaVersion"] != 1:
@@ -55,8 +73,10 @@ def load_manifest(path: Path) -> dict:
     ):
         raise ClassificationError("manifest-invalid", "invalid expected terminal")
     machine = value["machine"]
-    if set(machine) != set(MACHINE_FIELDS) or not all(
-        isinstance(machine[field], str) and machine[field].strip()
+    if not isinstance(machine, dict) or set(machine) != set(MACHINE_FIELDS) or not all(
+        isinstance(machine[field], str)
+        and machine[field].strip()
+        and len(machine[field]) <= MAX_MACHINE_FIELD_CHARS
         for field in MACHINE_FIELDS
     ):
         raise ClassificationError("manifest-invalid", "incomplete machine identity")
@@ -70,9 +90,12 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(iso) != manifest["isoSha256"] or sha256(elf) != manifest["elfSha256"]:
         raise ClassificationError("digest-mismatch", "artifact digest mismatch")
-    data = capture.read_bytes()
-    if len(data) > MAX_CAPTURE_BYTES:
-        raise ClassificationError("capture-failure", "capture exceeds byte bound")
+    data = read_bounded(
+        capture,
+        MAX_CAPTURE_BYTES,
+        "capture-failure",
+        "capture exceeds byte bound",
+    )
     if not data:
         raise ClassificationError("silence-timeout", "capture is empty")
     try:

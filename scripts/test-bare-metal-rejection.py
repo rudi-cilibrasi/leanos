@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("check-bare-metal-rejection.py")
 SPEC = importlib.util.spec_from_file_location("bare_metal_rejection", SCRIPT)
@@ -93,6 +94,23 @@ class BareMetalRejectionTest(unittest.TestCase):
     def test_rejects_incomplete_machine_identity(self):
         self.write_manifest(machine={})
         self.assert_result("manifest-invalid", self.terminal.encode())
+
+        self.manifest.write_text("[]", encoding="utf-8")
+        self.assert_result("manifest-invalid", self.terminal.encode())
+
+        oversized = "x" * (MODULE.MAX_MACHINE_FIELD_CHARS + 1)
+        self.write_manifest(machine={
+            "model": oversized, "cpu": "fixture-x86-64",
+            "firmware": "fixture-bios-1", "uart": "COM1 115200 8N1",
+            "captureAdapter": "fixture-usb-uart",
+        })
+        self.assert_result("manifest-invalid", self.terminal.encode())
+
+    def test_rejects_over_bound_files_before_classification(self):
+        with patch.object(MODULE, "MAX_CAPTURE_BYTES", 2):
+            self.assert_result("capture-failure", b"abc")
+        with patch.object(MODULE, "MAX_MANIFEST_BYTES", 2):
+            self.assert_result("manifest-invalid", self.terminal.encode())
 
     def test_rejects_invalid_expected_prefix(self):
         self.write_manifest(expectedPrefix=["unversioned output"])
