@@ -79,9 +79,10 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
     def test_accepts_production_final_failure_as_the_expected_terminal(self):
+        final_identity = PROTOCOL_PREFIX + "3 FINAL"
         with self.protocol.open("a", encoding="utf-8") as stream:
-            stream.write("record\t3\tFINAL\tfinal\tLEANOS/3 FINAL\n")
-        self.terminal = "LEANOS/3 FINAL status=FAIL reason=dma-required-missing"
+            stream.write(f"record\t3\tFINAL\tfinal\t{final_identity}\n")
+        self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"
         self.write_manifest()
 
         result = self.classify(
