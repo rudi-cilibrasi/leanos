@@ -12,7 +12,7 @@ MAX_CAPTURE_BYTES = 1024 * 1024
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 FORBIDDEN = re.compile(
-    r"^LEANOS/[0-9]+ (CPL3|ENTRY|TIMER|CONTEXT|SWITCH|SYSCALL|PEER|TLB-CPL3|FINAL)(?:\s|$)"
+    r"^LEANOS/[0-9]+ (CPL3|ENTER|ENTRY|TIMER|CONTEXT|SWITCH|SYSCALL|PEER|TLB-CPL3|FINAL)(?:\s|$)"
 )
 MACHINE_FIELDS = ("model", "cpu", "firmware", "uart", "captureAdapter")
 
@@ -36,13 +36,19 @@ def load_manifest(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
     if set(value) != {
         "schemaVersion", "sourceRevision", "isoSha256", "elfSha256",
-        "expectedTerminal", "machine",
+        "expectedPrefix", "expectedTerminal", "machine",
     } or value["schemaVersion"] != 1:
         raise ClassificationError("manifest-invalid", "unsupported manifest shape")
     if not HEX40.fullmatch(value["sourceRevision"]):
         raise ClassificationError("manifest-invalid", "invalid source revision")
     if not all(HEX64.fullmatch(value[field]) for field in ("isoSha256", "elfSha256")):
         raise ClassificationError("manifest-invalid", "invalid artifact digest")
+    prefix = value["expectedPrefix"]
+    if (not isinstance(prefix, list) or len(prefix) > 256
+            or not all(isinstance(line, str) and 0 < len(line) <= 512
+                       and re.fullmatch(r"LEANOS/[0-9]+ [A-Z0-9_-]+(?: .*)?", line)
+                       and " status=FAIL " not in line for line in prefix)):
+        raise ClassificationError("manifest-invalid", "invalid expected prefix")
     terminal = value["expectedTerminal"]
     if not isinstance(terminal, str) or not re.fullmatch(
         r"LEANOS/[0-9]+ [A-Z0-9_-]+ status=FAIL reason=[a-z0-9-]+", terminal
@@ -85,6 +91,10 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError("malformed-protocol", "terminal record is duplicated")
     if lines[-1] != expected:
         raise ClassificationError("post-terminal-output", "output follows terminal record")
+    if lines != manifest["expectedPrefix"] + [expected]:
+        raise ClassificationError(
+            "malformed-protocol", "pre-terminal protocol differs from manifest"
+        )
     return {
         "schemaVersion": 1,
         "result": "exact-typed-rejection",

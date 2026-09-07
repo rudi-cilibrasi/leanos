@@ -37,6 +37,7 @@ class BareMetalRejectionTest(unittest.TestCase):
             "sourceRevision": self.revision,
             "isoSha256": hashlib.sha256(self.iso.read_bytes()).hexdigest(),
             "elfSha256": hashlib.sha256(self.elf.read_bytes()).hexdigest(),
+            "expectedPrefix": ["LEANOS/1 SERIAL status=READY"],
             "expectedTerminal": self.terminal,
             "machine": {
                 "model": "fixture-board-rev-a", "cpu": "fixture-x86-64",
@@ -68,6 +69,13 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assert_result("malformed-protocol", b"not a terminal\n")
         self.assert_result("wrong-rejection", b"LEANOS/1 BOOTALLOC status=FAIL reason=other\n")
         self.assert_result("unexpected-success", b"LEANOS/1 CPL3 status=READY\n" + self.terminal.encode())
+        self.assert_result("unexpected-success", b"LEANOS/22 ENTER origin=cpl3\n" + self.terminal.encode())
+        self.assert_result(
+            "malformed-protocol",
+            b"LEANOS/1 SERIAL status=READY\nLEANOS/1 UNKNOWN value=1\n"
+            + self.terminal.encode(),
+        )
+        self.assert_result("malformed-protocol", self.terminal.encode())
         self.assert_result("post-terminal-output", self.terminal.encode() + b"\nextra\n")
         self.assert_result("malformed-protocol", self.terminal.encode() + b"\n" + self.terminal.encode())
         self.assert_result("malformed-protocol", b"\xff")
@@ -79,6 +87,10 @@ class BareMetalRejectionTest(unittest.TestCase):
 
     def test_rejects_incomplete_machine_identity(self):
         self.write_manifest(machine={})
+        self.assert_result("manifest-invalid", self.terminal.encode())
+
+    def test_rejects_invalid_expected_prefix(self):
+        self.write_manifest(expectedPrefix=["unversioned output"])
         self.assert_result("manifest-invalid", self.terminal.encode())
 
 
