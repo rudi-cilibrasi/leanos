@@ -53,6 +53,19 @@ def families : List Family := [
 def records : List (Nat × String) :=
   families.flatMap (fun family => family.tags.map (family.version, ·))
 
+/-- Exact production `LEANOS/3 FINAL` reasons that can be emitted before the
+platform-admission boundary. Runtime fail-stop reasons are intentionally absent. -/
+def preAdmissionRejectionReasons : List String := [
+  "dma-command-model",
+  "dma-command-readback",
+  "dma-empty-inventory",
+  "dma-global-policy",
+  "dma-identity",
+  "dma-inventory",
+  "dma-q35-nic-none",
+  "dma-required-missing"
+]
+
 /-- The exact line prefix the guest prints for a record. -/
 def prefixText (record : Nat × String) : String :=
   s!"LEANOS/{record.1} {record.2}"
@@ -64,6 +77,8 @@ def symbolName (record : Nat × String) : String :=
 theorem family_versions_nodup : (families.map Family.version).Nodup := by decide
 set_option maxRecDepth 32768 in
 theorem records_nodup : records.Nodup := by decide
+theorem pre_admission_rejection_reasons_nodup :
+    preAdmissionRejectionReasons.Nodup := by decide
 theorem families_nonempty : families.all (fun family => !family.tags.isEmpty) = true := by
   decide
 

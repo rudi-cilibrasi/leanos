@@ -47,6 +47,15 @@ $1 == "record" {
   rows++
   next
 }
+$1 == "pre-admission-reason" {
+  if (NF != 2 || $2 !~ /^[a-z0-9]+(-[a-z0-9]+)*$/)
+    fail("malformed pre-admission rejection reason: " $0)
+  if ($2 in rejection_seen)
+    fail("duplicate pre-admission rejection reason: " $2)
+  rejection_seen[$2] = 1
+  rejection_reason[rejections++] = $2
+  next
+}
 { fail("unexpected serial protocol row: " $0) }
 END {
   if (failed)
@@ -67,6 +76,7 @@ END {
     }
     print ""
     printf "#define LEANOS_SERIAL_RECORD_COUNT %dU\n", rows
+    printf "#define LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT %dU\n", rejections
     print ""
     print "#endif"
   } else {
@@ -81,6 +91,7 @@ END {
     }
     print ""
     printf "LEANOS_SERIAL_RECORD_COUNT=%d\n", rows
+    printf "LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT=%d\n", rejections
     print ""
     print "# The prefix of a record named by family and tag; unset for a record"
     print "# that is not in the vocabulary, which fails under set -u."

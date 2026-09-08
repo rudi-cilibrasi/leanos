@@ -1281,6 +1281,8 @@ def emitSerial : IO Unit := do
   for record in SerialProtocol.records do
     IO.println
       s!"record\t{record.1}\t{record.2}\t{SerialProtocol.symbolName record}\t{SerialProtocol.prefixText record}"
+  for reason in SerialProtocol.preAdmissionRejectionReasons do
+    IO.println s!"pre-admission-reason\t{reason}"
 
 end LeanOS.Oracle
 

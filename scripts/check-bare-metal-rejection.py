@@ -106,7 +106,7 @@ def load_manifest(path: Path) -> dict:
     return value
 
 
-def load_protocol(path: Path, source_revision: str) -> frozenset[str]:
+def load_protocol(path: Path, source_revision: str) -> tuple[frozenset[str], frozenset[str]]:
     try:
         lines = read_bounded(
             path, MAX_PROTOCOL_BYTES, "manifest-invalid",
@@ -125,6 +125,7 @@ def load_protocol(path: Path, source_revision: str) -> frozenset[str]:
         )
     identities = set()
     symbols = set()
+    pre_admission_reasons = set()
     for line in lines[2:]:
         fields = line.split("\t")
         if fields[0] == "family" and len(fields) == 4:
@@ -146,6 +147,14 @@ def load_protocol(path: Path, source_revision: str) -> frozenset[str]:
                 if identity in identities:
                     valid = False
                 identities.add(identity)
+        elif fields[0] == "pre-admission-reason" and len(fields) == 2:
+            reason = fields[1]
+            valid = (
+                re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", reason) is not None
+                and reason not in pre_admission_reasons
+            )
+            pre_admission_reasons.add(reason)
+            symbol = ""
         else:
             valid = False
             symbol = ""
@@ -153,10 +162,11 @@ def load_protocol(path: Path, source_revision: str) -> frozenset[str]:
             raise ClassificationError(
                 "manifest-invalid", "malformed or duplicate serial protocol row"
             )
-        symbols.add(symbol)
-    if not identities:
+        if symbol:
+            symbols.add(symbol)
+    if not identities or not pre_admission_reasons:
         raise ClassificationError("manifest-invalid", "serial protocol is empty")
-    return frozenset(identities)
+    return frozenset(identities), frozenset(pre_admission_reasons)
 
 
 def require_protocol_record(line: str, identities: frozenset[str]) -> None:
@@ -188,7 +198,9 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(protocol_path) != manifest["serialProtocolSha256"]:
         raise ClassificationError("digest-mismatch", "serial protocol digest mismatch")
-    protocol = load_protocol(protocol_path, manifest["sourceRevision"])
+    protocol, pre_admission_reasons = load_protocol(
+        protocol_path, manifest["sourceRevision"]
+    )
     for line in manifest["expectedPrefix"]:
         require_protocol_record(line, protocol)
         if PRETERMINAL_AUTHORITY.search(line):
@@ -203,6 +215,14 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     ):
         raise ClassificationError(
             "manifest-invalid", "terminal identity is not a platform rejection"
+        )
+    terminal_reason = manifest["expectedTerminal"].rsplit("reason=", 1)[1]
+    if (
+        terminal_identity.group(1) == f"{PROTOCOL_PREFIX}3 FINAL"
+        and terminal_reason not in pre_admission_reasons
+    ):
+        raise ClassificationError(
+            "manifest-invalid", "terminal reason is not a pre-admission rejection"
         )
     if sha256(iso) != manifest["isoSha256"] or sha256(elf) != manifest["elfSha256"]:
         raise ClassificationError("digest-mismatch", "artifact digest mismatch")

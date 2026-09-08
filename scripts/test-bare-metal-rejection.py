@@ -41,6 +41,11 @@ class BareMetalRejectionTest(unittest.TestCase):
             f"record\t10\tIPC\tLEANOS_SERIAL_10_IPC\t{PROTOCOL_PREFIX}10 IPC\n",
             encoding="utf-8",
         )
+        with self.protocol.open("a", encoding="utf-8") as protocol:
+            protocol.write(
+                "pre-admission-reason\tdma-required-missing\n"
+                "pre-admission-reason\tdma-inventory\n"
+            )
         self.terminal = f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=platform-inventory"
         self.write_manifest()
 
@@ -108,6 +113,13 @@ class BareMetalRejectionTest(unittest.TestCase):
     def test_rejects_relabelled_nonterminal_protocol_identity(self):
         self.write_manifest(
             expectedTerminal=f"{PROTOCOL_PREFIX}3 ORACLE status=FAIL reason=made-up"
+        )
+
+        self.assert_result("manifest-invalid", self.terminal.encode())
+
+    def test_rejects_a_runtime_final_reason_as_a_pre_admission_contract(self):
+        self.write_manifest(
+            expectedTerminal=f"{PROTOCOL_PREFIX}3 FINAL status=FAIL reason=entry-nested"
         )
 
         self.assert_result("manifest-invalid", self.terminal.encode())
