@@ -15207,6 +15207,12 @@
     },
     {
       "source": "LeanOS/SerialProtocol.lean",
+      "qualified": "LeanOS.SerialProtocol.pre_admission_rejection_reasons_nodup",
+      "display": "pre_admission_rejection_reasons_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SerialProtocol.lean",
       "qualified": "LeanOS.SerialProtocol.records_nodup",
       "display": "records_nodup",
       "kind": "theorem"
