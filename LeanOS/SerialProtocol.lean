@@ -82,6 +82,22 @@ def preAdmissionBootRecords : List (Nat × String) := [
   (10, "BOOT")
 ]
 
+/-- Record identities that can be emitted after the scenario BOOT record but
+before `boot_allocate` can produce a typed `BOOTALLOC` rejection. Repetition
+is permitted in the capture (for example one DMA-FUNCTION per device); this
+list owns only the finite identity vocabulary for that phase. -/
+def preAdmissionPhaseRecords : List (Nat × String) := [
+  (15, "DMA-FUNCTION"),
+  (15, "DMA"),
+  (8, "PAGING"),
+  (19, "TLB"),
+  (21, "VTD"),
+  (21, "VTD-PLAN"),
+  (21, "VTD-TABLES"),
+  (21, "VTD-ASSIGN"),
+  (21, "VTD-ACTIVATE")
+]
+
 /-- The exact line prefix the guest prints for a record. -/
 def prefixText (record : Nat × String) : String :=
   s!"LEANOS/{record.1} {record.2}"
@@ -99,6 +115,11 @@ theorem pre_admission_boot_records_nodup : preAdmissionBootRecords.Nodup := by
   decide
 theorem pre_admission_boot_records_are_protocol_records :
     preAdmissionBootRecords.all (· ∈ records) = true := by
+  decide
+theorem pre_admission_phase_records_nodup : preAdmissionPhaseRecords.Nodup := by
+  decide
+theorem pre_admission_phase_records_are_protocol_records :
+    preAdmissionPhaseRecords.all (· ∈ records) = true := by
   decide
 theorem families_nonempty : families.all (fun family => !family.tags.isEmpty) = true := by
   decide

@@ -25,8 +25,9 @@ FORBIDDEN = re.compile(
 MACHINE_FIELDS = ("model", "cpu", "firmware", "uart", "captureAdapter")
 RECORD_IDENTITY = re.compile(r"^(LEANOS/[0-9]+ [A-Z0-9_-]+)(?:\s|$)")
 PRETERMINAL_AUTHORITY = re.compile(
-    r"(?:^|\s)(?:origin=cpl3|cpl=3|(?:status|result)=(?:PASS|FAIL))(?:\s|$)"
+    r"(?:^|\s)(?:origin=cpl3|cpl=3|status=(?:PASS|FAIL)|result=FAIL)(?:\s|$)"
 )
+PRETERMINAL_PASS = re.compile(r"(?:^|\s)result=PASS(?:\s|$)")
 PROTOCOL_PREFIX = "LEANOS" + "/"
 # These are the only production record families emitted as ordinary
 # platform-admission failures before CPL3. Generated-protocol membership alone
@@ -130,6 +131,7 @@ def load_protocol(
     symbols = set()
     pre_admission_reasons = set()
     pre_admission_boot_records = set()
+    pre_admission_phase_records = set()
     for line in lines[2:]:
         fields = line.split("\t")
         if fields[0] == "family" and len(fields) == 4:
@@ -170,6 +172,17 @@ def load_protocol(
             )
             pre_admission_boot_records.add(identity)
             symbol = ""
+        elif fields[0] == "pre-admission-record" and len(fields) == 3:
+            version, tag = fields[1:]
+            identity = f"LEANOS/{version} {tag}"
+            valid = (
+                version.isdigit()
+                and re.fullmatch(r"[A-Z][A-Z0-9-]*", tag) is not None
+                and identity in identities
+                and identity not in pre_admission_phase_records
+            )
+            pre_admission_phase_records.add(identity)
+            symbol = ""
         else:
             valid = False
             symbol = ""
@@ -179,12 +192,18 @@ def load_protocol(
             )
         if symbol:
             symbols.add(symbol)
-    if not identities or not pre_admission_reasons or not pre_admission_boot_records:
+    if (
+        not identities
+        or not pre_admission_reasons
+        or not pre_admission_boot_records
+        or not pre_admission_phase_records
+    ):
         raise ClassificationError("manifest-invalid", "serial protocol is empty")
     return (
         frozenset(identities),
         frozenset(pre_admission_reasons),
         frozenset(pre_admission_boot_records),
+        frozenset(pre_admission_phase_records),
     )
 
 
@@ -217,20 +236,26 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(protocol_path) != manifest["serialProtocolSha256"]:
         raise ClassificationError("digest-mismatch", "serial protocol digest mismatch")
-    protocol, pre_admission_reasons, pre_admission_boot_records = load_protocol(
+    (protocol, pre_admission_reasons, pre_admission_boot_records,
+     pre_admission_phase_records) = load_protocol(
         protocol_path, manifest["sourceRevision"]
     )
     for line in manifest["expectedPrefix"]:
         require_protocol_record(line, protocol)
         identity = RECORD_IDENTITY.match(line)
         if identity is None or identity.group(1) not in (
-            PRE_ADMISSION_STATIC_IDENTITIES | pre_admission_boot_records
+            PRE_ADMISSION_STATIC_IDENTITIES
+            | pre_admission_boot_records
+            | pre_admission_phase_records
         ):
             raise ClassificationError(
                 "manifest-invalid",
                 "pre-terminal record is outside the generated pre-admission phase",
             )
-        if PRETERMINAL_AUTHORITY.search(line):
+        if PRETERMINAL_AUTHORITY.search(line) or (
+            PRETERMINAL_PASS.search(line)
+            and identity.group(1) not in pre_admission_phase_records
+        ):
             raise ClassificationError(
                 "manifest-invalid", "pre-terminal authority record is forbidden"
             )
