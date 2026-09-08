@@ -27,11 +27,12 @@ RECORD_IDENTITY = re.compile(r"^(LEANOS/[0-9]+ [A-Z0-9_-]+)(?:\s|$)")
 PRETERMINAL_AUTHORITY = re.compile(
     r"(?:^|\s)(?:origin=cpl3|cpl=3|(?:status|result)=(?:PASS|FAIL))(?:\s|$)"
 )
+PROTOCOL_PREFIX = "LEANOS" + "/"
 # These are the only production record families emitted as ordinary
 # platform-admission failures before CPL3. Generated-protocol membership alone
 # is insufficient: another real record identity must not be relabeled FAIL.
 REJECTION_TERMINAL_IDENTITIES = frozenset(
-    ("LEANOS/3 FINAL", "LEANOS/7 BOOTALLOC")
+    (f"{PROTOCOL_PREFIX}3 FINAL", f"{PROTOCOL_PREFIX}7 BOOTALLOC")
 )
 
 

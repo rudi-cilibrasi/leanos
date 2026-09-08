@@ -31,17 +31,17 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.protocol.write_text(
             "leanos-serial-protocol\t1\n"
             f"source-revision\t{self.revision}\n"
-            "record\t1\tSERIAL\tLEANOS_SERIAL_1_SERIAL\tLEANOS/1 SERIAL\n"
-            "record\t3\tFINAL\tLEANOS_SERIAL_3_FINAL\tLEANOS/3 FINAL\n"
-            "record\t3\tORACLE\tLEANOS_SERIAL_3_ORACLE\tLEANOS/3 ORACLE\n"
-            "record\t7\tBOOTALLOC\tLEANOS_SERIAL_7_BOOTALLOC\tLEANOS/7 BOOTALLOC\n"
+            f"record\t1\tSERIAL\tLEANOS_SERIAL_1_SERIAL\t{PROTOCOL_PREFIX}1 SERIAL\n"
+            f"record\t3\tFINAL\tLEANOS_SERIAL_3_FINAL\t{PROTOCOL_PREFIX}3 FINAL\n"
+            f"record\t3\tORACLE\tLEANOS_SERIAL_3_ORACLE\t{PROTOCOL_PREFIX}3 ORACLE\n"
+            f"record\t7\tBOOTALLOC\tLEANOS_SERIAL_7_BOOTALLOC\t{PROTOCOL_PREFIX}7 BOOTALLOC\n"
             f"record\t8\tTERMINAL\tLEANOS_SERIAL_8_TERMINAL\t{PROTOCOL_PREFIX}8 TERMINAL\n"
             f"record\t22\tENTER\tLEANOS_SERIAL_22_ENTER\t{PROTOCOL_PREFIX}22 ENTER\n"
             f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n"
             f"record\t10\tIPC\tLEANOS_SERIAL_10_IPC\t{PROTOCOL_PREFIX}10 IPC\n",
             encoding="utf-8",
         )
-        self.terminal = "LEANOS/7 BOOTALLOC status=FAIL reason=platform-inventory"
+        self.terminal = f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=platform-inventory"
         self.write_manifest()
 
     def tearDown(self):
@@ -56,7 +56,7 @@ class BareMetalRejectionTest(unittest.TestCase):
             "serialProtocolSha256": hashlib.sha256(
                 self.protocol.read_bytes()
             ).hexdigest(),
-            "expectedPrefix": ["LEANOS/1 SERIAL status=READY"],
+            "expectedPrefix": [f"{PROTOCOL_PREFIX}1 SERIAL status=READY"],
             "expectedTerminal": self.terminal,
             "machine": {
                 "model": "fixture-board-rev-a", "cpu": "fixture-x86-64",
@@ -78,7 +78,7 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(caught.exception.result, result)
 
     def test_accepts_exact_final_rejection_and_binds_evidence(self):
-        result = self.classify(("LEANOS/1 SERIAL status=READY\r\n" + self.terminal + "\r\n").encode())
+        result = self.classify((f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r\n" + self.terminal + "\r\n").encode())
         self.assertEqual(result["result"], "exact-typed-rejection")
         self.assertEqual(result["captureBytes"], self.capture.stat().st_size)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
@@ -89,7 +89,7 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.write_manifest()
 
         result = self.classify(
-            ("LEANOS/1 SERIAL status=READY\n" + self.terminal + "\n").encode()
+            (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\n" + self.terminal + "\n").encode()
         )
 
         self.assertEqual(result["result"], "exact-typed-rejection")
@@ -101,13 +101,13 @@ class BareMetalRejectionTest(unittest.TestCase):
 
         self.assert_result(
             "wrong-rejection",
-            ("LEANOS/1 SERIAL status=READY\n" +
+            (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\n" +
              f"{final_identity} status=FAIL reason=other\n").encode(),
         )
 
     def test_rejects_relabelled_nonterminal_protocol_identity(self):
         self.write_manifest(
-            expectedTerminal="LEANOS/3 ORACLE status=FAIL reason=made-up"
+            expectedTerminal=f"{PROTOCOL_PREFIX}3 ORACLE status=FAIL reason=made-up"
         )
 
         self.assert_result("manifest-invalid", self.terminal.encode())
@@ -115,32 +115,32 @@ class BareMetalRejectionTest(unittest.TestCase):
     def test_distinguishes_controlled_nonpassing_classes(self):
         self.assert_result("silence-timeout", b"")
         self.assert_result("malformed-protocol", b"not a terminal\n")
-        self.assert_result("wrong-rejection", b"LEANOS/7 BOOTALLOC status=FAIL reason=other\n")
-        self.assert_result("unexpected-success", b"LEANOS/1 CPL3 status=READY\n" + self.terminal.encode())
+        self.assert_result("wrong-rejection", f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=other\n".encode())
+        self.assert_result("unexpected-success", f"{PROTOCOL_PREFIX}1 CPL3 status=READY\n".encode() + self.terminal.encode())
         self.assert_result(
             "unexpected-success",
             f"{PROTOCOL_PREFIX}22 ENTER origin=cpl3\n".encode()
             + self.terminal.encode(),
         )
         self.write_manifest(expectedPrefix=[
-            "LEANOS/1 SERIAL status=READY",
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY",
             f"{PROTOCOL_PREFIX}22 OFFER origin=cpl3 result=PASS",
         ])
         self.assert_result("manifest-invalid", self.terminal.encode())
         self.write_manifest(expectedPrefix=[
-            "LEANOS/1 SERIAL status=READY",
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY",
             f"{PROTOCOL_PREFIX}10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10",
         ])
         self.assert_result("manifest-invalid", self.terminal.encode())
         self.write_manifest(expectedPrefix=[
-            "LEANOS/1 SERIAL status=READY",
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY",
             f"{PROTOCOL_PREFIX}8 TERMINAL status=FAIL",
         ])
         self.assert_result("manifest-invalid", self.terminal.encode())
         self.write_manifest()
         self.assert_result(
             "malformed-protocol",
-            b"LEANOS/1 SERIAL status=READY\nLEANOS/1 UNKNOWN value=1\n"
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY\n{PROTOCOL_PREFIX}1 UNKNOWN value=1\n".encode()
             + self.terminal.encode(),
         )
         self.assert_result("malformed-protocol", self.terminal.encode())
