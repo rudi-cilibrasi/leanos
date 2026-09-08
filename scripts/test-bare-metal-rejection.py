@@ -100,6 +100,22 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(result["captureLines"], 2)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
+    def test_normalization_preserves_eof_and_replaces_lone_cr(self):
+        without_final_newline = (
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r" + self.terminal
+        ).encode()
+        normalized = without_final_newline.replace(b"\r", b"\n")
+
+        result = self.classify(without_final_newline)
+
+        self.assertEqual(result["result"], "exact-typed-rejection")
+        self.assertEqual(result["normalizedCaptureBytes"], len(normalized))
+        self.assertEqual(
+            result["normalizedCaptureSha256"],
+            hashlib.sha256(normalized).hexdigest(),
+        )
+        self.assertEqual(result["captureLines"], 2)
+
     def test_accepts_production_final_failure_as_the_expected_terminal(self):
         final_identity = PROTOCOL_PREFIX + "3 FINAL"
         self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"

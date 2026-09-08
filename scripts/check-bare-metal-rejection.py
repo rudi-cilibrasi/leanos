@@ -238,8 +238,11 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         text = data.decode("utf-8")
     except UnicodeDecodeError as error:
         raise ClassificationError("malformed-protocol", "capture is not UTF-8") from error
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines()
-    normalized = ("\n".join(lines) + "\n").encode("utf-8")
+    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized_text.encode("utf-8")
+    lines = normalized_text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
     expected = manifest["expectedTerminal"]
     terminal_indexes = [index for index, line in enumerate(lines) if " status=FAIL reason=" in line]
     if any(
