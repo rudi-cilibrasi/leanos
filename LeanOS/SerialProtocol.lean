@@ -66,6 +66,22 @@ def preAdmissionRejectionReasons : List String := [
   "dma-required-missing"
 ]
 
+/-- Every scenario-specific BOOT identity emitted immediately after serial
+initialization and before the platform-admission boundary. -/
+def preAdmissionBootRecords : List (Nat × String) := [
+  (17, "BOOT"),
+  (22, "BOOT"),
+  (23, "BOOT"),
+  (20, "BOOT"),
+  (14, "BOOT"),
+  (13, "BOOT"),
+  (19, "BOOT"),
+  (16, "BOOT"),
+  (18, "BOOT"),
+  (6, "BOOT"),
+  (10, "BOOT")
+]
+
 /-- The exact line prefix the guest prints for a record. -/
 def prefixText (record : Nat × String) : String :=
   s!"LEANOS/{record.1} {record.2}"
@@ -79,6 +95,11 @@ set_option maxRecDepth 32768 in
 theorem records_nodup : records.Nodup := by decide
 theorem pre_admission_rejection_reasons_nodup :
     preAdmissionRejectionReasons.Nodup := by decide
+theorem pre_admission_boot_records_nodup : preAdmissionBootRecords.Nodup := by
+  decide
+theorem pre_admission_boot_records_are_protocol_records :
+    preAdmissionBootRecords.all (· ∈ records) = true := by
+  decide
 theorem families_nonempty : families.all (fun family => !family.tags.isEmpty) = true := by
   decide
 
