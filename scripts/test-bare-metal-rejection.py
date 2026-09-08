@@ -83,9 +83,21 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(caught.exception.result, result)
 
     def test_accepts_exact_final_rejection_and_binds_evidence(self):
-        result = self.classify((f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r\n" + self.terminal + "\r\n").encode())
+        capture = (
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r\n"
+            + self.terminal
+            + "\r\n"
+        ).encode()
+        normalized = capture.replace(b"\r\n", b"\n")
+        result = self.classify(capture)
         self.assertEqual(result["result"], "exact-typed-rejection")
         self.assertEqual(result["captureBytes"], self.capture.stat().st_size)
+        self.assertEqual(result["normalizedCaptureBytes"], len(normalized))
+        self.assertEqual(
+            result["normalizedCaptureSha256"],
+            hashlib.sha256(normalized).hexdigest(),
+        )
+        self.assertEqual(result["captureLines"], 2)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
     def test_accepts_production_final_failure_as_the_expected_terminal(self):

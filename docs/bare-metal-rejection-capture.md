@@ -90,6 +90,12 @@ The only passing result is `exact-typed-rejection`. `wrong-rejection`,
 `silence-timeout`, `digest-mismatch`, `manifest-invalid`, and `capture-failure`
 are distinct non-passing diagnostics.
 
+The passing classification binds both the raw capture and the canonical
+CRLF/CR-to-LF normalized transcript with separate SHA-256 digests and byte
+counts, plus the normalized line count. Generate the retained normalized file
+with the same replacement rule and verify it against
+`normalizedCaptureSha256` before publishing the bundle.
+
 ## Evidence bundle
 
 Retain these files together without editing the raw capture:

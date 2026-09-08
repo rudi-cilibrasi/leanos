@@ -239,6 +239,7 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     except UnicodeDecodeError as error:
         raise ClassificationError("malformed-protocol", "capture is not UTF-8") from error
     lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    normalized = ("\n".join(lines) + "\n").encode("utf-8")
     expected = manifest["expectedTerminal"]
     terminal_indexes = [index for index, line in enumerate(lines) if " status=FAIL reason=" in line]
     if any(
@@ -270,6 +271,9 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         "serialProtocolSha256": manifest["serialProtocolSha256"],
         "captureSha256": hashlib.sha256(data).hexdigest(),
         "captureBytes": len(data),
+        "normalizedCaptureSha256": hashlib.sha256(normalized).hexdigest(),
+        "normalizedCaptureBytes": len(normalized),
+        "captureLines": len(lines),
         "machine": manifest["machine"],
         "expectedTerminal": expected,
     }
