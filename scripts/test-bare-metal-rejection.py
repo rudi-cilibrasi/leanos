@@ -124,6 +124,33 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.write_manifest(expectedPrefix=[ipc])
         self.assert_result("manifest-invalid", (ipc + "\n" + self.terminal).encode())
 
+    def test_rejects_reordered_or_duplicate_pre_admission_phases(self):
+        serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
+        boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
+        dma = f"{PROTOCOL_PREFIX}15 DMA snapshot=1 result=PASS"
+
+        for prefix in ([boot, serial, dma], [serial, boot, boot, dma], [serial, dma, boot]):
+            with self.subTest(prefix=prefix):
+                self.write_manifest(expectedPrefix=prefix)
+                self.assert_result(
+                    "manifest-invalid",
+                    ("\n".join(prefix) + "\n" + self.terminal + "\n").encode(),
+                )
+
+    def test_allows_repeated_records_within_a_generated_phase(self):
+        serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
+        boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
+        dma_one = f"{PROTOCOL_PREFIX}15 DMA snapshot=1 result=PASS"
+        dma_two = f"{PROTOCOL_PREFIX}15 DMA snapshot=2 result=PASS"
+        prefix = [serial, boot, dma_one, dma_two]
+        self.write_manifest(expectedPrefix=prefix)
+
+        result = self.classify(
+            ("\n".join(prefix) + "\n" + self.terminal + "\n").encode()
+        )
+
+        self.assertEqual(result["result"], "exact-typed-rejection")
+
     def test_normalization_preserves_eof_and_replaces_lone_cr(self):
         without_final_newline = (
             f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r" + self.terminal

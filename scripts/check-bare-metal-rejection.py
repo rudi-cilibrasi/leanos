@@ -110,7 +110,9 @@ def load_manifest(path: Path) -> dict:
 
 def load_protocol(
     path: Path, source_revision: str
-) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+) -> tuple[
+    frozenset[str], frozenset[str], frozenset[str], tuple[str, ...]
+]:
     try:
         lines = read_bounded(
             path, MAX_PROTOCOL_BYTES, "manifest-invalid",
@@ -131,7 +133,7 @@ def load_protocol(
     symbols = set()
     pre_admission_reasons = set()
     pre_admission_boot_records = set()
-    pre_admission_phase_records = set()
+    pre_admission_phase_records = []
     for line in lines[2:]:
         fields = line.split("\t")
         if fields[0] == "family" and len(fields) == 4:
@@ -181,7 +183,7 @@ def load_protocol(
                 and identity in identities
                 and identity not in pre_admission_phase_records
             )
-            pre_admission_phase_records.add(identity)
+            pre_admission_phase_records.append(identity)
             symbol = ""
         else:
             valid = False
@@ -203,7 +205,7 @@ def load_protocol(
         frozenset(identities),
         frozenset(pre_admission_reasons),
         frozenset(pre_admission_boot_records),
-        frozenset(pre_admission_phase_records),
+        tuple(pre_admission_phase_records),
     )
 
 
@@ -213,6 +215,47 @@ def require_protocol_record(line: str, identities: frozenset[str]) -> None:
         raise ClassificationError(
             "manifest-invalid", "manifest record is outside generated protocol"
         )
+
+
+def require_pre_admission_order(
+    lines: list[str],
+    boot_records: frozenset[str],
+    phase_records: tuple[str, ...],
+) -> None:
+    """Require the generated pre-admission phases in their emitter order.
+
+    SERIAL and the scenario BOOT record are singleton phase boundaries. Later
+    generated phase identities may repeat (for example DMA-FUNCTION per PCI
+    function), but may not move backwards in the Lean-owned row order.
+    """
+    phase_order = {identity: index for index, identity in enumerate(phase_records)}
+    seen_serial = False
+    seen_boot = False
+    last_phase = -1
+    for line in lines:
+        match = RECORD_IDENTITY.match(line)
+        if match is None:
+            raise ClassificationError("manifest-invalid", "invalid pre-admission record")
+        identity = match.group(1)
+        if identity in PRE_ADMISSION_STATIC_IDENTITIES:
+            if seen_serial or seen_boot or last_phase >= 0:
+                raise ClassificationError(
+                    "manifest-invalid", "pre-admission static record is reordered"
+                )
+            seen_serial = True
+        elif identity in boot_records:
+            if seen_boot or last_phase >= 0:
+                raise ClassificationError(
+                    "manifest-invalid", "pre-admission boot record is reordered or duplicated"
+                )
+            seen_boot = True
+        else:
+            rank = phase_order.get(identity)
+            if rank is None or rank < last_phase:
+                raise ClassificationError(
+                    "manifest-invalid", "pre-admission phase record is reordered"
+                )
+            last_phase = rank
 
 
 def is_platform_rejection(line: str) -> bool:
@@ -246,7 +289,7 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         if identity is None or identity.group(1) not in (
             PRE_ADMISSION_STATIC_IDENTITIES
             | pre_admission_boot_records
-            | pre_admission_phase_records
+            | frozenset(pre_admission_phase_records)
         ):
             raise ClassificationError(
                 "manifest-invalid",
@@ -259,6 +302,11 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
             raise ClassificationError(
                 "manifest-invalid", "pre-terminal authority record is forbidden"
             )
+    require_pre_admission_order(
+        manifest["expectedPrefix"],
+        pre_admission_boot_records,
+        pre_admission_phase_records,
+    )
     require_protocol_record(manifest["expectedTerminal"], protocol)
     terminal_identity = RECORD_IDENTITY.match(manifest["expectedTerminal"])
     if (
