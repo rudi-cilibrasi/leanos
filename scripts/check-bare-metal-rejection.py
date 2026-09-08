@@ -72,7 +72,7 @@ def load_manifest(path: Path) -> dict:
         "schemaVersion", "sourceRevision", "isoSha256", "elfSha256",
         "serialProtocolSha256",
         "expectedPrefix", "expectedTerminal", "machine",
-    } or value["schemaVersion"] != 1:
+    } or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
         raise ClassificationError("manifest-invalid", "unsupported manifest shape")
     if not isinstance(value["sourceRevision"], str) or not HEX40.fullmatch(
         value["sourceRevision"]

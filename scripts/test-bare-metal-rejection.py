@@ -164,6 +164,12 @@ class BareMetalRejectionTest(unittest.TestCase):
                 self.write_manifest(**{field: 1})
                 self.assert_result("manifest-invalid", self.terminal.encode())
 
+    def test_rejects_non_integer_schema_versions(self):
+        for value in (True, "1"):
+            with self.subTest(value=value):
+                self.write_manifest(schemaVersion=value)
+                self.assert_result("manifest-invalid", self.terminal.encode())
+
     def test_rejects_protocol_revision_and_row_contract_drift(self):
         self.protocol.write_text(
             self.protocol.read_text(encoding="utf-8").replace(
