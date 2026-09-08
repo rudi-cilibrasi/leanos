@@ -114,6 +114,20 @@ variable metadata; the classifier result and all content-derived digests must be
 stable for identical inputs. Never commit physical serial numbers, hostnames,
 credentials, or unrelated serial output.
 
+Pass `--bundle-dir <new-directory>` to the classifier to atomically retain the
+deterministic bundle core: the exact manifest, ISO, ELF, generated protocol, raw
+and normalized captures, source revision, classification, and sorted
+`SHA256SUMS`. The output directory must not already exist. Validate that core
+before publication with:
+
+```sh
+python3 scripts/verify-bare-metal-evidence-bundle.py <bundle-directory>
+```
+
+Keep the variable operator, capture-command, firmware-setting, inventory, and
+reset metadata alongside this deterministic core; those observation records are
+not synthesized by the classifier.
+
 ## Interpretation
 
 A passing bundle is integration evidence that the named procedure observed the

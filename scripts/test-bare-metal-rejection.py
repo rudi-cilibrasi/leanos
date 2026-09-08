@@ -104,6 +104,32 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(result["captureLines"], 2)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
+    def test_emits_and_verifies_deterministic_bundle(self):
+        capture = (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r\n"
+                   + self.terminal + "\r\n").encode()
+        result = self.classify(capture)
+        bundle = self.root / "bundle"
+        MODULE.emit_evidence_bundle(
+            bundle, result, self.manifest, self.iso, self.elf, self.capture,
+            self.protocol,
+        )
+        self.assertEqual(MODULE.verify_evidence_bundle(bundle), result)
+        names = set(MODULE.BUNDLE_FILES) | {"SHA256SUMS"}
+        self.assertEqual({path.name for path in bundle.iterdir()}, names)
+        self.assertEqual(
+            (bundle / "serial.normalized.log").read_bytes(),
+            capture.replace(b"\r\n", b"\n"),
+        )
+        expected = [
+            f"{MODULE.sha256(bundle / name)}  {name}" for name in MODULE.BUNDLE_FILES
+        ]
+        self.assertEqual((bundle / "SHA256SUMS").read_text().splitlines(), expected)
+
+        (bundle / "serial.normalized.log").write_text("tampered\n")
+        with self.assertRaises(MODULE.ClassificationError) as caught:
+            MODULE.verify_evidence_bundle(bundle)
+        self.assertEqual(caught.exception.result, "digest-mismatch")
+
     def test_accepts_only_generated_pre_admission_phase_prefixes(self):
         boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
         dma = f"{PROTOCOL_PREFIX}15 DMA snapshot=1 stage=pre-cpl3 result=PASS"

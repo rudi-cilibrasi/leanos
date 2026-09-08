@@ -11,7 +11,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
+import tempfile
 
 MAX_CAPTURE_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024
@@ -36,6 +38,16 @@ REJECTION_TERMINAL_IDENTITIES = frozenset(
     (f"{PROTOCOL_PREFIX}3 FINAL", f"{PROTOCOL_PREFIX}7 BOOTALLOC")
 )
 PRE_ADMISSION_STATIC_IDENTITIES = frozenset((f"{PROTOCOL_PREFIX}1 SERIAL",))
+BUNDLE_FILES = (
+    "classification.json",
+    "image.iso",
+    "kernel.elf",
+    "machine.json",
+    "serial-protocol.tsv",
+    "serial.normalized.log",
+    "serial.raw.log",
+    "source-revision.txt",
+)
 
 
 class ClassificationError(Exception):
@@ -382,6 +394,86 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     }
 
 
+def emit_evidence_bundle(
+    directory: Path,
+    result: dict,
+    manifest: Path,
+    iso: Path,
+    elf: Path,
+    capture: Path,
+    serial_protocol: Path,
+) -> None:
+    """Atomically emit the deterministic, content-addressed bundle core."""
+    if directory.exists():
+        raise ClassificationError("capture-failure", "bundle output already exists")
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{directory.name}.", dir=directory.parent))
+    try:
+        shutil.copyfile(manifest, temporary / "machine.json")
+        shutil.copyfile(iso, temporary / "image.iso")
+        shutil.copyfile(elf, temporary / "kernel.elf")
+        shutil.copyfile(capture, temporary / "serial.raw.log")
+        shutil.copyfile(serial_protocol, temporary / "serial-protocol.tsv")
+        raw_capture = (temporary / "serial.raw.log").read_bytes()
+        normalized = raw_capture.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        (temporary / "serial.normalized.log").write_text(normalized, encoding="utf-8")
+        (temporary / "source-revision.txt").write_text(
+            result["sourceRevision"] + "\n", encoding="ascii"
+        )
+        (temporary / "classification.json").write_text(
+            json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+        digest_lines = [
+            f"{sha256(temporary / name)}  {name}" for name in BUNDLE_FILES
+        ]
+        (temporary / "SHA256SUMS").write_text(
+            "\n".join(digest_lines) + "\n", encoding="ascii"
+        )
+        temporary.rename(directory)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+
+def verify_evidence_bundle(directory: Path) -> dict:
+    """Verify the exact bundle inventory and re-run classification from it."""
+    expected_names = set(BUNDLE_FILES) | {"SHA256SUMS"}
+    if not directory.is_dir():
+        raise ClassificationError("manifest-invalid", "bundle file inventory differs")
+    entries = tuple(directory.iterdir())
+    if (
+        {entry.name for entry in entries} != expected_names
+        or any(entry.is_symlink() or not entry.is_file() for entry in entries)
+    ):
+        raise ClassificationError("manifest-invalid", "bundle file inventory differs")
+    lines = (directory / "SHA256SUMS").read_text(encoding="ascii").splitlines()
+    expected_lines = [f"{sha256(directory / name)}  {name}" for name in BUNDLE_FILES]
+    if lines != expected_lines:
+        raise ClassificationError("digest-mismatch", "bundle digest inventory differs")
+    manifest = load_manifest(directory / "machine.json")
+    revision_text = (directory / "source-revision.txt").read_text(encoding="ascii")
+    if revision_text != manifest["sourceRevision"] + "\n":
+        raise ClassificationError("digest-mismatch", "bundle source revision differs")
+    observed = classify(
+        directory / "machine.json",
+        directory / "image.iso",
+        directory / "kernel.elf",
+        directory / "serial.raw.log",
+        manifest["sourceRevision"],
+        directory / "serial-protocol.tsv",
+    )
+    retained = json.loads((directory / "classification.json").read_text(encoding="utf-8"))
+    if retained != observed:
+        raise ClassificationError("digest-mismatch", "retained classification differs")
+    normalized = (directory / "serial.normalized.log").read_bytes()
+    if (
+        hashlib.sha256(normalized).hexdigest() != observed["normalizedCaptureSha256"]
+        or len(normalized) != observed["normalizedCaptureBytes"]
+    ):
+        raise ClassificationError("digest-mismatch", "normalized capture differs")
+    return observed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
@@ -390,10 +482,23 @@ def main() -> int:
     parser.add_argument("capture", type=Path)
     parser.add_argument("--serial-protocol", type=Path)
     parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--bundle-dir", type=Path)
     args = parser.parse_args()
     try:
         result = classify(args.manifest, args.iso, args.elf, args.capture,
                           args.source_revision, args.serial_protocol)
+        if args.bundle_dir is not None:
+            emit_evidence_bundle(
+                args.bundle_dir,
+                result,
+                args.manifest,
+                args.iso,
+                args.elf,
+                args.capture,
+                args.serial_protocol or Path(os.environ.get(
+                    "LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv"
+                )),
+            )
     except ClassificationError as error:
         print(json.dumps({"schemaVersion": 1, "result": error.result,
                           "detail": error.detail}, sort_keys=True))
