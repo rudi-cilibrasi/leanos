@@ -34,6 +34,7 @@ PROTOCOL_PREFIX = "LEANOS" + "/"
 REJECTION_TERMINAL_IDENTITIES = frozenset(
     (f"{PROTOCOL_PREFIX}3 FINAL", f"{PROTOCOL_PREFIX}7 BOOTALLOC")
 )
+PRE_ADMISSION_STATIC_IDENTITIES = frozenset((f"{PROTOCOL_PREFIX}1 SERIAL",))
 
 
 class ClassificationError(Exception):
@@ -106,7 +107,9 @@ def load_manifest(path: Path) -> dict:
     return value
 
 
-def load_protocol(path: Path, source_revision: str) -> tuple[frozenset[str], frozenset[str]]:
+def load_protocol(
+    path: Path, source_revision: str
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
     try:
         lines = read_bounded(
             path, MAX_PROTOCOL_BYTES, "manifest-invalid",
@@ -126,6 +129,7 @@ def load_protocol(path: Path, source_revision: str) -> tuple[frozenset[str], fro
     identities = set()
     symbols = set()
     pre_admission_reasons = set()
+    pre_admission_boot_records = set()
     for line in lines[2:]:
         fields = line.split("\t")
         if fields[0] == "family" and len(fields) == 4:
@@ -155,6 +159,17 @@ def load_protocol(path: Path, source_revision: str) -> tuple[frozenset[str], fro
             )
             pre_admission_reasons.add(reason)
             symbol = ""
+        elif fields[0] == "pre-admission-boot-record" and len(fields) == 3:
+            version, tag = fields[1:]
+            identity = f"LEANOS/{version} {tag}"
+            valid = (
+                version.isdigit()
+                and tag == "BOOT"
+                and identity in identities
+                and identity not in pre_admission_boot_records
+            )
+            pre_admission_boot_records.add(identity)
+            symbol = ""
         else:
             valid = False
             symbol = ""
@@ -164,9 +179,13 @@ def load_protocol(path: Path, source_revision: str) -> tuple[frozenset[str], fro
             )
         if symbol:
             symbols.add(symbol)
-    if not identities or not pre_admission_reasons:
+    if not identities or not pre_admission_reasons or not pre_admission_boot_records:
         raise ClassificationError("manifest-invalid", "serial protocol is empty")
-    return frozenset(identities), frozenset(pre_admission_reasons)
+    return (
+        frozenset(identities),
+        frozenset(pre_admission_reasons),
+        frozenset(pre_admission_boot_records),
+    )
 
 
 def require_protocol_record(line: str, identities: frozenset[str]) -> None:
@@ -198,11 +217,19 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(protocol_path) != manifest["serialProtocolSha256"]:
         raise ClassificationError("digest-mismatch", "serial protocol digest mismatch")
-    protocol, pre_admission_reasons = load_protocol(
+    protocol, pre_admission_reasons, pre_admission_boot_records = load_protocol(
         protocol_path, manifest["sourceRevision"]
     )
     for line in manifest["expectedPrefix"]:
         require_protocol_record(line, protocol)
+        identity = RECORD_IDENTITY.match(line)
+        if identity is None or identity.group(1) not in (
+            PRE_ADMISSION_STATIC_IDENTITIES | pre_admission_boot_records
+        ):
+            raise ClassificationError(
+                "manifest-invalid",
+                "pre-terminal record is outside the generated pre-admission phase",
+            )
         if PRETERMINAL_AUTHORITY.search(line):
             raise ClassificationError(
                 "manifest-invalid", "pre-terminal authority record is forbidden"

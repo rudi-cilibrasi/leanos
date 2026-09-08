@@ -37,12 +37,14 @@ class BareMetalRejectionTest(unittest.TestCase):
             f"record\t7\tBOOTALLOC\tLEANOS_SERIAL_7_BOOTALLOC\t{PROTOCOL_PREFIX}7 BOOTALLOC\n"
             f"record\t8\tTERMINAL\tLEANOS_SERIAL_8_TERMINAL\t{PROTOCOL_PREFIX}8 TERMINAL\n"
             f"record\t22\tENTER\tLEANOS_SERIAL_22_ENTER\t{PROTOCOL_PREFIX}22 ENTER\n"
+            f"record\t22\tBOOT\tLEANOS_SERIAL_22_BOOT\t{PROTOCOL_PREFIX}22 BOOT\n"
             f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n"
             f"record\t10\tIPC\tLEANOS_SERIAL_10_IPC\t{PROTOCOL_PREFIX}10 IPC\n",
             encoding="utf-8",
         )
         with self.protocol.open("a", encoding="utf-8") as protocol:
             protocol.write(
+                "pre-admission-boot-record\t22\tBOOT\n"
                 "pre-admission-reason\tdma-required-missing\n"
                 "pre-admission-reason\tdma-inventory\n"
             )
@@ -99,6 +101,24 @@ class BareMetalRejectionTest(unittest.TestCase):
         )
         self.assertEqual(result["captureLines"], 2)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
+
+    def test_accepts_only_generated_pre_admission_boot_prefixes(self):
+        boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
+        self.write_manifest(expectedPrefix=[
+            f"{PROTOCOL_PREFIX}1 SERIAL status=READY",
+            boot,
+        ])
+        self.assertEqual(
+            self.classify(
+                (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\n{boot}\n"
+                 + self.terminal + "\n").encode()
+            )["result"],
+            "exact-typed-rejection",
+        )
+
+        ipc = f"{PROTOCOL_PREFIX}10 IPC event=boot"
+        self.write_manifest(expectedPrefix=[ipc])
+        self.assert_result("manifest-invalid", (ipc + "\n" + self.terminal).encode())
 
     def test_normalization_preserves_eof_and_replaces_lone_cr(self):
         without_final_newline = (
