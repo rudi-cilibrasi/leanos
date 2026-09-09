@@ -433,7 +433,13 @@ def write_evaluate(cases: list[dict], out: Path) -> None:
             lines.append(f"def {ident} : ByteArray := {lean_bytes(data)}")
             if stage == "handoff":
                 query = f"BootMemoryMapDecoderABI.query {MULTIBOOT2_MAGIC} {INFO_ADDRESS} {ident}"
-                count = MAX_HANDOFF_WORDS
+                # Ask the model for the complete projection length. Replaying
+                # every maximum-sized slot repeatedly normalizes the same map
+                # thousands of times, even for small captures.
+                lines.append(f"def {ident}_query := {query}")
+                query = f"{ident}_query"
+                count = (f"(if {query} 1 == 1 then 5 + 3 * "
+                         f"(({query} 3).toNat + ({query} 4).toNat) + {HANDOFF_TAIL} else 3)")
             else:
                 query = f"BootTopology.completeTopologyQuery {ident} {apic['bsp']} {apic['executing']}"
                 count = MADT_WORDS
