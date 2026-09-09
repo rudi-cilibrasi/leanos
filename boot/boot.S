@@ -129,6 +129,9 @@ boot_cpu_gate_begin:
     jne boot_cpu_rejected
     cmp $0x6c65746e, %ecx
     jne boot_cpu_rejected
+    /* Intel exposes SYSCALL only in long mode. Its architectural target MSRs
+       are available with LM; require NX too before enabling it in EFER. */
+    mov $0x20100000, %esi
     jmp 8f
 7:
     cmp $0x68747541, %ebx
@@ -137,6 +140,7 @@ boot_cpu_gate_begin:
     jne boot_cpu_rejected
     cmp $0x444d4163, %ecx
     jne boot_cpu_rejected
+    mov $0x20100800, %esi
 8:
     mov $1, %eax
     xor %ecx, %ecx
@@ -153,9 +157,9 @@ boot_cpu_gate_begin:
     mov $0x80000001, %eax
     xor %ecx, %ecx
     cpuid
-    /* SYSCALL, NX and long mode authorize the EFER/target recipe. */
-    and $0x20100800, %edx
-    cmp $0x20100800, %edx
+    /* Vendor-specific availability of the EFER/target recipe. */
+    and %esi, %edx
+    cmp %esi, %edx
     jne boot_cpu_rejected
 .global boot_cpu_gate_end
 boot_cpu_gate_end:

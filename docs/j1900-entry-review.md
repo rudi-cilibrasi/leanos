@@ -54,25 +54,27 @@ XSAVE and AVX; those cannot be asserted for these measured J1900 leaves.
 `boot/boot.S` writes EFER, STAR, LSTAR, CSTAR, FMASK and all three SYSENTER MSRs
 in the 32-bit normalization path. A new early gate now checks Intel/AMD vendor
 words, basic/extended leaf availability, the required legacy feature mask,
-and SYSCALL/NX/long-mode support before any CR/MSR access. It follows the first
+and the vendor-specific extended-feature mask before any CR/MSR access.
+Intel requires NX/long mode here; AMD also requires SYSCALL. It follows the first
 kernel-owned IDT publication and preservation of the Multiboot registers.
 This establishes common architectural prerequisites, not the exact J1900
 profile or permission to enter CPL3. `check_fast_entry_cpuid` still runs later
-in C and remains AMD-only; the full raw J1900 selector still needs wiring there.
+in the q35 C path and remains AMD-only. The separate Intel diagnostic now calls
+the full raw J1900 selector before the q35 path, without authorizing CPL3.
 
 The separate early rejection emits `FINAL status=FAIL reason=early-cpu-capability`
 when UART readiness permits. Each byte has at most 65536 readiness polls; a
 timeout abandons output and halts. This path does not reuse the unbounded
 `EARLY_SERIAL32` loop used by the older exception stubs. The linked-instruction
 checker verifies the guard, handoff preservation, control-access ordering,
-retry decrement and terminal path. Five altered ELF cases cover weakened MSR/NX
+retry decrement and terminal path. Six altered ELF cases cover weakened MSR/NX
 masks, guard bypass, zero retry budget, and a non-decrementing poll loop. The
 two new port sites are declared in each image's reviewed I/O inventory.
 The port audit now decodes the complete bootstrap interval in 32-bit mode:
 decoding its far jump as 64-bit code had falsely interpreted address bytes as
 port instructions. A separate injected real I/O instruction is still rejected.
-Run `scripts/test-early-cpu-image.sh ISO` for the focused QEMU `msr=off` and
-`nx=off` rejection fixtures. They require exactly the early failure record and
+Run `scripts/test-early-cpu-image.sh ISO` for the focused AMD QEMU `msr=off`,
+`nx=off`, and `syscall=off` rejection fixtures. They require exactly the early failure record and
 a terminal timeout; they do not count as canonical q35 admission evidence.
 
 The next implementation needs a closed, versioned raw-leaf projection, exact
@@ -133,7 +135,7 @@ existing production return gate and does not establish the no-SMAP policy.
 The focused runner checks 51 CPU/control combinations, including mixed AMD/Intel
 data, incomplete observations, every modeled EFER bit and target register, plus
 the Intel vectors 6 and 13. These new binding checks currently run in Lean;
-the generated-C control adapter and physical readback remain to be connected.
+the complete control-state adapter and physical readback remain to be connected.
 
 Local execution at the early-gate revision passed canonical blocking IPC and
 both AMD fast-entry probes under TCG. KVM on mgnuc's Intel i7-10710U passed the
@@ -144,7 +146,6 @@ are retained. This demonstrates a mismatch in that tested configuration;
 an unchanged-main baseline was not run, so it does not establish when the
 mismatch was introduced. Intel-specific execution testing must account for
 the actual instruction behavior rather than relying on a vendor-string override.
-
 
 `J1900MsrReadback.checkRaw` now supplies a scalar generated-C check for the eight
 complete Intel MSR observations. It accepts only EFER `0xd00` and seven zero
@@ -157,4 +158,58 @@ its eight 64-bit words. Kernel reduction and generated-C replay check the same
 513 cases, including reserved EFER and upper target bits. The shared hosted
 runner also exercises both CPU and MSR exports. Each retained generated export
 links as a freestanding ELF without Lean runtime dependencies. The full control
-binding remains in Lean, and the MSR export is not yet wired into the boot image.
+binding remains in Lean. The CPU and MSR exports are now linked into the boot image.
+
+## Early Intel diagnostic boundary
+
+Before emitting any q35 BOOT identity or accessing q35 PCI/MMIO, the boot adapter
+recognizes an Intel candidate and captures the five bounded CPUID slots. It
+queries optional basic/extended leaves only when their root advertises them.
+The generated CPU selector consumes all 22 words and must accept before the
+adapter reads the eight MSRs and invokes the generated readback check.
+
+Generated family 24 records identify this as `qotom-j1900-candidate` with
+`platform-admitted=0 cpl3=0`, then retain the raw CPU words and selection code,
+and, only after CPU acceptance, the MSR words and readback result. A mismatch
+terminates with `j1900-cpu-profile` or `j1900-msr-readback`. Successful CPU and
+MSR checks still terminate with `qotom-platform-pending`: the diagnostic is
+not the DMA, firmware, no-SMAP, or CPL3 admission required by the remaining
+issues. It does not identify an Intel run as the AMD q35 profile. Non-Intel
+CPUs continue through the existing q35 path.
+
+`scripts/test-j1900-cpu-image.sh` exercises this boundary using a synthetic Intel
+CPU projection under TCG, including stepping, SMEP and SMAP mutations. These
+are diagnostic CPU fixtures on a q35 machine, not Qotom platform evidence or
+fast-entry instruction-outcome tests. Family 24 needs its own strict capture
+replay; the existing generic q35 rejection classifier does not admit these
+records. A physical capture and the Intel denial execution fixture remain open.
+
+The CPU record's 22 unsigned decimal words are version, presence bitmap, then
+EAX/EBX/ECX/EDX for leaves 0, 1, 7, 0x80000000 and 0x80000001 (all subleaf 0).
+The selection word is the scalar selector result: 65536 accepts, 1–12 reject
+as defined by `J1900CpuProfile.rejectionWord` and the width guard. The control
+record orders EFER, STAR, LSTAR, CSTAR, SFMASK, SYSENTER_CS, SYSENTER_ESP and
+SYSENTER_EIP; `readback=1` accepts the exact tuple and zero rejects it. These
+records describe CPU capability and register observations, not execution of
+SYSCALL/SYSENTER or successful platform admission.
+
+The synthetic Intel execution exposed a mode distinction in the early gate:
+QEMU 8.2.2 masks the Intel SYSCALL feature before long mode, as shown in its
+[pinned CPUID implementation](https://github.com/qemu/qemu/blob/v8.2.2/target/i386/cpu.c#L6510).
+The Intel architectural MSR table instead conditions EFER on NX or LM, and
+STAR/LSTAR/CSTAR/FMASK on LM (Volume 4, table 2-2, page 2-93). The 32-bit gate
+therefore requires Intel NX+LM (`0x20100000`), while AMD retains SYSCALL+NX+LM
+(`0x20100800`). Both still require the complete legacy MSR/PAE/SEP and integer/
+FPU control prerequisites. The 64-bit J1900 selector continues to require
+SYSCALL as part of its complete raw capability projection before the C MSR
+readback. The first synthetic Intel failure is retained in the local build
+logs; it was an early-gate defect, not successful J1900 admission.
+
+Local validation of the integrated adapter passed the full image-family build
+and policy/fixture checks, all four synthetic Intel diagnostic cases, and the
+three AMD early-capability rejection cases. Canonical AMD blocking IPC,
+SYSCALL and SYSENTER all passed complete TCG protocol classification. This
+extends the local diagnostic evidence; it does not replace the missing Intel
+instruction-denial fixture, KVM resolution, physical capture or complete
+platform admission. The local test images were built from the working tree;
+CI must validate the committed PR head before merge or hardware deployment.

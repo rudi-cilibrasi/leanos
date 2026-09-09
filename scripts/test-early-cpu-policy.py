@@ -44,6 +44,10 @@ with tempfile.TemporaryDirectory() as directory:
                    struct.pack('<I', 0x20100800), struct.pack('<I', 0x20000800))
     cases.append(('missing-nx-feature', data))
     data = bytearray(raw)
+    replace_region(data, 'boot_cpu_gate_begin', 'boot_cpu_gate_end',
+                   struct.pack('<I', 0x20100000), struct.pack('<I', 0x20000000))
+    cases.append(('intel-missing-nx-feature', data))
+    data = bytearray(raw)
     address = symbols['boot_idt32_published']
     data[offset(address):offset(address)+5] = b'\xe9' + struct.pack('<i', symbols['boot_cpu_gate_end'] - address - 5)
     cases.append(('bypass-cpu-gate', data))

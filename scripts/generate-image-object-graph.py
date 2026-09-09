@@ -25,6 +25,8 @@ GENERATED_MODULES = (
     "CapabilityReuse",
     "ExtendedState",
     "PrivilegeEntryControl",
+    "J1900CpuProfile",
+    "J1900MsrReadback",
     "FaultDispatch",
     "DirectPortIO",
     "StaleTranslation",
@@ -162,6 +164,8 @@ COMMON_LINK_OBJECTS = (
     "CapabilityReuse",
     "ExtendedState",
     "PrivilegeEntryControl",
+    "J1900CpuProfile",
+    "J1900MsrReadback",
     "FaultDispatch",
 )
 

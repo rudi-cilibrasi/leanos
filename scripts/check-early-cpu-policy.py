@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check the actual 32-bit CPU guard and bounded rejection in the linked ELF."""
 import importlib.util
+import os
 from pathlib import Path
 import sys
 
@@ -80,6 +81,7 @@ cmp $0x49656e69,%edx
 jne @rejected
 cmp $0x6c65746e,%ecx
 jne @rejected
+mov $0x20100000,%esi
 jmp @common
 amd:
 cmp $0x68747541,%ebx
@@ -88,6 +90,7 @@ cmp $0x69746e65,%edx
 jne @rejected
 cmp $0x444d4163,%ecx
 jne @rejected
+mov $0x20100800,%esi
 common:
 mov $0x1,%eax
 xor %ecx,%ecx
@@ -103,12 +106,18 @@ jb @rejected
 mov $0x80000001,%eax
 xor %ecx,%ecx
 cpuid
-and $0x20100800,%edx
-cmp $0x20100800,%edx
+and %esi,%edx
+cmp %esi,%edx
 jne @rejected
 ''', {'rejected': symbols['boot_cpu_rejected']})
 
-record = b'LEANOS/3 FINAL status=FAIL reason=early-cpu-capability\n'
+protocol = Path(os.environ.get('LEANOS_SERIAL_PROTOCOL_TSV', 'build/boot/serial-protocol.tsv'))
+final_prefixes = [fields[4] for line in protocol.read_text().splitlines()
+                  if len(fields := line.split('\t')) == 5
+                  and fields[:3] == ['record', '3', 'FINAL']]
+if len(final_prefixes) != 1:
+    idt.fail('missing or duplicate generated FINAL identity')
+record = (final_prefixes[0] + ' status=FAIL reason=early-cpu-capability\n').encode('ascii')
 start = symbols['boot_cpu_rejected_record']
 if symbols['boot_cpu_rejected_record_end'] - start != len(record) or idt.read_virtual(elf, sections, start, len(record)) != record:
     idt.fail('early CPU rejection record drifted')

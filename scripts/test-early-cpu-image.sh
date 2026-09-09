@@ -8,7 +8,8 @@ output="${2:-build/early-cpu-negative}"
 mkdir -p "$output"
 export LEANOS_QEMU_ACCELERATOR=tcg
 source scripts/q35-platform.sh
-for feature in msr nx; do
+source build/boot/serial-protocol.sh
+for feature in msr nx syscall; do
   cpu_command=()
   leanos_q35_command cpu_command qemu-system-x86_64 128 "$output/no-$feature.log" "$image"
   # Deliberately mutate only the CPU feature after constructing and validating
@@ -24,7 +25,7 @@ for feature in msr nx; do
   cpu_status=$?
   set -e
   [[ "$cpu_status" == 124 ]] || { echo "unexpected QEMU status: $cpu_status" >&2; exit 1; }
-  grep -Fxq 'LEANOS/3 FINAL status=FAIL reason=early-cpu-capability' "$output/no-$feature.log"
+  grep -Fxq "$LEANOS_SERIAL_3_FINAL status=FAIL reason=early-cpu-capability" "$output/no-$feature.log"
   [[ "$(wc -l < "$output/no-$feature.log")" == 1 ]]
   echo "CPU $feature=off: exact early rejection and terminal timeout verified"
 done
