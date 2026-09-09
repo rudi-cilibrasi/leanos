@@ -52,18 +52,28 @@ instruction execution or relax `Accepted`. The selected extended-feature project
 XSAVE and AVX; those cannot be asserted for these measured J1900 leaves.
 
 `boot/boot.S` writes EFER, STAR, LSTAR, CSTAR, FMASK and all three SYSENTER MSRs
-in the 32-bit normalization path. `check_fast_entry_cpuid` executes later in C.
-A new profile must authorize operations before they execute, not merely relax
-that late vendor comparison. Review the per-model MSR table and early CPUID
-checks before deciding which accesses to omit or retain.
+in the 32-bit normalization path. A new early gate now checks Intel/AMD vendor
+words, basic/extended leaf availability, the required legacy feature mask,
+and SYSCALL/NX/long-mode support before any CR/MSR access. It follows the first
+kernel-owned IDT publication and preservation of the Multiboot registers.
+This establishes common architectural prerequisites, not the exact J1900
+profile or permission to enter CPL3. `check_fast_entry_cpuid` still runs later
+in C and remains AMD-only; the full raw J1900 selector still needs wiring there.
 
-The current assembly has no CPUID instruction before those operations (or
-elsewhere in `boot.S`). Preserve the Multiboot registers and the first
-kernel-owned IDT publication when inserting the early capability gate.
-`EARLY_SERIAL32` currently polls UART readiness without a timeout, so reusing
-it unchanged would not satisfy this issue's bounded early rejection path.
-The gate needs a bounded output attempt and a terminal path even if COM1 never
-becomes ready, with the final-ELF I/O and entry-policy checks updated together.
+The separate early rejection emits `FINAL status=FAIL reason=early-cpu-capability`
+when UART readiness permits. Each byte has at most 65536 readiness polls; a
+timeout abandons output and halts. This path does not reuse the unbounded
+`EARLY_SERIAL32` loop used by the older exception stubs. The linked-instruction
+checker verifies the guard, handoff preservation, control-access ordering,
+retry decrement and terminal path. Five altered ELF cases cover weakened MSR/NX
+masks, guard bypass, zero retry budget, and a non-decrementing poll loop. The
+two new port sites are declared in each image's reviewed I/O inventory.
+The port audit now decodes the complete bootstrap interval in 32-bit mode:
+decoding its far jump as 64-bit code had falsely interpreted address bytes as
+port instructions. A separate injected real I/O instruction is still rejected.
+Run `scripts/test-early-cpu-image.sh ISO` for the focused QEMU `msr=off` and
+`nx=off` rejection fixtures. They require exactly the early failure record and
+a terminal timeout; they do not count as canonical q35 admission evidence.
 
 The next implementation needs a closed, versioned raw-leaf projection, exact
 profile/control readback checks, generated profile-bound records, Lean/C

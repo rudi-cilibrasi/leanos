@@ -113,6 +113,53 @@ boot_bootstrap32_ud_probe:
     mov %eax, multiboot_magic
     mov %ebx, multiboot_info
 
+    /* Authorize the common architectural prerequisites before the first
+       CR/MSR write. This is an operation-safety gate, not platform admission:
+       the later complete CPU snapshot still selects the exact profile. */
+.global boot_cpu_gate_begin
+boot_cpu_gate_begin:
+    xor %eax, %eax
+    xor %ecx, %ecx
+    cpuid
+    cmp $1, %eax
+    jb boot_cpu_rejected
+    cmp $0x756e6547, %ebx
+    jne 7f
+    cmp $0x49656e69, %edx
+    jne boot_cpu_rejected
+    cmp $0x6c65746e, %ecx
+    jne boot_cpu_rejected
+    jmp 8f
+7:
+    cmp $0x68747541, %ebx
+    jne boot_cpu_rejected
+    cmp $0x69746e65, %edx
+    jne boot_cpu_rejected
+    cmp $0x444d4163, %ecx
+    jne boot_cpu_rejected
+8:
+    mov $1, %eax
+    xor %ecx, %ecx
+    cpuid
+    /* FPU, PSE, MSR, PAE, SEP, MMX, FXSR, SSE, SSE2. */
+    and $0x07800869, %edx
+    cmp $0x07800869, %edx
+    jne boot_cpu_rejected
+    mov $0x80000000, %eax
+    xor %ecx, %ecx
+    cpuid
+    cmp $0x80000001, %eax
+    jb boot_cpu_rejected
+    mov $0x80000001, %eax
+    xor %ecx, %ecx
+    cpuid
+    /* SYSCALL, NX and long mode authorize the EFER/target recipe. */
+    and $0x20100800, %edx
+    cmp $0x20100800, %edx
+    jne boot_cpu_rejected
+.global boot_cpu_gate_end
+boot_cpu_gate_end:
+
     /* Identity-map 16 MiB with 4 KiB leaves; only the two explicit user
        ranges receive U/S at the leaf.  Upper levels permit traversal. */
     mov $page_table_a, %edi
@@ -992,6 +1039,43 @@ df_guard_mapped_record_end:
    record, requests a phase-typed debug exit, and halts.  No stub reads the
    exception frame, pushes, calls, returns, or depends on runtime C state,
    the Lean runtime, the ordinary entry stack, or the later IDT/TSS. */
+/* Keep the rejected path outside the successful entry interval. No calls,
+   stack use, MSR access, or runtime initialization is needed here. A UART
+   that never becomes ready exhausts its budget and reaches the halt loop. */
+.section .text.cpu_reject,"ax",@progbits
+.code32
+.global boot_cpu_rejected
+boot_cpu_rejected:
+    cli
+    mov $boot_cpu_rejected_record, %esi
+    mov $(boot_cpu_rejected_record_end-boot_cpu_rejected_record), %ecx
+1:
+    mov $65536, %edi
+    mov $0x3fd, %dx
+2:
+    inb %dx, %al
+    test $0x20, %al
+    jnz 3f
+    sub $1, %edi
+    jnz 2b
+    jmp 5f
+3:
+    movb (%esi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    add $1, %esi
+    sub $1, %ecx
+    jnz 1b
+5:
+    hlt
+    jmp 5b
+.global boot_cpu_rejected_end
+boot_cpu_rejected_end:
+.section .rodata.cpu_reject,"a",@progbits
+boot_cpu_rejected_record:
+    .ascii LEANOS_SERIAL_3_FINAL, " status=FAIL reason=early-cpu-capability\n"
+boot_cpu_rejected_record_end:
+
 .section .text.earlytrap,"ax",@progbits
 .code32
 .global boot_early_isr2_32
