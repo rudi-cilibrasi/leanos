@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rudi-cilibrasi/leanos/hardware/bundle.schema.json",
+  "title": "LeanOS opt-in hardware evidence bundle",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "leanos-hardware-bundle-v1"
+    },
+    "tier": {
+      "const": "hardware"
+    },
+    "scenario": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "iso": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "elf": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "toolchain": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "protocol": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "iso",
+        "elf",
+        "toolchain",
+        "protocol"
+      ],
+      "additionalProperties": false
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capture": {
+      "type": "object",
+      "properties": {
+        "started_utc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "finished_utc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reset_declared_utc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 3600
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 3605
+        },
+        "baud": {
+          "const": 38400
+        },
+        "format": {
+          "const": "8N1"
+        },
+        "flow_control": {
+          "const": "none"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "started_utc",
+        "finished_utc",
+        "reset_declared_utc",
+        "timeout_seconds",
+        "duration_seconds",
+        "baud",
+        "format",
+        "flow_control",
+        "command",
+        "device"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "live",
+            "imported-observation"
+          ]
+        },
+        "capture_implementation_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "original_result_sha256": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{64}|not-applicable)$"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "capture_implementation_sha256",
+        "original_result_sha256",
+        "note"
+      ],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "properties": {
+        "profile.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "inventory.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "toolchain.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "serial.raw": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "serial.normalized": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "events.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "protocol.tsv": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "implementation.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "profile.json",
+        "inventory.json",
+        "toolchain.json",
+        "serial.raw",
+        "serial.normalized",
+        "events.jsonl",
+        "protocol.tsv",
+        "implementation.py"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "tier",
+    "scenario",
+    "source_revision",
+    "artifacts",
+    "operator",
+    "capture",
+    "provenance",
+    "files"
+  ],
+  "additionalProperties": false
+}

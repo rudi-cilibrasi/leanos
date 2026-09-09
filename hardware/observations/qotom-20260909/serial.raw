@@ -1,0 +1,2 @@
+b摬G2񤀐隠EANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap
+LEANOS/3 FINAL status=FAIL reason=dma-identity
