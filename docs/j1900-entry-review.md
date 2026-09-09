@@ -125,7 +125,7 @@ required for #328; hosted replay is not a physical CPU admission capture.
 
 `J1900EntryControl` combines the raw capability selector with an exact modeled
 control tuple: Intel long mode, completed writes and readback, disabled fast
-entry targets, and the measured extended features without XSAVE/AVX. Its three
+entry targets, and the measured extended features without XSAVE/AVX. Its
 proofs connect executable validation to that tuple, disabled SYSCALL/SYSENTER,
 and completed initialization/readback observations. It is separate from the
 existing production return gate and does not establish the no-SMAP policy.
@@ -144,3 +144,17 @@ are retained. This demonstrates a mismatch in that tested configuration;
 an unchanged-main baseline was not run, so it does not establish when the
 mismatch was introduced. Intel-specific execution testing must account for
 the actual instruction behavior rather than relying on a vendor-string override.
+
+
+`J1900MsrReadback.checkRaw` now supplies a scalar generated-C check for the eight
+complete Intel MSR observations. It accepts only EFER `0xd00` and seven zero
+fast-entry targets/masks. A proof maps every passing raw snapshot to the generic
+model's denied MSR state. The check neither performs nor authorizes RDMSR.
+The boot adapter must establish the CPU prerequisites before collecting values.
+
+The corpus includes the accepted tuple and all 512 single-bit mutations across
+its eight 64-bit words. Kernel reduction and generated-C replay check the same
+513 cases, including reserved EFER and upper target bits. The shared hosted
+runner also exercises both CPU and MSR exports. Each retained generated export
+links as a freestanding ELF without Lean runtime dependencies. The full control
+binding remains in Lean, and the MSR export is not yet wired into the boot image.

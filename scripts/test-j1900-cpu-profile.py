@@ -156,6 +156,19 @@ for vendor in ('intel', 'amd', 'unsupported'):
                               f'{str(expected).lower()} := by rfl')
                 entry_count += 1
 
+# Exact full-width MSR readback: every bit differs from the denied tuple
+# in one mutation. This covers reserved EFER bits and upper target bits.
+msr_denied = [0xd00, 0, 0, 0, 0, 0, 0, 0]
+msr_cases = [(msr_denied, 1)]
+for slot in range(8):
+    for bit in range(64):
+        changed = list(msr_denied)
+        changed[slot] ^= 1 << bit
+        msr_cases.append((changed, 0))
+for words, expected in msr_cases:
+    args = ' '.join(str(word) for word in words)
+    checks.append(f'example : LeanOS.J1900MsrReadback.checkRaw {args} = {expected} := by rfl')
+
 output = root / 'build/j1900'
 output.mkdir(parents=True, exist_ok=True)
 path = output / 'Checks.lean'
@@ -218,3 +231,55 @@ undefined = subprocess.check_output(['nm', '-u', str(closed_object)], text=True)
 if undefined.strip():
     raise RuntimeError('CPU boundary needs runtime symbols:\n' + undefined)
 print('Freestanding CPU boundary: no unresolved runtime dependencies')
+
+# Replay the same full-width corpus through the separately generated MSR C
+# translation unit and prove its retained entry point links without runtime.
+msr_rows = ['{' + ', '.join(f'UINT64_C({word})' for word in words + [expected]) + '}'
+            for words, expected in msr_cases]
+(output / 'msr-cases.h').write_text(
+    'static const uint64_t msr_cases[][9] = {\n' + ',\n'.join(msr_rows) + '\n};\n')
+msr_host = output / 'msr-host.c'
+msr_host.write_text('''#include <stdio.h>
+#include "../../.lake/build/ir/LeanOS/J1900MsrReadback.c"
+#include "msr-cases.h"
+extern void lean_initialize(void);
+int main(void) {
+  lean_initialize();
+  lean_object *init = initialize_leanos_LeanOS_J1900MsrReadback(1);
+  if (lean_io_result_is_error(init)) return 2;
+  lean_dec_ref(init);
+  lean_io_mark_end_initialization();
+  for (size_t i = 0; i < sizeof(msr_cases) / sizeof(msr_cases[0]); ++i) {
+    const uint64_t *w = msr_cases[i];
+    if (leanos_j1900_msr_readback(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]) != w[8]) {
+      fprintf(stderr, "MSR case %zu failed\\n", i);
+      return 1;
+    }
+  }
+  puts("Generated-C MSR boundary: 513 cases passed");
+  return 0;
+}
+''')
+msr_object = output / 'msr-host.o'
+msr_executable = output / 'msr-host'
+subprocess.run([os.environ.get('LEANOS_HOST_CC', 'gcc'), '-O1',
+                '-I' + str(Path(prefix) / 'include'), '-c', str(msr_host),
+                '-o', str(msr_object)], cwd=root, check=True)
+subprocess.run(['lake', 'env', 'leanc', str(msr_object), '-o', str(msr_executable)],
+               cwd=root, check=True)
+subprocess.run([str(msr_executable)], cwd=root, check=True)
+msr_generated = output / 'msr-generated.o'
+msr_closed = output / 'msr-freestanding.elf'
+subprocess.run([os.environ.get('LEANOS_CC', 'gcc'), '-O2', '-ffreestanding',
+                '-fno-stack-protector', '-mno-red-zone', '-mgeneral-regs-only',
+                '-fno-asynchronous-unwind-tables', '-fno-unwind-tables',
+                '-ffunction-sections', '-fdata-sections',
+                '-I' + str(Path(prefix) / 'include'), '-c',
+                str(root / '.lake/build/ir/LeanOS/J1900MsrReadback.c'),
+                '-o', str(msr_generated)], cwd=root, check=True)
+subprocess.run(['ld', '--gc-sections', '-e', 'leanos_j1900_msr_readback',
+                str(msr_generated), '-o', str(msr_closed)], cwd=root, check=True)
+undefined = subprocess.check_output(['nm', '-u', str(msr_closed)], text=True)
+if undefined.strip():
+    raise RuntimeError('MSR boundary needs runtime symbols:\n' + undefined)
+print('Freestanding MSR boundary: no unresolved runtime dependencies')

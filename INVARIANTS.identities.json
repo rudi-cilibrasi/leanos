@@ -13041,8 +13041,20 @@
     },
     {
       "source": "LeanOS/J1900EntryControl.lean",
+      "qualified": "LeanOS.J1900EntryControl.raw_readback_requires_denied_msrs",
+      "display": "raw_readback_requires_denied_msrs",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900EntryControl.lean",
       "qualified": "LeanOS.J1900EntryControl.validate_normalized_iff",
       "display": "validate_normalized_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900MsrReadback.lean",
+      "qualified": "LeanOS.J1900MsrReadback.validate_denied_iff",
+      "display": "validate_denied_iff",
       "kind": "theorem"
     },
     {

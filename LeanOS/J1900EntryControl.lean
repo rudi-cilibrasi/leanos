@@ -1,5 +1,6 @@
 import LeanOS.J1900CpuProfile
 import LeanOS.PrivilegeEntryControl
+import LeanOS.J1900MsrReadback
 
 namespace LeanOS.J1900EntryControl
 
@@ -43,5 +44,21 @@ theorem normalized_requires_completed_readback snapshot control
     control.boot.writesComplete = true ∧ control.boot.readbackMatches = true := by
   rw [h.2]
   decide
+
+/-- Interpret the Intel EFER fields named by the generic entry-control model.
+The raw validator additionally rejects reserved bits instead of masking them. -/
+def interpretMsrs (s : J1900MsrReadback.Snapshot) : MsrState :=
+  { eferLme := s.efer &&& 0x100 != 0
+    eferLma := s.efer &&& 0x400 != 0
+    eferNxe := s.efer &&& 0x800 != 0
+    eferSce := s.efer &&& 1 != 0
+    star := s.star, lstar := s.lstar, cstar := s.cstar, sfmask := s.sfmask
+    sysenterCs := s.sysenterCs, sysenterEsp := s.sysenterEsp, sysenterEip := s.sysenterEip }
+
+theorem raw_readback_requires_denied_msrs s
+    (h : J1900MsrReadback.validate s = true) : interpretMsrs s = deniedMsrs := by
+  have hs := (J1900MsrReadback.validate_denied_iff s).mp h
+  rw [hs]
+  rfl
 
 end LeanOS.J1900EntryControl
