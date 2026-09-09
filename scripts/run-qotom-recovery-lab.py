@@ -22,7 +22,7 @@ CHAIN = b'LEANOS-LAB/1 CHAIN freebsd disk='
 
 def watchdog_request(clock_text, prefix='watchdog-test'):
     """Use the board's verified UTC RTC convention, never the observer's clock."""
-    if prefix != 'watchdog-test' and not re.fullmatch(r'watchdog-kernel-[0-9a-f]{64}', prefix):
+    if prefix != 'watchdog-test' and not re.fullmatch(r'watchdog-(kernel|leanos)-[0-9a-f]{64}', prefix):
         raise ValueError('invalid watchdog request prefix')
     lines = clock_text.splitlines()
     if len(lines) != 2 or lines[0] != '0':
@@ -159,6 +159,28 @@ def classify(events):
             'raw_sha256': hashlib.sha256(data).hexdigest()}
 
 
+def classify_protected(events, digest):
+    result = classify(events)
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
+    armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
+    default = b'LEANOS-LAB/1 DEFAULT request=none'
+    if not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid protected image digest')
+    pattern = rb'[\r\n]*'.join(bytes([ch]) for ch in digest.encode())
+    load = re.search(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' + pattern + rb'(?=[\r\n])', data)
+    if (load is None or any(data.count(marker) != 1 for marker in (accepted, armed, default, b'WATCHDOG-LEANOS-LOAD'))
+            or not data.find(accepted) < data.find(armed) < load.start() < load.end() <= data.find(EXPECTED)
+            or data.find(default) < data.find(EXPECTED) + len(EXPECTED)
+            or any(marker in data for marker in (b'WATCHDOG-LOAD-FAILED', b'WATCHDOG-STOP-FAILED',
+                                                  b'WATCHDOG-NO-RESET', b'KERNEL-HANG', b'WATCHDOG-KERNEL-LOAD'))):
+        raise ValueError('missing, repeated, or failed normal watchdog launch/recovery')
+    if not 30 <= result['quiet_seconds'] <= 90:
+        raise ValueError('protected completion outside its observation interval')
+    result['watchdog_protected'] = True
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True)
@@ -170,7 +192,7 @@ def main():
     parser.add_argument('--kernel-hang-elf', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
-    parser.add_argument('--scenario', choices=('leanos', 'rtc-probe', 'watchdog-test', 'watchdog-kernel'), default='leanos')
+    parser.add_argument('--scenario', choices=('leanos', 'rtc-probe', 'watchdog-test', 'watchdog-kernel', 'watchdog-leanos'), default='watchdog-leanos')
     args = parser.parse_args()
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
@@ -195,13 +217,14 @@ def main():
         env = args.output / 'request.env'
         subprocess.run(['grub-editenv', str(env), 'create'], check=True)
         request = 'leanos-' + digest if args.scenario == 'leanos' else 'rtc-probe'
-        if args.scenario in ('watchdog-test', 'watchdog-kernel'):
+        if args.scenario.startswith('watchdog-'):
             deadline = time.monotonic() + 75
             while time.monotonic() < deadline:
                 clock = remote("sysctl -n machdep.wall_cmos_clock; date -u +%Y-%m-%dT%H:%M:%S", text=True)
                 if clock.returncode:
                     raise ValueError('cannot read board clock; no trial armed')
-                prefix = 'watchdog-test' if args.scenario == 'watchdog-test' else 'watchdog-kernel-' + kernel_digest
+                prefix = {'watchdog-test': 'watchdog-test', 'watchdog-leanos': 'watchdog-leanos-' + digest,
+                          'watchdog-kernel': 'watchdog-kernel-' + (kernel_digest or '')}[args.scenario]
                 request = watchdog_request(clock.stdout, prefix)
                 if request is not None:
                     break
@@ -289,7 +312,8 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
 '''.replace('SERIAL', shlex.quote(args.usb_serial)), text=True)
         (directory / 'verification.txt').write_text(verify.stdout + verify.stderr)
         recovery = {'freebsd_boot_before': before, 'freebsd_boot_after': after,
-                    'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment', 'hang_recovery': False,
+                    'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment',
+                    'hang_recovery': False,
                     'request_consumed': verify.returncode == 0, 'recovery': 'freebsd-ssh-restored'}
         # Preserve recovery evidence even when an unfamiliar serial format fails
         # classification. Replaying a parser fix must not require another boot.
@@ -298,10 +322,14 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             raise ValueError('one-shot request was not verified consumed')
         if args.scenario == 'watchdog-kernel':
             result = classify_watchdog(events, kernel_digest)
+        elif args.scenario == 'watchdog-leanos':
+            result = classify_protected(events, digest)
         else:
             classifier = {'leanos': classify, 'rtc-probe': classify_rtc, 'watchdog-test': classify_watchdog}[args.scenario]
             result = classifier(events)
         result.update(recovery)
+        if args.scenario == 'watchdog-leanos':
+            result['hang_recovery'] = True
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         print('PASS cycle=' + str(cycle), json.dumps(result), flush=True)
 

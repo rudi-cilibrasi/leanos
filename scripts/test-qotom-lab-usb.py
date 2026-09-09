@@ -65,6 +65,8 @@ def main():
             hang_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest()
             for name in ('kernel-guard-hang', 'kernel-guard-bad-hash', 'kernel-guard-bad-elf', 'kernel-guard-wrong-digest'):
                 cases.append((name, 'watchdog-kernel-' + hang_digest + '-2026-9-9-12-0'))
+        for name in ('normal-guard-boot', 'normal-guard-bad-hash', 'normal-guard-bad-elf', 'normal-guard-wrong-digest'):
+            cases.append((name, 'watchdog-leanos-' + digest + '-2026-9-9-12-0'))
         if args.case:
             unknown = set(args.case) - {name for name, _ in cases}
             if unknown:
@@ -79,27 +81,30 @@ def main():
             if name == 'bad-env':
                 env.write_bytes(b'invalid' + b'#' * 1017)
             run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
-            if name.startswith('kernel-guard-'):
+            if name.startswith(('kernel-guard-', 'normal-guard-')):
+                payload_digest = hang_digest if name.startswith('kernel-') else digest
+                payload_name = 'leanos-qotom-kernel-hang.elf' if name.startswith('kernel-') else 'leanos-qotom-lab.elf'
+                checksum_name = 'kernel-hang.sha256' if name.startswith('kernel-') else 'leanos.sha256'
                 mock = tmp / 'watchdog-mock.cfg'
                 mock.write_text('function qotom_watchdog_arm {\necho WATCHDOG-MOCK-ARM\ntrue\n}\n'
                                 'function qotom_watchdog_stop {\necho WATCHDOG-MOCK-STOP\ntrue\n}\n')
                 run('mcopy', '-o', '-i', str(image) + '@@1048576', str(mock), '::/boot/grub/watchdog.cfg')
-                if name in ('kernel-guard-bad-hash', 'kernel-guard-bad-elf'):
+                if name.endswith(('bad-hash', 'bad-elf')):
                     bad = tmp / 'bad-kernel.elf'
                     bad.write_bytes(b'not a multiboot ELF')
-                    run('mcopy', '-o', '-i', str(image) + '@@1048576', str(bad), '::/boot/leanos-qotom-kernel-hang.elf')
-                if name == 'kernel-guard-bad-elf':
+                    run('mcopy', '-o', '-i', str(image) + '@@1048576', str(bad), '::/boot/' + payload_name)
+                if name.endswith('bad-elf'):
                     bad_digest = hashlib.sha256(bad.read_bytes()).hexdigest()
                     cfg = tmp / 'bad-kernel.cfg'
                     run('mcopy', '-o', '-i', str(image) + '@@1048576', '::/boot/grub/grub.cfg', str(cfg))
-                    cfg.write_text(cfg.read_text().replace(hang_digest, bad_digest))
+                    cfg.write_text(cfg.read_text().replace(payload_digest, bad_digest))
                     checksum = tmp / 'bad-kernel.sha256'
-                    checksum.write_text(bad_digest + '  /boot/leanos-qotom-kernel-hang.elf\n')
-                    run('grub-editenv', str(env), 'set', 'request=' + request.replace(hang_digest, bad_digest))
-                    for source, target in ((cfg, 'grub/grub.cfg'), (env, 'grub/grubenv'), (checksum, 'kernel-hang.sha256')):
+                    checksum.write_text(bad_digest + '  /boot/' + payload_name + '\n')
+                    run('grub-editenv', str(env), 'set', 'request=' + request.replace(payload_digest, bad_digest))
+                    for source, target in ((cfg, 'grub/grub.cfg'), (env, 'grub/grubenv'), (checksum, checksum_name)):
                         run('mcopy', '-o', '-i', str(image) + '@@1048576', str(source), '::/boot/' + target)
-                if name == 'kernel-guard-wrong-digest':
-                    run('grub-editenv', str(env), 'set', 'request=' + request.replace(hang_digest, '0' * 64))
+                if name.endswith('wrong-digest'):
+                    run('grub-editenv', str(env), 'set', 'request=' + request.replace(payload_digest, '0' * 64))
                     run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
             if name == 'kernel-hang':
                 hang_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest()
@@ -148,7 +153,7 @@ def main():
                 '-drive', 'file=' + str(image) + ',format=raw,if=ide,index=0',
                 '-drive', 'file=' + str(sentinel) + ',format=raw,if=ide,index=1'],
                 stderr=subprocess.DEVNULL)
-            expected = b'FINAL status=FAIL reason=dma-identity' if name == 'leanos' else b'FREEBSD-CHAIN-SENTINEL'
+            expected = b'FINAL status=FAIL reason=dma-identity' if name in ('leanos', 'normal-guard-boot') else b'FREEBSD-CHAIN-SENTINEL'
             if name in ('kernel-hang', 'kernel-guard-hang'):
                 expected = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
             deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
@@ -170,13 +175,13 @@ def main():
             if name in ('kernel-hang', 'kernel-guard-hang'):
                 assert data.count(expected) == 1 and data.endswith(expected), data
                 assert b'LEANOS/' not in data and b'FREEBSD-CHAIN-SENTINEL' not in data, data
-            if name.startswith('kernel-guard-'):
+            if name.startswith(('kernel-guard-', 'normal-guard-')):
                 assert b'WATCHDOG-ARMED' not in data, data
-                if name == 'kernel-guard-wrong-digest':
+                if name.endswith('wrong-digest'):
                     assert b'WATCHDOG-MOCK-ARM' not in data and b'expired-or-invalid=1' in data, data
                 else:
                     assert data.count(b'WATCHDOG-MOCK-ARM') == 1, data
-                    if name != 'kernel-guard-hang':
+                    if name not in ('kernel-guard-hang', 'normal-guard-boot'):
                         assert data.count(b'WATCHDOG-MOCK-STOP') == 1 and b'WATCHDOG-LOAD-FAILED' in data, data
             if name == 'rtc-probe':
                 stamps = re.findall(rb'LEANOS-LAB/1 RTC-(?:BEGIN|END) ([0-9-]+)', data)
@@ -211,7 +216,7 @@ def main():
                 assert b'WATCHDOG-ARM-REJECTED' in data, data
             if name == 'bad-image':
                 assert b'HASH MISMATCH' in data and b'LOAD-FAILED' in data
-            if name != 'leanos':
+            if name not in ('leanos', 'normal-guard-boot'):
                 assert record(10, 'BOOT') not in data
             else:
                 assert b'LEANOS-LAB/1 MODE' in data

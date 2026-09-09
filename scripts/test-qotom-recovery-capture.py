@@ -16,6 +16,24 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_protected_normal_capture(self):
+        digest = 'a' * 64
+        prefix = (b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'
+                  b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n'
+                  b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD\n\rsha256=' + b'a' * 30 + b'\n\r' + b'a' * 34 + b'\n')
+        default = b'LEANOS-LAB/1 DEFAULT request=none\n'
+        valid = [event(prefix, 1), event(lab.EXPECTED, 3), event(b'firmware\n', 37), event(default + lab.CHAIN, 38)]
+        self.assertTrue(lab.classify_protected(valid, digest)['watchdog_protected'])
+        for bad in (valid[1:], valid + [event(prefix, 39)],
+                    [event(prefix.replace(b'ARMED ticks=120', b'ARM-REJECTED'), 1), *valid[1:]],
+                    [*valid[:2], event(b'firmware', 120), event(default + lab.CHAIN, 125)],
+                    [*valid[:3], event(lab.CHAIN, 38)], valid + [event(b'WATCHDOG-LOAD-FAILED', 39)],
+                    [valid[0], event(lab.EXPECTED.replace(b'dma-identity', b'other'), 3), *valid[2:]]):
+            with self.subTest(events=bad), self.assertRaises(ValueError):
+                lab.classify_protected(bad, digest)
+        with self.assertRaises(ValueError):
+            lab.classify_protected(valid, 'b' * 64)
+
     def test_retained_kernel_watchdog(self):
         root = Path(__file__).resolve().parent.parent / 'hardware/lab/observations/qotom-kernel-watchdog-20260909'
         manifest = json.loads((root / 'manifest.json').read_text())
