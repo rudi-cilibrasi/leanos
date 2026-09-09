@@ -15,6 +15,9 @@ SCRIPT = ROOT / "scripts/reproducibility-partitions.py"
 
 
 def run(*arguments: object, check: bool = True) -> subprocess.CompletedProcess[str]:
+    if arguments and arguments[0] in ("result", "verify"):
+        arguments += ("--source-revision", "a" * 40,
+                      "--toolchain-id", "clang-reference@18.1.3")
     result = subprocess.run(
         ["python3", str(SCRIPT), *(str(argument) for argument in arguments)],
         text=True,
@@ -27,7 +30,7 @@ def run(*arguments: object, check: bool = True) -> subprocess.CompletedProcess[s
 
 def reject(*arguments: object, diagnostic: str) -> None:
     result = run(*arguments, check=False)
-    if result.returncode == 0 or diagnostic not in result.stderr:
+    if result.returncode == 0 or diagnostic not in result.stderr or result.stdout:
         raise AssertionError(f"expected {diagnostic!r}, got {result.stderr!r}")
 
 
@@ -141,6 +144,36 @@ with tempfile.TemporaryDirectory() as directory:
         result_paths.append(path)
 
     verification = ("verify", plan_path, *result_paths, "--artifacts", artifacts)
+    # Even a freshly rehashed plan and matching result provenance cannot replace
+    # the consumer's independently observed checkout/container identity.
+    for field, changed_value, diagnostic in (
+        ("sourceRevision", "b" * 40, "differs from consumer checkout"),
+        ("toolchainId", "other-toolchain", "differs from consumer toolchain"),
+    ):
+        changed = json.loads(json.dumps(plan))
+        changed[field] = changed_value
+        changed.pop("planDigest")
+        changed["planDigest"] = hashlib.sha256(
+            json.dumps(changed, separators=(",", ":"), sort_keys=True).encode()
+        ).hexdigest()
+        plan_path.write_text(json.dumps(changed))
+        reject("result", plan_path, "--partition", 0, "--build-root", build_root,
+               diagnostic=diagnostic)
+        reject(*verification, diagnostic=diagnostic)
+    plan_path.write_text(json.dumps(plan))
+    for command in (
+        ("result", plan_path, "--partition", 0, "--build-root", build_root),
+        verification,
+    ):
+        for flags in ((), ("--source-revision", revision),
+                      ("--toolchain-id", "clang-reference@18.1.3")):
+            missing = subprocess.run(
+                ["python3", str(SCRIPT), *map(str, command + flags)],
+                capture_output=True, text=True,
+            )
+            if missing.returncode == 0 or missing.stdout:
+                raise AssertionError("consumer accepted missing independent provenance")
+
     aggregate = run(*verification).stdout.splitlines()
     if [line[66:] for line in aggregate] != artifacts.read_text().splitlines():
         raise AssertionError("aggregate manifest does not preserve authoritative order")
@@ -249,5 +282,86 @@ with tempfile.TemporaryDirectory() as directory:
     reject(*verification, diagnostic="authoritative artifact list")
     pin_plan(json.loads(json.dumps(plan)))
     run(*verification)
+
+# Exercise the revision-owned producer inventory through the real CLI. A
+# partition may group producers, but must never split any producer's outputs.
+with tempfile.TemporaryDirectory() as directory:
+    fixture = Path(directory)
+    evidence = ROOT / "scripts/run-emulator-evidence.py"
+    groups = json.loads(subprocess.check_output(
+        ["python3", str(evidence), "reproducibility-groups"], text=True,
+    ))
+    artifact_text = subprocess.check_output(
+        ["python3", str(evidence), "reproducibility-artifacts"], text=True,
+    )
+    artifacts = fixture / "artifacts.txt"
+    artifacts.write_text(artifact_text)
+    group_path = fixture / "groups.json"
+    group_path.write_text(json.dumps(groups))
+    command = ("plan", artifacts, "--partitions", 4, "--source-revision", "a" * 40,
+               "--toolchain-id", "fixture-only", "--artifact-groups", group_path)
+    original = run(*command).stdout
+    plan = json.loads(original)
+    ownership = {
+        artifact: partition["id"]
+        for partition in plan["partitions"] for artifact in partition["artifacts"]
+    }
+    if sorted(ownership) != sorted(artifact_text.splitlines()):
+        raise AssertionError("grouped plan lost authoritative artifacts")
+    if any(len({ownership[artifact] for artifact in group}) != 1
+           for group in groups.values()):
+        raise AssertionError("one producer was split across cold builds")
+    if any(not partition["artifacts"] for partition in plan["partitions"]):
+        raise AssertionError("grouped planner emitted an empty partition")
+    plan_path = fixture / "grouped-plan.json"
+    plan_path.write_text(original)
+    selection = ("select", plan_path, "--partition", 0, "--artifact-groups", group_path,
+                 "--source-revision", "a" * 40, "--toolchain-id", "fixture-only")
+    selected = json.loads(run(*selection).stdout)
+    expected_producers = sorted(name for name, group in groups.items() if ownership[group[0]] == 0)
+    if selected["producers"] != expected_producers or selected["artifacts"] != sorted(plan["partitions"][0]["artifacts"]):
+        raise AssertionError("selection differs from exact revision-owned producers")
+    reject(*selection, "--source-revision", "b" * 40, diagnostic="consumer checkout")
+    reject(*selection, "--toolchain-id", "wrong", diagnostic="consumer toolchain")
+    reject(*selection, "--partition", 999, diagnostic="unknown partition")
+    changed = json.loads(original)
+    # Preserve coverage and rehash the plan while deliberately splitting a real
+    # producer. Self-consistent downloaded metadata cannot authorize this build.
+    multi = next(group for group in groups.values() if len(group) > 1)
+    owner = ownership[multi[0]]
+    destination = (owner + 1) % len(changed["partitions"])
+    changed["partitions"][owner]["artifacts"].remove(multi[0])
+    changed["partitions"][destination]["artifacts"].append(multi[0])
+    changed.pop("planDigest")
+    changed["planDigest"] = hashlib.sha256(json.dumps(changed, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+    plan_path.write_text(json.dumps(changed))
+    reject(*selection, diagnostic="splits an authoritative producer")
+    plan_path.write_text(original)
+    group_path.write_text(json.dumps(dict(reversed(list(groups.items())))))
+    if run(*command).stdout != original:
+        raise AssertionError("JSON object order changed grouped partition assignment")
+    for mutation in ("missing", "duplicate", "unknown", "invalid", "empty"):
+        changed = json.loads(json.dumps(groups))
+        first = next(iter(changed))
+        if mutation == "missing":
+            changed[first].pop()
+        elif mutation == "duplicate":
+            changed[first].append(changed[first][0])
+        elif mutation == "unknown":
+            changed[first][0] = "unknown.elf"
+        elif mutation == "invalid":
+            changed[first] = "not-a-list"
+        else:
+            changed = {}
+        group_path.write_text(json.dumps(changed))
+        rejected_selection = run(*selection, check=False)
+        if rejected_selection.returncode == 0 or rejected_selection.stdout:
+            raise AssertionError(f"{mutation} groups emitted a usable build selection")
+        rejected = run(*command, check=False)
+        if rejected.returncode == 0 or rejected.stdout:
+            raise AssertionError(f"{mutation} groups emitted a usable partial plan")
+    group_path.write_text(json.dumps(groups))
+    reject(*command, "--partitions", len(groups) + 1,
+           diagnostic="producer group count")
 
 print("Reproducibility partition planning and aggregation fail closed")

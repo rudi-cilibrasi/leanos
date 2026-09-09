@@ -594,12 +594,73 @@ def select_build_artifacts(
     return artifacts
 
 
+def select_reproducibility_rows(
+    manifest: dict[str, object], rows: list[dict[str, str]], version: str,
+    requested: list[str],
+) -> list[dict[str, str]]:
+    """Map exact authoritative artifact names to their producing scenario rows.
+
+    This is a build-selection contract, not permission to reuse canonical build
+    products or omit the other partitions from the independent comparison.
+    """
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise EvidenceError("version must be MAJOR.MINOR.PATCH")
+    if not requested or len(requested) != len(set(requested)):
+        raise EvidenceError("reproducibility selection must be nonempty and unique")
+    authoritative = set(reproducibility_artifacts(manifest, rows, version))
+    unknown = set(requested) - authoritative
+    if unknown:
+        raise EvidenceError(f"unknown reproducibility artifacts: {sorted(unknown)!r}")
+    requested_set = set(requested)
+    selected = []
+    for row in rows:
+        kinds = manifest["scenarios"][row["id"]].get("reproducibility_artifacts", [])
+        owned = {
+            Path(source).name
+            for source, _ in scenario_artifacts(manifest, row, kinds, version)
+        }
+        # Shared source/toolchain provenance is emitted with the canonical
+        # image, just as in reproducibility_artifacts; never guess from suffixes.
+        if row["id"] == rows[0]["id"]:
+            owned.update(manifest.get("reproducibility_extras", []))
+        if requested_set & owned:
+            selected.append(row)
+    if not selected:
+        raise EvidenceError("reproducibility selection has no producing scenarios")
+    return selected
+
+
+def reproducibility_groups(
+    manifest: dict[str, object], rows: list[dict[str, str]], version: str,
+) -> dict[str, list[str]]:
+    """Keep every artifact produced by one scenario in one cold-build group."""
+    groups: dict[str, list[str]] = {}
+    for artifact in reproducibility_artifacts(manifest, rows, version):
+        producers = select_reproducibility_rows(manifest, rows, version, [artifact])
+        if len(producers) != 1:
+            raise EvidenceError(f"artifact has ambiguous producers: {artifact}")
+        groups.setdefault(producers[0]["id"], []).append(artifact)
+    return groups
+
+
 def print_build_plan(args: argparse.Namespace) -> None:
     """Emit a machine-readable build boundary before image construction."""
     _matrix_id, rows = parse_matrix(args.matrix.resolve())
-    rows = select_rows(rows, None, args.tier, args.shard_index, args.shard_count)
+    requested_path = getattr(args, "reproducibility_selection", None)
+    if requested_path is not None:
+        if args.tier != "all" or args.shard_index is not None or args.shard_count is not None:
+            raise EvidenceError("reproducibility selection cannot be combined with tier or sharding")
+        try:
+            requested = requested_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as error:
+            raise EvidenceError("reproducibility selection is not readable UTF-8") from error
+        rows = select_reproducibility_rows(load_manifest(), rows, args.version, requested)
+    else:
+        rows = select_rows(rows, None, args.tier, args.shard_index, args.shard_count)
+    # Validate the complete selection before emitting even the TSV header.
+    artifacts = select_build_artifacts(rows, args.version)
     print("id\trunner\timage\tprelink_elf\tfinal_elf")
-    for fields in select_build_artifacts(rows, args.version):
+    for fields in artifacts:
         print("\t".join(fields))
 
 
@@ -1876,9 +1937,10 @@ def main() -> int:
     subparsers.add_parser("check")
     release_parser = subparsers.add_parser("release-artifacts")
     reproducibility_parser = subparsers.add_parser("reproducibility-artifacts")
+    groups_parser = subparsers.add_parser("reproducibility-groups")
     negative_parser = subparsers.add_parser("negative-evidence")
     negative_parser.add_argument("scenario", nargs="?")
-    for subparser in (release_parser, reproducibility_parser):
+    for subparser in (release_parser, reproducibility_parser, groups_parser):
         subparser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
         subparser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
         subparser.add_argument("--version", default=os.environ.get("LEANOS_VERSION", "0.1.0"))
@@ -1896,6 +1958,10 @@ def main() -> int:
             help="select the complete evidence inventory or the versioned PR subset",
         )
     plan_parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
+    plan_parser.add_argument(
+        "--reproducibility-selection", type=Path,
+        help="exact artifact-name list to map to producing scenarios; no tier/shard filters",
+    )
     plan_parser.add_argument(
         "--version", default=os.environ.get("LEANOS_VERSION", "0.1.0")
     )
@@ -1956,6 +2022,16 @@ def main() -> int:
                 check_artifacts_present([(f"build/boot/{name}", name) for name in names], ROOT)
             for name in names:
                 print(name)
+        elif args.operation == "reproducibility-groups":
+            manifest = load_manifest(args.manifest)
+            _, rows = parse_matrix(args.matrix, args.manifest)
+            groups = reproducibility_groups(manifest, rows, args.version)
+            if args.check:
+                check_artifacts_present([
+                    (f"build/boot/{name}", name)
+                    for names in groups.values() for name in names
+                ], ROOT)
+            print(json.dumps(groups, indent=2, sort_keys=True))
         elif args.operation == "negative-evidence":
             declared = negative_evidence(load_manifest())
             if args.scenario is not None:
