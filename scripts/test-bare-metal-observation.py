@@ -54,6 +54,16 @@ class BareMetalObservationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expected UTC RFC3339"):
             self.validate()
 
+    def test_rejects_basic_format_timestamp(self):
+        self.value["startedAtUtc"] = "20260909T120000Z"
+        with self.assertRaisesRegex(ValueError, "expected UTC RFC3339"):
+            self.validate()
+
+    def test_rejects_boolean_schema_version(self):
+        self.value["schemaVersion"] = True
+        with self.assertRaisesRegex(ValueError, "expected integer"):
+            self.validate()
+
     def test_rejects_reversed_timestamp_range(self):
         self.value["endedAtUtc"] = "2026-09-09T11:59:59Z"
         with self.assertRaisesRegex(ValueError, "precedes startedAtUtc"):

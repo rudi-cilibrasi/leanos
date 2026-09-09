@@ -5,7 +5,13 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import sys
+
+
+RFC3339_UTC = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"
+)
 
 
 def fail(reason: str) -> None:
@@ -13,7 +19,7 @@ def fail(reason: str) -> None:
 
 
 def parse_utc(value: str, field: str) -> datetime:
-    if not value.endswith("Z"):
+    if RFC3339_UTC.fullmatch(value) is None:
         fail(f"{field}: expected UTC RFC3339 timestamp")
     try:
         parsed = datetime.fromisoformat(value[:-1] + "+00:00")

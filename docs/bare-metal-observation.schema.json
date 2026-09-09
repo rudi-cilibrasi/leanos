@@ -19,7 +19,7 @@
     "resetResult"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "type": "integer", "const": 1 },
     "operatorId": { "type": "string", "minLength": 1, "maxLength": 128 },
     "startedAtUtc": { "type": "string", "format": "date-time" },
     "endedAtUtc": { "type": "string", "format": "date-time" },
