@@ -39,7 +39,7 @@ def main():
         with sentinel.open('r+b') as stream:
             stream.write(code)
         cases = [('default', 'none'), ('oneshot', 'reboot-test'),
-                 ('unknown', 'unknown'), ('watchdog-wrong-board', 'watchdog-test'), ('bad-env', 'none'), ('bad-image', 'leanos-' + digest),
+                 ('unknown', 'unknown'), ('watchdog-disabled', 'watchdog-test'), ('bad-env', 'none'), ('bad-image', 'leanos-' + digest),
                  ('leanos', 'leanos-' + digest)]
         for name, request in cases:
             image = tmp / (name + '.img')
@@ -76,8 +76,8 @@ def main():
             data = log.read_bytes()
             if name == 'oneshot':
                 assert data.count(b'SELECT reboot-test consumed=1') == 1
-            if name == 'watchdog-wrong-board':
-                assert b'WATCHDOG-ARM-REJECTED' in data
+            if name == 'watchdog-disabled':
+                assert b'WATCHDOG-DISABLED fallback=freebsd' in data
                 assert b'WATCHDOG-ARMED' not in data
             if name == 'bad-image':
                 assert b'HASH MISMATCH' in data and b'LOAD-FAILED' in data

@@ -76,3 +76,27 @@ Test ordinary completion and failed-arm fallback as well. Timer expiration is
 recovery evidence only; it must never turn an incomplete LeanOS trace into a
 successful scenario. Until those physical tests pass, the existing runner's
 `hang_recovery: false` remains accurate.
+
+## Physical timer trial: reset works, recovery fails
+
+An opt-in GRUB timer experiment at source `e3863f8` armed 120 TCO v3 ticks
+only after validating the board and register state. Its initial trial rejected
+GRUB's SMI register `0x20073` (FreeBSD had reported `0x20033`) and returned to
+FreeBSD. The next trial admitted those two observed states, preserving SMI_EN.
+Seven actual GRUB/QEMU tests passed before that physical trial.
+
+The physical trace then repeated SELECT and WATCHDOG-ARMED at approximately
+13.34, 141.80 and 269.82 seconds. The timer reset the board before the 300-second
+software escape, but the same request loaded again despite the earlier
+`save_env` success. This **fails unattended recovery**. The cause of repeated
+persistent state is not yet established; it must not be described as a proven
+USB cache or firmware defect. The ordinary CF9 reset's successful cycles do
+not establish durability across this watchdog reset.
+
+The watchdog-test path is now disabled in the template: it falls back to
+FreeBSD without arming. The register recipe is retained only for investigation.
+The already installed experimental configuration needs replacement after
+physical USB removal allows FreeBSD to boot. No further watchdog arm is
+appropriate until independent durable one-shot consumption is demonstrated
+under the actual reset mechanism. A GRUB success message or a same-boot cached
+readback alone is insufficient.
