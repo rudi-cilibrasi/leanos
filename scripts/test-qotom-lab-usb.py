@@ -37,7 +37,7 @@ def main():
         with sentinel.open('r+b') as stream:
             stream.write(code)
         cases = [('default', 'none'), ('oneshot', 'reboot-test'),
-                 ('unknown', 'unknown'), ('bad-image', 'leanos-' + digest),
+                 ('unknown', 'unknown'), ('bad-env', 'none'), ('bad-image', 'leanos-' + digest),
                  ('leanos', 'leanos-' + digest)]
         for name, request in cases:
             image = tmp / (name + '.img')
@@ -45,6 +45,8 @@ def main():
             env = tmp / 'grubenv'
             run('grub-editenv', str(env), 'create')
             run('grub-editenv', str(env), 'set', 'request=' + request)
+            if name == 'bad-env':
+                env.write_bytes(b'invalid' + b'#' * 1017)
             run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
             if name == 'bad-image':
                 (tmp / 'bad.elf').write_bytes(b'unauthorized image')
@@ -79,8 +81,11 @@ def main():
             else:
                 assert b'LEANOS-LAB/1 MODE' in data
             run('mcopy', '-o', '-i', str(image) + '@@1048576', '::/boot/grub/grubenv', str(env))
-            state = subprocess.check_output(['grub-editenv', str(env), 'list'], text=True)
-            assert state == 'request=none\n', (name, state)
+            if name == 'bad-env':
+                assert b'DISARM-FAILED fallback=freebsd' in data
+            else:
+                state = subprocess.check_output(['grub-editenv', str(env), 'list'], text=True)
+                assert state == 'request=none\n', (name, state)
             print(name, 'PASS', flush=True)
 
 

@@ -1,8 +1,9 @@
 # Qotom boot recovery experiment
 
 This is an opt-in lab prototype for issue #333, separate from the canonical
-halt-until-reset observation in #327. It is not yet a demonstrated unattended
-hardware loop and does not change physical platform admission.
+halt-until-reset observation in #327. The completed-run return path has been observed on the physical board. It does
+not change physical platform admission; recovery from an earlier hang remains
+unimplemented.
 
 ## Arrangement
 
@@ -59,7 +60,7 @@ The image builder creates a 96 MiB regular file and only attaches that file to
 a loop device. It never writes a physical disk. The test uses a fake GPT disk
 with a small serial-output MBR, not an emulated FreeBSD installation. It verifies
 default fallback, one-shot consumption across a real emulator reset, unknown
-requests, image hash mismatch, and launch of the lab rejection kernel. It reads
+requests, invalid environment state, image hash mismatch, and launch of the lab rejection kernel. It reads
 the environment back after every case to verify that the request was consumed.
 The simulated PC is not the Qotom, so the board-specific terminal reset is not
 exercised by that test.
@@ -91,15 +92,57 @@ At 2026-09-09 16:56:20 UTC the first physical default test rebooted FreeBSD.
 FreeBSD's next boot time was 16:56:47 UTC. Serial capture contained firmware
 prefix bytes but no lab GRUB marker. Therefore this is **not** evidence of
 successful USB-to-FreeBSD chainloading; the firmware appears to have bypassed
-the USB. A `reboot-test` request is now armed pending legacy USB-first selection.
+the USB. After the operator selected legacy USB first, the capture at 17:02 UTC showed
+`SELECT reboot-test consumed=1`, a reset, then `CHAIN freebsd disk=hd1`. FreeBSD
+returned with boot time 17:02:57 UTC and the saved request was `none`.
 The media ELF was read back as
 `9226ca1e9ea33607ba73e1acbfe3df5063665df9f5b13fbbd001cc7fb89bbdb2`.
 
-The expected physical sequence is `SELECT reboot-test consumed=1`, a firmware
-reset, `CHAIN freebsd`, then a new FreeBSD boot and working SSH. Only after that
-passes should the lab kernel request be armed and tested for three consecutive
-capture/reset/FreeBSD cycles. COM1 capture remains 38400 baud, 8N1, no flow
+The first actual LeanOS lab run emitted its expected `dma-identity` FINAL at
+17:04:52 UTC. Subsequent firmware bytes appeared about 34 seconds later, followed
+by `CHAIN freebsd disk=hd1` at 17:05:27. FreeBSD returned with boot time 17:05:42
+and working SSH. The BIOS remained configured to select USB. Three additional
+automated cycles then passed consecutively, with post-terminal quiet intervals
+of 34.27, 34.28 and 36.69 seconds. Every cycle verified a new FreeBSD boot, working
+SSH, and `request=none`. The retained lab observations are in
+`hardware/lab/observations/qotom-20260909/`. This includes the exact producer
+script used; the current classifier additionally rejects nonmonotonic timestamps
+and unexpected earlier kernel records. COM1 capture remains 38400 baud, 8N1, no flow
 control, FTDI adapter and null-modem cable.
+
+## Automated completed-run captures
+
+After USB-first selection and a successful physical fallback test, run the local
+orchestrator with access to the serial device and authenticated SSH:
+
+```sh
+python3 scripts/run-qotom-recovery-lab.py \
+  --host freebsd@HOST --host-key-alias freebsd.lan \
+  --usb-serial USB_SERIAL --serial-device /dev/serial/by-id/ADAPTER \
+  --elf build/qotom-lab/leanos-qotom-lab.elf \
+  --output /path/to/new/capture-directory --cycles 3
+```
+
+It validates the USB serial and remote ELF digest, arms one digest-bound request,
+starts serial collection before reboot, and waits up to 180 seconds per cycle.
+It requires the exact lab rejection trace, at least ten seconds of quiet, the
+subsequent chain marker, a changed FreeBSD boot time, working authenticated SSH,
+and the saved request cleared to `none`. It stops on failure instead of retrying
+boots indefinitely. Raw bytes, chunk timestamps, SSH reboot output and result
+metadata are retained per cycle. The runner currently targets this rejection
+image, not an arbitrary future CPL3 success protocol.
+
+`--ssh-prefix` accepts an argument list such as `sshpass -e ssh` if password
+credentials are supplied externally in `SSHPASS`; credentials are not written
+into the evidence. Normal SSH agent/key authentication is preferable for repeat
+use. The tool does not install an SSH key or modify the internal bootloader.
+If a request was armed but a later step failed, disarm it before an unrelated
+reboot. The same fixed mount point must not be used concurrently by other tools.
+
+`test-qotom-recovery-capture.py` rejects changed/truncated traces, false success,
+duplicate terminals, insufficient quiet, unexpected kernel output and a repeated
+LeanOS selection. `test-qotom-lab-usb.py` exercises the actual GRUB boot code in
+QEMU with a fake fallback disk. Neither test establishes physical hang recovery.
 
 ## Hang recovery and rollback
 
