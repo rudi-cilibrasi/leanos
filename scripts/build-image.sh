@@ -955,17 +955,6 @@ while IFS=$'\t' read -r plan_image plan_check plan_expected plan_final plan_desc
       "$build/$plan_final" "$plan_description"
   fi
 done < "$build/final-plan-checks.tsv"
-extended_state_plan_targets=()
-for target in \
-  "$build/leanos-extended-state.elf" \
-  "$build/leanos-extended-state-mmx.elf" \
-  "$build/leanos-extended-state-sse.elf" \
-  "$build/leanos-extended-state-sse2.elf" \
-  "$build/leanos-extended-state-avx.elf" \
-  "$build/leanos-fast-entry-syscall.elf" \
-  "$build/leanos-fast-entry-sysenter.elf"; do
-  selected_final_enabled "$target" && extended_state_plan_targets+=("$target")
-done
 if selected_final_enabled "$build/leanos-double-fault.elf"; then
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
