@@ -50,6 +50,8 @@ class BareMetalRejectionTest(unittest.TestCase):
                 "pre-admission-reason\tdma-required-missing\n"
                 "pre-admission-reason\tdma-inventory\n"
             )
+        self.serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
+        self.boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
         self.terminal = f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=platform-inventory"
         self.write_manifest()
 
@@ -65,7 +67,7 @@ class BareMetalRejectionTest(unittest.TestCase):
             "serialProtocolSha256": hashlib.sha256(
                 self.protocol.read_bytes()
             ).hexdigest(),
-            "expectedPrefix": [f"{PROTOCOL_PREFIX}1 SERIAL status=READY"],
+            "expectedPrefix": [self.serial, self.boot],
             "expectedTerminal": self.terminal,
             "machine": {
                 "model": "fixture-board-rev-a", "cpu": "fixture-x86-64",
@@ -88,7 +90,7 @@ class BareMetalRejectionTest(unittest.TestCase):
 
     def test_accepts_exact_final_rejection_and_binds_evidence(self):
         capture = (
-            f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r\n"
+            f"{self.serial}\r\n{self.boot}\r\n"
             + self.terminal
             + "\r\n"
         ).encode()
@@ -101,11 +103,11 @@ class BareMetalRejectionTest(unittest.TestCase):
             result["normalizedCaptureSha256"],
             hashlib.sha256(normalized).hexdigest(),
         )
-        self.assertEqual(result["captureLines"], 2)
+        self.assertEqual(result["captureLines"], 3)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
     def test_emits_and_verifies_deterministic_bundle(self):
-        capture = (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r\n"
+        capture = (f"{self.serial}\r\n{self.boot}\r\n"
                    + self.terminal + "\r\n").encode()
         result = self.classify(capture)
         bundle = self.root / "bundle"
@@ -163,6 +165,15 @@ class BareMetalRejectionTest(unittest.TestCase):
                     ("\n".join(prefix) + "\n" + self.terminal + "\n").encode(),
                 )
 
+    def test_requires_serial_and_boot_boundaries(self):
+        for prefix in ([], [self.serial]):
+            with self.subTest(prefix=prefix):
+                self.write_manifest(expectedPrefix=prefix)
+                self.assert_result(
+                    "manifest-invalid",
+                    ("\n".join(prefix + [self.terminal]) + "\n").encode(),
+                )
+
     def test_allows_repeated_records_within_a_generated_phase(self):
         serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
         boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
@@ -179,7 +190,7 @@ class BareMetalRejectionTest(unittest.TestCase):
 
     def test_normalization_preserves_eof_and_replaces_lone_cr(self):
         without_final_newline = (
-            f"{PROTOCOL_PREFIX}1 SERIAL status=READY\r" + self.terminal
+            f"{self.serial}\r{self.boot}\r" + self.terminal
         ).encode()
         normalized = without_final_newline.replace(b"\r", b"\n")
 
@@ -191,7 +202,7 @@ class BareMetalRejectionTest(unittest.TestCase):
             result["normalizedCaptureSha256"],
             hashlib.sha256(normalized).hexdigest(),
         )
-        self.assertEqual(result["captureLines"], 2)
+        self.assertEqual(result["captureLines"], 3)
 
     def test_accepts_production_final_failure_as_the_expected_terminal(self):
         final_identity = PROTOCOL_PREFIX + "3 FINAL"
@@ -199,7 +210,7 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.write_manifest()
 
         result = self.classify(
-            (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\n" + self.terminal + "\n").encode()
+            (f"{self.serial}\n{self.boot}\n" + self.terminal + "\n").encode()
         )
 
         self.assertEqual(result["result"], "exact-typed-rejection")
@@ -211,7 +222,7 @@ class BareMetalRejectionTest(unittest.TestCase):
 
         self.assert_result(
             "wrong-rejection",
-            (f"{PROTOCOL_PREFIX}1 SERIAL status=READY\n" +
+            (f"{self.serial}\n{self.boot}\n" +
              f"{final_identity} status=FAIL reason=other\n").encode(),
         )
 

@@ -268,6 +268,10 @@ def require_pre_admission_order(
                     "manifest-invalid", "pre-admission phase record is reordered"
                 )
             last_phase = rank
+    if not seen_serial or not seen_boot:
+        raise ClassificationError(
+            "manifest-invalid", "pre-admission boundaries are incomplete"
+        )
 
 
 def is_platform_rejection(line: str) -> bool:
