@@ -13,6 +13,8 @@ out=build/firmware-corpus
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+python3 scripts/test-capture-acpi-root-tables.py
+python3 scripts/test-firmware-root-corpus.py
 python3 "$tool" validate
 rm -rf "$out"
 python3 "$tool" normalize --out "$out"
@@ -26,7 +28,8 @@ done
 cases="$(python3 "$tool" list | wc -l)"
 rows="$(grep -c -v '^#' "$out/replay.tsv")"
 (( cases >= 3 )) || { echo "error: the corpus must hold at least three firmware captures" >&2; exit 1; }
-(( rows == cases * 16 )) || { echo "error: expected $((cases * 16)) replay rows, found $rows" >&2; exit 1; }
+root_cases="$(python3 -c 'import json; print(sum(c["root_tables"] == "acpidump" for c in json.load(open("firmware-corpus/manifest.json"))["cases"]))')"
+(( rows == cases * 16 + root_cases )) || { echo "error: expected $((cases * 16 + root_cases)) replay rows, found $rows" >&2; exit 1; }
 python3 "$tool" list | awk -F '\t' '
   $3 == "accepted" { handoff++ }
   $4 == "accepted" { admitted++ }
@@ -97,7 +100,7 @@ expect_rejection mutation-unknown "names an unknown madt rejection" \
 expect_rejection mutation-missing "mutations must pin a result for each of" \
   'del case["mutations"]["madt-checksum"]'
 expect_rejection root-stage "root_tables must be" \
-  'case["root_tables"] = "acpidump"'
+  'case["root_tables"] = "invented"'
 expect_rejection missing-permission "missing permission" \
   'case["permission"] = " "'
 

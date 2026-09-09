@@ -29,11 +29,12 @@ taken, who permitted it, what was redacted and why it cannot affect the
 result, the SHA-256 of each raw file, the BSP and executing APIC identities
 handed to admission, the expected result of each stage, and the typed
 rejection each derived mutation must produce. `root_tables` is
-`unavailable` for every current row: Linux does not expose the RSDP, RSDT, or
-XSDT in sysfs, so the root-selection stage of `BootTopology` is not replayed
-yet, and the manifest refuses any other value until that stage lands.
+`unavailable` for captures without physical root bytes. Rows marked `acpidump`
+also retain the RSDP, root tables, physical address summary, and an exact copy
+of each referenced table. Their `root_replay` expectation pins all five result
+words and the content digest of the normalized root replay.
 
-The corpus includes three virtual-firmware captures and one physical-machine capture:
+The corpus includes five virtual-firmware captures and one physical-machine capture:
 
 | Case | Firmware | Memory map | Topology |
 | --- | --- | --- | --- |
@@ -41,8 +42,10 @@ The corpus includes three virtual-firmware captures and one physical-machine cap
 | `qemu-seabios-q35-1cpu` | SeaBIOS on QEMU q35 | 9 entries, decoded | 1 processor, admitted |
 | `qemu-ovmf-q35-4cpu` | OVMF (EDK II) on QEMU q35, booted through the EFI stub | 19 interleaved RAM/NVS/reserved entries, decoded | 4 enabled processors, rejected `multipleEnabledProcessors` |
 | `intel-nuc10-fncml0053` | Intel NUC10i7FNH, FNCML357.0053 firmware | 18 interleaved RAM/NVS/reserved entries, decoded | 12 enabled processors, rejected `multipleEnabledProcessors` |
+| `qemu-seabios-q35-roots-1cpu` | SeaBIOS physical root capture | 9 entries, decoded | RSDP/RSDT and 5 referenced tables; topology admitted |
+| `qemu-ovmf-q35-roots-4cpu` | OVMF physical root capture | 19 entries, decoded | RSDP/XSDT and 6 referenced tables; rejected `multipleEnabledProcessors` |
 
-The two QEMU rows are real firmware captured through the same Linux
+The QEMU rows are real firmware captured through the same Linux
 procedure as a physical machine, not repository-constructed fixtures; the
 Hyper-V row is a physical host's virtualization firmware. The NUC row was
 collected directly on the physical development host (mgnuc), using that same
@@ -74,8 +77,7 @@ The QEMU capture accepts `--acpidump <binary>` to stage that optional tool and
 its libraries in the minimal guest. Merely having acpidump installed on the
 host does not put it in the guest. Both capture scripts support x86_64 Linux;
 the root helper interprets the little-endian address vectors on that host.
-The current corpus manifest still marks its checked rows' root stage as
-unavailable; collecting these files does not itself add hosted root replay.
+The two root-capture rows replay those files through both Lean and generated C.
 
 `scripts/capture-firmware-handoff-qemu.sh` produces the same capture from a
 Linux guest under QEMU: it builds a minimal initramfs (static busybox, bash
@@ -186,3 +188,28 @@ manifest: the DMA-quarantine inventory, VT-d construction, and serial
 contract are outside these two stages. A row that decodes and then rejects
 is a correct corpus outcome, and the q35 boot, malformed-handoff, topology
 rejection, TCG, and KVM evidence are unchanged by it.
+
+## Root replay representation
+
+The converter appends the one observed RSDP to the normalized memory handoff as
+Multiboot2 tag 14 (revision 0) or tag 15 (revision 2 or later), preserving every
+RSDP byte and adding only the specified tag header/alignment and information
+length. It never synthesizes a second old/new root. The root address comes
+independently from the physical address summary, and the root vector is not
+sorted or deduplicated. Each distinct referenced address has one complete
+byte copy; the root model detects duplicate entries and missing translations.
+
+The normalized content digest covers the handoff bytes, root bytes, root
+address, and ordered address/table pairs using canonical JSON with hex byte
+strings. A separate `bundle.tsv` points the hosted harness at these binary
+files; filesystem paths do not enter the digest. The harness constructs Lean
+byte arrays and calls `leanos_boot_captured_root_query`, which reuses
+`AcpiRootDecoder.decode` and `decodeAndAdmitAuthoritativeAcpiTopology`.
+
+The five-word projection retains the topology ABI/status/result. On rejection,
+words 3/4 preserve a root SDT reason, an offending physical address, or the
+expected/actual root address. RSDP byte errors occupy codes 100–110, wrapped
+handoff errors use 200 plus the existing decoder code, and adapter bounds use
+300–305. The adapter rejects copy-count mismatch, oversized copies, aggregate
+size overflow, and an executing APIC identity outside UInt32 before conversion.
+Root-derived adversarial mutation coverage remains under development for #292.
