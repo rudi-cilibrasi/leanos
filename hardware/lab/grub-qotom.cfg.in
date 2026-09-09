@@ -24,6 +24,20 @@ if save_env --file=($labroot)/boot/grub/grubenv request; then
         fi
         echo 'LEANOS-LAB/1 LOAD-FAILED fallback=freebsd'
     fi
+    if [ "$selected" = "watchdog-test" ]; then
+        echo 'LEANOS-LAB/1 SELECT watchdog-test consumed=1'
+        if source ($labroot)/boot/grub/qotom-watchdog.cfg; then
+            if qotom_watchdog_arm; then
+                # Initial timer experiment has a software escape. A reset before
+                # this marker is required; escape/recovery is never a test pass.
+                sleep 300
+                echo 'LEANOS-LAB/1 WATCHDOG-NO-RESET test=FAIL'
+                if qotom_watchdog_stop; then
+                    reboot
+                fi
+            fi
+        fi
+    fi
     if [ "$selected" = "reboot-test" ]; then
         echo 'LEANOS-LAB/1 SELECT reboot-test consumed=1'
         sleep 3
