@@ -87,7 +87,20 @@ four measured CPUs plus 29 altered snapshots using kernel-checked Lean reduction
 The same runner checks 162 fast-entry combinations across vendor, execution
 mode, feature exposure, and null/non-null selectors (including RPL and upper
 bits), also by kernel reduction. These are model checks, not hardware execution.
+The `leanos_j1900_cpu_select` export accepts 22 unsigned 64-bit words: version,
+presence, and EAX/EBX/ECX/EDX for each of the five slots in order. It rejects
+any input exceeding 32 bits before narrowing, including unused register words.
+Results 1–11 identify selection rejections, 12 identifies an input-width
+violation, and 0x10000 selects the existing capability projection. That result
+does not authorize MSR accesses or production CPL3. Each call supplies a whole
+snapshot; the boundary stores no intermediate state between calls.
+
+The runner also checks 55 raw-boundary cases in Lean and generated C: the
+33 snapshots above and a high-bit mutation of each of the 22 input words.
+`scripts/check-j1900-cpu-host.sh` connects that corpus to the shared hosted
+boundary runner, including its instrumented export coverage and sanitizer mode.
+
 The default Lean root imports this module, its three theorems are in the
 checked invariant inventory, and `scripts/check.sh` runs these capture and
-fast-entry cases. The generated-C ABI and boot adapter are not yet connected;
-those and completion of the MSR policy remain required for #328.
+fast-entry cases. The boot adapter and completion of the MSR policy remain
+required for #328; hosted replay is not a physical CPU admission capture.

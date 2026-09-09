@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -36,12 +37,31 @@ def literal(snapshot, version=1, present=31):
 checks = ['import LeanOS.J1900CpuProfile', 'import LeanOS.PrivilegeEntryControl',
           'open LeanOS.J1900CpuProfile']
 count = 0
+raw_count = 0
+raw_cases = []
+reasons = ('version', 'presence', 'basicRange', 'extendedRange', 'vendor',
+           'signature', 'requiredLegacy', 'requiredExtended', 'smep',
+           'unexpectedExtendedState', 'smap')
+
+
+def raw_words(snapshot, version=1, present=31):
+    return [version, present] + [word for field in fields for word in snapshot[field]]
+
+
+def check_raw(words, expected):
+    global raw_count
+    args = ' '.join(str(word) for word in words)
+    checks.append(f'example : selectRaw {args} = {expected} := by rfl')
+    raw_cases.append((list(words), expected))
+    raw_count += 1
 
 
 def check(snapshot, reason=None, **kwargs):
     global count
     expected = '.ok selected' if reason is None else '.error .' + reason
     checks.append(f'example : select ({literal(snapshot, **kwargs)} : Snapshot) = {expected} := by rfl')
+    check_raw(raw_words(snapshot, **kwargs),
+              0x10000 if reason is None else reasons.index(reason) + 1)
     count += 1
 
 
@@ -75,6 +95,13 @@ for field, word, bits, reason in (
         changed[field][word] |= 1 << bit
         check(changed, reason)
 
+# A high bit in any slot must reject before UInt32 conversion, including
+# unused registers and the version/presence words.
+for index in range(22):
+    words = raw_words(base)
+    words[index] |= 1 << 32
+    check_raw(words, 12)
+
 # Exercise the vendor/mode distinction and selector boundary independently of
 # CPU admission. In particular, an Intel long-mode non-null target is enabled,
 # while RPL-only and upper-register bits must not make a null selector valid.
@@ -105,3 +132,36 @@ subprocess.run(['lake', 'build', 'LeanOS.J1900CpuProfile',
 subprocess.run(['lake', 'env', 'lean', str(path)], cwd=root, check=True)
 print(f'J1900 CPU profile: {len(captures)} captures, {count} Lean selection/rejection checks passed')
 print(f'Fast entry: {entry_count} vendor/mode/exposure/selector checks passed')
+print(f'Raw CPU boundary: {raw_count} selection/rejection/width checks passed')
+
+# Include the freshly generated translation unit so the compiler itself checks
+# the exported signature; do not transcribe a second prototype into this test.
+host = output / 'raw-host.c'
+lines = ['#include <stdio.h>',
+         '#include "../../.lake/build/ir/LeanOS/J1900CpuProfile.c"',
+         'extern void lean_initialize(void);',
+         'int main(void) {', '  lean_initialize();',
+         '  lean_object *init = initialize_leanos_LeanOS_J1900CpuProfile(1);',
+         '  if (lean_io_result_is_error(init)) return 2;',
+         '  lean_dec_ref(init);', '  lean_io_mark_end_initialization();']
+for index, (words, expected) in enumerate(raw_cases):
+    args = ', '.join(f'UINT64_C({word})' for word in words)
+    lines.append(f'  if (leanos_j1900_cpu_select({args}) != UINT64_C({expected})) {{')
+    lines.append(f'    fprintf(stderr, "raw CPU case {index} failed\\n"); return 1; }}')
+lines.extend([f'  puts("Generated-C CPU boundary: {raw_count} cases passed");',
+              '  return 0;', '}'])
+host.write_text('\n'.join(lines) + '\n')
+rows = ['{' + ', '.join(f'UINT64_C({word})' for word in words + [expected]) + '}'
+        for words, expected in raw_cases]
+(output / 'raw-cases.h').write_text(
+    'static const uint64_t cpu_cases[][23] = {\n' + ',\n'.join(rows) + '\n};\n')
+executable = output / 'raw-host'
+prefix = subprocess.check_output(['lake', 'env', 'lean', '--print-prefix'],
+                                 cwd=root, text=True).strip()
+host_object = output / 'raw-host.o'
+subprocess.run([os.environ.get('LEANOS_HOST_CC', 'gcc'), '-O1',
+                '-I' + str(Path(prefix) / 'include'), '-c', str(host),
+                '-o', str(host_object)], cwd=root, check=True)
+subprocess.run(['lake', 'env', 'leanc', str(host_object), '-o', str(executable)],
+               cwd=root, check=True)
+subprocess.run([str(executable)], cwd=root, check=True)

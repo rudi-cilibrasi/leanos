@@ -107,4 +107,53 @@ theorem selection_requires_measured_capabilities s projection
   exact ⟨by simpa using hleg.1, by simpa using hext.1,
     by simpa using hsmep.1, by simpa using hstate.1, by simpa using hsmap.1⟩
 
+/-- Stable scalar rejection words for the version-one CPU boundary. Zero is
+not success: successful selection has its own distinct word. -/
+def rejectionWord : Rejection → UInt64
+  | .version => 1
+  | .presence => 2
+  | .basicRange => 3
+  | .extendedRange => 4
+  | .vendor => 5
+  | .signature => 6
+  | .requiredLegacy => 7
+  | .requiredExtended => 8
+  | .smep => 9
+  | .unexpectedExtendedState => 10
+  | .smap => 11
+
+/-- Version-one scalar boundary: version, presence, then EAX/EBX/ECX/EDX
+for each of the five Snapshot slots in order. Every input must fit UInt32;
+reject before narrowing, including otherwise unused CPUID words. Result 12
+means a width violation; 1–11 are typed selection rejections; 0x10000 means
+selection of `selected`, which still does not authorize production CPL3.
+This entry point consumes a complete snapshot on each call and keeps no state. -/
+@[export leanos_j1900_cpu_select]
+def selectRaw
+    (version present basic_eax basic_ebx : UInt64)
+    (basic_ecx basic_edx features_eax features_ebx : UInt64)
+    (features_ecx features_edx structured_eax structured_ebx : UInt64)
+    (structured_ecx structured_edx extended_eax extended_ebx : UInt64)
+    (extended_ecx extended_edx extendedFeatures_eax extendedFeatures_ebx : UInt64)
+    (extendedFeatures_ecx extendedFeatures_edx : UInt64)
+    : UInt64 :=
+  if (version ||| present ||| basic_eax ||| basic_ebx |||
+      basic_ecx ||| basic_edx ||| features_eax ||| features_ebx |||
+      features_ecx ||| features_edx ||| structured_eax ||| structured_ebx |||
+      structured_ecx ||| structured_edx ||| extended_eax ||| extended_ebx |||
+      extended_ecx ||| extended_edx ||| extendedFeatures_eax ||| extendedFeatures_ebx |||
+      extendedFeatures_ecx ||| extendedFeatures_edx) > 0xffffffff then 12
+  else
+    let snapshot : Snapshot :=
+      { version := version.toUInt32, present := present.toUInt32
+        basic := { eax := basic_eax.toUInt32, ebx := basic_ebx.toUInt32, ecx := basic_ecx.toUInt32, edx := basic_edx.toUInt32 }
+        features := { eax := features_eax.toUInt32, ebx := features_ebx.toUInt32, ecx := features_ecx.toUInt32, edx := features_edx.toUInt32 }
+        structured := { eax := structured_eax.toUInt32, ebx := structured_ebx.toUInt32, ecx := structured_ecx.toUInt32, edx := structured_edx.toUInt32 }
+        extended := { eax := extended_eax.toUInt32, ebx := extended_ebx.toUInt32, ecx := extended_ecx.toUInt32, edx := extended_edx.toUInt32 }
+        extendedFeatures := { eax := extendedFeatures_eax.toUInt32, ebx := extendedFeatures_ebx.toUInt32, ecx := extendedFeatures_ecx.toUInt32, edx := extendedFeatures_edx.toUInt32 }
+      }
+    match select snapshot with
+    | .error reason => rejectionWord reason
+    | .ok _ => 0x10000
+
 end LeanOS.J1900CpuProfile
