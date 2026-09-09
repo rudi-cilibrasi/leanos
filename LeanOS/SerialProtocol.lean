@@ -66,6 +66,76 @@ def preAdmissionRejectionReasons : List String := [
   "dma-required-missing"
 ]
 
+/-- Exact production `LEANOS/7 BOOTALLOC` reasons emitted by `handoff_fail`
+before `boot_allocate` publishes its successful terminal. Keeping this
+separate from `preAdmissionRejectionReasons` prevents a FINAL-only reason from
+being relabeled as a BOOTALLOC rejection. -/
+def preAdmissionBootallocRejectionReasons : List String := [
+  "authority-init",
+  "authority-rejected",
+  "bounds",
+  "decode-incomplete",
+  "decode-init",
+  "decode-rejected",
+  "frame-budget-projection-authority",
+  "frame-budget-unpublished-frame",
+  "magic",
+  "pointer",
+  "projection-authority",
+  "projection-entry",
+  "projection-entry-count",
+  "projection-mutation-raw-selection",
+  "projection-terminal",
+  "publication",
+  "raw-selection-authority",
+  "scrub",
+  "stream-incomplete",
+  "stream-init",
+  "stream-step",
+  "topology-admission-publication",
+  "topology-admission-result",
+  "topology-cpuid-apic",
+  "topology-cpuid-leaf",
+  "topology-handoff-length",
+  "topology-madt-duplicate",
+  "topology-madt-generated-entries",
+  "topology-madt-generated-envelope",
+  "topology-madt-missing",
+  "topology-madt-selection",
+  "topology-root-copy",
+  "topology-root-entries",
+  "topology-root-entry-address",
+  "topology-root-entry-duplicate",
+  "topology-root-entry-index",
+  "topology-root-header",
+  "topology-root-kind",
+  "topology-root-selection",
+  "topology-root-vector",
+  "topology-root-width",
+  "topology-sdt-address",
+  "topology-sdt-address-space",
+  "topology-sdt-address-width",
+  "topology-sdt-checksum",
+  "topology-sdt-envelope",
+  "topology-sdt-length",
+  "topology-sdt-window",
+  "topology-table-copy-address",
+  "topology-table-copy-binding",
+  "topology-table-copy-budget",
+  "topology-table-copy-error",
+  "topology-table-copy-exposed",
+  "topology-table-copy-final-cursor",
+  "topology-table-copy-incomplete",
+  "topology-table-copy-length",
+  "topology-table-copy-next-byte",
+  "topology-table-copy-offset",
+  "topology-table-copy-partial-cursor",
+  "topology-table-copy-sequence",
+  "topology-table-copy-status",
+  "topology-table-copy-stream",
+  "topology-table-copy-terminal"
+]
+
 /-- Every scenario-specific BOOT identity emitted immediately after serial
 initialization and before the platform-admission boundary. -/
 def preAdmissionBootRecords : List (Nat × String) := [
@@ -111,6 +181,8 @@ set_option maxRecDepth 32768 in
 theorem records_nodup : records.Nodup := by decide
 theorem pre_admission_rejection_reasons_nodup :
     preAdmissionRejectionReasons.Nodup := by decide
+theorem pre_admission_bootalloc_rejection_reasons_nodup :
+    preAdmissionBootallocRejectionReasons.Nodup := by decide
 theorem pre_admission_boot_records_nodup : preAdmissionBootRecords.Nodup := by
   decide
 theorem pre_admission_boot_records_are_protocol_records :
