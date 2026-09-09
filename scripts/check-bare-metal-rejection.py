@@ -244,6 +244,7 @@ def require_pre_admission_order(
     lines: list[str],
     boot_records: frozenset[str],
     phase_records: tuple[str, ...],
+    terminal_identity: str,
 ) -> None:
     """Require the generated pre-admission phases in their emitter order.
 
@@ -254,6 +255,7 @@ def require_pre_admission_order(
     phase_order = {identity: index for index, identity in enumerate(phase_records)}
     seen_serial = False
     seen_boot = False
+    seen_phases = set()
     last_phase = -1
     for line in lines:
         match = RECORD_IDENTITY.match(line)
@@ -279,9 +281,19 @@ def require_pre_admission_order(
                     "manifest-invalid", "pre-admission phase record is reordered"
                 )
             last_phase = rank
+            seen_phases.add(identity)
     if not seen_serial or not seen_boot:
         raise ClassificationError(
             "manifest-invalid", "pre-admission boundaries are incomplete"
+        )
+    required_phases = set(phase_records)
+    if terminal_identity == f"{PROTOCOL_PREFIX}7 BOOTALLOC" and seen_phases != required_phases:
+        raise ClassificationError(
+            "manifest-invalid", "boot-allocation rejection phases are incomplete"
+        )
+    if terminal_identity == f"{PROTOCOL_PREFIX}3 FINAL" and seen_phases:
+        raise ClassificationError(
+            "manifest-invalid", "pre-admission final includes post-quarantine phases"
         )
 
 
@@ -330,11 +342,6 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
             raise ClassificationError(
                 "manifest-invalid", "pre-terminal authority record is forbidden"
             )
-    require_pre_admission_order(
-        manifest["expectedPrefix"],
-        pre_admission_boot_records,
-        pre_admission_phase_records,
-    )
     require_protocol_record(manifest["expectedTerminal"], protocol)
     terminal_identity = RECORD_IDENTITY.match(manifest["expectedTerminal"])
     if (
@@ -344,6 +351,12 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError(
             "manifest-invalid", "terminal identity is not a platform rejection"
         )
+    require_pre_admission_order(
+        manifest["expectedPrefix"],
+        pre_admission_boot_records,
+        pre_admission_phase_records,
+        terminal_identity.group(1),
+    )
     terminal_reason = manifest["expectedTerminal"].rsplit("reason=", 1)[1]
     if (
         terminal_identity.group(1) == f"{PROTOCOL_PREFIX}3 FINAL"

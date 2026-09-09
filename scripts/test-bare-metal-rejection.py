@@ -53,6 +53,7 @@ class BareMetalRejectionTest(unittest.TestCase):
             )
         self.serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
         self.boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
+        self.dma = f"{PROTOCOL_PREFIX}15 DMA snapshot=1 stage=pre-cpl3 result=PASS"
         self.terminal = f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=authority-init"
         self.write_manifest()
 
@@ -68,7 +69,7 @@ class BareMetalRejectionTest(unittest.TestCase):
             "serialProtocolSha256": hashlib.sha256(
                 self.protocol.read_bytes()
             ).hexdigest(),
-            "expectedPrefix": [self.serial, self.boot],
+            "expectedPrefix": [self.serial, self.boot, self.dma],
             "expectedTerminal": self.terminal,
             "machine": {
                 "model": "fixture-board-rev-a", "cpu": "fixture-x86-64",
@@ -91,7 +92,7 @@ class BareMetalRejectionTest(unittest.TestCase):
 
     def test_accepts_exact_final_rejection_and_binds_evidence(self):
         capture = (
-            f"{self.serial}\r\n{self.boot}\r\n"
+            f"{self.serial}\r\n{self.boot}\r\n{self.dma}\r\n"
             + self.terminal
             + "\r\n"
         ).encode()
@@ -104,11 +105,11 @@ class BareMetalRejectionTest(unittest.TestCase):
             result["normalizedCaptureSha256"],
             hashlib.sha256(normalized).hexdigest(),
         )
-        self.assertEqual(result["captureLines"], 3)
+        self.assertEqual(result["captureLines"], 4)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
     def test_emits_and_verifies_deterministic_bundle(self):
-        capture = (f"{self.serial}\r\n{self.boot}\r\n"
+        capture = (f"{self.serial}\r\n{self.boot}\r\n{self.dma}\r\n"
                    + self.terminal + "\r\n").encode()
         result = self.classify(capture)
         bundle = self.root / "bundle"
@@ -175,6 +176,20 @@ class BareMetalRejectionTest(unittest.TestCase):
                     ("\n".join(prefix + [self.terminal]) + "\n").encode(),
                 )
 
+    def test_requires_terminal_specific_phase_completeness(self):
+        self.write_manifest(expectedPrefix=[self.serial, self.boot])
+        self.assert_result(
+            "manifest-invalid",
+            (f"{self.serial}\n{self.boot}\n{self.terminal}\n").encode(),
+        )
+
+        final = f"{PROTOCOL_PREFIX}3 FINAL status=FAIL reason=dma-required-missing"
+        self.write_manifest(expectedTerminal=final)
+        self.assert_result(
+            "manifest-invalid",
+            (f"{self.serial}\n{self.boot}\n{self.dma}\n{final}\n").encode(),
+        )
+
     def test_allows_repeated_records_within_a_generated_phase(self):
         serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
         boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
@@ -191,7 +206,7 @@ class BareMetalRejectionTest(unittest.TestCase):
 
     def test_normalization_preserves_eof_and_replaces_lone_cr(self):
         without_final_newline = (
-            f"{self.serial}\r{self.boot}\r" + self.terminal
+            f"{self.serial}\r{self.boot}\r{self.dma}\r" + self.terminal
         ).encode()
         normalized = without_final_newline.replace(b"\r", b"\n")
 
@@ -203,12 +218,12 @@ class BareMetalRejectionTest(unittest.TestCase):
             result["normalizedCaptureSha256"],
             hashlib.sha256(normalized).hexdigest(),
         )
-        self.assertEqual(result["captureLines"], 3)
+        self.assertEqual(result["captureLines"], 4)
 
     def test_accepts_production_final_failure_as_the_expected_terminal(self):
         final_identity = PROTOCOL_PREFIX + "3 FINAL"
         self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"
-        self.write_manifest()
+        self.write_manifest(expectedPrefix=[self.serial, self.boot])
 
         result = self.classify(
             (f"{self.serial}\n{self.boot}\n" + self.terminal + "\n").encode()
@@ -219,7 +234,7 @@ class BareMetalRejectionTest(unittest.TestCase):
     def test_classifies_a_different_production_final_reason_as_wrong_rejection(self):
         final_identity = PROTOCOL_PREFIX + "3 FINAL"
         self.terminal = f"{final_identity} status=FAIL reason=dma-required-missing"
-        self.write_manifest()
+        self.write_manifest(expectedPrefix=[self.serial, self.boot])
 
         self.assert_result(
             "wrong-rejection",
