@@ -100,3 +100,5 @@ physical USB removal allows FreeBSD to boot. No further watchdog arm is
 appropriate until independent durable one-shot consumption is demonstrated
 under the actual reset mechanism. A GRUB success message or a same-boot cached
 readback alone is insufficient.
+
+The bounded [failed observation](../hardware/lab/observations/qotom-watchdog-20260909/result.json) retains all 420 seconds of serial events and the failure classification. The post-disable seven-case GRUB/QEMU suite passes, including watchdog-disabled fallback.
