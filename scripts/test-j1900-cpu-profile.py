@@ -35,10 +35,12 @@ def literal(snapshot, version=1, present=31):
 
 
 checks = ['import LeanOS.J1900CpuProfile', 'import LeanOS.PrivilegeEntryControl',
+          'import LeanOS.J1900EntryControl',
           'open LeanOS.J1900CpuProfile']
 count = 0
 raw_count = 0
 raw_cases = []
+control_count = 0
 reasons = ('version', 'presence', 'basicRange', 'extendedRange', 'vendor',
            'signature', 'requiredLegacy', 'requiredExtended', 'smep',
            'unexpectedExtendedState', 'smap')
@@ -57,11 +59,16 @@ def check_raw(words, expected):
 
 
 def check(snapshot, reason=None, **kwargs):
-    global count
+    global count, control_count
     expected = '.ok selected' if reason is None else '.error .' + reason
     checks.append(f'example : select ({literal(snapshot, **kwargs)} : Snapshot) = {expected} := by rfl')
     check_raw(raw_words(snapshot, **kwargs),
               0x10000 if reason is None else reasons.index(reason) + 1)
+    checks.append('example : LeanOS.J1900EntryControl.validate '
+                  f'({literal(snapshot, **kwargs)} : Snapshot) '
+                  'LeanOS.J1900EntryControl.deniedControl = '
+                  f'{str(reason is None).lower()} := by rfl')
+    control_count += 1
     count += 1
 
 
@@ -102,6 +109,32 @@ for index in range(22):
     words[index] |= 1 << 32
     check_raw(words, 12)
 
+control_changes = [
+    'cpu := LeanOS.PrivilegeEntryControl.selectedCpu',
+    'cpu := { LeanOS.J1900EntryControl.cpu with mode := .compatibility }',
+    'boot := { writesComplete := false, readbackMatches := true }',
+    'boot := { writesComplete := true, readbackMatches := false }',
+    'int80ManifestPresent := false',
+    'extendedFeatures := LeanOS.PrivilegeEntryControl.reviewedExtendedFeatures',
+    'extendedControls := { LeanOS.ExtendedState.deniedControls with cr0Ts := false }',
+]
+for field, value in (('eferLme', 'false'), ('eferLma', 'false'),
+                     ('eferNxe', 'false'), ('eferSce', 'true')):
+    control_changes.append('msrs := { LeanOS.PrivilegeEntryControl.deniedMsrs with '
+                           f'{field} := {value} }}')
+for field in ('star', 'lstar', 'cstar', 'sfmask', 'sysenterCs', 'sysenterEsp', 'sysenterEip'):
+    control_changes.append('msrs := { LeanOS.PrivilegeEntryControl.deniedMsrs with '
+                           f'{field} := 1 }}')
+for change in control_changes:
+    checks.append('example : LeanOS.J1900EntryControl.validate '
+                  f'({literal(base)} : Snapshot) '
+                  '{ LeanOS.J1900EntryControl.deniedControl with ' + change +
+                  ' } = false := by rfl')
+    control_count += 1
+for mechanism, vector in (('syscall', 6), ('sysenter', 13)):
+    checks.append('example : LeanOS.PrivilegeEntryControl.expectedVector '
+                  f'LeanOS.J1900EntryControl.cpu .{mechanism} = {vector} := by rfl')
+
 # Exercise the vendor/mode distinction and selector boundary independently of
 # CPU admission. In particular, an Intel long-mode non-null target is enabled,
 # while RPL-only and upper-register bits must not make a null selector valid.
@@ -128,11 +161,12 @@ output.mkdir(parents=True, exist_ok=True)
 path = output / 'Checks.lean'
 path.write_text('\n'.join(checks) + '\n')
 subprocess.run(['lake', 'build', 'LeanOS.J1900CpuProfile',
-                'LeanOS.PrivilegeEntryControl'], cwd=root, check=True)
+                'LeanOS.PrivilegeEntryControl', 'LeanOS.J1900EntryControl'], cwd=root, check=True)
 subprocess.run(['lake', 'env', 'lean', str(path)], cwd=root, check=True)
 print(f'J1900 CPU profile: {len(captures)} captures, {count} Lean selection/rejection checks passed')
 print(f'Fast entry: {entry_count} vendor/mode/exposure/selector checks passed')
 print(f'Raw CPU boundary: {raw_count} selection/rejection/width checks passed')
+print(f'J1900 control binding: {control_count} snapshot/readback checks and two vector checks passed')
 
 # Include the freshly generated translation unit so the compiler itself checks
 # the exported signature; do not transcribe a second prototype into this test.

@@ -120,3 +120,27 @@ The default Lean root imports this module, its three theorems are in the
 checked invariant inventory, and `scripts/check.sh` runs these capture and
 fast-entry cases. The boot adapter and completion of the MSR policy remain
 required for #328; hosted replay is not a physical CPU admission capture.
+
+## CPU and control binding
+
+`J1900EntryControl` combines the raw capability selector with an exact modeled
+control tuple: Intel long mode, completed writes and readback, disabled fast
+entry targets, and the measured extended features without XSAVE/AVX. Its three
+proofs connect executable validation to that tuple, disabled SYSCALL/SYSENTER,
+and completed initialization/readback observations. It is separate from the
+existing production return gate and does not establish the no-SMAP policy.
+
+The focused runner checks 51 CPU/control combinations, including mixed AMD/Intel
+data, incomplete observations, every modeled EFER bit and target register, plus
+the Intel vectors 6 and 13. These new binding checks currently run in Lean;
+the generated-C control adapter and physical readback remain to be connected.
+
+Local execution at the early-gate revision passed canonical blocking IPC and
+both AMD fast-entry probes under TCG. KVM on mgnuc's Intel i7-10710U passed the
+canonical and SYSCALL probes, but SYSENTER reported vector 13 where the guest
+contract expected 6; QEMU exited 39. The configured guest vendor was
+`AuthenticAMD`. [The failed serial trace and provenance](../hardware/lab/observations/mgnuc-kvm-sysenter-20260909/provenance.json)
+are retained. This demonstrates a mismatch in that tested configuration;
+an unchanged-main baseline was not run, so it does not establish when the
+mismatch was introduced. Intel-specific execution testing must account for
+the actual instruction behavior rather than relying on a vendor-string override.

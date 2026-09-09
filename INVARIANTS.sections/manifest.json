@@ -46,6 +46,7 @@
     "LeanOS/InterruptEntry.lean",
     "LeanOS/InvalidationPublication.lean",
     "LeanOS/J1900CpuProfile.lean",
+    "LeanOS/J1900EntryControl.lean",
     "LeanOS/KernelTransition.lean",
     "LeanOS/LifetimeIssuer.lean",
     "LeanOS/MemoryLifecycle.lean",
