@@ -93,6 +93,23 @@ def prelink_plan_rows(manifest: dict) -> list[dict[str, str]]:
     return rows
 
 
+def plan_comparison_rows(manifest: dict) -> list[dict[str, str]]:
+    prelink_plan_rows(manifest)
+    images = manifest["build"]["images"]
+    rows = []
+    for stem, entry in images.items():
+        if "plan_equal_to" not in entry:
+            raise ManifestError(f"image {stem} lacks plan comparison declaration")
+        target = entry["plan_equal_to"]
+        if target is None:
+            continue
+        if not isinstance(target, str) or target not in images or target == stem:
+            raise ManifestError(f"image {stem} names an invalid plan comparison target")
+        rows.append({"expected": images[target]["prelink_plan"],
+                     "actual": entry["prelink_plan"]})
+    return rows
+
+
 def packaged_rows(manifest: dict) -> list[dict[str, str]]:
     """One row per packaged final ELF: the ISO it is staged into, the GRUB
     configuration that boots it, and the final-ELF policy check queued for
@@ -338,6 +355,7 @@ def main() -> int:
     sub.add_parser("images", help="one row per object-graph image")
     packaged = sub.add_parser("packaged-images", help="one row per packaged final ELF")
     packaged.add_argument("--version", default="0.1.0")
+    sub.add_parser("plan-comparisons", help="declared equality checks between image page plans")
     sub.add_parser("prelink-plans", help="prelink ELF and generated page-plan pairs")
     sub.add_parser("page-plans", help="every page-plan header stub the build needs")
     sub.add_parser("plan-checks", help="final-ELF page-plan checks in build order")
@@ -358,6 +376,9 @@ def main() -> int:
                 values = [row[column] for column in PACKAGED_COLUMNS]
                 values[PACKAGED_COLUMNS.index("iso")] = row["iso"].replace("@VERSION@", args.version)
                 print("\t".join(values))
+        elif args.operation == "plan-comparisons":
+            for row in plan_comparison_rows(manifest):
+                print(f"{row['expected']}\t{row['actual']}")
         elif args.operation == "prelink-plans":
             for row in prelink_plan_rows(manifest):
                 print(f"{row['prelink']}\t{row['header']}")

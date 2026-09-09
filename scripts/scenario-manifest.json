@@ -441,133 +441,152 @@
         "kernel": "kernel",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan.h"
+        "prelink_plan": "boot-page-plan.h",
+        "plan_equal_to": null
       },
       "leanos-malformed-handoff": {
         "boot": "boot",
         "kernel": "kernel-malformed-handoff",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-malformed-handoff.h"
+        "prelink_plan": "boot-page-plan-malformed-handoff.h",
+        "plan_equal_to": null
       },
       "leanos-projection-authority-mutation": {
         "boot": "boot",
         "kernel": "kernel-projection-authority-mutation",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-projection-authority-mutation.h"
+        "prelink_plan": "boot-page-plan-projection-authority-mutation.h",
+        "plan_equal_to": null
       },
       "leanos-raw-selection-authority-mutation": {
         "boot": "boot",
         "kernel": "kernel-raw-selection-authority-mutation",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-raw-selection-authority-mutation.h"
+        "prelink_plan": "boot-page-plan-raw-selection-authority-mutation.h",
+        "plan_equal_to": null
       },
       "leanos-preemption": {
         "boot": "boot-preemption",
         "kernel": "kernel-preemption",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-preemption.h"
+        "prelink_plan": "boot-page-plan-preemption.h",
+        "plan_equal_to": null
       },
       "leanos-frame-budget": {
         "boot": "boot-frame-budget",
         "kernel": "kernel-frame-budget",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-frame-budget.h"
+        "prelink_plan": "boot-page-plan-frame-budget.h",
+        "plan_equal_to": null
       },
       "leanos-capability-transfer": {
         "boot": "boot-capability-transfer",
         "kernel": "kernel-capability-transfer",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-capability-transfer.h"
+        "prelink_plan": "boot-page-plan-capability-transfer.h",
+        "plan_equal_to": null
       },
       "leanos-inflight-revocation": {
         "boot": "boot-inflight-revocation",
         "kernel": "kernel-inflight-revocation",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-inflight-revocation.h"
+        "prelink_plan": "boot-page-plan-inflight-revocation.h",
+        "plan_equal_to": null
       },
       "leanos-fault-containment": {
         "boot": "boot-fault-containment",
         "kernel": "kernel-fault-containment",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fault-containment.h"
+        "prelink_plan": "boot-page-plan-fault-containment.h",
+        "plan_equal_to": null
       },
       "leanos-fault-readonly-write": {
         "boot": "boot-fault-readonly-write",
         "kernel": "kernel-fault-containment",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fault-readonly-write.h"
+        "prelink_plan": "boot-page-plan-fault-readonly-write.h",
+        "plan_equal_to": "leanos-fault-containment"
       },
       "leanos-fault-nx-execute": {
         "boot": "boot-fault-nx-execute",
         "kernel": "kernel-fault-containment",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fault-nx-execute.h"
+        "prelink_plan": "boot-page-plan-fault-nx-execute.h",
+        "plan_equal_to": "leanos-fault-containment"
       },
       "leanos-fault-reserved-bit": {
         "boot": "boot-fault-reserved-bit",
         "kernel": "kernel-fault-reserved-bit",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fault-reserved-bit.h"
+        "prelink_plan": "boot-page-plan-fault-reserved-bit.h",
+        "plan_equal_to": "leanos-fault-containment"
       },
       "leanos-fault-walk-mismatch": {
         "boot": "boot-fault-walk-mismatch",
         "kernel": "kernel-fault-walk-mismatch",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fault-walk-mismatch.h"
+        "prelink_plan": "boot-page-plan-fault-walk-mismatch.h",
+        "plan_equal_to": "leanos-fault-containment"
       },
       "leanos-fault-stale-translation": {
         "boot": "boot-fault-stale-translation",
         "kernel": "kernel-fault-stale-translation",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fault-stale-translation.h"
+        "prelink_plan": "boot-page-plan-fault-stale-translation.h",
+        "plan_equal_to": null
       },
       "leanos-extended-state": {
         "boot": "boot-extended-state",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-extended-state.h"
+        "prelink_plan": "boot-page-plan-extended-state.h",
+        "plan_equal_to": null
       },
       "leanos-extended-state-mmx": {
         "boot": "boot-extended-state-mmx",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-extended-state-mmx.h"
+        "prelink_plan": "boot-page-plan-extended-state-mmx.h",
+        "plan_equal_to": "leanos-extended-state"
       },
       "leanos-extended-state-sse": {
         "boot": "boot-extended-state-sse",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-extended-state-sse.h"
+        "prelink_plan": "boot-page-plan-extended-state-sse.h",
+        "plan_equal_to": "leanos-extended-state"
       },
       "leanos-extended-state-sse2": {
         "boot": "boot-extended-state-sse2",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-extended-state-sse2.h"
+        "prelink_plan": "boot-page-plan-extended-state-sse2.h",
+        "plan_equal_to": "leanos-extended-state"
       },
       "leanos-extended-state-avx": {
         "boot": "boot-extended-state-avx",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-extended-state-avx.h"
+        "prelink_plan": "boot-page-plan-extended-state-avx.h",
+        "plan_equal_to": "leanos-extended-state"
       },
       "leanos-extended-state-peer-pke": {
         "boot": "boot-extended-state-peer-pke",
@@ -576,112 +595,128 @@
           "peer-pke-fixture"
         ],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-extended-state-peer-pke.h"
+        "prelink_plan": "boot-page-plan-extended-state-peer-pke.h",
+        "plan_equal_to": null
       },
       "leanos-fast-entry-syscall": {
         "boot": "boot-fast-entry-syscall",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fast-entry-syscall.h"
+        "prelink_plan": "boot-page-plan-fast-entry-syscall.h",
+        "plan_equal_to": "leanos-extended-state"
       },
       "leanos-fast-entry-sysenter": {
         "boot": "boot-fast-entry-sysenter",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-fast-entry-sysenter.h"
+        "prelink_plan": "boot-page-plan-fast-entry-sysenter.h",
+        "plan_equal_to": "leanos-extended-state"
       },
       "leanos-double-fault": {
         "boot": "boot",
         "kernel": "kernel-double-fault",
         "extra_objects": [],
         "final_link": false,
-        "prelink_plan": "boot-page-plan-double-fault.h"
+        "prelink_plan": "boot-page-plan-double-fault.h",
+        "plan_equal_to": null
       },
       "leanos-entry-stack-overflow": {
         "boot": "boot-entry-stack-overflow",
         "kernel": "kernel-double-fault",
         "extra_objects": [],
         "final_link": false,
-        "prelink_plan": "boot-page-plan-entry-overflow.h"
+        "prelink_plan": "boot-page-plan-entry-overflow.h",
+        "plan_equal_to": null
       },
       "leanos-entry-adversarial": {
         "boot": "boot-entry-adversarial",
         "kernel": "kernel-entry-adversarial",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-entry-adversarial.h"
+        "prelink_plan": "boot-page-plan-entry-adversarial.h",
+        "plan_equal_to": null
       },
       "leanos-direct-port-serial": {
         "boot": "boot-direct-port-serial",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-direct-port.h"
+        "prelink_plan": "boot-page-plan-direct-port.h",
+        "plan_equal_to": null
       },
       "leanos-direct-port-debug": {
         "boot": "boot-direct-port-debug",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-direct-port-debug.h"
+        "prelink_plan": "boot-page-plan-direct-port-debug.h",
+        "plan_equal_to": "leanos-direct-port-serial"
       },
       "leanos-direct-port-in": {
         "boot": "boot-direct-port-in",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-direct-port-in.h"
+        "prelink_plan": "boot-page-plan-direct-port-in.h",
+        "plan_equal_to": "leanos-direct-port-serial"
       },
       "leanos-direct-port-pic": {
         "boot": "boot-direct-port-pic",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-direct-port-pic.h"
+        "prelink_plan": "boot-page-plan-direct-port-pic.h",
+        "plan_equal_to": "leanos-direct-port-serial"
       },
       "leanos-divide-error": {
         "boot": "boot-divide-error",
         "kernel": "kernel-integer-fault",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-integer-fault.h"
+        "prelink_plan": "boot-page-plan-integer-fault.h",
+        "plan_equal_to": null
       },
       "leanos-breakpoint": {
         "boot": "boot-breakpoint",
         "kernel": "kernel-integer-fault",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-breakpoint.h"
+        "prelink_plan": "boot-page-plan-breakpoint.h",
+        "plan_equal_to": "leanos-divide-error"
       },
       "leanos-nmi": {
         "boot": "boot-nmi",
         "kernel": "kernel-nmi",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-nmi.h"
+        "prelink_plan": "boot-page-plan-nmi.h",
+        "plan_equal_to": null
       },
       "leanos-bootstrap32-ud": {
         "boot": "boot-bootstrap32-ud",
         "kernel": "kernel-bootstrap32-ud",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-bootstrap32-ud.h"
+        "prelink_plan": "boot-page-plan-bootstrap32-ud.h",
+        "plan_equal_to": null
       },
       "leanos-bootstrap64-nmi": {
         "boot": "boot-bootstrap64-nmi",
         "kernel": "kernel-bootstrap64-nmi",
         "extra_objects": [],
         "final_link": true,
-        "prelink_plan": "boot-page-plan-bootstrap64-nmi.h"
+        "prelink_plan": "boot-page-plan-bootstrap64-nmi.h",
+        "plan_equal_to": null
       },
       "leanos-guard": {
         "boot": "boot-df-guard-mapped",
         "kernel": "kernel-double-fault-guard-mapped",
         "extra_objects": [],
         "final_link": false,
-        "prelink_plan": "boot-page-plan-guard.h"
+        "prelink_plan": "boot-page-plan-guard.h",
+        "plan_equal_to": null
       }
     },
     "policy_fixtures": {

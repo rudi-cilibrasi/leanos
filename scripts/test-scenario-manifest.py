@@ -89,6 +89,20 @@ def main() -> None:
         if rejected.returncode == 0 or diagnostic not in rejected.stderr or rejected.stdout:
             raise AssertionError(f"prelink plan failed closed-output validation: {rejected}")
 
+    for change, diagnostic in (
+        (lambda m: m["build"]["images"]["leanos"].pop("plan_equal_to"), "lacks plan comparison declaration"),
+        (lambda m: m["build"]["images"]["leanos"].update(plan_equal_to="leanos-absent"), "invalid plan comparison target"),
+        (lambda m: m["build"]["images"]["leanos"].update(plan_equal_to="leanos"), "invalid plan comparison target"),
+        (lambda m: m["build"]["images"]["leanos"].update(plan_equal_to=[]), "invalid plan comparison target"),
+    ):
+        rejected = run(mutated(change), "plan-comparisons")
+        if rejected.returncode == 0 or diagnostic not in rejected.stderr or rejected.stdout:
+            raise AssertionError(f"plan comparison accepted invalid input: {rejected}")
+    extra["build"]["images"]["leanos-new-fixture"]["plan_equal_to"] = "leanos"
+    compared = run(extra, "plan-comparisons")
+    if compared.returncode or "boot-page-plan.h\tboot-page-plan-new-fixture.h" not in compared.stdout:
+        raise AssertionError("new declared comparison requires a handwritten build check")
+
     def unknown_kernel(m):
         m["build"]["images"]["leanos-preemption"]["kernel"] = "kernel-absent"
 

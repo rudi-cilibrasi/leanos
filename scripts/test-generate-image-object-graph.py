@@ -208,6 +208,33 @@ generate_lean_c {source!s} {output!s}
         self.assertIn('"$root/.lake/build/bin/leanos-boot-plan"', plan_script)
         self.assertIn('"$root/.lake/build/bin/leanos-vtd-plan"', plan_script)
 
+    def test_build_wrapper_enforces_declared_plan_comparisons(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text()
+        start = wrapper.index('if [[ "$evidence_tier" == all ]]; then\n  ./scripts/scenario-manifest.py plan-comparisons')
+        end = wrapper.index('# Re-enter the same graph', start)
+        fragment = wrapper[start:end]
+        manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text())
+        images = manifest["build"]["images"]
+        with tempfile.TemporaryDirectory(prefix="plan comparison ") as build_dir:
+            for entry in images.values():
+                (Path(build_dir) / entry["prelink_plan"]).write_text("identical plan\n")
+            def compare(tier="all"):
+                return subprocess.run(["bash", "-e"], input=fragment, text=True,
+                    cwd=ROOT, env=dict(os.environ, build=build_dir, evidence_tier=tier),
+                    capture_output=True)
+            self.assertEqual(compare().returncode, 0)
+            for entry in images.values():
+                if entry["plan_equal_to"] is None:
+                    continue
+                with self.subTest(header=entry["prelink_plan"]):
+                    header = Path(build_dir) / entry["prelink_plan"]
+                    header.write_text("changed plan\n")
+                    rejected = compare()
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("shared page-table plan changed", rejected.stderr)
+                    self.assertEqual(compare("pr").returncode, 0)
+                    header.write_text("identical plan\n")
+
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         packaging = "compute_iso_packaging_signature() {" + wrapper.split(

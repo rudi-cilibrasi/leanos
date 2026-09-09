@@ -365,6 +365,14 @@ manifest's `build` section declares the image wiring the same way: each kernel
 object with its macro set, each boot object with its source and macro set,
 each image as the boot and kernel objects it links (plus extra objects and
 whether it receives a final page-plan link), and the policy-negative fixtures.
+Each image also declares its `prelink_plan` output and `plan_equal_to` (another
+image whose prelink plan must match, or explicit `null` for no comparison).
+The `prelink-plans` query supplies the build's generation tasks; `plan-comparisons`
+supplies the equality checks used only in complete evidence builds. Both queries
+validate all rows before emitting output. Missing or unsafe headers, duplicate
+output destinations, and unknown or self-referential comparison targets fail
+with named diagnostics. These fields replace the parallel handwritten lists
+in the build wrapper; adding an image or relationship requires no new shell arm.
 `scripts/generate-image-object-graph.py` derives its compile and link rules
 from that section instead of Python literal tables, and it rejects an image
 that names an unknown object or a malformed macro set with a named

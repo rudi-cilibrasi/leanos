@@ -421,7 +421,7 @@ def run_fixtures() -> None:
             raise AssertionError("build-image accepts a cache missing selected prelinks")
         if 'boot_plan_batch_args=("${filtered_boot_plan_batch_args[@]}")' not in build_image:
             raise AssertionError("build-image does not restrict PR boot-plan generation")
-        if 'if [[ "$evidence_tier" == all ]]; then\n  cmp "$build/boot-page-plan-fault-containment.h"' not in build_image:
+        if 'if [[ "$evidence_tier" == all ]]; then\n  ./scripts/scenario-manifest.py plan-comparisons' not in build_image:
             raise AssertionError("build-image does not reserve cross-variant plan checks for full evidence")
         if 'if [[ "$evidence_tier" == all ]] && nm "$build/kernel.o"' not in build_image:
             raise AssertionError("build-image checks unselected canonical objects in PR shards")

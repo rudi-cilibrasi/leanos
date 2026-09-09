@@ -428,19 +428,9 @@ declare -A fault_fatal_probe_flags=(
 # Direct-port-containment family (#130): one shared kernel object, one reviewed
 # raw CPL3 port instruction per probe selected by a boot.S -D variant.
 direct_port_probes=(serial debug in pic)
-declare -A direct_port_probe_flags=(
-  [serial]=""
-  [debug]="-DLEANOS_DIRECT_PORT_PROBE_DEBUG=1"
-  [in]="-DLEANOS_DIRECT_PORT_PROBE_IN=1"
-  [pic]="-DLEANOS_DIRECT_PORT_PROBE_PIC=1"
-)
 # Integer-fault-containment family (#150): one shared kernel object, one real
 # faulting instruction per probe selected by a boot.S -D variant.
 integer_fault_probes=(divide-error breakpoint)
-declare -A integer_fault_probe_flags=(
-  [divide-error]=""
-  [breakpoint]="-DLEANOS_INTEGER_FAULT_PROBE_BP=1"
-)
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -842,64 +832,13 @@ fi
 run_boot_plan_batch "${boot_plan_batch_args[@]}"
 
 if [[ "$evidence_tier" == all ]]; then
-  cmp "$build/boot-page-plan-fault-containment.h" \
-  "$build/boot-page-plan-fault-readonly-write.h" || {
-  echo "error: read-only-write probe changed shared fault page-table plan" >&2
-  exit 1
-}
-cmp "$build/boot-page-plan-fault-containment.h" \
-  "$build/boot-page-plan-fault-nx-execute.h" || {
-  echo "error: NX-execute probe changed shared fault page-table plan" >&2
-  exit 1
-}
-for probe in "${fault_image_probes[@]}"; do
-  if [[ "$probe" != stale-translation ]]; then
-    cmp "$build/boot-page-plan-fault-containment.h" \
-      "$build/boot-page-plan-fault-${probe}.h" || {
-      echo "error: $probe probe changed shared fault page-table plan" >&2
+  ./scripts/scenario-manifest.py plan-comparisons > "$build/prelink-plan-comparisons.tsv"
+  while IFS=$'\t' read -r expected actual; do
+    cmp "$build/$expected" "$build/$actual" || {
+      echo "error: shared page-table plan changed: $actual differs from $expected" >&2
       exit 1
     }
-  fi
-done
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-mmx.h" || {
-  echo "error: MMX probe changed the shared extended-state page-table plan" >&2
-  exit 1
-}
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-sse.h" || {
-  echo "error: SSE probe changed the shared extended-state page-table plan" >&2
-  exit 1
-}
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-sse2.h" || {
-  echo "error: SSE2 probe changed the shared extended-state page-table plan" >&2
-  exit 1
-}
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-avx.h" || {
-  echo "error: AVX probe changed the shared extended-state page-table plan" >&2
-  exit 1
-}
-for mechanism in syscall sysenter; do
-  cmp "$build/boot-page-plan-extended-state.h" \
-    "$build/boot-page-plan-fast-entry-${mechanism}.h" || {
-    echo "error: fast-entry $mechanism probe changed the shared page-table plan" >&2
-    exit 1
-  }
-done
-for probe in debug in pic; do
-  cmp "$build/boot-page-plan-direct-port.h" \
-    "$build/boot-page-plan-direct-port-${probe}.h" || {
-    echo "error: direct-port $probe probe changed the shared page-table plan" >&2
-    exit 1
-  }
-done
-cmp "$build/boot-page-plan-integer-fault.h" \
-  "$build/boot-page-plan-breakpoint.h" || {
-  echo "error: breakpoint probe changed the shared integer-fault page-table plan" >&2
-  exit 1
-}
+  done < "$build/prelink-plan-comparisons.tsv"
 fi
 # Re-enter the same graph after replacing every stub boot-page plan.  The
 # generated dependency files select only affected kernel variants, and Make
