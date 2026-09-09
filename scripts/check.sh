@@ -46,6 +46,7 @@ record_check_phase() {
 ./scripts/check-native-decide-policy.py
 
 lake build
+lake env lean tests/kernel-user-root.lean
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"

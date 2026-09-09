@@ -46,6 +46,7 @@
     "LeanOS/InterruptEntry.lean",
     "LeanOS/InvalidationPublication.lean",
     "LeanOS/KernelTransition.lean",
+    "LeanOS/KernelUserRoot.lean",
     "LeanOS/LifetimeIssuer.lean",
     "LeanOS/MemoryLifecycle.lean",
     "LeanOS/Observation.lean",

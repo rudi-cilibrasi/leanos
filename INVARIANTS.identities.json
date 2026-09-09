@@ -13040,6 +13040,48 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.close_idempotent_leaf",
+      "display": "close_idempotent_leaf",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.close_preserves_ancestors",
+      "display": "close_preserves_ancestors",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.protected_access_denied",
+      "display": "protected_access_denied",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.protected_aliases_absent",
+      "display": "protected_aliases_absent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.protected_leaf_absent",
+      "display": "protected_leaf_absent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.retained_leaf_original",
+      "display": "retained_leaf_original",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.unprotected_leaf_preserved",
+      "display": "unprotected_leaf_preserved",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/LifetimeIssuer.lean",
       "qualified": "LeanOS.LifetimeIssuer.decode_encode",
       "display": "decode_encode",
