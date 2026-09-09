@@ -1,0 +1,24 @@
+{
+  "source_revision": "f539506",
+  "files": {
+    "README.md": "2f68602a3240d01a03db150d6e2f11b138cd1ae98eb235f3231eaed398e89b70",
+    "cycle-1/events.jsonl": "50d75cdabc43c39f682926139a7ab10831a98f39d7594752f42e1e87ae6ea3c8",
+    "cycle-1/recovery.json": "ed7a385a722ca4378cd1cfeb79eebf957943b65cbf2e03389ffe1c08520999ec",
+    "cycle-1/result.json": "37b9715b82e4a699cb7bf5e2a0c2177a73308eae0f30cc357bfeba54a71d4577",
+    "cycle-1/serial.raw": "49f3c468a32401fe4e6ed10a148aafead78e411860c44ca02941df1ecb6ffb6d",
+    "cycle-1/verification.txt": "b6c391bd319c84e014f1027ada734e9e5a047a1b050d0a0bad3273bb72a1dd3b",
+    "cycle-2/events.jsonl": "a4db1aacf177c5e63e0eb7522c27e1e167d918b928f8efe53a7dacdd719237b7",
+    "cycle-2/recovery.json": "cabae126e0e7da92a28f7f570597c6bc8d1a86105308c69ffa5af4f41a2a4aa5",
+    "cycle-2/result.json": "a8c0258dcf5bcf40fed5016ad0f465bd9f0e983c90ed401411d12a5f04e2fb59",
+    "cycle-2/serial.raw": "0a8f05e50da664bfdbe98a1fe2d8aa4991aca6c8580a8f4efcf48ec19ec3e5d0",
+    "cycle-2/verification.txt": "b6c391bd319c84e014f1027ada734e9e5a047a1b050d0a0bad3273bb72a1dd3b",
+    "cycle-3/events.jsonl": "7fa8defa3078f4b761b8ff37d93e31f51248c16794df364b218c57f9db76e214",
+    "cycle-3/recovery.json": "7804889b1569f324b58d7762bb46723a5ad8116c518a00bbeefac6038286e7a3",
+    "cycle-3/result.json": "879452e1bd002aab3b5d328e01606faeb889967aa890d724e4a294f65fce2576",
+    "cycle-3/serial.raw": "bdbe137e5765d6c1ef45a94c6255e80cb18eb6698144bcc91d8667a882c60064",
+    "cycle-3/verification.txt": "b6c391bd319c84e014f1027ada734e9e5a047a1b050d0a0bad3273bb72a1dd3b",
+    "grub.cfg": "c0506a8f1198101311b03c1e28e17ec7466b2072fc1144536974da190722632e",
+    "watchdog-window.cfg": "09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce",
+    "watchdog.cfg": "62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86"
+  }
+}

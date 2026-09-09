@@ -1,9 +1,9 @@
 # Qotom boot recovery experiment
 
 This is an opt-in lab prototype for issue #333, separate from the canonical
-halt-until-reset observation in #327. The completed-run return path has been observed on the physical board. It does
-not change physical platform admission; recovery from an earlier hang remains
-unimplemented.
+halt-until-reset observation in #327. Completed-run recovery and watchdog
+recovery from deliberate loader and early-kernel stalls have been observed on
+the physical board. It does not broaden physical platform admission.
 
 ## Arrangement
 
@@ -19,10 +19,17 @@ An operator arms exactly one request in `boot/grub/grubenv`:
 - `none`: chainload FreeBSD.
 - `reboot-test`: consume the request, wait three seconds, reboot; the next boot
   defaults to FreeBSD.
-- `leanos-<ELF SHA-256>`: consume the request, verify the ELF against the check
-  file, and launch LeanOS. The configuration binds the permitted ELF digest.
+- `watchdog-leanos-<digest>-<UTC minute fields>`: consume the request, validate
+  its current-minute window, arm the board watchdog, verify and launch the lab
+  ELF. This is the runner default. The digest must match the configured image.
+- `leanos-<ELF SHA-256>`: the historical unprotected launch for explicit
+  comparisons; it still consumes the request and verifies the image.
+- `watchdog-test-<UTC minute fields>` and `watchdog-kernel-<digest>-<UTC minute fields>`:
+  deliberate loader/early-kernel stall experiments described in the watchdog notes.
+- `rtc-probe`: an unarmed 65-second clock/expiry preflight. The old unbounded
+  `watchdog-test` request is disabled.
 
-GRUB writes `request=none` before launching either one-shot action. A failed
+GRUB writes `request=none` before executing a one-shot action. A failed
 state write or image check falls back to FreeBSD. This is accidental-corruption
 and operator-error detection, not protection against someone who can rewrite
 both the USB configuration and image. The saved environment needs plain-disk
@@ -123,11 +130,15 @@ python3 scripts/run-qotom-recovery-lab.py \
   --output /path/to/new/capture-directory --cycles 3
 ```
 
-It validates the USB serial and remote ELF digest, arms one digest-bound request,
-starts serial collection before reboot, and waits up to 180 seconds per cycle.
-It requires the exact lab rejection trace, at least ten seconds of quiet, the
-subsequent chain marker, a changed FreeBSD boot time, working authenticated SSH,
-and the saved request cleared to `none`. It stops on failure instead of retrying
+The default `watchdog-leanos` scenario validates the USB serial and remote ELF
+digest and generates a dated, digest-bound request from the verified board UTC
+clock. GRUB consumes it and arms 120 watchdog ticks before loading LeanOS. The
+runner starts serial collection before reboot and bounds each protected cycle
+at 420 seconds. It requires one arm, the exact load digest and lab rejection
+trace, 30–90 seconds of post-terminal quiet, a subsequent consumed-request
+default and chain marker, a changed FreeBSD boot time, authenticated SSH, and
+the saved request cleared to `none`. Explicit `--scenario leanos` retains the
+older unprotected 180-second completed-run path for comparisons. It stops on failure instead of retrying
 boots indefinitely. Raw bytes, chunk timestamps, SSH reboot output and result
 metadata are retained per cycle. The runner currently targets this rejection
 image, not an arbitrary future CPL3 success protocol.
@@ -142,18 +153,20 @@ reboot. The same fixed mount point must not be used concurrently by other tools.
 `test-qotom-recovery-capture.py` rejects changed/truncated traces, false success,
 duplicate terminals, insufficient quiet, unexpected kernel output and a repeated
 LeanOS selection. `test-qotom-lab-usb.py` exercises the actual GRUB boot code in
-QEMU with a fake fallback disk. Neither test establishes physical hang recovery.
+QEMU with a fake fallback disk. The emulator tests use an explicitly marked mock timer for guarded image loads;
+physical loader and early-kernel hang recovery are established by the separate
+[watchdog observations](qotom-watchdog-lab.md), not by the emulator mocks.
 
 ## Hang recovery and rollback
 
-The lab completion hook only runs when the kernel reaches its terminal function.
-A loader hang, earlier kernel hang, stalled PM timer, or ineffective reset still
-requires another mechanism. FreeBSD successfully attached `ichwd0` as an Intel
-Bay Trail watchdog during inspection, but watchdog arming across this boot path
-has not been implemented or tested. Loading the driver alone is not hang-recovery
-evidence. Its implementation is documented in the
-[FreeBSD watchdog driver](https://github.com/freebsd/freebsd-src/blob/releng/15.0/sys/dev/ichwd/ichwd.c).
-No persistent watchdog service was enabled.
+The completion hook alone only runs when the kernel reaches its terminal
+function. The default route now arms the Bay Trail TCO watchdog in GRUB before
+loading the image. Deliberate loader and early-kernel stalls have both recovered
+to authenticated FreeBSD SSH; see the exact captures and limits in the
+[watchdog notes](qotom-watchdog-lab.md). Recovery does not convert a missing or
+incorrect LeanOS terminal trace into a successful scenario. The hardware tests
+cover the current rejection image and explicit early stalls, not arbitrary
+future platform changes. No persistent FreeBSD watchdog service is enabled.
 
 To disarm, install an environment block with `request=none` while in FreeBSD.
 To bypass the lab entirely, select the internal FreeBSD disk in firmware or

@@ -1,0 +1,15 @@
+{
+  "scenario": "watchdog-loader-stall",
+  "recovery": "freebsd-ssh-restored",
+  "arm_to_recovery_boot_seconds": 128.76468582899543,
+  "loader_hang_recovery": true,
+  "recovery_guard": "consumed-request",
+  "kernel_hang_recovery": false,
+  "raw_sha256": "21de1f30c99714ac86f56d779a53eb23c567820e1fbcd227bbd306c34e005bb0",
+  "freebsd_boot_before": 1788987155,
+  "freebsd_boot_after": 1788987999,
+  "elf_sha256": "9226ca1e9ea33607ba73e1acbfe3df5063665df9f5b13fbbd001cc7fb89bbdb2",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": false,
+  "request_consumed": true
+}

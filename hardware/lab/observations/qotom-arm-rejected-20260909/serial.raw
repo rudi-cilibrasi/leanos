@@ -1,0 +1,6 @@
+a“2!k2ãZ‘ÿ[H[J[1;1HLEANOS-LAB/1 SELECT watchdog-test consumed=1
+LEANOS-LAB/1 WATCHDOG-STATE pmc=10 smi=20073 count=800 timer=4
+LEANOS-LAB/1 WATCHDOG-ARM-REJECTED
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+

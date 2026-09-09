@@ -1,0 +1,15 @@
+{
+  "schema": "leanos-watchdog-investigation-v1",
+  "result": "FAIL-repeated-request",
+  "source_revision": "e3863f8",
+  "test": "GRUB watchdog-test with 120 ticks and 300-second software escape",
+  "capture_bound_seconds": 420,
+  "select_count": 4,
+  "arm_count": 4,
+  "chain_count": 0,
+  "software_escape_count": 0,
+  "authenticated_recovery": false,
+  "manual_recovery_requested": "unplug USB so next reset can boot internal FreeBSD",
+  "raw_sha256": "a3653c41407b990781e258c5e8a13cda171d23bcde436652a24abbd705360325",
+  "trust_note": "integration observation; not proof of hardware reset cause or durable storage semantics"
+}
