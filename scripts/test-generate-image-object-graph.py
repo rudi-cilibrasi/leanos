@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -235,6 +236,50 @@ generate_lean_c {source!s} {output!s}
                     self.assertEqual(compare("pr").returncode, 0)
                     header.write_text("identical plan\n")
 
+    def test_checksum_inventory_follows_packaging_selection(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text()
+        start = wrapper.index('iso_task_file="$build/iso-packaging-tasks.nul"')
+        end = wrapper.index('if ! xargs -0 -r -n 2 -P "$policy_jobs"', start)
+        queue = wrapper[start:end]
+        start = wrapper.index('# Hash the artifacts selected by the manifest-driven packaging queue')
+        end = wrapper.index('if [[ "$graph_make_cache_current"', start)
+        checksums = wrapper[start:end]
+        rows = subprocess.check_output(
+            ["python3", str(ROOT / "scripts/scenario-manifest.py"), "packaged-images"],
+            text=True, cwd=ROOT).splitlines()
+        for selection in (rows, rows[:1]):
+            with self.subTest(images=len(selection)), tempfile.TemporaryDirectory(prefix="checksum build ") as directory:
+                build = Path(directory)
+                expected = {"TOOLCHAIN_PROFILE.json"}
+                assignments = []
+                for row in selection:
+                    stem, iso, iso_root, *_ = row.split("\t")
+                    expected.update((iso, stem + ".elf", stem + ".map"))
+                    assignments.append('selected_iso_root_lookup[' + shlex.quote(str(build / iso_root))
+                                       + ']=' + shlex.quote(str(build / (stem + '.elf'))))
+                for name in expected | {"unselected.elf"}:
+                    (build / name).write_text("fixture bytes for " + name)
+                setup = (
+                    'declare -A selected_iso_root_lookup=()\n' + '\n'.join(assignments)
+                    + '\nreturn_corruptions=()\npackaged_images=(' + ' '.join(map(shlex.quote, rows)) + ')\n'
+                    + 'selected_final_enabled() { return 1; }\n'
+                )
+                subprocess.run(["bash", "-e"], input=setup + queue + checksums,
+                    env=dict(os.environ, build=directory), cwd=ROOT, text=True,
+                    capture_output=True, check=True)
+                tasks = (build / "iso-packaging-tasks.nul").read_bytes().decode().split("\0")[:-1]
+                expected_tasks = []
+                for row in selection:
+                    _, iso, iso_root, *_ = row.split("\t")
+                    expected_tasks.extend((str(build / iso), str(build / iso_root)))
+                self.assertEqual(tasks, expected_tasks)
+                lines = (build / "SHA256SUMS").read_text().splitlines()
+                actual = {Path(line.split("  ", 1)[1]).name for line in lines}
+                self.assertEqual(actual, expected)
+                self.assertEqual(len(lines), len(expected))
+                subprocess.run(["sha256sum", "--check", str(build / "SHA256SUMS")],
+                    stdout=subprocess.DEVNULL, check=True)
+
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         packaging = "compute_iso_packaging_signature() {" + wrapper.split(
@@ -328,15 +373,8 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             "export -f compute_iso_signature grub-mkrescue run_iso_packaging",
             wrapper,
         )
-        for output in (
-            "x86_64.iso",
-            "x86_64-fault-containment.iso",
-            "x86_64-extended-state.iso",
-            "x86_64-bootstrap64-nmi.iso",
-            "x86_64-direct-port-${probe}.iso",
-            "x86_64-return-${fixture}.iso",
-        ):
-            self.assertIn(output, wrapper)
+        self.assertIn('queue_iso "$build/$packaged_iso" "$build/$packaged_root"', wrapper)
+        self.assertIn('queue_iso "$build/leanos-${version}-x86_64-return-${fixture}.iso"', wrapper)
         self.assertIn(
             'echo "error: one or more deterministic ISO packages failed"', wrapper
         )

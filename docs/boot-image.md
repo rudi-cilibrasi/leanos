@@ -373,6 +373,13 @@ validate all rows before emitting output. Missing or unsafe headers, duplicate
 output destinations, and unknown or self-referential comparison targets fail
 with named diagnostics. These fields replace the parallel handwritten lists
 in the build wrapper; adding an image or relationship requires no new shell arm.
+Both full builds and shards write `SHA256SUMS` from the selected packaging
+outputs, their ELFs and available maps, plus the selected alias/assigned-device
+artifacts and toolchain profile. A sorted, deduplicated list replaces the
+separate full-build checksum inventory. This also covers the previously omitted
+stale-translation ISO/ELF/map and five existing maps; it changes the checksum
+inventory, not those artifacts' bytes. Redundant family staging-directory lists
+are likewise removed because the packaged-image declarations already own them.
 `scripts/generate-image-object-graph.py` derives its compile and link rules
 from that section instead of Python literal tables, and it rejects an image
 that names an unknown object or a malformed macro set with a named

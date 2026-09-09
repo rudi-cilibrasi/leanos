@@ -425,12 +425,6 @@ declare -A fault_fatal_probe_flags=(
   [walk-mismatch]="-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1"
   [stale-translation]="-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1"
 )
-# Direct-port-containment family (#130): one shared kernel object, one reviewed
-# raw CPL3 port instruction per probe selected by a boot.S -D variant.
-direct_port_probes=(serial debug in pic)
-# Integer-fault-containment family (#150): one shared kernel object, one real
-# faulting instruction per probe selected by a boot.S -D variant.
-integer_fault_probes=(divide-error breakpoint)
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -548,15 +542,6 @@ selected_final_enabled() {
 while IFS=$'\t' read -r _ _ packaged_root _ _ _ _; do
   mkdir -p "$build/$packaged_root/boot/grub"
 done < <(printf '%s\n' "${packaged_images[@]}")
-for probe in "${fault_image_probes[@]}"; do
-  mkdir -p "$build/iso-fault-${probe}/boot/grub"
-done
-for probe in "${direct_port_probes[@]}"; do
-  mkdir -p "$build/iso-direct-port-${probe}/boot/grub"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  mkdir -p "$build/iso-${probe}/boot/grub"
-done
 current_lean_c_signature="$(compute_lean_c_signature "$repo_root")"
 record_bootstrap_phase setup-and-signatures
 LEANOS_ORACLE_TOOL_SIGNATURE="$current_lean_c_signature" \
@@ -1579,124 +1564,23 @@ if grep -q $'^multivcpu-rejection\t' "$build/evidence-build-plan.tsv"; then
     "$build/leanos-multivcpu-rejection.elf"
   )
 fi
-# An unsharded complete-evidence build owns the fixed full inventory below.
-# All-tier CI is still sharded: each shard must hash only the files selected by
-# its build plan, including the multi-vCPU aliases only in their owning shard.
-if [[ "$evidence_tier" == all && -z "$evidence_shard_index" ]]; then
-  sha256sum "$build/TOOLCHAIN_PROFILE.json" \
-  "$build/leanos-${version}-x86_64.iso" \
-  "$build/leanos-${version}-x86_64-multivcpu-rejection.iso" \
-  "$build/leanos-multivcpu-rejection.elf" \
-  "$build/leanos-${version}-x86_64-assigned-edu.iso" \
-  "$build/leanos-assigned-edu.elf" \
-  "$build/leanos-assigned-edu.map" \
-  "$build/boot-page-plan-assigned-edu.final.h" \
-  "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
-  "$build/leanos-malformed-handoff.elf" \
-  "$build/leanos-malformed-handoff.map" \
-  "$build/leanos-${version}-x86_64-projection-authority-mutation.iso" \
-  "$build/leanos-projection-authority-mutation.elf" \
-  "$build/leanos-projection-authority-mutation.map" \
-  "$build/leanos-${version}-x86_64-raw-selection-authority-mutation.iso" \
-  "$build/leanos-raw-selection-authority-mutation.elf" \
-  "$build/leanos-raw-selection-authority-mutation.map" \
-  "$build/leanos-${version}-x86_64-preemption.iso" \
-  "$build/leanos-${version}-x86_64-frame-budget.iso" \
-  "$build/leanos-${version}-x86_64-capability-transfer.iso" \
-  "$build/leanos-${version}-x86_64-inflight-revocation.iso" \
-  "$build/leanos-${version}-x86_64-fault-containment.iso" \
-  "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
-  "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
-  "$build/leanos-${version}-x86_64-fault-reserved-bit.iso" \
-  "$build/leanos-${version}-x86_64-fault-walk-mismatch.iso" \
-  "$build/leanos-${version}-x86_64-extended-state.iso" \
-  "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
-  "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
-  "$build/leanos-${version}-x86_64-extended-state-sse2.iso" \
-  "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
-  "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
-  "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
-  "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
-  "$build/leanos-frame-budget.elf" "$build/leanos-frame-budget.map" \
-  "$build/leanos-capability-transfer.elf" \
-  "$build/leanos-capability-transfer.map" \
-  "$build/leanos-inflight-revocation.elf" \
-  "$build/leanos-inflight-revocation.map" \
-  "$build/leanos-fault-containment.elf" \
-  "$build/leanos-fault-containment.map" \
-  "$build/leanos-fault-readonly-write.elf" \
-  "$build/leanos-fault-readonly-write.map" \
-  "$build/leanos-fault-nx-execute.elf" \
-  "$build/leanos-fault-nx-execute.map" \
-  "$build/leanos-fault-reserved-bit.elf" \
-  "$build/leanos-fault-reserved-bit.map" \
-  "$build/leanos-fault-walk-mismatch.elf" \
-  "$build/leanos-fault-walk-mismatch.map" \
-  "$build/leanos-extended-state.elf" "$build/leanos-extended-state.map" \
-  "$build/leanos-extended-state-mmx.elf" \
-  "$build/leanos-extended-state-mmx.map" \
-  "$build/leanos-extended-state-sse.elf" \
-  "$build/leanos-extended-state-sse.map" \
-  "$build/leanos-extended-state-sse2.elf" \
-  "$build/leanos-extended-state-sse2.map" \
-  "$build/leanos-extended-state-avx.elf" \
-  "$build/leanos-extended-state-avx.map" \
-  "$build/leanos-extended-state-peer-pke.elf" \
-  "$build/leanos-extended-state-peer-pke.map" \
-  "$build/leanos-${version}-x86_64-fast-entry-syscall.iso" \
-  "$build/leanos-fast-entry-syscall.elf" \
-  "$build/leanos-fast-entry-syscall.map" \
-  "$build/leanos-${version}-x86_64-fast-entry-sysenter.iso" \
-  "$build/leanos-fast-entry-sysenter.elf" \
-  "$build/leanos-fast-entry-sysenter.map" \
-  "$build/leanos-double-fault.elf" \
-  "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
-  "$build/leanos-double-fault-guard-mapped.elf" \
-  "$build/leanos-${version}-x86_64-entry-stack-overflow.iso" \
-  "$build/leanos-entry-stack-overflow.elf" \
-  "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
-  "$build/leanos-entry-adversarial.elf" \
-  "$build/leanos-${version}-x86_64-nmi.iso" \
-  "$build/leanos-nmi.elf" "$build/leanos-nmi.map" \
-  "$build/leanos-${version}-x86_64-nmi-cpl3.iso" \
-  "$build/leanos-nmi-cpl3.elf" "$build/leanos-nmi-cpl3.map" \
-  "$build/leanos-${version}-x86_64-bootstrap32-ud.iso" \
-  "$build/leanos-bootstrap32-ud.elf" "$build/leanos-bootstrap32-ud.map" \
-  "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
-  "$build/leanos-bootstrap64-nmi.elf" "$build/leanos-bootstrap64-nmi.map" \
-    > "$build/SHA256SUMS"
-  for probe in "${direct_port_probes[@]}"; do
-    sha256sum "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
-      "$build/leanos-direct-port-${probe}.elf" \
-      "$build/leanos-direct-port-${probe}.map" >> "$build/SHA256SUMS"
-  done
-  for probe in "${integer_fault_probes[@]}"; do
-    sha256sum "$build/leanos-${version}-x86_64-${probe}.iso" \
-      "$build/leanos-${probe}.elf" \
-      "$build/leanos-${probe}.map" >> "$build/SHA256SUMS"
-  done
-  for spec in "${return_corruptions[@]}"; do
-    IFS=: read -r fixture _mode _reason <<<"$spec"
-    sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
-      "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
-  done
-else
-  selected_checksum_paths+=("$build/TOOLCHAIN_PROFILE.json")
-  if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
-    selected_checksum_paths+=(
-      "$build/leanos-${version}-x86_64-assigned-edu.iso"
-      "$build/leanos-assigned-edu.elf"
-      "$build/leanos-assigned-edu.map"
-      "$build/boot-page-plan-assigned-edu.final.h"
-    )
-  fi
-  ((${#selected_checksum_paths[@]} > 0)) || {
-    echo "error: selected evidence produced no checksum inputs" >&2
-    exit 1
-  }
-  printf '%s\0' "${selected_checksum_paths[@]}" | sort -zu | \
-    xargs -0 sha256sum > "$build/SHA256SUMS"
+# Hash the artifacts selected by the manifest-driven packaging queue for both
+# full builds and shards. Never maintain a second full-build filename list.
+selected_checksum_paths+=("$build/TOOLCHAIN_PROFILE.json")
+if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
+  selected_checksum_paths+=(
+    "$build/leanos-${version}-x86_64-assigned-edu.iso"
+    "$build/leanos-assigned-edu.elf"
+    "$build/leanos-assigned-edu.map"
+    "$build/boot-page-plan-assigned-edu.final.h"
+  )
 fi
+((${#selected_checksum_paths[@]} > 0)) || {
+  echo "error: selected evidence produced no checksum inputs" >&2
+  exit 1
+}
+printf '%s\0' "${selected_checksum_paths[@]}" | sort -zu | \
+  xargs -0 sha256sum > "$build/SHA256SUMS"
 if [[ "$graph_make_cache_current" != true ]]; then
   graph_make_manifest_tmp="${graph_make_cache_manifest}.tmp"
   find "$build" -maxdepth 1 -type f \
