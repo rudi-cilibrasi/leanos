@@ -16,6 +16,21 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_retained_loader_watchdog(self):
+        root = Path(__file__).resolve().parent.parent / 'hardware/lab/observations/qotom-dated-watchdog-20260909'
+        manifest = json.loads((root / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), digest, name)
+        events = [json.loads(line) for line in (root / 'events.jsonl').read_text().splitlines()]
+        self.assertEqual((root / 'serial.raw').read_bytes(), b''.join(bytes.fromhex(e['hex']) for e in events))
+        recorded = json.loads((root / 'result.json').read_text())
+        for key, value in lab.classify_watchdog(events).items():
+            if key != 'recovery':
+                self.assertEqual(value, recorded[key], key)
+        self.assertNotEqual(recorded['freebsd_boot_before'], recorded['freebsd_boot_after'])
+        self.assertTrue(recorded['request_consumed'])
+        self.assertFalse(recorded['kernel_hang_recovery'])
+
     def test_watchdog_request_clock(self):
         self.assertEqual(lab.watchdog_request('0\n2026-09-09T20:05:25\n'), 'watchdog-test-2026-9-9-20-5')
         self.assertIsNone(lab.watchdog_request('0\n2026-09-09T20:05:26\n'))

@@ -1,0 +1,12 @@
+{
+  "source_revision": "940662e8b0372e4be5636e9eded6d4967c30e656",
+  "files": {
+    "README.md": "a332f0e8c0618162698124345e967b0b03ee1f01ac6606bf79e78b60e4a6bb46",
+    "events.jsonl": "84f257b2d681c968829c3b9c0b9efaa9670371f9c0342c44b09deea6ff73e776",
+    "grub.cfg": "20ca85187a28c088fde30d632bb15c62be2c5fdb70c8a0571a5f0e454fba79e5",
+    "result.json": "6ff763ce0d31c207e99f38dcfba7afc3edf992d925ab39119a5c83462a1e1ea9",
+    "serial.raw": "21de1f30c99714ac86f56d779a53eb23c567820e1fbcd227bbd306c34e005bb0",
+    "watchdog-window.cfg": "db50e207c096ab343b39e0b93c5a4b6c05bd7dc8e1e52193cadfadc1b2d3a216",
+    "watchdog.cfg": "62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86"
+  }
+}

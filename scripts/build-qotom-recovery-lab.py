@@ -9,16 +9,20 @@ import subprocess
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--prepared-repo', type=Path, required=True)
+p.add_argument('--mode', choices=('completion', 'kernel-hang'), default='completion')
 a = p.parse_args()
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / 'qotom-lab'
+out = root / 'build' / ('qotom-lab' if a.mode == 'completion' else 'qotom-kernel-hang')
 out.mkdir(parents=True, exist_ok=True)
 build = root / 'build' / 'boot'
 build.mkdir(parents=True, exist_ok=True)
 source = root / 'boot' / 'kernel.c'
 if source.read_bytes() != (prepared / 'boot/kernel.c').read_bytes():
     raise SystemExit('prepared kernel source differs; rebuild canonical inputs first')
+prepared_graph = (prepared / 'build/boot/generated-image-objects.mk').read_text()
+if str(prepared / 'boot/kernel.c') not in prepared_graph:
+    raise SystemExit('prepared graph names a different checkout; regenerate it in the prepared repository')
 for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk'}:
         shutil.copy2(item, build / item.name)
@@ -31,23 +35,35 @@ old = '''static __attribute__((noreturn)) void finish(uint8_t value) {
 }'''
 if text.count(old) != 1 or text.count('    serial_init();') != 1:
     raise SystemExit('unsupported kernel terminal/init shape')
-text = text.replace(old, (root / 'hardware/lab/qotom-finish.c.inc').read_text())
-text = text.replace('    serial_init();', '    serial_init();\n    serial_puts("LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\\n");')
+if a.mode == 'completion':
+    text = text.replace(old, (root / 'hardware/lab/qotom-finish.c.inc').read_text())
+    text = text.replace('    serial_init();', '    serial_init();\n    serial_puts("LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\\n");')
+else:
+    text = text.replace('    serial_init();', '''    serial_init();
+    serial_puts("LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\\n");
+    for (;;) {
+        __asm__ volatile ("cli; hlt");
+    }''')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
-graph = (build / 'generated-image-objects.mk').read_text().replace(str(prepared), str(root))
+graph = prepared_graph.replace(str(prepared), str(root))
 graph = '\n'.join('IMAGE_CC := gcc' if s.startswith('IMAGE_CC :=') else s for s in graph.splitlines()) + '\n'
 graph = graph.replace(str(source), str(overlay))
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 subprocess.run(['make', '-f', str(makefile), '-j4', str(build / 'leanos.elf')], cwd=root, check=True)
-elf = out / 'leanos-qotom-lab.elf'
+elf = out / ('leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
 shutil.copy2(build / 'leanos.elf', elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
-files = [source, overlay, root / 'hardware/lab/qotom-finish.c.inc', elf]
+files = [source, overlay, Path(__file__).resolve(), makefile, elf]
+if a.mode == 'completion':
+    files.append(root / 'hardware/lab/qotom-finish.c.inc')
 manifest = {'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
-            'recovery_seconds': 30, 'hang_recovery': False,
+            'mode': a.mode, 'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
+            'source_dirty': bool(subprocess.check_output(['git','status','--porcelain'], cwd=root, text=True)),
+            'prepared_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=prepared, text=True).strip(),
+            'compiler': subprocess.check_output(['gcc','--version'], text=True).splitlines()[0],
             'files': {str(f.relative_to(root)): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}}
 (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 print(elf)

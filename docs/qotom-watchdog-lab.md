@@ -179,9 +179,24 @@ a changed boot epoch, and consumed request readback. A repeated arm or the
 300-second software escape fails the trial. The runner bounds observation at
 420 seconds and does not automatically rearm on failure.
 
-This is a candidate loader-stall test. The Qotom still has the earlier unarmed
-probe configuration until a separately verified installation of this revision.
-No physical success of this dated armed path is claimed. Even a passing trial
-will not demonstrate kernel-hang recovery or complete #333 by itself.
+The [physical dated loader-stall trial](../hardware/lab/observations/qotom-dated-watchdog-20260909/README.md) passed after verified installation: one arm, 128.8 seconds to a new GRUB default marker, consumed request, and restored FreeBSD SSH without operator intervention. The expiry fallback was not needed in this run because the request was consumed. Kernel-hang recovery remains unverified, so #333 remains open.
 
 Validation: all 19 GRUB/QEMU cases pass after the missing-file fix, including stale requests, rejected hardware arming, missing recipe/guard, and existing recovery paths. The later explicit default marker passed focused default and reboot-once tests. Six Python test methods cover retained physical captures, RTC line endings/advancement, UTC request production, and watchdog trace failure mutations. The software tests do not arm Qotom hardware.
+
+## Early-kernel hang image
+
+`build-qotom-recovery-lab.py --prepared-repo PATH --mode kernel-hang` creates a
+separate ELF under `build/qotom-kernel-hang/`. It emits a lab-only marker after
+serial initialization, before the normal BOOT record, and enters a `cli; hlt`
+loop. It does not use the completion-reset overlay. The manifest records the
+mode, generated overlay, producer and graph hashes, compiler, prepared revision,
+and whether the working tree was dirty. The prepared graph must name its own
+checkout to avoid accidentally rebuilding targets in another checkout.
+
+The optional `test-qotom-lab-usb.py --kernel-hang-elf PATH --case kernel-hang`
+fixture boots it through a temporary GRUB disk, checks the exact marker and a
+live but quiet guest for two seconds, and rejects normal LeanOS output or a
+fallback chain. This passed for ELF SHA-256
+`b015acc16e23ca805277d63af30f85d8fe41e3df63f12e103b5f5e5c3f3baa9e`.
+It is not yet connected to the hardware watchdog launch path or installed on
+the Qotom USB; physical kernel-hang recovery remains outstanding.

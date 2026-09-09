@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--freebsd-boot-uuid', required=True)
     parser.add_argument('--case', action='append', help='run only named cases; default runs every case')
+    parser.add_argument('--kernel-hang-elf', type=Path, help='also test the deliberately stalled lab kernel')
     args = parser.parse_args()
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
@@ -59,6 +60,8 @@ def main():
             'window-invalid-clock': ('watchdog-test-2000-9-9-12-0', '2000-09-09T12:00:00', False),
         }
         cases.extend((name, 'none') for name in window_cases)
+        if args.kernel_hang_elf:
+            cases.append(('kernel-hang', 'leanos-' + digest))
         if args.case:
             unknown = set(args.case) - {name for name, _ in cases}
             if unknown:
@@ -73,6 +76,17 @@ def main():
             if name == 'bad-env':
                 env.write_bytes(b'invalid' + b'#' * 1017)
             run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
+            if name == 'kernel-hang':
+                hang_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest()
+                original = tmp / 'hang.cfg'
+                run('mcopy', '-o', '-i', str(image) + '@@1048576', '::/boot/grub/grub.cfg', str(original))
+                original.write_text(original.read_text().replace(digest, hang_digest))
+                checksum = tmp / 'hang.sha256'
+                checksum.write_text(hang_digest + '  /boot/leanos-qotom-lab.elf\n')
+                run('grub-editenv', str(env), 'set', 'request=leanos-' + hang_digest)
+                for source, target in ((original, 'grub/grub.cfg'), (env, 'grub/grubenv'),
+                                       (checksum, 'leanos.sha256'), (args.kernel_hang_elf, 'leanos-qotom-lab.elf')):
+                    run('mcopy', '-o', '-i', str(image) + '@@1048576', str(source), '::/boot/' + target)
             if name == 'rtc-missing-guard':
                 run('mdel', '-i', str(image) + '@@1048576', '::/boot/grub/watchdog-window.cfg')
             if name == 'watchdog-missing-recipe':
@@ -110,6 +124,8 @@ def main():
                 '-drive', 'file=' + str(sentinel) + ',format=raw,if=ide,index=1'],
                 stderr=subprocess.DEVNULL)
             expected = b'FINAL status=FAIL reason=dma-identity' if name == 'leanos' else b'FREEBSD-CHAIN-SENTINEL'
+            if name == 'kernel-hang':
+                expected = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
             deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
             try:
                 while time.monotonic() < deadline:
@@ -118,10 +134,17 @@ def main():
                     time.sleep(0.1)
                 else:
                     raise AssertionError((name, log.read_bytes()))
+                if name == 'kernel-hang':
+                    before = log.read_bytes()
+                    time.sleep(2)
+                    assert process.poll() is None and log.read_bytes() == before
             finally:
                 process.terminate()
                 process.wait(timeout=5)
             data = log.read_bytes()
+            if name == 'kernel-hang':
+                assert data.count(expected) == 1 and data.endswith(expected), data
+                assert b'LEANOS/' not in data and b'FREEBSD-CHAIN-SENTINEL' not in data, data
             if name == 'rtc-probe':
                 stamps = re.findall(rb'LEANOS-LAB/1 RTC-(?:BEGIN|END) ([0-9-]+)', data)
                 assert len(stamps) == 2, data
