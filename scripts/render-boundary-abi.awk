@@ -56,7 +56,8 @@ $1 == "export" || $1 == "object-export" {
     params = ""
     for (i = 1; i < n; i++) {
       if (shape[i] == "u64") type = "uint64_t"
-      else if (shape[i] == "ByteArray") type = "lean_object *"
+      else if (shape[i] == "ByteArray" || shape[i] == "Array.{0} UInt64" ||
+               shape[i] == "Array.{0} ByteArray") type = "lean_object *"
       else fail("unsupported generated object export parameter: " $2 " " shape[i])
       params = params (i > 1 ? "," : "") type
     }

@@ -82,11 +82,55 @@ static char *next_field(char **cursor) {
   return start;
 }
 
+struct root_bundle {
+  uint64_t address;
+  lean_object *info, *root, *addresses, *tables;
+};
+
+static struct root_bundle read_root_bundle(const char *path) {
+  FILE *file = fopen(path, "r");
+  if (!file) { fprintf(stderr, "firmware corpus: cannot open root bundle %s\n", path); exit(1); }
+  char line[MAX_LINE];
+  if (!fgets(line, sizeof(line), file) || !strchr(line, '\n')) {
+    fprintf(stderr, "firmware corpus: incomplete root bundle header\n"); exit(1);
+  }
+  *strchr(line, '\n') = '\0';
+  char *cursor = line;
+  char *address = next_field(&cursor), *info = next_field(&cursor), *root = next_field(&cursor);
+  if (!address || !info || !root || cursor) {
+    fprintf(stderr, "firmware corpus: malformed root bundle header\n"); exit(1);
+  }
+  struct root_bundle bundle = {parse_u64(address, "root address"),
+    read_byte_array(info), read_byte_array(root), lean_mk_empty_array(), lean_mk_empty_array()};
+  size_t count = 0;
+  while (fgets(line, sizeof(line), file)) {
+    char *newline = strchr(line, '\n');
+    if (!newline || ++count > 256) {
+      fprintf(stderr, "firmware corpus: root bundle exceeds bounds\n"); exit(1);
+    }
+    *newline = '\0'; cursor = line;
+    address = next_field(&cursor);
+    char *table = next_field(&cursor);
+    if (!address || !table || cursor) {
+      fprintf(stderr, "firmware corpus: malformed physical table row\n"); exit(1);
+    }
+    bundle.addresses = lean_array_push(bundle.addresses, lean_box_uint64(parse_u64(address, "table address")));
+    bundle.tables = lean_array_push(bundle.tables, read_byte_array(table));
+  }
+  if (ferror(file)) { fprintf(stderr, "firmware corpus: root bundle read failed\n"); exit(1); }
+  fclose(file);
+  return bundle;
+}
+
+#include "firmware-root-bounds.h"
+
 static lean_object *run_host(int argc, char **argv) {
   (void)argc;
   (void)argv;
   REGISTER_BOUNDARY(leanos_boot_handoff_query);
   REGISTER_BOUNDARY(leanos_boot_complete_topology_query);
+  REGISTER_BOUNDARY(leanos_boot_captured_root_query);
+  test_root_adapter_bounds();
 
   const char *path = replay_path();
   FILE *replay = fopen(path, "r");
@@ -136,19 +180,30 @@ static lean_object *run_host(int argc, char **argv) {
     uint64_t first = parse_u64(arg0, "argument");
     uint64_t second = parse_u64(arg1, "argument");
     int handoff = strcmp(stage, "handoff") == 0;
-    if (!handoff && strcmp(stage, "madt") != 0) {
+    int rooted = strcmp(stage, "root") == 0;
+    if (!handoff && !rooted && strcmp(stage, "madt") != 0) {
       fprintf(stderr, "firmware corpus: %s has unknown stage %s\n", input, stage);
       exit(1);
     }
-    lean_object *bytes = read_byte_array(file);
+    struct root_bundle bundle = {0};
+    lean_object *bytes = NULL;
+    if (rooted) bundle = read_root_bundle(file);
+    else bytes = read_byte_array(file);
     for (size_t word = 0; word < count; ++word) {
       /* Both exports consume their byte-array argument; keep this loop's
        * reference alive across the words and release it once at the end. */
-      lean_inc(bytes);
-      uint64_t actual =
-          handoff ? leanos_boot_handoff_query(first, second, bytes, word)
+      uint64_t actual;
+      if (rooted) {
+        lean_inc(bundle.info); lean_inc(bundle.root);
+        lean_inc(bundle.addresses); lean_inc(bundle.tables);
+        actual = leanos_boot_captured_root_query(0x36d76289, 0x1000,
+          bundle.info, bundle.root, bundle.address, bundle.addresses, bundle.tables, second, word);
+      } else {
+        lean_inc(bytes);
+        actual = handoff ? leanos_boot_handoff_query(first, second, bytes, word)
                   : leanos_boot_complete_topology_query(bytes, first, second,
                                                         word);
+      }
       printf("firmware-corpus %s %s word-%zu %llu\n", input, stage, word,
              (unsigned long long)actual);
       if (actual != expected[word]) {
@@ -159,7 +214,10 @@ static lean_object *run_host(int argc, char **argv) {
         exit(1);
       }
     }
-    lean_dec(bytes);
+    if (rooted) {
+      lean_dec(bundle.info); lean_dec(bundle.root);
+      lean_dec(bundle.addresses); lean_dec(bundle.tables);
+    } else lean_dec(bytes);
     inputs += 1;
     words += count;
   }

@@ -64,6 +64,16 @@ expect_rejection scripts/render-boundary-abi.awk \
 expect_rejection scripts/render-boundary-abi.awk \
   'generated boundary abi lists no scalar exports' "$abi"
 
+# Captured-root replay admits exactly these two boxed array shapes.
+printf '%b' "${abi}export\tleanos_scalar\t0\ta\tb\nobject-export\tleanos_arrays\tArray.{0} UInt64,Array.{0} ByteArray,u64\ta\tb\n" |
+  awk -f scripts/render-boundary-abi.awk > "$tmp/arrays.h"
+grep -Fxq 'uint64_t leanos_arrays(lean_object *, lean_object *);' "$tmp/arrays.h"
+for shape in 'Array.{0} UInt32' 'Array.{0} Nat' 'Array.{0} (Array.{0} ByteArray)'; do
+  expect_rejection scripts/render-boundary-abi.awk \
+    "unsupported generated object export parameter: leanos_arrays $shape" \
+    "${abi}object-export\tleanos_arrays\t${shape},u64\ta\tb\n"
+done
+
 # An arity mismatch against the generated prototypes is a compile error; the
 # exact arity compiles.
 cat > "$tmp/caller.c" <<'CALLER'
@@ -99,7 +109,11 @@ LEANOS_ORACLE_TOOL_SIGNATURE=test ./scripts/generate-oracle.sh "$tmp/out" > /dev
 cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
-test "$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")" -eq 65
+export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
+if [[ "$export_count" -ne 66 ]]; then
+  echo "error: expected 66 generated boundary exports, found $export_count" >&2
+  exit 1
+fi
 
 # No hand-maintained copy of a boundary token or an exported prototype may
 # remain in the C sources; the checked-in dispatcher header carries prose

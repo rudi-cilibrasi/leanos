@@ -45,11 +45,21 @@ read_root "$tables/APIC" > "$out/acpi/APIC.bin"
 root_tables=unavailable
 if command -v acpidump > /dev/null 2>&1; then
   dump="$(mktemp -d)"
-  if (cd "$dump" && { if [[ $EUID -eq 0 ]]; then acpidump -b; else sudo -n acpidump -b; fi; } > /dev/null 2>&1); then
+  if (cd "$dump" && { if [[ $EUID -eq 0 ]]; then acpidump -c off -b; else sudo -n acpidump -c off -b; fi; } > /dev/null 2>&1); then
     for table in rsdp rsdt xsdt; do
       [[ -f "$dump/$table.dat" ]] && cp "$dump/$table.dat" "$out/acpi/${table^^}.bin"
     done
-    [[ -f "$out/acpi/RSDP.bin" ]] && root_tables=acpidump
+    if [[ -f "$out/acpi/RSDP.bin" ]]; then
+      if [[ $EUID -eq 0 ]]; then acpidump -c off -s; else sudo -n acpidump -c off -s; fi > "$dump/summary.txt"
+      awk '$1 == "ACPI:" && ($2 == "RSDP" || $2 == "RSDT" || $2 == "XSDT" || $2 == "APIC")' \
+        "$dump/summary.txt" > "$out/acpi/addresses.txt"
+      cmp "$dump/apic.dat" "$out/acpi/APIC.bin" || {
+        echo "error: firmware MADT differs from sysfs MADT" >&2
+        exit 1
+      }
+      bash "$(dirname "${BASH_SOURCE[0]}")/capture-acpi-root-tables.sh" "$out/acpi"
+      root_tables=acpidump
+    fi
   fi
   rm -rf "$dump"
 fi
@@ -74,6 +84,10 @@ profile() {
   echo "  \"memory_map_source\": \"/sys/firmware/memmap\","
   echo "  \"acpi_table_source\": \"/sys/firmware/acpi/tables\","
   echo "  \"root_tables\": \"$root_tables\","
+  if [[ "$root_tables" == acpidump ]]; then
+    echo "  \"root_capture_tool_sha256\": \"$(sha "$(dirname "${BASH_SOURCE[0]}")/capture-acpi-root-tables.sh")\","
+    echo "  \"acpidump_sha256\": \"$(sha "$(command -v acpidump)")\","
+  fi
   echo "  \"processor_count\": $(nproc --all),"
   echo "  \"machine\": {"
   profile sys_vendor; echo ","
