@@ -1,0 +1,41 @@
+{
+  "artifacts": {
+    "elf": "2b961990117b01ec9fa4480998ac71e6cd776ef90b841389a96d89b7aaa51ae9",
+    "iso": "bef7bf6873938263dc9dfa2b280bd93065ad10f06e59b0273968626e4eac12fb",
+    "protocol": "3a4b1ce0fe1f5191c7c930ac94dc58639a1bffa9dc5031aed8e3cac6f512ff20",
+    "toolchain": "f1adca0db34baf5c7181500aca106fe8813d26a90708858e4ebbed92f8540bfd"
+  },
+  "capture": {
+    "baud": 38400,
+    "command": "sudo -n python3 -u leanos/scripts/capture-hardware.py --manifest evidence/qotom-hardware-manifest.json --image leanos/build/boot/leanos-0.1.0-x86_64.iso --elf leanos/build/boot/leanos.elf --device /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_<redacted>-if00-port0 --output evidence/qotom-boot-attempt-03 --timeout 180",
+    "device": "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_<redacted>-if00-port0",
+    "duration_seconds": 180.00105295800313,
+    "finished_utc": "2026-09-09T15:57:49.206652+00:00",
+    "flow_control": "none",
+    "format": "8N1",
+    "reset_declared_utc": "2026-09-09T15:54:54+00:00",
+    "started_utc": "2026-09-09T15:54:49.117385+00:00",
+    "timeout_seconds": 180
+  },
+  "files": {
+    "events.jsonl": "408463dc9ec39775d6557b5b41445616f89752d8b7a1f1e0809661fa157ed538",
+    "implementation.py": "fb21026420537098134006dcae79390b6caeca74644a6fe7932266a24ba3b4c5",
+    "inventory.json": "20fa12fbb1b79d8c1fa4e8c19d4565c2af4485b345b591eb9374d302aa177f55",
+    "profile.json": "b05b0f4bda8921436fc4afcecd92de619f61adcbf324f2902ddae1c6eb8178c4",
+    "protocol.tsv": "3a4b1ce0fe1f5191c7c930ac94dc58639a1bffa9dc5031aed8e3cac6f512ff20",
+    "serial.normalized": "3a0dde9ced8af3a10f91c9976e19e91d9e57fc1ffd60ef63598aba124250c4d6",
+    "serial.raw": "3a0dde9ced8af3a10f91c9976e19e91d9e57fc1ffd60ef63598aba124250c4d6",
+    "toolchain.json": "f1adca0db34baf5c7181500aca106fe8813d26a90708858e4ebbed92f8540bfd"
+  },
+  "operator": "Repository owner at physical Qotom; assistant issued SSH reboot and serial capture",
+  "provenance": {
+    "capture_implementation_sha256": "fb21026420537098134006dcae79390b6caeca74644a6fe7932266a24ba3b4c5",
+    "kind": "imported-observation",
+    "note": "Imported without changing raw or event bytes from the pre-integration capture script archived at implementation.py in this observation bundle. Reset time comes from the SSH shutdown log. Duration is original quiet_seconds plus last event elapsed_seconds. Original result contains a local adapter path and is retained privately; inventory metadata is sanitized, not raw serial data. The recorded command and device path redact the adapter serial only; paths name the original workspace and archived capture implementation.",
+    "original_result_sha256": "63c019bd2e8ecceadc5c0f6de45dd88f0ae58b76d822e8b03889a7449b7e9749"
+  },
+  "scenario": "qotom-j1900-clbtm210-v1",
+  "schema": "leanos-hardware-bundle-v1",
+  "source_revision": "1cc62dbb6e365b8b00716c316c927d9dc6db8f9a",
+  "tier": "hardware"
+}

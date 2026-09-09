@@ -59,7 +59,7 @@ The three evidence classes are deliberately separate:
 | --- | --- | --- | --- |
 | Required q35/TCG | Deterministic integration behavior in QEMU software emulation | QEMU/TCG and the hosted build environment | Host-silicon or physical-machine behavior |
 | Experimental q35/KVM | The same guest scenarios while eligible instructions execute through hardware virtualization | Host CPU, host kernel and KVM, runner virtualization, QEMU's KVM and device models | Bare-metal firmware, SMM, physical UART, or hardware VT-d behavior |
-| Future bare metal | A separately admitted physical platform and real peripherals | Platform firmware, physical CPU, chipset, and laboratory automation | Any claim not defined by that future platform contract |
+| Opt-in physical rejection ([ADR 0016](0016-physical-rejection-evidence.md)) | Exact pre-CPL3 rejection on one inventoried machine | Firmware/SMM, physical CPU/chipset/UART, boot medium, capture host, operator | Hardware admission, generic bare-metal support, or binary refinement |
 
 KVM evidence can expose differences between TCG and hardware-assisted execution,
 but it remains integration evidence. It does not prove binary refinement,
