@@ -95,8 +95,12 @@ not establish durability across this watchdog reset.
 
 The watchdog-test path is now disabled in the template: it falls back to
 FreeBSD without arming. The register recipe is retained only for investigation.
-The already installed experimental configuration needs replacement after
-physical USB removal allows FreeBSD to boot. No further watchdog arm is
+The board was later found running FreeBSD; how it recovered is unknown. The
+installed enabled configuration was backed up and replaced with the disabled
+configuration, with a read-only remount and byte-for-byte comparison. A subsequent
+[normal completed-run cycle](../hardware/lab/observations/qotom-recovery-restored-20260909/README.md)
+passed through USB-first selection, the expected rejection, reset, and FreeBSD
+SSH recovery with the request consumed. No watchdog was armed. No further watchdog arm is
 appropriate until independent durable one-shot consumption is demonstrated
 under the actual reset mechanism. A GRUB success message or a same-boot cached
 readback alone is insufficient.
@@ -105,8 +109,8 @@ The bounded [failed observation](../hardware/lab/observations/qotom-watchdog-202
 
 ## Candidate independent expiry guard
 
-`grub-qotom-watchdog-window.cfg` is a candidate guard, not sourced by the active
-lab configuration. A request names exactly one RTC minute using unpadded
+`grub-qotom-watchdog-window.cfg` is a candidate guard, used only by the unarmed
+`rtc-probe` request in the lab configuration. A request names exactly one RTC minute using unpadded
 `watchdog-test-YEAR-MONTH-DAY-HOUR-MINUTE` fields. It rejects a different minute,
 implausible clock, or inconsistent resampling across rollover. The 120-tick
 watchdog interval exceeds the maximum 60-second eligibility window, so an
@@ -119,8 +123,8 @@ integers. An arm producer must use the same RTC convention and allow enough of
 the selected minute for the loader to reach the guard. It must not broaden the
 window on failure or silently use the observing host's wall clock.
 
-The 14-case actual GRUB/QEMU suite passes: seven existing boot/fallback cases
-plus current-minute acceptance, stale replay of the same token two minutes
+The 15-case actual GRUB/QEMU suite passes: seven existing boot/fallback cases,
+the unarmed 65-second clock probe, and current-minute acceptance, stale replay of the same token two minutes
 later, future minute, wrong date, missing expiry, malformed padding, and invalid
 clock rejection. The clock fixtures never arm a watchdog. Before enabling this
 path physically, establish the Qotom RTC convention and advancement, verify
@@ -128,3 +132,24 @@ stale-token rejection across its watchdog reset, and complete the deliberate
 loader/kernel hang recovery tests. A stopped or backward-jumping RTC remains
 outside this proposed guard's guarantee and must be recorded as a trust
 assumption or addressed with a separate recovery mechanism.
+
+## Unarmed clock preflight
+
+The `rtc-probe` request consumes its environment request before reading GRUB's
+date variables. It prints the clock and current-minute acceptance, waits 65
+seconds, prints the clock again and the expired-token rejection, then follows
+the normal FreeBSD chain path. It never sources the register recipe or arms a
+watchdog. Even a repeated request only delays chainloading by 65 seconds; the
+probe itself never reboots. A missing guard file falls back to FreeBSD.
+
+Use `run-qotom-recovery-lab.py --scenario rtc-probe` with the same explicit host,
+USB identity, serial device, ELF, and output arguments as the normal runner.
+The runner requires one complete successful probe, 64–75 seconds of RTC
+advancement, a subsequent chain marker, a changed FreeBSD boot epoch, and
+consumed request readback. It retains raw bytes and timed events. Compare the
+reported GRUB clock to the capture's UTC timestamps and FreeBSD's
+`machdep.wall_cmos_clock` setting to establish the board's convention. Clock
+sampling can straddle a rollover and fail acceptance; such a run is inconclusive
+and must not be promoted to watchdog recovery evidence.
+
+The [physical unarmed preflight](../hardware/lab/observations/qotom-rtc-20260909/README.md) passed: GRUB matched UTC, advanced exactly 65 seconds, rejected the expired token, and chainloaded FreeBSD with SSH restored and the request consumed. This does not establish RTC behavior across a watchdog reset. The retained capture also covers GRUB LF-CR line endings in the replay classifier.

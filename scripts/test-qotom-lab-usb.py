@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Exercise lab GRUB state and hash failures against a fake fallback boot disk."""
 import argparse
+from datetime import datetime
 import hashlib
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -39,6 +41,7 @@ def main():
         with sentinel.open('r+b') as stream:
             stream.write(code)
         cases = [('default', 'none'), ('oneshot', 'reboot-test'),
+                 ('rtc-probe', 'rtc-probe'),
                  ('unknown', 'unknown'), ('watchdog-disabled', 'watchdog-test'), ('bad-env', 'none'), ('bad-image', 'leanos-' + digest),
                  ('leanos', 'leanos-' + digest)]
         window_cases = {
@@ -93,7 +96,7 @@ def main():
                 '-drive', 'file=' + str(sentinel) + ',format=raw,if=ide,index=1'],
                 stderr=subprocess.DEVNULL)
             expected = b'FINAL status=FAIL reason=dma-identity' if name == 'leanos' else b'FREEBSD-CHAIN-SENTINEL'
-            deadline = time.monotonic() + 15
+            deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
             try:
                 while time.monotonic() < deadline:
                     if log.exists() and expected in log.read_bytes():
@@ -105,6 +108,14 @@ def main():
                 process.terminate()
                 process.wait(timeout=5)
             data = log.read_bytes()
+            if name == 'rtc-probe':
+                stamps = re.findall(rb'LEANOS-LAB/1 RTC-(?:BEGIN|END) ([0-9-]+)', data)
+                assert len(stamps) == 2, data
+                start, end = (datetime(*map(int, stamp.split(b'-'))) for stamp in stamps)
+                assert 64 <= (end - start).total_seconds() <= 70, data
+                assert b'RTC-CURRENT accepted=1' in data, data
+                assert b'RTC-EXPIRED rejected=1' in data, data
+                assert b'WATCHDOG-ARMED' not in data, data
             if name in window_cases:
                 expected_window = b'WINDOW-ACCEPTED' if accepted else b'WINDOW-REJECTED'
                 other_window = b'WINDOW-REJECTED' if accepted else b'WINDOW-ACCEPTED'

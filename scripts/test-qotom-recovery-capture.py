@@ -16,6 +16,24 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_rtc_probe_and_failures(self):
+        raw = (b'LEANOS-LAB/1 RTC-BEGIN 2026-9-9-23-59-30\r\n'
+               b'LEANOS-LAB/1 RTC-CURRENT accepted=1\r\n'
+               b'LEANOS-LAB/1 RTC-END 2026-9-10-0-0-35\r\n'
+               b'LEANOS-LAB/1 RTC-EXPIRED rejected=1\r\n' + lab.CHAIN + b'hd1\r\n')
+        self.assertEqual(lab.classify_rtc([event(raw, 80)])['rtc_advance_seconds'], 65)
+        for newline in (b'\n', b'\n\r'):
+            self.assertEqual(lab.classify_rtc([event(raw.replace(b'\r\n', newline), 80)])['rtc_advance_seconds'], 65)
+        for bad in (raw + raw, raw.replace(b'accepted=1', b'accepted=0'),
+                    raw.replace(b'rejected=1', b'rejected=0'),
+                    raw.replace(b'2026-9-10-0-0-35', b'2026-9-9-23-59-30'),
+                    raw.replace(b'2026-9-10-0-0-35', b'2026-9-10-0-0-50'),
+                    raw.replace(lab.CHAIN, b'no-chain'),
+                    raw + b'WATCHDOG-ARMED', raw + lab.EXPECTED,
+                    lab.CHAIN + b'hd1\n' + raw.split(lab.CHAIN)[0]):
+            with self.subTest(raw=bad), self.assertRaises(ValueError):
+                lab.classify_rtc([event(bad, 80)])
+
     def fixture(self):
         return [event(b'firmware\n', 1), event(lab.EXPECTED[:40], 2),
                 event(lab.EXPECTED[40:], 3), event(b'firmware\n', 37),

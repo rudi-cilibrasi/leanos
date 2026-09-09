@@ -29,6 +29,27 @@ if save_env --file=($labroot)/boot/grub/grubenv request; then
         # Disabled until durable consumption under that reset is established.
         echo 'LEANOS-LAB/1 WATCHDOG-DISABLED fallback=freebsd'
     fi
+    if [ "$selected" = "rtc-probe" ]; then
+        # Read the clock and exercise expiry without touching watchdog registers.
+        if source ($labroot)/boot/grub/watchdog-window.cfg; then
+            set probe_token="watchdog-test-${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}"
+            echo "LEANOS-LAB/1 RTC-BEGIN ${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}-${SECOND}"
+            if qotom_watchdog_window "$probe_token"; then
+                echo 'LEANOS-LAB/1 RTC-CURRENT accepted=1'
+            else
+                echo 'LEANOS-LAB/1 RTC-CURRENT accepted=0'
+            fi
+            sleep 65
+            echo "LEANOS-LAB/1 RTC-END ${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}-${SECOND}"
+            if qotom_watchdog_window "$probe_token"; then
+                echo 'LEANOS-LAB/1 RTC-EXPIRED rejected=0'
+            else
+                echo 'LEANOS-LAB/1 RTC-EXPIRED rejected=1'
+            fi
+        else
+            echo 'LEANOS-LAB/1 RTC-UNAVAILABLE fallback=freebsd'
+        fi
+    fi
     if [ "$selected" = "reboot-test" ]; then
         echo 'LEANOS-LAB/1 SELECT reboot-test consumed=1'
         sleep 3

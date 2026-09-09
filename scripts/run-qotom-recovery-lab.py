@@ -20,6 +20,30 @@ EXPECTED = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n' + EXPECTED_
 CHAIN = b'LEANOS-LAB/1 CHAIN freebsd disk='
 
 
+def classify_rtc(events):
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    newline = rb'(?:\r\n|\n\r|\n)'
+    pattern = (rb'LEANOS-LAB/1 RTC-BEGIN ([0-9-]+)' + newline +
+               rb'LEANOS-LAB/1 RTC-CURRENT accepted=1' + newline +
+               rb'LEANOS-LAB/1 RTC-END ([0-9-]+)' + newline +
+               rb'LEANOS-LAB/1 RTC-EXPIRED rejected=1' + newline)
+    match = re.search(pattern, data)
+    if (match is None or data.count(b'LEANOS-LAB/1 RTC-') != 4
+            or b'WATCHDOG-ARMED' in data or b'LEANOS/' in data
+            or data.count(CHAIN) != 1 or data.find(CHAIN) < match.end()):
+        raise ValueError('missing, repeated, or invalid RTC expiry probe trace')
+    start, end = (datetime.datetime(*map(int, stamp.split(b'-'))) for stamp in match.groups())
+    advancement = (end - start).total_seconds()
+    if not 64 <= advancement <= 75:
+        raise ValueError('RTC did not advance by the bounded probe interval')
+    return {'scenario': 'rtc-probe', 'recovery': 'chain-observed',
+            'rtc_begin': start.isoformat(), 'rtc_end': end.isoformat(),
+            'rtc_advance_seconds': advancement, 'stale_token_rejected': True,
+            'raw_sha256': hashlib.sha256(data).hexdigest()}
+
+
 def classify(events):
     if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
         raise ValueError('nonmonotonic capture timestamps')
@@ -66,6 +90,7 @@ def main():
     parser.add_argument('--elf', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
+    parser.add_argument('--scenario', choices=('leanos', 'rtc-probe'), default='leanos')
     args = parser.parse_args()
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
@@ -86,7 +111,8 @@ def main():
             raise SystemExit('FreeBSD SSH unavailable; no boot armed')
         env = args.output / 'request.env'
         subprocess.run(['grub-editenv', str(env), 'create'], check=True)
-        subprocess.run(['grub-editenv', str(env), 'set', 'request=leanos-' + digest], check=True)
+        request = 'leanos-' + digest if args.scenario == 'leanos' else 'rtc-probe'
+        subprocess.run(['grub-editenv', str(env), 'set', 'request=' + request], check=True)
         # Remote names are fixed; arguments interpolated into shell are quoted.
         arm = '''set -e
 cat > /var/tmp/leanos-lab-request.env
@@ -153,7 +179,7 @@ sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
         finally:
             stop.set(); thread.join()
             termios.tcsetattr(fd, termios.TCSANOW, previous); os.close(fd)
-        result = classify(events)
+        result = classify(events) if args.scenario == 'leanos' else classify_rtc(events)
         result.update({'freebsd_boot_before': before, 'freebsd_boot_after': after,
                        'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment', 'hang_recovery': False})
         # Read consumed state only after FreeBSD has returned; do not arm again on failure.
