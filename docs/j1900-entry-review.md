@@ -87,5 +87,7 @@ four measured CPUs plus 29 altered snapshots using kernel-checked Lean reduction
 The same runner checks 162 fast-entry combinations across vendor, execution
 mode, feature exposure, and null/non-null selectors (including RPL and upper
 bits), also by kernel reduction. These are model checks, not hardware execution.
-This module is not yet connected to the aggregate gate, generated-C ABI, or
-boot adapter; those and the MSR review remain required for #328.
+The default Lean root imports this module, its three theorems are in the
+checked invariant inventory, and `scripts/check.sh` runs these capture and
+fast-entry cases. The generated-C ABI and boot adapter are not yet connected;
+those and completion of the MSR policy remain required for #328.

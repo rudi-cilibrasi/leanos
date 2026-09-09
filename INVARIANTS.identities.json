@@ -13010,6 +13010,24 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/J1900CpuProfile.lean",
+      "qualified": "LeanOS.J1900CpuProfile.selection_does_not_authorize_cpl3",
+      "display": "selection_does_not_authorize_cpl3",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900CpuProfile.lean",
+      "qualified": "LeanOS.J1900CpuProfile.selection_requires_all_checks",
+      "display": "selection_requires_all_checks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900CpuProfile.lean",
+      "qualified": "LeanOS.J1900CpuProfile.selection_requires_measured_capabilities",
+      "display": "selection_requires_measured_capabilities",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/KernelTransition.lean",
       "qualified": "LeanOS.KernelTransition.bootTransition_agrees",
       "display": "bootTransition_agrees",
