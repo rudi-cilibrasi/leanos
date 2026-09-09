@@ -62,6 +62,7 @@ lake build leanos-vtd-plan
 ./scripts/test-generate-serial-protocol.sh
 python3 ./scripts/test-scenario-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
+python3 ./scripts/test-bare-metal-observation.py
 
 ./scripts/check-security-claims.sh
 

@@ -133,6 +133,13 @@ the capture. Record a pseudonymous operator identifier and redaction note; do
 not put a personal name, hostname, serial number, credential, or secret in the
 sidecar.
 
+Validate the sidecar, including strict fields, bounds, UTC timestamps, and
+timestamp ordering, before publication:
+
+```sh
+python3 scripts/check-bare-metal-observation.py <bundle-directory>/observation.json
+```
+
 ## Interpretation
 
 A passing bundle is integration evidence that the named procedure observed the
