@@ -421,7 +421,7 @@ def run_fixtures() -> None:
             raise AssertionError("build-image accepts a cache missing selected prelinks")
         if 'boot_plan_batch_args=("${filtered_boot_plan_batch_args[@]}")' not in build_image:
             raise AssertionError("build-image does not restrict PR boot-plan generation")
-        if 'if [[ "$evidence_tier" == all ]]; then\n  cmp "$build/boot-page-plan-fault-containment.h"' not in build_image:
+        if 'if [[ "$evidence_tier" == all ]]; then\n  ./scripts/scenario-manifest.py plan-comparisons' not in build_image:
             raise AssertionError("build-image does not reserve cross-variant plan checks for full evidence")
         if 'if [[ "$evidence_tier" == all ]] && nm "$build/kernel.o"' not in build_image:
             raise AssertionError("build-image checks unselected canonical objects in PR shards")
@@ -453,7 +453,7 @@ def run_fixtures() -> None:
         if canonical_plan is None or canonical_plan["check"] != "validate":
             raise AssertionError("manifest does not validate the canonical final plan")
         converge = [entry for entry in plan_checks if entry["check"] == "converge"]
-        if {entry["image"] for entry in converge} != {"leanos-bootstrap64-nmi", "leanos-extended-state"}:
+        if not {"leanos-bootstrap64-nmi", "leanos-extended-state", "leanos-frame-budget", "leanos-fault-stale-translation"} <= {entry["image"] for entry in converge}:
             raise AssertionError("manifest does not converge the shared graph plans")
         for image, expected in (
             ("leanos-direct-port-serial", "boot-page-plan-direct-port.h"),
@@ -469,18 +469,8 @@ def run_fixtures() -> None:
             raise AssertionError("manifest does not list the selected disassembly reports")
         if [row["variant"] for row in build["extended_state_policies"]] != ["x87", "mmx", "sse", "sse2", "avx"]:
             raise AssertionError("manifest does not list the extended-state policy variants in order")
-        if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
-            raise AssertionError("build-image does not restrict frame-budget convergence")
-        if 'selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue' not in build_image:
-            raise AssertionError("build-image does not restrict fault-family final plans")
-        if (
-            'expected_fault_plan="$build/boot-page-plan-fault-${probe}.h"\n'
-            '  if [[ "$evidence_tier" == all && "$probe" != stale-translation ]]'
-            not in build_image
-        ):
-            raise AssertionError(
-                "build-image compares selected PR fault plans against an unselected stub"
-            )
+        if './scripts/scenario-manifest.py plan-checks --tier "$evidence_tier"' not in build_image:
+            raise AssertionError("build-image does not select tier-specific final-plan expectations")
         for final_elf in (
             "leanos-double-fault.elf",
             "leanos-entry-stack-overflow.elf",
