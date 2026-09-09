@@ -125,8 +125,13 @@ python3 scripts/verify-bare-metal-evidence-bundle.py <bundle-directory>
 ```
 
 Keep the variable operator, capture-command, firmware-setting, inventory, and
-reset metadata alongside this deterministic core; those observation records are
-not synthesized by the classifier.
+reset metadata alongside this deterministic core as `observation.json`; those
+observation records are not synthesized by the classifier. The sidecar must
+conform to `docs/bare-metal-observation.schema.json`. Its timestamps use UTC
+RFC 3339 date-times, and its bounded timeout is the same operator timer used for
+the capture. Record a pseudonymous operator identifier and redaction note; do
+not put a personal name, hostname, serial number, credential, or secret in the
+sidecar.
 
 ## Interpretation
 

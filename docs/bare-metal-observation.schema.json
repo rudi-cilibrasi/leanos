@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanos.dev/schemas/bare-metal-observation-v1.json",
+  "title": "LeanOS bare-metal observation metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operatorId",
+    "startedAtUtc",
+    "endedAtUtc",
+    "captureCommand",
+    "captureToolVersion",
+    "serialDevice",
+    "timeoutSeconds",
+    "firmwareSettings",
+    "pciInventory",
+    "redactionNote",
+    "resetResult"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "operatorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "startedAtUtc": { "type": "string", "format": "date-time" },
+    "endedAtUtc": { "type": "string", "format": "date-time" },
+    "captureCommand": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "captureToolVersion": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "serialDevice": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+    "firmwareSettings": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "pciInventory": { "type": "string", "minLength": 1, "maxLength": 65536 },
+    "redactionNote": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "resetResult": { "type": "string", "minLength": 1, "maxLength": 2048 }
+  }
+}
