@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise normalization using the checked raw root captures."""
 import importlib.util
+import json
+import sys
 from pathlib import Path
 import shutil
 import tempfile
@@ -22,6 +24,46 @@ class RootCorpusTests(unittest.TestCase):
         self.info = corpus.multiboot2_information(corpus.read_memmap(self.case/'memmap.tsv'))
 
     def replay(self): return roots.from_capture(self.case, self.info)
+
+    def manifest(self):
+        manifest=json.loads((ROOT/'firmware-corpus/manifest.json').read_text())
+        case=next(c for c in manifest['cases'] if c['id']=='qemu-seabios-q35-roots-1cpu')
+        case['id']='capture';manifest['cases']=[case]
+        return manifest
+
+    def run_manifest(self, manifest, command='validate'):
+        path=Path(self.temp.name)/'manifest.json';path.write_text(json.dumps(manifest))
+        args=[sys.executable,str(ROOT/'scripts/firmware-corpus.py'),'--manifest',str(path),command]
+        if command=='normalize':args+=['--out',str(Path(self.temp.name)/'normalized')]
+        return subprocess.run(args,text=True,capture_output=True)
+
+    def test_source_hash_drift_has_case_local_failure(self):
+        path=self.case/'acpi/RSDT.bin';path.write_bytes(path.read_bytes()+b'\0')
+        result=self.run_manifest(self.manifest())
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('case capture',result.stderr)
+        self.assertIn('does not match its recorded sha256',result.stderr)
+
+    def test_root_reason_drift_rejected(self):
+        manifest=self.manifest()
+        manifest['cases'][0]['root_mutations']['root-checksum']['words'][3]=3
+        result=self.run_manifest(manifest)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('root result disagrees with words',result.stderr)
+
+    def test_missing_root_mutation_rejected(self):
+        manifest=self.manifest();del manifest['cases'][0]['root_mutations']['root-checksum']
+        result=self.run_manifest(manifest)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('must pin every derived root mutation',result.stderr)
+
+    def test_normalized_mutation_digest_drift_rejected(self):
+        manifest=self.manifest()
+        manifest['cases'][0]['root_mutations']['root-checksum']['normalized_sha256']='0'*64
+        result=self.run_manifest(manifest,'normalize')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('case capture: normalized root-checksum bytes differ',result.stderr)
+
 
     def test_abi_renderer_limits_supported_array_shapes(self):
         prefix='leanos-abi\t1\nexport\tleanos_scalar\t1\ttest\tTest.scalar\n'
@@ -65,6 +107,27 @@ class RootCorpusTests(unittest.TestCase):
     def test_duplicate_physical_summary_rejected(self):
         p=self.case/'acpi/addresses.txt';s=p.read_text();p.write_text(s+s)
         with self.assertRaises(ValueError):self.replay()
+
+    def test_mutations_do_not_modify_the_captured_input(self):
+        base=self.replay(); before=base.digest()
+        variants=roots.mutations(base)
+        self.assertEqual(base.digest(),before)
+        self.assertEqual(before,self.replay().digest())
+        self.assertTrue(all(v.digest()!=before for v in variants.values()))
+        self.assertEqual(len({v.digest() for v in variants.values()}),len(variants))
+
+    def test_bsp_override_is_part_of_the_normalized_identity(self):
+        from dataclasses import replace
+        base=self.replay()
+        self.assertNotEqual(base.digest(),replace(base,executing_override=255).digest())
+        self.assertIn('255',roots.lean_query(replace(base,executing_override=255),0))
+
+    def test_root_sdt_reason_is_not_collapsed_to_generic_code(self):
+        self.assertEqual(roots.rejection_name([1,2,25,5,0]),
+                         'decoder-rejected:madtSelection.root.invalidChecksum')
+        self.assertNotEqual(roots.rejection_name([1,2,25,3,0]),
+                            roots.rejection_name([1,2,25,5,0]))
+        with self.assertRaises(ValueError):roots.rejection_name([1,2,25,99,0])
 
     def test_oversized_table_rejected(self):
         next((self.case/'acpi/root-tables').glob('*.bin')).write_bytes(bytes(65537))

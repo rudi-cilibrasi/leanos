@@ -13,14 +13,18 @@ class RootReplay:
     root: bytes
     root_address: int
     tables: tuple[tuple[int, bytes], ...]
+    executing_override: int | None = None
 
     def digest(self):
         # Content-only encoding: output paths never affect normalized identity.
-        return hashlib.sha256(json.dumps({
+        content = {
             'info': self.info.hex(), 'root': self.root.hex(),
             'root_address': self.root_address,
             'tables': [[address, data.hex()] for address, data in self.tables],
-        }, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        }
+        if self.executing_override is not None:
+            content['executing_override'] = self.executing_override
+        return hashlib.sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
     def write(self, target: Path):
         target.mkdir(parents=True, exist_ok=True)
@@ -129,6 +133,8 @@ def from_capture(directory: Path, memory_info: bytes):
 
 
 def lean_query(replay, executing):
+    if replay.executing_override is not None:
+        executing = replay.executing_override
     def array(data):
         return '⟨#[' + ', '.join(map(str, data)) + ']⟩'
     addresses = '#[' + ', '.join(str(a) for a, _ in replay.tables) + ']'
@@ -136,3 +142,103 @@ def lean_query(replay, executing):
     return (f'BootMemoryMapDecoderABI.capturedRootQuery 0x36d76289 0x1000 '
             f'{array(replay.info)} {array(replay.root)} {replay.root_address} '
             f'{addresses} {tables} {executing}')
+
+
+def mutations(replay):
+    """Derived adversarial inputs; checksum repairs here isolate the named fault.
+    Captured inputs and the base normalization path are never repaired.
+    """
+    from dataclasses import replace
+
+    def changed(data, offset):
+        b = bytearray(data); b[offset] ^= 1; return bytes(b)
+
+    def sdt(data):
+        b = bytearray(data)
+        struct.pack_into('<I', b, 4, len(b))
+        b[9] = 0; b[9] = -sum(b) % 256
+        return bytes(b)
+
+    def info(data):
+        return struct.pack('<I', len(data)) + data[4:]
+
+    offset = 8
+    while offset < len(replay.info):
+        kind, size = struct.unpack_from('<II', replay.info, offset)
+        if kind in (14, 15): break
+        if size < 8: raise ValueError('malformed normalized tag')
+        offset += (size+7)//8*8
+    else: raise ValueError('normalized handoff has no ACPI tag')
+    tag_end = offset + (size+7)//8*8
+    payload = offset + 8
+    madt_index = next(i for i, (_, b) in enumerate(replay.tables) if b[:4] == b'APIC')
+    madt_address, madt = replay.tables[madt_index]
+
+    def table(data):
+        tables = list(replay.tables); tables[madt_index] = (madt_address, data)
+        return replace(replay, tables=tuple(tables))
+
+    bad_length = bytearray(replay.root)
+    struct.pack_into('<I', bad_length, 4, len(bad_length)+1)
+    width = 4 if replay.root[:4] == b'RSDT' else 8
+    result = {
+        'root-rsdp-signature': replace(replay, info=changed(replay.info, payload)),
+        'root-rsdp-legacy-checksum': replace(replay, info=changed(replay.info, payload+8)),
+        'root-missing-rsdp': replace(replay, info=info(replay.info[:offset]+replay.info[tag_end:])),
+        'root-duplicate-rsdp': replace(replay, info=info(replay.info[:tag_end]+replay.info[offset:tag_end]+replay.info[tag_end:])),
+        'root-checksum': replace(replay, root=changed(replay.root, 9)),
+        'root-declared-length': replace(replay, root=bytes(bad_length)),
+        'root-truncated': replace(replay, root=replay.root[:-1]),
+        'root-wrong-address': replace(replay, root_address=0),
+        'root-missing-copy': replace(replay, tables=replay.tables[1:]),
+        'root-duplicate-copy': replace(replay, tables=replay.tables+(replay.tables[0],)),
+        'root-zero-entry': replace(replay, root=sdt(replay.root[:36]+bytes(width)+replay.root[36+width:])),
+        'root-missing-madt': table(sdt(b'XXXX'+madt[4:])),
+        'root-duplicate-madt': replace(replay, root=sdt(replay.root+madt_address.to_bytes(width,'little'))),
+        'root-madt-checksum': table(changed(madt,9)),
+        'root-madt-truncated': table(madt[:-1]),
+        'root-madt-unknown-record': table(sdt(madt+bytes([9,16])+bytes(14))),
+    }
+    single = bytearray(madt)
+    cursor, enabled = 44, False
+    while cursor < len(single):
+        record_kind, record_size = single[cursor:cursor+2]
+        if record_size < 2 or cursor+record_size > len(single):
+            raise ValueError('invalid captured MADT record bounds')
+        if record_kind == 0:
+            struct.pack_into('<I', single, cursor+4, 0 if enabled else 1)
+            enabled = True
+        cursor += record_size
+    result['root-bsp-mismatch'] = replace(table(sdt(single)), executing_override=255)
+    result['root-executing-overflow'] = replace(replay, executing_override=2**32)
+    if kind == 15:
+        result['root-rsdp-extended-checksum'] = replace(replay, info=changed(replay.info,payload+32))
+    return result
+
+
+def rejection_name(words):
+    """Names mirror BootTopology and AcpiRootDecoder constructors, including detail."""
+    names = {
+        20:'rsdp.missingRoot',21:'rsdp.duplicateOldRoot',22:'rsdp.duplicateNewRoot',23:'rsdp.conflictingRoots',
+        24:'selectedRootAddressMismatch',26:'madtSelection.untranslatedRootEntry',
+        27:'madtSelection.duplicateTranslation',28:'madtSelection.missingMadt',29:'madtSelection.duplicateMadt',
+        100:'truncatedTag',101:'malformedTagSize',102:'tagOutOfBounds',103:'missingEndTag',
+        104:'misplacedEndTag',105:'tooManyTags',106:'invalidSignature',107:'unsupportedRevision',
+        108:'invalidRsdpLength',109:'invalidLegacyChecksum',110:'invalidExtendedChecksum',
+        300:'copyCountExceeded',301:'copyCountMismatch',302:'copyBytesExceeded',
+        303:'tableBytesExceeded',304:'executingApicIdOverflow',305:'handoffBytesExceeded',
+    }
+    complete = ['entry.truncatedHeader','entry.truncatedRecord','entry.invalidRecordLength',
+                'entry.unsupportedRecordKind','entry.processorOverflow','truncatedMadtHeader',
+                'sdt.truncatedHeader','sdt.invalidSignature','sdt.invalidLength','sdt.tableTooLarge',
+                'sdt.invalidChecksum','sdt.invalidRootPayloadAlignment','sdt.rootEntryOverflow']
+    names.update({33+i:'completeMadt.'+name for i,name in enumerate(complete)})
+    if len(words) != 5 or words[0] != 1 or words[1] != 2:
+        raise ValueError('root rejection needs the five-word decoder projection')
+    if words[2] == 25:
+        sdt = ['truncatedHeader','invalidSignature','invalidLength','tableTooLarge',
+               'invalidChecksum','invalidRootPayloadAlignment','rootEntryOverflow']
+        if not 1 <= words[3] <= len(sdt): raise ValueError('unknown root SDT detail')
+        return 'decoder-rejected:madtSelection.root.'+sdt[words[3]-1]
+    if words[2] not in names: raise ValueError(f'unknown root rejection code {words[2]}')
+    return 'decoder-rejected:'+names[words[2]]

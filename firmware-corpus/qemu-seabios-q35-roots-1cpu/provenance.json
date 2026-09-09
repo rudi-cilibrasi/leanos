@@ -1,11 +1,13 @@
 {
   "capture_tool": "scripts/capture-firmware-handoff.sh",
-  "capture_tool_sha256": "c164e71660baf6af61d3b8611889ccbf7f4263a9a369cf8f0d88d2d57bc8d541",
-  "captured_at": "2026-09-09T19:41:00Z",
+  "capture_tool_sha256": "0bcecc73a6e6d576f0c1efdcb41d27cd2ef86ef57d49813e42a8a561a1aa97a5",
+  "captured_at": "2026-09-09T20:08:09Z",
   "kernel": "7.0.0-31-generic",
   "memory_map_source": "/sys/firmware/memmap",
   "acpi_table_source": "/sys/firmware/acpi/tables",
   "root_tables": "acpidump",
+  "root_capture_tool_sha256": "8d3eed5a42e34a38f2f904e5e11c33fe8308031f8ee5f079d5d7f7ea1c0480b8",
+  "acpidump_sha256": "8e431190e1b7f571823b78be884bf3ef271cd367b0bb1f96a4fdaa5534b7b9f7",
   "processor_count": 1,
   "machine": {
     "sys_vendor": "QEMU",
@@ -33,9 +35,9 @@
     "firmware": "seabios",
     "cpus": 1,
     "memory_mib": 1024,
-    "kernel_package": "",
+    "kernel_package": "linux-image-7.0.0-31-generic 7.0.0-31.31~24.04.1",
     "kernel_sha256": "d5d71ed32239eaa9bcb0528227a7adb62688250ce9f163b3e04e9675ddf86cff",
-    "busybox_package": "",
+    "busybox_package": "busybox-static 1:1.36.1-6ubuntu3.1",
     "busybox_sha256": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
     "acpidump_sha256": "8e431190e1b7f571823b78be884bf3ef271cd367b0bb1f96a4fdaa5534b7b9f7"
   }

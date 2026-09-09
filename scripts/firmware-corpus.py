@@ -175,14 +175,29 @@ def validate_case(case: dict, seen_ids: set) -> None:
         require(provenance.get("files", {}).get(name) == inputs[name],
                 f"{prefix}: capture provenance records a different {name}")
     if rooted:
-        entry = case.get("root_replay", {})
-        require(set(entry) == {"result", "words", "normalized_sha256"},
-                f"{prefix}: root_replay needs result, words and normalized_sha256")
-        check_result(f"{prefix} root", entry["result"], entry["words"], MADT_RESULT_TABLES)
-        require(len(entry["words"]) == 5 and isinstance(entry["normalized_sha256"], str)
-                and SHA256.fullmatch(entry["normalized_sha256"]), f"{prefix}: malformed root expectation")
+        def root_entry(entry, name):
+            require(isinstance(entry, dict) and set(entry) == {"result", "words", "normalized_sha256"},
+                    f"{prefix}: {name} needs result, words and normalized_sha256")
+            words = entry["words"]
+            require(isinstance(words, list) and len(words) == 5 and all(
+                type(w) is int and 0 <= w < 2**64 for w in words), f"{prefix}: invalid root words")
+            if words[1] == STATUS_DECODER:
+                require(entry["result"] == roots.rejection_name(words), f"{prefix}: root result disagrees with words")
+            else:
+                check_result(f"{prefix} {name}", entry["result"], words, MADT_RESULT_TABLES)
+            require(isinstance(entry["normalized_sha256"], str) and SHA256.fullmatch(entry["normalized_sha256"]),
+                    f"{prefix}: malformed root digest")
+        root_entry(case.get("root_replay"), "root_replay")
+        root = roots.from_capture(directory, multiboot2_information(read_memmap(directory / "memmap.tsv")))
+        mutations = case.get("root_mutations")
+        require(isinstance(mutations, dict) and set(mutations) == set(roots.mutations(root)),
+                f"{prefix}: root_mutations must pin every derived root mutation")
+        for name, entry in mutations.items():
+            root_entry(entry, name)
+            require(entry["result"] != "accepted", f"{prefix}: root mutation {name} was accepted")
     else:
-        require("root_replay" not in case, f"{prefix}: unavailable roots cannot declare a replay")
+        require("root_replay" not in case and "root_mutations" not in case,
+                f"{prefix}: unavailable roots cannot declare a replay")
     ids = case.get("apic")
     require(isinstance(ids, dict) and set(ids) == {"bsp", "executing"} and
             all(isinstance(ids[k], int) and 0 <= ids[k] <= 0xFFFFFFFF for k in ids),
@@ -370,13 +385,14 @@ def normalize(cases: list[dict], out: Path) -> list[dict]:
             rows.append({"case": case["id"], "input": f"{case['id']}/{stage}", "stage": stage,
                          "path": path, "words": padded_words(stage, words), "result": entry["result"]})
         if case["root_tables"] == "acpidump":
-            replay = roots.from_capture(directory, info)
-            entry = case["root_replay"]
-            require(replay.digest() == entry["normalized_sha256"],
-                    f"case {case['id']}: normalized root bytes differ from the recorded sha256")
-            path = replay.write(target / "root")
-            rows.append({"case": case["id"], "input": f"{case['id']}/root", "stage": "root",
-                         "path": path, "words": entry["words"], "result": entry["result"], "root": replay})
+            base = roots.from_capture(directory, info)
+            for name, replay in {"root": base, **roots.mutations(base)}.items():
+                entry = case["root_replay"] if name == "root" else case["root_mutations"][name]
+                require(replay.digest() == entry["normalized_sha256"],
+                        f"case {case['id']}: normalized {name} bytes differ from the recorded sha256")
+                path = replay.write(target / name)
+                rows.append({"case": case["id"], "input": f"{case['id']}/{name}", "stage": "root",
+                             "path": path, "words": entry["words"], "result": entry["result"], "root": replay})
         for name, stage in MUTATIONS.items():
             data = mutate_handoff(name, info) if stage == "handoff" else mutate_madt(name, table)
             path = target / f"{name}.bin"
@@ -399,6 +415,8 @@ def write_replay(rows: list[dict], cases: list[dict], out: Path) -> None:
                 arg0, arg1 = MULTIBOOT2_MAGIC, INFO_ADDRESS
             else:
                 arg0, arg1 = ids[row["case"]]["bsp"], ids[row["case"]]["executing"]
+            if row["stage"] == "root" and row["root"].executing_override is not None:
+                arg1 = row["root"].executing_override
             handle.write("\t".join([row["input"], row["stage"], str(row["path"].resolve()), str(arg0),
                                     str(arg1), ",".join(str(word) for word in row["words"])]) + "\n")
 
@@ -472,9 +490,10 @@ def write_evaluate(cases: list[dict], out: Path) -> None:
             lines.append("")
         if case.get("root_tables") == "acpidump":
             root = roots.from_capture(directory, info)
-            query = roots.lean_query(root, apic["executing"])
-            lines.append(f'#eval IO.println s!"{case["id"]}\\troot\\t{{((List.range 5).map (fun word => {query} (UInt64.ofNat word))).toString}}"')
-            lines.append(f'#eval IO.println s!"{case["id"]}\\troot\\tsha256-input\\t{root.digest()}"')
+            for name, replay in {"root": root, **roots.mutations(root)}.items():
+                query = roots.lean_query(replay, apic["executing"])
+                lines.append(f'#eval IO.println s!"{case["id"]}\\t{name}\\t{{((List.range 5).map (fun word => {query} (UInt64.ofNat word))).toString}}"')
+                lines.append(f'#eval IO.println s!"{case["id"]}\\t{name}\\tsha256-input\\t{replay.digest()}"')
         for name, data in inputs:
             lines.append(f'#eval IO.println s!"{case["id"]}\\t{name}\\tsha256-input\\t{hashlib.sha256(data).hexdigest()}"')
     lines.append("end LeanOS.FirmwareCorpusEvaluate")
@@ -482,6 +501,8 @@ def write_evaluate(cases: list[dict], out: Path) -> None:
 
 
 def name_of(stage: str, words: list[int]) -> str:
+    if stage == "root" and words[1] == STATUS_DECODER:
+        return roots.rejection_name(words)
     tables = HANDOFF_RESULT_TABLES if stage == "handoff" else MADT_RESULT_TABLES
     if words[1] == STATUS_ACCEPTED:
         return "accepted"
@@ -518,6 +539,15 @@ def pin(manifest: dict, evaluation: Path, path: Path) -> None:
                     f"case {case_id}: declared {stage} result {declared!r} but the model computes {computed!r}")
             entry["words"] = words[key]
             entry["normalized_sha256"] = digests[key]
+        if case.get("root_tables") == "acpidump":
+            root = roots.from_capture(CORPUS / case_id, multiboot2_information(read_memmap(CORPUS / case_id / "memmap.tsv")))
+            case["root_mutations"] = {}
+            for name in roots.mutations(root):
+                key = (case_id, name)
+                require(key in words and key in digests, f"case {case_id}: evaluation lacks root mutation {name}")
+                computed = name_of("root", words[key])
+                require(computed != "accepted", f"case {case_id}: root mutation {name} was accepted")
+                case["root_mutations"][name] = {"result": computed, "words": words[key], "normalized_sha256": digests[key]}
         case["mutations"] = {}
         for name, stage in MUTATIONS.items():
             key = (case_id, name)
