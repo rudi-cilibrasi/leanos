@@ -61,10 +61,32 @@ def make_plan(args: argparse.Namespace) -> dict[str, object]:
     artifact_manifest_digest = hashlib.sha256(
         ("\n".join(artifacts) + "\n").encode()
     ).hexdigest()
-    partitions = [
-        {"id": index, "artifacts": artifacts[index :: args.partitions]}
-        for index in range(args.partitions)
-    ]
+    if args.artifact_groups is None:
+        partitions = [
+            {"id": index, "artifacts": artifacts[index :: args.partitions]}
+            for index in range(args.partitions)
+        ]
+    else:
+        groups = load_json(args.artifact_groups)
+        if not groups or any(
+            not name or not isinstance(group, list) or not group
+            or not all(isinstance(artifact, str) for artifact in group)
+            for name, group in groups.items()
+        ):
+            fail("invalid artifact groups")
+        grouped = [artifact for group in groups.values() for artifact in group]
+        if len(grouped) != len(set(grouped)) or sorted(grouped) != artifacts:
+            fail("artifact groups must cover the authoritative list exactly once")
+        if args.partitions > len(groups):
+            fail("partition count exceeds producer group count")
+        partitions = [{"id": index, "artifacts": []} for index in range(args.partitions)]
+        # Artifact count is a deterministic fallback weight, not measured build
+        # time. Never split a producer to improve this heuristic's balance.
+        for name in sorted(groups, key=lambda name: (-len(groups[name]), name)):
+            destination = min(partitions, key=lambda part: (len(part["artifacts"]), part["id"]))
+            destination["artifacts"].extend(sorted(groups[name]))
+        for partition in partitions:
+            partition["artifacts"].sort()
     plan: dict[str, object] = {
         "schemaVersion": SCHEMA,
         "sourceRevision": args.source_revision,
@@ -148,8 +170,51 @@ def load_plan(path: Path) -> dict[str, object]:
     return plan
 
 
+def verify_consumer_provenance(plan: dict[str, object], args: argparse.Namespace) -> None:
+    # These values must come from the consumer checkout/container, never from
+    # the downloaded plan. A self-consistent plan digest is not provenance.
+    if plan["sourceRevision"] != args.source_revision:
+        fail("plan source revision differs from consumer checkout")
+    if plan["toolchainId"] != args.toolchain_id:
+        fail("plan toolchain identity differs from consumer toolchain")
+
+
+def select_producers(args: argparse.Namespace) -> dict[str, object]:
+    """Validate a downloaded plan against revision-owned producers before build."""
+    plan = load_plan(args.plan)
+    verify_consumer_provenance(plan, args)
+    groups = load_json(args.artifact_groups)
+    if not groups or any(
+        not name or not isinstance(group, list) or not group
+        or not all(isinstance(artifact, str) for artifact in group)
+        for name, group in groups.items()
+    ):
+        fail("invalid artifact groups")
+    grouped = [artifact for group in groups.values() for artifact in group]
+    ownership = {
+        artifact: partition["id"]
+        for partition in plan["partitions"] for artifact in partition["artifacts"]
+    }
+    if len(grouped) != len(set(grouped)) or set(grouped) != set(ownership):
+        fail("plan differs from authoritative producer inventory")
+    if any(len({ownership[artifact] for artifact in group}) != 1 for group in groups.values()):
+        fail("plan splits an authoritative producer across partitions")
+    matches = [part for part in plan["partitions"] if part["id"] == args.partition]
+    if len(matches) != 1:
+        fail("unknown partition")
+    return {
+        "partition": args.partition,
+        "planDigest": plan["planDigest"],
+        "sourceRevision": plan["sourceRevision"],
+        "toolchainId": plan["toolchainId"],
+        "producers": sorted(name for name, group in groups.items() if ownership[group[0]] == args.partition),
+        "artifacts": sorted(matches[0]["artifacts"]),
+    }
+
+
 def make_result(args: argparse.Namespace) -> dict[str, object]:
     plan = load_plan(args.plan)
+    verify_consumer_provenance(plan, args)
     partitions = plan["partitions"]
     matches = [
         partition
@@ -193,6 +258,7 @@ def make_result(args: argparse.Namespace) -> dict[str, object]:
 
 def verify(args: argparse.Namespace) -> str:
     plan = load_plan(args.plan)
+    verify_consumer_provenance(plan, args)
     expected = {partition["id"]: partition["artifacts"] for partition in plan["partitions"]}
     # This list comes from the source revision's scenario manifest, independently
     # of the downloaded plan. Preserve its order for the existing byte comparison.
@@ -243,8 +309,14 @@ def main() -> int:
     plan_parser = subparsers.add_parser("plan")
     plan_parser.add_argument("artifacts", type=Path)
     plan_parser.add_argument("--partitions", type=int, required=True)
+    plan_parser.add_argument("--artifact-groups", type=Path, help="producer groups from reproducibility-groups; never split a group")
     plan_parser.add_argument("--source-revision", required=True)
     plan_parser.add_argument("--toolchain-id", required=True)
+    select_parser = subparsers.add_parser("select")
+    select_parser.add_argument("plan", type=Path)
+    select_parser.add_argument("--partition", type=int, required=True)
+    select_parser.add_argument("--artifact-groups", type=Path, required=True,
+                               help="revision-owned reproducibility-groups output, not downloaded plan data")
     result_parser = subparsers.add_parser("result")
     result_parser.add_argument("plan", type=Path)
     result_parser.add_argument("--partition", type=int, required=True)
@@ -258,10 +330,21 @@ def main() -> int:
         required=True,
         help="authoritative artifact list from write-reproducibility-manifest.sh --list",
     )
+    for consumer in (select_parser, result_parser, verify_parser):
+        consumer.add_argument(
+            "--source-revision", required=True,
+            help="independently observed consumer checkout revision, not plan metadata",
+        )
+        consumer.add_argument(
+            "--toolchain-id", required=True,
+            help="independently observed consumer toolchain identity, not plan metadata",
+        )
     args = parser.parse_args()
     try:
         if args.command == "plan":
             print(json.dumps(make_plan(args), indent=2, sort_keys=True))
+        elif args.command == "select":
+            print(json.dumps(select_producers(args), indent=2, sort_keys=True))
         elif args.command == "result":
             print(json.dumps(make_result(args), indent=2, sort_keys=True))
         else:

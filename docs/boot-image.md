@@ -236,6 +236,70 @@ part of `REPRODUCIBILITY-SHA256SUMS`, and matching durations are not required
 for byte reproducibility. Hosted scheduling, cache state, and runner load can
 change them even when every admitted artifact remains identical.
 
+The next #266 contract slice maps an exact subset of the authoritative
+reproducibility artifact names back to the scenarios and Make targets that
+produce them:
+
+```sh
+./scripts/run-emulator-evidence.py build-plan \
+  --reproducibility-selection build/reproducibility/partition-artifacts.txt
+```
+
+For a producer-preserving cold-build plan, first emit `reproducibility-groups`
+from `run-emulator-evidence.py`, then pass that JSON file as `--artifact-groups`
+to `reproducibility-partitions.py plan`. The planner keeps every scenario's
+outputs together, including canonical provenance extras, and rejects missing,
+duplicate, unknown, or malformed group entries. It deterministically balances
+whole groups by artifact count; this is a fallback heuristic, not measured build
+time. The default artifact-stride mode remains compatible for existing callers.
+
+Before a future executor starts compilation, `reproducibility-partitions.py select`
+validates the downloaded plan against independently generated, revision-owned
+`reproducibility-groups` output and the consumer's source/toolchain identity:
+
+```sh
+python3 scripts/reproducibility-partitions.py select plan.json --partition 0 \
+  --artifact-groups groups.json --source-revision "$revision" --toolchain-id "$toolchain"
+```
+
+Generate `groups.json` from the reviewed consumer checkout, not downloaded plan
+metadata. Selection emits only the validated partition's producer names and
+artifact paths. A rehashed plan that splits a producer, adds/removes artifacts,
+or differs from consumer provenance fails before any selection is emitted.
+This command does not compile anything, prove a cold build, or replace the full
+independent build. Executor isolation and shared-prerequisite accounting remain
+required before CI may consume the selection for compilation.
+
+Both `reproducibility-partitions.py result` and `verify` require explicit
+`--source-revision` and `--toolchain-id` values from the consumer's checkout and
+pinned build environment. They reject a plan that disagrees before hashing
+artifacts or emitting an aggregate, even if its own digest is valid. Never derive
+these arguments from the downloaded plan: callers must independently obtain the
+checkout SHA and admitted toolchain/container identity. This comparison binds
+metadata; it does not attest that a compiler actually produced the files.
+
+This planning interface does not yet change CI build execution, share compiled
+canonical output, or prove a sub-15-minute build. Shared graph prerequisites, independent cold builds,
+complete aggregation and representative timing evidence remain required before
+switching the reproducibility execution lane.
+
+The input is one exact artifact basename per line for the selected image version.
+Unknown, duplicate, empty, or wrong-version selections fail before any TSV output.
+The selector derives ownership from the scenario manifest (including canonical
+source/toolchain provenance), preserves matrix order, and selects each producer
+once even when several of its artifacts are requested. It cannot be combined
+with PR-tier or emulator-shard filtering, which could silently omit an artifact.
+
+This is a selection contract only: CI still runs the existing complete independent
+cold build. Before wiring parallel execution, select producer-preserving groups
+instead of the legacy artifact-stride plan, account for shared graph prerequisites without
+reusing canonical compiled outputs, validate downloaded plan provenance against
+the checked-out revision/toolchain, and aggregate every artifact against the
+independent authoritative list. The default round-robin artifact plan can split
+one producer across partitions; using these selectors independently without
+family grouping would duplicate compilation. No sub-15-minute timing or
+partitioned-build claim is made by this contract alone.
+
 The primary Clang lane builds and boots the canonical guest scenario with the pinned
 Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent full-build
 lanes set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler
