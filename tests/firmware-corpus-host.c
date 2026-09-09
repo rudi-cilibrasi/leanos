@@ -122,12 +122,15 @@ static struct root_bundle read_root_bundle(const char *path) {
   return bundle;
 }
 
+#include "firmware-root-bounds.h"
+
 static lean_object *run_host(int argc, char **argv) {
   (void)argc;
   (void)argv;
   REGISTER_BOUNDARY(leanos_boot_handoff_query);
   REGISTER_BOUNDARY(leanos_boot_complete_topology_query);
   REGISTER_BOUNDARY(leanos_boot_captured_root_query);
+  test_root_adapter_bounds();
 
   const char *path = replay_path();
   FILE *replay = fopen(path, "r");

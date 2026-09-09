@@ -486,6 +486,7 @@ def write_lean(rows: list[dict], cases: list[dict], out: Path) -> None:
         lines.append(f"example : (List.range {len(words)}).map (fun word => {query} (UInt64.ofNat word)) = [{expected}] := by")
         lines.append("  native_decide")
         lines.append("")
+    lines.extend(roots.lean_bounds())
     lines.append("end LeanOS.FirmwareCorpus")
     (out / "Corpus.lean").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

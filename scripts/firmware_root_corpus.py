@@ -255,3 +255,20 @@ def rejection_name(words):
         return 'decoder-rejected:madtSelection.root.'+sdt[words[3]-1]
     if words[2] not in names: raise ValueError(f'unknown root rejection code {words[2]}')
     return 'decoder-rejected:'+names[words[2]]
+
+
+def lean_bounds():
+    """Synthetic adapter limits, independent of captured firmware rows."""
+    lines = ['def rootBoundBytes (n : Nat) : ByteArray := ⟨(List.replicate n (0 : UInt8)).toArray⟩']
+    # code, info bytes, root bytes, address count, table count, table bytes, APIC
+    fixtures = [(300,0,0,257,0,0,0), (301,0,0,1,0,0,0),
+                (302,0,65536,16,16,65536,0), (303,0,65537,0,0,0,0),
+                (304,0,0,0,0,0,2**32), (305,65537,0,0,0,0,0)]
+    for code, info, root, addresses, tables, size, executing in fixtures:
+        query = (f'BootMemoryMapDecoderABI.capturedRootQuery 0x36d76289 0x1000 '
+                 f'(rootBoundBytes {info}) (rootBoundBytes {root}) 0 '
+                 f'(Array.replicate {addresses} (0 : UInt64)) '
+                 f'(Array.replicate {tables} (rootBoundBytes {size})) {executing}')
+        lines += [f'example : (List.range 5).map (fun word => {query} (UInt64.ofNat word)) = [1, 2, {code}, 0, 0] := by',
+                  '  native_decide']
+    return lines
