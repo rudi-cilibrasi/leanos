@@ -20,6 +20,51 @@ EXPECTED = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n' + EXPECTED_
 CHAIN = b'LEANOS-LAB/1 CHAIN freebsd disk='
 
 
+def watchdog_request(clock_text):
+    """Use the board's verified UTC RTC convention, never the observer's clock."""
+    lines = clock_text.splitlines()
+    if len(lines) != 2 or lines[0] != '0':
+        raise ValueError('watchdog trial requires the verified UTC CMOS convention')
+    stamp = datetime.datetime.strptime(lines[1], '%Y-%m-%dT%H:%M:%S')
+    if not 2026 <= stamp.year <= 2099:
+        raise ValueError('implausible board clock')
+    if stamp.second > 25:
+        return None
+    return 'watchdog-test-' + '-'.join(map(str, (stamp.year, stamp.month, stamp.day, stamp.hour, stamp.minute)))
+
+
+def classify_watchdog(events):
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
+    accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
+    expired = b'LEANOS-LAB/1 WATCHDOG-WINDOW expired-or-invalid=1 fallback=freebsd'
+    consumed = b'LEANOS-LAB/1 DEFAULT request=none'
+    recovery = expired if expired in data else consumed
+    if (any(data.count(marker) != 1 for marker in (accepted, armed, recovery, CHAIN))
+            or data.count(expired) + data.count(consumed) != 1
+            or not data.find(accepted) < data.find(armed) < data.find(recovery) < data.find(CHAIN)
+            or any(marker in data for marker in (b'WATCHDOG-NO-RESET', b'WATCHDOG-STOP-FAILED',
+                                                  b'WATCHDOG-ARM-REJECTED', b'LEANOS/'))):
+        raise ValueError('missing, repeated, or failed watchdog reset/expiry trace')
+    def completed_at(marker):
+        end = data.find(marker) + len(marker)
+        offset = 0
+        for event in events:
+            offset += len(bytes.fromhex(event['hex']))
+            if offset >= end:
+                return event['elapsed']
+        raise ValueError('incomplete watchdog marker')
+    delay = completed_at(recovery) - completed_at(armed)
+    if not 110 <= delay <= 170:
+        raise ValueError('watchdog recovery outside the expected reset interval')
+    return {'scenario': 'watchdog-loader-stall', 'recovery': 'chain-observed',
+            'arm_to_recovery_boot_seconds': delay, 'loader_hang_recovery': True,
+            'recovery_guard': 'expired-token' if recovery == expired else 'consumed-request',
+            'kernel_hang_recovery': False, 'raw_sha256': hashlib.sha256(data).hexdigest()}
+
+
 def classify_rtc(events):
     if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
         raise ValueError('nonmonotonic capture timestamps')
@@ -90,7 +135,7 @@ def main():
     parser.add_argument('--elf', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
-    parser.add_argument('--scenario', choices=('leanos', 'rtc-probe'), default='leanos')
+    parser.add_argument('--scenario', choices=('leanos', 'rtc-probe', 'watchdog-test'), default='leanos')
     args = parser.parse_args()
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
@@ -112,6 +157,18 @@ def main():
         env = args.output / 'request.env'
         subprocess.run(['grub-editenv', str(env), 'create'], check=True)
         request = 'leanos-' + digest if args.scenario == 'leanos' else 'rtc-probe'
+        if args.scenario == 'watchdog-test':
+            deadline = time.monotonic() + 75
+            while time.monotonic() < deadline:
+                clock = remote("sysctl -n machdep.wall_cmos_clock; date -u +%Y-%m-%dT%H:%M:%S", text=True)
+                if clock.returncode:
+                    raise ValueError('cannot read board clock; no trial armed')
+                request = watchdog_request(clock.stdout)
+                if request is not None:
+                    break
+                time.sleep(2)
+            else:
+                raise ValueError('no sufficiently early RTC minute; no trial armed')
         subprocess.run(['grub-editenv', str(env), 'set', 'request=' + request], check=True)
         # Remote names are fixed; arguments interpolated into shell are quoted.
         arm = '''set -e
@@ -166,7 +223,7 @@ sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
             (directory / 'reboot.txt').write_text(reboot.stdout + reboot.stderr)
             if reboot.returncode:
                 raise ValueError('SSH reboot request failed')
-            while time.monotonic() - started < 180:
+            while time.monotonic() - started < (420 if args.scenario == 'watchdog-test' else 180):
                 if errors:
                     raise ValueError(errors)
                 if CHAIN in b''.join(bytes.fromhex(e['hex']) for e in events):
@@ -179,7 +236,8 @@ sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
         finally:
             stop.set(); thread.join()
             termios.tcsetattr(fd, termios.TCSANOW, previous); os.close(fd)
-        result = classify(events) if args.scenario == 'leanos' else classify_rtc(events)
+        classifier = {'leanos': classify, 'rtc-probe': classify_rtc, 'watchdog-test': classify_watchdog}[args.scenario]
+        result = classifier(events)
         result.update({'freebsd_boot_before': before, 'freebsd_boot_after': after,
                        'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment', 'hang_recovery': False})
         # Read consumed state only after FreeBSD has returned; do not arm again on failure.

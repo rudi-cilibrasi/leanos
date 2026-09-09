@@ -109,8 +109,8 @@ The bounded [failed observation](../hardware/lab/observations/qotom-watchdog-202
 
 ## Candidate independent expiry guard
 
-`grub-qotom-watchdog-window.cfg` is a candidate guard, used only by the unarmed
-`rtc-probe` request in the lab configuration. A request names exactly one RTC minute using unpadded
+`grub-qotom-watchdog-window.cfg` is a candidate guard used by the unarmed
+`rtc-probe` request and the explicitly dated watchdog trial in the lab configuration. A request names exactly one RTC minute using unpadded
 `watchdog-test-YEAR-MONTH-DAY-HOUR-MINUTE` fields. It rejects a different minute,
 implausible clock, or inconsistent resampling across rollover. The 120-tick
 watchdog interval exceeds the maximum 60-second eligibility window, so an
@@ -153,3 +153,35 @@ sampling can straddle a rollover and fail acceptance; such a run is inconclusive
 and must not be promoted to watchdog recovery evidence.
 
 The [physical unarmed preflight](../hardware/lab/observations/qotom-rtc-20260909/README.md) passed: GRUB matched UTC, advanced exactly 65 seconds, rejected the expired token, and chainloaded FreeBSD with SSH restored and the request consumed. This does not establish RTC behavior across a watchdog reset. The retained capture also covers GRUB LF-CR line endings in the replay classifier.
+
+## Dated loader-stall trial
+
+The template now accepts only a dated watchdog request that passes the minute
+window guard before sourcing the register recipe. The unbounded `watchdog-test`
+request remains disabled. A missing guard or recipe, stale request, or rejected
+hardware/register state returns to FreeBSD without arming. Explicit file checks
+are necessary: testing showed that sourcing a missing recipe could stop GRUB's
+configuration execution before the fallback path.
+
+`run-qotom-recovery-lab.py --scenario watchdog-test` reads the board's UTC time
+and requires `machdep.wall_cmos_clock=0`. It waits at most 75 seconds to sample
+within the first 26 seconds of a minute, leaving time for shutdown and GRUB.
+It never uses the observer's clock or broadens the eligibility window. If the
+board arrives too late, the guard rejects the request and the trial does not
+count as successful recovery evidence.
+
+An admitted trial arms 120 ticks and deliberately stalls in GRUB for up to 300
+seconds. A timer reset should reach a new GRUB boot with either the request
+already consumed or the dated token expired. The capture classifier requires
+exactly one arm, the subsequent default/expiry marker and FreeBSD chain marker,
+110–170 seconds from arm to that recovery marker, restored authenticated SSH,
+a changed boot epoch, and consumed request readback. A repeated arm or the
+300-second software escape fails the trial. The runner bounds observation at
+420 seconds and does not automatically rearm on failure.
+
+This is a candidate loader-stall test. The Qotom still has the earlier unarmed
+probe configuration until a separately verified installation of this revision.
+No physical success of this dated armed path is claimed. Even a passing trial
+will not demonstrate kernel-hang recovery or complete #333 by itself.
+
+Validation: all 19 GRUB/QEMU cases pass after the missing-file fix, including stale requests, rejected hardware arming, missing recipe/guard, and existing recovery paths. The later explicit default marker passed focused default and reboot-once tests. Six Python test methods cover retained physical captures, RTC line endings/advancement, UTC request production, and watchdog trace failure mutations. The software tests do not arm Qotom hardware.

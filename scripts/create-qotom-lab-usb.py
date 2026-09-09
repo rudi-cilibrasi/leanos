@@ -45,6 +45,8 @@ def main():
                 run('sudo', '-n', 'cp', str(output / 'grub.cfg'), str(mount / 'boot/grub/grub.cfg'))
                 run('sudo', '-n', 'cp', str(root / 'hardware/lab/grub-qotom-watchdog-window.cfg'),
                     str(mount / 'boot/grub/watchdog-window.cfg'))
+                run('sudo', '-n', 'cp', str(root / 'hardware/lab/grub-qotom-watchdog.cfg'),
+                    str(mount / 'boot/grub/watchdog.cfg'))
                 run('sudo', '-n', 'grub-editenv', str(mount / 'boot/grub/grubenv'), 'create')
                 run('sudo', '-n', 'grub-editenv', str(mount / 'boot/grub/grubenv'), 'set', 'request=none')
                 run('sudo', '-n', 'cp', str(elf), str(mount / 'boot'))

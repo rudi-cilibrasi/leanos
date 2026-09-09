@@ -22,6 +22,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--freebsd-boot-uuid', required=True)
+    parser.add_argument('--case', action='append', help='run only named cases; default runs every case')
     args = parser.parse_args()
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
@@ -42,6 +43,10 @@ def main():
             stream.write(code)
         cases = [('default', 'none'), ('oneshot', 'reboot-test'),
                  ('rtc-probe', 'rtc-probe'),
+                 ('rtc-missing-guard', 'rtc-probe'),
+                 ('watchdog-expired', 'watchdog-test-2026-9-9-11-59'),
+                 ('watchdog-arm-rejected', 'watchdog-test-2026-9-9-12-0'),
+                 ('watchdog-missing-recipe', 'watchdog-test-2026-9-9-12-0'),
                  ('unknown', 'unknown'), ('watchdog-disabled', 'watchdog-test'), ('bad-env', 'none'), ('bad-image', 'leanos-' + digest),
                  ('leanos', 'leanos-' + digest)]
         window_cases = {
@@ -54,6 +59,11 @@ def main():
             'window-invalid-clock': ('watchdog-test-2000-9-9-12-0', '2000-09-09T12:00:00', False),
         }
         cases.extend((name, 'none') for name in window_cases)
+        if args.case:
+            unknown = set(args.case) - {name for name, _ in cases}
+            if unknown:
+                parser.error('unknown cases: ' + ', '.join(sorted(unknown)))
+            cases = [(name, request) for name, request in cases if name in args.case]
         for name, request in cases:
             image = tmp / (name + '.img')
             shutil.copyfile(args.image, image)
@@ -63,6 +73,10 @@ def main():
             if name == 'bad-env':
                 env.write_bytes(b'invalid' + b'#' * 1017)
             run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
+            if name == 'rtc-missing-guard':
+                run('mdel', '-i', str(image) + '@@1048576', '::/boot/grub/watchdog-window.cfg')
+            if name == 'watchdog-missing-recipe':
+                run('mdel', '-i', str(image) + '@@1048576', '::/boot/grub/watchdog.cfg')
             if name == 'bad-image':
                 (tmp / 'bad.elf').write_bytes(b'unauthorized image')
                 run('mcopy', '-o', '-i', str(image) + '@@1048576', str(tmp / 'bad.elf'),
@@ -123,9 +137,22 @@ def main():
                 assert b'WATCHDOG-ARMED' not in data
             if name == 'oneshot':
                 assert data.count(b'SELECT reboot-test consumed=1') == 1
+            if name in ('default', 'oneshot'):
+                assert data.count(b'DEFAULT request=none') == 1, data
             if name == 'watchdog-disabled':
                 assert b'WATCHDOG-DISABLED fallback=freebsd' in data
                 assert b'WATCHDOG-ARMED' not in data
+            if name == 'rtc-missing-guard':
+                assert b'RTC-UNAVAILABLE fallback=freebsd' in data, data
+            if name.startswith('watchdog-'):
+                assert b'WATCHDOG-ARMED' not in data, (name, data)
+            if name == 'watchdog-expired':
+                assert b'WATCHDOG-WINDOW expired-or-invalid=1' in data, data
+                assert b'WATCHDOG-STATE' not in data, data
+            if name in ('watchdog-arm-rejected', 'watchdog-missing-recipe'):
+                assert b'WATCHDOG-WINDOW accepted=1' in data, data
+            if name == 'watchdog-arm-rejected':
+                assert b'WATCHDOG-ARM-REJECTED' in data, data
             if name == 'bad-image':
                 assert b'HASH MISMATCH' in data and b'LOAD-FAILED' in data
             if name != 'leanos':

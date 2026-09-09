@@ -15,6 +15,9 @@ load_env --file=($labroot)/boot/grub/grubenv request
 set selected=$request
 set request=none
 if save_env --file=($labroot)/boot/grub/grubenv request; then
+    if [ "$selected" = "none" ]; then
+        echo 'LEANOS-LAB/1 DEFAULT request=none'
+    fi
     if [ "$selected" = "leanos-@ELF_SHA256@" ]; then
         echo 'LEANOS-LAB/1 SELECT leanos consumed=1'
         if hashsum --hash sha256 --check ($labroot)/boot/leanos.sha256; then
@@ -29,9 +32,31 @@ if save_env --file=($labroot)/boot/grub/grubenv request; then
         # Disabled until durable consumption under that reset is established.
         echo 'LEANOS-LAB/1 WATCHDOG-DISABLED fallback=freebsd'
     fi
+    insmod regexp
+    if regexp '^watchdog-test-[0-9]' "$selected"; then
+        if [ -f ($labroot)/boot/grub/watchdog-window.cfg ]; then
+            source ($labroot)/boot/grub/watchdog-window.cfg
+            if qotom_watchdog_window "$selected"; then
+                echo 'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
+                if [ -f ($labroot)/boot/grub/watchdog.cfg ]; then
+                    source ($labroot)/boot/grub/watchdog.cfg
+                    if qotom_watchdog_arm; then
+                        # Deliberate loader-stage stall, with a bounded software
+                        # escape if the independent reset fails to happen.
+                        sleep 300
+                        echo 'LEANOS-LAB/1 WATCHDOG-NO-RESET fallback=freebsd'
+                        qotom_watchdog_stop
+                    fi
+                fi
+            else
+                echo 'LEANOS-LAB/1 WATCHDOG-WINDOW expired-or-invalid=1 fallback=freebsd'
+            fi
+        fi
+    fi
     if [ "$selected" = "rtc-probe" ]; then
         # Read the clock and exercise expiry without touching watchdog registers.
-        if source ($labroot)/boot/grub/watchdog-window.cfg; then
+        if [ -f ($labroot)/boot/grub/watchdog-window.cfg ]; then
+            source ($labroot)/boot/grub/watchdog-window.cfg
             set probe_token="watchdog-test-${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}"
             echo "LEANOS-LAB/1 RTC-BEGIN ${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}-${SECOND}"
             if qotom_watchdog_window "$probe_token"; then

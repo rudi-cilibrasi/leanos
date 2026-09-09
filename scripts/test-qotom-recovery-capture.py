@@ -16,6 +16,38 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_watchdog_request_clock(self):
+        self.assertEqual(lab.watchdog_request('0\n2026-09-09T20:05:25\n'), 'watchdog-test-2026-9-9-20-5')
+        self.assertIsNone(lab.watchdog_request('0\n2026-09-09T20:05:26\n'))
+        for clock in ('1\n2026-09-09T20:05:00\n', '0\n2000-09-09T20:05:00\n',
+                      '0\ninvalid\n', '0\n2026-09-09T20:05:00\nextra\n'):
+            with self.subTest(clock=clock), self.assertRaises(ValueError):
+                lab.watchdog_request(clock)
+
+    def test_watchdog_reset_classification(self):
+        accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n\r'
+        armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n\r'
+        expired = b'LEANOS-LAB/1 WATCHDOG-WINDOW expired-or-invalid=1 fallback=freebsd\n\r'
+        valid = [event(accepted + armed, 14), event(b'firmware\n', 135),
+                 event(expired + lab.CHAIN + b'hd1\n\r', 142)]
+        result = lab.classify_watchdog(valid)
+        self.assertEqual(result['arm_to_recovery_boot_seconds'], 128)
+        self.assertEqual(result['recovery_guard'], 'expired-token')
+        consumed = [*valid[:2], event(b'LEANOS-LAB/1 DEFAULT request=none\n' + lab.CHAIN, 142)]
+        self.assertEqual(lab.classify_watchdog(consumed)['recovery_guard'], 'consumed-request')
+        self.assertTrue(result['loader_hang_recovery'])
+        self.assertFalse(result['kernel_hang_recovery'])
+        mutations = [valid[:2], valid + [event(armed, 145)],
+                     valid[:2] + [event(expired + lab.CHAIN, 30)],
+                     valid[:2] + [event(expired + lab.CHAIN, 320)],
+                     valid + [event(b'WATCHDOG-NO-RESET', 150)],
+                     valid + [event(lab.EXPECTED, 150)],
+                     [event(expired + lab.CHAIN, 1), event(accepted + armed, 14)],
+                     [valid[0], event(b'firmware\n', 1), valid[2]]]
+        for events in mutations:
+            with self.subTest(events=events), self.assertRaises(ValueError):
+                lab.classify_watchdog(events)
+
     def test_rtc_probe_and_failures(self):
         raw = (b'LEANOS-LAB/1 RTC-BEGIN 2026-9-9-23-59-30\r\n'
                b'LEANOS-LAB/1 RTC-CURRENT accepted=1\r\n'
