@@ -365,6 +365,21 @@ manifest's `build` section declares the image wiring the same way: each kernel
 object with its macro set, each boot object with its source and macro set,
 each image as the boot and kernel objects it links (plus extra objects and
 whether it receives a final page-plan link), and the policy-negative fixtures.
+Each image also declares its `prelink_plan` output and `plan_equal_to` (another
+image whose prelink plan must match, or explicit `null` for no comparison).
+The `prelink-plans` query supplies the build's generation tasks; `plan-comparisons`
+supplies the equality checks used only in complete evidence builds. Both queries
+validate all rows before emitting output. Missing or unsafe headers, duplicate
+output destinations, and unknown or self-referential comparison targets fail
+with named diagnostics. These fields replace the parallel handwritten lists
+in the build wrapper; adding an image or relationship requires no new shell arm.
+Both full builds and shards write `SHA256SUMS` from the selected packaging
+outputs, their ELFs and available maps, plus the selected alias/assigned-device
+artifacts and toolchain profile. A sorted, deduplicated list replaces the
+separate full-build checksum inventory. This also covers the previously omitted
+stale-translation ISO/ELF/map and five existing maps; it changes the checksum
+inventory, not those artifacts' bytes. Redundant family staging-directory lists
+are likewise removed because the packaged-image declarations already own them.
 `scripts/generate-image-object-graph.py` derives its compile and link rules
 from that section instead of Python literal tables, and it rejects an image
 that names an unknown object or a malformed macro set with a named
@@ -378,19 +393,19 @@ over them for the ISO staging roots, the page-plan stubs, the policy queue,
 the image staging, and the ISO queue instead of listing every image by hand;
 `scripts/test-scenario-manifest.py` rejects an invalid ISO name, an unknown
 GRUB configuration, a duplicate policy key, a malformed environment pair, an
-unknown kernel object, and a malformed stub name with named diagnostics. Four
-ordered lists in the same section drive the remaining per-image steps in the
-order the build runs them: `plan_checks` (a validate compares an image's
-linker-resolved page-table plan with its expected header; a converge feeds
-the resolved plan back through the listed graph targets until it is stable),
-`disassemblies`, `entry_policies` (the entry-policy check queued per final
-ELF with its report and optional environment pair), and
-`extended_state_policies`; the query tool rejects an unpackaged image, an
-unknown check kind, a convergence without graph targets or with a non-graph
-target, a duplicated final plan or output, a duplicated policy key, and a
-malformed variant, so the bespoke hand-linked double-fault family and the
-tier-dependent fault-probe validation are the only per-image steps the build
-script still spells out. A packaged image may also name its `port_sites`
+unknown kernel object, and a malformed stub name with named diagnostics. Four ordered lists in the same section drive final-image checks and reports:
+`plan_checks`, `disassemblies`, `entry_policies`, and `extended_state_policies`.
+A plan validation compares an image's linker-resolved plan with its expected
+header. Convergence feeds the resolved plan through declared graph targets,
+with at most three relinks. `expected_full` retains a stronger full-evidence
+comparison when PR shards need the image's own prelink plan. Frame-budget and
+stale-translation use the common convergence path; reserved-bit and walk-mismatch
+declare their tier-specific expectations in the same list. Entry policies name
+the report and optional environment pair, and extended-state policies name
+the checked variant. The query rejects unpackaged images, unknown check kinds,
+missing or non-graph convergence targets, invalid alternate expectations,
+duplicate final plans or reports, duplicate policy keys, and malformed variants.
+The hand-linked double-fault family retains separate build logic. A packaged image may also name its `port_sites`
 inventory, the reviewed final-ELF port-I/O site list the build checks it
 against; images that share a code layout share one inventory
 (`scripts/direct-port-sites-user-probe.tsv` serves the three direct-port

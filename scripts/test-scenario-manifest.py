@@ -70,6 +70,50 @@ def main() -> None:
         transform(copy)
         return copy
 
+    plan_rows = MODULE.prelink_plan_rows(manifest)
+    if len(plan_rows) != len(images):
+        raise AssertionError("prelink generation does not cover every image")
+    extra = mutated(lambda m: m["build"]["images"].update({
+        "leanos-new-fixture": dict(m["build"]["images"]["leanos"],
+                                   prelink_plan="boot-page-plan-new-fixture.h")
+    }))
+    queried = run(extra, "prelink-plans")
+    if queried.returncode or "leanos-new-fixture-prelink.elf\tboot-page-plan-new-fixture.h" not in queried.stdout:
+        raise AssertionError("new manifest image requires a handwritten plan task")
+    for change, diagnostic in (
+        (lambda m: m["build"]["images"]["leanos"].pop("prelink_plan"), "missing or invalid prelink plan"),
+        (lambda m: m["build"]["images"]["leanos"].update(prelink_plan="../outside.h"), "missing or invalid prelink plan"),
+        (lambda m: m["build"]["images"]["leanos-preemption"].update(prelink_plan="boot-page-plan.h"), "same header twice"),
+    ):
+        rejected = run(mutated(change), "prelink-plans")
+        if rejected.returncode == 0 or diagnostic not in rejected.stderr or rejected.stdout:
+            raise AssertionError(f"prelink plan failed closed-output validation: {rejected}")
+
+    for change, diagnostic in (
+        (lambda m: m["build"]["images"]["leanos"].pop("plan_equal_to"), "lacks plan comparison declaration"),
+        (lambda m: m["build"]["images"]["leanos"].update(plan_equal_to="leanos-absent"), "invalid plan comparison target"),
+        (lambda m: m["build"]["images"]["leanos"].update(plan_equal_to="leanos"), "invalid plan comparison target"),
+        (lambda m: m["build"]["images"]["leanos"].update(plan_equal_to=[]), "invalid plan comparison target"),
+    ):
+        rejected = run(mutated(change), "plan-comparisons")
+        if rejected.returncode == 0 or diagnostic not in rejected.stderr or rejected.stdout:
+            raise AssertionError(f"plan comparison accepted invalid input: {rejected}")
+    extra["build"]["images"]["leanos-new-fixture"]["plan_equal_to"] = "leanos"
+    compared = run(extra, "plan-comparisons")
+    if compared.returncode or "boot-page-plan.h\tboot-page-plan-new-fixture.h" not in compared.stdout:
+        raise AssertionError("new declared comparison requires a handwritten build check")
+
+    for tier in ("pr", "all"):
+        selected = MODULE.plan_check_rows(manifest, tier)
+        for declared, row in zip(manifest["build"]["plan_checks"], selected):
+            expected = declared.get("expected_full", declared["expected"]) if tier == "all" else declared["expected"]
+            if row["expected"] != expected:
+                raise AssertionError("final-plan query changed a tier's expected header")
+    bad_full = mutated(lambda m: m["build"]["plan_checks"][0].update(expected_full="../outside.h"))
+    rejected = run(bad_full, "plan-checks", "--tier", "pr")
+    if rejected.returncode == 0 or rejected.stdout or "invalid full-tier expectation" not in rejected.stderr:
+        raise AssertionError("invalid alternate expectation escaped validation in PR tier")
+
     def unknown_kernel(m):
         m["build"]["images"]["leanos-preemption"]["kernel"] = "kernel-absent"
 

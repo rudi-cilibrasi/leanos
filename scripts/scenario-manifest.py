@@ -78,6 +78,38 @@ def image_rows(manifest: dict) -> list[dict[str, str]]:
     return rows
 
 
+def prelink_plan_rows(manifest: dict) -> list[dict[str, str]]:
+    """Every graph image owns one bounded, unique prelink-plan output."""
+    rows = []
+    for image in image_rows(manifest):
+        stem = image["stem"]
+        header = manifest["build"]["images"][stem].get("prelink_plan")
+        if not isinstance(header, str) or not PLAN_HEADER.fullmatch(header):
+            raise ManifestError(f"image {stem} has a missing or invalid prelink plan")
+        rows.append({"prelink": stem + "-prelink.elf", "header": header})
+    headers = [row["header"] for row in rows]
+    if len(headers) != len(set(headers)):
+        raise ManifestError("prelink plans write the same header twice")
+    return rows
+
+
+def plan_comparison_rows(manifest: dict) -> list[dict[str, str]]:
+    prelink_plan_rows(manifest)
+    images = manifest["build"]["images"]
+    rows = []
+    for stem, entry in images.items():
+        if "plan_equal_to" not in entry:
+            raise ManifestError(f"image {stem} lacks plan comparison declaration")
+        target = entry["plan_equal_to"]
+        if target is None:
+            continue
+        if not isinstance(target, str) or target not in images or target == stem:
+            raise ManifestError(f"image {stem} names an invalid plan comparison target")
+        rows.append({"expected": images[target]["prelink_plan"],
+                     "actual": entry["prelink_plan"]})
+    return rows
+
+
 def packaged_rows(manifest: dict) -> list[dict[str, str]]:
     """One row per packaged final ELF: the ISO it is staged into, the GRUB
     configuration that boots it, and the final-ELF policy check queued for
@@ -171,11 +203,13 @@ def require_packaged(build: dict, key: str, image: str) -> None:
         raise ManifestError(f"build {key} names an unpackaged image {image!r}")
 
 
-def plan_check_rows(manifest: dict) -> list[dict[str, str]]:
+def plan_check_rows(manifest: dict, tier: str = "all") -> list[dict[str, str]]:
     """The final-ELF page-plan checks in the order the build runs them: a
     validate compares an image's linker-resolved plan with its expected
     header; a converge feeds the resolved plan back through every listed
     graph target until it is stable."""
+    if tier not in {"pr", "all"}:
+        raise ManifestError("plan checks require pr or all tier")
     build = manifest["build"]
     rows = []
     for entry in ordered_list(build, "plan_checks"):
@@ -187,6 +221,14 @@ def plan_check_rows(manifest: dict) -> list[dict[str, str]]:
             raise ManifestError(f"plan check for {image} has unknown kind {entry['check']!r}")
         if not PLAN_HEADER.match(str(entry["expected"])) or not FINAL_HEADER.match(str(entry["final"])):
             raise ManifestError(f"plan check for {image} names malformed plan headers")
+        expected = entry["expected"]
+        if "expected_full" in entry:
+            if (entry["check"] != "validate"
+                    or not isinstance(entry["expected_full"], str)
+                    or not PLAN_HEADER.fullmatch(entry["expected_full"])):
+                raise ManifestError(f"plan check for {image} has invalid full-tier expectation")
+            if tier == "all":
+                expected = entry["expected_full"]
         targets = entry.get("targets", [])
         if entry["check"] == "converge":
             if not isinstance(targets, list) or not targets:
@@ -197,7 +239,7 @@ def plan_check_rows(manifest: dict) -> list[dict[str, str]]:
         elif targets:
             raise ManifestError(f"plan validation for {image} must not list targets")
         rows.append({
-            "image": image, "check": entry["check"], "expected": entry["expected"],
+            "image": image, "check": entry["check"], "expected": expected,
             "final": entry["final"], "description": str(entry["description"]),
             "targets": ",".join(targets) if targets else "-",
         })
@@ -323,8 +365,11 @@ def main() -> int:
     sub.add_parser("images", help="one row per object-graph image")
     packaged = sub.add_parser("packaged-images", help="one row per packaged final ELF")
     packaged.add_argument("--version", default="0.1.0")
+    sub.add_parser("plan-comparisons", help="declared equality checks between image page plans")
+    sub.add_parser("prelink-plans", help="prelink ELF and generated page-plan pairs")
     sub.add_parser("page-plans", help="every page-plan header stub the build needs")
-    sub.add_parser("plan-checks", help="final-ELF page-plan checks in build order")
+    plan_checks = sub.add_parser("plan-checks", help="final-ELF page-plan checks in build order")
+    plan_checks.add_argument("--tier", choices=("pr", "all"), default="all")
     sub.add_parser("disassemblies", help="final-ELF disassembly outputs")
     sub.add_parser("entry-policies", help="entry-policy checks queued per final ELF")
     sub.add_parser("extended-state-policies", help="extended-state policy runs per final ELF")
@@ -342,11 +387,17 @@ def main() -> int:
                 values = [row[column] for column in PACKAGED_COLUMNS]
                 values[PACKAGED_COLUMNS.index("iso")] = row["iso"].replace("@VERSION@", args.version)
                 print("\t".join(values))
+        elif args.operation == "plan-comparisons":
+            for row in plan_comparison_rows(manifest):
+                print(f"{row['expected']}\t{row['actual']}")
+        elif args.operation == "prelink-plans":
+            for row in prelink_plan_rows(manifest):
+                print(f"{row['prelink']}\t{row['header']}")
         elif args.operation == "page-plans":
             for header in page_plan_stubs(manifest):
                 print(header)
         elif args.operation == "plan-checks":
-            for row in plan_check_rows(manifest):
+            for row in plan_check_rows(manifest, args.tier):
                 print("\t".join(row[c] for c in ("image", "check", "expected", "final", "description", "targets")))
         elif args.operation == "disassemblies":
             for row in disassembly_rows(manifest):
