@@ -77,6 +77,15 @@ $1 == "pre-admission-reason" {
   rejection_reason[rejections++] = $2
   next
 }
+$1 == "pre-admission-bootalloc-reason" {
+  if (NF != 2 || $2 !~ /^[a-z0-9]+(-[a-z0-9]+)*$/)
+    fail("malformed pre-admission BOOTALLOC rejection reason: " $0)
+  if ($2 in bootalloc_rejection_seen)
+    fail("duplicate pre-admission BOOTALLOC rejection reason: " $2)
+  bootalloc_rejection_seen[$2] = 1
+  bootalloc_rejection_reason[bootalloc_rejections++] = $2
+  next
+}
 { fail("unexpected serial protocol row: " $0) }
 END {
   if (failed)
@@ -98,6 +107,7 @@ END {
     print ""
     printf "#define LEANOS_SERIAL_RECORD_COUNT %dU\n", rows
     printf "#define LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT %dU\n", rejections
+    printf "#define LEANOS_PRE_ADMISSION_BOOTALLOC_REJECTION_REASON_COUNT %dU\n", bootalloc_rejections
     printf "#define LEANOS_PRE_ADMISSION_BOOT_RECORD_COUNT %dU\n", pre_admission_boots
     printf "#define LEANOS_PRE_ADMISSION_RECORD_COUNT %dU\n", pre_admission_records
     print ""
@@ -115,6 +125,7 @@ END {
     print ""
     printf "LEANOS_SERIAL_RECORD_COUNT=%d\n", rows
     printf "LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT=%d\n", rejections
+    printf "LEANOS_PRE_ADMISSION_BOOTALLOC_REJECTION_REASON_COUNT=%d\n", bootalloc_rejections
     printf "LEANOS_PRE_ADMISSION_BOOT_RECORD_COUNT=%d\n", pre_admission_boots
     printf "LEANOS_PRE_ADMISSION_RECORD_COUNT=%d\n", pre_admission_records
     print ""

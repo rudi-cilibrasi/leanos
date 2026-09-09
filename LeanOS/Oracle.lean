@@ -1287,6 +1287,8 @@ def emitSerial : IO Unit := do
     IO.println s!"pre-admission-record\t{record.1}\t{record.2}"
   for reason in SerialProtocol.preAdmissionRejectionReasons do
     IO.println s!"pre-admission-reason\t{reason}"
+  for reason in SerialProtocol.preAdmissionBootallocRejectionReasons do
+    IO.println s!"pre-admission-bootalloc-reason\t{reason}"
 
 end LeanOS.Oracle
 

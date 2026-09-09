@@ -123,7 +123,7 @@ def load_manifest(path: Path) -> dict:
 def load_protocol(
     path: Path, source_revision: str
 ) -> tuple[
-    frozenset[str], frozenset[str], frozenset[str], tuple[str, ...]
+    frozenset[str], frozenset[str], frozenset[str], frozenset[str], tuple[str, ...]
 ]:
     try:
         lines = read_bounded(
@@ -144,6 +144,7 @@ def load_protocol(
     identities = set()
     symbols = set()
     pre_admission_reasons = set()
+    pre_admission_bootalloc_reasons = set()
     pre_admission_boot_records = set()
     pre_admission_phase_records = []
     for line in lines[2:]:
@@ -174,6 +175,14 @@ def load_protocol(
                 and reason not in pre_admission_reasons
             )
             pre_admission_reasons.add(reason)
+            symbol = ""
+        elif fields[0] == "pre-admission-bootalloc-reason" and len(fields) == 2:
+            reason = fields[1]
+            valid = (
+                re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", reason) is not None
+                and reason not in pre_admission_bootalloc_reasons
+            )
+            pre_admission_bootalloc_reasons.add(reason)
             symbol = ""
         elif fields[0] == "pre-admission-boot-record" and len(fields) == 3:
             version, tag = fields[1:]
@@ -209,6 +218,7 @@ def load_protocol(
     if (
         not identities
         or not pre_admission_reasons
+        or not pre_admission_bootalloc_reasons
         or not pre_admission_boot_records
         or not pre_admission_phase_records
     ):
@@ -216,6 +226,7 @@ def load_protocol(
     return (
         frozenset(identities),
         frozenset(pre_admission_reasons),
+        frozenset(pre_admission_bootalloc_reasons),
         frozenset(pre_admission_boot_records),
         tuple(pre_admission_phase_records),
     )
@@ -295,7 +306,8 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
         raise ClassificationError("digest-mismatch", "source revision mismatch")
     if sha256(protocol_path) != manifest["serialProtocolSha256"]:
         raise ClassificationError("digest-mismatch", "serial protocol digest mismatch")
-    (protocol, pre_admission_reasons, pre_admission_boot_records,
+    (protocol, pre_admission_reasons, pre_admission_bootalloc_reasons,
+     pre_admission_boot_records,
      pre_admission_phase_records) = load_protocol(
         protocol_path, manifest["sourceRevision"]
     )
@@ -339,6 +351,13 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     ):
         raise ClassificationError(
             "manifest-invalid", "terminal reason is not a pre-admission rejection"
+        )
+    if (
+        terminal_identity.group(1) == f"{PROTOCOL_PREFIX}7 BOOTALLOC"
+        and terminal_reason not in pre_admission_bootalloc_reasons
+    ):
+        raise ClassificationError(
+            "manifest-invalid", "terminal reason is not a boot-allocation rejection"
         )
     if sha256(iso) != manifest["isoSha256"] or sha256(elf) != manifest["elfSha256"]:
         raise ClassificationError("digest-mismatch", "artifact digest mismatch")

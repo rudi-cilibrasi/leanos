@@ -49,10 +49,11 @@ class BareMetalRejectionTest(unittest.TestCase):
                 "pre-admission-record\t15\tDMA\n"
                 "pre-admission-reason\tdma-required-missing\n"
                 "pre-admission-reason\tdma-inventory\n"
+                "pre-admission-bootalloc-reason\tauthority-init\n"
             )
         self.serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"
         self.boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"
-        self.terminal = f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=platform-inventory"
+        self.terminal = f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=authority-init"
         self.write_manifest()
 
     def tearDown(self):
@@ -236,6 +237,15 @@ class BareMetalRejectionTest(unittest.TestCase):
     def test_rejects_a_runtime_final_reason_as_a_pre_admission_contract(self):
         self.write_manifest(
             expectedTerminal=f"{PROTOCOL_PREFIX}3 FINAL status=FAIL reason=entry-nested"
+        )
+
+        self.assert_result("manifest-invalid", self.terminal.encode())
+
+    def test_rejects_a_non_emitter_bootalloc_reason(self):
+        self.write_manifest(
+            expectedTerminal=(
+                f"{PROTOCOL_PREFIX}7 BOOTALLOC status=FAIL reason=not-an-emitter"
+            )
         )
 
         self.assert_result("manifest-invalid", self.terminal.encode())
