@@ -214,6 +214,15 @@ def validate_case(case: dict, seen_ids: set) -> None:
         check_result(f"{prefix} {stage}", entry["result"], entry["words"], tables)
         require(isinstance(entry["normalized_sha256"], str) and SHA256.match(entry["normalized_sha256"]),
                 f"{prefix}: expected.{stage}.normalized_sha256 must be a sha256")
+    variants = case.get("handoff_variants")
+    require(isinstance(variants, dict) and set(variants) == {"handoff-order-reversed", "handoff-overlapping-entry"},
+            f"{prefix}: handoff_variants must pin both derived memory variants")
+    for name, entry in variants.items():
+        require(isinstance(entry, dict) and set(entry) == {"result", "words", "normalized_sha256"},
+                f"{prefix}: {name} needs result, words and normalized_sha256")
+        check_result(f"{prefix} {name}", entry["result"], entry["words"], HANDOFF_RESULT_TABLES)
+        require(isinstance(entry["normalized_sha256"], str) and SHA256.fullmatch(entry["normalized_sha256"]),
+                f"{prefix}: invalid memory variant digest")
     mutations = case.get("mutations")
     require(isinstance(mutations, dict) and set(mutations) == set(MUTATIONS),
             f"{prefix}: mutations must pin a result for each of {sorted(MUTATIONS)}")
@@ -229,7 +238,11 @@ def validate_case(case: dict, seen_ids: set) -> None:
 def validate(manifest: dict) -> list[dict]:
     seen: set = set()
     for case in manifest["cases"]:
-        validate_case(case, seen)
+        try:
+            validate_case(case, seen)
+        except (ValueError, OSError) as error:
+            case_id = case.get("id", "unknown") if isinstance(case, dict) else "unknown"
+            raise CorpusError(f"case {case_id}: {error}") from error
     return manifest["cases"]
 
 
@@ -244,10 +257,26 @@ def read_memmap(path: Path) -> list[tuple[int, int, int]]:
         require(len(fields) == 4 and fields[0] == str(number), f"{path}: row {number} is malformed")
         start, end = int(fields[1], 16), int(fields[2], 16)
         require(end >= start, f"{path}: row {number} ends before it starts")
+        require(0 <= start <= end < 2**64 and end-start+1 < 2**64,
+                f"{path}: row {number} is outside the unsigned 64-bit capture range")
         require(fields[3] in E820_TYPES, f"{path}: row {number} has unknown E820 type {fields[3]!r}")
         entries.append((start, end - start + 1, E820_TYPES[fields[3]]))
     require(entries, f"{path}: no memory map entries")
     return entries
+
+
+def handoff_variants(info: bytes) -> dict[str, bytes]:
+    """Controlled memory-map changes; retain every row without sorting/merging."""
+    tag_size = struct.unpack_from("<I", info, 12)[0]
+    start, end = 24, 8 + tag_size
+    entries = [info[offset:offset+ENTRY_SIZE] for offset in range(start, end, ENTRY_SIZE)]
+    require(len(entries) >= 2, "memory variants need at least two captured entries")
+    reversed_info = info[:start] + b"".join(reversed(entries)) + info[end:]
+    overlapping = bytearray(info)
+    base, length = struct.unpack_from("<QQ", info, start)
+    struct.pack_into("<Q", overlapping, start+ENTRY_SIZE, base+min(4096, max(length-1, 0)))
+    return {"handoff-order-reversed": reversed_info,
+            "handoff-overlapping-entry": bytes(overlapping)}
 
 
 def multiboot2_information(entries: list[tuple[int, int, int]]) -> bytes:
@@ -384,6 +413,14 @@ def normalize(cases: list[dict], out: Path) -> list[dict]:
             require(len(words) <= limit, f"case {case['id']}: too many {stage} words")
             rows.append({"case": case["id"], "input": f"{case['id']}/{stage}", "stage": stage,
                          "path": path, "words": padded_words(stage, words), "result": entry["result"]})
+        for name, data in handoff_variants(info).items():
+            entry = case["handoff_variants"][name]
+            require(hashlib.sha256(data).hexdigest() == entry["normalized_sha256"],
+                    f"case {case['id']}: normalized {name} bytes differ from the recorded sha256")
+            path = target / f"{name}.bin"
+            path.write_bytes(data)
+            rows.append({"case": case["id"], "input": f"{case['id']}/{name}", "stage": "handoff",
+                         "path": path, "words": padded_words("handoff", entry["words"]), "result": entry["result"]})
         if case["root_tables"] == "acpidump":
             base = roots.from_capture(directory, info)
             for name, replay in {"root": base, **roots.mutations(base)}.items():
@@ -467,7 +504,7 @@ def write_evaluate(cases: list[dict], out: Path) -> None:
         info = multiboot2_information(read_memmap(directory / "memmap.tsv"))
         table = madt_bytes(directory / "acpi/APIC.bin")
         apic = case["apic"]
-        inputs = [("handoff", info), ("madt", table)]
+        inputs = [("handoff", info), ("madt", table)] + list(handoff_variants(info).items())
         inputs += [(name, mutate_handoff(name, info) if stage == "handoff" else mutate_madt(name, table))
                    for name, stage in MUTATIONS.items()]
         for name, data in inputs:
@@ -548,6 +585,12 @@ def pin(manifest: dict, evaluation: Path, path: Path) -> None:
                 computed = name_of("root", words[key])
                 require(computed != "accepted", f"case {case_id}: root mutation {name} was accepted")
                 case["root_mutations"][name] = {"result": computed, "words": words[key], "normalized_sha256": digests[key]}
+        case["handoff_variants"] = {}
+        for name in ("handoff-order-reversed", "handoff-overlapping-entry"):
+            key = (case_id, name)
+            require(key in words and key in digests, f"case {case_id}: evaluation lacks memory variant {name}")
+            case["handoff_variants"][name] = {"result": name_of("handoff", words[key]),
+                                             "words": words[key], "normalized_sha256": digests[key]}
         case["mutations"] = {}
         for name, stage in MUTATIONS.items():
             key = (case_id, name)

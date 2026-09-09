@@ -211,6 +211,19 @@ def mutations(replay):
         cursor += record_size
     result['root-bsp-mismatch'] = replace(table(sdt(single)), executing_override=255)
     result['root-executing-overflow'] = replace(replay, executing_override=2**32)
+    # Introduce a second, independently checksummed tag with a conflicting
+    # legacy OEM identity. This fabricated tag exists only in the mutation.
+    opposite = bytearray(replay.info[payload:payload+20])
+    opposite[9] ^= 1
+    opposite[15] = 0 if kind == 15 else 2
+    opposite[8] = 0; opposite[8] = -sum(opposite) % 256
+    opposite_kind = 14 if kind == 15 else 15
+    if opposite_kind == 15:
+        opposite += struct.pack('<IQ',36,replay.root_address) + bytes(4)
+        opposite[32] = -sum(opposite) % 256
+    opposite_tag = struct.pack('<II',opposite_kind,8+len(opposite)) + opposite
+    opposite_tag += bytes(-len(opposite_tag) % 8)
+    result['root-conflicting-rsdps'] = replace(replay, info=info(replay.info[:-8]+opposite_tag+replay.info[-8:]))
     if kind == 15:
         result['root-rsdp-extended-checksum'] = replace(replay, info=changed(replay.info,payload+32))
     return result

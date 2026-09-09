@@ -2,6 +2,7 @@
 """Exercise normalization using the checked raw root captures."""
 import importlib.util
 import json
+import hashlib
 import sys
 from pathlib import Path
 import shutil
@@ -128,6 +129,50 @@ class RootCorpusTests(unittest.TestCase):
         self.assertNotEqual(roots.rejection_name([1,2,25,3,0]),
                             roots.rejection_name([1,2,25,5,0]))
         with self.assertRaises(ValueError):roots.rejection_name([1,2,25,99,0])
+
+    def test_memory_variants_preserve_all_rows(self):
+        import struct
+        variants=corpus.handoff_variants(self.info)
+        entry_bytes=self.info[24:-8]
+        reversed_entries=b''.join(reversed([entry_bytes[o:o+24] for o in range(0,len(entry_bytes),24)]))
+        self.assertEqual(variants['handoff-order-reversed'][24:-8],reversed_entries)
+        overlap=variants['handoff-overlapping-entry']
+        self.assertEqual(len(overlap),len(self.info))
+        first_base,first_length=struct.unpack_from('<QQ',overlap,24)
+        second_base=struct.unpack_from('<Q',overlap,48)[0]
+        self.assertTrue(first_base <= second_base < first_base+first_length)
+        self.assertEqual(overlap[56:],self.info[56:])
+
+    def test_unencodable_memory_range_rejected_before_packing(self):
+        p=self.case/'memmap.tsv'
+        for start,end in [('-0x1','0x1000'),('0x0','0xffffffffffffffff')]:
+            p.write_text(f'index\tstart\tend\ttype\n0\t{start}\t{end}\tSystem RAM\n')
+            with self.assertRaises(corpus.CorpusError):corpus.read_memmap(p)
+
+    def test_symlink_diagnostic_names_the_case(self):
+        p=next((self.case/'acpi/root-tables').glob('*.bin'))
+        p.unlink();p.symlink_to(self.case/'acpi/APIC.bin')
+        result=self.run_manifest(self.manifest())
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('case capture: unsupported physical table file',result.stderr)
+
+    def test_memory_source_order_and_count_drift_rejected(self):
+        path=self.case/'memmap.tsv';original=path.read_text().splitlines()
+        provenance_path=self.case/'provenance.json'
+        original_provenance=provenance_path.read_text()
+        for rows in [list(reversed(original[1:])),original[1:-1]]:
+            with self.subTest(rows=len(rows)):
+                renumbered=[str(i)+'\t'+line.split('\t',1)[1] for i,line in enumerate(rows)]
+                path.write_text(original[0]+'\n'+'\n'.join(renumbered)+'\n')
+                digest=hashlib.sha256(path.read_bytes()).hexdigest()
+                provenance=json.loads(original_provenance);provenance['files']['memmap.tsv']=digest
+                provenance_path.write_text(json.dumps(provenance))
+                manifest=self.manifest();case=manifest['cases'][0]
+                case['inputs']['memmap.tsv']=digest
+                case['inputs']['provenance.json']=hashlib.sha256(provenance_path.read_bytes()).hexdigest()
+                result=self.run_manifest(manifest,'normalize')
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn('case capture: normalized handoff bytes differ',result.stderr)
 
     def test_oversized_table_rejected(self):
         next((self.case/'acpi/root-tables').glob('*.bin')).write_bytes(bytes(65537))

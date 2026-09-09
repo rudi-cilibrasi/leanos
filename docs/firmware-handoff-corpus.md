@@ -212,11 +212,20 @@ expected/actual root address. RSDP byte errors occupy codes 100–110, wrapped
 handoff errors use 200 plus the existing decoder code, and adapter bounds use
 300–305. The adapter rejects copy-count mismatch, oversized copies, aggregate
 size overflow, and an executing APIC identity outside UInt32 before conversion.
-The 37 root-derived mutation rows cover RSDP signatures and checksums,
-missing/duplicate roots, root checksums/lengths/addresses, missing/duplicate
+The 39 root-derived mutation rows cover RSDP signatures and checksums,
+missing/duplicate/conflicting roots, root checksums/lengths/addresses, missing/duplicate
 translations and MADTs, malformed MADTs, BSP mismatch, and executing-ID
 overflow. Every row pins all five model words, including rejection details,
 and replays through generated C with ASan/UBSan. The BSP-mismatch mutation
 explicitly disables other processors in a derived MADT and overrides the
 executing identity; this override is part of the normalized content digest.
 The unchanged captures retain their observed processor counts and identities.
+
+Each capture also has two `handoff_variants`: reversing all entries and moving
+the second entry into the first entry's range. Both preserve entry count and
+retain full decoded and normalized projections in the manifest. These are
+intentional derived variants; they do not alter the raw capture. All six
+reversed maps retain their original normalized regions. The overlapping maps
+remain accepted and pin their changed region projections. Independent drift
+tests change source entry count/order and update the raw hashes, then require
+the unchanged normalized expectation to reject the alteration.
