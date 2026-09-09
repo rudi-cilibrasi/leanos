@@ -99,6 +99,12 @@ The runner also checks 55 raw-boundary cases in Lean and generated C: the
 33 snapshots above and a high-bit mutation of each of the 22 input words.
 `scripts/check-j1900-cpu-host.sh` connects that corpus to the shared hosted
 boundary runner, including its instrumented export coverage and sanitizer mode.
+The selector, rejection mapping, and masks are inlined so the generated scalar
+entry point does not construct boxed snapshots or invoke lazy initialization.
+The focused runner also links only this function and its reachable dependencies
+into a standalone ELF without runtime libraries and requires no undefined
+symbols. This establishes link independence for that artifact, not an early
+boot execution or stack/memory admission proof.
 
 The default Lean root imports this module, its three theorems are in the
 checked invariant inventory, and `scripts/check.sh` runs these capture and

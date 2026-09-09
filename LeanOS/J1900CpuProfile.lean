@@ -42,12 +42,12 @@ def selected : Projection :=
     smep := true, smap := false, productionCpl3 := false }
 
 /-- FPU, PSE, MSR, PAE, SEP, MMX, FXSR, SSE and SSE2. -/
-def legacyMask : UInt32 := 0x07800869
+@[inline] def legacyMask : UInt32 := 0x07800869
 
 /-- SYSCALL, NX and long-mode support. -/
-def extendedMask : UInt32 := 0x20100800
+@[inline] def extendedMask : UInt32 := 0x20100800
 
-def rejection (s : Snapshot) : Option Rejection :=
+@[inline] def rejection (s : Snapshot) : Option Rejection :=
   if s.version != 1 then some .version
   else if s.present != 31 then some .presence
   else if s.basic.eax < 7 then some .basicRange
@@ -62,7 +62,7 @@ def rejection (s : Snapshot) : Option Rejection :=
   else if s.structured.ebx &&& 0x100000 != 0 then some .smap
   else none
 
-def select (s : Snapshot) : Except Rejection Projection :=
+@[inline] def select (s : Snapshot) : Except Rejection Projection :=
   match rejection s with
   | some reason => .error reason
   | none => .ok selected
@@ -109,7 +109,7 @@ theorem selection_requires_measured_capabilities s projection
 
 /-- Stable scalar rejection words for the version-one CPU boundary. Zero is
 not success: successful selection has its own distinct word. -/
-def rejectionWord : Rejection → UInt64
+@[inline] def rejectionWord : Rejection → UInt64
   | .version => 1
   | .presence => 2
   | .basicRange => 3

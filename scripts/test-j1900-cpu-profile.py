@@ -165,3 +165,22 @@ subprocess.run([os.environ.get('LEANOS_HOST_CC', 'gcc'), '-O1',
 subprocess.run(['lake', 'env', 'leanc', str(host_object), '-o', str(executable)],
                cwd=root, check=True)
 subprocess.run([str(executable)], cwd=root, check=True)
+
+# The early boot consumer has no Lean runtime or allocator. Retain only the
+# exported function and its transitive machine-code dependencies, then require
+# a closed object. This also catches accidental lazy initialization helpers.
+generated_object = output / 'cpu-generated.o'
+closed_object = output / 'cpu-freestanding.elf'
+subprocess.run([os.environ.get('LEANOS_CC', 'gcc'), '-O2', '-ffreestanding',
+                '-fno-stack-protector', '-mno-red-zone', '-mgeneral-regs-only',
+                '-fno-asynchronous-unwind-tables', '-fno-unwind-tables',
+                '-ffunction-sections', '-fdata-sections',
+                '-I' + str(Path(prefix) / 'include'), '-c',
+                str(root / '.lake/build/ir/LeanOS/J1900CpuProfile.c'),
+                '-o', str(generated_object)], cwd=root, check=True)
+subprocess.run(['ld', '--gc-sections', '-e', 'leanos_j1900_cpu_select',
+                str(generated_object), '-o', str(closed_object)], cwd=root, check=True)
+undefined = subprocess.check_output(['nm', '-u', str(closed_object)], text=True)
+if undefined.strip():
+    raise RuntimeError('CPU boundary needs runtime symbols:\n' + undefined)
+print('Freestanding CPU boundary: no unresolved runtime dependencies')
