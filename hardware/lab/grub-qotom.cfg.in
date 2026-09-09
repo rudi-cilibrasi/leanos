@@ -1,0 +1,51 @@
+# Lab-only BIOS disk. Persistent default is the existing FreeBSD disk.
+insmod part_gpt
+insmod part_msdos
+insmod fat
+insmod probe
+insmod chain
+insmod loadenv
+serial --unit=0 --speed=38400 --word=8 --parity=no --stop=1
+terminal_input console serial
+terminal_output console serial
+set timeout=0
+set labroot=$root
+set request=none
+load_env --file=($labroot)/boot/grub/grubenv request
+set selected=$request
+set request=none
+if save_env --file=($labroot)/boot/grub/grubenv request; then
+    if [ "$selected" = "leanos-@ELF_SHA256@" ]; then
+        echo 'LEANOS-LAB/1 SELECT leanos consumed=1'
+        if hashsum --hash sha256 --check ($labroot)/boot/leanos.sha256; then
+          if multiboot2 ($labroot)/boot/leanos-qotom-lab.elf; then
+            boot
+          fi
+        fi
+        echo 'LEANOS-LAB/1 LOAD-FAILED fallback=freebsd'
+    fi
+    if [ "$selected" = "reboot-test" ]; then
+        echo 'LEANOS-LAB/1 SELECT reboot-test consumed=1'
+        sleep 3
+        reboot
+    fi
+else
+    echo 'LEANOS-LAB/1 DISARM-FAILED fallback=freebsd'
+fi
+# Identify the installed disk by its FreeBSD boot partition UUID, not hd order.
+for disk in hd0 hd1 hd2 hd3; do
+    set candidate=unknown
+    if probe --set=candidate --part-uuid ($disk,gpt2); then
+        if [ "$candidate" = "@FREEBSD_BOOT_UUID@" ]; then
+            echo "LEANOS-LAB/1 CHAIN freebsd disk=$disk"
+            set root=($disk)
+            chainloader +1
+            boot
+        fi
+    fi
+done
+echo 'LEANOS-LAB/1 CHAIN-FAILED manual-recovery-required'
+set timeout=-1
+menuentry 'Retry FreeBSD default' {
+    configfile ($labroot)/boot/grub/grub.cfg
+}

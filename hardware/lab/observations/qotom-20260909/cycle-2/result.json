@@ -1,0 +1,12 @@
+{
+  "scenario": "expected-dma-identity-rejection",
+  "recovery": "freebsd-ssh-restored",
+  "quiet_seconds": 34.27578851499857,
+  "raw_sha256": "ba6eb8dfe70dded6ccdf8a5a02d41853803f67caffee92388f20aa0cdaacf8d5",
+  "freebsd_boot_before": 1788973717,
+  "freebsd_boot_after": 1788973801,
+  "elf_sha256": "9226ca1e9ea33607ba73e1acbfe3df5063665df9f5b13fbbd001cc7fb89bbdb2",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": false,
+  "request_consumed": true
+}

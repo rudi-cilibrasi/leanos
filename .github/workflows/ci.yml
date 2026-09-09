@@ -82,7 +82,9 @@ jobs:
         run: python3 scripts/test-main-ruleset-policy.py
 
       - name: Test toolchain profile contract
-        run: python3 scripts/test-toolchain-profile.py
+        run: |
+          python3 scripts/test-toolchain-profile.py
+          python3 scripts/test-toolchain-compatibility.py
 
       - name: Test image-build timing evidence contract
         run: python3 scripts/test-build-timing.py
@@ -358,6 +360,7 @@ jobs:
             build/ci/clang-tool-versions.txt
             build/ci/clang-image-build.log
             build/ci/clang-image-build-phases.tsv
+            build/ci/clang-image-build-phases-bootstrap.tsv
             build/ci/clang-canonical-boot.log
             build/oracle/
             build/boot-handoff-host/
@@ -410,6 +413,7 @@ jobs:
             build/ci/leanos-image-bundle.tar.gz
             build/ci/leanos-image-bundle.tar.gz.sha256
             build/ci/gcc-image-build-phases.tsv
+            build/ci/gcc-image-build-phases-bootstrap.tsv
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -479,6 +483,17 @@ jobs:
             build/boot/REPRODUCIBILITY-SHA256SUMS
             build/boot/clang-repro-build-phases.tsv
           if-no-files-found: error
+          retention-days: 14
+
+      # A failed bootstrap leaves a prefix of completed work, not a misleading
+      # success record. Retain that diagnostic separately from the manifest.
+      - name: Preserve independent bootstrap timing
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-clang-repro-bootstrap-${{ github.sha }}
+          path: build/boot/clang-repro-build-phases-bootstrap.tsv
+          if-no-files-found: warn
           retention-days: 14
 
   clang-reproducibility:

@@ -1,0 +1,13 @@
+{
+  "evidence_class": "lab-recovery-experiment",
+  "canonical_halt_evidence": false,
+  "recovery_seconds": 30,
+  "hang_recovery": false,
+  "source_revision": "2b874dd27ae03ca138156a22c5637008a748edd5",
+  "files": {
+    "boot/kernel.c": "735e53232f566cb6eb759a68bcb2a3906c47d74c73fadea6056d5375503304e2",
+    "build/qotom-lab/kernel.c": "34450e1c934fe18ded7f7cca2f851efb7be4064677cbe0b6d6d31be6cb481015",
+    "hardware/lab/qotom-finish.c.inc": "66e33ac21644cef4e8c96bff12c2317f6d1cdf9fd13b7e353c534fcb387c599e",
+    "build/qotom-lab/leanos-qotom-lab.elf": "9226ca1e9ea33607ba73e1acbfe3df5063665df9f5b13fbbd001cc7fb89bbdb2"
+  }
+}

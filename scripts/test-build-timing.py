@@ -6,8 +6,10 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 
+from workflow_yaml import load_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts" / "check-build-timing.py"
@@ -96,6 +98,21 @@ def main() -> None:
     ):
         if contract not in workflow:
             raise AssertionError(f"independent timing summary is missing: {contract}")
+    jobs = load_workflow(ROOT / ".github/workflows/ci.yml")["jobs"]
+    detail = next(step for step in jobs["clang-reproducibility-build"]["steps"]
+                  if step.get("name") == "Preserve independent bootstrap timing")
+    if (detail.get("if") != "always()"
+            or detail["with"]["path"] != "build/boot/clang-repro-build-phases-bootstrap.tsv"
+            or detail["with"]["retention-days"] != 14):
+        raise AssertionError("independent bootstrap diagnostics must survive failure for 14 days")
+    for job, path in (
+        ("clang-image", "build/ci/clang-image-build-phases-bootstrap.tsv"),
+        ("gcc-image-family", "build/ci/gcc-image-build-phases-bootstrap.tsv"),
+    ):
+        if not any(path in step.get("with", {}).get("path", "").splitlines()
+                   for step in jobs[job]["steps"]):
+            raise AssertionError(f"{job} does not retain its bootstrap diagnostic")
+    subprocess.run([sys.executable, str(ROOT / "scripts/test-bootstrap-timing.py")], check=True)
     print("Build phase timing evidence fixtures passed")
 
 

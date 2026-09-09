@@ -161,11 +161,15 @@ python3 scripts/test-setup-lean-cache.py
 ./scripts/test-main-ruleset-policy.py
 
 ./scripts/test-toolchain-profile.py
+python3 scripts/test-toolchain-compatibility.py
 ./scripts/render-toolchain-consumers.py --check
 ./scripts/test-render-toolchain-consumers.py
 
 python3 scripts/check-adr-links.py
 python3 scripts/test-adr-links.py
+python3 scripts/test-hardware-evidence.py
+python3 scripts/test-qotom-recovery-capture.py
+python3 scripts/hardware-evidence.py verify hardware/observations/qotom-20260909
 
 ./scripts/test-build-timing.py
 

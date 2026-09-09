@@ -109,6 +109,13 @@ hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
 
+### Opt-in physical-machine evidence
+
+A [Qotom J1900 capture](docs/qotom-hardware-bringup.md) records the unchanged
+image booting from USB and rejecting the physical PCI identity before CPL3.
+The separate `hardware` tier requires an exact serial rejection and bounded
+post-terminal silence; it is not hardware admission or a required CI run.
+
 ### Lean-proved properties
 
 The default Lake target builds the kernel reference models and their
@@ -630,7 +637,10 @@ are listed in [the boot-image guide](docs/boot-image.md). The versioned
 toolchain profiles described in
 [ADR 0014](docs/adr/0014-toolchain-compatibility-profiles.md) keep the canonical
 byte-reproducible GCC release profile distinct from the exact Clang profile's
-semantic-compatibility evidence. CI first runs the
+semantic-compatibility evidence. A separate daily and path-triggered
+[compatibility workflow](docs/toolchain-compatibility.md) compares bounded,
+same-revision semantic evidence across all registered profiles and records the
+observation history needed for candidate promotion. CI first runs the
 Markdown and complete Lean proof-integrity gates, then builds once and executes
 the versioned mandatory emulator matrix without KVM. The matrix is the sole
 release-blocking QEMU inventory for pull requests and tags. A separate

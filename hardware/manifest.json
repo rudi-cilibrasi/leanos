@@ -1,0 +1,25 @@
+{
+  "schema": "leanos-hardware-manifest-v1",
+  "rows": [
+    {
+      "id": "qotom-j1900-clbtm210-v1",
+      "tier": "hardware",
+      "result_class": "controlled-rejection",
+      "source_revision": "1cc62dbb6e365b8b00716c316c927d9dc6db8f9a",
+      "artifacts": {
+        "iso": "bef7bf6873938263dc9dfa2b280bd93065ad10f06e59b0273968626e4eac12fb",
+        "elf": "2b961990117b01ec9fa4480998ac71e6cd776ef90b841389a96d89b7aaa51ae9",
+        "toolchain": "f1adca0db34baf5c7181500aca106fe8813d26a90708858e4ebbed92f8540bfd",
+        "protocol": "3a4b1ce0fe1f5191c7c930ac94dc58639a1bffa9dc5031aed8e3cac6f512ff20"
+      },
+      "expected_lines": [
+        "LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap",
+        "LEANOS/3 FINAL status=FAIL reason=dma-identity"
+      ],
+      "inventory": "profiles/qotom-j1900-clbtm210-v1.json",
+      "timeout_seconds": 180,
+      "quiet_seconds": 10,
+      "max_bytes": 1048576
+    }
+  ]
+}
