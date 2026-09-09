@@ -2475,6 +2475,14 @@ static const struct pci_manifest_entry *q35_manifest_entry(
     return 0;
 }
 
+/* Keep platform-admission rejection call sites distinct from runtime fail-stop
+   sites even though both retain the existing production FINAL wire record. The
+   generated bare-metal reason contract can enumerate this boundary without
+   admitting later CPL3/runtime fail() reasons. */
+static __attribute__((noreturn)) void pre_admission_fail(const char *reason) {
+    fail(reason);
+}
+
 /* Exhaustively account for all 256 functions on the manifest's finite bus,
    clear bus mastering on every present function, and independently read back
    each complete modeled Command word. This runs after firmware and before the
@@ -2494,7 +2502,8 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
             unsigned index = 0;
             const struct pci_manifest_entry *entry =
                 q35_manifest_entry(device, function, &index);
-            if (!entry || (seen & (1u << index))) fail("dma-inventory");
+            if (!entry || (seen & (1u << index)))
+                pre_admission_fail("dma-inventory");
 
             uint16_t product = (uint16_t)(identity >> 16);
             uint32_t class_code = pci_config_dword(device, function, 0x08) >> 8;
@@ -2503,12 +2512,12 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
             if (vendor != entry->vendor || product != entry->product ||
                 class_code != entry->class_code ||
                 ((header >> 7) & 1u) != entry->multifunction)
-                fail("dma-identity");
+                pre_admission_fail("dma-identity");
 
             uint16_t command = (uint16_t)pci_config_dword(
                 device, function, 0x04);
             if ((command & ~PCI_COMMAND_MODEL_MASK) != 0)
-                fail("dma-command-model");
+                pre_admission_fail("dma-command-model");
             if ((command & PCI_COMMAND_BUS_MASTER) != 0) {
                 ++initially_bus_mastering;
                 initial_bus_master_mask |= 1u << index;
@@ -2528,7 +2537,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
             q35_live_pci_snapshot.functions[index].command_after = command;
             ++readbacks;
             if (command != expected_command)
-                fail("dma-command-readback");
+                pre_admission_fail("dma-command-readback");
             seen |= 1u << index;
             ++present;
         }
@@ -2542,13 +2551,14 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         q35_live_pci_snapshot.functions[i].multifunction =
             q35_pci_manifest[i].multifunction;
         if (seen & (1u << i)) continue;
-        if (q35_pci_manifest[i].required) fail("dma-required-missing");
+        if (q35_pci_manifest[i].required)
+            pre_admission_fail("dma-required-missing");
         ++optional_absent;
     }
-    if (present == 0) fail("dma-empty-inventory");
+    if (present == 0) pre_admission_fail("dma-empty-inventory");
     if (present != Q35_EXPECTED_PRESENT || optional_absent != 1 ||
         writes != present || readbacks != present)
-        fail("dma-q35-nic-none");
+        pre_admission_fail("dma-q35-nic-none");
 
     /* Feed the canonical live identity/status/Command/assignment/bridge
        projection itself through the generated q35Snapshot boundary.  The
@@ -2571,7 +2581,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
             pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[5]),
             pci_snapshot_control_word(&q35_live_pci_snapshot.functions[5]));
     if (q35_live_pci_snapshot.generated_result != 0)
-        fail("dma-global-policy");
+        pre_admission_fail("dma-global-policy");
 
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
