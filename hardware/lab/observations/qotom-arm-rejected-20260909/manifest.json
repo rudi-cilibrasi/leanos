@@ -1,0 +1,11 @@
+{
+  "source_revision": null,
+  "files": {
+    "README.md": "70b1d374d74c3ffda8826fedb548faa4fd0b35082fad0d38b902bba75ef5b064",
+    "boot-after.txt": "21f1dc57cd360eefa49e8355ebf2ebd53063e06520fce388c0c262704e2673fe",
+    "boot-before.txt": "78d0294a7ad42a36423964165be5e520be175e4170f6fec5b93842d9b8f3872e",
+    "events.jsonl": "fd0d0d019f342c021d4053b664a120921869f38ff0fff9f605e2cf147d5c3bbc",
+    "result.json": "b1b8fda0ba93b5eac4bcb668c260f36f00721919a305cffe154d58b2a6ef041c",
+    "serial.raw": "dc0af65b1b1fc9a6f9709fbc7c4bb32d68ba9bde020ac90f39bd20f539bce0a3"
+  }
+}

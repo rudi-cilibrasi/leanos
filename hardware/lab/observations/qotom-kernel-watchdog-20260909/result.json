@@ -1,0 +1,19 @@
+{
+  "scenario": "watchdog-early-kernel-stall",
+  "recovery": "freebsd-ssh-restored",
+  "arm_to_recovery_boot_seconds": 128.0119979190058,
+  "loader_hang_recovery": false,
+  "recovery_guard": "consumed-request",
+  "kernel_hang_recovery": true,
+  "raw_sha256": "c97687d6c8969026202fe2ca628c10a83093fb4b55cb6a8c65f00ce277c12dd3",
+  "hang_scope": "before-boot-record",
+  "kernel_sha256": "b015acc16e23ca805277d63af30f85d8fe41e3df63f12e103b5f5e5c3f3baa9e",
+  "kernel_quiet_seconds": 127.22599065399845,
+  "freebsd_boot_before": 1788987999,
+  "freebsd_boot_after": 1788988719,
+  "request_consumed": true,
+  "hang_recovery": false,
+  "evidence_class": "lab-kernel-hang-experiment",
+  "source_revision": "bd72e93",
+  "classification_note": "Original runner rejected wrapped GRUB SHA-256 load record. Corrected parser replayed this unchanged capture; separate SSH/USB/consumed-state verification followed. No repeated boot."
+}

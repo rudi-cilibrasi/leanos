@@ -15,6 +15,7 @@ def run(*args, **kwargs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--freebsd-boot-uuid', required=True)
+    parser.add_argument('--kernel-hang-elf', type=Path)
     args = parser.parse_args()
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
@@ -23,6 +24,10 @@ def main():
     digest = hashlib.sha256(elf.read_bytes()).hexdigest()
     template = (root / 'hardware/lab/grub-qotom.cfg.in').read_text()
     config = template.replace('@FREEBSD_BOOT_UUID@', boot_uuid).replace('@ELF_SHA256@', digest)
+    hang_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest() if args.kernel_hang_elf else 'disabled'
+    config = config.replace('@KERNEL_HANG_ENABLED@', '1' if args.kernel_hang_elf else '0').replace('@KERNEL_HANG_SHA256@', hang_digest)
+    if args.kernel_hang_elf:
+        (output / 'kernel-hang.sha256').write_text(hang_digest + '  /boot/leanos-qotom-kernel-hang.elf\n')
     (output / 'grub.cfg').write_text(config)
     (output / 'leanos.sha256').write_text(digest + '  /boot/leanos-qotom-lab.elf\n')
     # Work on a new regular file, then replace the previous image only on success.
@@ -43,10 +48,17 @@ def main():
                 run('sudo', '-n', 'grub-install', '--target=i386-pc',
                     '--boot-directory=' + str(mount / 'boot'), '--no-floppy', loop)
                 run('sudo', '-n', 'cp', str(output / 'grub.cfg'), str(mount / 'boot/grub/grub.cfg'))
+                run('sudo', '-n', 'cp', str(root / 'hardware/lab/grub-qotom-watchdog-window.cfg'),
+                    str(mount / 'boot/grub/watchdog-window.cfg'))
+                run('sudo', '-n', 'cp', str(root / 'hardware/lab/grub-qotom-watchdog.cfg'),
+                    str(mount / 'boot/grub/watchdog.cfg'))
                 run('sudo', '-n', 'grub-editenv', str(mount / 'boot/grub/grubenv'), 'create')
                 run('sudo', '-n', 'grub-editenv', str(mount / 'boot/grub/grubenv'), 'set', 'request=none')
                 run('sudo', '-n', 'cp', str(elf), str(mount / 'boot'))
                 run('sudo', '-n', 'cp', str(output / 'leanos.sha256'), str(mount / 'boot/leanos.sha256'))
+                if args.kernel_hang_elf:
+                    run('sudo', '-n', 'cp', str(args.kernel_hang_elf), str(mount / 'boot/leanos-qotom-kernel-hang.elf'))
+                    run('sudo', '-n', 'cp', str(output / 'kernel-hang.sha256'), str(mount / 'boot/kernel-hang.sha256'))
             finally:
                 run('sudo', '-n', 'umount', str(mount))
         finally:

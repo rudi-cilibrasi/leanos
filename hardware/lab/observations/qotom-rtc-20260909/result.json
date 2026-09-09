@@ -1,0 +1,19 @@
+{
+  "scenario": "rtc-probe",
+  "recovery": "freebsd-ssh-restored",
+  "rtc_begin": "2026-09-09T20:51:15",
+  "rtc_end": "2026-09-09T20:52:20",
+  "rtc_advance_seconds": 65.0,
+  "stale_token_rejected": true,
+  "raw_sha256": "a36701e1e39b0a88457ba860b156eeb0be5939a14234fe3700280611d7216fa7",
+  "freebsd_boot_before": 1788986204,
+  "freebsd_boot_after": 1788987155,
+  "request_consumed": true,
+  "hang_recovery": false,
+  "evidence_class": "lab-rtc-preflight",
+  "watchdog_armed": false,
+  "rtc_convention": "UTC",
+  "config_sha256": "de8b83bf0fa7354316bd5c8b7f527d6c73189a9d419b238847c8dbbf08291408",
+  "guard_sha256": "db50e207c096ab343b39e0b93c5a4b6c05bd7dc8e1e52193cadfadc1b2d3a216",
+  "classification_note": "Original runner rejected GRUB LF-CR line endings; same retained capture reclassified after parser correction, with separate SSH and request readback verification. No repeated hardware boot."
+}

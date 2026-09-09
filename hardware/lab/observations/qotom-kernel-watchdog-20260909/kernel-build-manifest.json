@@ -1,0 +1,18 @@
+{
+  "evidence_class": "lab-recovery-experiment",
+  "canonical_halt_evidence": false,
+  "mode": "kernel-hang",
+  "recovery_seconds": null,
+  "hang_recovery": false,
+  "source_revision": "940662e8b0372e4be5636e9eded6d4967c30e656",
+  "source_dirty": true,
+  "prepared_revision": "2b874dd27ae03ca138156a22c5637008a748edd5",
+  "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "files": {
+    "boot/kernel.c": "735e53232f566cb6eb759a68bcb2a3906c47d74c73fadea6056d5375503304e2",
+    "build/qotom-kernel-hang/kernel.c": "c687de56bdb3ca6a7cab48eb299e5957a6688a8ce79741255b0ddc430932d09d",
+    "scripts/build-qotom-recovery-lab.py": "a6055d362e46f67384419377873718f4df8881413d2033992818111be878ce5f",
+    "build/qotom-kernel-hang/objects.mk": "6c77623a28ad8b075f954bdfbcaaf7237a0ae21f0fcb904290c208a2f5ab2767",
+    "build/qotom-kernel-hang/leanos-qotom-kernel-hang.elf": "b015acc16e23ca805277d63af30f85d8fe41e3df63f12e103b5f5e5c3f3baa9e"
+  }
+}

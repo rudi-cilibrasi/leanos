@@ -20,6 +20,109 @@ EXPECTED = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n' + EXPECTED_
 CHAIN = b'LEANOS-LAB/1 CHAIN freebsd disk='
 
 
+def watchdog_request(clock_text, prefix='watchdog-test'):
+    """Use the board's verified UTC RTC convention, never the observer's clock."""
+    if prefix != 'watchdog-test' and not re.fullmatch(r'watchdog-(kernel|leanos)-[0-9a-f]{64}', prefix):
+        raise ValueError('invalid watchdog request prefix')
+    lines = clock_text.splitlines()
+    if len(lines) != 2 or lines[0] != '0':
+        raise ValueError('watchdog trial requires the verified UTC CMOS convention')
+    stamp = datetime.datetime.strptime(lines[1], '%Y-%m-%dT%H:%M:%S')
+    if not 2026 <= stamp.year <= 2099:
+        raise ValueError('implausible board clock')
+    if stamp.second > 25:
+        return None
+    return prefix + '-' + '-'.join(map(str, (stamp.year, stamp.month, stamp.day, stamp.hour, stamp.minute)))
+
+
+def classify_watchdog(events, kernel_digest=None):
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
+    accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
+    expired = b'LEANOS-LAB/1 WATCHDOG-WINDOW expired-or-invalid=1 fallback=freebsd'
+    consumed = b'LEANOS-LAB/1 DEFAULT request=none'
+    recovery = expired if expired in data else consumed
+    if (any(data.count(marker) != 1 for marker in (accepted, armed, recovery, CHAIN))
+            or data.count(expired) + data.count(consumed) != 1
+            or not data.find(accepted) < data.find(armed) < data.find(recovery) < data.find(CHAIN)
+            or any(marker in data for marker in (b'WATCHDOG-NO-RESET', b'WATCHDOG-STOP-FAILED',
+                                                  b'WATCHDOG-ARM-REJECTED', b'LEANOS/'))):
+        raise ValueError('missing, repeated, or failed watchdog reset/expiry trace')
+    def completed_at(marker):
+        end = data.find(marker) + len(marker)
+        offset = 0
+        for event in events:
+            offset += len(bytes.fromhex(event['hex']))
+            if offset >= end:
+                return event['elapsed']
+        raise ValueError('incomplete watchdog marker')
+    delay = completed_at(recovery) - completed_at(armed)
+    if not 110 <= delay <= 170:
+        raise ValueError('watchdog recovery outside the expected reset interval')
+    result = {'scenario': 'watchdog-loader-stall', 'recovery': 'chain-observed',
+            'arm_to_recovery_boot_seconds': delay, 'loader_hang_recovery': True,
+            'recovery_guard': 'expired-token' if recovery == expired else 'consumed-request',
+            'kernel_hang_recovery': False, 'raw_sha256': hashlib.sha256(data).hexdigest()}
+    hang = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
+    if kernel_digest is not None:
+        if not re.fullmatch(r'[0-9a-f]{64}', kernel_digest):
+            raise ValueError('invalid expected kernel digest')
+        # GRUB's console formatter can wrap the digest on the serial sink too.
+        # Permit only line breaks inside the exact digest; keep raw bytes intact.
+        digest_pattern = rb'[\r\n]*'.join(bytes([ch]) for ch in kernel_digest.encode())
+        load = re.search(rb'LEANOS-LAB/1 WATCHDOG-KERNEL-LOAD[ \r\n]+sha256=' + digest_pattern + rb'(?=[\r\n])', data)
+        if (data.count(hang) != 1 or load is None
+                or data.count(b'WATCHDOG-KERNEL-LOAD') != 1 or b'WATCHDOG-LOAD-FAILED' in data
+                or not data.find(armed) < load.start() < load.end() <= data.find(hang) < data.find(recovery)):
+            raise ValueError('missing, changed, or repeated kernel hang/load marker')
+        end = data.find(hang) + len(hang)
+        offset = 0
+        hang_time = next_time = None
+        for event in events:
+            following = offset + len(bytes.fromhex(event['hex']))
+            if offset < end <= following:
+                if following != end:
+                    raise ValueError('extra bytes immediately after kernel hang marker')
+                hang_time = event['elapsed']
+            elif offset >= end and next_time is None:
+                next_time = event['elapsed']
+            offset = following
+        if hang_time is None or next_time is None or next_time - hang_time < 90:
+            raise ValueError('insufficient quiet after the early-kernel hang')
+        result.update(scenario='watchdog-early-kernel-stall', kernel_hang_recovery=True,
+                      loader_hang_recovery=False, hang_scope='before-boot-record', kernel_sha256=kernel_digest,
+                      kernel_quiet_seconds=next_time - hang_time)
+    elif b'KERNEL-HANG' in data or b'WATCHDOG-KERNEL-LOAD' in data:
+        raise ValueError('kernel launch in a loader-only trial')
+    return result
+
+
+def classify_rtc(events):
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    newline = rb'(?:\r\n|\n\r|\n)'
+    pattern = (rb'LEANOS-LAB/1 RTC-BEGIN ([0-9-]+)' + newline +
+               rb'LEANOS-LAB/1 RTC-CURRENT accepted=1' + newline +
+               rb'LEANOS-LAB/1 RTC-END ([0-9-]+)' + newline +
+               rb'LEANOS-LAB/1 RTC-EXPIRED rejected=1' + newline)
+    match = re.search(pattern, data)
+    if (match is None or data.count(b'LEANOS-LAB/1 RTC-') != 4
+            or b'WATCHDOG-ARMED' in data or b'LEANOS/' in data
+            or data.count(CHAIN) != 1 or data.find(CHAIN) < match.end()):
+        raise ValueError('missing, repeated, or invalid RTC expiry probe trace')
+    start, end = (datetime.datetime(*map(int, stamp.split(b'-'))) for stamp in match.groups())
+    advancement = (end - start).total_seconds()
+    if not 64 <= advancement <= 75:
+        raise ValueError('RTC did not advance by the bounded probe interval')
+    return {'scenario': 'rtc-probe', 'recovery': 'chain-observed',
+            'rtc_begin': start.isoformat(), 'rtc_end': end.isoformat(),
+            'rtc_advance_seconds': advancement, 'stale_token_rejected': True,
+            'raw_sha256': hashlib.sha256(data).hexdigest()}
+
+
 def classify(events):
     if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
         raise ValueError('nonmonotonic capture timestamps')
@@ -56,6 +159,28 @@ def classify(events):
             'raw_sha256': hashlib.sha256(data).hexdigest()}
 
 
+def classify_protected(events, digest):
+    result = classify(events)
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
+    armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
+    default = b'LEANOS-LAB/1 DEFAULT request=none'
+    if not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid protected image digest')
+    pattern = rb'[\r\n]*'.join(bytes([ch]) for ch in digest.encode())
+    load = re.search(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' + pattern + rb'(?=[\r\n])', data)
+    if (load is None or any(data.count(marker) != 1 for marker in (accepted, armed, default, b'WATCHDOG-LEANOS-LOAD'))
+            or not data.find(accepted) < data.find(armed) < load.start() < load.end() <= data.find(EXPECTED)
+            or data.find(default) < data.find(EXPECTED) + len(EXPECTED)
+            or any(marker in data for marker in (b'WATCHDOG-LOAD-FAILED', b'WATCHDOG-STOP-FAILED',
+                                                  b'WATCHDOG-NO-RESET', b'KERNEL-HANG', b'WATCHDOG-KERNEL-LOAD'))):
+        raise ValueError('missing, repeated, or failed normal watchdog launch/recovery')
+    if not 30 <= result['quiet_seconds'] <= 90:
+        raise ValueError('protected completion outside its observation interval')
+    result['watchdog_protected'] = True
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True)
@@ -64,10 +189,15 @@ def main():
     parser.add_argument('--usb-serial', required=True)
     parser.add_argument('--serial-device', required=True)
     parser.add_argument('--elf', type=Path, required=True)
+    parser.add_argument('--kernel-hang-elf', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
+    parser.add_argument('--scenario', choices=('leanos', 'rtc-probe', 'watchdog-test', 'watchdog-kernel', 'watchdog-leanos'), default='watchdog-leanos')
     args = parser.parse_args()
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
+    if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
+        parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
+    kernel_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest() if args.kernel_hang_elf else None
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
                                         '-o', 'HostKeyAlias=' + args.host_key_alias, args.host]
     args.output.mkdir(parents=True, exist_ok=False)
@@ -86,7 +216,22 @@ def main():
             raise SystemExit('FreeBSD SSH unavailable; no boot armed')
         env = args.output / 'request.env'
         subprocess.run(['grub-editenv', str(env), 'create'], check=True)
-        subprocess.run(['grub-editenv', str(env), 'set', 'request=leanos-' + digest], check=True)
+        request = 'leanos-' + digest if args.scenario == 'leanos' else 'rtc-probe'
+        if args.scenario.startswith('watchdog-'):
+            deadline = time.monotonic() + 75
+            while time.monotonic() < deadline:
+                clock = remote("sysctl -n machdep.wall_cmos_clock; date -u +%Y-%m-%dT%H:%M:%S", text=True)
+                if clock.returncode:
+                    raise ValueError('cannot read board clock; no trial armed')
+                prefix = {'watchdog-test': 'watchdog-test', 'watchdog-leanos': 'watchdog-leanos-' + digest,
+                          'watchdog-kernel': 'watchdog-kernel-' + (kernel_digest or '')}[args.scenario]
+                request = watchdog_request(clock.stdout, prefix)
+                if request is not None:
+                    break
+                time.sleep(2)
+            else:
+                raise ValueError('no sufficiently early RTC minute; no trial armed')
+        subprocess.run(['grub-editenv', str(env), 'set', 'request=' + request], check=True)
         # Remote names are fixed; arguments interpolated into shell are quoted.
         arm = '''set -e
 cat > /var/tmp/leanos-lab-request.env
@@ -97,6 +242,10 @@ trap 'sudo -n umount /mnt/leanos-lab' EXIT
 test "$(sha256 -q /mnt/leanos-lab/boot/leanos-qotom-lab.elf)" = DIGEST
 sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
 '''.replace('SERIAL', shlex.quote(args.usb_serial)).replace('DIGEST', shlex.quote(digest))
+        if args.scenario == 'watchdog-kernel':
+            # Check the installed payload before writing the dated request.
+            check = 'test "$(sha256 -q /mnt/leanos-lab/boot/leanos-qotom-kernel-hang.elf)" = ' + shlex.quote(kernel_digest) + '\n'
+            arm = arm.replace('sudo -n cp /var/tmp/leanos-lab-request.env', check + 'sudo -n cp /var/tmp/leanos-lab-request.env')
         directory = args.output / ('cycle-' + str(cycle))
         directory.mkdir()
         fd = os.open(args.serial_device, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -140,7 +289,7 @@ sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
             (directory / 'reboot.txt').write_text(reboot.stdout + reboot.stderr)
             if reboot.returncode:
                 raise ValueError('SSH reboot request failed')
-            while time.monotonic() - started < 180:
+            while time.monotonic() - started < (420 if args.scenario.startswith('watchdog-') else 180):
                 if errors:
                     raise ValueError(errors)
                 if CHAIN in b''.join(bytes.fromhex(e['hex']) for e in events):
@@ -153,19 +302,34 @@ sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
         finally:
             stop.set(); thread.join()
             termios.tcsetattr(fd, termios.TCSANOW, previous); os.close(fd)
-        result = classify(events)
-        result.update({'freebsd_boot_before': before, 'freebsd_boot_after': after,
-                       'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment', 'hang_recovery': False})
         # Read consumed state only after FreeBSD has returned; do not arm again on failure.
         verify = remote('''set -e
+test "$(sudo -n camcontrol inquiry da0 -S)" = SERIAL
 sudo -n mount -t msdosfs -o ro /dev/da0s1 /mnt/leanos-lab
 trap 'sudo -n umount /mnt/leanos-lab' EXIT
 grep '^request=none$' /mnt/leanos-lab/boot/grub/grubenv
-''', text=True)
+sha256 /mnt/leanos-lab/boot/grub/grub.cfg
+'''.replace('SERIAL', shlex.quote(args.usb_serial)), text=True)
+        (directory / 'verification.txt').write_text(verify.stdout + verify.stderr)
+        recovery = {'freebsd_boot_before': before, 'freebsd_boot_after': after,
+                    'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment',
+                    'hang_recovery': False,
+                    'request_consumed': verify.returncode == 0, 'recovery': 'freebsd-ssh-restored'}
+        # Preserve recovery evidence even when an unfamiliar serial format fails
+        # classification. Replaying a parser fix must not require another boot.
+        (directory / 'recovery.json').write_text(json.dumps(recovery, indent=2) + '\n')
         if verify.returncode:
             raise ValueError('one-shot request was not verified consumed')
-        result['request_consumed'] = True
-        result['recovery'] = 'freebsd-ssh-restored'
+        if args.scenario == 'watchdog-kernel':
+            result = classify_watchdog(events, kernel_digest)
+        elif args.scenario == 'watchdog-leanos':
+            result = classify_protected(events, digest)
+        else:
+            classifier = {'leanos': classify, 'rtc-probe': classify_rtc, 'watchdog-test': classify_watchdog}[args.scenario]
+            result = classifier(events)
+        result.update(recovery)
+        if args.scenario == 'watchdog-leanos':
+            result['hang_recovery'] = True
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         print('PASS cycle=' + str(cycle), json.dumps(result), flush=True)
 
