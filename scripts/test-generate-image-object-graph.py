@@ -187,27 +187,22 @@ generate_lean_c {source!s} {output!s}
         self.assertIn("export LEANOS_BOOT_PLAN_EXECUTABLES_READY=1", wrapper)
         self.assertIn('xargs -0 -r -n 2 -P "${LEANOS_BUILD_JOBS:-$(nproc)}"', wrapper)
         self.assertIn('run_boot_plan_batch "${boot_plan_batch_args[@]}"', wrapper)
-        for stem in (
-            "leanos-prelink",
-            "leanos-malformed-handoff-prelink",
-            "leanos-frame-budget-prelink",
-            "leanos-capability-transfer-prelink",
-            "leanos-inflight-revocation-prelink",
-            "leanos-fault-containment-prelink",
-            "leanos-fault-readonly-write-prelink",
-            "leanos-fault-nx-execute-prelink",
-            "leanos-entry-stack-overflow-prelink",
-            "leanos-direct-port-serial-prelink",
-            "leanos-bootstrap64-nmi-prelink",
-        ):
-            self.assertIn(f'"$build/{stem}.elf"', wrapper)
-        for template in (
-            "leanos-extended-state${suffix}-prelink",
-            "leanos-fast-entry-${mechanism}-prelink",
-            "leanos-direct-port-${probe}-prelink",
-            "leanos-return-${fixture}-prelink",
-        ):
-            self.assertIn(f'"$build/{template}.elf"', wrapper)
+        start = wrapper.index('./scripts/scenario-manifest.py prelink-plans >')
+        end = wrapper.index('for spec in "${return_corruptions[@]}"; do', start)
+        with tempfile.TemporaryDirectory(prefix="plan build ") as build_dir:
+            result = subprocess.run(
+                ["bash", "-e"], cwd=ROOT,
+                input=wrapper[start:end] + 'printf "%s\\0" "${boot_plan_batch_args[@]}"\n',
+                env=dict(os.environ, build=build_dir), capture_output=True, text=True,
+                check=True,
+            )
+            manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text())
+            expected = []
+            for stem, entry in manifest["build"]["images"].items():
+                expected.extend((str(Path(build_dir) / (stem + "-prelink.elf")),
+                                 str(Path(build_dir) / entry["prelink_plan"])))
+            self.assertEqual(result.stdout.split("\0")[:-1], expected)
+        self.assertIn('"$build/leanos-return-${fixture}-prelink.elf"', wrapper)
 
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('"$root/.lake/build/bin/leanos-boot-plan"', plan_script)

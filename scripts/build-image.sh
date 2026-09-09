@@ -813,72 +813,13 @@ run_boot_plan_batch() {
     ./scripts/generate-boot-page-plan.sh < "$task_file"
 }
 
-boot_plan_batch_args=(
-  "$build/leanos-prelink.elf" "$build/boot-page-plan.h"
-  "$build/leanos-malformed-handoff-prelink.elf"
-  "$build/boot-page-plan-malformed-handoff.h"
-  "$build/leanos-projection-authority-mutation-prelink.elf"
-  "$build/boot-page-plan-projection-authority-mutation.h"
-  "$build/leanos-raw-selection-authority-mutation-prelink.elf"
-  "$build/boot-page-plan-raw-selection-authority-mutation.h"
-  "$build/leanos-preemption-prelink.elf" "$build/boot-page-plan-preemption.h"
-  "$build/leanos-frame-budget-prelink.elf"
-  "$build/boot-page-plan-frame-budget.h"
-  "$build/leanos-capability-transfer-prelink.elf"
-  "$build/boot-page-plan-capability-transfer.h"
-  "$build/leanos-inflight-revocation-prelink.elf"
-  "$build/boot-page-plan-inflight-revocation.h"
-  "$build/leanos-fault-containment-prelink.elf"
-  "$build/boot-page-plan-fault-containment.h"
-  "$build/leanos-fault-readonly-write-prelink.elf"
-  "$build/boot-page-plan-fault-readonly-write.h"
-  "$build/leanos-fault-nx-execute-prelink.elf"
-  "$build/boot-page-plan-fault-nx-execute.h"
-)
-for probe in "${fault_image_probes[@]}"; do
-  boot_plan_batch_args+=(
-    "$build/leanos-fault-${probe}-prelink.elf"
-    "$build/boot-page-plan-fault-${probe}.h"
-  )
-done
-for suffix in "" -mmx -sse -sse2 -avx -peer-pke; do
-  boot_plan_batch_args+=(
-    "$build/leanos-extended-state${suffix}-prelink.elf"
-    "$build/boot-page-plan-extended-state${suffix}.h"
-  )
-done
-for mechanism in syscall sysenter; do
-  boot_plan_batch_args+=(
-    "$build/leanos-fast-entry-${mechanism}-prelink.elf"
-    "$build/boot-page-plan-fast-entry-${mechanism}.h"
-  )
-done
-boot_plan_batch_args+=(
-  "$build/leanos-double-fault-prelink.elf"
-  "$build/boot-page-plan-double-fault.h"
-  "$build/leanos-entry-stack-overflow-prelink.elf"
-  "$build/boot-page-plan-entry-overflow.h"
-  "$build/leanos-guard-prelink.elf" "$build/boot-page-plan-guard.h"
-  "$build/leanos-entry-adversarial-prelink.elf"
-  "$build/boot-page-plan-entry-adversarial.h"
-  "$build/leanos-direct-port-serial-prelink.elf"
-  "$build/boot-page-plan-direct-port.h"
-  "$build/leanos-divide-error-prelink.elf"
-  "$build/boot-page-plan-integer-fault.h"
-  "$build/leanos-breakpoint-prelink.elf"
-  "$build/boot-page-plan-breakpoint.h"
-  "$build/leanos-nmi-prelink.elf" "$build/boot-page-plan-nmi.h"
-  "$build/leanos-bootstrap32-ud-prelink.elf"
-  "$build/boot-page-plan-bootstrap32-ud.h"
-  "$build/leanos-bootstrap64-nmi-prelink.elf"
-  "$build/boot-page-plan-bootstrap64-nmi.h"
-)
-for probe in debug in pic; do
-  boot_plan_batch_args+=(
-    "$build/leanos-direct-port-${probe}-prelink.elf"
-    "$build/boot-page-plan-direct-port-${probe}.h"
-  )
-done
+# Validate the complete query before reading rows; a failing producer must not
+# be hidden by process substitution or leave a partially accepted task list.
+./scripts/scenario-manifest.py prelink-plans > "$build/prelink-plan-producers.tsv"
+boot_plan_batch_args=()
+while IFS=$'\t' read -r prelink header; do
+  boot_plan_batch_args+=("$build/$prelink" "$build/$header")
+done < "$build/prelink-plan-producers.tsv"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   boot_plan_batch_args+=(

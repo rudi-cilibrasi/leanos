@@ -70,6 +70,25 @@ def main() -> None:
         transform(copy)
         return copy
 
+    plan_rows = MODULE.prelink_plan_rows(manifest)
+    if len(plan_rows) != len(images):
+        raise AssertionError("prelink generation does not cover every image")
+    extra = mutated(lambda m: m["build"]["images"].update({
+        "leanos-new-fixture": dict(m["build"]["images"]["leanos"],
+                                   prelink_plan="boot-page-plan-new-fixture.h")
+    }))
+    queried = run(extra, "prelink-plans")
+    if queried.returncode or "leanos-new-fixture-prelink.elf\tboot-page-plan-new-fixture.h" not in queried.stdout:
+        raise AssertionError("new manifest image requires a handwritten plan task")
+    for change, diagnostic in (
+        (lambda m: m["build"]["images"]["leanos"].pop("prelink_plan"), "missing or invalid prelink plan"),
+        (lambda m: m["build"]["images"]["leanos"].update(prelink_plan="../outside.h"), "missing or invalid prelink plan"),
+        (lambda m: m["build"]["images"]["leanos-preemption"].update(prelink_plan="boot-page-plan.h"), "same header twice"),
+    ):
+        rejected = run(mutated(change), "prelink-plans")
+        if rejected.returncode == 0 or diagnostic not in rejected.stderr or rejected.stdout:
+            raise AssertionError(f"prelink plan failed closed-output validation: {rejected}")
+
     def unknown_kernel(m):
         m["build"]["images"]["leanos-preemption"]["kernel"] = "kernel-absent"
 

@@ -78,6 +78,21 @@ def image_rows(manifest: dict) -> list[dict[str, str]]:
     return rows
 
 
+def prelink_plan_rows(manifest: dict) -> list[dict[str, str]]:
+    """Every graph image owns one bounded, unique prelink-plan output."""
+    rows = []
+    for image in image_rows(manifest):
+        stem = image["stem"]
+        header = manifest["build"]["images"][stem].get("prelink_plan")
+        if not isinstance(header, str) or not PLAN_HEADER.fullmatch(header):
+            raise ManifestError(f"image {stem} has a missing or invalid prelink plan")
+        rows.append({"prelink": stem + "-prelink.elf", "header": header})
+    headers = [row["header"] for row in rows]
+    if len(headers) != len(set(headers)):
+        raise ManifestError("prelink plans write the same header twice")
+    return rows
+
+
 def packaged_rows(manifest: dict) -> list[dict[str, str]]:
     """One row per packaged final ELF: the ISO it is staged into, the GRUB
     configuration that boots it, and the final-ELF policy check queued for
@@ -323,6 +338,7 @@ def main() -> int:
     sub.add_parser("images", help="one row per object-graph image")
     packaged = sub.add_parser("packaged-images", help="one row per packaged final ELF")
     packaged.add_argument("--version", default="0.1.0")
+    sub.add_parser("prelink-plans", help="prelink ELF and generated page-plan pairs")
     sub.add_parser("page-plans", help="every page-plan header stub the build needs")
     sub.add_parser("plan-checks", help="final-ELF page-plan checks in build order")
     sub.add_parser("disassemblies", help="final-ELF disassembly outputs")
@@ -342,6 +358,9 @@ def main() -> int:
                 values = [row[column] for column in PACKAGED_COLUMNS]
                 values[PACKAGED_COLUMNS.index("iso")] = row["iso"].replace("@VERSION@", args.version)
                 print("\t".join(values))
+        elif args.operation == "prelink-plans":
+            for row in prelink_plan_rows(manifest):
+                print(f"{row['prelink']}\t{row['header']}")
         elif args.operation == "page-plans":
             for header in page_plan_stubs(manifest):
                 print(header)

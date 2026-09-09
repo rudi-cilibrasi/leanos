@@ -440,115 +440,134 @@
         "boot": "boot",
         "kernel": "kernel",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan.h"
       },
       "leanos-malformed-handoff": {
         "boot": "boot",
         "kernel": "kernel-malformed-handoff",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-malformed-handoff.h"
       },
       "leanos-projection-authority-mutation": {
         "boot": "boot",
         "kernel": "kernel-projection-authority-mutation",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-projection-authority-mutation.h"
       },
       "leanos-raw-selection-authority-mutation": {
         "boot": "boot",
         "kernel": "kernel-raw-selection-authority-mutation",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-raw-selection-authority-mutation.h"
       },
       "leanos-preemption": {
         "boot": "boot-preemption",
         "kernel": "kernel-preemption",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-preemption.h"
       },
       "leanos-frame-budget": {
         "boot": "boot-frame-budget",
         "kernel": "kernel-frame-budget",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-frame-budget.h"
       },
       "leanos-capability-transfer": {
         "boot": "boot-capability-transfer",
         "kernel": "kernel-capability-transfer",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-capability-transfer.h"
       },
       "leanos-inflight-revocation": {
         "boot": "boot-inflight-revocation",
         "kernel": "kernel-inflight-revocation",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-inflight-revocation.h"
       },
       "leanos-fault-containment": {
         "boot": "boot-fault-containment",
         "kernel": "kernel-fault-containment",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-containment.h"
       },
       "leanos-fault-readonly-write": {
         "boot": "boot-fault-readonly-write",
         "kernel": "kernel-fault-containment",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-readonly-write.h"
       },
       "leanos-fault-nx-execute": {
         "boot": "boot-fault-nx-execute",
         "kernel": "kernel-fault-containment",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-nx-execute.h"
       },
       "leanos-fault-reserved-bit": {
         "boot": "boot-fault-reserved-bit",
         "kernel": "kernel-fault-reserved-bit",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-reserved-bit.h"
       },
       "leanos-fault-walk-mismatch": {
         "boot": "boot-fault-walk-mismatch",
         "kernel": "kernel-fault-walk-mismatch",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-walk-mismatch.h"
       },
       "leanos-fault-stale-translation": {
         "boot": "boot-fault-stale-translation",
         "kernel": "kernel-fault-stale-translation",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-stale-translation.h"
       },
       "leanos-extended-state": {
         "boot": "boot-extended-state",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-extended-state.h"
       },
       "leanos-extended-state-mmx": {
         "boot": "boot-extended-state-mmx",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-extended-state-mmx.h"
       },
       "leanos-extended-state-sse": {
         "boot": "boot-extended-state-sse",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-extended-state-sse.h"
       },
       "leanos-extended-state-sse2": {
         "boot": "boot-extended-state-sse2",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-extended-state-sse2.h"
       },
       "leanos-extended-state-avx": {
         "boot": "boot-extended-state-avx",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-extended-state-avx.h"
       },
       "leanos-extended-state-peer-pke": {
         "boot": "boot-extended-state-peer-pke",
@@ -556,97 +575,113 @@
         "extra_objects": [
           "peer-pke-fixture"
         ],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-extended-state-peer-pke.h"
       },
       "leanos-fast-entry-syscall": {
         "boot": "boot-fast-entry-syscall",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fast-entry-syscall.h"
       },
       "leanos-fast-entry-sysenter": {
         "boot": "boot-fast-entry-sysenter",
         "kernel": "kernel-extended-state",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fast-entry-sysenter.h"
       },
       "leanos-double-fault": {
         "boot": "boot",
         "kernel": "kernel-double-fault",
         "extra_objects": [],
-        "final_link": false
+        "final_link": false,
+        "prelink_plan": "boot-page-plan-double-fault.h"
       },
       "leanos-entry-stack-overflow": {
         "boot": "boot-entry-stack-overflow",
         "kernel": "kernel-double-fault",
         "extra_objects": [],
-        "final_link": false
+        "final_link": false,
+        "prelink_plan": "boot-page-plan-entry-overflow.h"
       },
       "leanos-entry-adversarial": {
         "boot": "boot-entry-adversarial",
         "kernel": "kernel-entry-adversarial",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-entry-adversarial.h"
       },
       "leanos-direct-port-serial": {
         "boot": "boot-direct-port-serial",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-direct-port.h"
       },
       "leanos-direct-port-debug": {
         "boot": "boot-direct-port-debug",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-direct-port-debug.h"
       },
       "leanos-direct-port-in": {
         "boot": "boot-direct-port-in",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-direct-port-in.h"
       },
       "leanos-direct-port-pic": {
         "boot": "boot-direct-port-pic",
         "kernel": "kernel-direct-port",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-direct-port-pic.h"
       },
       "leanos-divide-error": {
         "boot": "boot-divide-error",
         "kernel": "kernel-integer-fault",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-integer-fault.h"
       },
       "leanos-breakpoint": {
         "boot": "boot-breakpoint",
         "kernel": "kernel-integer-fault",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-breakpoint.h"
       },
       "leanos-nmi": {
         "boot": "boot-nmi",
         "kernel": "kernel-nmi",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-nmi.h"
       },
       "leanos-bootstrap32-ud": {
         "boot": "boot-bootstrap32-ud",
         "kernel": "kernel-bootstrap32-ud",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-bootstrap32-ud.h"
       },
       "leanos-bootstrap64-nmi": {
         "boot": "boot-bootstrap64-nmi",
         "kernel": "kernel-bootstrap64-nmi",
         "extra_objects": [],
-        "final_link": true
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-bootstrap64-nmi.h"
       },
       "leanos-guard": {
         "boot": "boot-df-guard-mapped",
         "kernel": "kernel-double-fault-guard-mapped",
         "extra_objects": [],
-        "final_link": false
+        "final_link": false,
+        "prelink_plan": "boot-page-plan-guard.h"
       }
     },
     "policy_fixtures": {

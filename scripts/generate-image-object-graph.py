@@ -87,7 +87,7 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             or not all(isinstance(flag, str) and flag.startswith("-D") for flag in entry["definitions"])
         ):
             raise SystemExit(f"error: scenario manifest boot object {name!r} is malformed")
-    for section, required in (("images", {"boot", "kernel", "extra_objects", "final_link"}), ("policy_fixtures", {"boot", "kernel", "extra_objects"})):
+    for section, required in (("images", {"boot", "kernel", "extra_objects", "final_link", "prelink_plan"}), ("policy_fixtures", {"boot", "kernel", "extra_objects"})):
         for stem, entry in build[section].items():
             if not OBJECT_NAME.match(stem) or not stem.startswith("leanos") or not isinstance(entry, dict) or set(entry) != required:
                 raise SystemExit(f"error: scenario manifest {section} entry {stem!r} is malformed")
@@ -98,6 +98,11 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             for extra in entry["extra_objects"]:
                 if extra not in build["boot_objects"]:
                     raise SystemExit(f"error: image {stem} links unknown extra object {extra!r}")
+            if section == "images" and (
+                not isinstance(entry["prelink_plan"], str)
+                or not re.fullmatch(r"boot-page-plan(?:-[a-z0-9-]+)?\.h", entry["prelink_plan"])
+            ):
+                raise SystemExit(f"error: image {stem} has an invalid prelink plan")
             if section == "images" and not isinstance(entry["final_link"], bool):
                 raise SystemExit(f"error: image {stem} final_link must be true or false")
     return build
