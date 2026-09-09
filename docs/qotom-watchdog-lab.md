@@ -86,7 +86,7 @@ FreeBSD. The next trial admitted those two observed states, preserving SMI_EN.
 Seven actual GRUB/QEMU tests passed before that physical trial.
 
 The physical trace then repeated SELECT and WATCHDOG-ARMED at approximately
-13.34, 141.80 and 269.82 seconds. The timer reset the board before the 300-second
+13.34, 141.80, 269.82 and 397.83 seconds. The timer reset the board before the 300-second
 software escape, but the same request loaded again despite the earlier
 `save_env` success. This **fails unattended recovery**. The cause of repeated
 persistent state is not yet established; it must not be described as a proven
