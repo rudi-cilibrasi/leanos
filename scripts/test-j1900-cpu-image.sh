@@ -9,6 +9,7 @@ mkdir -p "$output"
 export LEANOS_QEMU_ACCELERATOR=tcg
 source scripts/q35-platform.sh
 source build/boot/serial-protocol.sh
+./scripts/check-j1900-cpu-host.sh ordinary > "$output/native-replay-build.log" 2>&1
 for fixture in accepted wrong-stepping missing-smep unexpected-smap; do
   cpu='max,vendor=GenuineIntel,family=6,model=55,stepping=8,xsave=off,avx=off,smap=off'
   expected=65536
@@ -29,31 +30,14 @@ for fixture in accepted wrong-stepping missing-smep unexpected-smap; do
   result=$?
   set -e
   [[ "$result" == 35 ]] || { echo "$fixture: unexpected QEMU status $result" >&2; exit 1; }
-  python3 - "$output/$fixture.log" "$expected" "$LEANOS_SERIAL_24_BOOT" \
-      "$LEANOS_SERIAL_24_CPU" "$LEANOS_SERIAL_24_CONTROL" "$LEANOS_SERIAL_3_FINAL" <<'PY'
+  python3 scripts/check-j1900-diagnostic.py "$output/$fixture.log" \
+    > "$output/$fixture.replay.json"
+  python3 - "$output/$fixture.replay.json" "$expected" <<'PY'
+import json
 from pathlib import Path
-import re
 import sys
-path, expected, boot, cpu, control, final = sys.argv[1:]
-raw = Path(path).read_bytes()
-assert raw.endswith(b'\n') and b'\r' not in raw
-lines = raw.decode('ascii').splitlines()
-assert lines[0] == boot + ' target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0'
-match = re.fullmatch(re.escape(cpu) + r' profile=j1900-cpu-v1 codec=1 width=22 words=([0-9,]+) selection=([0-9]+)', lines[1])
-assert match and match[2] == expected
-words = [int(word) for word in match[1].split(',')]
-assert len(words) == 22 and all(word <= 0xffffffff for word in words)
-assert words[:2] == [1, 31]
-assert words[3:6] == [0x756e6547, 0x6c65746e, 0x49656e69]
-if expected == '65536':
-    assert len(lines) == 4
-    assert words[6] == 0x30678
-    assert lines[2] == control + ' profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1'
-    reason = 'qotom-platform-pending'
-else:
-    assert len(lines) == 3  # No RDMSR/readback record after CPU rejection.
-    reason = 'j1900-cpu-profile'
-assert lines[-1] == final + ' status=FAIL reason=' + reason
-print(Path(path).stem + ': exact CPU diagnostic and terminal rejection verified')
+result = json.loads(Path(sys.argv[1]).read_text())
+assert result['cpu_selection'] == int(sys.argv[2])
+print(Path(sys.argv[1]).stem + ': generated CPU/MSR replay and terminal verified')
 PY
 done

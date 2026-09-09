@@ -1,5 +1,7 @@
 #include <lean/lean.h>
 #include <stdint.h>
+#include <inttypes.h>
+#include <string.h>
 #include <stdio.h>
 #include "boundary-abi.h"
 #include "../build/j1900/raw-cases.h"
@@ -10,7 +12,20 @@ extern lean_object *initialize_leanos_LeanOS_J1900CpuProfile(uint8_t);
 extern lean_object *initialize_leanos_LeanOS_J1900MsrReadback(uint8_t);
 extern void leanos_register_boundary_target(const char *, void *);
 
-int main(void) {
+static int decimal_word(const char *text, uint64_t *word) {
+  if (!*text || (text[0] == '0' && text[1])) return 0;
+  uint64_t value = 0;
+  for (; *text; ++text) {
+    if (*text < '0' || *text > '9') return 0;
+    unsigned digit = (unsigned)(*text - '0');
+    if (value > (UINT64_MAX - digit) / 10) return 0;
+    value = value * 10 + digit;
+  }
+  *word = value;
+  return 1;
+}
+
+int main(int argc, char **argv) {
   lean_initialize();
   lean_object *init = initialize_leanos_LeanOS_J1900CpuProfile(1);
   if (lean_io_result_is_error(init)) {
@@ -48,6 +63,24 @@ int main(void) {
       fprintf(stderr, "J1900 CPU boundary case %zu failed\n", i);
       return 1;
     }
+  }
+  /* The capture checker supplies complete bounded observations to these same
+     generated exports. Run the fixed corpus first in both CLI and test modes. */
+  if (argc > 1) {
+    int cpu = strcmp(argv[1], "cpu") == 0;
+    int msr = strcmp(argv[1], "msr") == 0;
+    int count = cpu ? 22 : 8;
+    uint64_t w[22];
+    if ((!cpu && !msr) || argc != count + 2) return 2;
+    for (int i = 0; i < count; ++i)
+      if (!decimal_word(argv[i + 2], &w[i])) return 2;
+    uint64_t actual = cpu ? leanos_j1900_cpu_select(
+        w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9],
+        w[10], w[11], w[12], w[13], w[14], w[15], w[16], w[17], w[18],
+        w[19], w[20], w[21]) : leanos_j1900_msr_readback(
+        w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
+    printf("%" PRIu64 "\n", actual);
+    return 0;
   }
   puts("Hosted generated-C J1900 CPU replay passed");
   return 0;

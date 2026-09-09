@@ -213,3 +213,28 @@ extends the local diagnostic evidence; it does not replace the missing Intel
 instruction-denial fixture, KVM resolution, physical capture or complete
 platform admission. The local test images were built from the working tree;
 CI must validate the committed PR head before merge or hardware deployment.
+
+## Independent diagnostic replay
+
+Build the trusted native replay executable with
+`scripts/check-j1900-cpu-host.sh ordinary`, then run
+`scripts/check-j1900-diagnostic.py CAPTURE` on the exact diagnostic record bytes.
+The checker loads the generated serial vocabulary, requires a complete bounded
+three- or four-record transcript, and replays the supplied words through the
+same generated C exports used by the boot adapter. A guest's reported result
+must match the independent result. An accepted CPU requires MSR readback;
+a rejected CPU must not be followed by a control record. The terminal reason
+must agree with both results. Extra records, malformed numbers, over-wide
+words, missing terminators and platform/CPL3 admission claims are rejected.
+
+The JSON result retains the words and hashes of the capture, generated protocol
+and trusted replay executable. It reports CPU/MSR observations only, with
+platform admission and CPL3 authorization always false. These hashes identify
+replay inputs; they do not establish physical provenance or bind a capture to
+an image. GRUB/watchdog records and image provenance still belong to the lab
+capture wrapper, which must supply the exact diagnostic portion without
+silently dropping unexpected kernel records.
+
+The hosted suite tests the native decimal input path and forged/reordered
+captures under ordinary execution and ASan/UBSan. The Intel image fixtures now
+run this independent replay and retain a JSON result beside every raw capture.
