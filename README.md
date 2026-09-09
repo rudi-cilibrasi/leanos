@@ -109,6 +109,13 @@ hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
 
+### Opt-in physical-machine evidence
+
+A [Qotom J1900 capture](docs/qotom-hardware-bringup.md) records the unchanged
+image booting from USB and rejecting the physical PCI identity before CPL3.
+The separate `hardware` tier requires an exact serial rejection and bounded
+post-terminal silence; it is not hardware admission or a required CI run.
+
 ### Lean-proved properties
 
 The default Lake target builds the kernel reference models and their

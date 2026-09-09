@@ -1,0 +1,43 @@
+{
+  "manifest": {
+    "path": "scripts/toolchain-profiles.json",
+    "sha256": "66ab7434974e90afad071ac5d15cc71daf4861ba30de43b21eb620d0e7563729"
+  },
+  "observed_compiler": {
+    "command": "gcc",
+    "version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+  },
+  "profile": {
+    "claim": "byte-reproducible-reference",
+    "compiler": {
+      "command": "gcc",
+      "family": "gcc",
+      "major": 13,
+      "package": "gcc=4:13.2.0-7ubuntu1 (GCC 13.3.0)",
+      "version": "13.3.0"
+    },
+    "evidence_tier": "compatibility-v1",
+    "id": "gcc-reference",
+    "interfaces": {
+      "direct_port_elf": "gcc-reference-v1",
+      "lean_c": "restricted-generated-c-v1"
+    },
+    "lean_toolchain": "leanprover/lean4:v4.32.0",
+    "reference_environment": {
+      "architecture": "x86_64",
+      "ci_image_digest": "sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec",
+      "os": "Ubuntu 24.04"
+    },
+    "shared_tools": {
+      "binutils": "binutils=2.42-4ubuntu2.10",
+      "coreutils": "coreutils=9.4-3ubuntu6.3",
+      "grub": "grub-common=2.12-1ubuntu7.3; grub-pc-bin=2.12-1ubuntu7.3",
+      "mtools": "mtools=4.0.43-1build1",
+      "qemu": "qemu-system-x86=1:8.2.2+ds-0ubuntu1.18",
+      "seabios": "SeaBIOS 1.16.3",
+      "xorriso": "xorriso=1:1.5.6-1.1ubuntu3"
+    },
+    "status": "canonical"
+  },
+  "schema": "leanos-toolchain-profile-selection-v1"
+}
