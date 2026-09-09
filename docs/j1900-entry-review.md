@@ -28,12 +28,27 @@ that rule. Thus the intended Intel denial vectors are 6 and 13 respectively.
 This review does not yet establish the complete J1900 MSR inventory, especially
 whether the AMD-oriented CSTAR access is architecturally authorized.
 
+The current [Intel Volume 4](https://cdrdv2-public.intel.com/922493/335592-092-sdm-vol-4.pdf),
+335592-092US (June 2026), section 2.4 includes model 06_37H. Table 2-6
+lists SYSENTER_CS/ESP/EIP (2-125–126), EFER, STAR, LSTAR and FMASK (2-133),
+but omits CSTAR. The architectural table 2-2 (2-93) nevertheless lists CSTAR
+as read/write when extended-leaf EDX bit 29 is set, while describing it as
+unused. This discrepancy does not establish that CSTAR faults on J1900.
+The implementation review must distinguish architectural access from useful
+denial state; do not infer either a required CSTAR write or its absence solely
+from the model table. No MSR probe has been run on the physical machine.
+
 ## Current code audit and required changes
 
 `PrivilegeEntryControl.expectedVector` already distinguishes Intel SYSENTER,
-but `Accepted`/`validate` select only the AMD contract. Its generic `enabled`
-view suppresses SYSENTER in every long-mode contract, which must be revisited
-when Intel is admitted. The selected extended-feature projection includes
+but `Accepted`/`validate` select only the AMD contract. The generic `enabled`
+view now recognizes Intel SYSENTER in long mode and tests selector bits 15:2,
+so RPL-only or upper-register bits cannot make a null selector usable. The
+existing AMD long-mode denial remains intact, and unsupported vendors do not
+enable SYSENTER. Intel's [SDM Volume 3A, section 5.8.7.1](https://cdrdv2-public.intel.com/819714/253668-sdm-vol-3a.pdf)
+documents the Intel 64-bit path; [Volume 2, SYSENTER](https://cdrdv2-public.intel.com/671110/325383-sdm-vol-2abcd.pdf)
+specifies the null-selector check. This finite enablement view does not prove
+instruction execution or relax `Accepted`. The selected extended-feature projection includes
 XSAVE and AVX; those cannot be asserted for these measured J1900 leaves.
 
 `boot/boot.S` writes EFER, STAR, LSTAR, CSTAR, FMASK and all three SYSENTER MSRs
@@ -41,6 +56,14 @@ in the 32-bit normalization path. `check_fast_entry_cpuid` executes later in C.
 A new profile must authorize operations before they execute, not merely relax
 that late vendor comparison. Review the per-model MSR table and early CPUID
 checks before deciding which accesses to omit or retain.
+
+The current assembly has no CPUID instruction before those operations (or
+elsewhere in `boot.S`). Preserve the Multiboot registers and the first
+kernel-owned IDT publication when inserting the early capability gate.
+`EARLY_SERIAL32` currently polls UART readiness without a timeout, so reusing
+it unchanged would not satisfy this issue's bounded early rejection path.
+The gate needs a bounded output attempt and a terminal path even if COM1 never
+becomes ready, with the final-ELF I/O and entry-policy checks updated together.
 
 The next implementation needs a closed, versioned raw-leaf projection, exact
 profile/control readback checks, generated profile-bound records, Lean/C
@@ -61,5 +84,8 @@ Theorems connect successful selection to all checks and the required raw feature
 masks, and establish that the result leaves CPL3 unauthorized. Run
 `python3 scripts/test-j1900-cpu-profile.py` to verify capture hashes and replay
 four measured CPUs plus 29 altered snapshots using kernel-checked Lean reduction.
+The same runner checks 162 fast-entry combinations across vendor, execution
+mode, feature exposure, and null/non-null selectors (including RPL and upper
+bits), also by kernel reduction. These are model checks, not hardware execution.
 This module is not yet connected to the aggregate gate, generated-C ABI, or
 boot adapter; those and the MSR review remain required for #328.

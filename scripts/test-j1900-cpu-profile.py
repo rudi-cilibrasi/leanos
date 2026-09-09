@@ -33,7 +33,8 @@ def literal(snapshot, version=1, present=31):
     return '{ ' + ', '.join(members) + ' }'
 
 
-checks = ['import LeanOS.J1900CpuProfile', 'open LeanOS.J1900CpuProfile']
+checks = ['import LeanOS.J1900CpuProfile', 'import LeanOS.PrivilegeEntryControl',
+          'open LeanOS.J1900CpuProfile']
 count = 0
 
 
@@ -74,10 +75,33 @@ for field, word, bits, reason in (
         changed[field][word] |= 1 << bit
         check(changed, reason)
 
+# Exercise the vendor/mode distinction and selector boundary independently of
+# CPU admission. In particular, an Intel long-mode non-null target is enabled,
+# while RPL-only and upper-register bits must not make a null selector valid.
+entry_count = 0
+for vendor in ('intel', 'amd', 'unsupported'):
+    for mode in ('protected32', 'long64', 'compatibility'):
+        for exposed in (False, True):
+            for selector in (0, 1, 2, 3, 4, 8, 0x10000, 0x10003, 0x10008):
+                expected = (exposed and (vendor == 'intel' or
+                            (vendor == 'amd' and mode != 'long64')) and
+                            (selector & 0xfffc) != 0)
+                control = ('{ acceptedControl with '
+                           'cpu := { selectedCpu with '
+                           f'vendor := .{vendor}, mode := .{mode}, '
+                           f'sysenterExposed := {str(exposed).lower()} }}, '
+                           f'msrs := {{ deniedMsrs with sysenterCs := {selector} }} }}')
+                checks.append('open LeanOS.PrivilegeEntryControl in\n'
+                              f'example : enabled ({control}) .sysenter = '
+                              f'{str(expected).lower()} := by rfl')
+                entry_count += 1
+
 output = root / 'build/j1900'
 output.mkdir(parents=True, exist_ok=True)
 path = output / 'Checks.lean'
 path.write_text('\n'.join(checks) + '\n')
-subprocess.run(['lake', 'build', 'LeanOS.J1900CpuProfile'], cwd=root, check=True)
+subprocess.run(['lake', 'build', 'LeanOS.J1900CpuProfile',
+                'LeanOS.PrivilegeEntryControl'], cwd=root, check=True)
 subprocess.run(['lake', 'env', 'lean', str(path)], cwd=root, check=True)
 print(f'J1900 CPU profile: {len(captures)} captures, {count} Lean selection/rejection checks passed')
+print(f'Fast entry: {entry_count} vendor/mode/exposure/selector checks passed')
