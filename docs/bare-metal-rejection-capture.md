@@ -117,12 +117,9 @@ credentials, or unrelated serial output.
 Pass `--bundle-dir <new-directory>` to the classifier to atomically retain the
 deterministic bundle core: the exact manifest, ISO, ELF, generated protocol, raw
 and normalized captures, source revision, classification, and sorted
-`SHA256SUMS`. The output directory must not already exist. Validate that core
-before publication with:
-
-```sh
-python3 scripts/verify-bare-metal-evidence-bundle.py <bundle-directory>
-```
+`SHA256SUMS`. The output directory must not already exist. The emitted core is
+deterministic; the publication verifier intentionally waits for the variable
+observation sidecar described below.
 
 Keep the variable operator, capture-command, firmware-setting, inventory, and
 reset metadata alongside this deterministic core as `observation.json`; those
@@ -133,11 +130,13 @@ the capture. Record a pseudonymous operator identifier and redaction note; do
 not put a personal name, hostname, serial number, credential, or secret in the
 sidecar.
 
-Validate the sidecar, including strict fields, bounds, UTC timestamps, and
-timestamp ordering, before publication:
+Regenerate the sorted `SHA256SUMS` after adding `observation.json`, so it covers
+every retained publication file. Then validate the exact inventory, digests,
+reclassification, strict sidecar fields, bounds, UTC timestamps, and timestamp
+ordering together before publication:
 
 ```sh
-python3 scripts/check-bare-metal-observation.py <bundle-directory>/observation.json
+python3 scripts/verify-bare-metal-evidence-bundle.py <bundle-directory>
 ```
 
 ## Interpretation

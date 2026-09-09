@@ -13,6 +13,12 @@ SCRIPT = Path(__file__).with_name("check-bare-metal-rejection.py")
 SPEC = importlib.util.spec_from_file_location("bare_metal_rejection", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+VERIFIER_SCRIPT = Path(__file__).with_name("verify-bare-metal-evidence-bundle.py")
+VERIFIER_SPEC = importlib.util.spec_from_file_location(
+    "verify_bare_metal_evidence_bundle", VERIFIER_SCRIPT
+)
+VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
+VERIFIER_SPEC.loader.exec_module(VERIFIER)
 PROTOCOL_PREFIX = "LEANOS" + "/"
 
 
@@ -133,6 +139,58 @@ class BareMetalRejectionTest(unittest.TestCase):
         with self.assertRaises(MODULE.ClassificationError) as caught:
             MODULE.verify_evidence_bundle(bundle)
         self.assertEqual(caught.exception.result, "digest-mismatch")
+
+    def test_publication_verifier_requires_and_validates_observation(self):
+        capture = (
+            f"{self.serial}\n{self.boot}\n{self.dma}\n" + self.terminal + "\n"
+        ).encode()
+        result = self.classify(capture)
+        bundle = self.root / "publication"
+        MODULE.emit_evidence_bundle(
+            bundle,
+            result,
+            self.manifest,
+            self.iso,
+            self.elf,
+            self.capture,
+            self.protocol,
+        )
+        with self.assertRaises(VERIFIER.MODULE.ClassificationError):
+            VERIFIER.verify_bundle(bundle)
+
+        observation = {
+            "schemaVersion": 1,
+            "operatorId": "operator-fixture-a",
+            "startedAtUtc": "2026-09-09T12:00:00Z",
+            "endedAtUtc": "2026-09-09T12:01:00Z",
+            "captureCommand": "fixture-capture --timeout 60",
+            "captureToolVersion": "fixture-capture 1.0",
+            "serialDevice": "/dev/fixture-uart",
+            "timeoutSeconds": 60,
+            "firmwareSettings": "legacy BIOS; COM1 enabled",
+            "pciInventory": "00:00.0 fixture bridge",
+            "redactionNote": "fixture identifiers only",
+            "resetResult": "halt observed until manual reset",
+        }
+        observation_path = bundle / "observation.json"
+        observation_path.write_text(json.dumps(observation), encoding="utf-8")
+        retained = sorted((*MODULE.BUNDLE_FILES, "observation.json"))
+        (bundle / "SHA256SUMS").write_text(
+            "\n".join(f"{MODULE.sha256(bundle / name)}  {name}" for name in retained)
+            + "\n",
+            encoding="ascii",
+        )
+        self.assertEqual(VERIFIER.verify_bundle(bundle), result)
+
+        observation["endedAtUtc"] = "2026-09-09T11:59:59Z"
+        observation_path.write_text(json.dumps(observation), encoding="utf-8")
+        (bundle / "SHA256SUMS").write_text(
+            "\n".join(f"{MODULE.sha256(bundle / name)}  {name}" for name in retained)
+            + "\n",
+            encoding="ascii",
+        )
+        with self.assertRaisesRegex(ValueError, "precedes startedAtUtc"):
+            VERIFIER.verify_bundle(bundle)
 
     def test_accepts_only_generated_pre_admission_phase_prefixes(self):
         boot = f"{PROTOCOL_PREFIX}22 BOOT scenario=capability-transfer"

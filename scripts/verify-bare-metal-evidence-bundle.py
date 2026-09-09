@@ -11,6 +11,24 @@ CLASSIFIER = Path(__file__).with_name("check-bare-metal-rejection.py")
 SPEC = importlib.util.spec_from_file_location("bare_metal_rejection", CLASSIFIER)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+OBSERVATION_CHECKER = Path(__file__).with_name("check-bare-metal-observation.py")
+OBSERVATION_SPEC = importlib.util.spec_from_file_location(
+    "bare_metal_observation", OBSERVATION_CHECKER
+)
+OBSERVATION = importlib.util.module_from_spec(OBSERVATION_SPEC)
+OBSERVATION_SPEC.loader.exec_module(OBSERVATION)
+OBSERVATION_SCHEMA = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "bare-metal-observation.schema.json"
+)
+
+
+def verify_bundle(bundle: Path) -> dict:
+    """Verify the deterministic core and its required variable observation."""
+    result = MODULE.verify_evidence_bundle(bundle, include_observation=True)
+    OBSERVATION.validate(bundle / "observation.json", OBSERVATION_SCHEMA)
+    return result
 
 
 def main() -> int:
@@ -18,7 +36,7 @@ def main() -> int:
     parser.add_argument("bundle", type=Path)
     args = parser.parse_args()
     try:
-        result = MODULE.verify_evidence_bundle(args.bundle)
+        result = verify_bundle(args.bundle)
     except MODULE.ClassificationError as error:
         print(json.dumps({"schemaVersion": 1, "result": error.result,
                           "detail": error.detail}, sort_keys=True))

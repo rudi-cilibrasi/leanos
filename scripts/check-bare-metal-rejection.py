@@ -471,9 +471,13 @@ def emit_evidence_bundle(
         raise
 
 
-def verify_evidence_bundle(directory: Path) -> dict:
+def verify_evidence_bundle(directory: Path, *, include_observation: bool = False) -> dict:
     """Verify the exact bundle inventory and re-run classification from it."""
-    expected_names = set(BUNDLE_FILES) | {"SHA256SUMS"}
+    retained_names = list(BUNDLE_FILES)
+    if include_observation:
+        retained_names.append("observation.json")
+    retained_names.sort()
+    expected_names = set(retained_names) | {"SHA256SUMS"}
     if not directory.is_dir():
         raise ClassificationError("manifest-invalid", "bundle file inventory differs")
     entries = tuple(directory.iterdir())
@@ -483,7 +487,7 @@ def verify_evidence_bundle(directory: Path) -> dict:
     ):
         raise ClassificationError("manifest-invalid", "bundle file inventory differs")
     lines = (directory / "SHA256SUMS").read_text(encoding="ascii").splitlines()
-    expected_lines = [f"{sha256(directory / name)}  {name}" for name in BUNDLE_FILES]
+    expected_lines = [f"{sha256(directory / name)}  {name}" for name in retained_names]
     if lines != expected_lines:
         raise ClassificationError("digest-mismatch", "bundle digest inventory differs")
     manifest = load_manifest(directory / "machine.json")
