@@ -46,13 +46,15 @@ class BareMetalRejectionTest(unittest.TestCase):
             f"record\t22\tBOOT\tLEANOS_SERIAL_22_BOOT\t{PROTOCOL_PREFIX}22 BOOT\n"
             f"record\t22\tOFFER\tLEANOS_SERIAL_22_OFFER\t{PROTOCOL_PREFIX}22 OFFER\n"
             f"record\t10\tIPC\tLEANOS_SERIAL_10_IPC\t{PROTOCOL_PREFIX}10 IPC\n"
-            f"record\t15\tDMA\tLEANOS_SERIAL_15_DMA\t{PROTOCOL_PREFIX}15 DMA\n",
+            f"record\t15\tDMA\tLEANOS_SERIAL_15_DMA\t{PROTOCOL_PREFIX}15 DMA\n"
+            f"record\t21\tVTD-ASSIGN\tLEANOS_SERIAL_21_VTD_ASSIGN\t{PROTOCOL_PREFIX}21 VTD-ASSIGN\n",
             encoding="utf-8",
         )
         with self.protocol.open("a", encoding="utf-8") as protocol:
             protocol.write(
                 "pre-admission-boot-record\t22\tBOOT\n"
                 "pre-admission-record\t15\tDMA\n"
+                "pre-admission-record\t21\tVTD-ASSIGN\n"
                 "pre-admission-reason\tdma-required-missing\n"
                 "pre-admission-reason\tdma-inventory\n"
                 "pre-admission-bootalloc-reason\tauthority-init\n"
@@ -247,6 +249,16 @@ class BareMetalRejectionTest(unittest.TestCase):
             "manifest-invalid",
             (f"{self.serial}\n{self.boot}\n{self.dma}\n{final}\n").encode(),
         )
+
+    def test_default_profile_does_not_require_assigned_device_phase(self):
+        result = self.classify(
+            (
+                f"{self.serial}\n{self.boot}\n{self.dma}\n"
+                f"{self.terminal}\n"
+            ).encode()
+        )
+
+        self.assertEqual(result["result"], "exact-typed-rejection")
 
     def test_allows_repeated_records_within_a_generated_phase(self):
         serial = f"{PROTOCOL_PREFIX}1 SERIAL status=READY"

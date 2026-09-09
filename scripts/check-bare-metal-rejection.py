@@ -38,6 +38,12 @@ REJECTION_TERMINAL_IDENTITIES = frozenset(
     (f"{PROTOCOL_PREFIX}3 FINAL", f"{PROTOCOL_PREFIX}7 BOOTALLOC")
 )
 PRE_ADMISSION_STATIC_IDENTITIES = frozenset((f"{PROTOCOL_PREFIX}1 SERIAL",))
+# The assigned-device image emits this phase behind
+# LEANOS_ASSIGNED_EDU_SCENARIO; the default/canonical image does not. Keep it
+# ordered and admissible when present, but do not require it universally.
+CONDITIONAL_PRE_ADMISSION_IDENTITIES = frozenset(
+    (f"{PROTOCOL_PREFIX}21 VTD-ASSIGN",)
+)
 BUNDLE_FILES = (
     "classification.json",
     "image.iso",
@@ -286,8 +292,11 @@ def require_pre_admission_order(
         raise ClassificationError(
             "manifest-invalid", "pre-admission boundaries are incomplete"
         )
-    required_phases = set(phase_records)
-    if terminal_identity == f"{PROTOCOL_PREFIX}7 BOOTALLOC" and seen_phases != required_phases:
+    required_phases = set(phase_records) - CONDITIONAL_PRE_ADMISSION_IDENTITIES
+    if (
+        terminal_identity == f"{PROTOCOL_PREFIX}7 BOOTALLOC"
+        and not required_phases.issubset(seen_phases)
+    ):
         raise ClassificationError(
             "manifest-invalid", "boot-allocation rejection phases are incomplete"
         )
