@@ -59,8 +59,23 @@ the sysfs memory map and the raw MADT, records processor 0's APIC identity,
 and writes `provenance.json`. It reads only vendor, model, and firmware
 version strings from DMI; it never reads serial numbers, UUIDs, or network
 addresses, and it never reorders, merges, or repairs what it copies. When
-`acpidump` is available it also records the RSDP, RSDT, and XSDT for a future
-root-stage replay.
+`acpidump` is available it attempts physical-memory mode (`-c off`) and
+records the RSDP, RSDT, and XSDT for root-stage replay. The default sysfs mode
+does not provide these roots or their physical addresses. When roots are
+available, `capture-acpi-root-tables.sh` reads each distinct referenced physical
+address separately and names the exact returned table bytes
+`acpi/root-tables/<16-digit hexadecimal address>.bin`. It preserves the root
+vectors unchanged and refuses ambiguous responses, unsupported addresses,
+tables over 64 KiB, or aggregate copies over 1 MiB. It also requires the
+physical MADT to match the sysfs copy. Root and table input hashes, the helper
+hash, and the acpidump binary hash enter the capture provenance.
+
+The QEMU capture accepts `--acpidump <binary>` to stage that optional tool and
+its libraries in the minimal guest. Merely having acpidump installed on the
+host does not put it in the guest. Both capture scripts support x86_64 Linux;
+the root helper interprets the little-endian address vectors on that host.
+The current corpus manifest still marks its checked rows' root stage as
+unavailable; collecting these files does not itself add hosted root replay.
 
 `scripts/capture-firmware-handoff-qemu.sh` produces the same capture from a
 Linux guest under QEMU: it builds a minimal initramfs (static busybox, bash

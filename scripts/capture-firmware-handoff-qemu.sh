@@ -19,7 +19,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/capture-firmware-handoff-qemu.sh --kernel <bzImage> --busybox <static-busybox>
          --firmware seabios|ovmf [--ovmf-code <fd> --ovmf-vars <fd>]
-         [--cpus N] [--memory MiB] [--timeout SECONDS]
+         [--cpus N] [--memory MiB] [--timeout SECONDS] [--acpidump <binary>]
          [--kernel-package <text>] [--busybox-package <text>] [--ovmf-package <text>]
          <capture-directory>
 EOF
@@ -29,9 +29,10 @@ EOF
 kernel="" busybox="" firmware="" ovmf_code="" ovmf_vars=""
 cpus=1 memory=1024 limit=300
 kernel_package="" busybox_package="" ovmf_package=""
-out=""
+out="" acpidump=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --acpidump) acpidump="$2"; shift 2 ;;
     --kernel) kernel="$2"; shift 2 ;;
     --busybox) busybox="$2"; shift 2 ;;
     --firmware) firmware="$2"; shift 2 ;;
@@ -54,7 +55,7 @@ case "$firmware" in
   ovmf) [[ -n "$ovmf_code" && -n "$ovmf_vars" ]] || usage ;;
   *) usage ;;
 esac
-for path in "$kernel" "$busybox" ${ovmf_code:+"$ovmf_code"} ${ovmf_vars:+"$ovmf_vars"}; do
+for path in "$kernel" "$busybox" ${acpidump:+"$acpidump"} ${ovmf_code:+"$ovmf_code"} ${ovmf_vars:+"$ovmf_vars"}; do
   [[ -f "$path" ]] || { echo "error: $path is not a file" >&2; exit 1; }
 done
 [[ -e "$out" ]] && { echo "error: $out already exists" >&2; exit 1; }
@@ -86,8 +87,19 @@ while IFS= read -r library; do
     /*) cp "$library" "$stage/lib/x86_64-linux-gnu/$(basename "$library")" ;;
   esac
 done < <(ldd /bin/bash | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) { print $i; break } }')
+if [[ -n "$acpidump" ]]; then
+  cp "$acpidump" "$stage/bin/acpidump"
+  chmod 755 "$stage/bin/acpidump"
+  while IFS= read -r library; do
+    case "$library" in
+      */ld-linux-x86-64.so.2) cp "$library" "$stage/lib64/ld-linux-x86-64.so.2" ;;
+      /*) cp "$library" "$stage/lib/x86_64-linux-gnu/$(basename "$library")" ;;
+    esac
+  done < <(ldd "$acpidump" | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) { print $i; break } }')
+fi
 cp scripts/capture-firmware-handoff.sh "$stage/scripts/capture-firmware-handoff.sh"
-chmod 755 "$stage/scripts/capture-firmware-handoff.sh"
+cp scripts/capture-acpi-root-tables.sh "$stage/scripts/capture-acpi-root-tables.sh"
+chmod 755 "$stage/scripts/"*.sh
 cat > "$stage/init" <<'EOF'
 #!/bin/sh
 export PATH=/bin
@@ -216,12 +228,12 @@ done
 emulator="$("$qemu" --version | head -n 1)"
 python3 - "$out/provenance.json" "$emulator" "$firmware" "$cpus" "$memory" \
   "$kernel_package" "$(sha "$kernel")" "$busybox_package" "$(sha "$busybox")" \
-  "$ovmf_package" "${ovmf_code:+$(sha "$ovmf_code")}" <<'EOF'
+  "$ovmf_package" "${ovmf_code:+$(sha "$ovmf_code")}" "${acpidump:+$(sha "$acpidump")}" <<'EOF'
 import json
 import sys
 
 (path, emulator, firmware, cpus, memory, kernel_package, kernel_sha, busybox_package,
- busybox_sha, ovmf_package, ovmf_sha) = sys.argv[1:]
+ busybox_sha, ovmf_package, ovmf_sha, acpidump_sha) = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     provenance = json.load(handle)
 guest = {
@@ -235,6 +247,8 @@ guest = {
     "busybox_package": busybox_package,
     "busybox_sha256": busybox_sha,
 }
+if acpidump_sha:
+    guest["acpidump_sha256"] = acpidump_sha
 if firmware == "ovmf":
     guest["ovmf_package"] = ovmf_package
     guest["ovmf_code_sha256"] = ovmf_sha
