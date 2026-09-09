@@ -33,19 +33,23 @@ rejection each derived mutation must produce. `root_tables` is
 XSDT in sysfs, so the root-selection stage of `BootTopology` is not replayed
 yet, and the manifest refuses any other value until that stage lands.
 
-Three firmware families are in the corpus today:
+The corpus includes three virtual-firmware captures and one physical-machine capture:
 
 | Case | Firmware | Memory map | Topology |
 | --- | --- | --- | --- |
 | `hyperv-wsl2-24cpu` | Microsoft Hyper-V UEFI (WSL2 utility VM) | 5 entries, decoded | 24 enabled processors, rejected `multipleEnabledProcessors` |
 | `qemu-seabios-q35-1cpu` | SeaBIOS on QEMU q35 | 9 entries, decoded | 1 processor, admitted |
 | `qemu-ovmf-q35-4cpu` | OVMF (EDK II) on QEMU q35, booted through the EFI stub | 19 interleaved RAM/NVS/reserved entries, decoded | 4 enabled processors, rejected `multipleEnabledProcessors` |
+| `intel-nuc10-fncml0053` | Intel NUC10i7FNH, FNCML357.0053 firmware | 18 interleaved RAM/NVS/reserved entries, decoded | 12 enabled processors, rejected `multipleEnabledProcessors` |
 
 The two QEMU rows are real firmware captured through the same Linux
 procedure as a physical machine, not repository-constructed fixtures; the
-Hyper-V row is a physical host's virtualization firmware. Physical-machine
-captures from the bare-metal work (#290) join the corpus through the same
-procedure.
+Hyper-V row is a physical host's virtualization firmware. The NUC row was
+collected directly on the physical development host (mgnuc), using that same
+procedure. Its MADT retains the firmware OEM table identifier `NUC9i5FN` even
+though DMI identifies the machine as NUC10i7FNH; neither value is repaired.
+This is a Linux-observed firmware replay, not a LeanOS boot capture. The NUC
+root-table bytes could not be read, so it adds no root-selection evidence.
 
 ## Capture procedure
 
@@ -62,7 +66,9 @@ root-stage replay.
 Linux guest under QEMU: it builds a minimal initramfs (static busybox, bash
 and its libraries, and the capture script), boots a stock kernel with SeaBIOS
 or an OVMF firmware image, reads the capture back over the serial console,
-and adds the `guest` provenance object. The two QEMU rows were produced with
+and adds the `guest` provenance object. | `intel-nuc10-fncml0053` | Intel NUC10i7FNH, FNCML357.0053 firmware | 18 interleaved RAM/NVS/reserved entries, decoded | 12 enabled processors, rejected `multipleEnabledProcessors` |
+
+The two QEMU rows were produced with
 the Ubuntu `linux-image-6.8.0-139-generic`, `busybox-static
 1:1.36.1-6ubuntu3.1`, and `ovmf 2024.02-2ubuntu0.9` packages named, with
 their digests, in each row's provenance.
