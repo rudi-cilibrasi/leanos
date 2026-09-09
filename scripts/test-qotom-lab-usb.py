@@ -41,6 +41,16 @@ def main():
         cases = [('default', 'none'), ('oneshot', 'reboot-test'),
                  ('unknown', 'unknown'), ('watchdog-disabled', 'watchdog-test'), ('bad-env', 'none'), ('bad-image', 'leanos-' + digest),
                  ('leanos', 'leanos-' + digest)]
+        window_cases = {
+            'window-current': ('watchdog-test-2026-9-9-12-0', '2026-09-09T12:00:00', True),
+            'window-stale-replay': ('watchdog-test-2026-9-9-12-0', '2026-09-09T12:02:00', False),
+            'window-future': ('watchdog-test-2026-9-9-12-1', '2026-09-09T12:00:00', False),
+            'window-old-date': ('watchdog-test-2025-9-9-12-0', '2026-09-09T12:00:00', False),
+            'window-unbounded': ('watchdog-test', '2026-09-09T12:00:00', False),
+            'window-malformed': ('watchdog-test-2026-09-09-12-00', '2026-09-09T12:00:00', False),
+            'window-invalid-clock': ('watchdog-test-2000-9-9-12-0', '2000-09-09T12:00:00', False),
+        }
+        cases.extend((name, 'none') for name in window_cases)
         for name, request in cases:
             image = tmp / (name + '.img')
             shutil.copyfile(args.image, image)
@@ -54,10 +64,31 @@ def main():
                 (tmp / 'bad.elf').write_bytes(b'unauthorized image')
                 run('mcopy', '-o', '-i', str(image) + '@@1048576', str(tmp / 'bad.elf'),
                     '::/boot/leanos-qotom-lab.elf')
+            rtc = '2026-09-09T12:00:00'
+            if name in window_cases:
+                token, rtc, accepted = window_cases[name]
+                original = tmp / 'original.cfg'
+                run('mcopy', '-o', '-i', str(image) + '@@1048576',
+                    '::/boot/grub/grub.cfg', str(original))
+                run('mcopy', '-o', '-i', str(image) + '@@1048576',
+                    str(root / 'hardware/lab/grub-qotom-watchdog-window.cfg'),
+                    '::/boot/grub/watchdog-window.cfg')
+                # Run the candidate guard in actual GRUB, without I/O arming.
+                # The same literal token is replayed with a later RTC above.
+                prefix = (
+                    'serial --unit=0 --speed=38400\nterminal_output serial\n'
+                    'source ($root)/boot/grub/watchdog-window.cfg\n'
+                    f'if qotom_watchdog_window "{token}"; then\n'
+                    'echo WINDOW-ACCEPTED\nelse\necho WINDOW-REJECTED\nfi\n'
+                )
+                original.write_text(prefix + original.read_text())
+                run('mcopy', '-o', '-i', str(image) + '@@1048576', str(original),
+                    '::/boot/grub/grub.cfg')
             log = tmp / (name + '.log')
             process = subprocess.Popen([
                 'qemu-system-x86_64', '-machine', 'pc', '-m', '128', '-display', 'none',
                 '-serial', 'file:' + str(log), '-monitor', 'none',
+                '-rtc', 'base=' + rtc + ',clock=vm',
                 '-drive', 'file=' + str(image) + ',format=raw,if=ide,index=0',
                 '-drive', 'file=' + str(sentinel) + ',format=raw,if=ide,index=1'],
                 stderr=subprocess.DEVNULL)
@@ -74,6 +105,11 @@ def main():
                 process.terminate()
                 process.wait(timeout=5)
             data = log.read_bytes()
+            if name in window_cases:
+                expected_window = b'WINDOW-ACCEPTED' if accepted else b'WINDOW-REJECTED'
+                other_window = b'WINDOW-REJECTED' if accepted else b'WINDOW-ACCEPTED'
+                assert expected_window in data and other_window not in data, (name, data)
+                assert b'WATCHDOG-ARMED' not in data
             if name == 'oneshot':
                 assert data.count(b'SELECT reboot-test consumed=1') == 1
             if name == 'watchdog-disabled':

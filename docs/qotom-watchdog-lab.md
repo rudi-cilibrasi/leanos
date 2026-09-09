@@ -102,3 +102,29 @@ under the actual reset mechanism. A GRUB success message or a same-boot cached
 readback alone is insufficient.
 
 The bounded [failed observation](../hardware/lab/observations/qotom-watchdog-20260909/result.json) retains all 420 seconds of serial events and the failure classification. The post-disable seven-case GRUB/QEMU suite passes, including watchdog-disabled fallback.
+
+## Candidate independent expiry guard
+
+`grub-qotom-watchdog-window.cfg` is a candidate guard, not sourced by the active
+lab configuration. A request names exactly one RTC minute using unpadded
+`watchdog-test-YEAR-MONTH-DAY-HOUR-MINUTE` fields. It rejects a different minute,
+implausible clock, or inconsistent resampling across rollover. The 120-tick
+watchdog interval exceeds the maximum 60-second eligibility window, so an
+advancing RTC would reject the old request after the observed reset even if
+USB state repeats. This complements durable consumption; it does not prove it.
+
+GRUB's [datehook implementation](https://github.com/rhboot/grub2/blob/master/grub-core/hook/datehook.c)
+reads the clock on variable access and formats these values as unpadded decimal
+integers. An arm producer must use the same RTC convention and allow enough of
+the selected minute for the loader to reach the guard. It must not broaden the
+window on failure or silently use the observing host's wall clock.
+
+The 14-case actual GRUB/QEMU suite passes: seven existing boot/fallback cases
+plus current-minute acceptance, stale replay of the same token two minutes
+later, future minute, wrong date, missing expiry, malformed padding, and invalid
+clock rejection. The clock fixtures never arm a watchdog. Before enabling this
+path physically, establish the Qotom RTC convention and advancement, verify
+stale-token rejection across its watchdog reset, and complete the deliberate
+loader/kernel hang recovery tests. A stopped or backward-jumping RTC remains
+outside this proposed guard's guarantee and must be recorded as a trust
+assumption or addressed with a separate recovery mechanism.
