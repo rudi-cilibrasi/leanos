@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -187,31 +188,97 @@ generate_lean_c {source!s} {output!s}
         self.assertIn("export LEANOS_BOOT_PLAN_EXECUTABLES_READY=1", wrapper)
         self.assertIn('xargs -0 -r -n 2 -P "${LEANOS_BUILD_JOBS:-$(nproc)}"', wrapper)
         self.assertIn('run_boot_plan_batch "${boot_plan_batch_args[@]}"', wrapper)
-        for stem in (
-            "leanos-prelink",
-            "leanos-malformed-handoff-prelink",
-            "leanos-frame-budget-prelink",
-            "leanos-capability-transfer-prelink",
-            "leanos-inflight-revocation-prelink",
-            "leanos-fault-containment-prelink",
-            "leanos-fault-readonly-write-prelink",
-            "leanos-fault-nx-execute-prelink",
-            "leanos-entry-stack-overflow-prelink",
-            "leanos-direct-port-serial-prelink",
-            "leanos-bootstrap64-nmi-prelink",
-        ):
-            self.assertIn(f'"$build/{stem}.elf"', wrapper)
-        for template in (
-            "leanos-extended-state${suffix}-prelink",
-            "leanos-fast-entry-${mechanism}-prelink",
-            "leanos-direct-port-${probe}-prelink",
-            "leanos-return-${fixture}-prelink",
-        ):
-            self.assertIn(f'"$build/{template}.elf"', wrapper)
+        start = wrapper.index('./scripts/scenario-manifest.py prelink-plans >')
+        end = wrapper.index('for spec in "${return_corruptions[@]}"; do', start)
+        with tempfile.TemporaryDirectory(prefix="plan build ") as build_dir:
+            result = subprocess.run(
+                ["bash", "-e"], cwd=ROOT,
+                input=wrapper[start:end] + 'printf "%s\\0" "${boot_plan_batch_args[@]}"\n',
+                env=dict(os.environ, build=build_dir), capture_output=True, text=True,
+                check=True,
+            )
+            manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text())
+            expected = []
+            for stem, entry in manifest["build"]["images"].items():
+                expected.extend((str(Path(build_dir) / (stem + "-prelink.elf")),
+                                 str(Path(build_dir) / entry["prelink_plan"])))
+            self.assertEqual(result.stdout.split("\0")[:-1], expected)
+        self.assertIn('"$build/leanos-return-${fixture}-prelink.elf"', wrapper)
 
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('"$root/.lake/build/bin/leanos-boot-plan"', plan_script)
         self.assertIn('"$root/.lake/build/bin/leanos-vtd-plan"', plan_script)
+
+    def test_build_wrapper_enforces_declared_plan_comparisons(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text()
+        start = wrapper.index('if [[ "$evidence_tier" == all ]]; then\n  ./scripts/scenario-manifest.py plan-comparisons')
+        end = wrapper.index('# Re-enter the same graph', start)
+        fragment = wrapper[start:end]
+        manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text())
+        images = manifest["build"]["images"]
+        with tempfile.TemporaryDirectory(prefix="plan comparison ") as build_dir:
+            for entry in images.values():
+                (Path(build_dir) / entry["prelink_plan"]).write_text("identical plan\n")
+            def compare(tier="all"):
+                return subprocess.run(["bash", "-e"], input=fragment, text=True,
+                    cwd=ROOT, env=dict(os.environ, build=build_dir, evidence_tier=tier),
+                    capture_output=True)
+            self.assertEqual(compare().returncode, 0)
+            for entry in images.values():
+                if entry["plan_equal_to"] is None:
+                    continue
+                with self.subTest(header=entry["prelink_plan"]):
+                    header = Path(build_dir) / entry["prelink_plan"]
+                    header.write_text("changed plan\n")
+                    rejected = compare()
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("shared page-table plan changed", rejected.stderr)
+                    self.assertEqual(compare("pr").returncode, 0)
+                    header.write_text("identical plan\n")
+
+    def test_checksum_inventory_follows_packaging_selection(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text()
+        start = wrapper.index('iso_task_file="$build/iso-packaging-tasks.nul"')
+        end = wrapper.index('if ! xargs -0 -r -n 2 -P "$policy_jobs"', start)
+        queue = wrapper[start:end]
+        start = wrapper.index('# Hash the artifacts selected by the manifest-driven packaging queue')
+        end = wrapper.index('if [[ "$graph_make_cache_current"', start)
+        checksums = wrapper[start:end]
+        rows = subprocess.check_output(
+            ["python3", str(ROOT / "scripts/scenario-manifest.py"), "packaged-images"],
+            text=True, cwd=ROOT).splitlines()
+        for selection in (rows, rows[:1]):
+            with self.subTest(images=len(selection)), tempfile.TemporaryDirectory(prefix="checksum build ") as directory:
+                build = Path(directory)
+                expected = {"TOOLCHAIN_PROFILE.json"}
+                assignments = []
+                for row in selection:
+                    stem, iso, iso_root, *_ = row.split("\t")
+                    expected.update((iso, stem + ".elf", stem + ".map"))
+                    assignments.append('selected_iso_root_lookup[' + shlex.quote(str(build / iso_root))
+                                       + ']=' + shlex.quote(str(build / (stem + '.elf'))))
+                for name in expected | {"unselected.elf"}:
+                    (build / name).write_text("fixture bytes for " + name)
+                setup = (
+                    'declare -A selected_iso_root_lookup=()\n' + '\n'.join(assignments)
+                    + '\nreturn_corruptions=()\npackaged_images=(' + ' '.join(map(shlex.quote, rows)) + ')\n'
+                    + 'selected_final_enabled() { return 1; }\n'
+                )
+                subprocess.run(["bash", "-e"], input=setup + queue + checksums,
+                    env=dict(os.environ, build=directory), cwd=ROOT, text=True,
+                    capture_output=True, check=True)
+                tasks = (build / "iso-packaging-tasks.nul").read_bytes().decode().split("\0")[:-1]
+                expected_tasks = []
+                for row in selection:
+                    _, iso, iso_root, *_ = row.split("\t")
+                    expected_tasks.extend((str(build / iso), str(build / iso_root)))
+                self.assertEqual(tasks, expected_tasks)
+                lines = (build / "SHA256SUMS").read_text().splitlines()
+                actual = {Path(line.split("  ", 1)[1]).name for line in lines}
+                self.assertEqual(actual, expected)
+                self.assertEqual(len(lines), len(expected))
+                subprocess.run(["sha256sum", "--check", str(build / "SHA256SUMS")],
+                    stdout=subprocess.DEVNULL, check=True)
 
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
@@ -306,15 +373,8 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             "export -f compute_iso_signature grub-mkrescue run_iso_packaging",
             wrapper,
         )
-        for output in (
-            "x86_64.iso",
-            "x86_64-fault-containment.iso",
-            "x86_64-extended-state.iso",
-            "x86_64-bootstrap64-nmi.iso",
-            "x86_64-direct-port-${probe}.iso",
-            "x86_64-return-${fixture}.iso",
-        ):
-            self.assertIn(output, wrapper)
+        self.assertIn('queue_iso "$build/$packaged_iso" "$build/$packaged_root"', wrapper)
+        self.assertIn('queue_iso "$build/leanos-${version}-x86_64-return-${fixture}.iso"', wrapper)
         self.assertIn(
             'echo "error: one or more deterministic ISO packages failed"', wrapper
         )
@@ -976,6 +1036,21 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
             self.assertEqual(
                 outside_graph.read_text(encoding="utf-8"), "copied-artifact\n"
             )
+
+            # A changing linker plan must stop after three relinks, not loop
+            # indefinitely or accept the last mismatching output.
+            attempts = root / "attempts.log"
+            expected.write_text("stale-again\n")
+            graph.write_text(
+                f".PHONY: {elf!s} {sibling!s}\n"
+                f"{elf!s}:\n\tprintf x >> {elf!s}\n\techo relink >> {attempts!s}\n"
+                f"{sibling!s}:\n\ttrue\n"
+            )
+            rejected = subprocess.run(["bash", "-c", shell], cwd=root,
+                                      capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("page-table plan drifted after final link", rejected.stderr)
+            self.assertEqual(attempts.read_text().splitlines(), ["relink"] * 3)
 
     def test_boot_plan_cache_is_per_input_stage_and_checks_output(self) -> None:
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")

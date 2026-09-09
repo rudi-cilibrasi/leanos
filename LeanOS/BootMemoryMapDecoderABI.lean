@@ -139,6 +139,91 @@ theorem rejection_has_no_accepted_status magic infoAddress bytes reason
     query magic infoAddress bytes 1 = 2 := by
   simp [query, h]
 
+/-! ## Hosted replay of captured ACPI roots and physical table copies -/
+
+private def rootDecodeErrorCode : AcpiRootDecoder.Error → UInt64
+  | .handoffRejected reason => 200 + errorCode reason
+  | .truncatedTag => 100
+  | .malformedTagSize => 101
+  | .tagOutOfBounds => 102
+  | .missingEndTag => 103
+  | .misplacedEndTag => 104
+  | .tooManyTags => 105
+  | .invalidSignature => 106
+  | .unsupportedRevision => 107
+  | .invalidRsdpLength => 108
+  | .invalidLegacyChecksum => 109
+  | .invalidExtendedChecksum => 110
+
+private def rootSdtErrorCode : BootTopology.AcpiSdtError → UInt64
+  | .truncatedHeader => 1
+  | .invalidSignature => 2
+  | .invalidLength => 3
+  | .tableTooLarge => 4
+  | .invalidChecksum => 5
+  | .invalidRootPayloadAlignment => 6
+  | .rootEntryOverflow => 7
+
+private def rootFailureWord (code detail extra word : UInt64) : UInt64 :=
+  if word == 1 then 2 else if word == 2 then code
+  else if word == 3 then detail else if word == 4 then extra else 0
+
+/-- Replay the captured handoff and physical ACPI copies through the existing
+root decoder and authoritative topology model. The ordinary five-word topology
+projection is retained. Decoder rejection words 3/4 additionally preserve root
+SDT reasons and offending physical addresses. RSDP byte failures use 100..110,
+wrapped handoff failures use 200 + the existing decoder code, and adapter
+bounds use 300..305. No root or processor identity is synthesized here. -/
+def capturedRootQuery (magic infoAddress : UInt64) (info rootBytes : ByteArray)
+    (rootAddress : UInt64) (addresses : Array UInt64) (tables : Array ByteArray)
+    (executingApicId word : UInt64) : UInt64 :=
+  if word == 0 then abiVersion
+  else if addresses.size > BootTopology.maxAcpiRootEntries ||
+      tables.size > BootTopology.maxAcpiRootEntries then rootFailureWord 300 0 0 word
+  else if addresses.size != tables.size then rootFailureWord 301 0 0 word
+  else if rootBytes.size + (tables.foldl (fun n bytes => n + bytes.size) 0) > 1048576 then
+    rootFailureWord 302 0 0 word
+  else if rootBytes.size > BootTopology.maxAcpiSdtBytes ||
+      tables.any (fun bytes => bytes.size > BootTopology.maxAcpiSdtBytes) then
+    rootFailureWord 303 0 0 word
+  else if executingApicId > 0xffffffff then rootFailureWord 304 0 0 word
+  else if info.size > 65536 then rootFailureWord 305 0 0 word
+  else
+    match AcpiRootDecoder.decode
+        { magic := magic.toNat, infoAddress := infoAddress.toNat,
+          bytes := info.data.toList } with
+    | .error reason => rootFailureWord (rootDecodeErrorCode reason) 0 0 word
+    | .ok roots =>
+      let copies := (addresses.toList.zip tables.toList).map (fun (address, bytes) =>
+        ({ physicalAddress := address, bytes := bytes.data.toList } : BootTopology.CopiedAcpiSdt))
+      match BootTopology.decodeAndAdmitAuthoritativeAcpiTopology roots
+          { physicalAddress := rootAddress, bytes := rootBytes.data.toList }
+          copies (UInt32.ofNat executingApicId.toNat) with
+      | .error reason =>
+        let detail := match reason with
+          | .madtSelection (.root reason) => rootSdtErrorCode reason
+          | .madtSelection (.untranslatedRootEntry address) => address
+          | .madtSelection (.duplicateTranslation address) => address
+          | .selectedRootAddressMismatch expected _ => expected
+          | _ => 0
+        let extra := match reason with
+          | .selectedRootAddressMismatch _ actual => actual
+          | _ => 0
+        rootFailureWord (BootTopology.authoritativeAcpiTopologyErrorCode reason) detail extra word
+      | .ok (.rejected reason) =>
+        if word == 1 then 3 else if word == 2 then BootTopology.admissionErrorCode reason else 0
+      | .ok (.accepted processor) =>
+        if word == 1 then 1 else if word == 2 then processor.apicId.toUInt64
+        else if word == 3 then if processor.enabled then 1 else 0
+        else if word == 4 then if processor.onlineCapable then 1 else 0
+        else 0
+
+@[export leanos_boot_captured_root_query]
+def exportedCapturedRootQuery (magic infoAddress : UInt64) (info rootBytes : ByteArray)
+    (rootAddress : UInt64) (addresses : Array UInt64) (tables : Array ByteArray)
+    (executingApicId word : UInt64) : UInt64 :=
+  capturedRootQuery magic infoAddress info rootBytes rootAddress addresses tables executingApicId word
+
 namespace Fixtures
 
 open BootMemoryMapDecoder.Fixtures

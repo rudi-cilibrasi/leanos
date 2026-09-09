@@ -303,6 +303,63 @@ def run_fixtures() -> None:
             "between zero and count minus one",
         )
 
+        manifest = evidence.load_manifest()
+        repro_names = evidence.reproducibility_artifacts(manifest, matrix_rows, "0.1.0")
+        selected = evidence.select_reproducibility_rows(
+            manifest, matrix_rows, "0.1.0",
+            ["fault-containment-policy-report.txt", "leanos-fault-containment.elf"],
+        )
+        if [row["id"] for row in selected] != ["fault-containment"]:
+            raise AssertionError("artifact selection duplicates or widens a producing family")
+        if evidence.select_build_artifacts(selected, "0.1.0")[0][3:] != (
+            "leanos-fault-containment-prelink.elf", "leanos-fault-containment.elf"
+        ):
+            raise AssertionError("artifact selection lost the actual Make targets")
+        for extra in manifest.get("reproducibility_extras", []):
+            selected = evidence.select_reproducibility_rows(manifest, matrix_rows, "0.1.0", [extra])
+            if [row["id"] for row in selected] != [matrix_rows[0]["id"]]:
+                raise AssertionError("global provenance lacks its canonical producer")
+        # Every declared artifact must map, and reversed input must retain the
+        # authoritative matrix order, not partition/input order.
+        full_selection = evidence.select_reproducibility_rows(
+            manifest, matrix_rows, "0.1.0", list(reversed(repro_names))
+        )
+        expected_ids = [row["id"] for row in matrix_rows
+                        if manifest["scenarios"][row["id"]].get("reproducibility_artifacts")]
+        if [row["id"] for row in full_selection] != expected_ids:
+            raise AssertionError("complete artifact selection lost declared producers or order")
+        for requested in ([], [repro_names[0], repro_names[0]]):
+            expect_failure(lambda: evidence.select_reproducibility_rows(
+                manifest, matrix_rows, "0.1.0", requested), "nonempty and unique")
+        for requested in (["../leanos.elf"], [""], ["unowned.iso"],
+                          ["leanos-9.9.9-x86_64.iso"], [" leanos.elf"]):
+            expect_failure(lambda: evidence.select_reproducibility_rows(
+                manifest, matrix_rows, "0.1.0", requested), "unknown reproducibility")
+
+        with tempfile.TemporaryDirectory() as selection_directory:
+            selection_path = Path(selection_directory) / "artifacts.txt"
+            selection_path.write_text("leanos-fault-containment.elf\n")
+            command = ["python3", str(MODULE_PATH), "build-plan",
+                       "--reproducibility-selection", str(selection_path)]
+            emitted = subprocess.run(command, text=True, capture_output=True, check=True)
+            if len(emitted.stdout.splitlines()) != 2 or not emitted.stdout.splitlines()[1].startswith(
+                "fault-containment\t"
+            ):
+                raise AssertionError("CLI did not emit the minimal producing build plan")
+            for options in (["--tier", "pr"], ["--shard-index", "0", "--shard-count", "4"],
+                            ["--version", "not-a-version"]):
+                rejected = subprocess.run(command + options, text=True, capture_output=True)
+                if rejected.returncode == 0 or rejected.stdout:
+                    raise AssertionError("invalid CLI selection published partial build output")
+            selection_path.write_bytes(b"\xff")
+            rejected = subprocess.run(command, text=True, capture_output=True)
+            if rejected.returncode == 0 or rejected.stdout or "readable UTF-8" not in rejected.stderr:
+                raise AssertionError("invalid selection encoding was not rejected cleanly")
+            selection_path.write_text("unknown.elf\n")
+            rejected = subprocess.run(command, text=True, capture_output=True)
+            if rejected.returncode == 0 or rejected.stdout:
+                raise AssertionError("unknown CLI artifact published partial build output")
+
         pr_rows = evidence.select_rows(matrix_rows, None, "pr", None, None)
         if len(pr_rows) != len(evidence.RUNNERS):
             raise AssertionError("PR tier does not select exactly one row per runner")
@@ -364,7 +421,7 @@ def run_fixtures() -> None:
             raise AssertionError("build-image accepts a cache missing selected prelinks")
         if 'boot_plan_batch_args=("${filtered_boot_plan_batch_args[@]}")' not in build_image:
             raise AssertionError("build-image does not restrict PR boot-plan generation")
-        if 'if [[ "$evidence_tier" == all ]]; then\n  cmp "$build/boot-page-plan-fault-containment.h"' not in build_image:
+        if 'if [[ "$evidence_tier" == all ]]; then\n  ./scripts/scenario-manifest.py plan-comparisons' not in build_image:
             raise AssertionError("build-image does not reserve cross-variant plan checks for full evidence")
         if 'if [[ "$evidence_tier" == all ]] && nm "$build/kernel.o"' not in build_image:
             raise AssertionError("build-image checks unselected canonical objects in PR shards")
@@ -396,7 +453,7 @@ def run_fixtures() -> None:
         if canonical_plan is None or canonical_plan["check"] != "validate":
             raise AssertionError("manifest does not validate the canonical final plan")
         converge = [entry for entry in plan_checks if entry["check"] == "converge"]
-        if {entry["image"] for entry in converge} != {"leanos-bootstrap64-nmi", "leanos-extended-state"}:
+        if not {"leanos-bootstrap64-nmi", "leanos-extended-state", "leanos-frame-budget", "leanos-fault-stale-translation"} <= {entry["image"] for entry in converge}:
             raise AssertionError("manifest does not converge the shared graph plans")
         for image, expected in (
             ("leanos-direct-port-serial", "boot-page-plan-direct-port.h"),
@@ -412,18 +469,8 @@ def run_fixtures() -> None:
             raise AssertionError("manifest does not list the selected disassembly reports")
         if [row["variant"] for row in build["extended_state_policies"]] != ["x87", "mmx", "sse", "sse2", "avx"]:
             raise AssertionError("manifest does not list the extended-state policy variants in order")
-        if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
-            raise AssertionError("build-image does not restrict frame-budget convergence")
-        if 'selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue' not in build_image:
-            raise AssertionError("build-image does not restrict fault-family final plans")
-        if (
-            'expected_fault_plan="$build/boot-page-plan-fault-${probe}.h"\n'
-            '  if [[ "$evidence_tier" == all && "$probe" != stale-translation ]]'
-            not in build_image
-        ):
-            raise AssertionError(
-                "build-image compares selected PR fault plans against an unselected stub"
-            )
+        if './scripts/scenario-manifest.py plan-checks --tier "$evidence_tier"' not in build_image:
+            raise AssertionError("build-image does not select tier-specific final-plan expectations")
         for final_elf in (
             "leanos-double-fault.elf",
             "leanos-entry-stack-overflow.elf",
