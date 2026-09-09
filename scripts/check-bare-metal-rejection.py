@@ -89,11 +89,16 @@ def load_manifest(path: Path) -> dict:
         raise ClassificationError(
             "manifest-invalid", "manifest is not valid UTF-8 JSON"
         ) from error
-    if not isinstance(value, dict) or set(value) != {
+    required = {
         "schemaVersion", "sourceRevision", "isoSha256", "elfSha256",
         "serialProtocolSha256",
         "expectedPrefix", "expectedTerminal", "machine",
-    } or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
+    }
+    prefix_fields = {"firmwarePrefixBytes", "firmwarePrefixSha256"}
+    if (not isinstance(value, dict)
+            or set(value) not in (required, required | prefix_fields)
+            or type(value["schemaVersion"]) is not int
+            or value["schemaVersion"] != 1):
         raise ClassificationError("manifest-invalid", "unsupported manifest shape")
     if not isinstance(value["sourceRevision"], str) or not HEX40.fullmatch(
         value["sourceRevision"]
@@ -104,6 +109,12 @@ def load_manifest(path: Path) -> dict:
         for field in ("isoSha256", "elfSha256", "serialProtocolSha256")
     ):
         raise ClassificationError("manifest-invalid", "invalid artifact digest")
+    if "firmwarePrefixBytes" in value:
+        if (type(value["firmwarePrefixBytes"]) is not int
+                or not 0 < value["firmwarePrefixBytes"] <= 4096
+                or not isinstance(value["firmwarePrefixSha256"], str)
+                or not HEX64.fullmatch(value["firmwarePrefixSha256"])):
+            raise ClassificationError("manifest-invalid", "invalid firmware prefix")
     prefix = value["expectedPrefix"]
     if (not isinstance(prefix, list) or len(prefix) > 256
             or not all(isinstance(line, str) and 0 < len(line) <= 512
@@ -124,6 +135,28 @@ def load_manifest(path: Path) -> dict:
     ):
         raise ClassificationError("manifest-invalid", "incomplete machine identity")
     return value
+
+
+def normalize_capture(data: bytes, manifest: dict) -> str:
+    """Remove only an explicitly bound firmware prefix, preserving raw evidence."""
+    count = manifest.get("firmwarePrefixBytes", 0)
+    if count:
+        if count >= len(data):
+            raise ClassificationError("malformed-protocol", "firmware prefix consumes capture")
+        prefix = data[:count]
+        if hashlib.sha256(prefix).hexdigest() != manifest["firmwarePrefixSha256"]:
+            raise ClassificationError("digest-mismatch", "firmware prefix digest differs")
+        # A declared prefix must never hide an earlier kernel record, including
+        # a record whose marker crosses the declared boundary.
+        marker = PROTOCOL_PREFIX.encode("ascii")
+        if marker in data[:count + len(marker) - 1]:
+            raise ClassificationError("malformed-protocol", "firmware prefix contains protocol")
+        data = data[count:]
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ClassificationError("malformed-protocol", "capture is not UTF-8") from error
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def load_protocol(
@@ -391,11 +424,7 @@ def classify(manifest_path: Path, iso: Path, elf: Path, capture: Path,
     )
     if not data:
         raise ClassificationError("silence-timeout", "capture is empty")
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise ClassificationError("malformed-protocol", "capture is not UTF-8") from error
-    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized_text = normalize_capture(data, manifest)
     normalized = normalized_text.encode("utf-8")
     lines = normalized_text.split("\n")
     if lines and lines[-1] == "":
@@ -460,7 +489,7 @@ def emit_evidence_bundle(
         shutil.copyfile(capture, temporary / "serial.raw.log")
         shutil.copyfile(serial_protocol, temporary / "serial-protocol.tsv")
         raw_capture = (temporary / "serial.raw.log").read_bytes()
-        normalized = raw_capture.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        normalized = normalize_capture(raw_capture, load_manifest(temporary / "machine.json"))
         (temporary / "serial.normalized.log").write_text(normalized, encoding="utf-8")
         (temporary / "source-revision.txt").write_text(
             result["sourceRevision"] + "\n", encoding="ascii"

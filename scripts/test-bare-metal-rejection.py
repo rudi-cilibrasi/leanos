@@ -116,6 +116,56 @@ class BareMetalRejectionTest(unittest.TestCase):
         self.assertEqual(result["captureLines"], 4)
         self.assertEqual(result["machine"]["model"], "fixture-board-rev-a")
 
+    def test_binary_firmware_prefix_roundtrip_and_rejections(self):
+        # Reuse only the physical firmware bytes; kernel records and artifacts
+        # below remain explicitly synthetic fixtures, not a new physical run.
+        physical = (SCRIPT.parent.parent / "hardware/observations/"
+                    "qotom-20260909/serial.raw").read_bytes()
+        prefix = physical[:10]
+        capture = (f"{self.serial}\r\n{self.boot}\r\n{self.dma}\r\n"
+                   + self.terminal + "\r\n").encode()
+        metadata = {"firmwarePrefixBytes": len(prefix),
+                    "firmwarePrefixSha256": hashlib.sha256(prefix).hexdigest()}
+        self.assert_result("malformed-protocol", prefix + capture)
+        self.write_manifest(**metadata)
+        result = self.classify(prefix + capture)
+        bundle = self.root / "prefixed-bundle"
+        MODULE.emit_evidence_bundle(
+            bundle, result, self.manifest, self.iso, self.elf, self.capture,
+            self.protocol,
+        )
+        self.assertEqual(MODULE.verify_evidence_bundle(bundle), result)
+        self.assertEqual((bundle / "serial.raw.log").read_bytes(), prefix + capture)
+        self.assertEqual((bundle / "serial.normalized.log").read_bytes(),
+                         capture.replace(b"\r\n", b"\n"))
+        self.assert_result("digest-mismatch", bytes([prefix[0] ^ 1]) + prefix[1:] + capture)
+        self.assert_result("malformed-protocol", prefix)
+        self.assert_result("malformed-protocol", prefix + b"\xff" + capture)
+        self.assert_result("post-terminal-output", prefix + capture + b"extra\n")
+        for hidden in (capture, PROTOCOL_PREFIX.encode(), b"noise" + capture):
+            with self.subTest(hidden=hidden):
+                self.write_manifest(firmwarePrefixBytes=len(hidden),
+                                    firmwarePrefixSha256=hashlib.sha256(hidden).hexdigest())
+                self.assert_result("malformed-protocol", hidden + capture)
+        marker = PROTOCOL_PREFIX.encode()
+        self.write_manifest(firmwarePrefixBytes=3,
+                            firmwarePrefixSha256=hashlib.sha256(marker[:3]).hexdigest())
+        self.assert_result("malformed-protocol", marker + capture)
+
+    def test_firmware_prefix_manifest_bounds_and_pairing(self):
+        capture = (f"{self.serial}\n{self.boot}\n{self.dma}\n"
+                   + self.terminal + "\n").encode()
+        for count in (True, 0, -1, 4097, "10", 1.5):
+            with self.subTest(count=count):
+                self.write_manifest(firmwarePrefixBytes=count, firmwarePrefixSha256="a" * 64)
+                self.assert_result("manifest-invalid", capture)
+        for metadata in ({"firmwarePrefixBytes": 10},
+                         {"firmwarePrefixSha256": "a" * 64},
+                         {"firmwarePrefixBytes": 10, "firmwarePrefixSha256": "invalid"}):
+            with self.subTest(metadata=metadata):
+                self.write_manifest(**metadata)
+                self.assert_result("manifest-invalid", capture)
+
     def test_emits_and_verifies_deterministic_bundle(self):
         capture = (f"{self.serial}\r\n{self.boot}\r\n{self.dma}\r\n"
                    + self.terminal + "\r\n").encode()

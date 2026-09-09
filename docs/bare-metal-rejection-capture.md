@@ -29,7 +29,7 @@ or proofs.
    relevant firmware settings, and PCI inventory. Redact serial numbers, asset
    tags, and hostnames; do not erase the technical platform identity.
 3. Record the USB-to-serial adapter model and cabling. Configure the capture host
-   for 115200 baud, 8 data bits, no parity, one stop bit, and no flow control.
+   for 38400 baud, 8 data bits, no parity, one stop bit, and no flow control.
 4. Create a manifest accepted by
    `scripts/check-bare-metal-rejection.py`. `expectedPrefix` must list every
    expected pre-terminal protocol record in order and every identity must exist
@@ -54,7 +54,7 @@ Example manifest shape (placeholder values are deliberately not valid evidence):
     "model": "<vendor model and board revision>",
     "cpu": "<processor model and stepping>",
     "firmware": "<firmware version and relevant settings>",
-    "uart": "COM1 0x3f8 115200 8N1",
+    "uart": "COM1 0x3f8 38400 8N1",
     "captureAdapter": "<adapter model and connection>"
   }
 }
@@ -62,6 +62,16 @@ Example manifest shape (placeholder values are deliberately not valid evidence):
 
 Each machine field is limited to 512 characters. The manifest is limited to 64
 KiB and the serial capture to 1 MiB.
+
+If firmware emits bytes before the first LeanOS record, retain them in the raw
+capture. The manifest may additionally declare `firmwarePrefixBytes` (1–4096)
+and `firmwarePrefixSha256` (the exact prefix's lowercase SHA-256). Both fields
+are required together. This explicit observation metadata permits binary
+firmware output; it cannot hide a LeanOS protocol marker, consume the entire
+capture, or skip bytes after kernel output starts. The normalized transcript
+excludes only this verified prefix; the raw digest covers every captured byte.
+Do not change the expected kernel records or artifact/source identities to fit
+an observation. Without these fields, every byte is treated as protocol text.
 
 ## Capture
 
