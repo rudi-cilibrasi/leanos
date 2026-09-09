@@ -41,10 +41,49 @@ $1 == "record" {
   if ($4 in seen)
     fail("duplicate generated serial record: " $4)
   seen[$4] = 1
+  record_seen[$2 SUBSEP $3] = 1
   version[rows] = $2
   symbol[rows] = $4
   prefix[rows] = $5
   rows++
+  next
+}
+$1 == "pre-admission-boot-record" {
+  if (NF != 3 || $2 !~ /^[0-9]+$/ || $3 !~ /^[A-Z][A-Z0-9-]*$/ ||
+      !(($2 SUBSEP $3) in record_seen))
+    fail("malformed pre-admission boot record: " $0)
+  if (($2 SUBSEP $3) in pre_admission_boot_seen)
+    fail("duplicate pre-admission boot record: " $0)
+  pre_admission_boot_seen[$2 SUBSEP $3] = 1
+  pre_admission_boots++
+  next
+}
+$1 == "pre-admission-record" {
+  if (NF != 3 || $2 !~ /^[0-9]+$/ || $3 !~ /^[A-Z][A-Z0-9-]*$/ ||
+      !(($2 SUBSEP $3) in record_seen))
+    fail("malformed pre-admission phase record: " $0)
+  if (($2 SUBSEP $3) in pre_admission_seen)
+    fail("duplicate pre-admission phase record: " $0)
+  pre_admission_seen[$2 SUBSEP $3] = 1
+  pre_admission_records++
+  next
+}
+$1 == "pre-admission-reason" {
+  if (NF != 2 || $2 !~ /^[a-z0-9]+(-[a-z0-9]+)*$/)
+    fail("malformed pre-admission rejection reason: " $0)
+  if ($2 in rejection_seen)
+    fail("duplicate pre-admission rejection reason: " $2)
+  rejection_seen[$2] = 1
+  rejection_reason[rejections++] = $2
+  next
+}
+$1 == "pre-admission-bootalloc-reason" {
+  if (NF != 2 || $2 !~ /^[a-z0-9]+(-[a-z0-9]+)*$/)
+    fail("malformed pre-admission BOOTALLOC rejection reason: " $0)
+  if ($2 in bootalloc_rejection_seen)
+    fail("duplicate pre-admission BOOTALLOC rejection reason: " $2)
+  bootalloc_rejection_seen[$2] = 1
+  bootalloc_rejection_reason[bootalloc_rejections++] = $2
   next
 }
 { fail("unexpected serial protocol row: " $0) }
@@ -67,6 +106,10 @@ END {
     }
     print ""
     printf "#define LEANOS_SERIAL_RECORD_COUNT %dU\n", rows
+    printf "#define LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT %dU\n", rejections
+    printf "#define LEANOS_PRE_ADMISSION_BOOTALLOC_REJECTION_REASON_COUNT %dU\n", bootalloc_rejections
+    printf "#define LEANOS_PRE_ADMISSION_BOOT_RECORD_COUNT %dU\n", pre_admission_boots
+    printf "#define LEANOS_PRE_ADMISSION_RECORD_COUNT %dU\n", pre_admission_records
     print ""
     print "#endif"
   } else {
@@ -81,6 +124,10 @@ END {
     }
     print ""
     printf "LEANOS_SERIAL_RECORD_COUNT=%d\n", rows
+    printf "LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT=%d\n", rejections
+    printf "LEANOS_PRE_ADMISSION_BOOTALLOC_REJECTION_REASON_COUNT=%d\n", bootalloc_rejections
+    printf "LEANOS_PRE_ADMISSION_BOOT_RECORD_COUNT=%d\n", pre_admission_boots
+    printf "LEANOS_PRE_ADMISSION_RECORD_COUNT=%d\n", pre_admission_records
     print ""
     print "# The prefix of a record named by family and tag; unset for a record"
     print "# that is not in the vocabulary, which fails under set -u."

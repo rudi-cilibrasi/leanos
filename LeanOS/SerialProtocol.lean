@@ -53,6 +53,121 @@ def families : List Family := [
 def records : List (Nat × String) :=
   families.flatMap (fun family => family.tags.map (family.version, ·))
 
+/-- Exact production `LEANOS/3 FINAL` reasons that can be emitted before the
+platform-admission boundary. Runtime fail-stop reasons are intentionally absent. -/
+def preAdmissionRejectionReasons : List String := [
+  "dma-command-model",
+  "dma-command-readback",
+  "dma-empty-inventory",
+  "dma-global-policy",
+  "dma-identity",
+  "dma-inventory",
+  "dma-q35-nic-none",
+  "dma-required-missing"
+]
+
+/-- Exact production `LEANOS/7 BOOTALLOC` reasons emitted by `handoff_fail`
+before `boot_allocate` publishes its successful terminal. Keeping this
+separate from `preAdmissionRejectionReasons` prevents a FINAL-only reason from
+being relabeled as a BOOTALLOC rejection. -/
+def preAdmissionBootallocRejectionReasons : List String := [
+  "authority-init",
+  "authority-rejected",
+  "bounds",
+  "decode-incomplete",
+  "decode-init",
+  "decode-rejected",
+  "frame-budget-projection-authority",
+  "frame-budget-unpublished-frame",
+  "magic",
+  "pointer",
+  "projection-authority",
+  "projection-entry",
+  "projection-entry-count",
+  "projection-mutation-raw-selection",
+  "projection-terminal",
+  "publication",
+  "raw-selection-authority",
+  "scrub",
+  "stream-incomplete",
+  "stream-init",
+  "stream-step",
+  "topology-admission-publication",
+  "topology-admission-result",
+  "topology-cpuid-apic",
+  "topology-cpuid-leaf",
+  "topology-handoff-length",
+  "topology-madt-duplicate",
+  "topology-madt-generated-entries",
+  "topology-madt-generated-envelope",
+  "topology-madt-missing",
+  "topology-madt-selection",
+  "topology-root-copy",
+  "topology-root-entries",
+  "topology-root-entry-address",
+  "topology-root-entry-duplicate",
+  "topology-root-entry-index",
+  "topology-root-header",
+  "topology-root-kind",
+  "topology-root-selection",
+  "topology-root-vector",
+  "topology-root-width",
+  "topology-sdt-address",
+  "topology-sdt-address-space",
+  "topology-sdt-address-width",
+  "topology-sdt-checksum",
+  "topology-sdt-envelope",
+  "topology-sdt-length",
+  "topology-sdt-window",
+  "topology-table-copy-address",
+  "topology-table-copy-binding",
+  "topology-table-copy-budget",
+  "topology-table-copy-error",
+  "topology-table-copy-exposed",
+  "topology-table-copy-final-cursor",
+  "topology-table-copy-incomplete",
+  "topology-table-copy-length",
+  "topology-table-copy-next-byte",
+  "topology-table-copy-offset",
+  "topology-table-copy-partial-cursor",
+  "topology-table-copy-sequence",
+  "topology-table-copy-status",
+  "topology-table-copy-stream",
+  "topology-table-copy-terminal"
+]
+
+/-- Every scenario-specific BOOT identity emitted immediately after serial
+initialization and before the platform-admission boundary. -/
+def preAdmissionBootRecords : List (Nat × String) := [
+  (17, "BOOT"),
+  (22, "BOOT"),
+  (23, "BOOT"),
+  (20, "BOOT"),
+  (14, "BOOT"),
+  (13, "BOOT"),
+  (19, "BOOT"),
+  (16, "BOOT"),
+  (18, "BOOT"),
+  (6, "BOOT"),
+  (10, "BOOT")
+]
+
+/-- Record identities that can be emitted after the scenario BOOT record but
+before `boot_allocate` can produce a typed `BOOTALLOC` rejection. Repetition
+is permitted in the capture (for example one DMA-FUNCTION per device); this
+list owns only the finite identity vocabulary for that phase. -/
+def preAdmissionPhaseRecords : List (Nat × String) := [
+  (15, "DMA-FUNCTION"),
+  (15, "DMA"),
+  (8, "PAGING"),
+  (19, "TLB"),
+  (21, "VTD"),
+  (21, "VTD-PLAN"),
+  (21, "VTD-TABLES"),
+  (21, "VTD-ASSIGN"),
+  (21, "VTD-ACTIVATE")
+]
+
 /-- The exact line prefix the guest prints for a record. -/
 def prefixText (record : Nat × String) : String :=
   s!"LEANOS/{record.1} {record.2}"
@@ -64,6 +179,20 @@ def symbolName (record : Nat × String) : String :=
 theorem family_versions_nodup : (families.map Family.version).Nodup := by decide
 set_option maxRecDepth 32768 in
 theorem records_nodup : records.Nodup := by decide
+theorem pre_admission_rejection_reasons_nodup :
+    preAdmissionRejectionReasons.Nodup := by decide
+theorem pre_admission_bootalloc_rejection_reasons_nodup :
+    preAdmissionBootallocRejectionReasons.Nodup := by decide
+theorem pre_admission_boot_records_nodup : preAdmissionBootRecords.Nodup := by
+  decide
+theorem pre_admission_boot_records_are_protocol_records :
+    preAdmissionBootRecords.all (· ∈ records) = true := by
+  decide
+theorem pre_admission_phase_records_nodup : preAdmissionPhaseRecords.Nodup := by
+  decide
+theorem pre_admission_phase_records_are_protocol_records :
+    preAdmissionPhaseRecords.all (· ∈ records) = true := by
+  decide
 theorem families_nonempty : families.all (fun family => !family.tags.isEmpty) = true := by
   decide
 

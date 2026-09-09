@@ -31,10 +31,16 @@ expect_rejection() {
 
 header='leanos-serial-protocol\t1\nsource-revision\ttest\n'
 rows="${header}family\t3\tLEANOS_SERIAL_FAMILY_3\t${p}3\nrecord\t3\tORACLE\tLEANOS_SERIAL_3_ORACLE\t${p}3 ORACLE\nrecord\t23\tREVOKE-DENIAL\tLEANOS_SERIAL_23_REVOKE_DENIAL\t${p}23 REVOKE-DENIAL\n"
+rows+="pre-admission-reason\tdma-required-missing\n"
+rows+="pre-admission-bootalloc-reason\tauthority-init\n"
+rows+="pre-admission-boot-record\t3\tORACLE\n"
 printf '%b' "$rows" | awk -v target=h -f scripts/render-serial-protocol.awk > "$tmp/serial.h"
 grep -Fxq "#define LEANOS_SERIAL_FAMILY_3 \"${p}3\"" "$tmp/serial.h"
 grep -Fxq "#define LEANOS_SERIAL_23_REVOKE_DENIAL \"${p}23 REVOKE-DENIAL\"" "$tmp/serial.h"
 grep -Fxq '#define LEANOS_SERIAL_RECORD_COUNT 2U' "$tmp/serial.h"
+grep -Fxq '#define LEANOS_PRE_ADMISSION_REJECTION_REASON_COUNT 1U' "$tmp/serial.h"
+grep -Fxq '#define LEANOS_PRE_ADMISSION_BOOTALLOC_REJECTION_REASON_COUNT 1U' "$tmp/serial.h"
+grep -Fxq '#define LEANOS_PRE_ADMISSION_BOOT_RECORD_COUNT 1U' "$tmp/serial.h"
 printf '%b' "$rows" | awk -v target=sh -f scripts/render-serial-protocol.awk > "$tmp/serial.sh"
 (
   set -u
@@ -44,6 +50,8 @@ printf '%b' "$rows" | awk -v target=sh -f scripts/render-serial-protocol.awk > "
   [[ "$(leanos_serial 23 REVOKE-DENIAL)" == "${p}23 REVOKE-DENIAL" ]]
   [[ "$(leanos_serial_re 23 REVOKE-DENIAL)" == "${pe}23 REVOKE-DENIAL" ]]
   [[ "$(leanos_serial_family_re 3)" == "${pe}3" ]]
+  [[ "$LEANOS_PRE_ADMISSION_BOOT_RECORD_COUNT" == 1 ]]
+  [[ "$LEANOS_PRE_ADMISSION_BOOTALLOC_REJECTION_REASON_COUNT" == 1 ]]
   if value="$(leanos_serial 2 BOOT 2> /dev/null)"; then
     echo "error: a record outside the vocabulary resolved to '$value'" >&2
     exit 1
@@ -67,6 +75,16 @@ LEANOS_ORACLE_TOOL_SIGNATURE=test ./scripts/generate-oracle.sh "$tmp/out" > /dev
 families="$(awk -F "$tab" '$1 == "family" { print $2 }' "$tmp/out/serial-protocol.tsv" | paste -sd '|')"
 test -n "$families"
 test "$(grep -c '^record' "$tmp/out/serial-protocol.tsv")" -ge 100
+diff -u \
+  <(grep -o 'pre_admission_fail("[a-z0-9-]*")' boot/kernel.c |
+    sed 's/.*("//; s/")//' | sort -u) \
+  <(awk -F "$tab" '$1 == "pre-admission-reason" { print $2 }' \
+    "$tmp/out/serial-protocol.tsv" | sort -u)
+diff -u \
+  <(grep -o 'handoff_fail("[a-z0-9-]*")' boot/kernel.c |
+    sed 's/.*("//; s/")//' | sort -u) \
+  <(awk -F "$tab" '$1 == "pre-admission-bootalloc-reason" { print $2 }' \
+    "$tmp/out/serial-protocol.tsv" | sort -u)
 literal_pattern="LEANOS\\\\*/($families)([^0-9]|\$)"
 scan() {
   local status=0
