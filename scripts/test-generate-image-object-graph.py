@@ -507,6 +507,49 @@ build={root!s}/build
                 counter.read_text(encoding="utf-8"), "call\ncall\ncall\n"
             )
 
+    def test_failed_image_policy_is_not_cached_without_errexit(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        helpers = "compute_check_signature() {" + wrapper.split(
+            "compute_check_signature() {", 1
+        )[1].split("\ncompute_iso_signature() {", 1)[0]
+        worker = "run_image_policy_check() {" + wrapper.split(
+            "run_image_policy_check() {", 1
+        )[1].split("\n}\nexport -f run_image_policy_check", 1)[0] + "\n}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            (root / "build/image-policy-logs").mkdir(parents=True)
+            (root / "image.elf").write_text("elf")
+            check = root / "scripts/check-image-policy.sh"
+            check.write_text("#!/bin/sh\necho call >> calls\nexit 23\n")
+            check.chmod(0o755)
+            shell = f"""cd {root!s}
+validation_tool_signature=tools-v1
+build={root!s}/build
+{helpers}
+{worker}
+run_image_policy_check canonical image.elf '' ''
+status=$?
+[[ $status == 23 ]] || exit 1
+[[ ! -f build/image-policy-logs/canonical.log.inputs.sha256 ]] || exit 2
+run_image_policy_check canonical image.elf TEST_POLICY value
+status=$?
+[[ $status == 23 ]] || exit 3
+[[ ! -f build/image-policy-logs/canonical.log.inputs.sha256 ]] || exit 4
+"""
+            subprocess.run(["bash", "-c", shell], check=True)
+            self.assertEqual((root / "calls").read_text(), "call\ncall\n")
+
+    def test_packaged_policy_reader_consumes_port_inventory_column(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        reader = next(line for line in wrapper.splitlines()
+                      if line.startswith("while IFS=") and "policy_env_value" in line)
+        row = "image\timage.iso\tiso\tgrub.cfg\tfast-entry\tLEANOS_FAST_ENTRY_PROBE\tsyscall\t-\n"
+        shell = reader + "\nprintf '%s\n' \"$policy_env_value\"\ndone"
+        result = subprocess.run(["bash", "-c", shell], input=row,
+                                text=True, capture_output=True, check=True)
+        self.assertEqual(result.stdout, "syscall\n")
+
     def test_fixture_suite_cache_reuses_only_matching_inputs(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         helpers = "compute_check_signature() {" + wrapper.split(
