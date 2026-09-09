@@ -275,6 +275,7 @@ run_image_policy_check() {
   local environment_value="$4"
   local log="$build/image-policy-logs/$key.log"
   local signature
+  local status=0
   signature="$(compute_check_signature image-policy "$elf" \
     "$environment_name" "$environment_value")"
   if cached_check_is_current "$log" "$signature"; then
@@ -283,9 +284,13 @@ run_image_policy_check() {
   : > "$log"
   if [[ -n "$environment_name" ]]; then
     env "$environment_name=$environment_value" \
-      ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1
+      ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1 || status=$?
   else
-    ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1
+    ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1 || status=$?
+  fi
+  if ((status != 0)); then
+    rm -f "${log}.inputs.sha256"
+    return "$status"
   fi
   record_check_signature "$log" "$signature"
 }
@@ -1154,7 +1159,7 @@ queue_image_policy() {
     >> "$policy_task_file"
 }
 
-while IFS=$'\t' read -r packaged_stem _ _ _ policy_key policy_env_name policy_env_value; do
+while IFS=$'\t' read -r packaged_stem _ _ _ policy_key policy_env_name policy_env_value _; do
   [[ "$policy_key" != - ]] || continue
   if [[ "$policy_env_name" != - ]]; then
     queue_image_policy "$policy_key" "$build/$packaged_stem.elf" \
