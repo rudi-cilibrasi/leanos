@@ -16,6 +16,26 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_retained_protected_cycles(self):
+        root = Path(__file__).resolve().parent.parent / 'hardware/lab/observations/qotom-protected-normal-20260909'
+        manifest = json.loads((root / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), digest, name)
+        previous = None
+        for cycle in sorted(root.glob('cycle-*')):
+            recorded = json.loads((cycle / 'result.json').read_text())
+            events = [json.loads(line) for line in (cycle / 'events.jsonl').read_text().splitlines()]
+            self.assertEqual((cycle / 'serial.raw').read_bytes(), b''.join(bytes.fromhex(e['hex']) for e in events))
+            for key, value in lab.classify_protected(events, recorded['elf_sha256']).items():
+                if key != 'recovery':
+                    self.assertEqual(value, recorded[key], key)
+            self.assertTrue(recorded['request_consumed'] and recorded['hang_recovery'])
+            self.assertNotEqual(recorded['freebsd_boot_before'], recorded['freebsd_boot_after'])
+            if previous is not None:
+                self.assertEqual(previous, recorded['freebsd_boot_before'])
+            previous = recorded['freebsd_boot_after']
+        self.assertEqual(len(list(root.glob('cycle-*'))), 3)
+
     def test_protected_normal_capture(self):
         digest = 'a' * 64
         prefix = (b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'

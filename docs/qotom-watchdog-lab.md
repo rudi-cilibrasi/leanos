@@ -179,7 +179,7 @@ a changed boot epoch, and consumed request readback. A repeated arm or the
 300-second software escape fails the trial. The runner bounds observation at
 420 seconds and does not automatically rearm on failure.
 
-The [physical dated loader-stall trial](../hardware/lab/observations/qotom-dated-watchdog-20260909/README.md) passed after verified installation: one arm, 128.8 seconds to a new GRUB default marker, consumed request, and restored FreeBSD SSH without operator intervention. The expiry fallback was not needed in this run because the request was consumed. A separate early-kernel trial also passes below; ordinary capture protection remains outstanding, so #333 stays open.
+The [physical dated loader-stall trial](../hardware/lab/observations/qotom-dated-watchdog-20260909/README.md) passed after verified installation: one arm, 128.8 seconds to a new GRUB default marker, consumed request, and restored FreeBSD SSH without operator intervention. The expiry fallback was not needed in this run because the request was consumed. A separate early-kernel trial also passes below; the ordinary capture path now uses the same guard and arm operation, with repeated physical validation described below.
 
 Validation: all 19 GRUB/QEMU cases pass after the missing-file fix, including stale requests, rejected hardware arming, missing recipe/guard, and existing recovery paths. The later explicit default marker passed focused default and reboot-once tests. Six Python test methods cover retained physical captures, RTC line endings/advancement, UTC request production, and watchdog trace failure mutations. The software tests do not arm Qotom hardware.
 
@@ -211,8 +211,20 @@ inside the expected load digest and preserves raw capture bytes. Recovery
 metadata is saved before classification so a parser correction can replay a
 capture without requiring another boot.
 
-Remaining before full unattended capture claims: protect the ordinary LeanOS
-launch using the same expiry/arming path, retain its unchanged terminal/quiet
-semantics, and repeat normal capture cycles with protection enabled. The two
-physical hang trials establish the loader and early-kernel failure cases but do
-not by themselves change the original unprotected normal launch route.
+## Protected ordinary captures
+
+The runner defaults to `--scenario watchdog-leanos`. Its request combines the
+normal lab ELF digest and the verified board UTC minute. It shares the guard,
+arm-before-load and stop-on-load-failure code with the tested early-kernel path.
+The existing kernel completion mode still emits its exact trace, waits 30
+seconds, then resets. The protected classifier additionally requires one arm,
+the exact load digest, 30–90 seconds of post-terminal quiet, and a consumed-request
+default on the recovery boot. Repeated arms, missing protection, wrong traces,
+and delayed recovery fail; recovery alone cannot count as a successful LeanOS
+scenario. Explicit `--scenario leanos` retains the historical unprotected route.
+
+All 28 GRUB/QEMU cases pass, including normal protected launch, bad checksum,
+invalid ELF and wrong request digest. Successful loads and load failures use a
+marked mock timer in QEMU; physical evidence is recorded separately. Ten Python
+test methods pass, including both retained physical hang captures and protected
+normal-capture failure mutations. Three consecutive [protected physical cycles](../hardware/lab/observations/qotom-protected-normal-20260909/README.md) passed with 34.26-second quiet intervals, unchanged rejection traces, consumed requests, changed boot epochs, and authenticated FreeBSD SSH recovery. No operator intervention was needed.
