@@ -73,6 +73,10 @@ tables over 64 KiB, or aggregate copies over 1 MiB. It also requires the
 physical MADT to match the sysfs copy. Root and table input hashes, the helper
 hash, and the acpidump binary hash enter the capture provenance.
 
+The two checked root captures used ACPICA acpidump version `20230628`.
+The version was verified with `acpidump -v` on the identical SHA-256 binary
+recorded in both provenance files.
+
 The QEMU capture accepts `--acpidump <binary>` to stage that optional tool and
 its libraries in the minimal guest. Merely having acpidump installed on the
 host does not put it in the guest. Both capture scripts support x86_64 Linux;
