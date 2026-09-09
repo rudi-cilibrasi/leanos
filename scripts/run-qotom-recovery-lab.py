@@ -67,10 +67,15 @@ def classify_watchdog(events, kernel_digest=None):
             'kernel_hang_recovery': False, 'raw_sha256': hashlib.sha256(data).hexdigest()}
     hang = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
     if kernel_digest is not None:
-        load = b'LEANOS-LAB/1 WATCHDOG-KERNEL-LOAD sha256=' + kernel_digest.encode()
-        if (data.count(hang) != 1 or data.count(load) != 1
+        if not re.fullmatch(r'[0-9a-f]{64}', kernel_digest):
+            raise ValueError('invalid expected kernel digest')
+        # GRUB's console formatter can wrap the digest on the serial sink too.
+        # Permit only line breaks inside the exact digest; keep raw bytes intact.
+        digest_pattern = rb'[\r\n]*'.join(bytes([ch]) for ch in kernel_digest.encode())
+        load = re.search(rb'LEANOS-LAB/1 WATCHDOG-KERNEL-LOAD[ \r\n]+sha256=' + digest_pattern + rb'(?=[\r\n])', data)
+        if (data.count(hang) != 1 or load is None
                 or data.count(b'WATCHDOG-KERNEL-LOAD') != 1 or b'WATCHDOG-LOAD-FAILED' in data
-                or not data.find(armed) < data.find(load) < data.find(hang) < data.find(recovery)):
+                or not data.find(armed) < load.start() < load.end() <= data.find(hang) < data.find(recovery)):
             raise ValueError('missing, changed, or repeated kernel hang/load marker')
         end = data.find(hang) + len(hang)
         offset = 0
@@ -274,23 +279,29 @@ sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
         finally:
             stop.set(); thread.join()
             termios.tcsetattr(fd, termios.TCSANOW, previous); os.close(fd)
+        # Read consumed state only after FreeBSD has returned; do not arm again on failure.
+        verify = remote('''set -e
+test "$(sudo -n camcontrol inquiry da0 -S)" = SERIAL
+sudo -n mount -t msdosfs -o ro /dev/da0s1 /mnt/leanos-lab
+trap 'sudo -n umount /mnt/leanos-lab' EXIT
+grep '^request=none$' /mnt/leanos-lab/boot/grub/grubenv
+sha256 /mnt/leanos-lab/boot/grub/grub.cfg
+'''.replace('SERIAL', shlex.quote(args.usb_serial)), text=True)
+        (directory / 'verification.txt').write_text(verify.stdout + verify.stderr)
+        recovery = {'freebsd_boot_before': before, 'freebsd_boot_after': after,
+                    'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment', 'hang_recovery': False,
+                    'request_consumed': verify.returncode == 0, 'recovery': 'freebsd-ssh-restored'}
+        # Preserve recovery evidence even when an unfamiliar serial format fails
+        # classification. Replaying a parser fix must not require another boot.
+        (directory / 'recovery.json').write_text(json.dumps(recovery, indent=2) + '\n')
+        if verify.returncode:
+            raise ValueError('one-shot request was not verified consumed')
         if args.scenario == 'watchdog-kernel':
             result = classify_watchdog(events, kernel_digest)
         else:
             classifier = {'leanos': classify, 'rtc-probe': classify_rtc, 'watchdog-test': classify_watchdog}[args.scenario]
             result = classifier(events)
-        result.update({'freebsd_boot_before': before, 'freebsd_boot_after': after,
-                       'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment', 'hang_recovery': False})
-        # Read consumed state only after FreeBSD has returned; do not arm again on failure.
-        verify = remote('''set -e
-sudo -n mount -t msdosfs -o ro /dev/da0s1 /mnt/leanos-lab
-trap 'sudo -n umount /mnt/leanos-lab' EXIT
-grep '^request=none$' /mnt/leanos-lab/boot/grub/grubenv
-''', text=True)
-        if verify.returncode:
-            raise ValueError('one-shot request was not verified consumed')
-        result['request_consumed'] = True
-        result['recovery'] = 'freebsd-ssh-restored'
+        result.update(recovery)
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         print('PASS cycle=' + str(cycle), json.dumps(result), flush=True)
 

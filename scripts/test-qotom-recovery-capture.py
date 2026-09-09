@@ -16,6 +16,21 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_retained_kernel_watchdog(self):
+        root = Path(__file__).resolve().parent.parent / 'hardware/lab/observations/qotom-kernel-watchdog-20260909'
+        manifest = json.loads((root / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), digest, name)
+        events = [json.loads(line) for line in (root / 'events.jsonl').read_text().splitlines()]
+        self.assertEqual((root / 'serial.raw').read_bytes(), b''.join(bytes.fromhex(e['hex']) for e in events))
+        recorded = json.loads((root / 'result.json').read_text())
+        for key, value in lab.classify_watchdog(events, recorded['kernel_sha256']).items():
+            if key != 'recovery':
+                self.assertEqual(value, recorded[key], key)
+        self.assertNotEqual(recorded['freebsd_boot_before'], recorded['freebsd_boot_after'])
+        self.assertTrue(recorded['request_consumed'])
+        self.assertTrue(recorded['kernel_hang_recovery'])
+
     def test_kernel_watchdog_capture(self):
         digest = 'a' * 64
         accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'
@@ -27,6 +42,8 @@ class CaptureTests(unittest.TestCase):
         result = lab.classify_watchdog(valid, digest)
         self.assertTrue(result['kernel_hang_recovery'])
         self.assertEqual(result['kernel_quiet_seconds'], 119)
+        wrapped = load.replace(b' sha256=', b'\n\rsha256=').replace(digest.encode(), b'a' * 30 + b'\n\r' + b'a' * 34)
+        self.assertTrue(lab.classify_watchdog([valid[0], event(wrapped + hang, 16), *valid[2:]], digest)['kernel_hang_recovery'])
         self.assertEqual(lab.watchdog_request('0\n2026-09-09T20:05:00\n', 'watchdog-kernel-' + digest),
                          'watchdog-kernel-' + digest + '-2026-9-9-20-5')
         for bad in (valid[:1] + valid[2:], valid + [event(hang, 150)],

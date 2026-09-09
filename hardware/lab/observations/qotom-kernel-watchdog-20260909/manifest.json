@@ -1,0 +1,14 @@
+{
+  "files": {
+    "README.md": "7501fb8c2483d351bc02869e9a29eeaa8416617360bff963c5602dfff79120db",
+    "events.jsonl": "06337c964103531f57dbf84d73fdaf1655721977abb5937e03c0b7759b959aba",
+    "grub.cfg": "7edc454fd9f3b82f7cd67c9970ba0f9a38e787f4349879f3c49e40bbe5899bac",
+    "kernel-build-manifest.json": "8106a8df6d982653d69ea4d60153c4931c962061c821530e77c3bb375c0d62fa",
+    "kernel-hang.sha256": "1c480b6166b6960a0c64b7d720b097903b504fa260b57085db780540c2486cc6",
+    "result.json": "003a8130feb9ec7a6e55eafd1d6c3e4b1948f7c801b4cbf89bc064d33ce3fcc9",
+    "serial.raw": "c97687d6c8969026202fe2ca628c10a83093fb4b55cb6a8c65f00ce277c12dd3",
+    "verification.txt": "b8824601550919b4c927c79d53677dd1dd458f0a48aff0c9ad97d39690b106af",
+    "watchdog-window.cfg": "09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce",
+    "watchdog.cfg": "62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86"
+  }
+}

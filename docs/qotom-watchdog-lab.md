@@ -179,7 +179,7 @@ a changed boot epoch, and consumed request readback. A repeated arm or the
 300-second software escape fails the trial. The runner bounds observation at
 420 seconds and does not automatically rearm on failure.
 
-The [physical dated loader-stall trial](../hardware/lab/observations/qotom-dated-watchdog-20260909/README.md) passed after verified installation: one arm, 128.8 seconds to a new GRUB default marker, consumed request, and restored FreeBSD SSH without operator intervention. The expiry fallback was not needed in this run because the request was consumed. Kernel-hang recovery remains unverified, so #333 remains open.
+The [physical dated loader-stall trial](../hardware/lab/observations/qotom-dated-watchdog-20260909/README.md) passed after verified installation: one arm, 128.8 seconds to a new GRUB default marker, consumed request, and restored FreeBSD SSH without operator intervention. The expiry fallback was not needed in this run because the request was consumed. A separate early-kernel trial also passes below; ordinary capture protection remains outstanding, so #333 stays open.
 
 Validation: all 19 GRUB/QEMU cases pass after the missing-file fix, including stale requests, rejected hardware arming, missing recipe/guard, and existing recovery paths. The later explicit default marker passed focused default and reboot-once tests. Six Python test methods cover retained physical captures, RTC line endings/advancement, UTC request production, and watchdog trace failure mutations. The software tests do not arm Qotom hardware.
 
@@ -198,5 +198,21 @@ fixture boots it through a temporary GRUB disk, checks the exact marker and a
 live but quiet guest for two seconds, and rejects normal LeanOS output or a
 fallback chain. This passed for ELF SHA-256
 `b015acc16e23ca805277d63af30f85d8fe41e3df63f12e103b5f5e5c3f3baa9e`.
-It is not yet connected to the hardware watchdog launch path or installed on
-the Qotom USB; physical kernel-hang recovery remains outstanding.
+It is connected to the digest-bound watchdog launch path and installed on the Qotom USB. The [physical early-kernel stall](../hardware/lab/observations/qotom-kernel-watchdog-20260909/README.md) recovered after 127.2 seconds of quiet, with the request consumed and authenticated FreeBSD SSH restored.
+
+The kernel trial uses `--scenario watchdog-kernel --kernel-hang-elf PATH` in the
+runner, with the normal `--elf` still checking the existing lab media identity.
+Its request prefix includes the exact kernel digest before the UTC minute.
+Hash or load failure stops the armed timer before FreeBSD fallback; QEMU tests
+exercise both paths with a marked mock timer, plus wrong-digest rejection.
+The capture classifier requires the exact kernel marker, at least 90 seconds of
+quiet, and a subsequent recovery marker. It accepts GRUB line wrapping only
+inside the expected load digest and preserves raw capture bytes. Recovery
+metadata is saved before classification so a parser correction can replay a
+capture without requiring another boot.
+
+Remaining before full unattended capture claims: protect the ordinary LeanOS
+launch using the same expiry/arming path, retain its unchanged terminal/quiet
+semantics, and repeat normal capture cycles with protection enabled. The two
+physical hang trials establish the loader and early-kernel failure cases but do
+not by themselves change the original unprotected normal launch route.
