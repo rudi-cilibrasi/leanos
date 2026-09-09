@@ -1,0 +1,25 @@
+{
+  "schema": "leanos-firmware-capture-draft-v1",
+  "captured_utc": "2026-09-09T19:06:33.435656+00:00",
+  "source": "user-owned Intel NUC10 test host; user-authorized LeanOS hardware investigation",
+  "kernel_release": "7.0.0-31-generic",
+  "architecture": "x86_64",
+  "profile": {
+    "sys_vendor": "Intel(R) Client Systems",
+    "product_name": "NUC10i7FNH",
+    "board_vendor": "Intel Corporation",
+    "board_name": "NUC10i7FNB",
+    "bios_vendor": "Intel Corp.",
+    "bios_version": "FNCML357.0053.2021.0707.1420",
+    "bios_date": "07/07/2021"
+  },
+  "memory_map_method": "exact sysfs start/end/type bytes; entries retained in numeric sysfs-index order; end is inclusive",
+  "entry_count": 18,
+  "acpi_method": "exact /sys/firmware/acpi/tables/APIC bytes",
+  "unsupported": [
+    "RSDP/root tables unavailable: /dev/mem denied with EPERM",
+    "executing BSP APIC identity not captured"
+  ],
+  "normalization": "none; no address sorting, checksum repair, redaction, or synthesized roots",
+  "redaction": "Host nickname removed from descriptive metadata only; all memory-map field files and APIC bytes are unchanged."
+}
