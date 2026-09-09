@@ -47,3 +47,19 @@ profile/control readback checks, generated profile-bound records, Lean/C
 agreement and malformed/mixed-profile negatives. An Intel execution fixture
 must exercise the two denial outcomes. Absent SMAP remains a distinct #329
 policy dependency; this issue must not silently authorize production CPL3.
+
+## Initial checked projection
+
+`LeanOS/J1900CpuProfile.lean` now selects the measured version-one capability
+projection from five raw CPUID slots with explicit presence bits. It rejects
+wrong versions, missing/extra presence bits, insufficient leaf ranges, wrong
+vendor/signature, missing required legacy/extended features, absent SMEP,
+unexpected XSAVE/OSXSAVE/AVX, and unexpected SMAP. It does not infer active
+long mode from support bits or authorize production CPL3.
+
+Theorems connect successful selection to all checks and the required raw feature
+masks, and establish that the result leaves CPL3 unauthorized. Run
+`python3 scripts/test-j1900-cpu-profile.py` to verify capture hashes and replay
+four measured CPUs plus 29 altered snapshots using kernel-checked Lean reduction.
+This module is not yet connected to the aggregate gate, generated-C ABI, or
+boot adapter; those and the MSR review remain required for #328.
