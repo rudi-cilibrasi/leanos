@@ -1,0 +1,8 @@
+"k2š,?Z‘ÿ[H[J[1;1HLEANOS-LAB/1 SELECT leanos consumed=1
+/boot/leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap
+LEANOS/3 FINAL status=FAIL reason=dma-identity
+Wk2óº,Z‘ÿ[H[J[1;1Herror: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+

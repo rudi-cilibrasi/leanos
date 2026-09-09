@@ -1,0 +1,22 @@
+{
+  "class": "lab-recovery-experiment",
+  "canonical_halt_evidence": false,
+  "hang_recovery": false,
+  "cycles": 3,
+  "files": {
+    "build-manifest.json": "411dae2ce58f0dfa47896c662bb871cd088f2c715acb1114e1fc659cbdd19186",
+    "cycle-1/events.jsonl": "56cddb2dd0c9d4d13b78f158a50697754dd6d506354520aedc6c6d37ed81bc0e",
+    "cycle-1/reboot.txt": "f16ff5947d4c9a0eafefb44a2fc7732b7d738b6d05c2f86c04ce38b1b138a7af",
+    "cycle-1/result.json": "af4d4e8817fb300832a182d92ac48dbabb3acd4fd07e268b095291d55fed10a1",
+    "cycle-1/serial.raw": "465ca55bad14ad85fb952ef3ea4f63d4fabbb99d49147a0e0156846bd479879b",
+    "cycle-2/events.jsonl": "2d43726421eee31ccf890ec5bb12cff04899d198c6cf3380ef206d70f86db4a0",
+    "cycle-2/reboot.txt": "feb3dc3639d858890a7d8391d0a5033426c792bb0e2b2cf7060509a529b7c9a6",
+    "cycle-2/result.json": "a78f7ac35176a05147176c505042cc553091030a825054f97c1ca4cd594dcaaa",
+    "cycle-2/serial.raw": "ba6eb8dfe70dded6ccdf8a5a02d41853803f67caffee92388f20aa0cdaacf8d5",
+    "cycle-3/events.jsonl": "9410f911385a881b6dbe29cef1785cc704cd0de6a12ffb31c992efd4628174a1",
+    "cycle-3/reboot.txt": "feb3dc3639d858890a7d8391d0a5033426c792bb0e2b2cf7060509a529b7c9a6",
+    "cycle-3/result.json": "5b5ced9a715692ea1af1205bd0f3d30b6eb329a52e7747e3ef85b5fade59aea0",
+    "cycle-3/serial.raw": "0f7039690ed773622ea7116e8b8c3658273ca9aa1bf1fa62a80362dd8d9b59a1",
+    "producer.py": "c09d3e20db1c93c38cfd401cb4a9e3ad34527667b7640cabedf526b4a63f0d2a"
+  }
+}
