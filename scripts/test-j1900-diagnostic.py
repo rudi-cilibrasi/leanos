@@ -122,6 +122,69 @@ class DiagnosticTests(unittest.TestCase):
             result = subprocess.run([str(REPLAY), *extra], capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 2)
 
+    def test_protected_lab_replay_preserves_recovery_checks(self):
+        spec = importlib.util.spec_from_file_location(
+            'lab', ROOT / 'scripts/run-qotom-recovery-lab.py')
+        lab = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lab)
+        digest = 'a' * 64
+        before = (b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'
+                  b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n'
+                  b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD sha256=' + digest.encode() + b'\n')
+        mode = lab.EXPECTED[:-len(lab.EXPECTED_KERNEL)]
+        after = b'LEANOS-LAB/1 DEFAULT request=none\n' + lab.CHAIN + b'fixture\n'
+        def event(data, elapsed):
+            return {'hex': data.hex(), 'elapsed': elapsed}
+        valid = [event(before, 14), event(mode + capture(), 20), event(after, 55)]
+        result = lab.classify_cpu_protected(valid, digest, PROTOCOL_PATH, REPLAY)
+        self.assertTrue(result['watchdog_protected'])
+        self.assertEqual(result['quiet_seconds'], 35)
+        self.assertEqual(result['scenario'], 'j1900-cpu-diagnostic')
+        self.assertEqual(result['diagnostic']['cpu_selection'], 65536)
+        self.assertFalse(result['diagnostic']['platform_admitted'])
+        self.assertEqual(lab.cpu_diagnostic_bytes(valid, PROTOCOL)[1], capture())
+        bad_events = [
+            [event(before.replace(digest.encode(), b'b' * 64), 14), *valid[1:]],
+            [*valid[:2], event(after, 25)],
+            [valid[0], event(capture(), 20), valid[2]],
+            [valid[0], event(mode + mode + capture(), 20), valid[2]],
+            [event(before + PROTOCOL['CPU'].encode() + b' unexpected\n', 14), *valid[1:]],
+            [*valid[:2], event(after + PROTOCOL['CPU'].encode() + b' unexpected\n', 55)],
+            [valid[0], event(mode + capture().replace(b'readback=1', b'readback=0'), 20), valid[2]],
+            [valid[0], event(mode + capture() + b'extra', 20), valid[2]],
+        ]
+        for stamp in (float('nan'), float('inf'), -1, True, '20'):
+            bad_events.append([valid[0], event(mode + capture(), stamp), valid[2]])
+        for bad in bad_events:
+            with self.subTest(events=bad), self.assertRaises(ValueError):
+                lab.classify_cpu_protected(bad, digest, PROTOCOL_PATH, REPLAY)
+
+    def test_lab_preflight_rejects_before_remote_actions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / 'remote-called'
+            remote = root / 'remote'
+            remote.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n')
+            remote.chmod(0o755)
+            replay = root / 'wrong-replay'
+            replay.write_text('#!/bin/sh\nexit 0\n')
+            replay.chmod(0o755)
+            image = root / 'image.elf'
+            image.write_bytes(b'not executed')
+            output = root / 'capture'
+            command = ['python3', str(ROOT / 'scripts/run-qotom-recovery-lab.py'),
+                       '--host', 'unused', '--host-key-alias', 'unused',
+                       '--ssh-prefix', str(remote), '--usb-serial', 'unused',
+                       '--serial-device', 'unused', '--elf', str(image),
+                       '--output', str(output), '--cpu-diagnostic',
+                       '--diagnostic-protocol', str(PROTOCOL_PATH),
+                       '--diagnostic-replay', str(replay)]
+            for extra in (['--scenario', 'leanos'], []):
+                result = subprocess.run(command + extra, capture_output=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(marker.exists())
+                self.assertFalse(output.exists())
+
     def test_protocol_must_have_unique_required_identities(self):
         text = PROTOCOL_PATH.read_text()
         cpu = next(line for line in text.splitlines() if line.startswith('record\t24\tCPU\t'))

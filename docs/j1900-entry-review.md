@@ -238,3 +238,21 @@ silently dropping unexpected kernel records.
 The hosted suite tests the native decimal input path and forged/reordered
 captures under ordinary execution and ASan/UBSan. The Intel image fixtures now
 run this independent replay and retain a JSON result beside every raw capture.
+
+The protected lab runner accepts `--cpu-diagnostic` only with
+`--scenario watchdog-leanos`. It requires the normal prepared recovery USB and
+a recovery ELF built from the intended diagnostic image; it does not install
+or alter either. Build the native replay tool first. Optional
+`--diagnostic-protocol` and `--diagnostic-replay` paths select the trusted replay
+inputs. The runner checks the protocol and native corpus self-test before any
+SSH or boot-arming action and saves their input hashes beside the capture.
+
+For this mode, the recovery-mode record must immediately precede the complete
+CPU diagnostic. The runner independently replays that exact span, verifies the
+existing watchdog digest/order, quiet interval and recovery markers, and rejects
+unexpected kernel output before, within or after the span. It retains both the
+whole raw stream/events and `diagnostic.raw` with its replay result. Nonfinite
+or invalid capture timestamps cannot establish a quiet interval. Changed replay
+inputs reject classification; raw capture and recovery metadata remain available
+for investigation. This path has local synthetic and retained-recovery tests;
+it has not yet been exercised on the Qotom.
