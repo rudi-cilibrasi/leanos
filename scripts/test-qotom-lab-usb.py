@@ -62,6 +62,9 @@ def main():
         cases.extend((name, 'none') for name in window_cases)
         if args.kernel_hang_elf:
             cases.append(('kernel-hang', 'leanos-' + digest))
+            hang_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest()
+            for name in ('kernel-guard-hang', 'kernel-guard-bad-hash', 'kernel-guard-bad-elf', 'kernel-guard-wrong-digest'):
+                cases.append((name, 'watchdog-kernel-' + hang_digest + '-2026-9-9-12-0'))
         if args.case:
             unknown = set(args.case) - {name for name, _ in cases}
             if unknown:
@@ -76,6 +79,28 @@ def main():
             if name == 'bad-env':
                 env.write_bytes(b'invalid' + b'#' * 1017)
             run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
+            if name.startswith('kernel-guard-'):
+                mock = tmp / 'watchdog-mock.cfg'
+                mock.write_text('function qotom_watchdog_arm {\necho WATCHDOG-MOCK-ARM\ntrue\n}\n'
+                                'function qotom_watchdog_stop {\necho WATCHDOG-MOCK-STOP\ntrue\n}\n')
+                run('mcopy', '-o', '-i', str(image) + '@@1048576', str(mock), '::/boot/grub/watchdog.cfg')
+                if name in ('kernel-guard-bad-hash', 'kernel-guard-bad-elf'):
+                    bad = tmp / 'bad-kernel.elf'
+                    bad.write_bytes(b'not a multiboot ELF')
+                    run('mcopy', '-o', '-i', str(image) + '@@1048576', str(bad), '::/boot/leanos-qotom-kernel-hang.elf')
+                if name == 'kernel-guard-bad-elf':
+                    bad_digest = hashlib.sha256(bad.read_bytes()).hexdigest()
+                    cfg = tmp / 'bad-kernel.cfg'
+                    run('mcopy', '-o', '-i', str(image) + '@@1048576', '::/boot/grub/grub.cfg', str(cfg))
+                    cfg.write_text(cfg.read_text().replace(hang_digest, bad_digest))
+                    checksum = tmp / 'bad-kernel.sha256'
+                    checksum.write_text(bad_digest + '  /boot/leanos-qotom-kernel-hang.elf\n')
+                    run('grub-editenv', str(env), 'set', 'request=' + request.replace(hang_digest, bad_digest))
+                    for source, target in ((cfg, 'grub/grub.cfg'), (env, 'grub/grubenv'), (checksum, 'kernel-hang.sha256')):
+                        run('mcopy', '-o', '-i', str(image) + '@@1048576', str(source), '::/boot/' + target)
+                if name == 'kernel-guard-wrong-digest':
+                    run('grub-editenv', str(env), 'set', 'request=' + request.replace(hang_digest, '0' * 64))
+                    run('mcopy', '-o', '-i', str(image) + '@@1048576', str(env), '::/boot/grub/grubenv')
             if name == 'kernel-hang':
                 hang_digest = hashlib.sha256(args.kernel_hang_elf.read_bytes()).hexdigest()
                 original = tmp / 'hang.cfg'
@@ -124,7 +149,7 @@ def main():
                 '-drive', 'file=' + str(sentinel) + ',format=raw,if=ide,index=1'],
                 stderr=subprocess.DEVNULL)
             expected = b'FINAL status=FAIL reason=dma-identity' if name == 'leanos' else b'FREEBSD-CHAIN-SENTINEL'
-            if name == 'kernel-hang':
+            if name in ('kernel-hang', 'kernel-guard-hang'):
                 expected = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
             deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
             try:
@@ -134,7 +159,7 @@ def main():
                     time.sleep(0.1)
                 else:
                     raise AssertionError((name, log.read_bytes()))
-                if name == 'kernel-hang':
+                if name in ('kernel-hang', 'kernel-guard-hang'):
                     before = log.read_bytes()
                     time.sleep(2)
                     assert process.poll() is None and log.read_bytes() == before
@@ -142,9 +167,17 @@ def main():
                 process.terminate()
                 process.wait(timeout=5)
             data = log.read_bytes()
-            if name == 'kernel-hang':
+            if name in ('kernel-hang', 'kernel-guard-hang'):
                 assert data.count(expected) == 1 and data.endswith(expected), data
                 assert b'LEANOS/' not in data and b'FREEBSD-CHAIN-SENTINEL' not in data, data
+            if name.startswith('kernel-guard-'):
+                assert b'WATCHDOG-ARMED' not in data, data
+                if name == 'kernel-guard-wrong-digest':
+                    assert b'WATCHDOG-MOCK-ARM' not in data and b'expired-or-invalid=1' in data, data
+                else:
+                    assert data.count(b'WATCHDOG-MOCK-ARM') == 1, data
+                    if name != 'kernel-guard-hang':
+                        assert data.count(b'WATCHDOG-MOCK-STOP') == 1 and b'WATCHDOG-LOAD-FAILED' in data, data
             if name == 'rtc-probe':
                 stamps = re.findall(rb'LEANOS-LAB/1 RTC-(?:BEGIN|END) ([0-9-]+)', data)
                 assert len(stamps) == 2, data

@@ -16,6 +16,28 @@ def event(data, elapsed):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_kernel_watchdog_capture(self):
+        digest = 'a' * 64
+        accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'
+        armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n'
+        load = b'LEANOS-LAB/1 WATCHDOG-KERNEL-LOAD sha256=' + digest.encode() + b'\n'
+        hang = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
+        recovery = b'LEANOS-LAB/1 DEFAULT request=none\n' + lab.CHAIN
+        valid = [event(accepted + armed, 14), event(load + hang, 16), event(b'firmware', 135), event(recovery, 142)]
+        result = lab.classify_watchdog(valid, digest)
+        self.assertTrue(result['kernel_hang_recovery'])
+        self.assertEqual(result['kernel_quiet_seconds'], 119)
+        self.assertEqual(lab.watchdog_request('0\n2026-09-09T20:05:00\n', 'watchdog-kernel-' + digest),
+                         'watchdog-kernel-' + digest + '-2026-9-9-20-5')
+        for bad in (valid[:1] + valid[2:], valid + [event(hang, 150)],
+                    [valid[0], event(load + hang + b'extra', 16), *valid[2:]],
+                    [*valid[:2], event(b'extra', 20), *valid[2:]],
+                    [valid[0], event(load.replace(digest.encode(), b'b' * 64) + hang, 16), *valid[2:]]):
+            with self.subTest(events=bad), self.assertRaises(ValueError):
+                lab.classify_watchdog(bad, digest)
+        with self.assertRaises(ValueError):
+            lab.classify_watchdog(valid)
+
     def test_retained_loader_watchdog(self):
         root = Path(__file__).resolve().parent.parent / 'hardware/lab/observations/qotom-dated-watchdog-20260909'
         manifest = json.loads((root / 'manifest.json').read_text())

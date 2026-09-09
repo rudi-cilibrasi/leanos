@@ -33,19 +33,38 @@ if save_env --file=($labroot)/boot/grub/grubenv request; then
         echo 'LEANOS-LAB/1 WATCHDOG-DISABLED fallback=freebsd'
     fi
     insmod regexp
-    if regexp '^watchdog-test-[0-9]' "$selected"; then
+    set wd_prefix=watchdog-test
+    set wd_kernel=0
+    if [ "@KERNEL_HANG_ENABLED@" = "1" ]; then
+        if regexp '^watchdog-kernel-' "$selected"; then
+            set wd_prefix=watchdog-kernel-@KERNEL_HANG_SHA256@
+            set wd_kernel=1
+        fi
+    fi
+    if regexp '^watchdog-(test|kernel)-' "$selected"; then
         if [ -f ($labroot)/boot/grub/watchdog-window.cfg ]; then
             source ($labroot)/boot/grub/watchdog-window.cfg
-            if qotom_watchdog_window "$selected"; then
+            if qotom_watchdog_window "$selected" "$wd_prefix"; then
                 echo 'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
                 if [ -f ($labroot)/boot/grub/watchdog.cfg ]; then
                     source ($labroot)/boot/grub/watchdog.cfg
                     if qotom_watchdog_arm; then
+                        if [ "$wd_kernel" = "1" ]; then
+                            echo 'LEANOS-LAB/1 WATCHDOG-KERNEL-LOAD sha256=@KERNEL_HANG_SHA256@'
+                            if hashsum --hash sha256 --check ($labroot)/boot/kernel-hang.sha256; then
+                                if multiboot2 ($labroot)/boot/leanos-qotom-kernel-hang.elf; then
+                                    boot
+                                fi
+                            fi
+                            echo 'LEANOS-LAB/1 WATCHDOG-LOAD-FAILED fallback=freebsd'
+                            qotom_watchdog_stop
+                        else
                         # Deliberate loader-stage stall, with a bounded software
                         # escape if the independent reset fails to happen.
                         sleep 300
                         echo 'LEANOS-LAB/1 WATCHDOG-NO-RESET fallback=freebsd'
                         qotom_watchdog_stop
+                        fi
                     fi
                 fi
             else
