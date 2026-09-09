@@ -5,6 +5,7 @@ Every line the kernel writes to its serial port during a scenario starts with a 
 - `family_versions_nodup` — No two protocol families share a version number, so a `LEANOS/<version>` prefix identifies exactly one family.
 - `records_nodup` — No record identity (family version paired with tag) appears twice in the vocabulary, so a generated macro or shell variable names exactly one record.
 - `pre_admission_rejection_reasons_nodup` — No pre-admission failure reason appears twice, so the generated bare-metal rejection vocabulary classifies each admitted reason exactly once.
+- `pre_admission_bootalloc_rejection_reasons_nodup` — No boot-allocation rejection reason appears twice, so the generated classifier binds each terminal allocation failure to one canonical reason.
 - `pre_admission_boot_records_nodup` — No scenario-specific boot identity appears twice in the pre-admission set.
 - `pre_admission_boot_records_are_protocol_records` — Every scenario-specific pre-admission boot identity is an existing version-and-tag pair in the serial protocol vocabulary.
 - `pre_admission_phase_records_nodup` — No post-boot record identity appears twice in the generated pre-admission phase set.

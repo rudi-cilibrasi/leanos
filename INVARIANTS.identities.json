@@ -15219,6 +15219,12 @@
     },
     {
       "source": "LeanOS/SerialProtocol.lean",
+      "qualified": "LeanOS.SerialProtocol.pre_admission_bootalloc_rejection_reasons_nodup",
+      "display": "pre_admission_bootalloc_rejection_reasons_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SerialProtocol.lean",
       "qualified": "LeanOS.SerialProtocol.pre_admission_phase_records_are_protocol_records",
       "display": "pre_admission_phase_records_are_protocol_records",
       "kind": "theorem"
