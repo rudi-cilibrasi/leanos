@@ -9,6 +9,8 @@ import tempfile
 import time
 import uuid
 
+from qotom_lab_protocol import record
+
 
 def run(*args, **kwargs):
     return subprocess.run(list(args), check=True, stdout=subprocess.DEVNULL, **kwargs)
@@ -77,7 +79,7 @@ def main():
             if name == 'bad-image':
                 assert b'HASH MISMATCH' in data and b'LOAD-FAILED' in data
             if name != 'leanos':
-                assert b'LEANOS/10 BOOT' not in data
+                assert record(10, 'BOOT') not in data
             else:
                 assert b'LEANOS-LAB/1 MODE' in data
             run('mcopy', '-o', '-i', str(image) + '@@1048576', '::/boot/grub/grubenv', str(env))

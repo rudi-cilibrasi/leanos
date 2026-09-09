@@ -14,9 +14,9 @@ import termios
 import threading
 import time
 
-EXPECTED = (b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n'
-            b'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n'
-            b'LEANOS/3 FINAL status=FAIL reason=dma-identity\n')
+from qotom_lab_protocol import EXPECTED_KERNEL, record
+
+EXPECTED = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n' + EXPECTED_KERNEL
 CHAIN = b'LEANOS-LAB/1 CHAIN freebsd disk='
 
 
@@ -25,7 +25,7 @@ def classify(events):
         raise ValueError('nonmonotonic capture timestamps')
     data = b''.join(bytes.fromhex(e['hex']) for e in events)
     start = data.find(EXPECTED)
-    if start < 0 or data.count(b'LEANOS/10 BOOT') != 1 or data.count(b'LEANOS/3 FINAL') != 1:
+    if start < 0 or data.count(record(10, 'BOOT')) != 1 or data.count(record(3, 'FINAL')) != 1:
         raise ValueError('missing, changed, or duplicated lab rejection trace')
     if b'LEANOS/' in data[:start]:
         raise ValueError('unexpected kernel output before selected trace')

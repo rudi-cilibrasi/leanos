@@ -48,17 +48,17 @@ class CaptureTests(unittest.TestCase):
     def test_failure_mutations(self):
         valid = self.fixture()
         mutations = {
-            'earlier kernel output': [event(b'LEANOS/4 PROBE unexpected\n', 0)] + valid,
+            'earlier kernel output': [event(lab.record(4, 'PROBE') + b' unexpected\n', 0)] + valid,
             'nonmonotonic time': valid[:3] + [event(b'firmware\n', 2), valid[-1]],
             'wrong reason': [event(lab.EXPECTED.replace(b'dma-identity', b'other'), 3)] + valid[3:],
             'false success': [event(lab.EXPECTED.replace(b'status=FAIL', b'status=PASS'), 3)] + valid[3:],
             'partial trace': [event(lab.EXPECTED[:-2], 3)] + valid[3:],
-            'extra terminal': valid[:3] + [event(b'LEANOS/3 FINAL status=PASS\n', 4)] + valid[3:],
+            'extra terminal': valid[:3] + [event(lab.record(3, 'FINAL') + b' status=PASS\n', 4)] + valid[3:],
             'early reboot': valid[:3] + [event(b'firmware\n', 4), valid[-1]],
             'extra same chunk': [event(lab.EXPECTED + b'extra', 3)] + valid[3:],
             'missing chain': valid[:-1],
             'boot loop': valid + [event(b'LEANOS-LAB/1 SELECT leanos consumed=1\n', 40)],
-            'post-terminal kernel output': valid + [event(b'LEANOS/4 PROBE unexpected\n', 40)],
+            'post-terminal kernel output': valid + [event(lab.record(4, 'PROBE') + b' unexpected\n', 40)],
         }
         for name, events in mutations.items():
             with self.subTest(name=name), self.assertRaises(ValueError):
