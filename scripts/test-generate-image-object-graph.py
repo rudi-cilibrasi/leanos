@@ -1037,6 +1037,21 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
                 outside_graph.read_text(encoding="utf-8"), "copied-artifact\n"
             )
 
+            # A changing linker plan must stop after three relinks, not loop
+            # indefinitely or accept the last mismatching output.
+            attempts = root / "attempts.log"
+            expected.write_text("stale-again\n")
+            graph.write_text(
+                f".PHONY: {elf!s} {sibling!s}\n"
+                f"{elf!s}:\n\tprintf x >> {elf!s}\n\techo relink >> {attempts!s}\n"
+                f"{sibling!s}:\n\ttrue\n"
+            )
+            rejected = subprocess.run(["bash", "-c", shell], cwd=root,
+                                      capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("page-table plan drifted after final link", rejected.stderr)
+            self.assertEqual(attempts.read_text().splitlines(), ["relink"] * 3)
+
     def test_boot_plan_cache_is_per_input_stage_and_checks_output(self) -> None:
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
         symbol_block = plan_script.split("symbols=(", 1)[1].split("\n)", 1)[0]

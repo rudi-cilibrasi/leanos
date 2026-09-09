@@ -418,13 +418,6 @@ run_return_corruption_policy_check() {
 export -f run_return_corruption_policy_check
 
 build="$repo_root/build/boot"
-fault_fatal_probes=(reserved-bit walk-mismatch)
-fault_image_probes=("${fault_fatal_probes[@]}" stale-translation)
-declare -A fault_fatal_probe_flags=(
-  [reserved-bit]="-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1"
-  [walk-mismatch]="-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1"
-  [stale-translation]="-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1"
-)
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -947,6 +940,7 @@ converge_selected_graph_plan() {
 # Final-ELF page-plan checks come from the scenario manifest in build order:
 # a validate compares the linker-resolved plan with the expected header; a
 # converge feeds the resolved plan back through the listed graph targets.
+./scripts/scenario-manifest.py plan-checks --tier "$evidence_tier" > "$build/final-plan-checks.tsv"
 while IFS=$'\t' read -r plan_image plan_check plan_expected plan_final plan_description plan_targets; do
   if [[ "$plan_check" == converge ]]; then
     plan_target_paths=()
@@ -960,87 +954,7 @@ while IFS=$'\t' read -r plan_image plan_check plan_expected plan_final plan_desc
     validate_selected_final_plan "$build/$plan_image.elf" "$build/$plan_expected" \
       "$build/$plan_final" "$plan_description"
   fi
-done < <(./scripts/scenario-manifest.py plan-checks)
-if selected_final_enabled "$build/leanos-frame-budget.elf"; then
-  frame_budget_plan_converged=false
-  for pass in 1 2 3 4; do
-    ./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget.elf" \
-      "$build/boot-page-plan-frame-budget.final.h"
-    if cmp -s "$build/boot-page-plan-frame-budget.h" \
-        "$build/boot-page-plan-frame-budget.final.h"; then
-      frame_budget_plan_converged=true
-      break
-    fi
-    [[ "$pass" -lt 4 ]] || break
-
-    # Clang can change a page-boundary comparison after the linker-derived plan
-    # replaces the fixed-size stub. Rebuild to a bounded fixed point instead of
-    # accepting a plan that describes the preceding ELF.
-    cp "$build/boot-page-plan-frame-budget.final.h" \
-      "$build/boot-page-plan-frame-budget.h"
-    "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-      -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
-      -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-frame-budget.h"' \
-      -c boot/kernel.c -o "$build/kernel-frame-budget.o"
-    ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-      -T boot/linker.ld -Map "$build/leanos-frame-budget.map" \
-      -o "$build/leanos-frame-budget.elf" "$build/boot-frame-budget.o" \
-      "$build/kernel-frame-budget.o" "$build/KernelTransition.o" \
-      "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-      "$build/BootAllocation.o" "$build/Interrupt.o" \
-      "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-      "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-      "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-  done
-  [[ "$frame_budget_plan_converged" == true ]] || {
-    echo "error: frame-budget boot page-table plan drifted after final link" >&2
-    exit 1
-  }
-fi
-for probe in "${fault_image_probes[@]}"; do
-  selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-fault-${probe}.elf" \
-    "$build/boot-page-plan-fault-${probe}.final.h"
-  # A PR shard may select this probe without selecting fault-containment, whose
-  # plan header is then only a stub.  Compare the probe's generated prelink plan
-  # to its final plan in that case; full evidence retains the stronger
-  # cross-variant containment-plan equality below.
-  expected_fault_plan="$build/boot-page-plan-fault-${probe}.h"
-  if [[ "$evidence_tier" == all && "$probe" != stale-translation ]]; then
-    expected_fault_plan="$build/boot-page-plan-fault-containment.h"
-  fi
-  if [[ "$probe" == stale-translation ]]; then
-    for pass in 1 2 3; do
-      cmp -s "$expected_fault_plan" \
-        "$build/boot-page-plan-fault-${probe}.final.h" && break
-      cp "$build/boot-page-plan-fault-${probe}.final.h" \
-        "$expected_fault_plan"
-      "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-        -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-        "${fault_fatal_probe_flags[$probe]}" \
-        -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-stale-translation.h"' \
-        -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
-      ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-        -T boot/linker.ld -Map "$build/leanos-fault-${probe}.map" \
-        -o "$build/leanos-fault-${probe}.elf" \
-        "$build/boot-fault-${probe}.o" "$build/kernel-fault-${probe}.o" \
-        "$build/KernelTransition.o" "$build/Syscall.o" \
-        "$build/IPCSyscall.o" "$build/Preemption.o" \
-        "$build/BootAllocation.o" "$build/Interrupt.o" \
-        "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-        "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-        "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-      ./scripts/generate-boot-page-plan.sh \
-        "$build/leanos-fault-${probe}.elf" \
-        "$build/boot-page-plan-fault-${probe}.final.h"
-    done
-  fi
-  cmp "$expected_fault_plan" \
-    "$build/boot-page-plan-fault-${probe}.final.h" || {
-    echo "error: $probe page-table plan drifted after final link" >&2
-    exit 1
-  }
-done
+done < "$build/final-plan-checks.tsv"
 extended_state_plan_targets=()
 for target in \
   "$build/leanos-extended-state.elf" \

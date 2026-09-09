@@ -103,6 +103,17 @@ def main() -> None:
     if compared.returncode or "boot-page-plan.h\tboot-page-plan-new-fixture.h" not in compared.stdout:
         raise AssertionError("new declared comparison requires a handwritten build check")
 
+    for tier in ("pr", "all"):
+        selected = MODULE.plan_check_rows(manifest, tier)
+        for declared, row in zip(manifest["build"]["plan_checks"], selected):
+            expected = declared.get("expected_full", declared["expected"]) if tier == "all" else declared["expected"]
+            if row["expected"] != expected:
+                raise AssertionError("final-plan query changed a tier's expected header")
+    bad_full = mutated(lambda m: m["build"]["plan_checks"][0].update(expected_full="../outside.h"))
+    rejected = run(bad_full, "plan-checks", "--tier", "pr")
+    if rejected.returncode == 0 or rejected.stdout or "invalid full-tier expectation" not in rejected.stderr:
+        raise AssertionError("invalid alternate expectation escaped validation in PR tier")
+
     def unknown_kernel(m):
         m["build"]["images"]["leanos-preemption"]["kernel"] = "kernel-absent"
 

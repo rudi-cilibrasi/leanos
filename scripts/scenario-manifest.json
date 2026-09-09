@@ -1222,6 +1222,42 @@
         "expected": "boot-page-plan-integer-fault.h",
         "final": "boot-page-plan-breakpoint.final.h",
         "description": "integer-fault breakpoint"
+      },
+      {
+        "image": "leanos-frame-budget",
+        "check": "converge",
+        "expected": "boot-page-plan-frame-budget.h",
+        "final": "boot-page-plan-frame-budget.final.h",
+        "description": "frame-budget",
+        "targets": [
+          "leanos-frame-budget"
+        ]
+      },
+      {
+        "image": "leanos-fault-reserved-bit",
+        "check": "validate",
+        "expected": "boot-page-plan-fault-reserved-bit.h",
+        "final": "boot-page-plan-fault-reserved-bit.final.h",
+        "description": "fault-reserved-bit",
+        "expected_full": "boot-page-plan-fault-containment.h"
+      },
+      {
+        "image": "leanos-fault-walk-mismatch",
+        "check": "validate",
+        "expected": "boot-page-plan-fault-walk-mismatch.h",
+        "final": "boot-page-plan-fault-walk-mismatch.final.h",
+        "description": "fault-walk-mismatch",
+        "expected_full": "boot-page-plan-fault-containment.h"
+      },
+      {
+        "image": "leanos-fault-stale-translation",
+        "check": "converge",
+        "expected": "boot-page-plan-fault-stale-translation.h",
+        "final": "boot-page-plan-fault-stale-translation.final.h",
+        "description": "fault-stale-translation",
+        "targets": [
+          "leanos-fault-stale-translation"
+        ]
       }
     ],
     "disassemblies": [

@@ -397,7 +397,11 @@ unknown kernel object, and a malformed stub name with named diagnostics. Four
 ordered lists in the same section drive the remaining per-image steps in the
 order the build runs them: `plan_checks` (a validate compares an image's
 linker-resolved page-table plan with its expected header; a converge feeds
-the resolved plan back through the listed graph targets until it is stable),
+the resolved plan back through the listed graph targets until it is stable,
+with at most three relinks; `expected_full` can retain a stronger full-evidence
+comparison while PR shards use the image's own prelink plan). Frame-budget and
+stale-translation use this graph-based convergence path, and the reserved-bit
+and walk-mismatch probes declare their full-versus-PR expectations here),
 `disassemblies`, `entry_policies` (the entry-policy check queued per final
 ELF with its report and optional environment pair), and
 `extended_state_policies`; the query tool rejects an unpackaged image, an
