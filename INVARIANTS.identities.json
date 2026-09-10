@@ -13112,6 +13112,66 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.failed_reload_terminal",
+      "display": "failed_reload_terminal",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.interruption_terminal",
+      "display": "interruption_terminal",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.iret_requires_reload",
+      "display": "iret_requires_reload",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.preparation_requires_closed",
+      "display": "preparation_requires_closed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.prepared_publication",
+      "display": "prepared_publication",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.prepared_request_exact",
+      "display": "prepared_request_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.prepared_request_validated",
+      "display": "prepared_request_validated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.step_preserves_plan",
+      "display": "step_preserves_plan",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.terminal_absorbing",
+      "display": "terminal_absorbing",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootReturn.lean",
+      "qualified": "LeanOS.KernelRootReturn.user_requires_iret",
+      "display": "user_requires_iret",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/KernelTransition.lean",
       "qualified": "LeanOS.KernelTransition.bootTransition_agrees",
       "display": "bootTransition_agrees",

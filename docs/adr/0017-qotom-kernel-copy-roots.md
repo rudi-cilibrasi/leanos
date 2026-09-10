@@ -317,3 +317,29 @@ permissions. The caller must establish the full required mapping inventory,
 valid ancestors and live protected frames for the selected scenario. Publication,
 TLB invalidation and production entry/copy/return integration remain separate
 obligations; this model does not authorize Qotom CPL3.
+
+### Return preparation under the closed root
+
+`KernelRootReturn.prepare` composes the existing `Interrupt.validateUserReturn`
+with root publication planning. The currently active root must equal the trusted
+closed-root identity, with interrupts, PCID and global pages disabled. The
+pending subject-root identity is independently validated by the existing return
+request, must be nonzero and aligned, and must resolve in the trusted immutable
+root registry. The resulting plan retains the exact request and original state,
+and requires a root reload with an empty modeled cache.
+
+The tail has only awaiting-reload, awaiting-IRET, user and terminal phases. A
+verified reload must precede IRET completion; interruption, failed reload and
+out-of-order events terminate. Tail steps preserve the exact plan and accept no
+replacement request. This is a sequential effect protocol, not proof of hardware
+interrupt timing or atomic IRET. The verified-reload event must come from the
+checked machine primitive. Terminal cleanup must use the separately established
+entry path; the model does not claim that a terminal state itself closes roots.
+
+Root registry provenance, protected-frame exclusion, subject-table ownership,
+lifetime stability, full saved-register preservation and actual instructions
+remain implementation obligations. The 16 replay cases use an empty toy table
+to exercise selection and sequencing; they do not establish executable user
+mappings. Production return integration must validate under the closed root,
+then perform the final switch without intervening C callbacks. The current q35
+return path still runs C under the subject root and retains its existing checks.

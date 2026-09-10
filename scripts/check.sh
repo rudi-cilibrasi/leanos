@@ -50,6 +50,8 @@ python3 scripts/test-qotom-bsp-capture.py
 lake env lean tests/kernel-user-root.lean
 lake env lean tests/user-copy-prefix.lean
 lake env lean tests/user-copy-aliases.lean
+lake build leanos-kernel-root-return-replay
+.lake/build/bin/leanos-kernel-root-return-replay
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 lake build leanos-copy-root-construction

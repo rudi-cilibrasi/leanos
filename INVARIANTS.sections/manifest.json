@@ -50,6 +50,7 @@
     "LeanOS/J1900EntryControl.lean",
     "LeanOS/J1900MsrReadback.lean",
     "LeanOS/KernelRootPublication.lean",
+    "LeanOS/KernelRootReturn.lean",
     "LeanOS/KernelTransition.lean",
     "LeanOS/KernelUserRoot.lean",
     "LeanOS/LifetimeIssuer.lean",
