@@ -73,6 +73,7 @@ lake build leanos-vtd-plan
 python3 ./scripts/generate-evidence-matrix.py --output scripts/emulator-evidence-matrix.tsv
 python3 ./scripts/test-scenario-manifest.py
 python3 ./scripts/test-release-artifact-consumers.py
+python3 ./scripts/test-build-manifest-consumers.py
 python3 ./scripts/test-assigned-negative-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
 python3 ./scripts/test-bare-metal-observation.py

@@ -200,10 +200,6 @@ generate_lean_c {source!s} {output!s}
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('rm -rf "$build"\n', wrapper)
         self.assertNotIn("-type d -name 'iso*'", wrapper)
-        self.assertIn(
-            'mapfile -t page_plan_stubs < <(./scripts/scenario-manifest.py page-plans)',
-            wrapper,
-        )
         self.assertIn('ensure_boot_plan_stub "$build/$stub"', wrapper)
         self.assertIn('mktemp -d "$build/.lean-c.XXXXXX"', wrapper)
         self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
@@ -497,10 +493,6 @@ test ! -e {output!s}.inputs.sha256
         self.assertIn('xargs -0 -r -n 4 -P "$policy_jobs"', wrapper)
         self.assertIn('export -f run_image_policy_check', wrapper)
         self.assertIn(
-            './scripts/scenario-manifest.py packaged-images --version "$version"',
-            wrapper,
-        )
-        self.assertIn(
             'queue_image_policy "$policy_key" "$build/$packaged_stem.elf"', wrapper
         )
         manifest = json.loads(
@@ -723,7 +715,6 @@ validation_tool_signature={signature}
         )
         self.assertIn('export -f run_entry_policy_check', wrapper)
         self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
-        self.assertIn('./scripts/scenario-manifest.py entry-policies', wrapper)
         self.assertIn(
             'queue_entry_policy "$entry_key" "$build/$entry_image.elf"', wrapper
         )
