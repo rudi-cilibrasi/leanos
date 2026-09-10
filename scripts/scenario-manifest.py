@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -308,6 +309,13 @@ DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
 
 def matrix_boot_scenarios(path: Path = DEFAULT_MATRIX) -> dict[str, str]:
     """Matrix id -> boot scenario name for the rows the boot runner drives."""
+    if path.resolve() == DEFAULT_MATRIX.resolve():
+        generated = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/generate-evidence-matrix.py"),
+             "--output", str(path)], capture_output=True, text=True,
+        )
+        if generated.returncode:
+            raise ManifestError(f"matrix generation failed: {generated.stderr.strip()}")
     rows = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("#"):

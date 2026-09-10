@@ -331,22 +331,27 @@ scope. This policy is not a stability or support guarantee.
 
 The tag workflow runs the repository-owned Markdown, complete Lean
 proof-integrity, deterministic-build, image-build, and shared emulator-evidence
-matrix before it can publish. `scripts/emulator-evidence-matrix.tsv` is the
-versioned, reviewable inventory used by both pull-request and tag CI. Its
+matrix before it can publish. `scripts/scenario-manifest.json` declares the
+inventory used by both pull-request and tag CI. The build and evidence tools
+generate `scripts/emulator-evidence-matrix.tsv` from it before reading the
+default inventory; the TSV is an ignored build artifact, not a second source
+to edit. Its
 `tier` column selects one representative scenario for every runner class on
 pull requests; merge-queue candidates, pushes to `main`, tags, and releases
 still execute every row.
 Each row
 names a unique scenario, its existing transcript-validating runner, expected
 integration-evidence class, timeout, image and ELF, serial log, and fixture
-metadata. New security-relevant QEMU work must register here; a reviewed matrix
-version change is required to alter the mandatory release inventory.
+metadata. New security-relevant QEMU work must register in the manifest. The
+generator derives the mandatory count and validates the complete inventory,
+including one PR-tier scenario per runner, before atomically publishing it.
+Explicit custom matrices remain subject to the evidence parser's checks.
 
-`scripts/scenario-manifest.json` is the matrix's declarative sidecar. For each
-scenario it records only what the row cannot express: the family whose
-template the row must follow (fast-entry denial images, fast-entry return-path
-relaxations, page-table-integrity probes), the family parameters (a corruption
-mode, a rejection reason), which artifact kinds the scenario contributes to a
+For each scenario the manifest declares its tier and either a row or the
+family whose template generates that row (fast-entry denial images,
+fast-entry return-path relaxations, page-table-integrity probes), with its
+family parameters (a corruption mode, a rejection reason). Result classes come
+from the runner contract. The manifest also declares which artifact kinds the scenario contributes to a
 release and to the byte-reproducibility set, and its controlled-negative
 evidence (directory, count, failure-class rule, driver). The evidence runner
 derives everything else: `parse_matrix` checks each mandatory row against the

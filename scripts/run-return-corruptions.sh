@@ -14,6 +14,9 @@ memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 build="${LEANOS_BOOT_DIR:-build/boot}"
 selected="${LEANOS_RETURN_CORRUPTION_FIXTURE:-}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
+if [[ "$matrix" == scripts/emulator-evidence-matrix.tsv ]]; then
+  python3 scripts/generate-evidence-matrix.py --output "$matrix"
+fi
 command -v "$qemu" >/dev/null 2>&1 || {
   echo "error: missing required tool '$qemu'" >&2; exit 1;
 }

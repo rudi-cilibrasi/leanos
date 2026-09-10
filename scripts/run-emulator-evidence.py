@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -235,12 +236,20 @@ def check_manifest_rows(
                 raise EvidenceError(f"manifest scenario is absent from the matrix: {scenario_id}")
             raise EvidenceError(f"mandatory {family} scenario is absent: {scenario_id}")
         expected = derive_row(manifest, scenario_id)
+        if expected is None and "row" in entry:
+            declaration = entry["row"]
+            if not isinstance(declaration, dict) or set(declaration) != set(ROW_TEMPLATE_KEYS):
+                raise EvidenceError(f"scenario {scenario_id} lacks a complete matrix row")
+            expected = dict(declaration)
         if expected is None:
             continue
+        if "tier" in entry:
+            expected["tier"] = entry["tier"]
         for key, value in expected.items():
             if row[key] != value:
+                source = f"mandatory {family}" if family is not None else "manifest"
                 raise EvidenceError(
-                    f"mandatory {family} scenario {scenario_id} has "
+                    f"{source} scenario {scenario_id} has "
                     f"unexpected {key} {row[key]!r}"
                 )
     for scenario_id in rows_by_id:
@@ -394,6 +403,17 @@ def qemu_accelerator(environment: dict[str, str]) -> str:
 def parse_matrix(
     path: Path, manifest_path: Path = DEFAULT_MANIFEST
 ) -> tuple[str, list[dict[str, str]]]:
+    if (path.resolve() == DEFAULT_MATRIX.resolve()
+            and manifest_path.resolve() == DEFAULT_MANIFEST.resolve()):
+        spec = importlib.util.spec_from_file_location(
+            "evidence_matrix_generator", SCRIPT_DIR / "generate-evidence-matrix.py"
+        )
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        try:
+            generator.publish(path, generator.render(manifest_path))
+        except generator.EVIDENCE.EvidenceError as error:
+            raise EvidenceError(f"matrix generation failed: {error}") from error
     if not path.is_file():
         raise EvidenceError(f"matrix not found: {display_path(path)}")
     lines = path.read_text(encoding="utf-8").splitlines()

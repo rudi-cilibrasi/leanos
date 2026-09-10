@@ -1455,18 +1455,100 @@
         "elf",
         "map"
       ],
-      "expectations": "scripts/expectations/blocking-ipc.transcript"
+      "expectations": "scripts/expectations/blocking-ipc.transcript",
+      "tier": "pr",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64.iso",
+        "elf": "leanos.elf",
+        "serial_log": "serial.log",
+        "scenario": "blocking-ipc",
+        "mode": "-",
+        "reason": "-"
+      }
     },
-    "multivcpu-rejection": {},
-    "assigned-edu-inventory": {},
-    "malformed-handoff": {},
-    "projection-authority-mutation": {},
-    "raw-selection-authority-mutation": {},
+    "multivcpu-rejection": {
+      "tier": "pr",
+      "row": {
+        "runner": "multivcpu",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-multivcpu-rejection.iso",
+        "elf": "leanos-multivcpu-rejection.elf",
+        "serial_log": "multivcpu-rejection.serial.log",
+        "scenario": "multivcpu-rejection",
+        "mode": "-",
+        "reason": "topology-non-singleton"
+      }
+    },
+    "assigned-edu-inventory": {
+      "tier": "pr",
+      "row": {
+        "runner": "assigned-edu",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-assigned-edu.iso",
+        "elf": "leanos-assigned-edu.elf",
+        "serial_log": "assigned-edu.serial.log",
+        "scenario": "assigned-edu-inventory",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "malformed-handoff": {
+      "tier": "pr",
+      "row": {
+        "runner": "malformed-handoff",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-malformed-handoff.iso",
+        "elf": "leanos-malformed-handoff.elf",
+        "serial_log": "malformed-handoff.serial.log",
+        "scenario": "malformed-handoff",
+        "mode": "-",
+        "reason": "decode-rejected"
+      }
+    },
+    "projection-authority-mutation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "malformed-handoff",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-projection-authority-mutation.iso",
+        "elf": "leanos-projection-authority-mutation.elf",
+        "serial_log": "projection-authority-mutation.serial.log",
+        "scenario": "projection-authority-mutation",
+        "mode": "-",
+        "reason": "projection-authority"
+      }
+    },
+    "raw-selection-authority-mutation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "malformed-handoff",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-raw-selection-authority-mutation.iso",
+        "elf": "leanos-raw-selection-authority-mutation.elf",
+        "serial_log": "raw-selection-authority-mutation.serial.log",
+        "scenario": "raw-selection-authority-mutation",
+        "mode": "-",
+        "reason": "raw-selection-authority"
+      }
+    },
     "entry-adversarial": {
       "release_artifacts": [
         "serial-log"
       ],
-      "expectations": "scripts/expectations/entry-adversarial.transcript"
+      "expectations": "scripts/expectations/entry-adversarial.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-entry-adversarial.iso",
+        "elf": "leanos-entry-adversarial.elf",
+        "serial_log": "entry-adversarial.serial.log",
+        "scenario": "entry-adversarial",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "preemption": {
       "release_artifacts": [
@@ -1475,7 +1557,18 @@
         "map",
         "serial-log"
       ],
-      "expectations": "scripts/expectations/preemption.transcript"
+      "expectations": "scripts/expectations/preemption.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-preemption.iso",
+        "elf": "leanos-preemption.elf",
+        "serial_log": "preemption.serial.log",
+        "scenario": "preemption",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "frame-budget": {
       "negative_evidence": {
@@ -1484,7 +1577,18 @@
         "failure_class": "serial-protocol",
         "driver": "scripts/test-run-frame-budget.sh"
       },
-      "expectations": "scripts/expectations/frame-budget.transcript"
+      "expectations": "scripts/expectations/frame-budget.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-frame-budget.iso",
+        "elf": "leanos-frame-budget.elf",
+        "serial_log": "frame-budget.serial.log",
+        "scenario": "frame-budget",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "capability-transfer": {
       "negative_evidence": {
@@ -1493,7 +1597,18 @@
         "failure_class": "classified",
         "driver": "scripts/test-run-capability-transfer.sh"
       },
-      "expectations": "scripts/expectations/capability-transfer.transcript"
+      "expectations": "scripts/expectations/capability-transfer.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-capability-transfer.iso",
+        "elf": "leanos-capability-transfer.elf",
+        "serial_log": "capability-transfer.serial.log",
+        "scenario": "capability-transfer",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "inflight-revocation": {
       "negative_evidence": {
@@ -1502,7 +1617,18 @@
         "failure_class": "classified",
         "driver": "scripts/test-run-inflight-revocation.sh"
       },
-      "expectations": "scripts/expectations/inflight-revocation.transcript"
+      "expectations": "scripts/expectations/inflight-revocation.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-inflight-revocation.iso",
+        "elf": "leanos-inflight-revocation.elf",
+        "serial_log": "inflight-revocation.serial.log",
+        "scenario": "inflight-revocation",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "fault-containment": {
       "release_artifacts": [
@@ -1523,7 +1649,18 @@
         "disassembly",
         "policy-report"
       ],
-      "expectations": "scripts/expectations/fault-containment.transcript"
+      "expectations": "scripts/expectations/fault-containment.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-containment.iso",
+        "elf": "leanos-fault-containment.elf",
+        "serial_log": "fault-containment.serial.log",
+        "scenario": "fault-containment",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "fault-readonly-write": {
       "release_artifacts": [
@@ -1544,7 +1681,18 @@
         "disassembly",
         "policy-report"
       ],
-      "expectations": "scripts/expectations/fault-readonly-write.transcript"
+      "expectations": "scripts/expectations/fault-readonly-write.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-readonly-write.iso",
+        "elf": "leanos-fault-readonly-write.elf",
+        "serial_log": "fault-readonly-write.serial.log",
+        "scenario": "fault-readonly-write",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "fault-nx-execute": {
       "release_artifacts": [
@@ -1565,7 +1713,18 @@
         "disassembly",
         "policy-report"
       ],
-      "expectations": "scripts/expectations/fault-nx-execute.transcript"
+      "expectations": "scripts/expectations/fault-nx-execute.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-nx-execute.iso",
+        "elf": "leanos-fault-nx-execute.elf",
+        "serial_log": "fault-nx-execute.serial.log",
+        "scenario": "fault-nx-execute",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "fault-reserved-bit": {
       "family": "fault-integrity",
@@ -1587,7 +1746,8 @@
         "page-plan",
         "disassembly",
         "policy-report"
-      ]
+      ],
+      "tier": "pr"
     },
     "fault-walk-mismatch": {
       "family": "fault-integrity",
@@ -1609,122 +1769,564 @@
         "page-plan",
         "disassembly",
         "policy-report"
-      ]
+      ],
+      "tier": "evidence"
     },
     "extended-state-denial": {
-      "expectations": "scripts/expectations/extended-state.transcript"
+      "expectations": "scripts/expectations/extended-state.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-extended-state.iso",
+        "elf": "leanos-extended-state.elf",
+        "serial_log": "extended-state.serial.log",
+        "scenario": "extended-state",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "extended-state-denial-mmx": {
-      "expectations": "scripts/expectations/extended-state-mmx.transcript"
+      "expectations": "scripts/expectations/extended-state-mmx.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-extended-state-mmx.iso",
+        "elf": "leanos-extended-state-mmx.elf",
+        "serial_log": "extended-state-mmx.serial.log",
+        "scenario": "extended-state-mmx",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "extended-state-denial-sse": {
-      "expectations": "scripts/expectations/extended-state-sse.transcript"
+      "expectations": "scripts/expectations/extended-state-sse.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-extended-state-sse.iso",
+        "elf": "leanos-extended-state-sse.elf",
+        "serial_log": "extended-state-sse.serial.log",
+        "scenario": "extended-state-sse",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "extended-state-denial-sse2": {
-      "expectations": "scripts/expectations/extended-state-sse2.transcript"
+      "expectations": "scripts/expectations/extended-state-sse2.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-extended-state-sse2.iso",
+        "elf": "leanos-extended-state-sse2.elf",
+        "serial_log": "extended-state-sse2.serial.log",
+        "scenario": "extended-state-sse2",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "extended-state-denial-avx": {
-      "expectations": "scripts/expectations/extended-state-avx.transcript"
+      "expectations": "scripts/expectations/extended-state-avx.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-extended-state-avx.iso",
+        "elf": "leanos-extended-state-avx.elf",
+        "serial_log": "extended-state-avx.serial.log",
+        "scenario": "extended-state-avx",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "fast-entry-syscall": {
       "family": "fast-entry",
-      "expectations": "scripts/expectations/fast-entry-syscall.transcript"
+      "expectations": "scripts/expectations/fast-entry-syscall.transcript",
+      "tier": "evidence"
     },
     "fast-entry-sysenter": {
       "family": "fast-entry",
-      "expectations": "scripts/expectations/fast-entry-sysenter.transcript"
+      "expectations": "scripts/expectations/fast-entry-sysenter.transcript",
+      "tier": "evidence"
     },
-    "extended-state-peer-pke": {},
-    "return-kernel-selector": {},
-    "return-wrong-stack-selector": {},
-    "return-noncanonical-rip": {},
-    "return-noncanonical-rsp": {},
-    "return-outside-code": {},
-    "return-outside-stack": {},
-    "return-flags-ac": {},
-    "return-flags-df": {},
-    "return-stale-cr3": {},
-    "return-stale-context": {},
-    "return-post-validation-mutation": {},
-    "return-blocking-context-canary": {},
-    "return-capability-reuse-generation": {},
+    "extended-state-peer-pke": {
+      "tier": "pr",
+      "row": {
+        "runner": "peer-pke",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-extended-state-peer-pke.iso",
+        "elf": "leanos-extended-state-peer-pke.elf",
+        "serial_log": "extended-state-peer-pke.serial.log",
+        "scenario": "extended-state-peer-pke",
+        "mode": "-",
+        "reason": "extended-state-denial-peer-controls"
+      }
+    },
+    "return-kernel-selector": {
+      "tier": "pr",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-kernel-selector.iso",
+        "elf": "leanos-return-kernel-selector.elf",
+        "serial_log": "return-corruption-kernel-selector.serial.log",
+        "scenario": "kernel-selector",
+        "mode": "1",
+        "reason": "user-return-selector"
+      }
+    },
+    "return-wrong-stack-selector": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-wrong-stack-selector.iso",
+        "elf": "leanos-return-wrong-stack-selector.elf",
+        "serial_log": "return-corruption-wrong-stack-selector.serial.log",
+        "scenario": "wrong-stack-selector",
+        "mode": "2",
+        "reason": "user-return-selector"
+      }
+    },
+    "return-noncanonical-rip": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-noncanonical-rip.iso",
+        "elf": "leanos-return-noncanonical-rip.elf",
+        "serial_log": "return-corruption-noncanonical-rip.serial.log",
+        "scenario": "noncanonical-rip",
+        "mode": "3",
+        "reason": "user-return-noncanonical"
+      }
+    },
+    "return-noncanonical-rsp": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-noncanonical-rsp.iso",
+        "elf": "leanos-return-noncanonical-rsp.elf",
+        "serial_log": "return-corruption-noncanonical-rsp.serial.log",
+        "scenario": "noncanonical-rsp",
+        "mode": "4",
+        "reason": "user-return-noncanonical"
+      }
+    },
+    "return-outside-code": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-outside-code.iso",
+        "elf": "leanos-return-outside-code.elf",
+        "serial_log": "return-corruption-outside-code.serial.log",
+        "scenario": "outside-code",
+        "mode": "5",
+        "reason": "user-return-code"
+      }
+    },
+    "return-outside-stack": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-outside-stack.iso",
+        "elf": "leanos-return-outside-stack.elf",
+        "serial_log": "return-corruption-outside-stack.serial.log",
+        "scenario": "outside-stack",
+        "mode": "6",
+        "reason": "user-return-stack"
+      }
+    },
+    "return-flags-ac": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-flags-ac.iso",
+        "elf": "leanos-return-flags-ac.elf",
+        "serial_log": "return-corruption-flags-ac.serial.log",
+        "scenario": "flags-ac",
+        "mode": "7",
+        "reason": "user-return-flags"
+      }
+    },
+    "return-flags-df": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-flags-df.iso",
+        "elf": "leanos-return-flags-df.elf",
+        "serial_log": "return-corruption-flags-df.serial.log",
+        "scenario": "flags-df",
+        "mode": "8",
+        "reason": "user-return-flags"
+      }
+    },
+    "return-stale-cr3": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-stale-cr3.iso",
+        "elf": "leanos-return-stale-cr3.elf",
+        "serial_log": "return-corruption-stale-cr3.serial.log",
+        "scenario": "stale-cr3",
+        "mode": "9",
+        "reason": "user-return-cr3"
+      }
+    },
+    "return-stale-context": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-stale-context.iso",
+        "elf": "leanos-return-stale-context.elf",
+        "serial_log": "return-corruption-stale-context.serial.log",
+        "scenario": "stale-context",
+        "mode": "10",
+        "reason": "user-return-code"
+      }
+    },
+    "return-post-validation-mutation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-post-validation-mutation.iso",
+        "elf": "leanos-return-post-validation-mutation.elf",
+        "serial_log": "return-corruption-post-validation-mutation.serial.log",
+        "scenario": "post-validation-mutation",
+        "mode": "11",
+        "reason": "user-return-noncanonical"
+      }
+    },
+    "return-blocking-context-canary": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-blocking-context-canary.iso",
+        "elf": "leanos-return-blocking-context-canary.elf",
+        "serial_log": "return-corruption-blocking-context-canary.serial.log",
+        "scenario": "blocking-context-canary",
+        "mode": "12",
+        "reason": "register-canary"
+      }
+    },
+    "return-capability-reuse-generation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-capability-reuse-generation.iso",
+        "elf": "leanos-return-capability-reuse-generation.elf",
+        "serial_log": "return-corruption-capability-reuse-generation.serial.log",
+        "scenario": "capability-reuse-generation",
+        "mode": "13",
+        "reason": "capability-reuse-generation"
+      }
+    },
     "return-fast-entry-sce-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "14",
-      "reason": "fast-entry-efer-readback"
+      "reason": "fast-entry-efer-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-lstar-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "15",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-sysenter-eip-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "16",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-star-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "17",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-cstar-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "18",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-sfmask-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "19",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-sysenter-cs-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "20",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
     "return-fast-entry-sysenter-esp-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "21",
-      "reason": "fast-entry-target-readback"
+      "reason": "fast-entry-target-readback",
+      "tier": "evidence"
     },
-    "return-direct-port-bitmap-relaxation": {},
-    "return-direct-port-limit-relaxation": {},
-    "return-direct-port-granularity-relaxation": {},
-    "return-dma-bus-master-reenable": {},
-    "return-vtd-translation-disable": {},
+    "return-direct-port-bitmap-relaxation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-direct-port-bitmap-relaxation.iso",
+        "elf": "leanos-return-direct-port-bitmap-relaxation.elf",
+        "serial_log": "return-corruption-direct-port-bitmap-relaxation.serial.log",
+        "scenario": "direct-port-bitmap-relaxation",
+        "mode": "22",
+        "reason": "direct-port-control-readback"
+      }
+    },
+    "return-direct-port-limit-relaxation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-direct-port-limit-relaxation.iso",
+        "elf": "leanos-return-direct-port-limit-relaxation.elf",
+        "serial_log": "return-corruption-direct-port-limit-relaxation.serial.log",
+        "scenario": "direct-port-limit-relaxation",
+        "mode": "23",
+        "reason": "direct-port-control-readback"
+      }
+    },
+    "return-direct-port-granularity-relaxation": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-direct-port-granularity-relaxation.iso",
+        "elf": "leanos-return-direct-port-granularity-relaxation.elf",
+        "serial_log": "return-corruption-direct-port-granularity-relaxation.serial.log",
+        "scenario": "direct-port-granularity-relaxation",
+        "mode": "24",
+        "reason": "direct-port-control-readback"
+      }
+    },
+    "return-dma-bus-master-reenable": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-dma-bus-master-reenable.iso",
+        "elf": "leanos-return-dma-bus-master-reenable.elf",
+        "serial_log": "return-corruption-dma-bus-master-reenable.serial.log",
+        "scenario": "dma-bus-master-reenable",
+        "mode": "25",
+        "reason": "dma-live-command"
+      }
+    },
+    "return-vtd-translation-disable": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-vtd-translation-disable.iso",
+        "elf": "leanos-return-vtd-translation-disable.elf",
+        "serial_log": "return-corruption-vtd-translation-disable.serial.log",
+        "scenario": "vtd-translation-disable",
+        "mode": "26",
+        "reason": "vtd-live-status"
+      }
+    },
     "double-fault": {
       "release_artifacts": [
         "serial-log"
-      ]
+      ],
+      "tier": "pr",
+      "row": {
+        "runner": "double-fault",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-double-fault.iso",
+        "elf": "leanos-double-fault.elf",
+        "serial_log": "double-fault.serial.log",
+        "scenario": "double-fault",
+        "mode": "-",
+        "reason": "-"
+      }
     },
-    "entry-stack-overflow": {},
-    "nmi-terminal": {},
-    "nmi-terminal-cpl3": {},
-    "bootstrap32-ud": {},
-    "bootstrap64-nmi": {},
+    "entry-stack-overflow": {
+      "tier": "pr",
+      "row": {
+        "runner": "entry-stack-overflow",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-entry-stack-overflow.iso",
+        "elf": "leanos-entry-stack-overflow.elf",
+        "serial_log": "entry-stack-overflow.serial.log",
+        "scenario": "entry-stack-overflow",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "nmi-terminal": {
+      "tier": "pr",
+      "row": {
+        "runner": "nmi",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-nmi.iso",
+        "elf": "leanos-nmi.elf",
+        "serial_log": "nmi.serial.log",
+        "scenario": "kernel-entry",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "nmi-terminal-cpl3": {
+      "tier": "evidence",
+      "row": {
+        "runner": "nmi",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-nmi-cpl3.iso",
+        "elf": "leanos-nmi-cpl3.elf",
+        "serial_log": "nmi-cpl3.serial.log",
+        "scenario": "cpl3-spin",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "bootstrap32-ud": {
+      "tier": "pr",
+      "row": {
+        "runner": "bootstrap32-ud",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-bootstrap32-ud.iso",
+        "elf": "leanos-bootstrap32-ud.elf",
+        "serial_log": "bootstrap32-ud.serial.log",
+        "scenario": "bootstrap32-ud",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "bootstrap64-nmi": {
+      "tier": "pr",
+      "row": {
+        "runner": "bootstrap64-nmi",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-bootstrap64-nmi.iso",
+        "elf": "leanos-bootstrap64-nmi.elf",
+        "serial_log": "bootstrap64-nmi.serial.log",
+        "scenario": "bootstrap64-nmi",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
     "double-fault-guard-mapped": {
       "release_artifacts": [
         "serial-log"
-      ]
+      ],
+      "tier": "pr",
+      "row": {
+        "runner": "double-fault-guard",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso",
+        "elf": "leanos-double-fault-guard-mapped.elf",
+        "serial_log": "double-fault-guard-mapped.serial.log",
+        "scenario": "double-fault-guard-mapped",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "direct-port-serial": {
-      "expectations": "scripts/expectations/direct-port-serial.transcript"
+      "expectations": "scripts/expectations/direct-port-serial.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-direct-port-serial.iso",
+        "elf": "leanos-direct-port-serial.elf",
+        "serial_log": "direct-port-serial.serial.log",
+        "scenario": "direct-port-serial",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "direct-port-debug": {
-      "expectations": "scripts/expectations/direct-port-debug.transcript"
+      "expectations": "scripts/expectations/direct-port-debug.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-direct-port-debug.iso",
+        "elf": "leanos-direct-port-debug.elf",
+        "serial_log": "direct-port-debug.serial.log",
+        "scenario": "direct-port-debug",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "direct-port-in": {
-      "expectations": "scripts/expectations/direct-port-in.transcript"
+      "expectations": "scripts/expectations/direct-port-in.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-direct-port-in.iso",
+        "elf": "leanos-direct-port-in.elf",
+        "serial_log": "direct-port-in.serial.log",
+        "scenario": "direct-port-in",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "direct-port-pic": {
-      "expectations": "scripts/expectations/direct-port-pic.transcript"
+      "expectations": "scripts/expectations/direct-port-pic.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-direct-port-pic.iso",
+        "elf": "leanos-direct-port-pic.elf",
+        "serial_log": "direct-port-pic.serial.log",
+        "scenario": "direct-port-pic",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "divide-error": {
-      "expectations": "scripts/expectations/divide-error.transcript"
+      "expectations": "scripts/expectations/divide-error.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-divide-error.iso",
+        "elf": "leanos-divide-error.elf",
+        "serial_log": "divide-error.serial.log",
+        "scenario": "divide-error",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "breakpoint": {
-      "expectations": "scripts/expectations/breakpoint.transcript"
+      "expectations": "scripts/expectations/breakpoint.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-breakpoint.iso",
+        "elf": "leanos-breakpoint.elf",
+        "serial_log": "breakpoint.serial.log",
+        "scenario": "breakpoint",
+        "mode": "-",
+        "reason": "-"
+      }
     },
     "stale-translation": {
       "reproducibility_artifacts": [
@@ -1735,7 +2337,42 @@
         "disassembly",
         "policy-report"
       ],
-      "expectations": "scripts/expectations/stale-translation-denial.transcript"
+      "expectations": "scripts/expectations/stale-translation-denial.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-stale-translation.iso",
+        "elf": "leanos-fault-stale-translation.elf",
+        "serial_log": "fault-stale-translation.serial.log",
+        "scenario": "stale-translation-denial",
+        "mode": "-",
+        "reason": "-"
+      }
+    },
+    "return-flags-iopl": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-flags-iopl.iso",
+        "elf": "leanos-return-flags-iopl.elf",
+        "serial_log": "return-corruption-flags-iopl.serial.log",
+        "scenario": "flags-iopl",
+        "mode": "27",
+        "reason": "user-return-flags"
+      },
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map"
+      ]
     }
   }
 }

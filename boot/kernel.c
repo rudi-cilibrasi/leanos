@@ -1152,6 +1152,9 @@ static const char *return_corruption_name(uint64_t mode) {
     case 11: return "post-validation-mutation";
     case 12: return "blocking-context-canary";
     case 13: return "capability-reuse-generation";
+#if LEANOS_RETURN_CORRUPTION_MODE == 27
+    case 27: return "flags-iopl";
+#endif
 #if LEANOS_RETURN_CORRUPTION_MODE == 14
     case 14: return "fast-entry-sce-relaxation";
 #endif
@@ -1226,6 +1229,11 @@ static void inject_return_corruption(uint64_t *saved) {
     case 10: current_subject = current_subject == 1 ? 2 : 1; break;
     case 11: break;
     case 12: saved[7] ^= 1; break;
+#if LEANOS_RETURN_CORRUPTION_MODE == 27
+    /* IOPL=3 would grant CPL3 direct I/O privileges after iret. The ordinary
+       outgoing-frame validator must reject it before any user instruction. */
+    case 27: saved[17] |= 3ull << 12; break;
+#endif
 #if LEANOS_RETURN_CORRUPTION_MODE == 14
     case 14: {
         uint32_t low, high;

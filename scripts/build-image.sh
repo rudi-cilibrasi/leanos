@@ -426,6 +426,9 @@ build="$repo_root/build/boot"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
+if [[ "$matrix" == scripts/emulator-evidence-matrix.tsv ]]; then
+  python3 scripts/generate-evidence-matrix.py --output "$matrix"
+fi
 evidence_tier="${LEANOS_EVIDENCE_TIER:-all}"
 evidence_shard_index="${LEANOS_EVIDENCE_SHARD_INDEX:-}"
 evidence_shard_count="${LEANOS_EVIDENCE_SHARD_COUNT:-}"
