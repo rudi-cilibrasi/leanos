@@ -1,5 +1,10 @@
 # Qotom command and readback observations
 
+The all-zero Command proposal is not a usable physical Qotom policy: LPC
+Command has read-only enabled bits. See
+[qotom-lpc-command-constraint.md](qotom-lpc-command-constraint.md).
+The synthetic accepted traces below do not establish hardware realizability.
+
 `LeanOS.QotomPCIQuarantineObservation` checks an ordered trace against the
 complete captured AHCI inventory from `QotomPCIInventory`. It is a prerequisite
 for the quarantine adapter in issue #330, not production admission or a proof
