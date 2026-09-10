@@ -38,6 +38,25 @@ def expect_rejection(manifest: dict, diagnostic: str) -> None:
 
 def main() -> None:
     manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
+    variants = manifest["scenarios"]["assigned-edu-inventory"]["negative_variants"]
+    result = run(manifest, "negative-variants", "assigned-edu-inventory")
+    expected = "".join("\t".join(row[k] for k in ("fixture", "macro", "reason")) + "\n" for row in variants)
+    if result.returncode or result.stdout != expected:
+        raise AssertionError(f"negative variants query failed: {result}")
+    for value, diagnostic in (
+        (None, "requires nonempty negative_variants"),
+        ([], "requires nonempty negative_variants"),
+        ([{}], "malformed negative variant"),
+        ([dict(variants[0], macro="-DUNTRUSTED")], "invalid negative variant fields"),
+        ([dict(variants[0], reason="bad\tfield")], "invalid negative variant fields"),
+        ([variants[0], variants[0]], "repeats negative fixture"),
+    ):
+        changed = json.loads(json.dumps(manifest))
+        changed["scenarios"]["assigned-edu-inventory"]["negative_variants"] = value
+        expect_rejection(changed, diagnostic)
+    changed = json.loads(json.dumps(manifest))
+    del changed["scenarios"]["assigned-edu-inventory"]["negative_variants"]
+    expect_rejection(changed, "requires nonempty negative_variants")
     generator = ROOT / "scripts/generate-evidence-matrix.py"
     generated = subprocess.run(["python3", str(generator)], capture_output=True, text=True)
     count = len(manifest["scenarios"])

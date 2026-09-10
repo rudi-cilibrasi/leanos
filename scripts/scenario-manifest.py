@@ -39,7 +39,34 @@ def load(path: Path) -> dict:
     build = manifest.get("build")
     if not isinstance(build, dict) or not isinstance(build.get("images"), dict):
         raise ManifestError("scenario manifest lacks build images")
+    for scenario, entry in manifest.get("scenarios", {}).items():
+        if entry.get("row", {}).get("runner") == "assigned-edu" or "negative_variants" in entry:
+            negative_variant_rows(manifest, scenario)
     return manifest
+
+
+def negative_variant_rows(manifest: dict, scenario: str) -> list[dict[str, str]]:
+    entry = manifest.get("scenarios", {}).get(scenario)
+    if not isinstance(entry, dict):
+        raise ManifestError(f"negative-variant scenario is missing: {scenario}")
+    variants = entry.get("negative_variants")
+    if not isinstance(variants, list) or not variants:
+        raise ManifestError(f"scenario {scenario} requires nonempty negative_variants")
+    seen = set()
+    for row in variants:
+        if not isinstance(row, dict) or set(row) != {"fixture", "macro", "reason"}:
+            raise ManifestError(f"scenario {scenario} has malformed negative variant")
+        if (
+            any(not isinstance(row[k], str) for k in row)
+            or not NAME.fullmatch(row["fixture"])
+            or not NAME.fullmatch(row["reason"])
+            or not re.fullmatch(r"LEANOS_[A-Z0-9_]+_FIXTURE", row["macro"])
+        ):
+            raise ManifestError(f"scenario {scenario} has invalid negative variant fields")
+        if row["fixture"] in seen:
+            raise ManifestError(f"scenario {scenario} repeats negative fixture {row['fixture']}")
+        seen.add(row["fixture"])
+    return variants
 
 
 def image_name(stem: str) -> str:
@@ -381,12 +408,17 @@ def main() -> int:
     sub.add_parser("disassemblies", help="final-ELF disassembly outputs")
     sub.add_parser("entry-policies", help="entry-policy checks queued per final ELF")
     sub.add_parser("extended-state-policies", help="extended-state policy runs per final ELF")
+    variants = sub.add_parser("negative-variants", help="fixture, compiler macro and expected failure reason")
+    variants.add_argument("scenario")
     expectations = sub.add_parser("expectations", help="scenarios whose expected transcript is a template")
     expectations.add_argument("scenario", nargs="?")
     args = parser.parse_args()
     try:
         manifest = load(args.manifest)
-        if args.operation == "images":
+        if args.operation == "negative-variants":
+            for row in negative_variant_rows(manifest, args.scenario):
+                print("\t".join(row[k] for k in ("fixture", "macro", "reason")))
+        elif args.operation == "images":
             for row in image_rows(manifest):
                 print("\t".join(row[column] for column in COLUMNS))
         elif args.operation == "packaged-images":

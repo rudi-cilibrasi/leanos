@@ -595,7 +595,7 @@ jobs:
             --shard-count 4 \
             --output build/evidence/emulator-shard-${{ matrix.shard }}.json \
             2>&1 | tee build/ci/emulator-evidence.log
-          if [[ -f build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64-assigned-edu-missing-mmio-mapping.iso ]]; then
+          if [[ -f build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64-assigned-edu.iso ]]; then
             ./scripts/run-assigned-edu-negatives.sh \
               2>&1 | tee build/ci/assigned-edu-negatives.log
           fi

@@ -41,16 +41,10 @@ assigned_outputs=(
   "build/boot/leanos-assigned-edu.elf"
   "build/boot/leanos-${version}-x86_64-assigned-edu.iso"
 )
-assigned_edu_negative_specs=(
-  "missing-mmio-mapping:LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE"
-  "wrong-bar:LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE"
-  "wrong-mmio-identity:LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE"
-  "forged-fault:LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE"
-  "wrong-fault-victim:LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE"
-  "omit-reuse-invalidation:LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE"
-)
+assigned_negative_rows="$(./scripts/scenario-manifest.py negative-variants assigned-edu-inventory)" || return 1
+mapfile -t assigned_edu_negative_specs <<< "$assigned_negative_rows"
 for spec in "${assigned_edu_negative_specs[@]}"; do
-  IFS=: read -r fixture _fixture_macro <<<"$spec"
+  IFS=$'\t' read -r fixture _fixture_macro _reason <<<"$spec"
   assigned_outputs+=(
     "build/boot/boot-page-plan-assigned-edu-${fixture}.h"
     "build/boot/boot-page-plan-assigned-edu-${fixture}.final.h"
@@ -64,7 +58,8 @@ assigned_current_signature="$(compute_check_signature assigned-edu \
   "$current_lean_c_signature" "$current_graph_signature" \
   "$iso_packaging_signature" "$source_revision" "$version" \
   "${cflags[@]}" boot/kernel.c boot/linker.ld boot/grub.cfg \
-  scripts/build-assigned-edu-image.sh \
+  scripts/build-assigned-edu-image.sh scripts/scenario-manifest.py \
+  scripts/scenario-manifest.json \
   "$build/boot.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
@@ -121,7 +116,7 @@ done
 # generated CPU mapping, exact device read-back, forged fault binding, and a
 # changed protected victim record.
 for spec in "${assigned_edu_negative_specs[@]}"; do
-  IFS=: read -r fixture fixture_macro <<<"$spec"
+  IFS=$'\t' read -r fixture fixture_macro _reason <<<"$spec"
   fixture_base="leanos-assigned-edu-${fixture}"
   fixture_iso_root="$build/iso-assigned-edu-${fixture}"
   fixture_plan="$build/boot-page-plan-assigned-edu-${fixture}.h"
