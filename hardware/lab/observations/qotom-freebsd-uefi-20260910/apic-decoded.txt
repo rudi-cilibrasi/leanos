@@ -1,0 +1,68 @@
+/*
+  RSD PTR: OEM=ALASKA, ACPI_Rev=2.0x (2)
+	XSDT=0x00000000b979b080, length=36, cksum=122
+ */
+/*
+  APIC: Length=132, Revision=3, Checksum=138,
+	OEMID=ALASKA, OEM Table ID=A M I, OEM Revision=0x1072009,
+	Creator ID=AMI, Creator Revision=0x10013
+	Local APIC ADDR=0xfee00000
+	Flags={PC-AT}
+
+	Type=Local APIC
+	ACPI CPU=1
+	Flags={ENABLED}
+	APIC ID=0
+
+	Type=Local APIC NMI
+	ACPI CPU=1
+	LINT Pin=247
+	Flags={Polarity=conforming, Trigger=level}
+
+	Type=Local APIC
+	ACPI CPU=2
+	Flags={ENABLED}
+	APIC ID=2
+
+	Type=Local APIC NMI
+	ACPI CPU=2
+	LINT Pin=166
+	Flags={Polarity=active-hi, Trigger=0x2}
+
+	Type=Local APIC
+	ACPI CPU=3
+	Flags={ENABLED}
+	APIC ID=4
+
+	Type=Local APIC NMI
+	ACPI CPU=3
+	LINT Pin=206
+	Flags={Polarity=0x2, Trigger=0x2}
+
+	Type=Local APIC
+	ACPI CPU=4
+	Flags={ENABLED}
+	APIC ID=6
+
+	Type=Local APIC NMI
+	ACPI CPU=4
+	LINT Pin=39
+	Flags={Polarity=active-hi, Trigger=level}
+
+	Type=IO APIC
+	APIC ID=1
+	INT BASE=0
+	ADDR=0x00000000fec00000
+
+	Type=INT Override
+	BUS=0
+	IRQ=0
+	INTR=2
+	Flags={Polarity=conforming, Trigger=conforming}
+
+	Type=INT Override
+	BUS=0
+	IRQ=9
+	INTR=9
+	Flags={Polarity=active-hi, Trigger=level}
+ */

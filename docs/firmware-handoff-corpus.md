@@ -34,7 +34,7 @@ also retain the RSDP, root tables, physical address summary, and an exact copy
 of each referenced table. Their `root_replay` expectation pins all five result
 words and the content digest of the normalized root replay.
 
-The corpus includes five virtual-firmware captures and one physical-machine capture:
+The corpus includes five virtual-firmware captures and two physical-machine captures:
 
 | Case | Firmware | Memory map | Topology |
 | --- | --- | --- | --- |
@@ -44,6 +44,7 @@ The corpus includes five virtual-firmware captures and one physical-machine capt
 | `intel-nuc10-fncml0053` | Intel NUC10i7FNH, FNCML357.0053 firmware | 18 interleaved RAM/NVS/reserved entries, decoded | 12 enabled processors, rejected `multipleEnabledProcessors` |
 | `qemu-seabios-q35-roots-1cpu` | SeaBIOS physical root capture | 9 entries, decoded | RSDP/RSDT and 5 referenced tables; topology admitted |
 | `qemu-ovmf-q35-roots-4cpu` | OVMF physical root capture | 19 entries, decoded | RSDP/XSDT and 6 referenced tables; rejected `multipleEnabledProcessors` |
+| `qotom-j1900-freebsd-uefi` | Qotom J1900 / AMI CLBTM210, FreeBSD UEFI | 30 EFI descriptors conservatively projected, decoded | Exact RSDP/XSDT and referenced tables; rejected `multipleEnabledProcessors` |
 
 The QEMU rows are real firmware captured through the same Linux
 procedure as a physical machine, not repository-constructed fixtures; the
@@ -53,6 +54,34 @@ procedure. Its MADT retains the firmware OEM table identifier `NUC9i5FN` even
 though DMI identifies the machine as NUC10i7FNH; neither value is repaired.
 This is a Linux-observed firmware replay, not a LeanOS boot capture. The NUC
 root-table bytes could not be read, so it adds no root-selection evidence.
+
+## FreeBSD Qotom source contract
+
+The Qotom row uses `root_tables: freebsd-physical`. Its raw EFI map and ACPI
+bytes were captured during a FreeBSD UEFI boot, not a legacy GRUB boot. The
+[conservative EFI projection](../hardware/lab/FREEBSD-FIRMWARE.md) preserves
+descriptor order and bounds, admits only conventional memory as usable, and
+reserves loader, boot-services and runtime regions. The corpus gate recomputes
+`memmap.tsv` from the retained `efi-map.bin`; it never relabels the raw map as
+Linux E820. The projection is a hosted input reconstruction, not a live
+allocation policy or an assertion about GRUB's actual memory map.
+
+Physical root addresses are recorded in `acpi/addresses.json`. The RSDP
+address is bound to the retained `machdep.acpi_root` sysctl output. RSDT/XSDT
+addresses follow the exact RSDP, and table addresses follow the exact root
+vectors. The full source observation retains commands, header/full/repeat
+reads and before/after boot identity. The per-case MADT must match its
+addressed physical copy. CPU0's sampled CPUID leaf 1 binds the hosted executing
+identity, but is not evidence that LeanOS runs on the BSP or leaves APs dormant.
+
+The UEFI MADT's four Local APIC NMI routing records contain unusual LINT bytes
+247, 166, 206 and 39. An earlier decoded Qotom inventory printed zero for all
+four fields. No bytes are repaired. The current topology decoder validates
+these records' kind and length but skips routing fields, so the topology
+result establishes no safety property about that routing. The ACPI tables
+also reside outside LeanOS's initial 16 MiB mapping. Actual legacy handoff,
+bounded physical copying, BSP-only admission and physical execution remain
+required by issue #331.
 
 ## Capture procedure
 
@@ -81,13 +110,13 @@ The QEMU capture accepts `--acpidump <binary>` to stage that optional tool and
 its libraries in the minimal guest. Merely having acpidump installed on the
 host does not put it in the guest. Both capture scripts support x86_64 Linux;
 the root helper interprets the little-endian address vectors on that host.
-The two root-capture rows replay those files through both Lean and generated C.
+The two QEMU root-capture rows replay those files through both Lean and generated C.
 
 `scripts/capture-firmware-handoff-qemu.sh` produces the same capture from a
 Linux guest under QEMU: it builds a minimal initramfs (static busybox, bash
 and its libraries, and the capture script), boots a stock kernel with SeaBIOS
 or an OVMF firmware image, reads the capture back over the serial console,
-and adds the `guest` provenance object. | `intel-nuc10-fncml0053` | Intel NUC10i7FNH, FNCML357.0053 firmware | 18 interleaved RAM/NVS/reserved entries, decoded | 12 enabled processors, rejected `multipleEnabledProcessors` |
+and adds the `guest` provenance object.
 
 The two QEMU rows were produced with
 the Ubuntu `linux-image-6.8.0-139-generic`, `busybox-static

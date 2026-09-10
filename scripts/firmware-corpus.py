@@ -156,9 +156,9 @@ def validate_case(case: dict, seen_ids: set) -> None:
     directory = CORPUS / case_id
     require(directory.is_dir(), f"{prefix}: directory {directory} is missing")
     inputs = case.get("inputs")
-    require(case.get("root_tables") in ("unavailable", "acpidump"),
-            f"{prefix}: root_tables must be unavailable or acpidump")
-    rooted = case["root_tables"] == "acpidump"
+    require(case.get("root_tables") in ("unavailable", "acpidump", "freebsd-physical"),
+            f"{prefix}: root_tables must be unavailable, acpidump or freebsd-physical")
+    rooted = case["root_tables"] in ("acpidump", "freebsd-physical")
     expected_files = roots.capture_files(directory) if rooted else {
         "memmap.tsv", "acpi/APIC.bin", "executing-apic-id.txt", "provenance.json"}
     require(isinstance(inputs, dict) and set(inputs) == expected_files,
@@ -174,6 +174,11 @@ def validate_case(case: dict, seen_ids: set) -> None:
     for name in set(inputs) - {"provenance.json"}:
         require(provenance.get("files", {}).get(name) == inputs[name],
                 f"{prefix}: capture provenance records a different {name}")
+    if rooted:
+        require((directory / "acpi/addresses.json").exists() == (case["root_tables"] == "freebsd-physical"),
+                f"{prefix}: root address format disagrees with capture source")
+    if case["root_tables"] == "freebsd-physical":
+        roots.validate_freebsd_projection(directory)
     if rooted:
         def root_entry(entry, name):
             require(isinstance(entry, dict) and set(entry) == {"result", "words", "normalized_sha256"},
@@ -421,7 +426,7 @@ def normalize(cases: list[dict], out: Path) -> list[dict]:
             path.write_bytes(data)
             rows.append({"case": case["id"], "input": f"{case['id']}/{name}", "stage": "handoff",
                          "path": path, "words": padded_words("handoff", entry["words"]), "result": entry["result"]})
-        if case["root_tables"] == "acpidump":
+        if case["root_tables"] in ("acpidump", "freebsd-physical"):
             base = roots.from_capture(directory, info)
             for name, replay in {"root": base, **roots.mutations(base)}.items():
                 entry = case["root_replay"] if name == "root" else case["root_mutations"][name]
@@ -526,7 +531,7 @@ def write_evaluate(cases: list[dict], out: Path) -> None:
                 count = MADT_WORDS
             lines.append(f'#eval IO.println s!"{case["id"]}\\t{name}\\t{{(trim ((List.range {count}).map (fun word => {query} (UInt64.ofNat word)))).toString}}"')
             lines.append("")
-        if case.get("root_tables") == "acpidump":
+        if case.get("root_tables") in ("acpidump", "freebsd-physical"):
             root = roots.from_capture(directory, info)
             for name, replay in {"root": root, **roots.mutations(root)}.items():
                 query = roots.lean_query(replay, apic["executing"])
@@ -566,7 +571,7 @@ def pin(manifest: dict, evaluation: Path, path: Path) -> None:
             words[(fields[0], fields[1])] = [int(word) for word in fields[2].strip("[]").split(",") if word.strip()]
     for case in manifest["cases"]:
         case_id = case["id"]
-        stages = ("handoff", "madt", "root") if case.get("root_tables") == "acpidump" else ("handoff", "madt")
+        stages = ("handoff", "madt", "root") if case.get("root_tables") in ("acpidump", "freebsd-physical") else ("handoff", "madt")
         for stage in stages:
             key = (case_id, stage)
             require(key in words and key in digests, f"case {case_id}: evaluation lacks the {stage} stage")
@@ -577,7 +582,7 @@ def pin(manifest: dict, evaluation: Path, path: Path) -> None:
                     f"case {case_id}: declared {stage} result {declared!r} but the model computes {computed!r}")
             entry["words"] = words[key]
             entry["normalized_sha256"] = digests[key]
-        if case.get("root_tables") == "acpidump":
+        if case.get("root_tables") in ("acpidump", "freebsd-physical"):
             root = roots.from_capture(CORPUS / case_id, multiboot2_information(read_memmap(CORPUS / case_id / "memmap.tsv")))
             case["root_mutations"] = {}
             for name in roots.mutations(root):
