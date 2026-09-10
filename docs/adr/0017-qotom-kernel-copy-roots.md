@@ -196,3 +196,20 @@ runs the executable.
 
 This is generated-C replay of the models, not a production boundary ABI, a
 freestanding runtime test or execution evidence for CR3/copy instructions.
+
+### Isolated root-reload primitive
+
+`experiments/copy-roots/reload.S` is an unlinked assembly prototype for the
+publication effect. It requires IF clear, PCID/PGE disabled, and a nonzero,
+page-aligned trusted PML4 address inside the initial 16 MiB arena. It always
+reloads CR3, including same-root transitions, then checks the root readback.
+Invalid preconditions or a readback mismatch enter an assembly-only CLI/HLT
+loop. The trusted caller must establish the target's full page-table contents,
+shared code/stack mappings, authority and exception-entry requirements.
+
+`scripts/check-copy-root-reload.py` checks the complete linked instruction
+sequence, guard targets and terminal loop. Eleven assembled mutations exercise
+missing reload/control/alignment/readback checks, an incorrect arena bound,
+premature or terminal returns, unsupported STAC and undecodable trailing bytes.
+These are static object checks. Execution fixtures and integration with every
+entry/copy/return path remain required before linking this into a boot image.

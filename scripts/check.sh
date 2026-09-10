@@ -51,6 +51,7 @@ lake env lean tests/user-copy-prefix.lean
 lake env lean tests/user-copy-aliases.lean
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
+python3 scripts/check-copy-root-reload.py --self-test
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"
