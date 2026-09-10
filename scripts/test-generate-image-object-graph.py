@@ -26,6 +26,65 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ImageObjectGraphTests(unittest.TestCase):
+    def test_common_link_query_reaches_policy_linkers_in_order(self) -> None:
+        import shutil
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            (root / "boot").mkdir()
+            (root / "boot" / "boot.S").write_text("isr2:\n")
+            generator = scripts / SCRIPT.name
+            # Simulate the next common module without editing any consumer.
+            generator.write_text(SCRIPT.read_text().replace(
+                "COMMON_LINK_OBJECTS = (", 'COMMON_LINK_OBJECTS = ("FutureBoundary",', 1))
+            shutil.copy(SCRIPT.with_name("scenario-manifest.json"), scripts)
+            build = root / "objects with spaces"
+            expected = subprocess.check_output([
+                "python3", str(generator), "--print-common-link-objects",
+                "--build-dir", str(build)], text=True).splitlines()
+            self.assertEqual(Path(expected[0]).name, "FutureBoundary.o")
+            for filename in ("test-nmi-image-policy.sh", "test-early-idt-policy.sh",
+                             "test-early-probe-policy.sh"):
+                with self.subTest(consumer=filename):
+                    source = SCRIPT.with_name(filename).read_text()
+                    query = source[source.index('common_object_rows='):].split(
+                        '\nmapfile -t common_link_objects <<< "$common_object_rows"', 1)[0]
+                    query += '\nmapfile -t common_link_objects <<< "$common_object_rows"'
+                    function = "link_fixture() {" + source.split(
+                        "link_fixture() {", 1)[1].split("\n}", 1)[0] + "\n}"
+                    shell = '\n'.join([
+                        'set -euo pipefail', 'root="$PWD"', 'tmp="$PWD"',
+                        'cc=true', 'build=' + shlex.quote(str(build)), query,
+                        'ld() { printf "%s\\n" "$@"; }', function,
+                        'link_fixture candidate nop',
+                    ])
+                    result = subprocess.check_output(["bash", "-c", shell],
+                                                     cwd=root, text=True).splitlines()
+                    self.assertEqual(result[-len(expected):], expected)
+
+    def test_policy_link_query_failure_stops_consumers(self) -> None:
+        import shutil
+        with tempfile.TemporaryDirectory() as directory:
+            scripts = Path(directory) / "scripts"
+            scripts.mkdir()
+            (scripts / SCRIPT.name).write_text('raise SystemExit(23)\n')
+            for filename in ("test-nmi-image-policy.sh", "test-early-idt-policy.sh",
+                             "test-early-probe-policy.sh"):
+                with self.subTest(consumer=filename):
+                    target = scripts / filename
+                    shutil.copy(SCRIPT.with_name(filename), target)
+                    result = subprocess.run(["bash", str(target)],
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 23, result.stderr)
+
+    def test_common_link_query_rejects_ambiguous_lines(self) -> None:
+        result = subprocess.run([
+            "python3", str(SCRIPT), "--print-common-link-objects",
+            "--build-dir", "bad\npath"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("single-line build directory", result.stderr)
+
     def test_serial_graph_parity_excludes_partitioned_intermediate_objects(
         self,
     ) -> None:

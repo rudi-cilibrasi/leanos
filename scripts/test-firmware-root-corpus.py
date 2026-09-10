@@ -123,6 +123,51 @@ class RootCorpusTests(unittest.TestCase):
         self.assertNotEqual(base.digest(),replace(base,executing_override=255).digest())
         self.assertIn('255',roots.lean_query(replace(base,executing_override=255),0))
 
+    def test_cpu_mutations_reach_topology_with_valid_tables(self):
+        import struct
+
+        def records(data):
+            offset, result = 44, []
+            while offset < len(data):
+                size = data[offset+1]
+                self.assertGreaterEqual(size, 2)
+                self.assertLessEqual(offset+size, len(data))
+                result.append(data[offset:offset+size])
+                offset += size
+            return result
+
+        manifest = json.loads((ROOT/'firmware-corpus/manifest.json').read_text())
+        for case in manifest['cases']:
+            if case['root_tables'] not in ('acpidump', 'freebsd-physical'):
+                continue
+            with self.subTest(case=case['id']):
+                directory = ROOT/'firmware-corpus'/case['id']
+                info = corpus.multiboot2_information(corpus.read_memmap(directory/'memmap.tsv'))
+                base = roots.from_capture(directory, info)
+                before = base.digest()
+                address, original = next((a,b) for a,b in base.tables if b[:4] == b'APIC')
+                original_records = records(original)
+                first_cpu = next(r for r in original_records if r[0] == 0)
+                variants = roots.mutations(base)
+                for name in ('root-duplicate-cpu', 'root-missing-cpus'):
+                    reason, code = (('duplicateApicId', 4) if name == 'root-duplicate-cpu'
+                                    else ('noEnabledProcessor', 6))
+                    pinned = case['root_mutations'][name]
+                    self.assertEqual(pinned['result'], 'admission-rejected:' + reason)
+                    self.assertEqual(pinned['words'], [1, 3, code, 0, 0])
+                    mutated = variants[name]
+                    data = dict(mutated.tables)[address]
+                    self.assertEqual(sum(data) % 256, 0)
+                    self.assertEqual(struct.unpack_from('<I', data, 4)[0], len(data))
+                    self.assertEqual(mutated.info, base.info)
+                    self.assertEqual(mutated.root, base.root)
+                    self.assertEqual([(a,b) for a,b in mutated.tables if a != address],
+                                     [(a,b) for a,b in base.tables if a != address])
+                    expected = (original_records + [first_cpu] if name == 'root-duplicate-cpu'
+                                else [r for r in original_records if r[0] != 0])
+                    self.assertEqual(records(data), expected)
+                self.assertEqual(base.digest(), before)
+
     def test_root_sdt_reason_is_not_collapsed_to_generic_code(self):
         self.assertEqual(roots.rejection_name([1,2,25,5,0]),
                          'decoder-rejected:madtSelection.root.invalidChecksum')
