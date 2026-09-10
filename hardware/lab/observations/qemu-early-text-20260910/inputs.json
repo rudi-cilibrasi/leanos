@@ -1,0 +1,7 @@
+{
+  "image_sha256": "abcaf180599188a4230bd6ed37a832a89ef6e60a90fb1d787398bc7a13daa0f9",
+  "elf_sha256": "dd75d7fa6718e8dfbc66faa2e958b461458bcd39b236b3fb5f22da616c8210e2",
+  "source_revision": "c06036aec84e619bb8d492137f3c7a9ea84fcd87",
+  "source_dirty": false,
+  "qemu": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)"
+}

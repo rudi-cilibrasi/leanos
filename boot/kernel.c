@@ -2,6 +2,9 @@
 #include "corpus.h"
 #include "serial-protocol.h"
 #include "boundary-abi.h"
+#include "boot_text_console.h"
+
+static struct boot_text_console early_text_console;
 #include "leanos/composite-dispatcher.h"
 
 /* GCC's noipa also blocks interprocedural transformations beyond noinline.
@@ -3488,6 +3491,7 @@ static __attribute__((noinline)) void serial_putc(char value) {
     while ((in8(COM1 + 5) & 0x20u) == 0) {
     }
     out8(COM1, (uint8_t)value);
+    boot_text_putc(&early_text_console, (uint8_t)value);
 }
 
 static void serial_puts(const char *text) {
@@ -5220,8 +5224,22 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
     pre_admission_fail("qotom-platform-pending");
 }
 
+/* Optional bootloader-advertised text aperture, valid only under the initial
+ * identity map and before device quarantine. No display-address probe occurs. */
+static void initialize_early_text(uint32_t magic, uint32_t address) {
+    boot_text_disable(&early_text_console);
+    if (magic != MULTIBOOT2_RUNTIME_MAGIC || (address & 7u) ||
+        address < PAGE_BYTES || address > BOOT_ACCESSIBLE_LIMIT - 16u) return;
+    struct boot_text_geometry geometry;
+    if (boot_text_parse((const uint8_t *)(uintptr_t)address,
+                        BOOT_ACCESSIBLE_LIMIT - address, &geometry))
+        (void)boot_text_enable(&early_text_console, &geometry,
+                              (volatile uint16_t *)(uintptr_t)0xb8000u);
+}
+
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
+    initialize_early_text(multiboot_magic, multiboot_info);
     report_j1900_cpu_candidate();
 #ifdef LEANOS_NMI_PROBE
     int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
@@ -5266,6 +5284,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
 #endif
 
+    /* Quarantine can remove display decode; subsequent root changes also end
+     * the borrowed initial mapping. Rejection records above remain on screen. */
+    boot_text_disable(&early_text_console);
     quarantine_q35_pci_dma();
 
     check_boot_page_tables();

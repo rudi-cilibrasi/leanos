@@ -1,0 +1,4 @@
+LEANOS/24 BOOT target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0
+LEANOS/24 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,13,1970169159,1818588270,1231384169,198264,2048,3805819403,265026557,1,567034793,2151744012,16,2147483658,1970169159,1818588270,1231384169,198264,0,373,3964667904 selection=65536
+LEANOS/24 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
