@@ -247,14 +247,26 @@ def mutations(replay):
     }
     single = bytearray(madt)
     cursor, enabled = 44, False
+    processor_records, other_records = [], []
     while cursor < len(single):
         record_kind, record_size = single[cursor:cursor+2]
         if record_size < 2 or cursor+record_size > len(single):
             raise ValueError('invalid captured MADT record bounds')
         if record_kind == 0:
+            if record_size != 8:
+                raise ValueError('invalid captured MADT processor record length')
+            processor_records.append(madt[cursor:cursor+record_size])
             struct.pack_into('<I', single, cursor+4, 0 if enabled else 1)
             enabled = True
+        else:
+            other_records.append(madt[cursor:cursor+record_size])
         cursor += record_size
+    if not processor_records:
+        raise ValueError('captured MADT has no processor record to mutate')
+    # Preserve every non-CPU record. Repair only these derived SDTs so that
+    # topology admission, rather than the checksum gate, sees the defect.
+    result['root-duplicate-cpu'] = table(sdt(madt + processor_records[0]))
+    result['root-missing-cpus'] = table(sdt(madt[:44] + b''.join(other_records)))
     result['root-bsp-mismatch'] = replace(table(sdt(single)), executing_override=255)
     result['root-executing-overflow'] = replace(replay, executing_override=2**32)
     # Introduce a second, independently checksummed tag with a conflicting

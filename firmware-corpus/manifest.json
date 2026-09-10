@@ -1257,6 +1257,28 @@
           ],
           "normalized_sha256": "c24043c3ee723f3a822f6e9ffd2986f634b552ff5ed0f73af7ec333bbec173cf"
         },
+        "root-duplicate-cpu": {
+          "result": "admission-rejected:duplicateApicId",
+          "words": [
+            1,
+            3,
+            4,
+            0,
+            0
+          ],
+          "normalized_sha256": "6210721322969557e31dd4a6ec46fcdd7fdd3163a9dc786f0259fb14dd05931a"
+        },
+        "root-missing-cpus": {
+          "result": "admission-rejected:noEnabledProcessor",
+          "words": [
+            1,
+            3,
+            6,
+            0,
+            0
+          ],
+          "normalized_sha256": "018f3fae01292b32b6bb678c517eaf96d871f9ddefc513c7baee408e45977a91"
+        },
         "root-bsp-mismatch": {
           "result": "admission-rejected:bspMismatch",
           "words": [
@@ -1734,6 +1756,28 @@
             0
           ],
           "normalized_sha256": "6c33d856c75a740f78d1ec984c2811d5ed9708a5130fe1aed86a0ab5a7a9fc6e"
+        },
+        "root-duplicate-cpu": {
+          "result": "admission-rejected:duplicateApicId",
+          "words": [
+            1,
+            3,
+            4,
+            0,
+            0
+          ],
+          "normalized_sha256": "08339fb173513b2e1d8fa75293785d7c3d62dc9ab85b968b44baac0177f47be0"
+        },
+        "root-missing-cpus": {
+          "result": "admission-rejected:noEnabledProcessor",
+          "words": [
+            1,
+            3,
+            6,
+            0,
+            0
+          ],
+          "normalized_sha256": "1afe5ef0df609e89c6270705efedc884b4b5ba2f700f638e704aaaeb20c369e8"
         },
         "root-bsp-mismatch": {
           "result": "admission-rejected:bspMismatch",
@@ -2331,6 +2375,28 @@
             0
           ],
           "normalized_sha256": "fa16e1bcf61e5e55260a125be3e186eda97609d9abd30d1bbf2501a8ed186cd7"
+        },
+        "root-duplicate-cpu": {
+          "result": "admission-rejected:duplicateApicId",
+          "words": [
+            1,
+            3,
+            4,
+            0,
+            0
+          ],
+          "normalized_sha256": "99a6fd1cd216f27283572f17fb7f1c5052cc96c225ddabb410e5fb4974869a55"
+        },
+        "root-missing-cpus": {
+          "result": "admission-rejected:noEnabledProcessor",
+          "words": [
+            1,
+            3,
+            6,
+            0,
+            0
+          ],
+          "normalized_sha256": "a017419d5f4deac0e0c0a77b5a7e5de22a1d000af2b5013b53d1746766c97299"
         },
         "root-bsp-mismatch": {
           "result": "admission-rejected:bspMismatch",
