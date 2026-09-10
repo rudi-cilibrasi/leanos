@@ -170,6 +170,7 @@ python3 scripts/test-toolchain-compatibility.py
 python3 scripts/check-adr-links.py
 python3 scripts/test-adr-links.py
 python3 scripts/test-hardware-evidence.py
+python3 scripts/test-pci-capture.py
 python3 scripts/test-qotom-recovery-capture.py
 python3 scripts/hardware-evidence.py verify hardware/observations/qotom-20260909
 
