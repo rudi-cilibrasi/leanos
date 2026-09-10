@@ -224,6 +224,21 @@ symbol; silence or elapsed time alone cannot pass. A missing-reload mutation
 must fail the backing-frame test with its explicit failure marker and exit code.
 
 The runner retains command lines, debug bytes, terminal registers and a summary
-with ELF/object hashes and the QEMU version. All eight cases run in the normal
-repository checks. This fixture does not cover NMI or fault-entry integration,
+with ELF/object hashes and the QEMU version. All twelve cases run in the normal
+repository checks. These isolated handlers do not establish production NMI/fault-entry integration,
 CPL3, complete copy windows, physical Qotom behavior or production image policy.
+
+Additional execution cases require page faults after closure through both the
+temporary alias and the original identity address. For these cases, the target
+root removes the test alias and the identity mappings of both backing frames.
+The page-fault handler checks the exact faulting RIP, CR2, not-present supervisor
+read error code and selected root before reporting success. A readback-mismatch
+mutation must reach the primitive's terminal loop.
+
+The NMI case primes the permissive mapping, then the runner injects an actual
+NMI through QMP. Its fixture handler selects the fixed closed root before any C
+call and attempts the protected read, which must reach the same checked
+page-fault path. It terminates the fixture rather than resuming the interrupted
+context. The test uses a shared trusted CPL0 stack and does not establish the
+production IST/TSS, nesting, double-fault or CPL3 return contracts. GCC and pinned
+Clang 18 pass all twelve execution cases with SMAP disabled.

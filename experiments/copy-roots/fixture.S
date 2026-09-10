@@ -55,6 +55,16 @@ _start:
     or $3, %eax
     mov %eax, leaves_a+0x3800
     mov %eax, leaves_b+0x3800
+#if FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10
+    movl $0, leaves_b+0x3800
+    /* Omit identity aliases of both protected backing frames as well. */
+    mov $value_a, %eax
+    shr $9, %eax
+    movl $0, leaves_b(%eax)
+    mov $value_b, %eax
+    shr $9, %eax
+    movl $0, leaves_b(%eax)
+#endif
     mov $0x20, %eax
     mov %eax, %cr4
     mov $root_a, %eax
@@ -76,8 +86,31 @@ long_mode:
     mov %ax, %es
     mov %ax, %ss
     mov $stack_top, %rsp
+#if FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10
+    lea page_fault(%rip), %rax
+    lea idt64+14*16(%rip), %rdi
+    movw %ax, (%rdi)
+    movw $8, 2(%rdi)
+    movb $0, 4(%rdi)
+    movb $0x8e, 5(%rdi)
+    shr $16, %rax
+    movw %ax, 6(%rdi)
+#if FIXTURE == 9
+    lea nmi_entry(%rip), %rax
+    lea idt64+2*16(%rip), %rdi
+    movw %ax, (%rdi)
+    movw $8, 2(%rdi)
+    movb $0, 4(%rdi)
+    movb $0x8e, 5(%rdi)
+    shr $16, %rax
+    movw %ax, 6(%rdi)
+#endif
+    lidt idt_pointer(%rip)
+#endif
+#if FIXTURE != 9
     mov $'R', %al
     out %al, $0xe9
+#endif
     mov $root_a, %edi
 #if FIXTURE == 1
     xor %edi, %edi
@@ -96,7 +129,34 @@ long_mode:
 #elif FIXTURE == 6
     sti
 #endif
-#if FIXTURE != 0
+#if FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10
+    mov $0x700000, %esi
+#if FIXTURE == 10
+    mov $value_a, %esi
+#endif
+    cmpq $0x111, (%rsi)
+    jne failed
+#if FIXTURE == 9
+    mov $'R', %al
+    out %al, $0xe9
+nmi_wait:
+    hlt
+    jmp nmi_wait
+nmi_entry:
+    /* First software action selects the fixed closed root; no C is called. */
+#endif
+    mov $root_b, %edi
+    call leanos_copy_root_reload
+#if FIXTURE == 9
+    mov $'N', %al
+#else
+    mov $'D', %al
+#endif
+    out %al, $0xe9
+faulting_read:
+    mov (%rsi), %rax
+    jmp failed
+#elif FIXTURE != 0
     call leanos_copy_root_reload
     jmp failed
 #else
@@ -128,6 +188,29 @@ long_mode:
     mov $0x10, %eax
     out %eax, $0xf4
 #endif
+#if FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10
+page_fault:
+    /* Require a not-present supervisor read at exactly the denied operand. */
+    cmpq $0, (%rsp)
+    jne failed
+    cmpq $faulting_read, 8(%rsp)
+    jne failed
+    mov %cr2, %rax
+#if FIXTURE == 10
+    cmp $value_a, %rax
+#else
+    cmp $0x700000, %rax
+#endif
+    jne failed
+    mov %cr3, %rax
+    cmp $root_b, %rax
+    jne failed
+    mov $'P', %al
+    out %al, $0xe9
+    mov $0x10, %eax
+    out %eax, $0xf4
+    jmp failed
+#endif
 failed:
     mov $'F', %al
     out %al, $0xe9
@@ -144,6 +227,9 @@ gdt:
 gdt_pointer:
 .word 23
 .long gdt
+idt_pointer:
+.word 4095
+.quad idt64
 .balign 4096
 value_a: .quad 0x111
 .balign 4096
@@ -151,6 +237,7 @@ value_b: .quad 0x222
 
 .section .bss,"aw",@nobits
 .balign 4096
+idt64: .skip 4096
 root_a: .skip 4096
 root_b: .skip 4096
 pdpt_a: .skip 4096

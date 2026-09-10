@@ -13,14 +13,14 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'build/copy-roots/qemu'
 
 
-def qmp_registers(path):
+def qmp_command(path, command=None):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(2)
         sock.connect(str(path))
         stream = sock.makefile('rwb')
         json.loads(stream.readline())
         for command in [{'execute': 'qmp_capabilities'},
-                        {'execute': 'human-monitor-command', 'arguments': {'command-line': 'info registers'}}]:
+                        command or {'execute': 'human-monitor-command', 'arguments': {'command-line': 'info registers'}}]:
             stream.write((json.dumps(command) + '\n').encode())
             stream.flush()
             while True:
@@ -47,14 +47,21 @@ def main():
     mutation.write_text(source.replace(needle, '    nop'))
     subprocess.run([cc, '-m64', '-c', str(mutation), '-o', str(OUT / 'missing-reload.o')], check=True)
     cases = list(enumerate(['reloads', 'zero-root', 'unaligned-root', 'outside-arena', 'pge', 'pcid', 'interrupts-enabled']))
-    cases.append((0, 'missing-reload'))
+    readback = OUT / 'readback-mismatch.S'
+    needle = '    mov %cr3, %rax'
+    if source.count(needle) != 1:
+        raise RuntimeError('readback mutation no longer applies uniquely')
+    readback.write_text(source.replace(needle, '    xor %eax, %eax'))
+    subprocess.run([cc, '-m64', '-c', str(readback), '-o', str(OUT / 'readback-mismatch.o')], check=True)
+    cases.extend([(0, 'missing-reload'), (7, 'closed-denial'), (8, 'readback-mismatch'), (9, 'nmi-closure'), (10, 'identity-denial')])
+    exit_cases = {'reloads': (33, b'RSTP'), 'missing-reload': (35, b'RF'), 'closed-denial': (33, b'RDP'), 'nmi-closure': (33, b'RNP'), 'identity-denial': (33, b'RDP')}
     for number, name in cases:
         directory = OUT / name
         grub = directory / 'iso/boot/grub'
         grub.mkdir(parents=True, exist_ok=True)
         elf = grub.parent / 'test.elf'
         (directory / 'terminal-registers.txt').unlink(missing_ok=True)
-        reload_object = OUT / ('missing-reload.o' if name == 'missing-reload' else 'reload.o')
+        reload_object = OUT / (name + '.o' if name in {'missing-reload', 'readback-mismatch'} else 'reload.o')
         subprocess.run([cc, '-m64', f'-DFIXTURE={number}', '-c', 'experiments/copy-roots/fixture.S',
                         '-o', str(directory / 'fixture.o')], cwd=ROOT, check=True)
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
@@ -77,17 +84,21 @@ def main():
             process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 15
+                injected_nmi = False
                 while True:
                     raw = capture.read_bytes() if capture.exists() else b''
                     status = process.poll()
-                    if number == 0 and status is not None:
-                        expected_status, expected_raw = (35, b'RF') if name == 'missing-reload' else (33, b'RSTP')
+                    if name == 'nmi-closure' and not injected_nmi and raw == b'R' and status is None and monitor.exists():
+                        qmp_command(monitor, {'execute': 'inject-nmi'})
+                        injected_nmi = True
+                    if name in exit_cases and status is not None:
+                        expected_status, expected_raw = exit_cases[name]
                         if status != expected_status or raw != expected_raw:
                             raise RuntimeError(f'{name}: exit={status}, capture={raw!r}')
-                        observation = {'kind': 'exit', 'status': status}
+                        observation = {'kind': 'exit', 'status': status, 'injected_nmi': injected_nmi}
                         break
-                    if number and raw == b'R' and status is None and monitor.exists():
-                        registers = qmp_registers(monitor)
+                    if name not in exit_cases and raw == b'R' and status is None and monitor.exists():
+                        registers = qmp_command(monitor)
                         match = re.search(r'RIP=([0-9a-fA-F]+)', registers)
                         if match and terminal_start <= int(match[1], 16) < terminal_start + terminal_size and 'HLT=1' in registers:
                             (directory / 'terminal-registers.txt').write_text(registers)
