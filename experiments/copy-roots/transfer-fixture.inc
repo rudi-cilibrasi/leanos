@@ -35,11 +35,11 @@
  * The checked constructor has removed both protected frames and both aliases
  * from root_b. Copy-root permissions and exception stacks are prepared below.
  * root_a is the copy root; no production kernel or user code is executed. */
-    mov $value_b, %eax
-    or $3, %rax
-    mov %rax, leaves_a+0x3808
-    movl $0x80000000, leaves_a+0x3804
-    movl $0x80000000, leaves_a+0x380c
+    mov $COPY_OUT, %edi
+    mov $TRANSFER_COUNT, %esi
+    call prepare_fixture_operands
+    test %eax, %eax
+    jne failed
 #if TRANSFER_FAULT
     /* Remove the second copy alias: exactly eight byte operands precede it. */
     movq $0, leaves_a+0x3808
@@ -84,24 +84,6 @@
     cmp $16, %ecx
     jne .Lkernel_source
 #endif
-    xor %ecx, %ecx
-.Ltransfer_operands:
-    mov %rcx, %rax
-    shl $4, %rax
-#if COPY_OUT
-    lea transfer_buffer+8(%rcx), %rdx
-    mov %rdx, transfer_operands(%rax)
-    lea 0x700ff8(%rcx), %rdx
-    mov %rdx, transfer_operands+8(%rax)
-#else
-    lea 0x700ff8(%rcx), %rdx
-    mov %rdx, transfer_operands(%rax)
-    lea transfer_buffer+8(%rcx), %rdx
-    mov %rdx, transfer_operands+8(%rax)
-#endif
-    inc %ecx
-    cmp $16, %ecx
-    jne .Ltransfer_operands
     mov $'R', %al
     out %al, $0xe9
     mov $root_b, %edi
@@ -124,6 +106,14 @@
 #if COPY_OUT
     /* Closure was checked before reopening solely to inspect destination
      * memory. This fixture inspection is not part of the transfer helper. */
+    /* Inspection needs both pages even when the admitted request used none
+     * or one. Restore aliases only after helper closure was verified. */
+    mov $value_a, %eax
+    or $3, %rax
+    mov %rax, leaves_a+0x3800
+    mov $value_b, %eax
+    or $3, %rax
+    mov %rax, leaves_a+0x3808
     mov $root_a, %edi
     call leanos_copy_root_reload
     mov $0x700ff0, %esi
