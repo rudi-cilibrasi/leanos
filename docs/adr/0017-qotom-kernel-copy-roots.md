@@ -243,7 +243,6 @@ context. The test uses a shared trusted CPL0 stack and does not establish the
 production IST/TSS, nesting, double-fault or CPL3 return contracts. GCC and pinned
 Clang 18 pass all twelve execution cases with SMAP disabled.
 
-
 ### Bounded operand-transfer prototype
 
 `experiments/copy-roots/transfer.S` consumes a trusted immutable sequence of
