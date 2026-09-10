@@ -1230,7 +1230,7 @@ def run_fixtures() -> None:
         )
 
         def orphan_entry(content):
-            content["scenarios"]["never-built"] = {}
+            content["scenarios"]["never-built"] = {"negative_evidence": None}
 
         expect_failure(
             lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(orphan_entry)),
@@ -1247,6 +1247,19 @@ def run_fixtures() -> None:
 
         def missing_driver(content):
             content["scenarios"]["frame-budget"]["negative_evidence"]["driver"] = "scripts/absent.sh"
+
+        # Omitting a family is distinct from explicitly declaring no extra
+        # negative fixtures. Check both a populated and a null declaration.
+        for scenario_id in ("frame-budget", "return-flags-iopl"):
+            def missing_declaration(content):
+                del content["scenarios"][scenario_id]["negative_evidence"]
+
+            expect_failure(
+                lambda: evidence.load_manifest(mutated_manifest(missing_declaration)),
+                f"scenario {scenario_id} is missing its negative-evidence declaration",
+            )
+        if "return-flags-iopl" in negatives:
+            raise AssertionError("explicit null was emitted as a negative fixture family")
 
         expect_failure(
             lambda: evidence.load_manifest(mutated_manifest(missing_driver)),

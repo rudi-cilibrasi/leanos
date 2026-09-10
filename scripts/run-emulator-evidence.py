@@ -162,7 +162,11 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, object]:
                     raise EvidenceError(
                         f"scenario {scenario_id} names unknown artifact kind {kind!r}"
                     )
-        negative = entry.get("negative_evidence")
+        if "negative_evidence" not in entry:
+            raise EvidenceError(
+                f"scenario {scenario_id} is missing its negative-evidence declaration"
+            )
+        negative = entry["negative_evidence"]
         if negative is not None:
             if (
                 not isinstance(negative, dict)
@@ -339,7 +343,7 @@ def negative_evidence(manifest: dict[str, object]) -> dict[str, dict[str, object
     return {
         scenario_id: entry["negative_evidence"]
         for scenario_id, entry in manifest["scenarios"].items()
-        if "negative_evidence" in entry
+        if entry["negative_evidence"] is not None
     }
 
 
