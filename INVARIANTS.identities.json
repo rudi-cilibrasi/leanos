@@ -13970,6 +13970,162 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.authoritative_q35_cannot_supply_candidate",
+      "display": "authoritative_q35_cannot_supply_candidate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.authoritative_synthetic_four_cpu_candidate_accepted",
+      "display": "authoritative_synthetic_four_cpu_candidate_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.authoritative_wrong_executing_bsp_rejected",
+      "display": "authoritative_wrong_executing_bsp_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.baseline_candidate_accepted",
+      "display": "baseline_candidate_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.changed_processor_order_rejected",
+      "display": "changed_processor_order_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.check_preserves_observation",
+      "display": "check_preserves_observation",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.damaged_madt_cannot_reach_candidate",
+      "display": "damaged_madt_cannot_reach_candidate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.disabled_ap_rejected",
+      "display": "disabled_ap_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.duplicate_processor_rejected",
+      "display": "duplicate_processor_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.duplicate_translation_cannot_reach_candidate",
+      "display": "duplicate_translation_cannot_reach_candidate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.exceeded_bound_rejected_before_duplicates",
+      "display": "exceeded_bound_rejected_before_duplicates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.missing_one_processor_rejected",
+      "display": "missing_one_processor_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.missing_processors_rejected",
+      "display": "missing_processors_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.missing_root_cannot_reach_candidate",
+      "display": "missing_root_cannot_reach_candidate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.missing_translation_cannot_reach_candidate",
+      "display": "missing_translation_cannot_reach_candidate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.online_capable_ap_rejected",
+      "display": "online_capable_ap_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.q35_cannot_supply_qotom_topology",
+      "display": "q35_cannot_supply_qotom_topology",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.witness_binds_executing_bsp",
+      "display": "witness_binds_executing_bsp",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.witness_enumerates_four_enabled_processors",
+      "display": "witness_enumerates_four_enabled_processors",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.witness_has_complete_baseline",
+      "display": "witness_has_complete_baseline",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.witness_still_rejected_by_single_core",
+      "display": "witness_still_rejected_by_single_core",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.wrong_executing_bsp_rejected",
+      "display": "wrong_executing_bsp_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.wrong_recorded_bsp_rejected",
+      "display": "wrong_recorded_bsp_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.wrong_root_address_cannot_reach_candidate",
+      "display": "wrong_root_address_cannot_reach_candidate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.wrong_source_rejected",
+      "display": "wrong_source_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.wrong_version_rejected",
+      "display": "wrong_version_rejected",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/ResumablePreemption.lean",
       "qualified": "LeanOS.ResumablePreemption.accepted_tick_facts",
       "display": "accepted_tick_facts",

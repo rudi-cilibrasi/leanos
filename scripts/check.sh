@@ -46,6 +46,7 @@ record_check_phase() {
 ./scripts/check-native-decide-policy.py
 
 lake build
+python3 scripts/test-qotom-bsp-capture.py
 lake env lean tests/kernel-user-root.lean
 lake env lean tests/user-copy-prefix.lean
 lake env lean tests/user-copy-aliases.lean
