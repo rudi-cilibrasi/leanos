@@ -11,7 +11,7 @@ struct executor_fixture {
     unsigned writes, reads, active;
     int fail_write, fail_read, drift_read, nonzero_step;
     int volatile_status;
-    int readonly_lpc;
+    int readonly_lpc, readonly_host;
 };
 
 static uint64_t executor_admit(const struct pci_enumeration_snapshot *s) {
@@ -60,6 +60,9 @@ static int executor_write(void *ctx, uint8_t bus, uint8_t dev, uint8_t fn,
      * This is a device-behavior fixture, not a physical write capture. */
     if (f->readonly_lpc && bus == 0 && dev == 31 && fn == 0)
         f->raw[f->active][1] |= 7u;
+    /* Section 11.1.2: the transaction router's entire dword is hardwired. */
+    if (f->readonly_host && bus == 0 && dev == 0 && fn == 0)
+        f->raw[f->active][1] = 7u;
     if ((int)step == f->nonzero_step) f->raw[f->active][1] |= 4;
     if (f->volatile_status) f->raw[f->active][1] ^= 0x10000u;
     return 1;
@@ -141,6 +144,20 @@ static void test_command_executor(void) {
     EXEC_REQUIRE(r.writes_completed == 10 && r.reads_completed == 146);
     EXEC_REQUIRE(t.words[9 * 25 + 10] % 65536 == 7);
     ++negatives;
+    /* Host-only and combined constraints both stop before reaching LPC. */
+    for (unsigned lpc = 0; lpc < 2; ++lpc) {
+        executor_reset(&f);
+        f.readonly_host = 1;
+        f.readonly_lpc = lpc;
+        r = pci_execute_command_clear(executor_read, executor_write, executor_admit,
+                                      &f, &f.initial, &t);
+        EXEC_REQUIRE(r.status == PCI_COMMAND_READBACK_NONZERO && !t.count);
+        EXEC_REQUIRE(r.step == 3 && r.bus == 0 && r.device == 0 && r.function == 0);
+        EXEC_REQUIRE(r.offset == 4 && f.writes == 4 && f.reads == 50);
+        EXEC_REQUIRE(r.writes_completed == 4 && r.reads_completed == 50);
+        EXEC_REQUIRE(t.words[3 * 25 + 10] == 7);
+        ++negatives;
+    }
     for (unsigned i = 0; i < 15; ++i) {
         executor_reset(&f);
         f.initial.headers[i].words[0] ^= 1;
