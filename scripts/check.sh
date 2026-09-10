@@ -47,6 +47,7 @@ record_check_phase() {
 
 lake build
 lake env lean tests/kernel-user-root.lean
+lake env lean tests/user-copy-prefix.lean
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"

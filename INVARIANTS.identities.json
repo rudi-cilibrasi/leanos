@@ -15878,6 +15878,42 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.complete_agrees",
+      "display": "complete_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.outside_prefix",
+      "display": "outside_prefix",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.preserves_authority",
+      "display": "preserves_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.preserves_kernel",
+      "display": "preserves_kernel",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.rejected_unchanged",
+      "display": "rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.zero_progress_unchanged",
+      "display": "zero_progress_unchanged",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/UserCopyWindow.lean",
       "qualified": "LeanOS.UserCopyWindow.closed_encoded_user_access_denied",
       "display": "closed_encoded_user_access_denied",

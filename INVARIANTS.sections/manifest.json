@@ -64,6 +64,7 @@
     "LeanOS/Syscall.lean",
     "LeanOS/TLB.lean",
     "LeanOS/UserCopy.lean",
+    "LeanOS/UserCopyPrefix.lean",
     "LeanOS/UserCopyWindow.lean",
     "LeanOS/UserFaultContainmentVocabulary.lean",
     "LeanOS/VTdBootPlan.lean",

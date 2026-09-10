@@ -110,3 +110,18 @@ including NMI and double-fault handling, and reject unsupported STAC/CLAC or
 CR4.SMAP writes on the selected path. Records must name the new strategy and
 report SMAP as absent. Physical Qotom evidence remains required. Until these
 obligations are discharged, retain a typed pre-CPL3 rejection.
+
+### Sequential interruption model
+
+`LeanOS/UserCopyPrefix.lean` models a possible completed prefix of a copy-to
+request, after validating the entire request with `UserCopy.validate`. It proves
+that rejected requests and zero progress change no state, that kernel buffers
+and mapping authority remain unchanged, and that physical bytes outside the
+completed prefix retain their original values. Full progress agrees with the
+existing complete-copy model, and excessive progress counts saturate at the
+requested length. Tests interrupt a two-page copy at the page boundary and
+reject a request whose second page is unmapped before writing its first byte.
+
+This model describes possible partial effects. It neither authorizes resumption
+nor proves actual instruction ordering, root closure, or exception cleanup.
+The runtime refinement must establish those obligations separately.
