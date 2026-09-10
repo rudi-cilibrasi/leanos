@@ -277,6 +277,7 @@ stack: .skip 16384
 stack_top:
 #ifdef TRANSFER_FIXTURE
 .balign 16
+.global transfer_operands, transfer_buffer
 transfer_operands: .skip 256
 transfer_buffer: .skip 32
 #if TRANSFER_NMI

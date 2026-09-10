@@ -54,6 +54,8 @@ lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 lake build leanos-copy-root-construction
 python3 scripts/test-copy-root-construction.py
+lake build leanos-copy-operand-projection
+python3 scripts/test-copy-operand-projection.py
 python3 scripts/check-copy-root-reload.py --self-test
 python3 scripts/test-copy-root-reload-qemu.py
 python3 scripts/check-copy-root-transfer.py --self-test
