@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'build/copy-roots' / ('transfer-qemu-' + Path(os.environ.get('LEANOS_CC', 'gcc')).name)
 
 
-def observe_rejection(command, directory, capture, elf, direction, fault=False, cleanup_failure=False):
+def observe_rejection(command, directory, capture, elf, direction, fault=False, cleanup_failure=False, nmi=False):
     spec = importlib.util.spec_from_file_location('reload_test', ROOT / 'scripts/test-copy-root-reload-qemu.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -33,11 +33,20 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False, 
             process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 20
+                injected_nmi = False
                 while True:
                     raw = capture.read_bytes() if capture.exists() else b''
                     if process.poll() is not None or time.monotonic() >= deadline:
                         raise RuntimeError(f'transfer did not halt: {process.poll()}, {raw!r}')
-                    if raw == (b'RX' if fault else b'R') and monitor.exists():
+                    if nmi and not injected_nmi and raw == b'RW' and monitor.exists():
+                        registers = module.qmp_command(monitor)
+                        rip = re.search(r'RIP=([0-9a-fA-F]+)', registers)
+                        begin = symbols['leanos_copy_transfer_nmi_wait'][0]
+                        end = symbols['leanos_copy_transfer_nmi_wait_end'][0]
+                        if rip and begin <= int(rip[1], 16) < end and 'HLT=1' in registers:
+                            module.qmp_command(monitor, {'execute': 'inject-nmi'})
+                            injected_nmi = True
+                    if raw == (b'RWN' if nmi else b'RX' if fault else b'R') and monitor.exists():
                         registers = module.qmp_command(monitor)
                         rip = re.search(r'RIP=([0-9a-fA-F]+)', registers)
                         cr3 = re.search(r'CR3=([0-9a-fA-F]+)', registers)
@@ -48,7 +57,7 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False, 
                             break
                     time.sleep(0.05)
                 pattern = bytes(range(0x10, 0x20))
-                prefix = 16 if cleanup_failure else 8 if fault else 0
+                prefix = 16 if cleanup_failure else 8 if fault or nmi else 0
                 expected_kernel = bytearray([0xa5])*32
                 expected_user = bytearray([0xa5])*32
                 if direction:
@@ -72,7 +81,7 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False, 
                     if actual != expected:
                         raise RuntimeError(f'transfer changed unexpected {name} bytes: {actual.hex()}')
                     hashes[name] = hashlib.sha256(actual).hexdigest()
-                return {'kind': 'terminal', 'halted': True, 'root': expected_root, 'closed': not cleanup_failure, 'memory_sha256': hashes, 'completed_prefix': prefix}
+                return {'kind': 'terminal', 'halted': True, 'root': expected_root, 'closed': not cleanup_failure, 'memory_sha256': hashes, 'completed_prefix': prefix, 'injected_nmi': injected_nmi}
             finally:
                 process.terminate()
                 try:
@@ -100,19 +109,41 @@ def main():
     mutation.write_text(source.replace(needle, '    xor %edi, %edi'))
     cleanup_object = OUT / 'cleanup-failure.o'
     subprocess.run([cc, '-m64', '-c', str(mutation), '-o', str(cleanup_object)], check=True)
+    nmi_source = OUT / 'nmi-transfer.S'
+    checkpoint = '    inc %rbx'
+    if source.count(checkpoint) != 1:
+        raise RuntimeError('NMI checkpoint must target one completed byte increment')
+    nmi_source.write_text(source.replace(checkpoint, checkpoint + """
+    cmp $8, %rbx
+    jne .Lnmi_continue
+    push %rax
+    mov $'W', %al
+    out %al, $0xe9
+    pop %rax
+.global leanos_copy_transfer_nmi_wait
+leanos_copy_transfer_nmi_wait:
+    hlt
+    jmp leanos_copy_transfer_nmi_wait
+.global leanos_copy_transfer_nmi_wait_end
+leanos_copy_transfer_nmi_wait_end:
+.Lnmi_continue:
+"""))
+    nmi_object = OUT / 'nmi-transfer.o'
+    subprocess.run([cc, '-m64', '-c', str(nmi_source), '-o', str(nmi_object)], check=True)
     results = []
-    cases = ([(d, n, False, False) for d in (0, 1) for n in (0, 1, 8, 16, 17)]
-             + [(d, 16, True, False) for d in (0, 1)]
-             + [(d, 16, False, True) for d in (0, 1)])
-    for direction, count, fault, cleanup_failure in cases:
-        directory = OUT / (f'{direction}-{count}' + ('-fault' if fault else '-cleanup' if cleanup_failure else ''))
+    cases = ([(d, n, False, False, False) for d in (0, 1) for n in (0, 1, 8, 16, 17)]
+             + [(d, 16, True, False, False) for d in (0, 1)]
+             + [(d, 16, False, True, False) for d in (0, 1)]
+             + [(d, 16, False, False, True) for d in (0, 1)])
+    for direction, count, fault, cleanup_failure, nmi in cases:
+        directory = OUT / (f'{direction}-{count}' + ('-fault' if fault else '-cleanup' if cleanup_failure else '-nmi' if nmi else ''))
         grub = directory / 'iso/boot/grub'
         grub.mkdir(parents=True, exist_ok=True)
         elf = grub.parent / 'test.elf'
         obj = directory / 'fixture.o'
-        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}',
+        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}', f'-DTRANSFER_NMI={int(nmi)}',
                         '-c', 'experiments/copy-roots/fixture.S', '-o', str(obj)], cwd=ROOT, check=True)
-        linked_objects = [objects[0], str(cleanup_object) if cleanup_failure else objects[1]]
+        linked_objects = [objects[0], str(cleanup_object) if cleanup_failure else str(nmi_object) if nmi else objects[1]]
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
                         '-o', str(elf), str(obj), *linked_objects], cwd=ROOT, check=True)
         (grub / 'grub.cfg').write_text('set timeout=0\nmenuentry "copy transfer" {\n multiboot2 /boot/test.elf\n boot\n}\n')
@@ -126,8 +157,8 @@ def main():
                    '-debugcon', f'file:{capture}', '-device', 'isa-debug-exit,iobase=0xf4,iosize=4',
                    '-no-reboot', '-cdrom', str(iso)]
         (directory / 'command.json').write_text(json.dumps(command, indent=2)+'\n')
-        if count > 16 or fault or cleanup_failure:
-            observation = observe_rejection(command, directory, capture, elf, direction, fault, cleanup_failure)
+        if count > 16 or fault or cleanup_failure or nmi:
+            observation = observe_rejection(command, directory, capture, elf, direction, fault, cleanup_failure, nmi)
         else:
             with (directory / 'qemu.log').open('w') as log:
                 result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=20)
@@ -135,11 +166,11 @@ def main():
             if result.returncode != 33 or raw != b'RTP':
                 raise RuntimeError(f'count {count}: exit {result.returncode}, capture {raw!r}')
             observation = {'kind': 'exit', 'exit': result.returncode}
-        results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault, 'cleanup_failure': cleanup_failure,
+        results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault, 'cleanup_failure': cleanup_failure, 'nmi': nmi,
                         'observation': observation, 'capture': capture.read_text(),
                         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
                         'transfer_object_sha256': hashlib.sha256(Path(linked_objects[1]).read_bytes()).hexdigest()})
-        print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure}: PASS', flush=True)
+        print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure} nmi={nmi}: PASS', flush=True)
     sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S')]
     report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in/copy-out, post-return closure and terminal partial faults; no production admission',
         'cases': results, 'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},

@@ -1,3 +1,13 @@
+#if TRANSFER_NMI
+    lea transfer_nmi_entry(%rip), %rax
+    lea idt64+2*16(%rip), %rdi
+    movw %ax, (%rdi)
+    movw $8, 2(%rdi)
+    movb $0, 4(%rdi)
+    movb $0x8e, 5(%rdi)
+    shr $16, %rax
+    movw %ax, 6(%rdi)
+#endif
 /* Included after the shared fixture establishes long mode and the PF gate.
  * FIXTURE=7 makes root_b omit both protected physical frames and first alias.
  * root_a is the copy root; no production kernel or user code is executed. */
@@ -173,3 +183,22 @@ page_fault:
     out %eax, $0xf4
     jmp failed
 #endif /* TRANSFER_FAULT */
+
+#if TRANSFER_NMI
+transfer_nmi_entry:
+    mov $root_b, %edi
+    call leanos_copy_root_reload
+    cmp $8, %rbx
+    jne failed
+    mov (%rsp), %rax
+    cmp $leanos_copy_transfer_nmi_wait, %rax
+    jb failed
+    cmp $leanos_copy_transfer_nmi_wait_end, %rax
+    jae failed
+    mov %cr3, %rax
+    cmp $root_b, %rax
+    jne failed
+    mov $'N', %al
+    out %al, $0xe9
+    jmp leanos_copy_root_terminal
+#endif
