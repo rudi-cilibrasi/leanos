@@ -75,7 +75,7 @@ for name, intel, display in [('intel-text', True, True), ('intel-headless', True
     raw_path = out / 'serial.raw'
     cpu = ('max,vendor=GenuineIntel,family=6,model=55,stepping=8,xsave=off,avx=off,smap=off'
            if intel else 'max,vendor=AuthenticAMD')
-    final = (b'LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending\n' if intel
+    final = ((protocol['FINAL'] + ' status=FAIL reason=qotom-platform-pending\n').encode('ascii') if intel
              else canonical[-1])
     with tempfile.TemporaryDirectory(prefix='leanos-text-', dir='/tmp') as temp:
         control = Path(temp) / 'qmp.sock'
