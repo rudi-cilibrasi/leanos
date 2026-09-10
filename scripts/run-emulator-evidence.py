@@ -157,7 +157,15 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, object]:
                 f"scenario {scenario_id} names unknown family {family!r}"
             )
         for key in ("release_artifacts", "reproducibility_artifacts"):
-            for kind in entry.get(key, ()):
+            if key not in entry:
+                raise EvidenceError(f"scenario {scenario_id} is missing its {key} declaration")
+            if not isinstance(entry[key], list) or any(
+                not isinstance(kind, str) for kind in entry[key]
+            ):
+                raise EvidenceError(f"scenario {scenario_id} {key} must be a list of artifact kinds")
+            if len(entry[key]) != len(set(entry[key])):
+                raise EvidenceError(f"scenario {scenario_id} {key} repeats an artifact kind")
+            for kind in entry[key]:
                 if kind not in kinds:
                     raise EvidenceError(
                         f"scenario {scenario_id} names unknown artifact kind {kind!r}"

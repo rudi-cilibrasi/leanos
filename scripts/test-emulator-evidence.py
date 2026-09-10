@@ -1230,7 +1230,7 @@ def run_fixtures() -> None:
         )
 
         def orphan_entry(content):
-            content["scenarios"]["never-built"] = {"negative_evidence": None}
+            content["scenarios"]["never-built"] = {"negative_evidence": None, "release_artifacts": [], "reproducibility_artifacts": []}
 
         expect_failure(
             lambda: evidence.parse_matrix(evidence.DEFAULT_MATRIX, mutated_manifest(orphan_entry)),
@@ -1244,6 +1244,33 @@ def run_fixtures() -> None:
             lambda: evidence.load_manifest(mutated_manifest(unknown_kind)),
             "scenario fault-containment names unknown artifact kind 'core-dump'",
         )
+
+        # Both populated and intentionally empty inventories must be explicit.
+        # Omission must fail before a query can silently shrink either list.
+        for key in ("release_artifacts", "reproducibility_artifacts"):
+            for scenario_id in ("return-flags-iopl", "frame-budget"):
+                def missing_artifacts(content):
+                    del content["scenarios"][scenario_id][key]
+
+                expect_failure(
+                    lambda: evidence.load_manifest(mutated_manifest(missing_artifacts)),
+                    f"scenario {scenario_id} is missing its {key} declaration",
+                )
+            for invalid in (None, "elf", {}, ["elf", {}]):
+                def malformed_artifacts(content):
+                    content["scenarios"]["return-flags-iopl"][key] = invalid
+
+                expect_failure(
+                    lambda: evidence.load_manifest(mutated_manifest(malformed_artifacts)),
+                    f"scenario return-flags-iopl {key} must be a list of artifact kinds",
+                )
+            def duplicate_artifacts(content):
+                content["scenarios"]["return-flags-iopl"][key] = ["elf", "elf"]
+
+            expect_failure(
+                lambda: evidence.load_manifest(mutated_manifest(duplicate_artifacts)),
+                f"scenario return-flags-iopl {key} repeats an artifact kind",
+            )
 
         def missing_driver(content):
             content["scenarios"]["frame-budget"]["negative_evidence"]["driver"] = "scripts/absent.sh"

@@ -86,6 +86,8 @@ def main() -> None:
 
         for change, diagnostic in (
             (lambda m: m["scenarios"]["frame-budget"].pop("negative_evidence"), "missing its negative-evidence declaration"),
+            (lambda m: m["scenarios"]["return-flags-iopl"].pop("release_artifacts"), "missing its release_artifacts declaration"),
+            (lambda m: m["scenarios"]["return-flags-iopl"].pop("reproducibility_artifacts"), "missing its reproducibility_artifacts declaration"),
             (lambda m: m["scenarios"]["blocking-ipc"].pop("row"), "lacks a complete matrix row"),
             (lambda m: m["scenarios"]["blocking-ipc"].pop("tier"), "invalid matrix field tier"),
             (lambda m: m["scenarios"]["preemption"].update(tier="pr"), "exactly one scenario per runner"),
