@@ -142,4 +142,33 @@ theorem witness_has_fifteen_steps (w : Witness) : w.steps.length = 15 := by
   have length := congrArg List.length w.inventory
   simpa only [List.length_map, order_has_fifteen_functions] using length
 
+/-- Error class and trace index are retained across the hosted ABI. -/
+def Error.code : Error → UInt64
+  | .count => 0x10000
+  | .write index => 0x20000 + index.toUInt64
+  | .target index => 0x30000 + index.toUInt64
+  | .header index reason => 0x40000 + (reason.code - 0x100) * 256 + index.toUInt64
+  | .inventory index => 0x50000 + index.toUInt64
+  | .command index => 0x60000 + index.toUInt64
+
+/-- Fifteen 25-word slots: write BDF, offset, width, value, readback BDF,
+then sixteen raw dwords. Count and array size are checked before access.
+The generated C ABI consumes the array and allocates hosted Lean objects;
+this is not a freestanding adapter or permission to perform PCI writes. -/
+@[export leanos_qotom_pci_quarantine_observe]
+def checkWords (count : UInt64) (words : Array UInt64) : UInt64 :=
+  if count != 15 then Error.count.code
+  else if words.size != 375 then 0x10001
+  else
+    let steps := (List.range 15).map fun index =>
+      let offset := index * 25
+      let field := fun i => words.getD (offset + i) 0
+      ({ target := ⟨field 0, field 1, field 2⟩
+         offset := field 3, width := field 4, value := field 5
+         readback := ⟨⟨field 6, field 7, field 8⟩,
+           (List.range 16).map (fun i => field (9 + i))⟩ } : Step)
+    match check steps with
+    | .ok _ => 1
+    | .error reason => reason.code
+
 end LeanOS.QotomPCIQuarantineObservation

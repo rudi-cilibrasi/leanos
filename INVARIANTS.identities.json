@@ -14174,6 +14174,48 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.checkStep_preserves_step",
+      "display": "checkStep_preserves_step",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.checkSteps_preserves_steps",
+      "display": "checkSteps_preserves_steps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.check_preserves_trace",
+      "display": "check_preserves_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.order_has_fifteen_functions",
+      "display": "order_has_fifteen_functions",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.witness_has_fifteen_steps",
+      "display": "witness_has_fifteen_steps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.witnessed_command_zero",
+      "display": "witnessed_command_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineObservation.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineObservation.witnessed_write_is_command_word",
+      "display": "witnessed_write_is_command_word",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/ResumablePreemption.lean",
       "qualified": "LeanOS.ResumablePreemption.accepted_tick_facts",
       "display": "accepted_tick_facts",
