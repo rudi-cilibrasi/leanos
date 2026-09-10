@@ -16328,6 +16328,30 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/UserCopyBinding.lean",
+      "qualified": "LeanOS.UserCopyBinding.bound_length",
+      "display": "bound_length",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyBinding.lean",
+      "qualified": "LeanOS.UserCopyBinding.bound_validated",
+      "display": "bound_validated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyBinding.lean",
+      "qualified": "LeanOS.UserCopyBinding.bound_walk_exact",
+      "display": "bound_walk_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyBinding.lean",
+      "qualified": "LeanOS.UserCopyBinding.validation_rejected",
+      "display": "validation_rejected",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/UserCopyOperands.lean",
       "qualified": "LeanOS.UserCopyOperands.frame_index_lookup",
       "display": "frame_index_lookup",
