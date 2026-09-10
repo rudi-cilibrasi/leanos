@@ -47,5 +47,8 @@ hosted interface is not yet a freestanding machine adapter.
 
 `python3 scripts/test-qotom-pci-abi.py` emits complete snapshots with explicit
 expected results for Lean and `tests/qotom-pci-inventory-host.c`. Ordinary
-Lean/generated-C parity passes 94 cases. Shared CI harness integration,
-sanitized parity, and production integration remain pending.
+Lean/generated-C parity passes 94 cases. The shared hosted harness runs these same 94 cases in ordinary and pinned
+ASan/UBSan modes, with generated export declarations and execution coverage;
+both modes pass. Run `./scripts/check-qotom-pci-inventory-host.sh ordinary`,
+then `./scripts/check-qotom-pci-inventory-host.sh sanitized` in the pinned CI
+container. Production integration remains pending.
