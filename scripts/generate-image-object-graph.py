@@ -528,15 +528,25 @@ def render_graph(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--print-common-link-objects", action="store_true",
+                        help="print the graph's ordered shared object paths, one per line")
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--build-dir", type=Path, required=True)
-    parser.add_argument("--cc", required=True)
-    parser.add_argument("--lean-prefix", type=Path, required=True)
-    parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--cc")
+    parser.add_argument("--lean-prefix", type=Path)
+    parser.add_argument("--source-root", type=Path)
     parser.add_argument("--cflag", action="append", default=[])
     parser.add_argument("--return-corruption", action="append", default=[])
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.print_common_link_objects:
+        if "\n" in str(args.build_dir) or "\r" in str(args.build_dir):
+            parser.error("common link object output requires a single-line build directory")
+    else:
+        for name in ("output", "cc", "lean_prefix", "source_root"):
+            if getattr(args, name) is None:
+                parser.error("missing required argument: --" + name.replace("_", "-"))
+    return args
 
 
 def parse_return_corruptions(values: list[str]) -> list[tuple[str, int]]:
@@ -551,6 +561,10 @@ def parse_return_corruptions(values: list[str]) -> list[tuple[str, int]]:
 
 def main() -> None:
     args = parse_args()
+    if args.print_common_link_objects:
+        for name in COMMON_LINK_OBJECTS:
+            print(args.build_dir / (name + ".o"))
+        return
     graph = render_graph(
         args.build_dir,
         args.cc,
