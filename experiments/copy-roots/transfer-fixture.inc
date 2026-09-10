@@ -1,9 +1,32 @@
 #if TRANSFER_NMI
+    /* Both roots retain the TSS and dedicated NX stack, with absent guards.
+     * The interrupted transfer's ordinary stack is not the exception stack. */
+    mov $nmi_tss, %eax
+    movw %ax, gdt+26
+    shr $16, %eax
+    movb %al, gdt+28
+    movb %ah, gdt+31
+    movq $nmi_stack_top, nmi_tss+36
+    movw $104, nmi_tss+102
+    mov $nmi_guard_low, %eax
+    shr $9, %eax
+    movq $0, leaves_a(%rax)
+    movq $0, leaves_b(%rax)
+    mov $nmi_guard_high, %eax
+    shr $9, %eax
+    movq $0, leaves_a(%rax)
+    movq $0, leaves_b(%rax)
+    mov $nmi_stack, %eax
+    shr $9, %eax
+    movl $0x80000000, leaves_a+4(%rax)
+    movl $0x80000000, leaves_b+4(%rax)
+    mov $24, %eax
+    ltr %ax
     lea transfer_nmi_entry(%rip), %rax
     lea idt64+2*16(%rip), %rdi
     movw %ax, (%rdi)
     movw $8, 2(%rdi)
-    movb $0, 4(%rdi)
+    movb $1, 4(%rdi)
     movb $0x8e, 5(%rdi)
     shr $16, %rax
     movw %ax, 6(%rdi)
@@ -195,6 +218,14 @@ page_fault:
 transfer_nmi_entry:
     mov $root_b, %edi
     call leanos_copy_root_reload
+    cmp $nmi_stack_top-40, %rsp
+    jne failed
+    cmpq $8, 8(%rsp)
+    jne failed
+    cmpq $stack, 24(%rsp)
+    jb failed
+    cmpq $stack_top, 24(%rsp)
+    jae failed
     cmp $8, %rbx
     jne failed
     mov (%rsp), %rax

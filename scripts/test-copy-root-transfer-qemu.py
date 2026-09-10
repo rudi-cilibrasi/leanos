@@ -55,6 +55,10 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False, 
                                 raise RuntimeError('transfer halted under an unexpected root')
                             if nmi and not injected_nmi:
                                 raise RuntimeError('NMI terminal preceded the requested injection')
+                            if nmi:
+                                rsp = re.search(r'RSP=([0-9a-fA-F]+)', registers)
+                                if not rsp or int(rsp[1], 16) != symbols['nmi_stack_top'][0] - 40:
+                                    raise RuntimeError('NMI did not retain its dedicated IST frame')
                             (directory / 'terminal-registers.txt').write_text(registers)
                             break
                     time.sleep(0.05)
@@ -83,7 +87,26 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False, 
                     if actual != expected:
                         raise RuntimeError(f'transfer changed unexpected {name} bytes: {actual.hex()}')
                     hashes[name] = hashlib.sha256(actual).hexdigest()
-                return {'kind': 'terminal', 'halted': True, 'root': expected_root, 'closed': not cleanup_failure, 'memory_sha256': hashes, 'completed_prefix': prefix, 'injected_nmi': injected_nmi}
+                if nmi:
+                    # Inspect both roots independently of the guest assertions.
+                    for root in ('a', 'b'):
+                        for guard in ('nmi_guard_low', 'nmi_guard_high', 'nmi_stack'):
+                            address = symbols['leaves_' + root][0] + (symbols[guard][0] >> 12) * 8
+                            dump = directory / (root + '-' + guard + '.bin')
+                            dump.unlink(missing_ok=True)
+                            response = module.qmp_command(monitor, {'execute': 'human-monitor-command',
+                                'arguments': {'command-line': f'pmemsave {address:#x} 8 {json.dumps(str(dump))}'}})
+                            if response.strip():
+                                raise RuntimeError(f'PTE dump failed: {response}')
+                            data = dump.read_bytes()
+                            if len(data) != 8:
+                                raise RuntimeError('short IST PTE dump')
+                            pte = int.from_bytes(data, 'little')
+                            expected = (symbols[guard][0] | 3 | (1 << 63)) if guard == 'nmi_stack' else 0
+                            # Hardware may set accessed/dirty bits on the stack.
+                            if pte & ~0x60 != expected:
+                                raise RuntimeError(f'bad IST mapping {root}/{guard}: {pte:#x}')
+                return {'kind': 'terminal', 'halted': True, 'root': expected_root, 'closed': not cleanup_failure, 'memory_sha256': hashes, 'completed_prefix': prefix, 'injected_nmi': injected_nmi, 'dedicated_ist': nmi}
             finally:
                 process.terminate()
                 try:

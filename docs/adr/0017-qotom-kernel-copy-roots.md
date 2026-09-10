@@ -287,7 +287,17 @@ normal exits from observed halted guests.
 The normal repository checks run the instruction audit and all 22 execution
 cases. `LEANOS_CC=clang-18 python3 scripts/test-copy-root-transfer-qemu.py`
 selects the second compiler; compiler-specific output directories preserve both
-runs. The tests use a trusted shared CPL0 stack. Production IST/TSS, nested
-exceptions, double faults, validation-to-operand binding, actual root construction
-and protected-frame inventory publication still require integration. This
+runs. The NMI cases install a 64-bit TSS and select IST1: a dedicated supervisor,
+NX stack retained in both roots, with absent guard pages below and above it.
+The handler first reloads the closed root, then checks its five-qword hardware
+frame and the saved ordinary-stack pointer. The QMP observer independently
+requires the halted stack pointer at the IST frame and reads both roots' leaf
+entries to verify the guarded NX mapping. Other fixture paths still use the
+trusted ordinary CPL0 stack.
+
+This is one injected NMI at a known copy checkpoint. It does not establish
+safe entry at every instruction, nested-exception handling, stack-exhaustion
+recovery, or double-fault handling. Production IST/TSS, validation-to-operand
+binding, actual root construction and protected-frame inventory publication
+still require integration. This
 prototype does not enable production or physical CPL3 admission.

@@ -232,8 +232,13 @@ failed:
 .balign 8
 gdt:
 .quad 0, 0x00af9a000000ffff, 0x00cf92000000ffff
+#if TRANSFER_NMI
+/* Available 64-bit TSS, base patched before LTR. */
+.quad 0x0000890000000067, 0
+#endif
+gdt_end:
 gdt_pointer:
-.word 23
+.word gdt_end-gdt-1
 .long gdt
 idt_pointer:
 .word 4095
@@ -260,5 +265,14 @@ stack_top:
 .balign 16
 transfer_operands: .skip 256
 transfer_buffer: .skip 32
+#if TRANSFER_NMI
+.balign 16
+nmi_tss: .skip 104
+.balign 4096
+nmi_guard_low: .skip 4096
+nmi_stack: .skip 4096
+nmi_stack_top:
+nmi_guard_high: .skip 4096
+#endif
 #endif
 .section .note.GNU-stack,"",@progbits
