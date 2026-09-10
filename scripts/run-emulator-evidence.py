@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -394,6 +395,17 @@ def qemu_accelerator(environment: dict[str, str]) -> str:
 def parse_matrix(
     path: Path, manifest_path: Path = DEFAULT_MANIFEST
 ) -> tuple[str, list[dict[str, str]]]:
+    if (path.resolve() == DEFAULT_MATRIX.resolve()
+            and manifest_path.resolve() == DEFAULT_MANIFEST.resolve()):
+        spec = importlib.util.spec_from_file_location(
+            "evidence_matrix_generator", SCRIPT_DIR / "generate-evidence-matrix.py"
+        )
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        try:
+            generator.publish(path, generator.render(manifest_path))
+        except generator.EVIDENCE.EvidenceError as error:
+            raise EvidenceError(f"matrix generation failed: {error}") from error
     if not path.is_file():
         raise EvidenceError(f"matrix not found: {display_path(path)}")
     lines = path.read_text(encoding="utf-8").splitlines()

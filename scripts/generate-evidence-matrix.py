@@ -8,6 +8,7 @@ the evidence consumer.
 
 import argparse
 import importlib.util
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -58,16 +59,38 @@ def render(manifest_path: Path) -> str:
     return result
 
 
+def publish(output: Path, result: str) -> None:
+    # Concurrent build and evidence consumers may request the same
+    # inventory. Publish only a complete, validated file.
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=output.parent,
+            prefix=f".{output.name}.", delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(result)
+        os.replace(temporary, output)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=EVIDENCE.DEFAULT_MANIFEST)
-    parser.add_argument("--check", type=Path, help="reject a stale derived matrix")
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument("--check", type=Path, help="reject a stale derived matrix")
+    output.add_argument("--output", type=Path, help="atomically publish the derived matrix")
     args = parser.parse_args()
     try:
         result = render(args.manifest)
         if args.check is not None:
             if args.check.read_text(encoding="utf-8") != result:
                 raise EVIDENCE.EvidenceError("derived evidence matrix is stale; regenerate from scenario-manifest.json")
+        elif args.output is not None:
+            publish(args.output, result)
         else:
             sys.stdout.write(result)
     except (EVIDENCE.EvidenceError, OSError) as error:

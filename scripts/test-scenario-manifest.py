@@ -39,12 +39,18 @@ def expect_rejection(manifest: dict, diagnostic: str) -> None:
 def main() -> None:
     manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
     generator = ROOT / "scripts/generate-evidence-matrix.py"
-    matrix_path = ROOT / "scripts/emulator-evidence-matrix.tsv"
     generated = subprocess.run(["python3", str(generator)], capture_output=True, text=True)
-    if generated.returncode or generated.stdout != matrix_path.read_text(encoding="utf-8"):
-        raise AssertionError(f"matrix migration changed the existing inventory: {generated}")
+    count = len(manifest["scenarios"])
+    if generated.returncode or f"# mandatory-count\t{count}\n" not in generated.stdout:
+        raise AssertionError(f"matrix generation did not cover the manifest: {generated}")
     with tempfile.TemporaryDirectory() as directory:
         test_manifest = Path(directory) / "manifest.json"
+        output = Path(directory) / "fresh" / "matrix.tsv"
+        published = subprocess.run(
+            ["python3", str(generator), "--output", str(output)], capture_output=True, text=True,
+        )
+        if published.returncode or published.stdout or output.read_text() != generated.stdout:
+            raise AssertionError(f"clean output directory was not populated: {published}")
 
         def generate(change):
             copy = json.loads(json.dumps(manifest))
@@ -78,15 +84,22 @@ def main() -> None:
             m["scenarios"]["return-new-fixture"] = entry
 
         result = generate(add_scenario)
-        if result.returncode or "# mandatory-count\t65\n" not in result.stdout or "return-new-fixture\treturn\t" not in result.stdout:
+        if result.returncode or f"# mandatory-count\t{count + 1}\n" not in result.stdout or "return-new-fixture\treturn\t" not in result.stdout:
             raise AssertionError(f"new manifest scenario needs a handwritten matrix edit: {result}")
         stale = Path(directory) / "stale.tsv"
-        stale.write_text(generated.stdout.replace("# mandatory-count\t64", "# mandatory-count\t63"))
+        stale.write_text(generated.stdout.replace(f"# mandatory-count\t{count}", "# mandatory-count\t0"))
         result = subprocess.run(
             ["python3", str(generator), "--check", str(stale)], capture_output=True, text=True,
         )
         if not result.returncode or result.stdout or "derived evidence matrix is stale" not in result.stderr:
             raise AssertionError(f"matrix drift was not rejected: {result}")
+        generate(lambda m: m["scenarios"]["blocking-ipc"].pop("row"))
+        rejected = subprocess.run(
+            ["python3", str(generator), "--manifest", str(test_manifest), "--output", str(output)],
+            capture_output=True, text=True,
+        )
+        if not rejected.returncode or output.read_text() != generated.stdout:
+            raise AssertionError("invalid manifest overwrote the last complete inventory")
     rows = MODULE.image_rows(manifest)
     images = manifest["build"]["images"]
     if [row["stem"] for row in rows] != list(images):
