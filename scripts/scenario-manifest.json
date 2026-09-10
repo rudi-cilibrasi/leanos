@@ -1466,7 +1466,8 @@
         "scenario": "blocking-ipc",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null
     },
     "multivcpu-rejection": {
       "tier": "pr",
@@ -1479,7 +1480,10 @@
         "scenario": "multivcpu-rejection",
         "mode": "-",
         "reason": "topology-non-singleton"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "assigned-edu-inventory": {
       "tier": "pr",
@@ -1492,7 +1496,10 @@
         "scenario": "assigned-edu-inventory",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "malformed-handoff": {
       "tier": "pr",
@@ -1505,7 +1512,10 @@
         "scenario": "malformed-handoff",
         "mode": "-",
         "reason": "decode-rejected"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "projection-authority-mutation": {
       "tier": "evidence",
@@ -1518,7 +1528,10 @@
         "scenario": "projection-authority-mutation",
         "mode": "-",
         "reason": "projection-authority"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "raw-selection-authority-mutation": {
       "tier": "evidence",
@@ -1531,7 +1544,10 @@
         "scenario": "raw-selection-authority-mutation",
         "mode": "-",
         "reason": "raw-selection-authority"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "entry-adversarial": {
       "release_artifacts": [
@@ -1548,7 +1564,9 @@
         "scenario": "entry-adversarial",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
     },
     "preemption": {
       "release_artifacts": [
@@ -1568,7 +1586,9 @@
         "scenario": "preemption",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
     },
     "frame-budget": {
       "negative_evidence": {
@@ -1588,7 +1608,9 @@
         "scenario": "frame-budget",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "capability-transfer": {
       "negative_evidence": {
@@ -1608,7 +1630,9 @@
         "scenario": "capability-transfer",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "inflight-revocation": {
       "negative_evidence": {
@@ -1628,7 +1652,9 @@
         "scenario": "inflight-revocation",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "fault-containment": {
       "release_artifacts": [
@@ -1660,7 +1686,8 @@
         "scenario": "fault-containment",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null
     },
     "fault-readonly-write": {
       "release_artifacts": [
@@ -1692,7 +1719,8 @@
         "scenario": "fault-readonly-write",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null
     },
     "fault-nx-execute": {
       "release_artifacts": [
@@ -1724,7 +1752,8 @@
         "scenario": "fault-nx-execute",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null
     },
     "fault-reserved-bit": {
       "family": "fault-integrity",
@@ -1747,7 +1776,8 @@
         "disassembly",
         "policy-report"
       ],
-      "tier": "pr"
+      "tier": "pr",
+      "negative_evidence": null
     },
     "fault-walk-mismatch": {
       "family": "fault-integrity",
@@ -1770,7 +1800,8 @@
         "disassembly",
         "policy-report"
       ],
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null
     },
     "extended-state-denial": {
       "expectations": "scripts/expectations/extended-state.transcript",
@@ -1784,7 +1815,10 @@
         "scenario": "extended-state",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "extended-state-denial-mmx": {
       "expectations": "scripts/expectations/extended-state-mmx.transcript",
@@ -1798,7 +1832,10 @@
         "scenario": "extended-state-mmx",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "extended-state-denial-sse": {
       "expectations": "scripts/expectations/extended-state-sse.transcript",
@@ -1812,7 +1849,10 @@
         "scenario": "extended-state-sse",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "extended-state-denial-sse2": {
       "expectations": "scripts/expectations/extended-state-sse2.transcript",
@@ -1826,7 +1866,10 @@
         "scenario": "extended-state-sse2",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "extended-state-denial-avx": {
       "expectations": "scripts/expectations/extended-state-avx.transcript",
@@ -1840,17 +1883,26 @@
         "scenario": "extended-state-avx",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "fast-entry-syscall": {
       "family": "fast-entry",
       "expectations": "scripts/expectations/fast-entry-syscall.transcript",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "fast-entry-sysenter": {
       "family": "fast-entry",
       "expectations": "scripts/expectations/fast-entry-sysenter.transcript",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "extended-state-peer-pke": {
       "tier": "pr",
@@ -1863,7 +1915,10 @@
         "scenario": "extended-state-peer-pke",
         "mode": "-",
         "reason": "extended-state-denial-peer-controls"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-kernel-selector": {
       "tier": "pr",
@@ -1876,7 +1931,10 @@
         "scenario": "kernel-selector",
         "mode": "1",
         "reason": "user-return-selector"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-wrong-stack-selector": {
       "tier": "evidence",
@@ -1889,7 +1947,10 @@
         "scenario": "wrong-stack-selector",
         "mode": "2",
         "reason": "user-return-selector"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-noncanonical-rip": {
       "tier": "evidence",
@@ -1902,7 +1963,10 @@
         "scenario": "noncanonical-rip",
         "mode": "3",
         "reason": "user-return-noncanonical"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-noncanonical-rsp": {
       "tier": "evidence",
@@ -1915,7 +1979,10 @@
         "scenario": "noncanonical-rsp",
         "mode": "4",
         "reason": "user-return-noncanonical"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-outside-code": {
       "tier": "evidence",
@@ -1928,7 +1995,10 @@
         "scenario": "outside-code",
         "mode": "5",
         "reason": "user-return-code"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-outside-stack": {
       "tier": "evidence",
@@ -1941,7 +2011,10 @@
         "scenario": "outside-stack",
         "mode": "6",
         "reason": "user-return-stack"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-flags-ac": {
       "tier": "evidence",
@@ -1954,7 +2027,10 @@
         "scenario": "flags-ac",
         "mode": "7",
         "reason": "user-return-flags"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-flags-df": {
       "tier": "evidence",
@@ -1967,7 +2043,10 @@
         "scenario": "flags-df",
         "mode": "8",
         "reason": "user-return-flags"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-stale-cr3": {
       "tier": "evidence",
@@ -1980,7 +2059,10 @@
         "scenario": "stale-cr3",
         "mode": "9",
         "reason": "user-return-cr3"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-stale-context": {
       "tier": "evidence",
@@ -1993,7 +2075,10 @@
         "scenario": "stale-context",
         "mode": "10",
         "reason": "user-return-code"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-post-validation-mutation": {
       "tier": "evidence",
@@ -2006,7 +2091,10 @@
         "scenario": "post-validation-mutation",
         "mode": "11",
         "reason": "user-return-noncanonical"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-blocking-context-canary": {
       "tier": "evidence",
@@ -2019,7 +2107,10 @@
         "scenario": "blocking-context-canary",
         "mode": "12",
         "reason": "register-canary"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-capability-reuse-generation": {
       "tier": "evidence",
@@ -2032,55 +2123,82 @@
         "scenario": "capability-reuse-generation",
         "mode": "13",
         "reason": "capability-reuse-generation"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-sce-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "14",
       "reason": "fast-entry-efer-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-lstar-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "15",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-sysenter-eip-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "16",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-star-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "17",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-cstar-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "18",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-sfmask-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "19",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-sysenter-cs-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "20",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-fast-entry-sysenter-esp-relaxation": {
       "family": "fast-entry-relaxation",
       "mode": "21",
       "reason": "fast-entry-target-readback",
-      "tier": "evidence"
+      "tier": "evidence",
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-direct-port-bitmap-relaxation": {
       "tier": "evidence",
@@ -2093,7 +2211,10 @@
         "scenario": "direct-port-bitmap-relaxation",
         "mode": "22",
         "reason": "direct-port-control-readback"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-direct-port-limit-relaxation": {
       "tier": "evidence",
@@ -2106,7 +2227,10 @@
         "scenario": "direct-port-limit-relaxation",
         "mode": "23",
         "reason": "direct-port-control-readback"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-direct-port-granularity-relaxation": {
       "tier": "evidence",
@@ -2119,7 +2243,10 @@
         "scenario": "direct-port-granularity-relaxation",
         "mode": "24",
         "reason": "direct-port-control-readback"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-dma-bus-master-reenable": {
       "tier": "evidence",
@@ -2132,7 +2259,10 @@
         "scenario": "dma-bus-master-reenable",
         "mode": "25",
         "reason": "dma-live-command"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "return-vtd-translation-disable": {
       "tier": "evidence",
@@ -2145,7 +2275,10 @@
         "scenario": "vtd-translation-disable",
         "mode": "26",
         "reason": "vtd-live-status"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "double-fault": {
       "release_artifacts": [
@@ -2161,7 +2294,9 @@
         "scenario": "double-fault",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
     },
     "entry-stack-overflow": {
       "tier": "pr",
@@ -2174,7 +2309,10 @@
         "scenario": "entry-stack-overflow",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "nmi-terminal": {
       "tier": "pr",
@@ -2187,7 +2325,10 @@
         "scenario": "kernel-entry",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "nmi-terminal-cpl3": {
       "tier": "evidence",
@@ -2200,7 +2341,10 @@
         "scenario": "cpl3-spin",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "bootstrap32-ud": {
       "tier": "pr",
@@ -2213,7 +2357,10 @@
         "scenario": "bootstrap32-ud",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "bootstrap64-nmi": {
       "tier": "pr",
@@ -2226,7 +2373,10 @@
         "scenario": "bootstrap64-nmi",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "double-fault-guard-mapped": {
       "release_artifacts": [
@@ -2242,7 +2392,9 @@
         "scenario": "double-fault-guard-mapped",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
     },
     "direct-port-serial": {
       "expectations": "scripts/expectations/direct-port-serial.transcript",
@@ -2256,7 +2408,10 @@
         "scenario": "direct-port-serial",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "direct-port-debug": {
       "expectations": "scripts/expectations/direct-port-debug.transcript",
@@ -2270,7 +2425,10 @@
         "scenario": "direct-port-debug",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "direct-port-in": {
       "expectations": "scripts/expectations/direct-port-in.transcript",
@@ -2284,7 +2442,10 @@
         "scenario": "direct-port-in",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "direct-port-pic": {
       "expectations": "scripts/expectations/direct-port-pic.transcript",
@@ -2298,7 +2459,10 @@
         "scenario": "direct-port-pic",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "divide-error": {
       "expectations": "scripts/expectations/divide-error.transcript",
@@ -2312,7 +2476,10 @@
         "scenario": "divide-error",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "breakpoint": {
       "expectations": "scripts/expectations/breakpoint.transcript",
@@ -2326,7 +2493,10 @@
         "scenario": "breakpoint",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
     },
     "stale-translation": {
       "reproducibility_artifacts": [
@@ -2348,7 +2518,9 @@
         "scenario": "stale-translation-denial",
         "mode": "-",
         "reason": "-"
-      }
+      },
+      "negative_evidence": null,
+      "release_artifacts": []
     },
     "return-flags-iopl": {
       "tier": "evidence",
@@ -2372,7 +2544,8 @@
         "iso",
         "elf",
         "map"
-      ]
+      ],
+      "negative_evidence": null
     }
   }
 }

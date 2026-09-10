@@ -354,6 +354,12 @@ family parameters (a corruption mode, a rejection reason). Result classes come
 from the runner contract. The manifest also declares which artifact kinds the scenario contributes to a
 release and to the byte-reproducibility set, and its controlled-negative
 evidence (directory, count, failure-class rule, driver). The evidence runner
+requires explicit `release_artifacts` and `reproducibility_artifacts` lists on every
+scenario (use `[]` when it contributes no artifacts to that inventory), and
+requires every scenario to declare `negative_evidence`: a fixture description
+or explicit `null` when no additional negative-fixture family is required.
+An omitted declaration is rejected before generating an inventory, so deleting
+a family cannot silently remove its tests from the derived list. The runner
 derives everything else: `parse_matrix` checks each mandatory row against the
 family template instead of a second hand-written copy and rejects a matrix
 scenario without a manifest entry, `run-emulator-evidence.py
