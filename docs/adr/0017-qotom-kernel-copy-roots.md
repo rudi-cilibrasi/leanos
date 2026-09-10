@@ -156,3 +156,13 @@ not certify that premise or install the root. Aliases expose whole pages while
 open. The transfer stub's validated count and offsets must constrain byte
 accesses inside those pages. Connecting those operands to the progress model,
 publishing translations, and proving actual cleanup remain runtime obligations.
+
+`LeanOS/UserCopyOperands.lean` connects accepted plans to byte-level operands.
+Each operand selects a reserved alias slot that maps the exact validated frame
+and preserves its bounded physical offset. The sequence has one operand per
+requested byte, in validated order, and its prefixes match the location prefixes
+used by the partial-copy model. A buffer starting in a later user page still
+uses the first alias slot; the operand does not reuse its original virtual page.
+Tests cover zero and maximum lengths, single-page offsets, cross-page ordering,
+and partial prefixes. Actual transfer instructions must refine this operand
+sequence under the established root and stable authority assumptions.

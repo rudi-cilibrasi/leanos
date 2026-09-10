@@ -15944,6 +15944,66 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.frame_index_lookup",
+      "display": "frame_index_lookup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.location_frame_in_plan",
+      "display": "location_frame_in_plan",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.operand_in_slots",
+      "display": "operand_in_slots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.operand_leaf_exact",
+      "display": "operand_leaf_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.operand_offset_exact",
+      "display": "operand_offset_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.operands_at",
+      "display": "operands_at",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.operands_length",
+      "display": "operands_length",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.operands_prefix",
+      "display": "operands_prefix",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.validated_location_authorized",
+      "display": "validated_location_authorized",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyOperands.lean",
+      "qualified": "LeanOS.UserCopyOperands.validated_offset_bound",
+      "display": "validated_offset_bound",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/UserCopyPrefix.lean",
       "qualified": "LeanOS.UserCopyPrefix.complete_agrees",
       "display": "complete_agrees",

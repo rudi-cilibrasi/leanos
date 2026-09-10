@@ -64,3 +64,4 @@ import LeanOS.KernelUserRoot
 import LeanOS.UserCopyPrefix
 import LeanOS.UserCopyTransaction
 import LeanOS.UserCopyAliases
+import LeanOS.UserCopyOperands

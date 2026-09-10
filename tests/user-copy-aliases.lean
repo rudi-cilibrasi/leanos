@@ -1,4 +1,4 @@
-import LeanOS.UserCopyAliases
+import LeanOS.UserCopyOperands
 open LeanOS LeanOS.VirtualMapping LeanOS.UserCopy LeanOS.UserCopyAliases LeanOS.X86PageTable
 
 private def demoVirtual : VirtualMapping.State :=
@@ -80,3 +80,24 @@ private def wideFrame : UserCopy.State :=
                        status := fun frame => if frame = physicalFrameLimit then .owned 10 else .reserved } } } }
 example : prepare wideFrame ctx 0 1 .read closed 128 [physicalFrameLimit] =
   .error .unrepresentableFrame := by rfl
+
+
+open LeanOS.UserCopyOperands
+-- Operands use reserved alias pages, retaining the physical offsets and order.
+example : readPlan.toOption.map (fun p => operands p 128) =
+  some [{ page := 128, offset := 4095 }, { page := 129, offset := 0 }] := by rfl
+example : writePlan.toOption.map (fun p => (operands p 128).take 1) =
+  some [{ page := 128, offset := 4095 }] := by rfl
+example : (prepare demo ctx 17 3 .read closed 128 [4, 5]).toOption.map (fun p => operands p 128) =
+  some [{ page := 128, offset := 17 }, { page := 128, offset := 18 }, { page := 128, offset := 19 }] := by rfl
+example : (prepare demo ctx 0xffffffffffffffff 0 .read closed 128 []).toOption.map (fun p => operands p 128) =
+  some [] := by rfl
+-- A request wholly in the second user page still uses the first alias slot.
+example : (prepare demo ctx 4096 1 .read closed 128 [4, 5]).toOption.map (fun p => operands p 128) =
+  some [{ page := 128, offset := 0 }] := by rfl
+example : (prepare demo ctx 4096 1 .read closed 128 [4, 5]).toOption.map (fun p => p.table.leaf 128) =
+  some (some (aliasLeaf 5 .read)) := by rfl
+-- Maximum-length cross-page transfers have sixteen operands in source order.
+example : (prepare demo ctx 4088 16 .write closed 128 [4, 5]).toOption.map (fun p => operands p 128) =
+  some ((List.range 8).map (fun n => { page := 128, offset := 4088 + n }) ++
+        (List.range 8).map (fun n => { page := 129, offset := n })) := by rfl
