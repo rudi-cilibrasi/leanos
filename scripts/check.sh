@@ -177,6 +177,7 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-emulator-evidence.py
 python3 scripts/test-workflow-yaml.py
+python3 scripts/test-ci-hosted-topology.py
 python3 scripts/test-setup-lean-cache.py
 
 ./scripts/test-main-ruleset-policy.py

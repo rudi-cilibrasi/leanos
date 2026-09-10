@@ -653,9 +653,7 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
-                    "${{ (github.event_name == 'pull_request' || github.event_name == "
-                    "'merge_group') && '1' || '0' }}",
+                    "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: '1'",
                     "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: 0",
                     1,
                 ),
@@ -663,7 +661,7 @@ def run_fixtures() -> None:
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must parallelize complete hosted evidence for pull requests and merge groups",
+                "CI must parallelize complete hosted evidence for every trigger",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")
@@ -671,16 +669,15 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    "if: github.event_name == 'pull_request' || "
-                    "github.event_name == 'merge_group'",
-                    "if: github.event_name == 'pull_request'",
+                    "  hosted-boundary:\n",
+                    "  hosted-boundary:\n    if: github.event_name == 'pull_request'\n",
                     1,
                 ),
                 encoding="utf-8",
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must parallelize complete hosted evidence for pull requests and merge groups",
+                "CI must parallelize complete hosted evidence for every trigger",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")

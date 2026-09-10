@@ -114,9 +114,9 @@ jobs:
 
       - name: Build and check proofs
         env:
-          # Pull requests and merge groups run the same hosted evidence in the
-          # parallel job below. Main-push and manual runs retain the replay here.
-          LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '1' || '0' }}
+          # Every trigger runs hosted evidence in the parallel job below.
+          # Serial replay here pushed main runs past the 40-minute job limit.
+          LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: '1'
         run: ./scripts/check.sh
 
       - name: Verify frame-budget negative evidence
@@ -158,46 +158,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Preserve generated-oracle evidence
-        if: always() && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: leanos-oracle-${{ github.sha }}
-          path: |
-            build/hosted-generated-sources/oracle/FrameBudgetScenario.c
-            build/hosted-generated-sources/oracle/CompositeDispatcher.c
-            include/leanos/composite-dispatcher.h
-            build/oracle/corpus.tsv
-            build/oracle/vocabulary.tsv
-            build/oracle/composite-tokens.h
-            build/oracle/boundary-abi.tsv
-            build/oracle/boundary-abi.h
-            build/oracle/serial-protocol.tsv
-            build/oracle/serial-protocol.h
-            build/oracle/serial-protocol.sh
-            build/oracle/host-results.txt
-            build/oracle/host-*.txt
-            build/oracle/negative-fixtures.tsv
-            build/oracle/toolchain-and-flags.tsv
-            build/oracle/manifest.tsv
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Preserve hosted sanitizer evidence
-        if: always() && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: hosted-sanitizers-${{ github.sha }}
-          path: |
-            build/oracle-sanitized/
-            build/boot-handoff-host-sanitized/
-            build/boot-handoff-stream-sanitized/
-            build/hosted-sanitizer-evidence/
-            build/hosted-sanitizer-negatives/
-            scripts/hosted-generated-boundaries.tsv
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Preserve aggregate-check timing evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -209,7 +169,6 @@ jobs:
 
   hosted-boundary:
     name: Hosted generated-boundary evidence
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     timeout-minutes: 40
