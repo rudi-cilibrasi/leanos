@@ -53,6 +53,8 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False, 
                         if rip and terminal <= int(rip[1], 16) < terminal + size and 'HLT=1' in registers:
                             if not cr3 or int(cr3[1], 16) != expected_root:
                                 raise RuntimeError('transfer halted under an unexpected root')
+                            if nmi and not injected_nmi:
+                                raise RuntimeError('NMI terminal preceded the requested injection')
                             (directory / 'terminal-registers.txt').write_text(registers)
                             break
                     time.sleep(0.05)
@@ -146,6 +148,8 @@ leanos_copy_transfer_nmi_wait_end:
         linked_objects = [objects[0], str(cleanup_object) if cleanup_failure else str(nmi_object) if nmi else objects[1]]
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
                         '-o', str(elf), str(obj), *linked_objects], cwd=ROOT, check=True)
+        if not cleanup_failure and not nmi:
+            subprocess.run(['python3', str(ROOT / 'scripts/check-copy-root-transfer.py'), str(elf)], check=True)
         (grub / 'grub.cfg').write_text('set timeout=0\nmenuentry "copy transfer" {\n multiboot2 /boot/test.elf\n boot\n}\n')
         iso = directory / 'fixture.iso'
         with (directory / 'grub.log').open('w') as log:
