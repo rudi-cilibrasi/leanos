@@ -1,5 +1,10 @@
 # Binding the initial PCI inventory to command readbacks
 
+The all-zero Command proposal is not a usable physical Qotom policy: LPC
+Command has read-only enabled bits. See
+[qotom-lpc-command-constraint.md](qotom-lpc-command-constraint.md).
+The synthetic accepted traces below do not establish hardware realizability.
+
 `QotomPCIQuarantineTransition` composes the complete Qotom AHCI inventory
 checker with the ordered command/readback observation checker. It validates
 both inputs before comparing configuration registers by function address.

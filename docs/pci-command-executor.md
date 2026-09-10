@@ -1,5 +1,10 @@
 # Ordered PCI Command writes and readbacks
 
+The all-zero Command proposal is not a usable physical Qotom policy: LPC
+Command has read-only enabled bits. See
+[qotom-lpc-command-constraint.md](qotom-lpc-command-constraint.md).
+The synthetic accepted traces below do not establish hardware realizability.
+
 `boot/pci-command-executor.h` executes the fifteen-step Qotom observation
 contract through supplied callbacks. Before any access, it requires a complete
 fifteen-function snapshot and acceptance from the supplied inventory checker.
