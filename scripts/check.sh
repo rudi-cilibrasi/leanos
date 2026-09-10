@@ -54,6 +54,8 @@ lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 python3 scripts/check-copy-root-reload.py --self-test
 python3 scripts/test-copy-root-reload-qemu.py
+python3 scripts/check-copy-root-transfer.py --self-test
+python3 scripts/test-copy-root-transfer-qemu.py
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"
