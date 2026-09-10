@@ -40,3 +40,5 @@ boot_early_isr2_64	0x73	out	%al,(%dx)	DirectPortIO.debug-exit
 boot_early_catchall_64	0x12	in	(%dx),%al	DirectPortIO.serial
 boot_early_catchall_64	0x1d	out	%al,(%dx)	DirectPortIO.serial
 boot_early_catchall_64	0x2b	out	%al,(%dx)	DirectPortIO.debug-exit
+boot_cpu_rejected	0x14	in	(%dx),%al	DirectPortIO.serial
+boot_cpu_rejected	0x26	out	%al,(%dx)	DirectPortIO.serial

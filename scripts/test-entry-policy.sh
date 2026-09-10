@@ -339,4 +339,5 @@ run_fixture de-handler-before-normalize 'vector=0 path=contained' de_before_norm
 run_fixture bp-handler-before-normalize 'vector=3 path=contained' bp_before_normalize
 run_fixture de-branch-around-cleanup 'vector=0 path=contained' de_branch_cleanup
 
+./scripts/test-early-cpu-policy.py "$elf"
 echo "Controlled entry descriptor, TSS, and path fixtures passed"

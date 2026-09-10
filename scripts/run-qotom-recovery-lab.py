@@ -3,7 +3,9 @@
 import argparse
 import datetime
 import hashlib
+import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -123,16 +125,20 @@ def classify_rtc(events):
             'raw_sha256': hashlib.sha256(data).hexdigest()}
 
 
-def classify(events):
+def classify(events, expected=EXPECTED, boot_record=None):
+    boot_record = record(10, 'BOOT') if boot_record is None else boot_record
+    if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
+           or e['elapsed'] < 0 for e in events):
+        raise ValueError('invalid capture timestamp')
     if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
         raise ValueError('nonmonotonic capture timestamps')
     data = b''.join(bytes.fromhex(e['hex']) for e in events)
-    start = data.find(EXPECTED)
-    if start < 0 or data.count(record(10, 'BOOT')) != 1 or data.count(record(3, 'FINAL')) != 1:
+    start = data.find(expected)
+    if start < 0 or data.count(boot_record) != 1 or data.count(record(3, 'FINAL')) != 1:
         raise ValueError('missing, changed, or duplicated lab rejection trace')
     if b'LEANOS/' in data[:start]:
         raise ValueError('unexpected kernel output before selected trace')
-    end = start + len(EXPECTED)
+    end = start + len(expected)
     chain = data.find(CHAIN, end)
     if chain < 0:
         raise ValueError('missing subsequent FreeBSD chain marker')
@@ -159,8 +165,8 @@ def classify(events):
             'raw_sha256': hashlib.sha256(data).hexdigest()}
 
 
-def classify_protected(events, digest):
-    result = classify(events)
+def classify_protected(events, digest, expected=EXPECTED, boot_record=None):
+    result = classify(events, expected, boot_record)
     data = b''.join(bytes.fromhex(e['hex']) for e in events)
     accepted = b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
     armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
@@ -170,14 +176,54 @@ def classify_protected(events, digest):
     pattern = rb'[\r\n]*'.join(bytes([ch]) for ch in digest.encode())
     load = re.search(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' + pattern + rb'(?=[\r\n])', data)
     if (load is None or any(data.count(marker) != 1 for marker in (accepted, armed, default, b'WATCHDOG-LEANOS-LOAD'))
-            or not data.find(accepted) < data.find(armed) < load.start() < load.end() <= data.find(EXPECTED)
-            or data.find(default) < data.find(EXPECTED) + len(EXPECTED)
+            or not data.find(accepted) < data.find(armed) < load.start() < load.end() <= data.find(expected)
+            or data.find(default) < data.find(expected) + len(expected)
             or any(marker in data for marker in (b'WATCHDOG-LOAD-FAILED', b'WATCHDOG-STOP-FAILED',
                                                   b'WATCHDOG-NO-RESET', b'KERNEL-HANG', b'WATCHDOG-KERNEL-LOAD'))):
         raise ValueError('missing, repeated, or failed normal watchdog launch/recovery')
     if not 30 <= result['quiet_seconds'] <= 90:
         raise ValueError('protected completion outside its observation interval')
     result['watchdog_protected'] = True
+    return result
+
+
+def cpu_replay_module():
+    spec = importlib.util.spec_from_file_location(
+        'j1900_diagnostic', Path(__file__).with_name('check-j1900-diagnostic.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def cpu_diagnostic_bytes(events, protocol):
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    mode = EXPECTED[:-len(EXPECTED_KERNEL)]
+    if data.count(mode) != 1:
+        raise ValueError('missing or repeated recovery mode record')
+    start = data.find(mode) + len(mode)
+    if not data.startswith(protocol['BOOT'].encode('ascii'), start):
+        raise ValueError('CPU diagnostic must immediately follow recovery mode')
+    final = data.find(protocol['FINAL'].encode('ascii'), start)
+    end = data.find(b'\n', final) if final >= 0 else -1
+    if end < 0:
+        raise ValueError('missing CPU diagnostic terminal')
+    raw = data[start:end + 1]
+    return mode + raw, raw
+
+
+def cpu_replay_inputs(protocol_path, replay):
+    return {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
+            'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+
+
+def classify_cpu_protected(events, digest, protocol_path, replay):
+    module = cpu_replay_module()
+    protocol = module.load_protocol(protocol_path)
+    expected, raw = cpu_diagnostic_bytes(events, protocol)
+    result = classify_protected(events, digest, expected, protocol['BOOT'].encode('ascii'))
+    diagnostic = module.classify(raw, protocol, Path(replay).resolve())
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay))
+    result.update(scenario='j1900-cpu-diagnostic', diagnostic=diagnostic)
     return result
 
 
@@ -193,7 +239,23 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
     parser.add_argument('--scenario', choices=('leanos', 'rtc-probe', 'watchdog-test', 'watchdog-kernel', 'watchdog-leanos'), default='watchdog-leanos')
+    parser.add_argument('--cpu-diagnostic', action='store_true',
+                        help='replay J1900 CPU/MSR records; only with watchdog-leanos')
+    parser.add_argument('--diagnostic-protocol', type=Path,
+                        default=Path(__file__).resolve().parents[1] / 'build/boot/serial-protocol.tsv')
+    parser.add_argument('--diagnostic-replay', type=Path,
+                        default=Path(__file__).resolve().parents[1] / 'build/j1900-cpu-host/host')
     args = parser.parse_args()
+    if args.cpu_diagnostic:
+        if args.scenario != 'watchdog-leanos':
+            parser.error('--cpu-diagnostic requires --scenario watchdog-leanos')
+        cpu_replay_module().load_protocol(args.diagnostic_protocol)
+        # Establish that the native corpus self-test runs before any SSH/arming.
+        selftest = subprocess.run([str(args.diagnostic_replay.resolve())], check=True,
+                                  capture_output=True, timeout=30)
+        if selftest.stdout != b'Hosted generated-C J1900 CPU replay passed\n':
+            parser.error('diagnostic replay did not report its corpus self-test')
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -201,6 +263,10 @@ def main():
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
                                         '-o', 'HostKeyAlias=' + args.host_key_alias, args.host]
     args.output.mkdir(parents=True, exist_ok=False)
+    if args.cpu_diagnostic:
+        (args.output / 'diagnostic-protocol.tsv').write_bytes(args.diagnostic_protocol.read_bytes())
+        (args.output / 'diagnostic-replay-inputs.json').write_text(
+            json.dumps(diagnostic_inputs, indent=2) + '\n')
 
     def remote(command, **kwargs):
         return subprocess.run(ssh + [command], capture_output=True, timeout=20, **kwargs)
@@ -323,7 +389,16 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         if args.scenario == 'watchdog-kernel':
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
-            result = classify_protected(events, digest)
+            if args.cpu_diagnostic:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay) != diagnostic_inputs:
+                    raise ValueError('diagnostic replay inputs changed during capture')
+                result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
+                                                args.diagnostic_replay)
+                protocol = cpu_replay_module().load_protocol(args.diagnostic_protocol)
+                _, raw = cpu_diagnostic_bytes(events, protocol)
+                (directory / 'diagnostic.raw').write_bytes(raw)
+            else:
+                result = classify_protected(events, digest)
         else:
             classifier = {'leanos': classify, 'rtc-probe': classify_rtc, 'watchdog-test': classify_watchdog}[args.scenario]
             result = classifier(events)

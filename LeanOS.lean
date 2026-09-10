@@ -66,3 +66,5 @@ import LeanOS.UserCopyPrefix
 import LeanOS.UserCopyTransaction
 import LeanOS.UserCopyAliases
 import LeanOS.UserCopyOperands
+import LeanOS.J1900CpuProfile
+import LeanOS.J1900EntryControl

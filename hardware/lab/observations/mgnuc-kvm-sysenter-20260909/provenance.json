@@ -1,0 +1,18 @@
+{
+  "schema": "leanos-kvm-sysenter-observation-v1",
+  "result": "FAIL-unexpected-vector",
+  "environment": "mgnuc local KVM emulator, not physical Qotom",
+  "host_cpu": "GenuineIntel family 6 model 166 stepping 0 (Core i7-10710U)",
+  "guest_cpu": "max,vendor=AuthenticAMD",
+  "reported_source_revision": "deed6c782e3bdbfb34ee4b1b399872a2bce0824d",
+  "elf_sha256": "caa769c8238f7f8081d470b836c5317871ff9bc716e33864ef9a8f0b012d8ddc",
+  "iso_sha256": "02dfc0cc1e64c4aa3dfb91724ca18091f288f6380e9f91afd6278e31d31ea2be",
+  "expected_vector": 6,
+  "reported_vector": 13,
+  "qemu_exit_status": 39,
+  "files": {
+    "serial.log": "2e81a19d375f1e409ffd401161c067fa6bc7d1b0681c9e5e64fe1bb2183ba4a3",
+    "runner.log": "399bb0f5080b4492e4bbd5d1ef2017b186c9e084ae725eda39e4eef82cc2ec29"
+  },
+  "limits": "The unexpected vector is observed. No unchanged-main baseline was run; this is not evidence of when the mismatch was introduced. New host-only control-model work was in progress during artifact verification and was not connected to the boot adapter."
+}

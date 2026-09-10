@@ -156,6 +156,28 @@ def elf_inventory(elf: Path) -> tuple[list[Site], dict[str, set[str]],
                                       dict[tuple[str, str], list[int]],
                                       dict[str, list[Instruction]]]:
     disassembly = tool_output("objdump", "-d", "--no-show-raw-insn", str(elf))
+    # ELF64 contains a real 32-bit bootstrap interval. In particular its far
+    # jump is not valid in a 64-bit decoder, which can mistake address bytes
+    # for port opcodes. Decode every byte of that interval in its actual mode;
+    # do not discard apparent I/O sites or normalize them into the allowlist.
+    lines = disassembly.splitlines()
+    boundaries = {}
+    for index, line in enumerate(lines):
+        match = SYMBOL_RE.match(line)
+        if match and match.group(1) in ('multiboot_entry', 'long_mode_entry'):
+            boundaries[match.group(1)] = (index, int(line.split()[0], 16))
+    if boundaries:
+        if len(boundaries) != 2:
+            raise SystemExit('error: incomplete 32-bit boot interval in port audit')
+        first_index, first = boundaries['multiboot_entry']
+        past_index, past = boundaries['long_mode_entry']
+        if first >= past or first_index >= past_index:
+            raise SystemExit('error: invalid 32-bit boot interval in port audit')
+        bootstrap = tool_output('objdump', '-d', '-m', 'i386',
+                                '--no-show-raw-insn', f'--start-address={first}',
+                                f'--stop-address={past}', str(elf))
+        disassembly = '\n'.join(lines[:first_index] + bootstrap.splitlines() +
+                                lines[past_index:])
     symbol = ""
     symbol_address = 0
     sites: list[Site] = []
