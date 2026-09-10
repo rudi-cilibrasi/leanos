@@ -4,6 +4,7 @@
 #define LEANOS_BOUNDARY_ABI_OBJECTS
 #include "boundary-abi.h"
 #include "../build/qotom-quarantine-transition/cases.h"
+#include "pci-command-executor-fixture.h"
 
 extern void lean_initialize(void);
 extern lean_object *initialize_leanos_LeanOS_QotomPCIQuarantineTransition(uint8_t);
@@ -21,6 +22,7 @@ int main(void) {
     lean_io_mark_end_initialization();
     leanos_register_boundary_target("leanos_qotom_pci_quarantine_transition",
         (void *)(uintptr_t)&leanos_qotom_pci_quarantine_transition);
+    test_command_executor();
     size_t count = sizeof(inventory_cases) / sizeof(inventory_cases[0]);
     for (size_t i = 0; i < count; ++i) {
         lean_object *words = lean_mk_empty_array_with_capacity(lean_box(inventory_cases[i].size));
