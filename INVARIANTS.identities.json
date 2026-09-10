@@ -15878,6 +15878,72 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.alias_execution_denied",
+      "display": "alias_execution_denied",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.alias_permissions",
+      "display": "alias_permissions",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.alias_user_read_denied",
+      "display": "alias_user_read_denied",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.ancestors_preserved",
+      "display": "ancestors_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.frameLeaf_member",
+      "display": "frameLeaf_member",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.outside_slots_preserved",
+      "display": "outside_slots_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.prepared_alias_authorized",
+      "display": "prepared_alias_authorized",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.prepared_checks",
+      "display": "prepared_checks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.prepared_frame_authorized",
+      "display": "prepared_frame_authorized",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.prepared_validated",
+      "display": "prepared_validated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyAliases.lean",
+      "qualified": "LeanOS.UserCopyAliases.projected_alias",
+      "display": "projected_alias",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/UserCopyPrefix.lean",
       "qualified": "LeanOS.UserCopyPrefix.complete_agrees",
       "display": "complete_agrees",

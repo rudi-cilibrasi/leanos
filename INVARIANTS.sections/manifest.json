@@ -64,6 +64,7 @@
     "LeanOS/Syscall.lean",
     "LeanOS/TLB.lean",
     "LeanOS/UserCopy.lean",
+    "LeanOS/UserCopyAliases.lean",
     "LeanOS/UserCopyPrefix.lean",
     "LeanOS/UserCopyTransaction.lean",
     "LeanOS/UserCopyWindow.lean",

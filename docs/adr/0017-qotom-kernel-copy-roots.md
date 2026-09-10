@@ -140,3 +140,19 @@ that report from the full root publication and invalidation contract; a CR3
 address comparison alone is insufficient. Tests cover both directions across
 all three stop kinds, both cleanup reports and four progress counts (48 cases),
 including partial effects after faults and unsuccessful cleanup.
+
+### Bounded alias planner
+
+`LeanOS/UserCopyAliases.lean` derives distinct physical frames from the complete
+validated location list and admits at most two. It rejects noncanonical or
+occupied reserved slots, frames outside the supplied protected inventory, and
+unrepresentable frame numbers. It constructs only supervisor/NX leaves, writable
+only for a request validated with write permission. Proofs connect every added
+alias to a validated location and preserve all mappings outside the two slots.
+The modeled walker denies execution and user-mode reads through these aliases.
+
+The planner assumes that its supplied kernel table is already closed; it does
+not certify that premise or install the root. Aliases expose whole pages while
+open. The transfer stub's validated count and offsets must constrain byte
+accesses inside those pages. Connecting those operands to the progress model,
+publishing translations, and proving actual cleanup remain runtime obligations.
