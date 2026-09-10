@@ -1,4 +1,4 @@
-import LeanOS.UserCopyOperands
+import LeanOS.UserCopyBinding
 import LeanOS.UserCopyTransaction
 import LeanOS.KernelRootPublication
 
@@ -63,7 +63,38 @@ private def aliased : PageTable :=
       else closed.leaf page }
 private def checkedRoot := KernelUserRoot.closeChecked aliased [4, 5] [(64, kernelLeaf)]
 
+private def subjectTable := X86PageTable.encode demoVirtual 7
+private def changedSecond (update : Leaf → Leaf) : PageTable :=
+  { subjectTable with leaf := fun page =>
+      if page = 1 then (subjectTable.leaf page).map update else subjectTable.leaf page }
+private def bindingMismatch (table : PageTable) (access : Access) : Bool :=
+  match UserCopyBinding.bind demo ctx 4095 2 access table with
+  | .error .hardwareMismatch => true
+  | _ => false
+
 private def checks : List (String × Bool) := [
+  ("binding-matches-policy-frames", decide (
+    (UserCopyBinding.bind demo ctx 4095 2 .read subjectTable).toOption.map
+      (fun locations => locations.map Location.frame) = some [4, 5])),
+  ("binding-rejects-changed-frame", bindingMismatch
+    (changedSecond fun leaf => { leaf with frame := 6 }) .read),
+  ("binding-rejects-second-page-absent", bindingMismatch
+    (changedSecond fun leaf => { leaf with present := false }) .read),
+  ("binding-rejects-supervisor-leaf", bindingMismatch
+    (changedSecond fun leaf => { leaf with user := false }) .read),
+  ("binding-rejects-write-drift", bindingMismatch
+    (changedSecond fun leaf => { leaf with writable := false }) .write),
+  ("binding-rejects-ancestor-write-drift", bindingMismatch
+    { subjectTable with pd := { subjectTable.pd with writable := false } } .write),
+  ("binding-read-allows-read-only-leaf", (UserCopyBinding.bind demo ctx 4095 2 .read
+    (changedSecond fun leaf => { leaf with writable := false })).toOption.isSome),
+  ("binding-empty-needs-no-walk", decide (
+    (UserCopyBinding.bind demo ctx 0xffffffffffffffff 0 .read closed).toOption.map
+      List.length = some 0)),
+  ("binding-policy-rejection-precedes-walk", match UserCopyBinding.bind demo
+    { ctx with caller := 1 } 4095 2 .read closed with
+    | .error (.validation (.translation .notOwner)) => true
+    | _ => false),
   ("checked-root-preserves-required", decide (checkedRoot.bind (fun t => t.leaf 64) = some kernelLeaf)),
   ("checked-root-removes-supervisor-aliases", checkedRoot.any fun t =>
     (t.leaf 128).isNone && (t.leaf 129).isNone),

@@ -140,6 +140,10 @@ def main():
     subprocess.run([cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
                     'experiments/copy-roots/operands-test.c', '-o', str(host_test)], cwd=ROOT, check=True)
     subprocess.run([str(host_test)], check=True)
+    binding_test = OUT / 'binding-test'
+    subprocess.run([cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
+                    'experiments/copy-roots/binding-test.c', '-o', str(binding_test)], cwd=ROOT, check=True)
+    subprocess.run([str(binding_test)], check=True)
     mutation = OUT / 'cleanup-failure.S'
     source = (ROOT / 'experiments/copy-roots/transfer.S').read_text()
     needle = '    mov %r12, %rdi'
@@ -216,7 +220,7 @@ leanos_copy_transfer_nmi_wait_end:
                         'planner_object_sha256': hashlib.sha256(planner.read_bytes()).hexdigest(),
                         'constructor_object_sha256': hashlib.sha256(constructor.read_bytes()).hexdigest()})
         print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure} nmi={nmi} invalid_root={invalid_root}: PASS', flush=True)
-    sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S', 'construct-fixture.c', 'construct.h', 'operands-fixture.c', 'operands.h')]
+    sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S', 'construct-fixture.c', 'construct.h', 'operands-fixture.c', 'operands.h', 'binding.h')]
     report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in/copy-out, post-return closure and terminal partial faults; no production admission',
         'cases': results, 'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},
         'compiler': subprocess.check_output([cc, '--version'], text=True),

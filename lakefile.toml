@@ -45,3 +45,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-copy-operand-projection"
 root = "tests.CopyOperandProjection"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-copy-binding-replay"
+root = "tests.CopyBindingReplay"
+moreLeanArgs = ["-DwarningAsError=true"]
