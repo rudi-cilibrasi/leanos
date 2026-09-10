@@ -157,3 +157,14 @@ assumption or shrinking a conclusion requires an explicit rationale. Preserve
 an old ID when its meaning is unchanged; otherwise deprecate it in prose and
 introduce a new ID that names the superseded claim. Tested evidence must link a
 repository-owned script and must never be classified as Proved.
+
+## Proposed Qotom copy-strategy delta
+
+[ADR 0017](adr/0017-qotom-kernel-copy-roots.md) proposes architectural denial
+through a closed kernel page-table root that omits all aliases of user-owned
+physical frames, with temporary bounded aliases for validated copies. It does
+not extend the current SMAP/AC claims to hardware without SMAP. The initial
+`KernelUserRoot` projection proves absence and modeled access denial for frames
+in the supplied inventory; it does not prove inventory completeness, root/TLB
+publication, byte-copy behavior, cleanup or CPL3 return. This proposed strategy
+is not admitted and supplies no new physical security claim yet.

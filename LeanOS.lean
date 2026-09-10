@@ -60,6 +60,12 @@ import LeanOS.X86PageTable
 import LeanOS.TLB
 import LeanOS.VTdBootPlan
 import LeanOS.SecurityClaims
+import LeanOS.KernelUserRoot
+import LeanOS.KernelRootPublication
+import LeanOS.UserCopyPrefix
+import LeanOS.UserCopyTransaction
+import LeanOS.UserCopyAliases
+import LeanOS.UserCopyOperands
 import LeanOS.J1900CpuProfile
 import LeanOS.J1900EntryControl
 import LeanOS.BootTextConsole
