@@ -47,5 +47,7 @@ exact RSDP/root/table copies, their physical addresses and checksums. Do not
 repair a firmware table. Bound reads to captured ACPI reclaim/NVS regions,
 individual table and aggregate limits; compare headers with full reads and
 repeat reads. This is a checked sequential live-OS observation, not an atomic
-snapshot. Actual legacy GRUB table placement and a reviewed physical copy
-path remain separate requirements for issue #331.
+snapshot. The existing `copy_acpi_physical_bytes` boot path handles table
+addresses below 4 GiB through a temporary supervisor-only NX mapping and
+restores the original leaf. Actual legacy GRUB table placement and physical
+validation of that path remain separate requirements for issue #331.

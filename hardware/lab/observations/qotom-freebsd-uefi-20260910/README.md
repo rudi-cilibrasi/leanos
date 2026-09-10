@@ -41,8 +41,10 @@ production decoder/runtime treatment need review; do not repair these bytes
 to make a topology candidate pass.
 
 The ACPI tables reside near 0xb979b000–0xb97a7418, outside LeanOS's initial
-16 MiB mapping. Actual legacy table placement and a reviewed bounded physical
-copy path still need verification. At capture time these inputs had not been replayed. Subsequent hosted replay
+16 MiB identity mapping. The existing `copy_acpi_physical_bytes` path already
+provides a temporary supervisor-only NX mapping with a 4 GiB physical limit,
+and these captured ranges fit it. Actual legacy table placement and physical
+validation of that existing path still need verification. At capture time these inputs had not been replayed. Subsequent hosted replay
 uses the explicitly conservative EFI projection documented in
 `hardware/lab/FREEBSD-FIRMWARE.md`; it is not a GRUB handoff. No platform,
 physical allocator, BSP-only execution or hardware success is claimed.

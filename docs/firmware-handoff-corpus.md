@@ -79,9 +79,12 @@ The UEFI MADT's four Local APIC NMI routing records contain unusual LINT bytes
 four fields. No bytes are repaired. The current topology decoder validates
 these records' kind and length but skips routing fields, so the topology
 result establishes no safety property about that routing. The ACPI tables
-also reside outside LeanOS's initial 16 MiB mapping. Actual legacy handoff,
-bounded physical copying, BSP-only admission and physical execution remain
-required by issue #331.
+also reside outside LeanOS's initial 16 MiB identity mapping. The existing
+`copy_acpi_physical_bytes` path already copies through a temporary
+supervisor-only NX mapping and accepts physical ranges below 4 GiB; the
+captured table ranges fit that limit. Their location does not establish a
+missing copy mechanism. Actual legacy handoff and physical validation of that
+existing path, BSP-only admission and execution remain required by issue #331.
 
 ## Capture procedure
 
