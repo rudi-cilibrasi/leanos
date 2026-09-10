@@ -25,10 +25,13 @@ def main():
         variants.append({"fixture": "new-fixture", "macro": "LEANOS_NEW_FIXTURE", "reason": "new-reason"})
         manifest_path = scripts / "scenario-manifest.json"
         manifest_path.write_text(json.dumps(manifest))
-        (boot / "serial-protocol.sh").write_text(
-            "LEANOS_SERIAL_3_FINAL=LEANOS/3\\ FINAL\n"
-            "LEANOS_SERIAL_10_FINAL=LEANOS/10\\ FINAL\n"
-            "LEANOS_SERIAL_21_VTD_ASSIGN=LEANOS/21\\ VTD_ASSIGN\n"
+        oracle = root / "oracle"
+        subprocess.run([str(ROOT / "scripts/generate-oracle.sh"), str(oracle)],
+                       cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+        shutil.copy2(oracle / "serial-protocol.sh", boot / "serial-protocol.sh")
+        final_record = subprocess.check_output(
+            ["bash", "-c", 'source "$1"; printf "%s" "$LEANOS_SERIAL_3_FINAL"',
+             "protocol", str(boot / "serial-protocol.sh")], text=True,
         )
         for row in variants:
             (boot / f"leanos-0.1.0-x86_64-assigned-edu-{row['fixture']}.iso").touch()
@@ -39,9 +42,10 @@ import sys
 from pathlib import Path
 args = sys.argv[1:]
 reasons = """ + repr(reasons) + """
+final_record = """ + repr(final_record) + """
 log = args[args.index('-serial') + 1].removeprefix('file:')
 fixture = next(k for k in reasons if any('assigned-edu-' + k + '.iso' in a for a in args))
-Path(log).write_text('LEANOS/3 FINAL status=FAIL reason=' + reasons[fixture] + '\\n')
+Path(log).write_text(final_record + ' status=FAIL reason=' + reasons[fixture] + '\\n')
 with open('invocations', 'a') as output:
     output.write(fixture + '\\n')
 sys.exit(35)
