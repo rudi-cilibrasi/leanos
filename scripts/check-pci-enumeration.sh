@@ -28,10 +28,16 @@ else
 fi
 # Compile the actual collector independently of the hosted test runtime.
 cat > "$build/freestanding.c" <<'C'
-#include "pci-enumeration.h"
+#include "pci-command-executor.h"
 struct pci_enumeration_result collect(pci_enumeration_read read, void *context,
                                      struct pci_enumeration_snapshot *snapshot) {
     return pci_enumerate_segment(read, context, snapshot);
+}
+struct pci_command_result execute(pci_enumeration_read read,
+        pci_command_write16 write, pci_command_admit admit, void *context,
+        const struct pci_enumeration_snapshot *snapshot,
+        struct pci_command_trace *trace) {
+    return pci_execute_command_clear(read, write, admit, context, snapshot, trace);
 }
 C
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin \
