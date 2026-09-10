@@ -1,0 +1,13 @@
+{
+  "collection_utc": "2026-09-09T21:40:33.861215+00:00",
+  "machine_id": "qotom-j1900-clbtm210-v1",
+  "method": "FreeBSD user-mode CPUID; cpuset -l pins one logical CPU per capture; no MSR or control-register writes",
+  "compiler": "FreeBSD clang version 19.1.7 (https://github.com/llvm/llvm-project.git llvmorg-19.1.7-0-gcd708029e0b2)",
+  "source_sha256": "1b80d055014a567d4aa458a4a1bf3ac928000373f705e6322727365c3b9eea92",
+  "files": {
+    "cpu-0.tsv": "63fbe86b6248b80d6d80ed8cdf5438cac501d1c4d11f37678aa33726ea051a10",
+    "cpu-1.tsv": "8e702587936787629ef2842fccd0c620cc3923c6aef8ae6bdc3541f1165f51ab",
+    "cpu-2.tsv": "c158df4496129bb2b8a945063496db8d23afd5382140025416120f85835eb616",
+    "cpu-3.tsv": "2a02700e08043bd01398bb97a6680136cff049ed84ea0210757972e0ccec5b10"
+  }
+}

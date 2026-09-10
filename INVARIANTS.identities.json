@@ -13010,6 +13010,54 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/J1900CpuProfile.lean",
+      "qualified": "LeanOS.J1900CpuProfile.selection_does_not_authorize_cpl3",
+      "display": "selection_does_not_authorize_cpl3",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900CpuProfile.lean",
+      "qualified": "LeanOS.J1900CpuProfile.selection_requires_all_checks",
+      "display": "selection_requires_all_checks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900CpuProfile.lean",
+      "qualified": "LeanOS.J1900CpuProfile.selection_requires_measured_capabilities",
+      "display": "selection_requires_measured_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900EntryControl.lean",
+      "qualified": "LeanOS.J1900EntryControl.normalized_disables_fast_entry",
+      "display": "normalized_disables_fast_entry",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900EntryControl.lean",
+      "qualified": "LeanOS.J1900EntryControl.normalized_requires_completed_readback",
+      "display": "normalized_requires_completed_readback",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900EntryControl.lean",
+      "qualified": "LeanOS.J1900EntryControl.raw_readback_requires_denied_msrs",
+      "display": "raw_readback_requires_denied_msrs",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900EntryControl.lean",
+      "qualified": "LeanOS.J1900EntryControl.validate_normalized_iff",
+      "display": "validate_normalized_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900MsrReadback.lean",
+      "qualified": "LeanOS.J1900MsrReadback.validate_denied_iff",
+      "display": "validate_denied_iff",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/KernelTransition.lean",
       "qualified": "LeanOS.KernelTransition.bootTransition_agrees",
       "display": "bootTransition_agrees",

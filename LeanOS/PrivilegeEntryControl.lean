@@ -130,12 +130,16 @@ inductive Mechanism where
   deriving BEq, DecidableEq, Repr
 
 /-- Mechanism enablement is a finite authorization view, not an instruction
-semantics theorem. -/
+semantics theorem. Intel supports SYSENTER in 64-bit mode; the selected AMD
+contract does not. SYSENTER_CS bits 15:2 must name a non-null selector;
+RPL bits and bits outside the selector cannot enable the mechanism. -/
 def enabled (control : ControlState) : Mechanism → Bool
   | .int80 => control.int80ManifestPresent
   | .syscall => control.cpu.syscallExposed && control.msrs.eferSce
   | .sysenter => control.cpu.sysenterExposed &&
-      control.cpu.mode != .long64 && control.msrs.sysenterCs != 0
+      (control.cpu.vendor == .intel ||
+        (control.cpu.vendor == .amd && control.cpu.mode != .long64)) &&
+      (control.msrs.sysenterCs &&& 0xfffc) != 0
 
 /-- Every accepted state authorizes exactly the reviewed manifest entry among
 the modeled system-call mechanisms. -/

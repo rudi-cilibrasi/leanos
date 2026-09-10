@@ -23,7 +23,7 @@ link_fixture() {
     "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
     "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
     "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+    "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/FaultDispatch.o"
 }
 
 run_fixture() {
@@ -106,3 +106,13 @@ run_fixture early-pic-unmask \
   'forbidden instruction in the boot-entry interval' early_pic_unmask
 
 echo "Early-IDT publication, descriptor, terminal-CFG, and interval fixtures rejected"
+
+# The CPU guard executes immediately after IDT publication. When the packaged
+# canonical image is available, exercise that boundary as well as the linked
+# instruction mutations above. CI already invokes this suite after packaging;
+# its existing evidence bundle retains these diagnostic logs under build/ci.
+cpu_image="$build/leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso"
+if [[ "$elf" == "$build/leanos.elf" && -f "$cpu_image" ]]; then
+  ./scripts/test-early-cpu-image.sh "$cpu_image" build/ci/cpu-diagnostics/early
+  ./scripts/test-j1900-cpu-image.sh "$cpu_image" build/ci/cpu-diagnostics/j1900
+fi

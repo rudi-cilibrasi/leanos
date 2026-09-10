@@ -90,7 +90,7 @@ link_fixture() {
     "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
     "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
     "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+    "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/FaultDispatch.o"
 }
 
 cp "$elf" "$tmp/nmi-missing-guard.elf"
@@ -120,7 +120,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+  "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/FaultDispatch.o"
 if ./scripts/check-nmi-image-policy.sh "$tmp/nmi-mapped-guard.elf" \
     >"$tmp/policy-mapped-guard.log" 2>&1; then
   echo "error: mapped NMI guard section fixture unexpectedly passed" >&2

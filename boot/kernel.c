@@ -5166,8 +5166,63 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
     return (uint8_t)(left == right);
 }
 
+/* This diagnostic admission boundary is intentionally before q35 PCI/MMIO
+   accesses. CPU acceptance alone is not platform or CPL3 acceptance: the
+   Qotom DMA and no-SMAP contracts must be completed separately. */
+static void j1900_cpuid(uint32_t leaf, uint64_t words[4]) {
+    uint32_t a, b, c, d;
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+                     : "a"(leaf), "c"(0u));
+    words[0] = a; words[1] = b; words[2] = c; words[3] = d;
+}
+
+static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
+    uint64_t w[22];
+    /* Keep absent CPUID slots zero without a compiler-synthesized libc call.
+       Each volatile store is required in this freestanding entry path. */
+    for (unsigned i = 0; i < 22; ++i)
+        ((volatile uint64_t *)w)[i] = 0;
+    w[0] = 1; w[1] = 1;
+    j1900_cpuid(0, &w[2]);
+    if (w[3] != UINT64_C(0x756e6547) ||
+        w[5] != UINT64_C(0x49656e69) || w[4] != UINT64_C(0x6c65746e))
+        return;
+    serial_puts(LEANOS_SERIAL_24_BOOT " target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0\n");
+    if (w[2] >= 1) { j1900_cpuid(1, &w[6]); w[1] |= 2; }
+    if (w[2] >= 7) { j1900_cpuid(7, &w[10]); w[1] |= 4; }
+    j1900_cpuid(UINT32_C(0x80000000), &w[14]); w[1] |= 8;
+    if (w[14] >= UINT64_C(0x80000001)) {
+        j1900_cpuid(UINT32_C(0x80000001), &w[18]); w[1] |= 16;
+    }
+    uint64_t result = leanos_j1900_cpu_select(
+        w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9],
+        w[10], w[11], w[12], w[13], w[14], w[15], w[16], w[17],
+        w[18], w[19], w[20], w[21]);
+    serial_puts(LEANOS_SERIAL_24_CPU " profile=j1900-cpu-v1 codec=1 width=22 words=");
+    for (unsigned i = 0; i < 22; ++i) {
+        if (i) serial_putc(',');
+        serial_u64(w[i]);
+    }
+    serial_puts(" selection="); serial_u64(result); serial_putc('\n');
+    if (result != UINT64_C(0x10000))
+        pre_admission_fail("j1900-cpu-profile");
+    uint64_t msrs[8];
+    read_fast_entry_msrs(msrs);
+    result = leanos_j1900_msr_readback(msrs[0], msrs[1], msrs[2], msrs[3],
+                                      msrs[4], msrs[5], msrs[6], msrs[7]);
+    serial_puts(LEANOS_SERIAL_24_CONTROL " profile=j1900-cpu-v1 codec=1 width=8 words=");
+    for (unsigned i = 0; i < 8; ++i) {
+        if (i) serial_putc(',');
+        serial_u64(msrs[i]);
+    }
+    serial_puts(" readback="); serial_u64(result); serial_putc('\n');
+    if (result != 1) pre_admission_fail("j1900-msr-readback");
+    pre_admission_fail("qotom-platform-pending");
+}
+
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
+    report_j1900_cpu_candidate();
 #ifdef LEANOS_NMI_PROBE
     int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
     serial_puts(LEANOS_SERIAL_17_BOOT " target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
