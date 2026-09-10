@@ -47,3 +47,14 @@ must remain unchanged. The corpus excludes unmodeled A/D bits and invalid storag
 those are separate C tests. This is differential evidence, not a universal
 refinement proof. The constructor is not used by the production kernel and does
 not admit Qotom CPL3.
+
+The transfer suite also requires constructed closed roots. Bootstrap populates
+both copy aliases before freezing the source snapshot, and the constructor
+removes them together with their identity aliases. Transfer setup subsequently
+restricts the copy-root permissions and prepares exception stacks; it no longer
+manually removes the second alias from the closed root. The transfer fixture
+rejects builds that omit constructor integration. Each transfer evidence row
+binds the linked constructor object digest, and its source manifest includes the
+constructor and adapter. This composes construction with ordinary copies, partial
+faults, failed cleanup and the existing single injected NMI checkpoint; production
+entry and arbitrary interrupt timing remain outside this fixture's claim.

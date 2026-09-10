@@ -126,6 +126,11 @@ def main():
         obj = OUT / (name + '.o')
         subprocess.run([cc, '-m64', '-c', f'experiments/copy-roots/{name}.S', '-o', str(obj)], cwd=ROOT, check=True)
         objects.append(str(obj))
+    constructor = OUT / 'construct-fixture.o'
+    subprocess.run([cc, '-m64', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
+                    '-ffreestanding', '-fno-stack-protector', '-fno-pie', '-mno-red-zone',
+                    '-mgeneral-regs-only', '-fno-asynchronous-unwind-tables', '-c',
+                    'experiments/copy-roots/construct-fixture.c', '-o', str(constructor)], cwd=ROOT, check=True)
     mutation = OUT / 'cleanup-failure.S'
     source = (ROOT / 'experiments/copy-roots/transfer.S').read_text()
     needle = '    mov %r12, %rdi'
@@ -168,11 +173,11 @@ leanos_copy_transfer_nmi_wait_end:
         grub.mkdir(parents=True, exist_ok=True)
         elf = grub.parent / 'test.elf'
         obj = directory / 'fixture.o'
-        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}', f'-DTRANSFER_NMI={int(nmi)}', f'-DINVALID_COPY_ROOT={invalid_root}',
+        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', '-DCONSTRUCT_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}', f'-DTRANSFER_NMI={int(nmi)}', f'-DINVALID_COPY_ROOT={invalid_root}',
                         '-c', 'experiments/copy-roots/fixture.S', '-o', str(obj)], cwd=ROOT, check=True)
         linked_objects = [objects[0], str(cleanup_object) if cleanup_failure else str(nmi_object) if nmi else objects[1]]
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
-                        '-o', str(elf), str(obj), *linked_objects], cwd=ROOT, check=True)
+                        '-o', str(elf), str(obj), *linked_objects, str(constructor)], cwd=ROOT, check=True)
         if not cleanup_failure and not nmi:
             subprocess.run(['python3', str(ROOT / 'scripts/check-copy-root-transfer.py'), str(elf)], check=True)
         (grub / 'grub.cfg').write_text('set timeout=0\nmenuentry "copy transfer" {\n multiboot2 /boot/test.elf\n boot\n}\n')
@@ -198,9 +203,10 @@ leanos_copy_transfer_nmi_wait_end:
         results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault, 'cleanup_failure': cleanup_failure, 'nmi': nmi, 'invalid_root': invalid_root,
                         'observation': observation, 'capture': capture.read_text(),
                         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
-                        'transfer_object_sha256': hashlib.sha256(Path(linked_objects[1]).read_bytes()).hexdigest()})
+                        'transfer_object_sha256': hashlib.sha256(Path(linked_objects[1]).read_bytes()).hexdigest(),
+                        'constructor_object_sha256': hashlib.sha256(constructor.read_bytes()).hexdigest()})
         print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure} nmi={nmi} invalid_root={invalid_root}: PASS', flush=True)
-    sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S')]
+    sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S', 'construct-fixture.c', 'construct.h')]
     report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in/copy-out, post-return closure and terminal partial faults; no production admission',
         'cases': results, 'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},
         'compiler': subprocess.check_output([cc, '--version'], text=True),

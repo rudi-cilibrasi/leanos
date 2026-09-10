@@ -32,14 +32,14 @@
     movw %ax, 6(%rdi)
 #endif
 /* Included after the shared fixture establishes long mode and the PF gate.
- * FIXTURE=7 makes root_b omit both protected physical frames and first alias.
+ * The checked constructor has removed both protected frames and both aliases
+ * from root_b. Copy-root permissions and exception stacks are prepared below.
  * root_a is the copy root; no production kernel or user code is executed. */
     mov $value_b, %eax
     or $3, %rax
     mov %rax, leaves_a+0x3808
     movl $0x80000000, leaves_a+0x3804
     movl $0x80000000, leaves_a+0x380c
-    movq $0, leaves_b+0x3808
 #if TRANSFER_FAULT
     /* Remove the second copy alias: exactly eight byte operands precede it. */
     movq $0, leaves_a+0x3808
