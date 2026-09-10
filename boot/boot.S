@@ -68,6 +68,12 @@ mb2_start:
     .long MB2_ARCH
     .long MB2_LENGTH
     .long MB2_CHECKSUM
+    /* Optional EGA text support; absence must not prevent serial boot. */
+    .short 4
+    .short 1
+    .long 12
+    .long 2
+    .long 0 /* eight-byte tag alignment */
     .short 0
     .short 0
     .long 8

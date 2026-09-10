@@ -2126,6 +2126,24 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/BootTextConsole.lean",
+      "qualified": "LeanOS.BootTextConsole.accepted_geometry",
+      "display": "accepted_geometry",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootTextConsole.lean",
+      "qualified": "LeanOS.BootTextConsole.cell_inside_aperture",
+      "display": "cell_inside_aperture",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootTextConsole.lean",
+      "qualified": "LeanOS.BootTextConsole.cell_inside_surface",
+      "display": "cell_inside_surface",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/BootTopology.lean",
       "qualified": "LeanOS.BootTopology.accepted_implies_single_enabled_bsp",
       "display": "accepted_implies_single_enabled_bsp",

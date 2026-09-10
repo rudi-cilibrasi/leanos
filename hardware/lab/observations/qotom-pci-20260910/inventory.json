@@ -1,0 +1,638 @@
+{
+  "schema": "leanos-freebsd-pci-headers-v1",
+  "collected_utc": "2026-09-10T01:25:12.334483+00:00",
+  "collector_system": "Linux",
+  "collector_release": "7.0.0-31-generic",
+  "functions": [
+    {
+      "selector": "pci0:0:0:0",
+      "words": [
+        251691142,
+        7,
+        100663310,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        254902406,
+        0,
+        0,
+        0,
+        0
+      ],
+      "vendor": 32902,
+      "device": 3840,
+      "command": 7,
+      "status": 0,
+      "revision": 14,
+      "class_code": 393216,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:0:2:0",
+      "words": [
+        254902406,
+        1049607,
+        50331662,
+        0,
+        3489660928,
+        0,
+        3221225480,
+        0,
+        61569,
+        0,
+        0,
+        254902406,
+        0,
+        208,
+        0,
+        511
+      ],
+      "vendor": 32902,
+      "device": 3889,
+      "command": 1031,
+      "status": 16,
+      "revision": 14,
+      "class_code": 196608,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:0:19:0",
+      "words": [
+        253984902,
+        45089799,
+        17170702,
+        0,
+        61553,
+        61537,
+        61521,
+        61505,
+        61473,
+        3499188224,
+        0,
+        253984902,
+        0,
+        128,
+        0,
+        511
+      ],
+      "vendor": 32902,
+      "device": 3875,
+      "command": 1031,
+      "status": 688,
+      "revision": 14,
+      "class_code": 67073,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:0:20:0",
+      "words": [
+        255164550,
+        42992646,
+        201535502,
+        0,
+        3499098116,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255164550,
+        0,
+        112,
+        0,
+        511
+      ],
+      "vendor": 32902,
+      "device": 3893,
+      "command": 1030,
+      "status": 656,
+      "revision": 14,
+      "class_code": 787248,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:0:26:0",
+      "words": [
+        253264006,
+        1048838,
+        276824078,
+        16,
+        3494903808,
+        3493855232,
+        0,
+        0,
+        0,
+        0,
+        0,
+        253264006,
+        0,
+        128,
+        0,
+        511
+      ],
+      "vendor": 32902,
+      "device": 3864,
+      "command": 262,
+      "status": 16,
+      "revision": 14,
+      "class_code": 1081344,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:0:27:0",
+      "words": [
+        251953286,
+        1049606,
+        67305486,
+        16,
+        3499163652,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        251953286,
+        0,
+        80,
+        0,
+        511
+      ],
+      "vendor": 32902,
+      "device": 3844,
+      "command": 1030,
+      "status": 16,
+      "revision": 14,
+      "class_code": 262912,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:0:28:0",
+      "words": [
+        256409734,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        65792,
+        536928480,
+        3498102912,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049087
+      ],
+      "vendor": 32902,
+      "device": 3912,
+      "command": 7,
+      "status": 16,
+      "revision": 14,
+      "class_code": 394240,
+      "header": 129,
+      "multifunction": true,
+      "bridge": {
+        "primary": 0,
+        "secondary": 1,
+        "subordinate": 1,
+        "control": 16
+      }
+    },
+    {
+      "selector": "pci0:0:28:1",
+      "words": [
+        256540806,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        131584,
+        536871152,
+        3497054320,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049343
+      ],
+      "vendor": 32902,
+      "device": 3914,
+      "command": 7,
+      "status": 16,
+      "revision": 14,
+      "class_code": 394240,
+      "header": 129,
+      "multifunction": true,
+      "bridge": {
+        "primary": 0,
+        "secondary": 2,
+        "subordinate": 2,
+        "control": 16
+      }
+    },
+    {
+      "selector": "pci0:0:28:2",
+      "words": [
+        256671878,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        197376,
+        536924368,
+        3496005728,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049599
+      ],
+      "vendor": 32902,
+      "device": 3916,
+      "command": 7,
+      "status": 16,
+      "revision": 14,
+      "class_code": 394240,
+      "header": 129,
+      "multifunction": true,
+      "bridge": {
+        "primary": 0,
+        "secondary": 3,
+        "subordinate": 3,
+        "control": 16
+      }
+    },
+    {
+      "selector": "pci0:0:28:3",
+      "words": [
+        256802950,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        263168,
+        536871152,
+        65520,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049855
+      ],
+      "vendor": 32902,
+      "device": 3918,
+      "command": 7,
+      "status": 16,
+      "revision": 14,
+      "class_code": 394240,
+      "header": 129,
+      "multifunction": true,
+      "bridge": {
+        "primary": 0,
+        "secondary": 4,
+        "subordinate": 4,
+        "control": 16
+      }
+    },
+    {
+      "selector": "pci0:0:31:0",
+      "words": [
+        253526150,
+        34603015,
+        100728846,
+        8388608,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        253526150,
+        0,
+        224,
+        0,
+        0
+      ],
+      "vendor": 32902,
+      "device": 3868,
+      "command": 7,
+      "status": 528,
+      "revision": 14,
+      "class_code": 393472,
+      "header": 128,
+      "multifunction": true
+    },
+    {
+      "selector": "pci0:0:31:3",
+      "words": [
+        252870790,
+        42991619,
+        201654286,
+        0,
+        3499180032,
+        0,
+        0,
+        0,
+        61441,
+        0,
+        0,
+        252870790,
+        0,
+        80,
+        0,
+        530
+      ],
+      "vendor": 32902,
+      "device": 3858,
+      "command": 3,
+      "status": 656,
+      "revision": 14,
+      "class_code": 787712,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:1:0:0",
+      "words": [
+        2171080940,
+        1049607,
+        33554439,
+        16,
+        57345,
+        0,
+        3498065924,
+        0,
+        3498049548,
+        0,
+        0,
+        19075308,
+        0,
+        64,
+        0,
+        511
+      ],
+      "vendor": 4332,
+      "device": 33128,
+      "command": 1031,
+      "status": 16,
+      "revision": 7,
+      "class_code": 131072,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:2:0:0",
+      "words": [
+        1129518308,
+        1048582,
+        41943041,
+        16,
+        3497000964,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        81269988,
+        0,
+        64,
+        0,
+        511
+      ],
+      "vendor": 5348,
+      "device": 17235,
+      "command": 6,
+      "status": 16,
+      "revision": 1,
+      "class_code": 163840,
+      "header": 0,
+      "multifunction": false
+    },
+    {
+      "selector": "pci0:3:0:0",
+      "words": [
+        2171080940,
+        1049607,
+        33554439,
+        16,
+        53249,
+        0,
+        3495968772,
+        0,
+        3495952396,
+        0,
+        0,
+        19075308,
+        0,
+        64,
+        0,
+        511
+      ],
+      "vendor": 4332,
+      "device": 33128,
+      "command": 1031,
+      "status": 16,
+      "revision": 7,
+      "class_code": 131072,
+      "header": 0,
+      "multifunction": false
+    }
+  ],
+  "commands": [
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-l"
+      ],
+      "file": "listing-before.txt",
+      "sha256": "0c9e19c6910f2283c4f3fd1917b9fa5c37ece60ea6b8bda5a9d8c798ad0b7324"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:0:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-0-0.txt",
+      "sha256": "adcefddebc4e37b79c281986a38676e2c252d0b6b4331673eb12a75de01f0695"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:2:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-2-0.txt",
+      "sha256": "e313cf58b4433cce6ddedf2e3054f682cf20d439c7b6058d26ed36a7260576ca"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:19:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-19-0.txt",
+      "sha256": "cbb313077c7ffe992443c069113812e5d6edad0a54515ff5095208e2bf893c6d"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:20:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-20-0.txt",
+      "sha256": "b6c3c847000d5215fc7356db2baec328e1099a21b2f067c6d8baec41b2803684"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:26:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-26-0.txt",
+      "sha256": "946604d6f38c13e7ac952f43d8906cdf01f003d5b0efe73242b15e3f9d31295e"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:27:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-27-0.txt",
+      "sha256": "b354387598c77f21ebed858cb3e292780b617f9c879be342a453e41bffb24b10"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:28:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-28-0.txt",
+      "sha256": "95a87ed3d0340cc1cfe76b4d25f30d01da04e6c14ba52220e0eddd7966953560"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:28:1",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-28-1.txt",
+      "sha256": "eb110c35983ec58f9c4be9e6917ecf65ebe7f8bf0b1f24d7e849155726621204"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:28:2",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-28-2.txt",
+      "sha256": "f4387fb49cd3284d78dbf7ff3b43030bf4d8d52f2b39215dee69b8b9d9549830"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:28:3",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-28-3.txt",
+      "sha256": "3cdc9a313d9e8fe97e744af5298e79dada94c669acb9cbdd6eb1004389abf2d2"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:31:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-31-0.txt",
+      "sha256": "16b0136bd73975444588a079f453cd129ea471a220627f0df48912cae93f8d7a"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:0:31:3",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-0-31-3.txt",
+      "sha256": "8c8f2300f2ef99e0effa3f62d40ec118eba247caf6615f9c333482460b77123f"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:1:0:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-1-0-0.txt",
+      "sha256": "9bd78b02023e4950fcd2c04b7df0b7c5dc1437c1ab8478543db5186d55a26d64"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:2:0:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-2-0-0.txt",
+      "sha256": "7cc05f703e6b853ddeaeb79823e7df10792f6152e2a537edf31e6530ba038086"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-r",
+        "pci0:3:0:0",
+        "0x0:0x3c"
+      ],
+      "file": "pci0-3-0-0.txt",
+      "sha256": "762ceb5ea197a6a0dcbdefa63c951aa6dc749a4b25e7293cb1255c41fdc3a64b"
+    },
+    {
+      "argv": [
+        "/usr/sbin/pciconf",
+        "-l"
+      ],
+      "file": "listing-after.txt",
+      "sha256": "0c9e19c6910f2283c4f3fd1917b9fa5c37ece60ea6b8bda5a9d8c798ad0b7324"
+    }
+  ],
+  "platform_admitted": false,
+  "dma_containment_established": false,
+  "scope": "FreeBSD enumerated functions; sequential live-OS reads, not an atomic boot snapshot"
+}

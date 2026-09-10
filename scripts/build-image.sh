@@ -573,7 +573,7 @@ lean_c_modules=(
   KernelTransition Syscall IPCSyscall Preemption BootAllocation
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
-  PrivilegeEntryControl J1900CpuProfile J1900MsrReadback FaultDispatch DirectPortIO StaleTranslation
+  PrivilegeEntryControl J1900CpuProfile J1900MsrReadback BootTextConsole FaultDispatch DirectPortIO StaleTranslation
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
 )
 lean_c_signature="$build/generated-lean-c.sha256"
@@ -862,48 +862,6 @@ if [[ "$graph_make_cache_current" != true ]]; then
 fi
 record_build_phase boot-plans-and-final-links
 
-for spec in "${return_corruptions[@]}"; do
-  IFS=: read -r fixture mode _reason <<<"$spec"
-  return_elf="$build/leanos-return-${fixture}.elf"
-  selected_final_enabled "$return_elf" || continue
-  ./scripts/generate-boot-page-plan.sh "$return_elf" \
-    "$build/boot-page-plan-return-${fixture}.final.h"
-  cmp "$build/boot-page-plan-return-${fixture}.h" \
-    "$build/boot-page-plan-return-${fixture}.final.h" || {
-    echo "error: ${fixture} boot page-table plan drifted after final link" >&2
-    exit 1
-  }
-  expected_policy_diagnostic=""
-  if [[ "$fixture" == post-validation-mutation ]]; then
-    expected_policy_diagnostic='mutation or control flow added after user-return validation'
-  elif [[ "$fixture" == fast-entry-sce-relaxation ||
-      "$fixture" == fast-entry-lstar-relaxation ||
-      "$fixture" == fast-entry-sysenter-eip-relaxation ||
-      "$fixture" == fast-entry-star-relaxation ||
-      "$fixture" == fast-entry-cstar-relaxation ||
-      "$fixture" == fast-entry-sfmask-relaxation ||
-      "$fixture" == fast-entry-sysenter-cs-relaxation ||
-      "$fixture" == fast-entry-sysenter-esp-relaxation ]]; then
-    expected_policy_diagnostic='fast-entry final-ELF write inventory drifted'
-  fi
-  run_return_corruption_policy_check "$fixture" \
-    "$return_elf" "$expected_policy_diagnostic" \
-    "$build/return-${fixture}-policy.log"
-done
-
-validate_selected_final_plan() {
-  local elf_path="$1"
-  local expected_plan="$2"
-  local final_plan="$3"
-  local description="$4"
-  selected_final_enabled "$elf_path" || return 0
-  ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
-  cmp "$expected_plan" "$final_plan" || {
-    echo "error: $description page-table plan drifted after final link" >&2
-    exit 1
-  }
-}
-
 converge_selected_graph_plan() {
   local elf_path="$1"
   local expected_plan="$2"
@@ -942,6 +900,46 @@ converge_selected_graph_plan() {
   }
 }
 
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture mode _reason <<<"$spec"
+  return_elf="$build/leanos-return-${fixture}.elf"
+  selected_final_enabled "$return_elf" || continue
+  converge_selected_graph_plan "$return_elf" \
+    "$build/boot-page-plan-return-${fixture}.h" \
+    "$build/boot-page-plan-return-${fixture}.final.h" "$fixture" \
+    "$return_elf"
+  expected_policy_diagnostic=""
+  if [[ "$fixture" == post-validation-mutation ]]; then
+    expected_policy_diagnostic='mutation or control flow added after user-return validation'
+  elif [[ "$fixture" == fast-entry-sce-relaxation ||
+      "$fixture" == fast-entry-lstar-relaxation ||
+      "$fixture" == fast-entry-sysenter-eip-relaxation ||
+      "$fixture" == fast-entry-star-relaxation ||
+      "$fixture" == fast-entry-cstar-relaxation ||
+      "$fixture" == fast-entry-sfmask-relaxation ||
+      "$fixture" == fast-entry-sysenter-cs-relaxation ||
+      "$fixture" == fast-entry-sysenter-esp-relaxation ]]; then
+    expected_policy_diagnostic='fast-entry final-ELF write inventory drifted'
+  fi
+  run_return_corruption_policy_check "$fixture" \
+    "$return_elf" "$expected_policy_diagnostic" \
+    "$build/return-${fixture}-policy.log"
+done
+
+validate_selected_final_plan() {
+  local elf_path="$1"
+  local expected_plan="$2"
+  local final_plan="$3"
+  local description="$4"
+  selected_final_enabled "$elf_path" || return 0
+  ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
+  cmp "$expected_plan" "$final_plan" || {
+    echo "error: $description page-table plan drifted after final link" >&2
+    exit 1
+  }
+}
+
+
 # Final-ELF page-plan checks come from the scenario manifest in build order:
 # a validate compares the linker-resolved plan with the expected header; a
 # converge feeds the resolved plan back through the listed graph targets.
@@ -967,7 +965,7 @@ if selected_final_enabled "$build/leanos-double-fault.elf"; then
     build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
     build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
     build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/FaultDispatch.o
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/BootTextConsole.o build/boot/FaultDispatch.o
   ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
     "$build/boot-page-plan-double-fault.final.h"
   cmp "$build/boot-page-plan-double-fault.h" \
@@ -984,7 +982,7 @@ if selected_final_enabled "$build/leanos-entry-stack-overflow.elf"; then
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/FaultDispatch.o"
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/BootTextConsole.o" "$build/FaultDispatch.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow.elf" \
     "$build/boot-page-plan-entry-overflow.final.h"
   cmp "$build/boot-page-plan-entry-overflow.h" \
@@ -1001,7 +999,7 @@ if selected_final_enabled "$build/leanos-double-fault-guard-mapped.elf"; then
     build/boot/kernel-double-fault-guard-mapped.o \
     build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
     build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/FaultDispatch.o
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/BootTextConsole.o build/boot/FaultDispatch.o
   ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
     "$build/boot-page-plan-guard.final.h"
   cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {

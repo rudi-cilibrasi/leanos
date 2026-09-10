@@ -1,0 +1,11 @@
+{
+  "schema": "leanos-pci-collection-provenance-v1",
+  "machine_id": "qotom-j1900-clbtm210-v1",
+  "target_os": "FreeBSD 15.0-RELEASE-p13 amd64",
+  "transport": "SSH with pinned known host key; passwordless sudo for pciconf reads",
+  "collector_source": "hardware/lab/capture-pci.py",
+  "collector_sha256": "568e9fdc163089d2020897b68bebf2d17aade4edef6c57ac441ad641f5c379e3",
+  "target_clock": "2014-01-01; observed after operator power cycle; report timestamp comes from Linux collector",
+  "hardware_changes": "SATA identity now 8086:0f23/class 010601 (AHCI), previously 8086:0f21/class 01018a (legacy IDE); cause not established",
+  "scope": "No reboot, PCI configuration writes, BAR MMIO reads, or DMA admission performed"
+}

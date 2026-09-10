@@ -1,0 +1,34 @@
+{
+  "cpu0_sample_command": "sha256 -q /var/tmp/leanos-capture-cpuid.c; sha256 -q /var/tmp/leanos-capture-cpuid; cpuset -l 0 /var/tmp/leanos-capture-cpuid; sysctl -n kern.boottime",
+  "cpu0_sample_sha256": "830004df0c239a0c75d053ede3ead378cae19c686392c674f0c112f35a0a6356",
+  "observed_cpu0_apic_id": 0,
+  "executing_identity_limitation": "FreeBSD processor 0 sampled after table capture in the same boot; not LeanOS executing-BSP evidence",
+  "raw_madt_processors": [
+    {
+      "acpi_id": 1,
+      "apic_id": 0,
+      "flags": 1
+    },
+    {
+      "acpi_id": 2,
+      "apic_id": 2,
+      "flags": 1
+    },
+    {
+      "acpi_id": 3,
+      "apic_id": 4,
+      "flags": 1
+    },
+    {
+      "acpi_id": 4,
+      "apic_id": 6,
+      "flags": 1
+    }
+  ],
+  "raw_local_apic_nmi_records": [
+    "040601dc51f7",
+    "0406029974a6",
+    "0406033a21ce",
+    "0406049d9e27"
+  ]
+}

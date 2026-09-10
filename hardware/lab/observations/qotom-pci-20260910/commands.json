@@ -1,0 +1,168 @@
+[
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-l"
+    ],
+    "file": "listing-before.txt",
+    "sha256": "0c9e19c6910f2283c4f3fd1917b9fa5c37ece60ea6b8bda5a9d8c798ad0b7324"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:0:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-0-0.txt",
+    "sha256": "adcefddebc4e37b79c281986a38676e2c252d0b6b4331673eb12a75de01f0695"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:2:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-2-0.txt",
+    "sha256": "e313cf58b4433cce6ddedf2e3054f682cf20d439c7b6058d26ed36a7260576ca"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:19:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-19-0.txt",
+    "sha256": "cbb313077c7ffe992443c069113812e5d6edad0a54515ff5095208e2bf893c6d"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:20:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-20-0.txt",
+    "sha256": "b6c3c847000d5215fc7356db2baec328e1099a21b2f067c6d8baec41b2803684"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:26:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-26-0.txt",
+    "sha256": "946604d6f38c13e7ac952f43d8906cdf01f003d5b0efe73242b15e3f9d31295e"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:27:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-27-0.txt",
+    "sha256": "b354387598c77f21ebed858cb3e292780b617f9c879be342a453e41bffb24b10"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:28:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-28-0.txt",
+    "sha256": "95a87ed3d0340cc1cfe76b4d25f30d01da04e6c14ba52220e0eddd7966953560"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:28:1",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-28-1.txt",
+    "sha256": "eb110c35983ec58f9c4be9e6917ecf65ebe7f8bf0b1f24d7e849155726621204"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:28:2",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-28-2.txt",
+    "sha256": "f4387fb49cd3284d78dbf7ff3b43030bf4d8d52f2b39215dee69b8b9d9549830"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:28:3",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-28-3.txt",
+    "sha256": "3cdc9a313d9e8fe97e744af5298e79dada94c669acb9cbdd6eb1004389abf2d2"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:31:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-31-0.txt",
+    "sha256": "16b0136bd73975444588a079f453cd129ea471a220627f0df48912cae93f8d7a"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:0:31:3",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-0-31-3.txt",
+    "sha256": "8c8f2300f2ef99e0effa3f62d40ec118eba247caf6615f9c333482460b77123f"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:1:0:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-1-0-0.txt",
+    "sha256": "9bd78b02023e4950fcd2c04b7df0b7c5dc1437c1ab8478543db5186d55a26d64"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:2:0:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-2-0-0.txt",
+    "sha256": "7cc05f703e6b853ddeaeb79823e7df10792f6152e2a537edf31e6530ba038086"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-r",
+      "pci0:3:0:0",
+      "0x0:0x3c"
+    ],
+    "file": "pci0-3-0-0.txt",
+    "sha256": "762ceb5ea197a6a0dcbdefa63c951aa6dc749a4b25e7293cb1255c41fdc3a64b"
+  },
+  {
+    "argv": [
+      "/usr/sbin/pciconf",
+      "-l"
+    ],
+    "file": "listing-after.txt",
+    "sha256": "0c9e19c6910f2283c4f3fd1917b9fa5c37ece60ea6b8bda5a9d8c798ad0b7324"
+  }
+]
