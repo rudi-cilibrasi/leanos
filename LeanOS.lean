@@ -62,3 +62,4 @@ import LeanOS.VTdBootPlan
 import LeanOS.SecurityClaims
 import LeanOS.KernelUserRoot
 import LeanOS.UserCopyPrefix
+import LeanOS.UserCopyTransaction

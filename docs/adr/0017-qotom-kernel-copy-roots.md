@@ -113,15 +113,30 @@ obligations are discharged, retain a typed pre-CPL3 rejection.
 
 ### Sequential interruption model
 
-`LeanOS/UserCopyPrefix.lean` models a possible completed prefix of a copy-to
-request, after validating the entire request with `UserCopy.validate`. It proves
-that rejected requests and zero progress change no state, that kernel buffers
-and mapping authority remain unchanged, and that physical bytes outside the
+`LeanOS/UserCopyPrefix.lean` models a possible completed prefix in both copy
+directions, after validating the entire request with `UserCopy.validate`. It proves
+that rejected requests and zero progress change no state, that the source memory domain
+and mapping authority remain unchanged, and that destination bytes outside the
 completed prefix retain their original values. Full progress agrees with the
-existing complete-copy model, and excessive progress counts saturate at the
+existing complete-copy models, and excessive progress counts saturate at the
 requested length. Tests interrupt a two-page copy at the page boundary and
 reject a request whose second page is unmapped before writing its first byte.
 
 This model describes possible partial effects. It neither authorizes resumption
 nor proves actual instruction ordering, root closure, or exception cleanup.
 The runtime refinement must establish those obligations separately.
+
+`LeanOS/UserCopyTransaction.lean` composes those effects with an abstract
+termination contract. After successful validation, only an exactly completed
+transfer, a finished stop and a verified-closed cleanup report permit a normal
+return. Interruptions, faults, incomplete or excessive progress, and unverified
+cleanup terminate. Termination retains partial effects rather than rolling
+back. Rejected validation leaves memory unchanged under the initial closed
+root, without opening a window or consulting a subsequent cleanup report.
+
+The cleanup report is an explicit trusted-boundary assumption. These proofs do
+not establish that hardware translations are closed. The runtime must produce
+that report from the full root publication and invalidation contract; a CR3
+address comparison alone is insufficient. Tests cover both directions across
+all three stop kinds, both cleanup reports and four progress counts (48 cases),
+including partial effects after faults and unsuccessful cleanup.

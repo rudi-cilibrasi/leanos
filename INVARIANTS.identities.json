@@ -15885,6 +15885,48 @@
     },
     {
       "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_complete_agrees",
+      "display": "from_complete_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_outside_prefix",
+      "display": "from_outside_prefix",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_preserves_authority",
+      "display": "from_preserves_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_preserves_user",
+      "display": "from_preserves_user",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_rejected_unchanged",
+      "display": "from_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_validated_exact",
+      "display": "from_validated_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
+      "qualified": "LeanOS.UserCopyPrefix.from_zero_progress_unchanged",
+      "display": "from_zero_progress_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPrefix.lean",
       "qualified": "LeanOS.UserCopyPrefix.outside_prefix",
       "display": "outside_prefix",
       "kind": "theorem"
@@ -15911,6 +15953,60 @@
       "source": "LeanOS/UserCopyPrefix.lean",
       "qualified": "LeanOS.UserCopyPrefix.zero_progress_unchanged",
       "display": "zero_progress_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.cleanup_failure_terminal",
+      "display": "cleanup_failure_terminal",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.exceptional_stop_terminal",
+      "display": "exceptional_stop_terminal",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.finish_returned_iff",
+      "display": "finish_returned_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.from_effects",
+      "display": "from_effects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.preserves_authority",
+      "display": "preserves_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.rejected_memory_unchanged",
+      "display": "rejected_memory_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.returned_requires_contract",
+      "display": "returned_requires_contract",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.to_effects",
+      "display": "to_effects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyTransaction.lean",
+      "qualified": "LeanOS.UserCopyTransaction.wrong_progress_terminal",
+      "display": "wrong_progress_terminal",
       "kind": "theorem"
     },
     {
