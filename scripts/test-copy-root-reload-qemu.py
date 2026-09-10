@@ -11,7 +11,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / 'build/copy-roots/qemu'
+OUT = ROOT / 'build/copy-roots' / ('qemu-' + Path(os.environ.get('LEANOS_CC', 'gcc')).name)
 
 
 def qmp_command(path, command=None):
@@ -55,7 +55,36 @@ def main():
     readback.write_text(source.replace(needle, '    xor %eax, %eax'))
     subprocess.run([cc, '-m64', '-c', str(readback), '-o', str(OUT / 'readback-mismatch.o')], check=True)
     cases.extend([(0, 'missing-reload'), (7, 'closed-denial'), (8, 'readback-mismatch'), (9, 'nmi-closure'), (10, 'identity-denial')])
+    cases.extend([(7, 'constructed-closed-denial'), (10, 'constructed-identity-denial')])
+    constructor = OUT / 'construct-fixture.o'
+    subprocess.run([cc, '-m64', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
+                    '-ffreestanding', '-fno-stack-protector', '-fno-pie', '-mno-red-zone',
+                    '-mgeneral-regs-only', '-fno-asynchronous-unwind-tables', '-c',
+                    'experiments/copy-roots/construct-fixture.c', '-o', str(constructor)], cwd=ROOT, check=True)
+    mutation_dir = OUT / 'unfiltered-constructor'
+    mutation_dir.mkdir(exist_ok=True)
+    header = (ROOT / 'experiments/copy-roots/construct.h').read_text()
+    filter_code = """target[page] = construct_protected(source[page], frames, frame_count)
+            ? 0 : source[page];"""
+    if header.count(filter_code) != 1:
+        raise RuntimeError('constructor filtering mutation no longer applies uniquely')
+    (mutation_dir / 'construct.h').write_text(header.replace(filter_code, 'target[page] = source[page];'))
+    (mutation_dir / 'construct-fixture.c').write_text(
+        (ROOT / 'experiments/copy-roots/construct-fixture.c').read_text())
+    unfiltered = mutation_dir / 'construct-fixture.o'
+    subprocess.run([cc, '-m64', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
+                    '-ffreestanding', '-fno-stack-protector', '-fno-pie', '-mno-red-zone',
+                    '-mgeneral-regs-only', '-fno-asynchronous-unwind-tables', '-c',
+                    str(mutation_dir / 'construct-fixture.c'), '-o', str(unfiltered)], check=True)
+    cases.append((7, 'constructed-missing-filter'))
     exit_cases = {'reloads': (33, b'RSTP'), 'missing-reload': (35, b'RF'), 'closed-denial': (33, b'RDP'), 'nmi-closure': (33, b'RNP'), 'identity-denial': (33, b'RDP')}
+    exit_cases.update({'constructed-closed-denial': (33, b'RDP'),
+                       'constructed-identity-denial': (33, b'RDP'),
+                       'constructed-missing-filter': (35, b'RDF')})
+    host_test = OUT / 'construct-test'
+    subprocess.run([cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
+                    'experiments/copy-roots/construct-test.c', '-o', str(host_test)], cwd=ROOT, check=True)
+    subprocess.run([str(host_test)], check=True)
     for number, name in cases:
         directory = OUT / name
         grub = directory / 'iso/boot/grub'
@@ -63,10 +92,13 @@ def main():
         elf = grub.parent / 'test.elf'
         (directory / 'terminal-registers.txt').unlink(missing_ok=True)
         reload_object = OUT / (name + '.o' if name in {'missing-reload', 'readback-mismatch'} else 'reload.o')
-        subprocess.run([cc, '-m64', f'-DFIXTURE={number}', '-c', 'experiments/copy-roots/fixture.S',
+        construction_flags = ['-DCONSTRUCT_FIXTURE'] if name.startswith('constructed-') else []
+        constructor_object = unfiltered if name == 'constructed-missing-filter' else constructor
+        construction_objects = [str(constructor_object)] if construction_flags else []
+        subprocess.run([cc, '-m64', f'-DFIXTURE={number}', *construction_flags, '-c', 'experiments/copy-roots/fixture.S',
                         '-o', str(directory / 'fixture.o')], cwd=ROOT, check=True)
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
-                        '-o', str(elf), str(directory / 'fixture.o'), str(reload_object)], cwd=ROOT, check=True)
+                        '-o', str(elf), str(directory / 'fixture.o'), str(reload_object), *construction_objects], cwd=ROOT, check=True)
         symbols = subprocess.check_output(['nm', '-S', str(elf)], text=True)
         terminal = next(line.split() for line in symbols.splitlines() if line.endswith(' leanos_copy_root_terminal'))
         terminal_start, terminal_size = int(terminal[0], 16), int(terminal[1], 16)
@@ -122,7 +154,8 @@ def main():
         results.append({'case': name, 'observation': observation,
                         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
                         'capture': capture.read_text(),
-                        'reload_object_sha256': hashlib.sha256(reload_object.read_bytes()).hexdigest()})
+                        'reload_object_sha256': hashlib.sha256(reload_object.read_bytes()).hexdigest(),
+                        'constructor_object_sha256': hashlib.sha256(constructor_object.read_bytes()).hexdigest() if construction_flags else None})
         print(f'copy-root QEMU {name}: PASS', flush=True)
     report.write_text(json.dumps({'scope': 'isolated QEMU TCG prototype; no physical or CPL3 admission',
                                  'compiler_version': subprocess.check_output([cc, '--version'], text=True),

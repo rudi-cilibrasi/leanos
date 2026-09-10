@@ -35,3 +35,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-copy-roots-replay"
 root = "tests.CopyRootsReplay"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-copy-root-construction"
+root = "tests.CopyRootConstruction"
+moreLeanArgs = ["-DwarningAsError=true"]
