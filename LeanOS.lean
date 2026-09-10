@@ -60,3 +60,5 @@ import LeanOS.X86PageTable
 import LeanOS.TLB
 import LeanOS.VTdBootPlan
 import LeanOS.SecurityClaims
+import LeanOS.J1900CpuProfile
+import LeanOS.J1900EntryControl

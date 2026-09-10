@@ -1,0 +1,4 @@
+QEMU version: QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)
+QEMU command: qemu-system-x86_64 -machine q35\,accel=kvm -nodefaults -cpu max\,vendor=AuthenticAMD -smp 1 -m 128M -display none -monitor none -serial file:build/j1900/sysenter-kvm-deed6c7.log -no-reboot -no-shutdown -nic none -device intel-iommu\,intremap=off\,pt=off\,caching-mode=off\,device-iotlb=off\,aw-bits=39\,dma-translation=on\,snoop-control=off -device VGA\,bus=pcie.0\,addr=0x1 -device isa-debug-exit\,iobase=0xf4\,iosize=0x04 -drive id=leanos-cd\,if=none\,format=raw\,media=cdrom\,readonly=on\,file=build/boot/leanos-0.1.0-x86_64-fast-entry-sysenter.iso -device ide-cd\,drive=leanos-cd\,bus=ide.0
+Serial log: build/j1900/sysenter-kvm-deed6c7.log
+failure_class=qemu-error: QEMU exit status 39 (expected 33)

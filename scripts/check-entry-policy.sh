@@ -8,6 +8,7 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 [[ -f "$kernel_source" && -f "$boot_source" ]] || {
   echo "error: missing entry-policy source snapshot" >&2; exit 1;
 }
+./scripts/check-early-cpu-policy.py "$elf"
 
 symbols="$(nm "$elf")"
 control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"

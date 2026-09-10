@@ -46,7 +46,8 @@ def families : List Family := [
   ⟨20, ["A-ALLOC", "A-REJECT", "B-ALLOC", "B-CONTEXT", "B-PUBLISH", "BOOT", "CANARY", "CLEANUP", "DISPATCH", "ENTER", "FINAL", "FRAME", "SCRUB", "STALE"]⟩,
   ⟨21, ["VTD", "VTD-ACTIVATE", "VTD-ASSIGN", "VTD-FAULT", "VTD-PLAN", "VTD-REUSE", "VTD-TABLES", "VTD-TRANSFER", "VTD-UNMAPPED-FAULT", "VTD-WRITE-FAULT"]⟩,
   ⟨22, ["ACCEPT", "BOOT", "DELEGATED-SEND", "DISPATCH", "ENTER", "EXCESS-RIGHT-DENIAL", "FINAL", "OFFER", "SEALED-DENIAL", "UNRELATED"]⟩,
-  ⟨23, ["BOOT", "CANCELED-HANDLE-DENIAL", "CANCELED-RECEIPT", "DISPATCH", "ENTER", "FINAL", "FRESH-SEND", "OFFER", "OFFER-DENIAL", "REPLACE", "REVOKE", "REVOKE-DENIAL", "UNRELATED"]⟩
+  ⟨23, ["BOOT", "CANCELED-HANDLE-DENIAL", "CANCELED-RECEIPT", "DISPATCH", "ENTER", "FINAL", "FRESH-SEND", "OFFER", "OFFER-DENIAL", "REPLACE", "REVOKE", "REVOKE-DENIAL", "UNRELATED"]⟩,
+  ⟨24, ["BOOT", "CPU", "CONTROL"]⟩
 ]
 
 /-- Every record identity, in family order. -/
@@ -56,6 +57,9 @@ def records : List (Nat × String) :=
 /-- Exact production `LEANOS/3 FINAL` reasons that can be emitted before the
 platform-admission boundary. Runtime fail-stop reasons are intentionally absent. -/
 def preAdmissionRejectionReasons : List String := [
+  "j1900-cpu-profile",
+  "j1900-msr-readback",
+  "qotom-platform-pending",
   "dma-command-model",
   "dma-command-readback",
   "dma-empty-inventory",

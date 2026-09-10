@@ -573,7 +573,7 @@ lean_c_modules=(
   KernelTransition Syscall IPCSyscall Preemption BootAllocation
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
-  PrivilegeEntryControl FaultDispatch DirectPortIO StaleTranslation
+  PrivilegeEntryControl J1900CpuProfile J1900MsrReadback FaultDispatch DirectPortIO StaleTranslation
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
 )
 lean_c_signature="$build/generated-lean-c.sha256"
@@ -967,7 +967,7 @@ if selected_final_enabled "$build/leanos-double-fault.elf"; then
     build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
     build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
     build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/FaultDispatch.o
   ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
     "$build/boot-page-plan-double-fault.final.h"
   cmp "$build/boot-page-plan-double-fault.h" \
@@ -984,7 +984,7 @@ if selected_final_enabled "$build/leanos-entry-stack-overflow.elf"; then
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/FaultDispatch.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow.elf" \
     "$build/boot-page-plan-entry-overflow.final.h"
   cmp "$build/boot-page-plan-entry-overflow.h" \
@@ -1001,7 +1001,7 @@ if selected_final_enabled "$build/leanos-double-fault-guard-mapped.elf"; then
     build/boot/kernel-double-fault-guard-mapped.o \
     build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
     build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/FaultDispatch.o
   ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
     "$build/boot-page-plan-guard.final.h"
   cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
