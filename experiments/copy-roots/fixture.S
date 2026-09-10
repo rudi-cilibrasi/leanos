@@ -1,4 +1,7 @@
 /* QEMU-only Multiboot2 fixture; no production entry/CPL3 admission. */
+#if defined(TRANSFER_FIXTURE) && !defined(CONSTRUCT_FIXTURE)
+#error "Transfer fixtures require constructed closed roots"
+#endif
 .section .multiboot,"a"
 .balign 8
 header:
@@ -55,6 +58,12 @@ _start:
     or $3, %eax
     mov %eax, leaves_a+0x3800
     mov %eax, leaves_b+0x3800
+#ifdef TRANSFER_FIXTURE
+    /* Include both copy aliases in the source before closed-root construction. */
+    mov $value_b, %eax
+    or $3, %eax
+    mov %eax, leaves_a+0x3808
+#endif
 #if (FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10) && !defined(CONSTRUCT_FIXTURE)
     movl $0, leaves_b+0x3800
     /* Omit identity aliases of both protected backing frames as well. */
