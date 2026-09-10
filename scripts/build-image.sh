@@ -862,48 +862,6 @@ if [[ "$graph_make_cache_current" != true ]]; then
 fi
 record_build_phase boot-plans-and-final-links
 
-for spec in "${return_corruptions[@]}"; do
-  IFS=: read -r fixture mode _reason <<<"$spec"
-  return_elf="$build/leanos-return-${fixture}.elf"
-  selected_final_enabled "$return_elf" || continue
-  ./scripts/generate-boot-page-plan.sh "$return_elf" \
-    "$build/boot-page-plan-return-${fixture}.final.h"
-  cmp "$build/boot-page-plan-return-${fixture}.h" \
-    "$build/boot-page-plan-return-${fixture}.final.h" || {
-    echo "error: ${fixture} boot page-table plan drifted after final link" >&2
-    exit 1
-  }
-  expected_policy_diagnostic=""
-  if [[ "$fixture" == post-validation-mutation ]]; then
-    expected_policy_diagnostic='mutation or control flow added after user-return validation'
-  elif [[ "$fixture" == fast-entry-sce-relaxation ||
-      "$fixture" == fast-entry-lstar-relaxation ||
-      "$fixture" == fast-entry-sysenter-eip-relaxation ||
-      "$fixture" == fast-entry-star-relaxation ||
-      "$fixture" == fast-entry-cstar-relaxation ||
-      "$fixture" == fast-entry-sfmask-relaxation ||
-      "$fixture" == fast-entry-sysenter-cs-relaxation ||
-      "$fixture" == fast-entry-sysenter-esp-relaxation ]]; then
-    expected_policy_diagnostic='fast-entry final-ELF write inventory drifted'
-  fi
-  run_return_corruption_policy_check "$fixture" \
-    "$return_elf" "$expected_policy_diagnostic" \
-    "$build/return-${fixture}-policy.log"
-done
-
-validate_selected_final_plan() {
-  local elf_path="$1"
-  local expected_plan="$2"
-  local final_plan="$3"
-  local description="$4"
-  selected_final_enabled "$elf_path" || return 0
-  ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
-  cmp "$expected_plan" "$final_plan" || {
-    echo "error: $description page-table plan drifted after final link" >&2
-    exit 1
-  }
-}
-
 converge_selected_graph_plan() {
   local elf_path="$1"
   local expected_plan="$2"
@@ -941,6 +899,46 @@ converge_selected_graph_plan() {
     exit 1
   }
 }
+
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture mode _reason <<<"$spec"
+  return_elf="$build/leanos-return-${fixture}.elf"
+  selected_final_enabled "$return_elf" || continue
+  converge_selected_graph_plan "$return_elf" \
+    "$build/boot-page-plan-return-${fixture}.h" \
+    "$build/boot-page-plan-return-${fixture}.final.h" "$fixture" \
+    "$return_elf"
+  expected_policy_diagnostic=""
+  if [[ "$fixture" == post-validation-mutation ]]; then
+    expected_policy_diagnostic='mutation or control flow added after user-return validation'
+  elif [[ "$fixture" == fast-entry-sce-relaxation ||
+      "$fixture" == fast-entry-lstar-relaxation ||
+      "$fixture" == fast-entry-sysenter-eip-relaxation ||
+      "$fixture" == fast-entry-star-relaxation ||
+      "$fixture" == fast-entry-cstar-relaxation ||
+      "$fixture" == fast-entry-sfmask-relaxation ||
+      "$fixture" == fast-entry-sysenter-cs-relaxation ||
+      "$fixture" == fast-entry-sysenter-esp-relaxation ]]; then
+    expected_policy_diagnostic='fast-entry final-ELF write inventory drifted'
+  fi
+  run_return_corruption_policy_check "$fixture" \
+    "$return_elf" "$expected_policy_diagnostic" \
+    "$build/return-${fixture}-policy.log"
+done
+
+validate_selected_final_plan() {
+  local elf_path="$1"
+  local expected_plan="$2"
+  local final_plan="$3"
+  local description="$4"
+  selected_final_enabled "$elf_path" || return 0
+  ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
+  cmp "$expected_plan" "$final_plan" || {
+    echo "error: $description page-table plan drifted after final link" >&2
+    exit 1
+  }
+}
+
 
 # Final-ELF page-plan checks come from the scenario manifest in build order:
 # a validate compares the linker-resolved plan with the expected header; a
