@@ -104,4 +104,51 @@ theorem decode_transport_bounds r h (accepted : decode r = .ok h) :
   rename_i dwords
   exact ⟨by simpa using address, by simpa using width, by simpa using dwords⟩
 
+def Error.code : Error → UInt64
+  | .invalidBDF => 0x100
+  | .wrongWordCount => 0x101
+  | .nonDword => 0x102
+  | .absent => 0x103
+  | .unsupportedLayout => 0x104
+
+/-- Twenty observation words: success tag, identity, command/status, revision,
+multifunction, layout tag, then eleven bridge fields. Endpoint bridge fields
+are canonical zeros. These words carry no admission or quiescence authority. -/
+def observationWords (h : Header) : List UInt64 :=
+  [1, h.identity.vendor, h.identity.device, h.identity.classCode,
+   h.command, h.status, h.revision, if h.multifunction then 1 else 0,
+   match h.layout with | .endpoint => 0 | .bridge _ => 1] ++
+    match h.layout with
+    | .endpoint => List.replicate 11 0
+    | .bridge r => [r.primary, r.secondary, r.subordinate, r.control,
+        r.ioBaseLimit, r.secondaryStatus, r.memoryBaseLimit, r.prefetchBaseLimit,
+        r.prefetchBaseUpper, r.prefetchLimitUpper, r.ioBaseLimitUpper]
+
+theorem observationWords_width h : (observationWords h).length = 20 := by
+  cases layout : h.layout <;> simp [observationWords, layout]
+
+/-- Read a field from one immutable supplied observation. Field zero must be
+checked before consuming data fields, whose values can equal an error code.
+An out-of-range selector returns 0x105. -/
+def observe (r : RawHeader) (field : UInt64) : UInt64 :=
+  if field ≥ 20 then 0x105
+  else match decode r with
+    | .error e => e.code
+    | .ok h => (observationWords h).getD field.toNat 0
+
+theorem observe_success_tag r h (accepted : decode r = .ok h) : observe r 0 = 1 := by
+  simp [observe, accepted, observationWords]
+
+/-- Fixed scalar transport for generated-C replay and a future boot adapter.
+The caller supplies sixteen dwords and an explicit declared count. This export
+does not access PCI configuration space or assert enumeration completeness. -/
+@[export leanos_pci_header_observe]
+def checkRaw (field count bus device fn
+    w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) : UInt64 :=
+  if field ≥ 20 then 0x105
+  else if !bdfValid ⟨bus, device, fn⟩ then Error.invalidBDF.code
+  else if count != 16 then Error.wrongWordCount.code
+  else observe ⟨⟨bus, device, fn⟩,
+    [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15]⟩ field
+
 end LeanOS.PCIHeaderObservation
