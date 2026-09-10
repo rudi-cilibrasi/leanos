@@ -1499,7 +1499,39 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "negative_variants": [
+        {
+          "fixture": "missing-mmio-mapping",
+          "macro": "LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE",
+          "reason": "pt-decode-a"
+        },
+        {
+          "fixture": "wrong-bar",
+          "macro": "LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE",
+          "reason": "vtd-assigned-bar"
+        },
+        {
+          "fixture": "wrong-mmio-identity",
+          "macro": "LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE",
+          "reason": "vtd-assigned-mmio-identity"
+        },
+        {
+          "fixture": "forged-fault",
+          "macro": "LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE",
+          "reason": "vtd-assigned-fault-binding"
+        },
+        {
+          "fixture": "wrong-fault-victim",
+          "macro": "LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE",
+          "reason": "vtd-assigned-fault-victim"
+        },
+        {
+          "fixture": "omit-reuse-invalidation",
+          "macro": "LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE",
+          "reason": "vtd-reuse-invalidation-omitted"
+        }
+      ]
     },
     "malformed-handoff": {
       "tier": "pr",

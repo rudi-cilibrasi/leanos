@@ -242,3 +242,52 @@ page-fault path. It terminates the fixture rather than resuming the interrupted
 context. The test uses a shared trusted CPL0 stack and does not establish the
 production IST/TSS, nesting, double-fault or CPL3 return contracts. GCC and pinned
 Clang 18 pass all twelve execution cases with SMAP disabled.
+
+### Bounded operand-transfer prototype
+
+`experiments/copy-roots/transfer.S` consumes a trusted immutable sequence of
+at most sixteen source/destination byte-address pairs. These must already be
+admitted `UserCopyOperands` results, with stable ownership and mappings. The
+assembly interface itself does not validate user buffers or manufacture copy
+authority. Code, stack, operands and exception data must remain mapped under
+both supplied roots.
+
+The helper first reloads the closed root. Zero length returns without opening
+the copy root; excessive length terminates. For a nonempty request it reloads
+the copy root, transfers the pairs in order, and reloads the closed root before
+normal return. Reload guards and readback use the existing primitive. The helper
+contains no STAC/CLAC and does not set CR4.SMAP. A linked-instruction checker
+verifies its complete body, direct branch/call destinations and reload/terminal
+callees. Twelve mutations challenge bounds, transfer width and stride, branch
+conditions, missing reloads, cleanup operands, unsupported instructions and
+premature return; the eleven original reload mutations remain separate.
+
+The QEMU driver tests both directions at lengths zero, one, eight and sixteen,
+including two-page transfers. The closed root omits all test-frame aliases;
+the copy root exposes only the two dedicated supervisor/NX aliases. Destination
+sentinels and copy-out source bytes are checked. An actual post-return read must
+fault under the already closed root; that probe handler does not repair closure.
+
+Oversized requests and zero, unaligned or out-of-arena copy-root arguments must
+halt before changing either memory domain. A missing second alias faults after
+eight completed bytes. A separate instrumented helper pauses at the same prefix
+so QMP can inject NMI after confirming the checkpoint's halted instruction
+pointer. These fixture handlers first select the fixed closed root, then halt
+without resumption. Physical memory dumps verify the exact completed prefix,
+unchanged source and unchanged destination surroundings. This samples one NMI
+checkpoint, not every possible interruption window.
+
+A mutated final cleanup operand must halt after the full transfer while the copy
+root remains selected. Its report explicitly marks closure as false; terminal
+behavior must not be mistaken for successful cleanup or rollback. The runner
+records QMP terminal state, memory dumps/hashes, exact commands, ELF/transfer-object
+hashes, source and driver hashes, and compiler/QEMU versions. It distinguishes
+normal exits from observed halted guests.
+
+The normal repository checks run the instruction audit and all 22 execution
+cases. `LEANOS_CC=clang-18 python3 scripts/test-copy-root-transfer-qemu.py`
+selects the second compiler; compiler-specific output directories preserve both
+runs. The tests use a trusted shared CPL0 stack. Production IST/TSS, nested
+exceptions, double faults, validation-to-operand binding, actual root construction
+and protected-frame inventory publication still require integration. This
+prototype does not enable production or physical CPL3 admission.

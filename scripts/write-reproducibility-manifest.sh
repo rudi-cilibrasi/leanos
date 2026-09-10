@@ -6,14 +6,13 @@ version="${LEANOS_VERSION:-0.1.0}"
 # The byte-reproducible artifact set is derived from scripts/scenario-manifest.json
 # by the evidence runner, so a new scenario's artifacts cannot escape this gate
 # without a manifest entry.
-mapfile -t artifacts < <(
-  "$repo_root/scripts/run-emulator-evidence.py" reproducibility-artifacts \
-    --version "$version"
-)
-[[ ${#artifacts[@]} -gt 0 ]] || {
+artifact_rows="$("$repo_root/scripts/run-emulator-evidence.py" reproducibility-artifacts \
+  --version "$version")"
+[[ -n "$artifact_rows" ]] || {
   echo "error: the derived reproducibility artifact list is empty" >&2
   exit 1
 }
+mapfile -t artifacts <<< "$artifact_rows"
 
 if [[ "${1:-}" == "--list" ]]; then
   printf '%s\n' "${artifacts[@]}"

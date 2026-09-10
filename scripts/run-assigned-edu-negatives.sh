@@ -28,16 +28,10 @@ done
   exit 1
 }
 
-specs=(
-  "missing-mmio-mapping:pt-decode-a"
-  "wrong-bar:vtd-assigned-bar"
-  "wrong-mmio-identity:vtd-assigned-mmio-identity"
-  "forged-fault:vtd-assigned-fault-binding"
-  "wrong-fault-victim:vtd-assigned-fault-victim"
-  "omit-reuse-invalidation:vtd-reuse-invalidation-omitted"
-)
+negative_rows="$(./scripts/scenario-manifest.py negative-variants assigned-edu-inventory)"
+mapfile -t specs <<< "$negative_rows"
 for spec in "${specs[@]}"; do
-  IFS=: read -r fixture reason <<<"$spec"
+  IFS=$'\t' read -r fixture _macro reason <<<"$spec"
   image="build/boot/leanos-${version}-x86_64-assigned-edu-${fixture}.iso"
   log="build/boot/assigned-edu-${fixture}.serial.log"
   terminal="${LEANOS_SERIAL_3_FINAL} status=FAIL reason=${reason}"

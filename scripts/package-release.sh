@@ -18,6 +18,14 @@ fi
 evidence="build/evidence/emulator-evidence.json"
 ./scripts/run-emulator-evidence.py verify "$evidence" --version "$version"
 
+# Materialize the complete query before replacing a prior release. A process
+# substitution would hide a producer failure after it emitted partial rows.
+artifact_rows="$(./scripts/run-emulator-evidence.py release-artifacts --version "$version")"
+[[ -n "$artifact_rows" ]] || {
+  echo "error: the derived release artifact list is empty" >&2
+  exit 1
+}
+
 release="$repo_root/build/release"
 rm -rf "$release"
 mkdir -p "$release"
@@ -36,7 +44,7 @@ while IFS=$'\t' read -r source destination; do
   }
   cp "$source" "$release/$destination"
   release_destinations+=("$destination")
-done < <(./scripts/run-emulator-evidence.py release-artifacts --version "$version")
+done <<< "$artifact_rows"
 [[ ${#release_destinations[@]} -gt 0 ]] || {
   echo "error: the derived release artifact list is empty" >&2
   exit 1

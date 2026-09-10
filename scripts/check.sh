@@ -54,6 +54,8 @@ lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 python3 scripts/check-copy-root-reload.py --self-test
 python3 scripts/test-copy-root-reload-qemu.py
+python3 scripts/check-copy-root-transfer.py --self-test
+python3 scripts/test-copy-root-transfer-qemu.py
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"
@@ -70,6 +72,9 @@ lake build leanos-vtd-plan
 ./scripts/test-generate-serial-protocol.sh
 python3 ./scripts/generate-evidence-matrix.py --output scripts/emulator-evidence-matrix.tsv
 python3 ./scripts/test-scenario-manifest.py
+python3 ./scripts/test-release-artifact-consumers.py
+python3 ./scripts/test-build-manifest-consumers.py
+python3 ./scripts/test-assigned-negative-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
 python3 ./scripts/test-bare-metal-observation.py
 python3 ./scripts/test-j1900-cpu-profile.py

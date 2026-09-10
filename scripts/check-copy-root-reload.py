@@ -10,9 +10,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def check(elf):
-    output = subprocess.check_output(
-        ['objdump', '-d', '--no-show-raw-insn', str(elf)], text=True)
+def check(elf, *, within_bundle=False):
+    selectors = ['leanos_copy_root_reload', 'leanos_copy_root_terminal'] if within_bundle else [None]
+    output = ''.join(subprocess.check_output(
+        ['objdump', '-d', '--no-show-raw-insn'] +
+        ([f'--disassemble={symbol}'] if symbol else []) + [str(elf)], text=True)
+        for symbol in selectors)
     if 'file format elf64-x86-64' not in output:
         raise ValueError('expected x86-64 ELF')
     symbols, instructions = {}, []
@@ -25,6 +28,20 @@ def check(elf):
             instructions.append((int(instruction[1], 16), instruction[2], instruction[3]))
         elif re.match(r"\s*[0-9a-f]+:", line):
             raise ValueError("undecodable instruction bytes")
+    if within_bundle:
+        # The caller audits other reachable helpers separately. Retain the
+        # entire declared bodies of these two callees, including any tail.
+        selected = {'leanos_copy_root_reload', 'leanos_copy_root_terminal'}
+        ranges = []
+        for line in subprocess.check_output(['nm', '-S', str(elf)], text=True).splitlines():
+            fields = line.split()
+            if len(fields) == 4 and fields[-1] in selected:
+                start, size = int(fields[0], 16), int(fields[1], 16)
+                ranges.append((start, start + size))
+        if len(ranges) != 2:
+            raise ValueError('missing sized reload/terminal symbols')
+        instructions = [row for row in instructions if any(a <= row[0] < b for a, b in ranges)]
+        symbols = {name: address for name, address in symbols.items() if name in selected}
     if set(symbols) != {'leanos_copy_root_reload', 'leanos_copy_root_terminal'}:
         raise ValueError('unexpected or missing code symbols')
     terminal = symbols['leanos_copy_root_terminal']

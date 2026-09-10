@@ -449,14 +449,24 @@ fi
 # The packaged image family (ISO, GRUB configuration, and final-ELF policy per
 # final ELF) and the page-plan stub set come from scripts/scenario-manifest.json;
 # nothing below names one by hand.
-mapfile -t packaged_images < <(
-  ./scripts/scenario-manifest.py packaged-images --version "$version"
-)
-[[ ${#packaged_images[@]} -gt 0 ]] || {
-  echo "error: the scenario manifest declares no packaged images" >&2
-  exit 1
+# Check complete query results before building or selecting policy work. Bash
+# process substitutions do not propagate a failed manifest producer.
+query_build_manifest() {
+  local rows
+  rows="$(./scripts/scenario-manifest.py "$@")" || return "$?"
+  [[ -n "$rows" ]] || {
+    echo "error: scenario manifest query $1 returned no rows" >&2
+    return 1
+  }
+  printf '%s\n' "$rows"
 }
-mapfile -t page_plan_stubs < <(./scripts/scenario-manifest.py page-plans)
+packaged_rows="$(query_build_manifest packaged-images --version "$version")"
+mapfile -t packaged_images <<< "$packaged_rows"
+page_plan_rows="$(query_build_manifest page-plans)"
+mapfile -t page_plan_stubs <<< "$page_plan_rows"
+disassembly_rows="$(query_build_manifest disassemblies)"
+extended_state_rows="$(query_build_manifest extended-state-policies)"
+entry_rows="$(query_build_manifest entry-policies)"
 declare -A port_sites_lookup=()
 while IFS=$'\t' read -r packaged_stem _ _ _ _ _ _ packaged_port_sites; do
   [[ "$packaged_port_sites" == - ]] || port_sites_lookup["$packaged_stem"]="$packaged_port_sites"
@@ -1223,7 +1233,7 @@ write_selected_disassembly() {
 while IFS=$'\t' read -r disassembly_image disassembly_output; do
   write_selected_disassembly "$build/$disassembly_image.elf" \
     "$build/$disassembly_output"
-done < <(./scripts/scenario-manifest.py disassemblies)
+done <<< "$disassembly_rows"
 run_selected_extended_state_policy() {
   local variant="$1"
   local elf="$2"
@@ -1236,7 +1246,7 @@ while IFS=$'\t' read -r policy_image policy_variant policy_report; do
   run_selected_extended_state_policy "$policy_variant" \
     "$build/$policy_image.elf" "$build/$policy_report"
   extended_state_policy_images+=("$build/$policy_image.elf")
-done < <(./scripts/scenario-manifest.py extended-state-policies)
+done <<< "$extended_state_rows"
 if [[ "$evidence_tier" == all ]]; then
   ./scripts/test-extended-state-policy.sh "${extended_state_policy_images[@]}"
 fi
@@ -1264,7 +1274,7 @@ while IFS=$'\t' read -r entry_image entry_key entry_report entry_env_name entry_
     queue_entry_policy "$entry_key" "$build/$entry_image.elf" \
       "$build/$entry_report"
   fi
-done < <(./scripts/scenario-manifest.py entry-policies)
+done <<< "$entry_rows"
 
 
 if ! xargs -0 -r -n 5 -P "$policy_jobs" bash -c \

@@ -8,6 +8,11 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
+expectation_rows="$(python3 ./scripts/scenario-manifest.py expectations)"
+[[ -n "$expectation_rows" ]] || {
+  echo "no expectation templates listed by the scenario manifest" >&2
+  exit 1
+}
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 ./scripts/generate-oracle.sh "$tmp/oracle" >"$tmp/generate-oracle.log"
@@ -40,6 +45,6 @@ while IFS=$'\t' read -r scenario boot_scenario template; do
     exit 1
   fi
   count=$((count + 1))
-done < <(python3 ./scripts/scenario-manifest.py expectations)
+done <<< "$expectation_rows"
 (( count > 0 )) || { echo "no expectation templates listed by the scenario manifest" >&2; exit 1; }
 echo "Expectation templates render for all $count boot-runner scenarios"

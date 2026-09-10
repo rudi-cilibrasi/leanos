@@ -72,3 +72,5 @@ import LeanOS.J1900EntryControl
 import LeanOS.BootTextConsole
 import LeanOS.PCIHeaderObservation
 import LeanOS.QotomPCIInventory
+import LeanOS.QotomPCIQuarantineObservation
+import LeanOS.QotomPCIQuarantineTransition

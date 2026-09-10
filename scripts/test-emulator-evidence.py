@@ -1176,21 +1176,6 @@ def run_fixtures() -> None:
             if failed_report["results"][0]["status"] != "FAIL":
                 raise AssertionError("failed scenario does not publish FAIL")
 
-        package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
-        evidence.check_release_package(package)
-        expect_failure(
-            lambda: evidence.check_release_package(
-                package.replace("run-emulator-evidence.py release-artifacts", "true")
-            ),
-            "does not copy the derived release artifact list",
-        )
-        expect_failure(
-            lambda: evidence.check_release_package(
-                package + '\ncp build/boot/fault-containment-snapshot.txt "$release/extra.txt"\n'
-            ),
-            "restates a build/boot artifact instead of deriving it",
-        )
-
         # The derivation layer: rows, artifact lists, and negatives come from
         # the manifest; every deviation fails with a named diagnostic.
         manifest = evidence.load_manifest()
