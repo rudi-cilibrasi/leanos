@@ -61,6 +61,7 @@
     "LeanOS/PrivilegeEntryControl.lean",
     "LeanOS/PrivilegeEntryStack.lean",
     "LeanOS/QotomBspTopology.lean",
+    "LeanOS/QotomPCIInventory.lean",
     "LeanOS/ResumablePreemption.lean",
     "LeanOS/ScheduledObservation.lean",
     "LeanOS/Scheduler.lean",

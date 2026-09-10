@@ -71,3 +71,4 @@ import LeanOS.J1900CpuProfile
 import LeanOS.J1900EntryControl
 import LeanOS.BootTextConsole
 import LeanOS.PCIHeaderObservation
+import LeanOS.QotomPCIInventory
