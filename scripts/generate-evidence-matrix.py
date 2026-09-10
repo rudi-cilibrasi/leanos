@@ -71,6 +71,8 @@ def publish(output: Path, result: str) -> None:
         ) as handle:
             temporary = Path(handle.name)
             handle.write(result)
+        # Preserve the former tracked TSV's mode in deterministic bundles.
+        temporary.chmod(0o644)
         os.replace(temporary, output)
     finally:
         if temporary is not None:

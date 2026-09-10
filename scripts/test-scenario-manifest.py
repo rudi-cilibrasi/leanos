@@ -51,6 +51,8 @@ def main() -> None:
         )
         if published.returncode or published.stdout or output.read_text() != generated.stdout:
             raise AssertionError(f"clean output directory was not populated: {published}")
+        if output.stat().st_mode & 0o777 != 0o644:
+            raise AssertionError("generated inventory changed the matrix's bundled file mode")
 
         def generate(change):
             copy = json.loads(json.dumps(manifest))
