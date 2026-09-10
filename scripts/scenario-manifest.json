@@ -2349,6 +2349,30 @@
         "mode": "-",
         "reason": "-"
       }
+    },
+    "return-flags-iopl": {
+      "tier": "evidence",
+      "row": {
+        "runner": "return",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-flags-iopl.iso",
+        "elf": "leanos-return-flags-iopl.elf",
+        "serial_log": "return-corruption-flags-iopl.serial.log",
+        "scenario": "flags-iopl",
+        "mode": "27",
+        "reason": "user-return-flags"
+      },
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "reproducibility_artifacts": [
+        "iso",
+        "elf",
+        "map"
+      ]
     }
   }
 }
