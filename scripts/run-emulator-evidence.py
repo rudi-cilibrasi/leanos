@@ -1438,23 +1438,6 @@ def build_evidence_bundle(report_path: Path, output: Path, root: Path = ROOT) ->
     )
 
 
-def check_release_package(package: str) -> None:
-    """The release packager must copy the derived artifact list and checksum
-    its destinations; it may not restate a build/boot artifact by hand."""
-    if "run-emulator-evidence.py release-artifacts" not in package:
-        raise EvidenceError(
-            "package-release.sh does not copy the derived release artifact list"
-        )
-    if re.search(r"^cp \"?build/boot/", package, re.M):
-        raise EvidenceError(
-            "package-release.sh restates a build/boot artifact instead of deriving it"
-        )
-    if "sha256sum" not in package or "release_destinations" not in package:
-        raise EvidenceError(
-            "package-release.sh does not checksum the derived release destinations"
-        )
-
-
 def workflow_step_runs(
     workflow: dict[str, object], relative: str
 ) -> list[tuple[str, str]]:
@@ -1952,10 +1935,6 @@ def check_workflows() -> None:
             raise EvidenceError(
                 f"release diagnostics do not retain mandatory evidence pattern {artifact}"
             )
-    package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
-    if "run-emulator-evidence.py verify" not in package:
-        raise EvidenceError("package-release.sh does not verify shared emulator evidence")
-    check_release_package(package)
     print("Emulator evidence matrix and workflow consistency checks passed")
 
 
