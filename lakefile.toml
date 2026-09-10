@@ -30,3 +30,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-abi"
 root = "LeanOS.BoundaryABIGenerator"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-copy-roots-replay"
+root = "tests.CopyRootsReplay"
+moreLeanArgs = ["-DwarningAsError=true"]
