@@ -14150,6 +14150,30 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomPCIInventory.lean",
+      "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
+      "display": "check_preserves_raw",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIInventory.lean",
+      "qualified": "LeanOS.QotomPCIInventory.decodeAll_preserves_raw",
+      "display": "decodeAll_preserves_raw",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIInventory.lean",
+      "qualified": "LeanOS.QotomPCIInventory.witness_has_complete_inventory",
+      "display": "witness_has_complete_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIInventory.lean",
+      "qualified": "LeanOS.QotomPCIInventory.witness_has_fifteen_functions",
+      "display": "witness_has_fifteen_functions",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/ResumablePreemption.lean",
       "qualified": "LeanOS.ResumablePreemption.accepted_tick_facts",
       "display": "accepted_tick_facts",
