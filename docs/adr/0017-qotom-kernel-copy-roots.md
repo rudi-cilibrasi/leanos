@@ -182,3 +182,17 @@ returned effect before publishing the returned logical state. The target's
 construction, control readback, instruction execution and processor invalidation
 remain trusted runtime obligations. The model does not turn a CR3 comparison or
 a desired post-flush state into evidence of completed hardware cleanup.
+
+### Generated-C model replay
+
+The test-only `leanos-copy-roots-replay` executable runs the composed alias,
+operand, partial-copy, transaction and root-publication models after Lake
+compiles them to C. Its 22 checks include all 48 transaction outcomes. The same
+corpus also reduces to success in Lean's kernel. It covers cross-page operands,
+read/write and execution permissions, partial-copy suffix preservation,
+whole-request rejection, zero length, missing inventory, occupied slots, stale
+cached authority and required reloads. The repository check script builds and
+runs the executable.
+
+This is generated-C replay of the models, not a production boundary ABI, a
+freestanding runtime test or execution evidence for CR3/copy instructions.
