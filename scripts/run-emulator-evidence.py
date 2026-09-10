@@ -236,12 +236,20 @@ def check_manifest_rows(
                 raise EvidenceError(f"manifest scenario is absent from the matrix: {scenario_id}")
             raise EvidenceError(f"mandatory {family} scenario is absent: {scenario_id}")
         expected = derive_row(manifest, scenario_id)
+        if expected is None and "row" in entry:
+            declaration = entry["row"]
+            if not isinstance(declaration, dict) or set(declaration) != set(ROW_TEMPLATE_KEYS):
+                raise EvidenceError(f"scenario {scenario_id} lacks a complete matrix row")
+            expected = dict(declaration)
         if expected is None:
             continue
+        if "tier" in entry:
+            expected["tier"] = entry["tier"]
         for key, value in expected.items():
             if row[key] != value:
+                source = f"mandatory {family}" if family is not None else "manifest"
                 raise EvidenceError(
-                    f"mandatory {family} scenario {scenario_id} has "
+                    f"{source} scenario {scenario_id} has "
                     f"unexpected {key} {row[key]!r}"
                 )
     for scenario_id in rows_by_id:

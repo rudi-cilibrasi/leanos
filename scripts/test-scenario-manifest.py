@@ -53,6 +53,27 @@ def main() -> None:
             raise AssertionError(f"clean output directory was not populated: {published}")
         if output.stat().st_mode & 0o777 != 0o644:
             raise AssertionError("generated inventory changed the matrix's bundled file mode")
+        evidence_spec = importlib.util.spec_from_file_location(
+            "matrix_consumer", ROOT / "scripts/run-emulator-evidence.py"
+        )
+        evidence = importlib.util.module_from_spec(evidence_spec)
+        evidence_spec.loader.exec_module(evidence)
+        tampered = Path(directory) / "tampered.tsv"
+        for field, replacement in ((3, "31"), (9, "wrong-rejection-reason")):
+            lines = generated.stdout.splitlines()
+            for index, line in enumerate(lines):
+                if line.startswith("return-flags-ac\t"):
+                    columns = line.split("\t")
+                    columns[field] = replacement
+                    lines[index] = "\t".join(columns)
+            tampered.write_text("\n".join(lines) + "\n")
+            try:
+                evidence.parse_matrix(tampered)
+            except evidence.EvidenceError as error:
+                if "manifest scenario return-flags-ac has unexpected" not in str(error):
+                    raise AssertionError(f"unexpected matrix drift diagnostic: {error}") from error
+            else:
+                raise AssertionError("custom matrix escaped its explicit manifest row contract")
 
         def generate(change):
             copy = json.loads(json.dumps(manifest))
