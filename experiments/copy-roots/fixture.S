@@ -71,7 +71,11 @@ _start:
     mov %eax, %cr3
     mov $0xc0000080, %ecx
     rdmsr
+#ifdef TRANSFER_FIXTURE
+    or $0x900, %eax
+#else
     or $0x100, %eax
+#endif
     wrmsr
     lgdt gdt_pointer
     mov %cr0, %eax
@@ -107,6 +111,9 @@ long_mode:
 #endif
     lidt idt_pointer(%rip)
 #endif
+#ifdef TRANSFER_FIXTURE
+#include "transfer-fixture.inc"
+#else
 #if FIXTURE != 9
     mov $'R', %al
     out %al, $0xe9
@@ -211,6 +218,7 @@ page_fault:
     out %eax, $0xf4
     jmp failed
 #endif
+#endif /* TRANSFER_FIXTURE */
 failed:
     mov $'F', %al
     out %al, $0xe9
@@ -248,4 +256,9 @@ leaves_a: .skip 32768
 leaves_b: .skip 32768
 stack: .skip 16384
 stack_top:
+#ifdef TRANSFER_FIXTURE
+.balign 16
+transfer_operands: .skip 256
+transfer_buffer: .skip 32
+#endif
 .section .note.GNU-stack,"",@progbits
