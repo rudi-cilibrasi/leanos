@@ -592,3 +592,18 @@ chasing, CR3 hardware semantics, and QEMU remain explicitly trusted. The
 guard-mapped double-fault negative is a selected test-policy deviation: its one
 guard leaf is expected live by the variant checker but is not part of the normal
 accepted boot plan.
+
+### Assigned-EDU negative variants
+
+The assigned-EDU scenario declares its extra boot fixtures in
+`negative_variants`: each entry binds a fixture name, compiler macro, and
+expected terminal failure reason. The `scenario-manifest.py negative-variants`
+query validates these entries before the builder or negative runner consumes
+any rows. Both consumers preserve declaration order. The image-family cache
+includes the manifest and query source, so changing a declaration invalidates
+the cached family. CI runs the suite whenever its parent assigned-EDU image is
+present; individual negative images remain mandatory to the runner.
+
+This list describes executable boot variants. The separate `negative_evidence`
+field describes retained fixture-directory reports and may remain null when a
+scenario has no report in that format.
