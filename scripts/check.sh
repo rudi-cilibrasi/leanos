@@ -46,6 +46,13 @@ record_check_phase() {
 ./scripts/check-native-decide-policy.py
 
 lake build
+lake env lean tests/kernel-user-root.lean
+lake env lean tests/user-copy-prefix.lean
+lake env lean tests/user-copy-aliases.lean
+lake build leanos-copy-roots-replay
+.lake/build/bin/leanos-copy-roots-replay
+python3 scripts/check-copy-root-reload.py --self-test
+python3 scripts/test-copy-root-reload-qemu.py
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"
