@@ -7,14 +7,13 @@
     movl $0x80000000, leaves_a+0x3804
     movl $0x80000000, leaves_a+0x380c
     movq $0, leaves_b+0x3808
-#if COPY_OUT
     xor %ecx, %ecx
 .Luser_sentinels:
     movb $0xa5, value_a+4080(%rcx)
     inc %ecx
     cmp $32, %ecx
     jne .Luser_sentinels
-#else
+#if !COPY_OUT
     /* Initialize a cross-page source and an independent expected byte pattern. */
     xor %ecx, %ecx
 .Ltransfer_source:
