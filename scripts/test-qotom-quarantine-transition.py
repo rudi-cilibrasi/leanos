@@ -25,6 +25,9 @@ def main():
         lines.append(f'example : (LeanOS.QotomPCIQuarantineTransition.check ({before}) ({after})).isOk = true := by native_decide')
 
     accepts('initial', 'trace')
+    lines.append('example : (match LeanOS.QotomPCIQuarantineTransition.check initial trace with '
+                 '| .ok w => w.initial.headers.map (·.raw) == initial && w.trace.steps.map (·.step) == trace '
+                 '| .error _ => false) = true := by native_decide')
     check('initial.tail', 'trace', 'e == .initial .count')
     check('initial.set 0 ⟨raw0.bdf, raw0.words.set 0 0x12348086⟩', 'trace', 'e == .initial (.identity 0)')
     check('initial', 'trace.set 0 { step0 with value := 4 }', 'e == .trace (.write 0)')

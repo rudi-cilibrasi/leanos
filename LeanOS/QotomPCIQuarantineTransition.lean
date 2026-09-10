@@ -51,6 +51,32 @@ def check (initialRaw : List RawHeader)
     pure ⟨initial, trace, stable⟩
   else throw (.registers 0)
 
+theorem check_preserves_inputs (initialRaw : List RawHeader)
+    (steps : List QotomPCIQuarantineObservation.Step) (w : Witness)
+    (accepted : check initialRaw steps = .ok w) :
+    w.initial.headers.map (·.raw) = initialRaw ∧ w.trace.steps.map (·.step) = steps := by
+  unfold check at accepted
+  cases initialResult : QotomPCIInventory.check initialRaw with
+  | error reason =>
+    simp [initialResult, Except.mapError, Bind.bind, Except.bind] at accepted
+  | ok initial =>
+    cases traceResult : QotomPCIQuarantineObservation.check steps with
+    | error reason =>
+      simp [initialResult, traceResult, Except.mapError, Bind.bind, Except.bind] at accepted
+    | ok trace =>
+      cases stableResult : checkStable initial.headers 0 trace.steps with
+      | error reason =>
+        simp [initialResult, traceResult, stableResult, Except.mapError,
+          Bind.bind, Except.bind] at accepted
+      | ok result =>
+        simp [initialResult, traceResult, stableResult, Except.mapError,
+          Bind.bind, Except.bind, Pure.pure, Except.pure] at accepted
+        split at accepted
+        · cases accepted
+          exact ⟨QotomPCIInventory.check_preserves_raw initialRaw initial initialResult,
+            QotomPCIQuarantineObservation.check_preserves_trace steps trace traceResult⟩
+        · contradiction
+
 theorem witnessed_registers_stable (w : Witness)
     (step : QotomPCIQuarantineObservation.StepWitness) (member : step ∈ w.trace.steps) :
     stableReadback w.initial.headers step = true := by
