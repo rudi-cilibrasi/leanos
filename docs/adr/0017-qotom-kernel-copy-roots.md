@@ -199,7 +199,7 @@ freestanding runtime test or execution evidence for CR3/copy instructions.
 
 ### Isolated root-reload primitive
 
-`experiments/copy-roots/reload.S` is an unlinked assembly prototype for the
+`experiments/copy-roots/reload.S` is an isolated assembly prototype for the
 publication effect. It requires IF clear, PCID/PGE disabled, and a nonzero,
 page-aligned trusted PML4 address inside the initial 16 MiB arena. It always
 reloads CR3, including same-root transitions, then checks the root readback.
@@ -211,5 +211,19 @@ shared code/stack mappings, authority and exception-entry requirements.
 sequence, guard targets and terminal loop. Eleven assembled mutations exercise
 missing reload/control/alignment/readback checks, an incorrect arena bound,
 premature or terminal returns, unsupported STAC and undecodable trailing bytes.
-These are static object checks. Execution fixtures and integration with every
-entry/copy/return path remain required before linking this into a boot image.
+These are static object checks. Integration with every entry/copy/return path remains required before linking
+this into a production boot image.
+
+`scripts/test-copy-root-reload-qemu.py` now executes that primitive in a small
+Multiboot2 fixture with 4 KiB leaves, one CPU and SMAP disabled. The positive case
+primes a translation, changes its PTE and reloads the same root, then switches
+to a distinct root and verifies the observed backing frame in both cases.
+Six rejection cases cover zero/unaligned/out-of-arena roots, PGE, PCID and IF.
+They require QMP register evidence of a halted CPU inside the exact terminal
+symbol; silence or elapsed time alone cannot pass. A missing-reload mutation
+must fail the backing-frame test with its explicit failure marker and exit code.
+
+The runner retains command lines, debug bytes, terminal registers and a summary
+with ELF/object hashes and the QEMU version. All eight cases run in the normal
+repository checks. This fixture does not cover NMI or fault-entry integration,
+CPL3, complete copy windows, physical Qotom behavior or production image policy.

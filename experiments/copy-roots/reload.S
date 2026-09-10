@@ -1,4 +1,4 @@
-/* Isolated prototype: not linked into a boot image.
+/* Isolated prototype: linked only into isolated execution fixtures.
  * uint64_t leanos_copy_root_reload(uint64_t trusted_root);
  *
  * Caller obligations: the root is an authorized PML4 in the initial 16 MiB
