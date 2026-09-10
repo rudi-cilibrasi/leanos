@@ -166,3 +166,19 @@ uses the first alias slot; the operand does not reuse its original virtual page.
 Tests cover zero and maximum lengths, single-page offsets, cross-page ordering,
 and partial prefixes. Actual transfer instructions must refine this operand
 sequence under the established root and stable authority assumptions.
+
+### Root publication and stale translations
+
+`LeanOS/KernelRootPublication.lean` models cached hits without revalidating them
+against current page tables. Its negative example preserves a usable protected
+frame after table replacement alone. An accepted publication requires PCID and
+PGE disabled and returns a mandatory root-reload effect plus the post-flush
+state. Even reuse of the same root requires that effect. Protected-frame denial
+then follows from the closed-root projection with arbitrary prior cache entries.
+Unsupported controls reject without mutation; rejection does not imply closure.
+
+As with the existing invalidation model, the machine must actually execute the
+returned effect before publishing the returned logical state. The target's
+construction, control readback, instruction execution and processor invalidation
+remain trusted runtime obligations. The model does not turn a CR3 comparison or
+a desired post-flush state into evidence of completed hardware cleanup.

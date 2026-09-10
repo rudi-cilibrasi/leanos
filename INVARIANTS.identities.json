@@ -13010,6 +13010,42 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/KernelRootPublication.lean",
+      "qualified": "LeanOS.KernelRootPublication.accepted_requires_controls",
+      "display": "accepted_requires_controls",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootPublication.lean",
+      "qualified": "LeanOS.KernelRootPublication.accepted_requires_reload",
+      "display": "accepted_requires_reload",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootPublication.lean",
+      "qualified": "LeanOS.KernelRootPublication.published_access_fresh",
+      "display": "published_access_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootPublication.lean",
+      "qualified": "LeanOS.KernelRootPublication.published_protected_denied",
+      "display": "published_protected_denied",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootPublication.lean",
+      "qualified": "LeanOS.KernelRootPublication.replacement_retains_hit",
+      "display": "replacement_retains_hit",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelRootPublication.lean",
+      "qualified": "LeanOS.KernelRootPublication.unsupported_unchanged",
+      "display": "unsupported_unchanged",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/KernelTransition.lean",
       "qualified": "LeanOS.KernelTransition.bootTransition_agrees",
       "display": "bootTransition_agrees",
