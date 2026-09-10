@@ -15,6 +15,15 @@
     inc %ecx
     cmp $16, %ecx
     jne .Ltransfer_source
+    /* The copy root exposes these frames only through the two admitted
+     * aliases, not their bootstrap identity addresses. The helper flushes
+     * stale translations before opening the window. */
+    mov $value_a, %eax
+    shr $9, %eax
+    movq $0, leaves_a(%rax)
+    mov $value_b, %eax
+    shr $9, %eax
+    movq $0, leaves_a(%rax)
     xor %ecx, %ecx
 .Ltransfer_sentinels:
     movb $0xa5, transfer_buffer(%rcx)
