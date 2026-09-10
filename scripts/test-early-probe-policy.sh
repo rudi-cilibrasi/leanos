@@ -25,7 +25,7 @@ link_fixture() {
     "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
     "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
     "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-    "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/FaultDispatch.o"
+    "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/BootTextConsole.o" "$build/FaultDispatch.o"
 }
 
 run_fixture() {
