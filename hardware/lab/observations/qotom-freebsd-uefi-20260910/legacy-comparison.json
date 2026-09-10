@@ -1,0 +1,6 @@
+{
+  "source": "evidence/qotom-acpi-20260909.txt",
+  "source_sha256": "779ac6858c7ccc875fbef962d47274728c21ae041a9ec3d96908a0f31dae3474",
+  "transformation": "Exact APIC comment block excerpt from earlier decoded FreeBSD acpidump text; not a raw MADT binary",
+  "excerpt_sha256": "4e55e95b4755768960e451d350d1671ee9084ec3ab8635e5b5e337946fa01d08"
+}

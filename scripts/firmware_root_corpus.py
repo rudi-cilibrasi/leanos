@@ -46,8 +46,13 @@ def capture_files(directory: Path):
     """Exact supported inventory; never allow manifest paths to escape a case."""
     if directory.is_symlink() or (directory / 'acpi').is_symlink():
         raise ValueError('capture directories must not be symlinks')
+    freebsd = (directory / 'acpi/addresses.json').exists()
     files = {'memmap.tsv', 'acpi/APIC.bin', 'executing-apic-id.txt',
-             'provenance.json', 'acpi/RSDP.bin', 'acpi/addresses.txt'}
+             'provenance.json', 'acpi/RSDP.bin'}
+    if freebsd:
+        files.update({'acpi/addresses.json', 'efi-map.bin', 'cpu0-sample.txt', 'acpi-root-address.txt'})
+    else:
+        files.add('acpi/addresses.txt')
     for kind in ('RSDT', 'XSDT'):
         if (directory / f'acpi/{kind}.bin').exists():
             files.add(f'acpi/{kind}.bin')
@@ -70,10 +75,44 @@ def capture_files(directory: Path):
     return files
 
 
+def validate_freebsd_projection(directory: Path):
+    """Bind derived TSV/CPU identity to exact retained FreeBSD source bytes."""
+    import importlib.util
+    source = Path(__file__).resolve().parents[1] / 'hardware/lab/project-freebsd-efi-map.py'
+    spec = importlib.util.spec_from_file_location('freebsd_efi_projection', source)
+    projection = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(projection)
+    with (directory / 'efi-map.bin').open('rb') as stream:
+        raw = stream.read(projection.MAX_BYTES + 33)
+    if (directory / 'memmap.tsv').read_text() != projection.render(projection.project(raw)):
+        raise ValueError('FreeBSD EFI projection differs from retained raw map')
+    sample = (directory / 'cpu0-sample.txt').read_text().splitlines()
+    producer = source.with_name('capture-cpuid.c')
+    if not sample or sample[0] != hashlib.sha256(producer.read_bytes()).hexdigest():
+        raise ValueError('FreeBSD CPU sample producer digest differs')
+    leaf1 = [line.split() for line in sample if line.startswith('00000001\t00000000\t')]
+    if len(leaf1) != 1 or len(leaf1[0]) != 6 or not all(re.fullmatch('[0-9a-f]{8}', word) for word in leaf1[0]):
+        raise ValueError('FreeBSD CPU sample lacks one complete leaf 1')
+    executing = int((directory / 'executing-apic-id.txt').read_text())
+    if int(leaf1[0][3], 16) >> 24 != executing:
+        raise ValueError('FreeBSD executing identity differs from CPU0 sample')
+    addresses = json.loads((directory / 'acpi/addresses.json').read_text())
+    if not isinstance(addresses, dict) or set(addresses) != {'RSDP', 'RSDT', 'XSDT', 'APIC'} or any(
+            type(value) is not int or not 0 < value < 2**64 for value in addresses.values()):
+        raise ValueError('malformed FreeBSD physical address inventory')
+    apic = addresses.get('APIC')
+    if type(apic) is not int or not 0 < apic < 2**64:
+        raise ValueError('FreeBSD APIC address is invalid')
+    if (directory / 'acpi/APIC.bin').read_bytes() != (directory / f'acpi/root-tables/{apic:016x}.bin').read_bytes():
+        raise ValueError('FreeBSD MADT differs from addressed physical copy')
+    if addresses.get('RSDP') != int((directory / 'acpi-root-address.txt').read_text(), 0):
+        raise ValueError('FreeBSD RSDP address differs from sysctl sample')
+
+
 def from_capture(directory: Path, memory_info: bytes):
     """Wrap exactly one observed RSDP and retain every selected table copy.
 
-    The Linux capture observes one RSDP, so the converter emits one matching
+    Each supported capture observes one RSDP, so the converter emits one matching
     Multiboot2 ACPI tag. It never invents a second old/new root, changes a
     checksum, or treats a summary's prose as a replacement for table bytes.
     """
@@ -96,14 +135,21 @@ def from_capture(directory: Path, memory_info: bytes):
         advertised = int.from_bytes(rsdp[24:32], 'little')
     else:
         raise ValueError('unsupported captured RSDP revision/length')
-    # Preserve addresses from the physical acpidump summary independently of
-    # addresses advertised by the RSDP, so disagreement is observable.
-    addresses = {}
-    for line in read('acpi/addresses.txt').decode('ascii').splitlines():
-        match = re.fullmatch(r'ACPI: (RSDP|RSDT|XSDT|APIC) (0x[0-9A-Fa-f]+) [0-9A-Fa-f]+ \(.*\)', line)
-        if not match or match[1] in addresses:
-            raise ValueError('malformed or duplicate physical address summary')
-        addresses[match[1]] = int(match[2], 16)
+    # Retain the address inventory separately from the table bytes. ACPICA
+    # supplies an independent summary; FreeBSD records the sysctl RSDP and
+    # the physical addresses followed by the bounded capture procedure.
+    if (directory / 'acpi/addresses.json').exists():
+        addresses = json.loads(read('acpi/addresses.json').decode('ascii'))
+        if not isinstance(addresses, dict) or set(addresses) != {'RSDP', 'RSDT', 'XSDT', 'APIC'} or any(
+                type(value) is not int or not 0 < value < 2**64 for value in addresses.values()):
+            raise ValueError('malformed FreeBSD physical address inventory')
+    else:
+        addresses = {}
+        for line in read('acpi/addresses.txt').decode('ascii').splitlines():
+            match = re.fullmatch(r'ACPI: (RSDP|RSDT|XSDT|APIC) (0x[0-9A-Fa-f]+) [0-9A-Fa-f]+ \(.*\)', line)
+            if not match or match[1] in addresses:
+                raise ValueError('malformed or duplicate physical address summary')
+            addresses[match[1]] = int(match[2], 16)
     if kind not in addresses or not 0 < addresses[kind] < 2**64:
         raise ValueError('selected root physical address is unavailable')
     if advertised == 0:

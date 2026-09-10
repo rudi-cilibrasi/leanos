@@ -1,0 +1,359 @@
+[
+  {
+    "command": "uname -sr; sysctl -n machdep.bootmethod kern.boottime",
+    "file": "system-before.txt",
+    "returncode": 0,
+    "sha256": "231d0f16d3ea38d5f148a687cd74d8fcdf6f0eeec73956dee10c52e1b2b04465",
+    "stderr": ""
+  },
+  {
+    "command": "sysctl -b machdep.efi_map",
+    "file": "efi-map.bin",
+    "returncode": 0,
+    "sha256": "8851c74b9e3efd769e3c501681baebaa7e608de4f68b6f81c20e173827b41284",
+    "stderr": ""
+  },
+  {
+    "command": "sysctl -n machdep.acpi_root",
+    "file": "acpi-root-address.txt",
+    "returncode": 0,
+    "sha256": "47ee22a88c67b81418bdde364404b60cffaacdf8e77e84c6aa941bc804478dae",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111759872 count=36 status=none",
+    "file": "acpi/RSDP.bin",
+    "returncode": 0,
+    "sha256": "f8024c011d2b2e1ed2df8fa81dd783ef15d33ebd598fa29b2aee84526e9bf0fb",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111759912 count=36 status=none",
+    "file": "headers/RSDT.bin",
+    "returncode": 0,
+    "sha256": "3225ee2c5c8618fbdeba2e00df3ef24a4f9d5e7d8fcd30b2c423dbd62fafb5e5",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111759912 count=80 status=none",
+    "file": "acpi/RSDT.bin",
+    "returncode": 0,
+    "sha256": "473d9d1a9e0c890b040bd4219f0b8740b0278a0accc6f4b70502a7bea83b5a93",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111760000 count=36 status=none",
+    "file": "headers/XSDT.bin",
+    "returncode": 0,
+    "sha256": "00dc2afa49753759e2fbe6d6092a4101a0b05f2bc00becd6e8b9704c18dc8bcb",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111760000 count=124 status=none",
+    "file": "acpi/XSDT.bin",
+    "returncode": 0,
+    "sha256": "e7eb852b648ef51354216d73cbcafd498ece14d763a158bc0760f838157d6e93",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111760128 count=36 status=none",
+    "file": "headers/root-tables/00000000b979b100.bin",
+    "returncode": 0,
+    "sha256": "9ec8ff62496a22cf5a5a0ee566fcf7855a921cfa72348cf3c1197273634f6c8c",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111760128 count=132 status=none",
+    "file": "acpi/root-tables/00000000b979b100.bin",
+    "returncode": 0,
+    "sha256": "3a1060c7e8b7cb4f9ad3266fb2f9fd66eaae4b78507414d5d71d466253a66ac6",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806200 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a64f8.bin",
+    "returncode": 0,
+    "sha256": "eb560a9d4573e26215df78a742d00d42e11cbcfefd4e98fbd6d19d68244ab283",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806200 count=268 status=none",
+    "file": "acpi/root-tables/00000000b97a64f8.bin",
+    "returncode": 0,
+    "sha256": "fc4e3f5611358cb462f22a234187bf7572e39d2262b8db91f6a351aa6b681aa4",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806472 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a6608.bin",
+    "returncode": 0,
+    "sha256": "c0c925f979c205d5f5980777906d3568206261bf399ae27da791deb489bbac2b",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806472 count=132 status=none",
+    "file": "acpi/root-tables/00000000b97a6608.bin",
+    "returncode": 0,
+    "sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806608 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a6690.bin",
+    "returncode": 0,
+    "sha256": "0c12970fee9a7ee18b8bc5b39a4c2be532cf250e78e4b760c7831fe6c9967d67",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806608 count=68 status=none",
+    "file": "acpi/root-tables/00000000b97a6690.bin",
+    "returncode": 0,
+    "sha256": "517b56f1ac7c73b7a33a6f2fc6139407f565daebf213aa9978884d677d5d6afc",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806680 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a66d8.bin",
+    "returncode": 0,
+    "sha256": "286f5d6e5918f8a2903968b6c2ed116913719bc2e7c6aab3525b8173d248b31b",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806680 count=60 status=none",
+    "file": "acpi/root-tables/00000000b97a66d8.bin",
+    "returncode": 0,
+    "sha256": "ea68ade449e37cbd39a4fb891b464229e7739dda4604880dc0606e2129d55538",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806744 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a6718.bin",
+    "returncode": 0,
+    "sha256": "b0852de1f5cd5ae0a2cae0b0dfc00c28d6e5412c8d6e147946c8dd5b3b93d2c4",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806744 count=260 status=none",
+    "file": "acpi/root-tables/00000000b97a6718.bin",
+    "returncode": 0,
+    "sha256": "46fb70714057e99f36d3421704da665900d717cfaf676bc07b91304ebfd76483",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111807008 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a6820.bin",
+    "returncode": 0,
+    "sha256": "cab5a9518de3ddea1726b37c113baa654903b535d324ab26dede2e577850c696",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111807008 count=56 status=none",
+    "file": "acpi/root-tables/00000000b97a6820.bin",
+    "returncode": 0,
+    "sha256": "0a72c80475ddddf1727db67087aa249bdae6999451e9e7b8d7e9278b3d60c9a1",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111807064 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a6858.bin",
+    "returncode": 0,
+    "sha256": "1acab7a4eed42ed4369d706cb05ff9103f4abd9c2c34f79ab3bb7c632cdd5964",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111807064 count=1891 status=none",
+    "file": "acpi/root-tables/00000000b97a6858.bin",
+    "returncode": 0,
+    "sha256": "684e8e6829f37c6e0af256cbddd894b0659176aa3e517c2ff78c77c30dbfbcde",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111808960 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a6fc0.bin",
+    "returncode": 0,
+    "sha256": "f3925160f51d42f98de74c2cd18365f161d2890ff7795b7bcaa8f06a7ca24a50",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111808960 count=656 status=none",
+    "file": "acpi/root-tables/00000000b97a6fc0.bin",
+    "returncode": 0,
+    "sha256": "3079581dcbd1b6ef7ba4fcabb7bd37a970a7387a8a5bb0d0fa61724d41f753d8",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111809616 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a7250.bin",
+    "returncode": 0,
+    "sha256": "11286d4b5077b70f8e0d88f7cd029b5e38c335a10a70abda9cb817eca2a9b6e5",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111809616 count=378 status=none",
+    "file": "acpi/root-tables/00000000b97a7250.bin",
+    "returncode": 0,
+    "sha256": "b40f4d7b2cb7b6f4120294365fd0cb4b9878a50352f2478d7d0df18d342b10a1",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111810000 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a73d0.bin",
+    "returncode": 0,
+    "sha256": "e7acaf2b4a6ba8247694eeb9fc9539a4e6eba95eada81efd8eac062a551ef43f",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111810000 count=66 status=none",
+    "file": "acpi/root-tables/00000000b97a73d0.bin",
+    "returncode": 0,
+    "sha256": "336d587c8c9a430977d581dad5a7f3e7c0c7e841c4724271c93c6e2c23b924ce",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111810072 count=36 status=none",
+    "file": "headers/root-tables/00000000b97a7418.bin",
+    "returncode": 0,
+    "sha256": "62b1ae6690ba221574de2154be0b548d8d05fab85eba41c12a1d2614947e1373",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111810072 count=56 status=none",
+    "file": "acpi/root-tables/00000000b97a7418.bin",
+    "returncode": 0,
+    "sha256": "22e90d46d4d7914c192dd8108372005a876901b2b7d3d8dbfa684a902cfe37d2",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111759912 count=80 status=none",
+    "file": "repeat/RSDT.bin",
+    "returncode": 0,
+    "sha256": "473d9d1a9e0c890b040bd4219f0b8740b0278a0accc6f4b70502a7bea83b5a93",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111760000 count=124 status=none",
+    "file": "repeat/XSDT.bin",
+    "returncode": 0,
+    "sha256": "e7eb852b648ef51354216d73cbcafd498ece14d763a158bc0760f838157d6e93",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111760128 count=132 status=none",
+    "file": "repeat/00000000b979b100.bin",
+    "returncode": 0,
+    "sha256": "3a1060c7e8b7cb4f9ad3266fb2f9fd66eaae4b78507414d5d71d466253a66ac6",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806200 count=268 status=none",
+    "file": "repeat/00000000b97a64f8.bin",
+    "returncode": 0,
+    "sha256": "fc4e3f5611358cb462f22a234187bf7572e39d2262b8db91f6a351aa6b681aa4",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806472 count=132 status=none",
+    "file": "repeat/00000000b97a6608.bin",
+    "returncode": 0,
+    "sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806608 count=68 status=none",
+    "file": "repeat/00000000b97a6690.bin",
+    "returncode": 0,
+    "sha256": "517b56f1ac7c73b7a33a6f2fc6139407f565daebf213aa9978884d677d5d6afc",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806680 count=60 status=none",
+    "file": "repeat/00000000b97a66d8.bin",
+    "returncode": 0,
+    "sha256": "ea68ade449e37cbd39a4fb891b464229e7739dda4604880dc0606e2129d55538",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111806744 count=260 status=none",
+    "file": "repeat/00000000b97a6718.bin",
+    "returncode": 0,
+    "sha256": "46fb70714057e99f36d3421704da665900d717cfaf676bc07b91304ebfd76483",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111807008 count=56 status=none",
+    "file": "repeat/00000000b97a6820.bin",
+    "returncode": 0,
+    "sha256": "0a72c80475ddddf1727db67087aa249bdae6999451e9e7b8d7e9278b3d60c9a1",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111807064 count=1891 status=none",
+    "file": "repeat/00000000b97a6858.bin",
+    "returncode": 0,
+    "sha256": "684e8e6829f37c6e0af256cbddd894b0659176aa3e517c2ff78c77c30dbfbcde",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111808960 count=656 status=none",
+    "file": "repeat/00000000b97a6fc0.bin",
+    "returncode": 0,
+    "sha256": "3079581dcbd1b6ef7ba4fcabb7bd37a970a7387a8a5bb0d0fa61724d41f753d8",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111809616 count=378 status=none",
+    "file": "repeat/00000000b97a7250.bin",
+    "returncode": 0,
+    "sha256": "b40f4d7b2cb7b6f4120294365fd0cb4b9878a50352f2478d7d0df18d342b10a1",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111810000 count=66 status=none",
+    "file": "repeat/00000000b97a73d0.bin",
+    "returncode": 0,
+    "sha256": "336d587c8c9a430977d581dad5a7f3e7c0c7e841c4724271c93c6e2c23b924ce",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111810072 count=56 status=none",
+    "file": "repeat/00000000b97a7418.bin",
+    "returncode": 0,
+    "sha256": "22e90d46d4d7914c192dd8108372005a876901b2b7d3d8dbfa684a902cfe37d2",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n dd if=/dev/mem bs=1 skip=3111759872 count=36 status=none",
+    "file": "repeat/RSDP.bin",
+    "returncode": 0,
+    "sha256": "f8024c011d2b2e1ed2df8fa81dd783ef15d33ebd598fa29b2aee84526e9bf0fb",
+    "stderr": ""
+  },
+  {
+    "command": "sysctl -b machdep.efi_map",
+    "file": "repeat/efi-map.bin",
+    "returncode": 0,
+    "sha256": "8851c74b9e3efd769e3c501681baebaa7e608de4f68b6f81c20e173827b41284",
+    "stderr": ""
+  },
+  {
+    "command": "uname -sr; sysctl -n machdep.bootmethod kern.boottime",
+    "file": "system-after.txt",
+    "returncode": 0,
+    "sha256": "231d0f16d3ea38d5f148a687cd74d8fcdf6f0eeec73956dee10c52e1b2b04465",
+    "stderr": ""
+  },
+  {
+    "command": "sysctl -n kern.smp.cpus",
+    "file": "processor-count.txt",
+    "returncode": 0,
+    "sha256": "7de1555df0c2700329e815b93b32c571c3ea54dc967b89e81ab73b9972b72d1d",
+    "stderr": ""
+  },
+  {
+    "command": "sudo -n acpidump -t -T APIC",
+    "file": "apic-decoded.txt",
+    "returncode": 0,
+    "sha256": "6dec6dc2b169c52ae48cd06ab321026aadceaf4fb725933b6fcbe779815f558c",
+    "stderr": ""
+  }
+]
