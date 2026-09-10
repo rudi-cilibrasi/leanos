@@ -144,4 +144,34 @@ theorem witness_has_fifteen_functions (w : Witness) : w.headers.length = 15 := b
   have h := congrArg List.length w.inventory
   simpa [baseline] using h
 
+/-- Disjoint error classes; indexed errors reserve the low byte for one of
+fifteen function indices. Header errors also retain the decoder's reason. -/
+def Error.code : Error → UInt64
+  | .count => 0x10000
+  | .header index reason => 0x20000 + (reason.code - 0x100) * 256 + index.toUInt64
+  | .address index => 0x30000 + index.toUInt64
+  | .identity index => 0x40000 + index.toUInt64
+  | .multifunction index => 0x50000 + index.toUInt64
+  | .routing index => 0x60000 + index.toUInt64
+
+/-- Complete immutable snapshot transport: fifteen slots of BDF plus sixteen
+raw dwords. Both the declared count and physical array size are checked before
+reading any slot. This hosted boundary allocates Lean objects; it is not yet
+a freestanding or hardware enumeration adapter. Success is inventory match
+only, not quarantine. The array argument is consumed by the generated C ABI. -/
+@[export leanos_qotom_pci_inventory_check]
+def checkWords (count : UInt64) (words : Array UInt64) : UInt64 :=
+  if count != 15 then Error.count.code
+  else if words.size != 285 then 0x10001
+  else
+    let raw := (List.range 15).map fun index =>
+      let offset := index * 19
+      let bdf : BDF := ⟨words.getD offset 0, words.getD (offset + 1) 0,
+        words.getD (offset + 2) 0⟩
+      let dwords := (List.range 16).map fun i => words.getD (offset + 3 + i) 0
+      ({ bdf := bdf, words := dwords } : RawHeader)
+    match check raw with
+    | .ok _ => 1
+    | .error reason => reason.code
+
 end LeanOS.QotomPCIInventory

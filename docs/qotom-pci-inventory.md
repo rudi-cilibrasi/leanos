@@ -36,4 +36,16 @@ header replay. It checks the complete capture, every function's identity and
 address mutations, bridge routing/control mutations, malformed headers,
 missing/extra/reordered functions, and IDE/q35 mixtures. A positive mutation
 also confirms that command/window values remain available to later checks.
-Generated-C parity and production integration remain pending.
+The `leanos_qotom_pci_inventory_check` export consumes an `Array UInt64`
+containing exactly 285 words: fifteen slots of bus, device, function, and sixteen
+configuration dwords. A separate declared count must equal fifteen. Count
+failure is 0x10000, array-size failure is 0x10001, and success is 1. Typed
+header errors use 0x20000 plus decoder reason offset times 256 plus function
+index; address, identity, multifunction, and routing use bases 0x30000,
+0x40000, 0x50000, and 0x60000 plus index respectively. This allocation-using
+hosted interface is not yet a freestanding machine adapter.
+
+`python3 scripts/test-qotom-pci-abi.py` emits complete snapshots with explicit
+expected results for Lean and `tests/qotom-pci-inventory-host.c`. Ordinary
+Lean/generated-C parity passes 94 cases. Shared CI harness integration,
+sanitized parity, and production integration remain pending.
