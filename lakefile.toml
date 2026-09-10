@@ -50,3 +50,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-copy-binding-replay"
 root = "tests.CopyBindingReplay"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-kernel-root-return-replay"
+root = "tests.KernelRootReturnReplay"
+moreLeanArgs = ["-DwarningAsError=true"]
