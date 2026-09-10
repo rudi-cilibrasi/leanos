@@ -7,6 +7,14 @@
     movl $0x80000000, leaves_a+0x3804
     movl $0x80000000, leaves_a+0x380c
     movq $0, leaves_b+0x3808
+#if COPY_OUT
+    xor %ecx, %ecx
+.Luser_sentinels:
+    movb $0xa5, value_a+4080(%rcx)
+    inc %ecx
+    cmp $32, %ecx
+    jne .Luser_sentinels
+#else
     /* Initialize a cross-page source and an independent expected byte pattern. */
     xor %ecx, %ecx
 .Ltransfer_source:
@@ -15,6 +23,7 @@
     inc %ecx
     cmp $16, %ecx
     jne .Ltransfer_source
+#endif
     /* The copy root exposes these frames only through the two admitted
      * aliases, not their bootstrap identity addresses. The helper flushes
      * stale translations before opening the window. */
@@ -30,14 +39,30 @@
     inc %ecx
     cmp $32, %ecx
     jne .Ltransfer_sentinels
+#if COPY_OUT
+    xor %ecx, %ecx
+.Lkernel_source:
+    lea 0x10(%rcx), %eax
+    movb %al, transfer_buffer+8(%rcx)
+    inc %ecx
+    cmp $16, %ecx
+    jne .Lkernel_source
+#endif
     xor %ecx, %ecx
 .Ltransfer_operands:
     mov %rcx, %rax
     shl $4, %rax
+#if COPY_OUT
+    lea transfer_buffer+8(%rcx), %rdx
+    mov %rdx, transfer_operands(%rax)
+    lea 0x700ff8(%rcx), %rdx
+    mov %rdx, transfer_operands+8(%rax)
+#else
     lea 0x700ff8(%rcx), %rdx
     mov %rdx, transfer_operands(%rax)
     lea transfer_buffer+8(%rcx), %rdx
     mov %rdx, transfer_operands+8(%rax)
+#endif
     inc %ecx
     cmp $16, %ecx
     jne .Ltransfer_operands
@@ -53,6 +78,15 @@
     mov %cr3, %rax
     cmp $root_b, %rax
     jne failed
+#if COPY_OUT
+    /* Closure was checked before reopening solely to inspect destination
+     * memory. This fixture inspection is not part of the transfer helper. */
+    mov $root_a, %edi
+    call leanos_copy_root_reload
+    mov $0x700ff0, %esi
+#else
+    mov $transfer_buffer, %esi
+#endif
     xor %ecx, %ecx
 .Ltransfer_verify:
     mov $0xa5, %eax
@@ -62,11 +96,30 @@
     jae .Ltransfer_compare
     lea 8(%rcx), %eax
 .Ltransfer_compare:
-    cmpb %al, transfer_buffer(%rcx)
+    cmpb %al, (%rsi,%rcx)
     jne failed
     inc %ecx
     cmp $32, %ecx
     jne .Ltransfer_verify
+#if COPY_OUT
+    /* Copy-out must also preserve all kernel source bytes and sentinels. */
+    xor %ecx, %ecx
+.Lsource_verify:
+    mov $0xa5, %eax
+    cmp $8, %ecx
+    jb .Lsource_compare
+    cmp $24, %ecx
+    jae .Lsource_compare
+    lea 8(%rcx), %eax
+.Lsource_compare:
+    cmpb %al, transfer_buffer(%rcx)
+    jne failed
+    inc %ecx
+    cmp $32, %ecx
+    jne .Lsource_verify
+    mov $root_b, %edi
+    call leanos_copy_root_reload
+#endif
     mov $'T', %al
     out %al, $0xe9
 transfer_denied:

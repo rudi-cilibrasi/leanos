@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / 'build/copy-roots/transfer-qemu'
+OUT = ROOT / 'build/copy-roots' / ('transfer-qemu-' + Path(os.environ.get('LEANOS_CC', 'gcc')).name)
 
 
 def main():
@@ -21,13 +21,13 @@ def main():
         subprocess.run([cc, '-m64', '-c', f'experiments/copy-roots/{name}.S', '-o', str(obj)], cwd=ROOT, check=True)
         objects.append(str(obj))
     results = []
-    for count in (0, 1, 8, 16):
-        directory = OUT / str(count)
+    for direction, count in ((d, n) for d in (0, 1) for n in (0, 1, 8, 16)):
+        directory = OUT / f'{direction}-{count}'
         grub = directory / 'iso/boot/grub'
         grub.mkdir(parents=True, exist_ok=True)
         elf = grub.parent / 'test.elf'
         obj = directory / 'fixture.o'
-        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}',
+        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}',
                         '-c', 'experiments/copy-roots/fixture.S', '-o', str(obj)], cwd=ROOT, check=True)
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
                         '-o', str(elf), str(obj), *objects], cwd=ROOT, check=True)
@@ -47,11 +47,11 @@ def main():
         raw = capture.read_bytes()
         if result.returncode != 33 or raw != b'RTP':
             raise RuntimeError(f'count {count}: exit {result.returncode}, capture {raw!r}')
-        results.append({'count': count, 'exit': result.returncode, 'capture': raw.decode(),
+        results.append({'direction': 'out' if direction else 'in', 'count': count, 'exit': result.returncode, 'capture': raw.decode(),
                         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest()})
-        print(f'copy-root transfer {count} bytes: PASS', flush=True)
+        print(f'copy-root transfer direction={direction} {count} bytes: PASS', flush=True)
     sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S')]
-    report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in and post-return closure; no production admission',
+    report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in/copy-out and post-return closure; no production admission',
         'cases': results, 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},
         'compiler': subprocess.check_output([cc, '--version'], text=True),
         'qemu': subprocess.check_output(['qemu-system-x86_64', '--version'], text=True)}, indent=2)+'\n')
