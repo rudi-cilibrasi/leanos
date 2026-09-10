@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "boot_text_console.h"
+#include "../include/boot_text_console.h"
+extern void leanos_register_boundary_target(const char *, void *);
+
 static void u32(uint8_t *p, uint32_t x) {
     for (unsigned i=0;i<4;++i) p[i]=(uint8_t)(x>>(8*i));
 }
@@ -11,6 +13,8 @@ static void surface(uint8_t *b) {
     b[36]=16; b[37]=2; u32(b+44,8);
 }
 int main(void) {
+    leanos_register_boundary_target("leanos_boot_text_surface",
+        (void *)(uintptr_t)&leanos_boot_text_surface);
     struct boot_text_geometry g;
     uint8_t b[96]; surface(b);
     assert(boot_text_parse(b,48,&g));
@@ -53,5 +57,10 @@ int main(void) {
     assert(!leanos_boot_text_surface(2,16,0xb8000,512,160,65));
     assert(!leanos_boot_text_surface(2,16,0xb8000,512,UINT64_MAX,64));
     assert(!leanos_boot_text_surface(2,16,UINT64_MAX,512,160,64));
+    for (unsigned field=0;field<6;++field) for (unsigned bit=32;bit<64;++bit) {
+        uint64_t raw[6]={2,16,0xb8000,160,80,25};
+        raw[field] |= UINT64_C(1) << bit;
+        assert(!leanos_boot_text_surface(raw[0],raw[1],raw[2],raw[3],raw[4],raw[5]));
+    }
     puts("Boot text parsing, generated gate, scrolling and guarded writes passed");
 }

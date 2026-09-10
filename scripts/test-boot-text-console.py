@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compile the console geometry boundary and exercise its bounded C writer."""
+import argparse
 import os
 from pathlib import Path
 import subprocess
@@ -10,24 +11,14 @@ out.mkdir(parents=True, exist_ok=True)
 subprocess.run(['lake', 'env', 'lean', '-DwarningAsError=true', '-c',
                 str(out / 'BootTextConsole.c'), 'LeanOS/BootTextConsole.lean'], cwd=root, check=True)
 prefix = subprocess.check_output(['lake', 'env', 'lean', '--print-prefix'], cwd=root, text=True).strip()
-cc = os.environ.get('LEANOS_HOST_CC', 'gcc-13')
-for mode, sanitizer in [('ordinary', []), ('sanitized', ['-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-sanitize-recover=all'])]:
-    objects = []
-    for name, source in [('gate', out / 'BootTextConsole.c'), ('test', root / 'tests/boot-text-console.c')]:
-        obj = out / (mode + '-' + name + '.o')
-        subprocess.run([cc, '-O1', '-g', '-ffunction-sections', '-fdata-sections',
-                        '-I' + prefix + '/include', '-I' + str(root / 'include'),
-                        *sanitizer, '-c', str(source), '-o', str(obj)], check=True)
-        objects.append(str(obj))
-    exe = out / mode
-    if sanitizer:
-        subprocess.run(['bash', '-c', 'source scripts/hosted-sanitizer-config.sh; leanos_link_sanitized_host "$@"',
-                        'console-link', str(exe), *objects], cwd=root, check=True)
-        subprocess.run(['bash', '-c', 'source scripts/hosted-sanitizer-config.sh; leanos_run_sanitized "$@"',
-                        'console-run', str(exe)], cwd=root, check=True)
-    else:
-        subprocess.run(['lake', 'env', 'leanc', '-Wl,--gc-sections', *objects, '-o', str(exe)], cwd=root, check=True)
-        subprocess.run([str(exe)], check=True)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--freestanding-only', action='store_true')
+args = parser.parse_args()
+if not args.freestanding_only:
+    env = dict(os.environ, LEANOS_HOSTED_BOUNDARY_ID='boot-text')
+    for mode in ['ordinary', 'sanitized']:
+        subprocess.run(['./scripts/check-boot-handoff-host.sh', mode],
+                       cwd=root, env=env, check=True)
 compiler = os.environ.get('LEANOS_CC', 'gcc')
 flags = ['-m64', '-O2', '-ffreestanding', '-fno-stack-protector', '-fno-pic',
          '-mno-red-zone', '-mgeneral-regs-only', '-ffunction-sections', '-fdata-sections']

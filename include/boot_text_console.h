@@ -23,6 +23,13 @@ static uint32_t boot_text_u32(const uint8_t *p) {
  * The caller separately validates the physical extent before reading the header. */
 static int boot_text_parse(const uint8_t *info, uint32_t available,
                            struct boot_text_geometry *out) {
+    volatile struct boot_text_geometry *cleared = out;
+    cleared->address = 0;
+    cleared->pitch = 0;
+    cleared->width = 0;
+    cleared->height = 0;
+    cleared->kind = 0;
+    cleared->bits = 0;
     if (available < 16) return 0;
     uint32_t total = boot_text_u32(info);
     if (total < 16 || total > available || total > 65536 || (total & 7) ||

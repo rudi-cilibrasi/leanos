@@ -51,3 +51,17 @@ memory including pitch padding. It executes the generated selector with the
 writer under ordinary and ASan/UBSan builds, and separately checks that the
 freestanding selector links without runtime dependencies. Image and physical
 validation remain separate requirements.
+
+After building the image, run the screen and lifetime checks with:
+
+```sh
+python3 scripts/test-boot-text-image.py build/boot/leanos-0.1.0-x86_64.iso
+```
+
+The runner builds the native CPU replay tool, boots synthetic Intel text and
+headless cases, and checks the actual VGA text cells against the serial text.
+It also boots the standard q35 construction and checks that only the initial
+BOOT text is displayed and the sink is disabled at the canonical terminal
+record. The expected q35 BOOT/FINAL records come from the existing transcript
+renderer. QMP text-memory/state dumps, screenshots, commands, binary hashes
+and source revision are retained. Its output directory must be new.
