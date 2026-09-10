@@ -1,11 +1,13 @@
 #include <lean/lean.h>
 #include <stdint.h>
 #include <stdio.h>
+#define LEANOS_BOUNDARY_ABI_OBJECTS
+#include "boundary-abi.h"
 #include "../build/qotom-pci-inventory/cases.h"
 
 extern void lean_initialize(void);
 extern lean_object *initialize_leanos_LeanOS_QotomPCIInventory(uint8_t);
-extern uint64_t leanos_qotom_pci_inventory_check(uint64_t, lean_object *);
+extern void leanos_register_boundary_target(const char *, void *);
 
 int main(void) {
     lean_initialize();
@@ -17,6 +19,8 @@ int main(void) {
     }
     lean_dec_ref(init);
     lean_io_mark_end_initialization();
+    leanos_register_boundary_target("leanos_qotom_pci_inventory_check",
+        (void *)(uintptr_t)&leanos_qotom_pci_inventory_check);
     size_t count = sizeof(inventory_cases) / sizeof(inventory_cases[0]);
     for (size_t i = 0; i < count; ++i) {
         lean_object *words = lean_mk_empty_array_with_capacity(lean_box(inventory_cases[i].size));
