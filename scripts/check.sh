@@ -62,6 +62,8 @@ lake build leanos-copy-binding-replay
 python3 scripts/test-copy-binding.py
 python3 scripts/check-copy-root-reload.py --self-test
 python3 scripts/test-copy-root-reload-qemu.py
+python3 scripts/check-closed-root-return.py --self-test
+python3 scripts/test-closed-root-return-qemu.py
 python3 scripts/check-copy-root-transfer.py --self-test
 python3 scripts/test-copy-root-transfer-qemu.py
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
