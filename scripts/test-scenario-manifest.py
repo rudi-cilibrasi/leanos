@@ -38,6 +38,55 @@ def expect_rejection(manifest: dict, diagnostic: str) -> None:
 
 def main() -> None:
     manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
+    generator = ROOT / "scripts/generate-evidence-matrix.py"
+    matrix_path = ROOT / "scripts/emulator-evidence-matrix.tsv"
+    generated = subprocess.run(["python3", str(generator)], capture_output=True, text=True)
+    if generated.returncode or generated.stdout != matrix_path.read_text(encoding="utf-8"):
+        raise AssertionError(f"matrix migration changed the existing inventory: {generated}")
+    with tempfile.TemporaryDirectory() as directory:
+        test_manifest = Path(directory) / "manifest.json"
+
+        def generate(change):
+            copy = json.loads(json.dumps(manifest))
+            change(copy)
+            test_manifest.write_text(json.dumps(copy), encoding="utf-8")
+            return subprocess.run(
+                ["python3", str(generator), "--manifest", str(test_manifest)],
+                capture_output=True, text=True,
+            )
+
+        for change, diagnostic in (
+            (lambda m: m["scenarios"]["blocking-ipc"].pop("row"), "lacks a complete matrix row"),
+            (lambda m: m["scenarios"]["blocking-ipc"].pop("tier"), "invalid matrix field tier"),
+            (lambda m: m["scenarios"]["preemption"].update(tier="pr"), "exactly one scenario per runner"),
+            (lambda m: m["scenarios"]["blocking-ipc"]["row"].update(image="../outside.iso"), "unsafe image path"),
+            (lambda m: m["scenarios"]["blocking-ipc"]["row"].update(reason="bad\nrow"), "invalid matrix field reason"),
+            (lambda m: m["scenarios"]["fast-entry-syscall"].update(row={}), "duplicates its family matrix row"),
+        ):
+            result = generate(change)
+            if not result.returncode or result.stdout or diagnostic not in result.stderr:
+                raise AssertionError(f"matrix generator did not fail before emitting output: {result}")
+
+        def add_scenario(m):
+            entry = json.loads(json.dumps(m["scenarios"]["return-flags-ac"]))
+            entry["row"].update(
+                image="leanos-@VERSION@-x86_64-return-new-fixture.iso",
+                elf="leanos-return-new-fixture.elf",
+                serial_log="return-new-fixture.serial.log",
+                scenario="new-fixture", mode="27",
+            )
+            m["scenarios"]["return-new-fixture"] = entry
+
+        result = generate(add_scenario)
+        if result.returncode or "# mandatory-count\t65\n" not in result.stdout or "return-new-fixture\treturn\t" not in result.stdout:
+            raise AssertionError(f"new manifest scenario needs a handwritten matrix edit: {result}")
+        stale = Path(directory) / "stale.tsv"
+        stale.write_text(generated.stdout.replace("# mandatory-count\t64", "# mandatory-count\t63"))
+        result = subprocess.run(
+            ["python3", str(generator), "--check", str(stale)], capture_output=True, text=True,
+        )
+        if not result.returncode or result.stdout or "derived evidence matrix is stale" not in result.stderr:
+            raise AssertionError(f"matrix drift was not rejected: {result}")
     rows = MODULE.image_rows(manifest)
     images = manifest["build"]["images"]
     if [row["stem"] for row in rows] != list(images):
