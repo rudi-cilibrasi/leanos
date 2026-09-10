@@ -89,4 +89,19 @@ theorem decode_preserves_raw r h (accepted : decode r = .ok h) : h.raw = r := by
   repeat' (split at accepted <;> try contradiction)
   all_goals cases accepted; rfl
 
+theorem decode_transport_bounds r h (accepted : decode r = .ok h) :
+    bdfValid r.bdf = true ∧ r.words.length = 16 ∧
+      r.words.all (· < 0x100000000) = true := by
+  unfold decode at accepted
+  split at accepted
+  · contradiction
+  rename_i address
+  split at accepted
+  · contradiction
+  rename_i width
+  split at accepted
+  · contradiction
+  rename_i dwords
+  exact ⟨by simpa using address, by simpa using width, by simpa using dwords⟩
+
 end LeanOS.PCIHeaderObservation
