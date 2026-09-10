@@ -216,12 +216,21 @@ subprocess.run([str(executable)], cwd=root, check=True)
 # The early boot consumer has no Lean runtime or allocator. Retain only the
 # exported function and its transitive machine-code dependencies, then require
 # a closed object. This also catches accidental lazy initialization helpers.
+# Match the image builder's Clang handling: general-registers-only changes
+# FLT_EVAL_METHOD unless source-width evaluation is explicitly selected. Lean's
+# header rejects the resulting semantics even for these integer-only exports.
+compiler = os.environ.get('LEANOS_CC', 'gcc')
+freestanding_flags = ['-O2', '-ffreestanding', '-fno-stack-protector',
+                      '-mno-red-zone', '-mgeneral-regs-only',
+                      '-fno-asynchronous-unwind-tables', '-fno-unwind-tables',
+                      '-ffunction-sections', '-fdata-sections']
+compiler_version = subprocess.check_output([compiler, '--version'], text=True)
+if 'clang' in compiler_version.splitlines()[0].lower():
+    freestanding_flags += ['-ffp-eval-method=source', '-Wno-error=pragmas',
+                           '-fno-jump-tables']
 generated_object = output / 'cpu-generated.o'
 closed_object = output / 'cpu-freestanding.elf'
-subprocess.run([os.environ.get('LEANOS_CC', 'gcc'), '-O2', '-ffreestanding',
-                '-fno-stack-protector', '-mno-red-zone', '-mgeneral-regs-only',
-                '-fno-asynchronous-unwind-tables', '-fno-unwind-tables',
-                '-ffunction-sections', '-fdata-sections',
+subprocess.run([compiler, *freestanding_flags,
                 '-I' + str(Path(prefix) / 'include'), '-c',
                 str(root / '.lake/build/ir/LeanOS/J1900CpuProfile.c'),
                 '-o', str(generated_object)], cwd=root, check=True)
@@ -270,10 +279,7 @@ subprocess.run(['lake', 'env', 'leanc', str(msr_object), '-o', str(msr_executabl
 subprocess.run([str(msr_executable)], cwd=root, check=True)
 msr_generated = output / 'msr-generated.o'
 msr_closed = output / 'msr-freestanding.elf'
-subprocess.run([os.environ.get('LEANOS_CC', 'gcc'), '-O2', '-ffreestanding',
-                '-fno-stack-protector', '-mno-red-zone', '-mgeneral-regs-only',
-                '-fno-asynchronous-unwind-tables', '-fno-unwind-tables',
-                '-ffunction-sections', '-fdata-sections',
+subprocess.run([compiler, *freestanding_flags,
                 '-I' + str(Path(prefix) / 'include'), '-c',
                 str(root / '.lake/build/ir/LeanOS/J1900MsrReadback.c'),
                 '-o', str(msr_generated)], cwd=root, check=True)
