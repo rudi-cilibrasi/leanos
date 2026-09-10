@@ -256,3 +256,26 @@ or invalid capture timestamps cannot establish a quiet interval. Changed replay
 inputs reject classification; raw capture and recovery metadata remain available
 for investigation. This path has local synthetic and retained-recovery tests;
 it has not yet been exercised on the Qotom.
+
+## Isolated CPL3 instruction execution
+
+`scripts/test-intel-entry-qemu.py` now exercises Intel-compatible long-mode
+SYSCALL and SYSENTER from CPL3 in a small Multiboot2 fixture. It extracts the
+eight-write MSR normalization block verbatim from `boot/boot.S`, then checks
+EFER 0xd00 and all seven zero target/mask values before entering user mode.
+The synthetic CPU identifies as Intel family 6/model 55/stepping 8 with
+XSAVE/OSXSAVE/AVX and SMAP absent. This is an emulator fixture, not a replay of
+physical instruction execution or a complete J1900 platform.
+
+The fixture accepts SYSCALL only as #UD and SYSENTER only as #GP(0). Its handler
+requires the exact faulting instruction RIP, zero normalized error code and
+saved CPL3 code selector. Negative controls deliberately use AMD's SYSENTER
+vector expectation or execute from CPL0; both must report failure. GCC and
+pinned Clang 18 pass all four expected outcomes. The runner retains command
+lines, debug bytes, ELF hashes, normalization-block hash and tool versions, and
+runs in the repository check script.
+
+This supplies the isolated Intel instruction-denial fixture previously missing
+above. It does not authorize the production user-return path, resolve the
+Intel-host KVM/AMD-guest discrepancy, or replace a physical CPU/MSR capture.
+Firmware, DMA and no-SMAP admission remain independent requirements for Qotom.
