@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'build/copy-roots' / ('transfer-qemu-' + Path(os.environ.get('LEANOS_CC', 'gcc')).name)
 
 
-def observe_rejection(command, directory, capture, elf, direction, fault=False):
+def observe_rejection(command, directory, capture, elf, direction, fault=False, cleanup_failure=False):
     spec = importlib.util.spec_from_file_location('reload_test', ROOT / 'scripts/test-copy-root-reload-qemu.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -24,7 +24,7 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False):
         if len(fields) in (3, 4):
             symbols[fields[-1]] = (int(fields[0], 16), int(fields[1], 16) if len(fields) == 4 else 0)
     terminal, size = symbols['leanos_copy_root_terminal']
-    closed = symbols['root_b'][0]
+    expected_root = symbols['root_a' if cleanup_failure else 'root_b'][0]
     with tempfile.TemporaryDirectory(prefix='leanos-transfer-', dir='/tmp') as temp:
         monitor = Path(temp) / 'qmp.sock'
         command = command + ['-qmp', f'unix:{monitor},server=on,wait=off']
@@ -42,13 +42,13 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False):
                         rip = re.search(r'RIP=([0-9a-fA-F]+)', registers)
                         cr3 = re.search(r'CR3=([0-9a-fA-F]+)', registers)
                         if rip and terminal <= int(rip[1], 16) < terminal + size and 'HLT=1' in registers:
-                            if not cr3 or int(cr3[1], 16) != closed:
-                                raise RuntimeError('transfer halted without the closed root')
+                            if not cr3 or int(cr3[1], 16) != expected_root:
+                                raise RuntimeError('transfer halted under an unexpected root')
                             (directory / 'terminal-registers.txt').write_text(registers)
                             break
                     time.sleep(0.05)
                 pattern = bytes(range(0x10, 0x20))
-                prefix = 8 if fault else 0
+                prefix = 16 if cleanup_failure else 8 if fault else 0
                 expected_kernel = bytearray([0xa5])*32
                 expected_user = bytearray([0xa5])*32
                 if direction:
@@ -72,7 +72,7 @@ def observe_rejection(command, directory, capture, elf, direction, fault=False):
                     if actual != expected:
                         raise RuntimeError(f'transfer changed unexpected {name} bytes: {actual.hex()}')
                     hashes[name] = hashlib.sha256(actual).hexdigest()
-                return {'kind': 'terminal', 'halted': True, 'closed_root': closed, 'memory_sha256': hashes, 'completed_prefix': prefix}
+                return {'kind': 'terminal', 'halted': True, 'root': expected_root, 'closed': not cleanup_failure, 'memory_sha256': hashes, 'completed_prefix': prefix}
             finally:
                 process.terminate()
                 try:
@@ -92,18 +92,29 @@ def main():
         obj = OUT / (name + '.o')
         subprocess.run([cc, '-m64', '-c', f'experiments/copy-roots/{name}.S', '-o', str(obj)], cwd=ROOT, check=True)
         objects.append(str(obj))
+    mutation = OUT / 'cleanup-failure.S'
+    source = (ROOT / 'experiments/copy-roots/transfer.S').read_text()
+    needle = '    mov %r12, %rdi'
+    if source.count(needle) != 1:
+        raise RuntimeError('cleanup operand mutation must target exactly one instruction')
+    mutation.write_text(source.replace(needle, '    xor %edi, %edi'))
+    cleanup_object = OUT / 'cleanup-failure.o'
+    subprocess.run([cc, '-m64', '-c', str(mutation), '-o', str(cleanup_object)], check=True)
     results = []
-    cases = [(d, n, False) for d in (0, 1) for n in (0, 1, 8, 16, 17)] + [(d, 16, True) for d in (0, 1)]
-    for direction, count, fault in cases:
-        directory = OUT / (f'{direction}-{count}' + ('-fault' if fault else ''))
+    cases = ([(d, n, False, False) for d in (0, 1) for n in (0, 1, 8, 16, 17)]
+             + [(d, 16, True, False) for d in (0, 1)]
+             + [(d, 16, False, True) for d in (0, 1)])
+    for direction, count, fault, cleanup_failure in cases:
+        directory = OUT / (f'{direction}-{count}' + ('-fault' if fault else '-cleanup' if cleanup_failure else ''))
         grub = directory / 'iso/boot/grub'
         grub.mkdir(parents=True, exist_ok=True)
         elf = grub.parent / 'test.elf'
         obj = directory / 'fixture.o'
         subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}',
                         '-c', 'experiments/copy-roots/fixture.S', '-o', str(obj)], cwd=ROOT, check=True)
+        linked_objects = [objects[0], str(cleanup_object) if cleanup_failure else objects[1]]
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
-                        '-o', str(elf), str(obj), *objects], cwd=ROOT, check=True)
+                        '-o', str(elf), str(obj), *linked_objects], cwd=ROOT, check=True)
         (grub / 'grub.cfg').write_text('set timeout=0\nmenuentry "copy transfer" {\n multiboot2 /boot/test.elf\n boot\n}\n')
         iso = directory / 'fixture.iso'
         with (directory / 'grub.log').open('w') as log:
@@ -115,8 +126,8 @@ def main():
                    '-debugcon', f'file:{capture}', '-device', 'isa-debug-exit,iobase=0xf4,iosize=4',
                    '-no-reboot', '-cdrom', str(iso)]
         (directory / 'command.json').write_text(json.dumps(command, indent=2)+'\n')
-        if count > 16 or fault:
-            observation = observe_rejection(command, directory, capture, elf, direction, fault)
+        if count > 16 or fault or cleanup_failure:
+            observation = observe_rejection(command, directory, capture, elf, direction, fault, cleanup_failure)
         else:
             with (directory / 'qemu.log').open('w') as log:
                 result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=20)
@@ -124,13 +135,14 @@ def main():
             if result.returncode != 33 or raw != b'RTP':
                 raise RuntimeError(f'count {count}: exit {result.returncode}, capture {raw!r}')
             observation = {'kind': 'exit', 'exit': result.returncode}
-        results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault,
+        results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault, 'cleanup_failure': cleanup_failure,
                         'observation': observation, 'capture': capture.read_text(),
-                        'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest()})
-        print(f'copy-root transfer direction={direction} {count} bytes fault={fault}: PASS', flush=True)
+                        'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
+                        'transfer_object_sha256': hashlib.sha256(Path(linked_objects[1]).read_bytes()).hexdigest()})
+        print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure}: PASS', flush=True)
     sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S')]
     report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in/copy-out, post-return closure and terminal partial faults; no production admission',
-        'cases': results, 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},
+        'cases': results, 'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},
         'compiler': subprocess.check_output([cc, '--version'], text=True),
         'qemu': subprocess.check_output(['qemu-system-x86_64', '--version'], text=True)}, indent=2)+'\n')
 
