@@ -64,6 +64,7 @@ python3 ./scripts/test-scenario-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
 python3 ./scripts/test-bare-metal-observation.py
 python3 ./scripts/test-j1900-cpu-profile.py
+python3 ./scripts/test-intel-entry-qemu.py
 
 ./scripts/check-security-claims.sh
 
