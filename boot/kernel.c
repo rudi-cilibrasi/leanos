@@ -5177,7 +5177,12 @@ static void j1900_cpuid(uint32_t leaf, uint64_t words[4]) {
 }
 
 static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
-    uint64_t w[22] = {1, 1};
+    uint64_t w[22];
+    /* Keep absent CPUID slots zero without a compiler-synthesized libc call.
+       Each volatile store is required in this freestanding entry path. */
+    for (unsigned i = 0; i < 22; ++i)
+        ((volatile uint64_t *)w)[i] = 0;
+    w[0] = 1; w[1] = 1;
     j1900_cpuid(0, &w[2]);
     if (w[3] != UINT64_C(0x756e6547) ||
         w[5] != UINT64_C(0x49656e69) || w[4] != UINT64_C(0x6c65746e))
