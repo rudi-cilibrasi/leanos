@@ -7,6 +7,10 @@
     movl $0x80000000, leaves_a+0x3804
     movl $0x80000000, leaves_a+0x380c
     movq $0, leaves_b+0x3808
+#if TRANSFER_FAULT
+    /* Remove the second copy alias: exactly eight byte operands precede it. */
+    movq $0, leaves_a+0x3808
+#endif
     xor %ecx, %ecx
 .Luser_sentinels:
     movb $0xa5, value_a+4080(%rcx)
@@ -125,6 +129,33 @@ transfer_denied:
     mov 0x700ff8, %rax
     jmp failed
 page_fault:
+#if TRANSFER_FAULT
+    /* First action establishes closure from a fixed trusted operand. No C,
+     * resume or rollback occurs; the completed prefix stays in memory. */
+    mov $root_b, %edi
+    call leanos_copy_root_reload
+#if COPY_OUT
+    cmpq $2, (%rsp)
+    jne failed
+    cmpq $leanos_copy_transfer_store, 8(%rsp)
+#else
+    cmpq $0, (%rsp)
+    jne failed
+    cmpq $leanos_copy_transfer_load, 8(%rsp)
+#endif
+    jne failed
+    cmp $8, %rbx
+    jne failed
+    mov %cr2, %rax
+    cmp $0x701000, %rax
+    jne failed
+    mov %cr3, %rax
+    cmp $root_b, %rax
+    jne failed
+    mov $'X', %al
+    out %al, $0xe9
+    jmp leanos_copy_root_terminal
+#else
     /* Observe an already closed root: this probe must not repair it. */
     cmpq $0, (%rsp)
     jne failed
@@ -141,3 +172,4 @@ page_fault:
     mov $0x10, %eax
     out %eax, $0xf4
     jmp failed
+#endif /* TRANSFER_FAULT */

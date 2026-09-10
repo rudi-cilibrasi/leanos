@@ -41,7 +41,11 @@ leanos_copy_root_transfer:
 .Ltransfer_byte:
     mov (%r14), %r10
     mov 8(%r14), %r11
+ .global leanos_copy_transfer_load
+leanos_copy_transfer_load:
     movb (%r10), %al
+ .global leanos_copy_transfer_store
+leanos_copy_transfer_store:
     movb %al, (%r11)
     inc %rbx
     add $16, %r14
