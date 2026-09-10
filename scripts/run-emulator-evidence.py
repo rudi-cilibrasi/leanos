@@ -24,6 +24,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from workflow_yaml import WorkflowYamlError, load_workflow
+from ci_hosted_topology import validate as validate_hosted_topology
 
 
 ROOT = SCRIPT_DIR.parent
@@ -1562,57 +1563,6 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must promote only labeled pull requests to complete evidence"
         )
-    hosted_job = workflow_job(
-        ci_workflow, ".github/workflows/ci.yml", "hosted-boundary"
-    )
-    hosted_steps = workflow_job_steps(
-        hosted_job, ".github/workflows/ci.yml", "hosted-boundary"
-    )
-    hosted_runs = [
-        step.get("run")
-        for step in hosted_steps
-        if isinstance(step.get("run"), str)
-    ]
-    hosted_commands = (
-        "./scripts/check-hosted-generated-boundaries.sh ordinary",
-        "./scripts/check-hosted-generated-boundaries.sh sanitized",
-        "./scripts/check-hosted-sanitizer-negatives.sh",
-    )
-    artifact_steps = [
-        step
-        for step in hosted_steps
-        if isinstance(step.get("uses"), str)
-        and step["uses"].startswith("actions/upload-artifact@")
-    ]
-    expected_skip = (
-        "${{ (github.event_name == 'pull_request' || github.event_name == "
-        "'merge_group') && '1' || '0' }}"
-    )
-    skip_is_structural = any(
-        isinstance(step.get("env"), dict)
-        and step["env"].get("LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY") == expected_skip
-        for job_name in ci_workflow.get("jobs", {})
-        for step in workflow_job_steps(
-            workflow_job(ci_workflow, ".github/workflows/ci.yml", job_name),
-            ".github/workflows/ci.yml",
-            job_name,
-        )
-    )
-    if (
-        hosted_job.get("if")
-        != "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
-        or any(not any(command in run for run in hosted_runs) for command in hosted_commands)
-        or not artifact_steps
-        or any(
-            not isinstance(step.get("with"), dict)
-            or step["with"].get("if-no-files-found") != "error"
-            for step in artifact_steps
-        )
-        or not skip_is_structural
-    ):
-        raise EvidenceError(
-            "CI must parallelize complete hosted evidence for pull requests and merge groups"
-        )
     # The real image-build failure fixture belongs to the canonical aggregate
     # check, which runs once in the required Lean lane on every CI event.
     # Emulator consumers must not repeat its Lean/C bootstrap after the image
@@ -1647,6 +1597,12 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must run the image-build failure fixture once through the required Lean aggregate"
         )
+    try:
+        validate_hosted_topology(ci_workflow)
+    except (ValueError, KeyError, StopIteration) as error:
+        raise EvidenceError(
+            f"CI must parallelize complete hosted evidence for every trigger: {error}"
+        ) from error
     ci_emulator = workflow_job(
         ci_workflow, ".github/workflows/ci.yml", "emulator"
     )
