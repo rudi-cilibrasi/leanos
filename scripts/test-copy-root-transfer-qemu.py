@@ -137,13 +137,15 @@ leanos_copy_transfer_nmi_wait_end:
              + [(d, 16, True, False, False) for d in (0, 1)]
              + [(d, 16, False, True, False) for d in (0, 1)]
              + [(d, 16, False, False, True) for d in (0, 1)])
-    for direction, count, fault, cleanup_failure, nmi in cases:
-        directory = OUT / (f'{direction}-{count}' + ('-fault' if fault else '-cleanup' if cleanup_failure else '-nmi' if nmi else ''))
+    cases = [(*case, 0) for case in cases] + [
+        (d, 16, False, False, False, root) for d in (0, 1) for root in (1, 2, 3)]
+    for direction, count, fault, cleanup_failure, nmi, invalid_root in cases:
+        directory = OUT / (f'{direction}-{count}' + ('-fault' if fault else '-cleanup' if cleanup_failure else '-nmi' if nmi else f'-root-{invalid_root}' if invalid_root else ''))
         grub = directory / 'iso/boot/grub'
         grub.mkdir(parents=True, exist_ok=True)
         elf = grub.parent / 'test.elf'
         obj = directory / 'fixture.o'
-        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}', f'-DTRANSFER_NMI={int(nmi)}',
+        subprocess.run([cc, '-m64', '-DFIXTURE=7', '-DTRANSFER_FIXTURE', f'-DTRANSFER_COUNT={count}', f'-DCOPY_OUT={direction}', f'-DTRANSFER_FAULT={int(fault)}', f'-DTRANSFER_NMI={int(nmi)}', f'-DINVALID_COPY_ROOT={invalid_root}',
                         '-c', 'experiments/copy-roots/fixture.S', '-o', str(obj)], cwd=ROOT, check=True)
         linked_objects = [objects[0], str(cleanup_object) if cleanup_failure else str(nmi_object) if nmi else objects[1]]
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
@@ -161,7 +163,7 @@ leanos_copy_transfer_nmi_wait_end:
                    '-debugcon', f'file:{capture}', '-device', 'isa-debug-exit,iobase=0xf4,iosize=4',
                    '-no-reboot', '-cdrom', str(iso)]
         (directory / 'command.json').write_text(json.dumps(command, indent=2)+'\n')
-        if count > 16 or fault or cleanup_failure or nmi:
+        if count > 16 or fault or cleanup_failure or nmi or invalid_root:
             observation = observe_rejection(command, directory, capture, elf, direction, fault, cleanup_failure, nmi)
         else:
             with (directory / 'qemu.log').open('w') as log:
@@ -170,11 +172,11 @@ leanos_copy_transfer_nmi_wait_end:
             if result.returncode != 33 or raw != b'RTP':
                 raise RuntimeError(f'count {count}: exit {result.returncode}, capture {raw!r}')
             observation = {'kind': 'exit', 'exit': result.returncode}
-        results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault, 'cleanup_failure': cleanup_failure, 'nmi': nmi,
+        results.append({'direction': 'out' if direction else 'in', 'count': count, 'fault': fault, 'cleanup_failure': cleanup_failure, 'nmi': nmi, 'invalid_root': invalid_root,
                         'observation': observation, 'capture': capture.read_text(),
                         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
                         'transfer_object_sha256': hashlib.sha256(Path(linked_objects[1]).read_bytes()).hexdigest()})
-        print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure} nmi={nmi}: PASS', flush=True)
+        print(f'copy-root transfer direction={direction} {count} bytes fault={fault} cleanup_failure={cleanup_failure} nmi={nmi} invalid_root={invalid_root}: PASS', flush=True)
     sources = ['experiments/copy-roots/'+name for name in ('fixture.S', 'fixture.ld', 'transfer-fixture.inc', 'reload.S', 'transfer.S')]
     report.write_text(json.dumps({'scope': 'isolated no-SMAP TCG copy-in/copy-out, post-return closure and terminal partial faults; no production admission',
         'cases': results, 'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'sources': {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sources},

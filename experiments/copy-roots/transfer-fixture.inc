@@ -83,6 +83,13 @@
     out %al, $0xe9
     mov $root_b, %edi
     mov $root_a, %esi
+#if INVALID_COPY_ROOT == 1
+    xor %esi, %esi
+#elif INVALID_COPY_ROOT == 2
+    inc %esi
+#elif INVALID_COPY_ROOT == 3
+    mov $0x1000000, %esi
+#endif
     mov $transfer_operands, %edx
     mov $TRANSFER_COUNT, %ecx
     call leanos_copy_root_transfer
