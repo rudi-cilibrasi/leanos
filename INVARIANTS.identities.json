@@ -13143,6 +13143,18 @@
     },
     {
       "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.checked_is_projection",
+      "display": "checked_is_projection",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
+      "qualified": "LeanOS.KernelUserRoot.checked_preserves_required",
+      "display": "checked_preserves_required",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelUserRoot.lean",
       "qualified": "LeanOS.KernelUserRoot.close_idempotent_leaf",
       "display": "close_idempotent_leaf",
       "kind": "theorem"

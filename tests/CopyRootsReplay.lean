@@ -57,7 +57,22 @@ private def stale : KernelRootPublication.State :=
 
 deriving instance DecidableEq for Except
 
+private def aliased : PageTable :=
+  { closed with leaf := fun page =>
+      if page = 128 ∨ page = 129 then some { kernelLeaf with frame := 4 }
+      else closed.leaf page }
+private def checkedRoot := KernelUserRoot.closeChecked aliased [4, 5] [(64, kernelLeaf)]
+
 private def checks : List (String × Bool) := [
+  ("checked-root-preserves-required", decide (checkedRoot.bind (fun t => t.leaf 64) = some kernelLeaf)),
+  ("checked-root-removes-supervisor-aliases", checkedRoot.any fun t =>
+    (t.leaf 128).isNone && (t.leaf 129).isNone),
+  ("checked-root-rejects-overlap", (KernelUserRoot.closeChecked aliased [4, 8] [(64, kernelLeaf)]).isNone),
+  ("checked-root-rejects-missing", (KernelUserRoot.closeChecked aliased [4] [(65, kernelLeaf)]).isNone),
+  ("checked-root-rejects-stale-frame", (KernelUserRoot.closeChecked aliased [4]
+    [(64, { kernelLeaf with frame := 9 })]).isNone),
+  ("checked-root-rejects-permission-drift", (KernelUserRoot.closeChecked aliased [4]
+    [(64, { kernelLeaf with writable := false })]).isNone),
   ("read-first-frame", decide (walkPlan readPlan 128 .read = some (.ok 4))),
   ("read-second-frame", decide (walkPlan readPlan 129 .read = some (.ok 5))),
   ("read-denies-write", decide (walkPlan readPlan 128 .write = some (.error .notWritable))),

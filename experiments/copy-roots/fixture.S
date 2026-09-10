@@ -55,7 +55,7 @@ _start:
     or $3, %eax
     mov %eax, leaves_a+0x3800
     mov %eax, leaves_b+0x3800
-#if FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10
+#if (FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10) && !defined(CONSTRUCT_FIXTURE)
     movl $0, leaves_b+0x3800
     /* Omit identity aliases of both protected backing frames as well. */
     mov $value_a, %eax
@@ -90,6 +90,11 @@ long_mode:
     mov %ax, %es
     mov %ax, %ss
     mov $stack_top, %rsp
+#ifdef CONSTRUCT_FIXTURE
+    call construct_fixture_root
+    test %eax, %eax
+    jne failed
+#endif
 #if FIXTURE == 7 || FIXTURE == 9 || FIXTURE == 10
     lea page_fault(%rip), %rax
     lea idt64+14*16(%rip), %rdi
@@ -274,5 +279,8 @@ nmi_stack: .skip 4096
 nmi_stack_top:
 nmi_guard_high: .skip 4096
 #endif
+#endif
+#ifdef CONSTRUCT_FIXTURE
+.global leaves_a, leaves_b, value_a, value_b
 #endif
 .section .note.GNU-stack,"",@progbits

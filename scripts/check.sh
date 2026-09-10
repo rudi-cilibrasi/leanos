@@ -52,6 +52,8 @@ lake env lean tests/user-copy-prefix.lean
 lake env lean tests/user-copy-aliases.lean
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
+lake build leanos-copy-root-construction
+python3 scripts/test-copy-root-construction.py
 python3 scripts/check-copy-root-reload.py --self-test
 python3 scripts/test-copy-root-reload-qemu.py
 python3 scripts/check-copy-root-transfer.py --self-test
