@@ -13754,6 +13754,30 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/PCIHeaderObservation.lean",
+      "qualified": "LeanOS.PCIHeaderObservation.decode_preserves_raw",
+      "display": "decode_preserves_raw",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PCIHeaderObservation.lean",
+      "qualified": "LeanOS.PCIHeaderObservation.decode_transport_bounds",
+      "display": "decode_transport_bounds",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PCIHeaderObservation.lean",
+      "qualified": "LeanOS.PCIHeaderObservation.observationWords_width",
+      "display": "observationWords_width",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PCIHeaderObservation.lean",
+      "qualified": "LeanOS.PCIHeaderObservation.observe_success_tag",
+      "display": "observe_success_tag",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/Preemption.lean",
       "qualified": "LeanOS.Preemption.accepted_context_comes_from_scheduler",
       "display": "accepted_context_comes_from_scheduler",

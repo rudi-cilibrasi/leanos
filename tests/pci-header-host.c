@@ -1,14 +1,12 @@
 #include <lean/lean.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "boundary-abi.h"
 #include "../build/pci-header-capture/cases.h"
 
 extern void lean_initialize(void);
 extern lean_object *initialize_leanos_LeanOS_PCIHeaderObservation(uint8_t);
-extern uint64_t leanos_pci_header_observe(uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t);
+extern void leanos_register_boundary_target(const char *, void *);
 
 static uint64_t observe(uint64_t field, const uint64_t *w) {
     return leanos_pci_header_observe(field, w[0], w[1], w[2], w[3], w[4],
@@ -26,6 +24,8 @@ int main(void) {
     }
     lean_dec_ref(init);
     lean_io_mark_end_initialization();
+    leanos_register_boundary_target("leanos_pci_header_observe",
+        (void *)(uintptr_t)&leanos_pci_header_observe);
     const size_t count = sizeof(pci_header_cases) / sizeof(pci_header_cases[0]);
     for (size_t i = 0; i < count; ++i) {
         const uint64_t *w = pci_header_cases[i];
