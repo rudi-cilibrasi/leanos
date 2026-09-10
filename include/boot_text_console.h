@@ -2,8 +2,7 @@
 #define LEANOS_BOOT_TEXT_CONSOLE_H
 #include <stdint.h>
 
-extern uint64_t leanos_boot_text_surface(uint64_t, uint64_t, uint64_t,
-                                        uint64_t, uint64_t, uint64_t);
+#include "boundary-abi.h"
 struct boot_text_geometry {
     uint64_t address;
     uint32_t pitch, width, height;
