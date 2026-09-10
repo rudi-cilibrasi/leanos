@@ -1,7 +1,7 @@
 # Ordered PCI Command writes and readbacks
 
-The all-zero Command proposal is not a usable physical Qotom policy: LPC
-Command has read-only enabled bits. See
+The all-zero Command proposal is not a usable physical Qotom policy: host bridge and
+LPC Command registers have read-only enabled bits. See
 [qotom-lpc-command-constraint.md](qotom-lpc-command-constraint.md).
 The synthetic accepted traces below do not establish hardware realizability.
 
