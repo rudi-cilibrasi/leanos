@@ -34,6 +34,14 @@ every captured header word plus the last absent slot. Its `sanitizers` mode
 uses the repository's pinned ASan/UBSan configuration. The collector is also
 compiled as a separate freestanding object and checked for runtime dependencies.
 
+The existing Qotom inventory hosted harness also passes collected snapshots
+through `leanos_qotom_pci_inventory_check`, using the actual generated C. It
+checks the complete captured inventory, each missing function, each changed
+identity and an extra function on bus 255. A read failure invalidates the
+collection before it is offered to admission. This transport allocates hosted
+Lean arrays; it is not a freestanding generated-code interface or evidence of
+physical access.
+
 The component is not wired into the boot path. Remaining work for issue #330
 includes the actual serialized hardware-access adapter, binding its output to
 generated admission, reviewed device and bridge policy, ordered writes and
