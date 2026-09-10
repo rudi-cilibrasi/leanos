@@ -71,4 +71,42 @@ theorem close_idempotent_leaf table frames page :
   | some leaf =>
       by_cases hp : leaf.frame ∈ frames <;> simp [close, h, hp]
 
+/-- Exact indispensable mappings supplied by the selected platform/scenario.
+Completeness of this list and the protected inventory remains a caller obligation. -/
+def requiredMapping (table : PageTable) (frames : List PhysicalFrame)
+    (entry : VirtualPage × Leaf) : Bool :=
+  decide (table.leaf entry.1 = some entry.2 ∧ entry.2.frame ∉ frames)
+
+/-- Reject incompatible or stale indispensable mappings before constructing a
+closed root. Rejection returns no candidate; it does not establish closure of
+any live hardware root. This does not publish CR3 or validate inventory completeness. -/
+def closeChecked (table : PageTable) (frames : List PhysicalFrame)
+    (required : List (VirtualPage × Leaf)) : Option PageTable :=
+  if required.all (requiredMapping table frames) then some (close table frames)
+  else none
+
+theorem checked_is_projection table frames required result
+    (h : closeChecked table frames required = some result) :
+    result = close table frames := by
+  simp only [closeChecked] at h
+  split at h
+  · exact (Option.some.inj h).symm
+  · contradiction
+
+theorem checked_preserves_required table frames required result page leaf
+    (h : closeChecked table frames required = some result)
+    (member : (page, leaf) ∈ required) :
+    result.leaf page = some leaf ∧ leaf.frame ∉ frames := by
+  have same := checked_is_projection table frames required result h
+  subst result
+  have valid : required.all (requiredMapping table frames) = true := by
+    simp only [closeChecked] at h
+    split at h
+    · assumption
+    · contradiction
+  have entry := List.all_eq_true.mp valid (page, leaf) member
+  have facts : table.leaf page = some leaf ∧ leaf.frame ∉ frames := by
+    simpa [requiredMapping] using entry
+  exact ⟨by simp [close, facts.1, facts.2], facts.2⟩
+
 end LeanOS.KernelUserRoot

@@ -9,3 +9,5 @@ This proposed page-table projection removes every virtual alias of each frame in
 - `protected_aliases_absent` — Two virtual aliases of the same listed frame disappear together, including supervisor aliases.
 - `close_preserves_ancestors` — Closing changes no ancestor entry; it only filters leaves.
 - `close_idempotent_leaf` — Closing the same inventory twice leaves each page exactly as it was after the first close.
+- `checked_is_projection` — Every accepted checked construction returns exactly the table obtained by removing all mappings of the supplied protected frames.
+- `checked_preserves_required` — Every supplied indispensable leaf survives an accepted construction unchanged and names a frame outside the protected inventory.

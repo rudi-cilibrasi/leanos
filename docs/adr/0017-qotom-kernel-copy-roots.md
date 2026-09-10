@@ -187,7 +187,7 @@ a desired post-flush state into evidence of completed hardware cleanup.
 
 The test-only `leanos-copy-roots-replay` executable runs the composed alias,
 operand, partial-copy, transaction and root-publication models after Lake
-compiles them to C. Its 22 checks include all 48 transaction outcomes. The same
+compiles them to C. Its 28 checks include all 48 transaction outcomes. The same
 corpus also reduces to success in Lean's kernel. It covers cross-page operands,
 read/write and execution permissions, partial-copy suffix preservation,
 whole-request rejection, zero length, missing inventory, occupied slots, stale
@@ -301,3 +301,19 @@ recovery, or double-fault handling. Production IST/TSS, validation-to-operand
 binding, actual root construction and protected-frame inventory publication
 still require integration. This
 prototype does not enable production or physical CPL3 admission.
+
+### Checked indispensable leaf construction
+
+`KernelUserRoot.closeChecked` checks the selected scenario's exact indispensable
+leaf list against the supplied source table and rejects any listed leaf whose
+physical frame is protected. It returns no candidate for absent or stale leaves,
+permission drift, or protected/kernel overlap. An accepted candidate is exactly
+the existing closed projection; its required leaves are preserved and refer to
+unprotected frames. Replay includes two supervisor aliases of one protected
+frame, both removed together, and the rejection cases above.
+
+This checks the supplied leaves, not inventory completeness or ancestor access
+permissions. The caller must establish the full required mapping inventory,
+valid ancestors and live protected frames for the selected scenario. Publication,
+TLB invalidation and production entry/copy/return integration remain separate
+obligations; this model does not authorize Qotom CPL3.
