@@ -62,3 +62,4 @@ import LeanOS.VTdBootPlan
 import LeanOS.SecurityClaims
 import LeanOS.J1900CpuProfile
 import LeanOS.J1900EntryControl
+import LeanOS.BootTextConsole
