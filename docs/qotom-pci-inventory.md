@@ -16,7 +16,10 @@ errors, with an index where applicable.
 
 A successful witness retains the complete decoded headers and their original
 16 dwords. Its proof binds the entire projected inventory to one baseline;
-a second theorem establishes its 15-function length. Command/status, revision,
+another theorem establishes its 15-function length. The general
+`check_preserves_raw` theorem proves that any successful check returns exactly
+the supplied raw headers in their original order, including every command and
+window register. Command/status, revision,
 BARs, and forwarding-window contents are observations for later policy. They
 are not frozen to values supplied by a running FreeBSD instance.
 
