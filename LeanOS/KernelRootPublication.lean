@@ -43,8 +43,8 @@ def access (state : State) (page : VirtualPage) (context : AccessContext) :
   | some entry => .ok entry.frame
   | none => classify state.table page context
 
-/-- Table replacement alone leaves cached authority intact. This intentionally
-unsafe operation is exposed for negative evidence, not as a publication API. -/
+/-- Table replacement alone leaves cached authority intact. This operation is
+intentionally unsafe and exposed for negative evidence, not as a publication API. -/
 def replaceOnly (state : State) (target : PageTable) : State :=
   { state with table := target }
 
