@@ -1,0 +1,55 @@
+{
+  "scope": "isolated CPL3 denial; no physical Qotom/platform admission",
+  "accelerator": "kvm",
+  "host_cpu_observed": {
+    "vendor_id": "GenuineIntel",
+    "cpu family": "6",
+    "model": "166",
+    "model name": "Intel(R) Core(TM) i7-10710U CPU @ 1.10GHz",
+    "stepping": "0"
+  },
+  "host_kernel": "7.0.0-31-generic",
+  "normalization_sha256": "065deedd9c7d67b78c3c9687b7d25277eeb8e8073b9ea54528e3090f5faaa8da",
+  "compiler_version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "qemu_version": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)\nCopyright (c) 2003-2023 Fabrice Bellard and the QEMU Project developers\n",
+  "cases": [
+    {
+      "case": "syscall",
+      "exit": 33,
+      "capture": "R6P",
+      "elf_sha256": "159ff6d68c00c8ace9a6f4dfc3bb62ffe4359b771b5cf35f851743336e9dd67d"
+    },
+    {
+      "case": "sysenter",
+      "exit": 33,
+      "capture": "RGP",
+      "elf_sha256": "79c0f9ce6e3155248b753cf2069973564adaa5004f8bbdfb0071cecf94cb4ee1"
+    },
+    {
+      "case": "amd-vector-rejected",
+      "exit": 35,
+      "capture": "RF",
+      "elf_sha256": "9be436f7178652f31c879346aac498e1893fe21ac376e509dd7d669ea2630eb9"
+    },
+    {
+      "case": "cpl0-origin-rejected",
+      "exit": 35,
+      "capture": "RF",
+      "elf_sha256": "0c5cf46e322c4cc6db055574489132e0ca96de7dcc940a2415249905ae737c15"
+    }
+  ],
+  "base_revision": "9067dff6b0a18e9ffdec987576766f4a897e3138",
+  "source_files": {
+    "experiments/intel-entry/fixture.S": "903f4a08bb45edbe96d088980475e358f871ad68ce1134aa73b6d31fa0ec31e6",
+    "experiments/intel-entry/fixture.ld": "c74da67d894ce14298106aff46d66d8c64a8c2ba63bf05948af6c2d5ed7b14ea",
+    "scripts/test-intel-entry-qemu.py": "bb36416f060cdd1939b5a364e34a9d7e9f174786e091e84f83158cd8d0228f6b",
+    "boot/boot.S": "c1106245b2b8a858741d201b9823867d22d9c0830b2e3c915fb90e178935f836"
+  },
+  "limits": "Working-tree runner added optional KVM support; source hashes identify exact inputs. Isolated Intel guest outcomes do not establish physical Qotom admission or clear the retained AMD-guest mismatch.",
+  "files": {
+    "syscall.log": "616847bfee0eadc3302cb0228836bb8731242e6c94f359058b1062aa846e66cb",
+    "sysenter.log": "3676a059b1613c1f999e150fcbe1f5e2835c21873a6f1bef52d5e91f484c7c8a",
+    "amd-vector-rejected.log": "585f45ee4ce012e226f215a77a041b3bbf31ba949279f21c66978c44552b214c",
+    "cpl0-origin-rejected.log": "585f45ee4ce012e226f215a77a041b3bbf31ba949279f21c66978c44552b214c"
+  }
+}
