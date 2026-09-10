@@ -14216,6 +14216,30 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomPCIQuarantineTransition.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineTransition.check_preserves_inputs",
+      "display": "check_preserves_inputs",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineTransition.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineTransition.witnessed_initial_count",
+      "display": "witnessed_initial_count",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineTransition.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineTransition.witnessed_registers_stable",
+      "display": "witnessed_registers_stable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomPCIQuarantineTransition.lean",
+      "qualified": "LeanOS.QotomPCIQuarantineTransition.witnessed_trace_count",
+      "display": "witnessed_trace_count",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/ResumablePreemption.lean",
       "qualified": "LeanOS.ResumablePreemption.accepted_tick_facts",
       "display": "accepted_tick_facts",

@@ -63,6 +63,7 @@
     "LeanOS/QotomBspTopology.lean",
     "LeanOS/QotomPCIInventory.lean",
     "LeanOS/QotomPCIQuarantineObservation.lean",
+    "LeanOS/QotomPCIQuarantineTransition.lean",
     "LeanOS/ResumablePreemption.lean",
     "LeanOS/ScheduledObservation.lean",
     "LeanOS/Scheduler.lean",

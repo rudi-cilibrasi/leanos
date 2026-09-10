@@ -89,4 +89,32 @@ theorem witnessed_initial_count (w : Witness) : w.initial.headers.length = 15 :=
 theorem witnessed_trace_count (w : Witness) : w.trace.steps.length = 15 :=
   QotomPCIQuarantineObservation.witness_has_fifteen_steps w.trace
 
+def Error.code : Error → UInt64
+  | .initial reason => 0x100000 + reason.code
+  | .trace reason => 0x200000 + reason.code
+  | .registers index => 0x300000 + index.toUInt64
+
+/-- One consumed hosted array contains fifteen initial 19-word headers,
+followed by fifteen 25-word write/readback records. The declared common count
+must be fifteen and the physical size exactly 660 before any field is read.
+This allocates Lean objects and establishes no hardware-access authority. -/
+@[export leanos_qotom_pci_quarantine_transition]
+def checkWords (count : UInt64) (words : Array UInt64) : UInt64 :=
+  if count != 15 then 0x10000
+  else if words.size != 660 then 0x10001
+  else
+    let initial := (List.range 15).map fun index =>
+      let field := fun i => words.getD (index * 19 + i) 0
+      ({ bdf := ⟨field 0, field 1, field 2⟩
+         words := (List.range 16).map (fun i => field (3 + i)) } : RawHeader)
+    let steps := (List.range 15).map fun index =>
+      let field := fun i => words.getD (285 + index * 25 + i) 0
+      ({ target := ⟨field 0, field 1, field 2⟩
+         offset := field 3, width := field 4, value := field 5
+         readback := ⟨⟨field 6, field 7, field 8⟩,
+           (List.range 16).map (fun i => field (9 + i))⟩ } : QotomPCIQuarantineObservation.Step)
+    match check initial steps with
+    | .ok _ => 1
+    | .error reason => reason.code
+
 end LeanOS.QotomPCIQuarantineTransition
