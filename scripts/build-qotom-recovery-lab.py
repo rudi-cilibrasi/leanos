@@ -219,6 +219,11 @@ if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
 elf = out / ('leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
 shutil.copy2(target, elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
+if a.bsp_topology:
+    msr_audit = out / 'msr-write-audit.json'
+    checked = subprocess.run(['python3', 'scripts/audit-qotom-msr-writes.py', str(elf)],
+                             cwd=root, check=True, capture_output=True)
+    msr_audit.write_bytes(checked.stdout)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
 if a.ecam_read:
     files.extend([root / 'hardware/lab' / name for name in (
@@ -252,7 +257,8 @@ if a.native_inventory:
                   root / '.lake/build/ir/LeanOS/QotomNativePCIFields.c',
                   build / 'boundary-abi.h', native_pci, native_pci_dir / 'symbols.txt'])
 if a.bsp_topology:
-    files.extend([root / 'hardware/lab/qotom-bsp.c.inc',
+    files.extend([root / 'scripts/audit-qotom-msr-writes.py', msr_audit,
+                  root / 'hardware/lab/qotom-bsp.c.inc',
                   root / 'include/qotom_bsp_consumer.h',
                   root / 'scripts/build-qotom-bsp-object.sh',
                   root / 'LeanOS/QotomMadtStream.lean', bsp_dir / 'QotomMadtStream.c',
