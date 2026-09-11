@@ -39,10 +39,14 @@ static __attribute__((noinline)) void lab_handoff_xhci(const struct lab_ecam_roo
         }
     }
     lab_xhci_handoff_disarm();
-    serial_puts("LEANOS-LAB/1 XHCI-HANDOFF profile=qotom-xhci-handoff-v1 index=3 status=");serial_u64(status);
+    serial_puts("LEANOS-LAB/1 XHCI-HANDOFF profile=qotom-xhci-handoff-v2 index=3 status=");serial_u64(status);
     serial_puts(" attempted=");serial_u64(result.write_attempted);
     serial_puts(" polls=");serial_u64(result.polls);
     serial_puts(" support=");serial_u64(result.last_support);
-    serial_puts(" control=");serial_u64(result.final_control);serial_putc('\n');
+    serial_puts(" control=");serial_u64(result.final_control);
+    serial_puts(" verify=");serial_u64(result.verify_kind);
+    serial_puts(" verify-index=");serial_u64(result.verify_index);
+    serial_puts(" expected=");serial_u64(result.verify_expected);
+    serial_puts(" observed=");serial_u64(result.verify_observed);serial_putc('\n');
     if(status!=QOTOM_XHCI_HANDOFF_OBSERVED)pre_admission_fail("qotom-xhci-handoff");
 }

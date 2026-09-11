@@ -251,5 +251,22 @@ reason from already collected values and adds no hardware reads, writes or
 weaker acceptance paths; the 274-read bound is unchanged. Tests cover each
 diagnostic kind, every final read-failure status, zero details on other results,
 and equivalence with the preceding comparison for all retained header-bit
-mutations. Native record emission and decoding of these fields are the next
-step before another physical handoff experiment.
+mutations. The versioned native record below carries these fields for the next physical
+handoff experiment.
+
+## Versioned verification record
+
+The native handoff record now uses `qotom-xhci-handoff-v2` and always emits
+`verify`, `verify-index`, `expected` and `observed`. The decoder retains explicit
+v1 support for the earlier physical rejection, which has no detail fields. It
+rejects a v1 record with details or a v2 record without all four fields. V2
+metadata carries a `verification` object; v1 metadata stays unchanged.
+
+Details must be zero outside final-verification failure. For that failure the
+decoder validates collector-status bounds, the expected captured count or offset,
+indexed prior header values, actual differences, and semaphore value consistency.
+The defensive header-offset diagnostic remains a rejection. It does not grant
+ownership or certify a reconstructed final list. Mutation tests cover both
+versions, missing or contradictory details, scalar bounds and the retained v1
+failure. The next physical capture must identify the cause without weakening
+the handoff acceptance conditions.
