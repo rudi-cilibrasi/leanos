@@ -8,6 +8,9 @@ static __attribute__((noreturn)) void lab_operational_fault(void *opaque) {
     (void)opaque;lab_operational_reader.armed=0;lab_smi_writer.armed=0;
     lab_handoff_disarm();pre_admission_fail("qotom-ehci-operational");
 }
+#ifdef LEANOS_QOTOM_EHCI_BME
+#include "qotom-ehci-bme.c.inc"
+#endif
 static void lab_observe_ehci_operational(const struct lab_ecam_root_view *view,
         const struct pci_enumeration_header *header,
         const struct qotom_ehci_capabilities *caps,
@@ -35,4 +38,7 @@ static void lab_observe_ehci_operational(const struct lab_ecam_root_view *view,
     serial_puts(" interrupt_enable=");serial_u64(result.interrupt_enable);
     serial_puts(" configured=");serial_u64(result.configured);serial_putc('\n');
     if(status!=QOTOM_EHCI_OPERATIONAL_OK)pre_admission_fail("qotom-ehci-operational");
+#ifdef LEANOS_QOTOM_EHCI_BME
+    lab_disable_ehci_bme(view,header,caps,prior,&result);
+#endif
 }

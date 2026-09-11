@@ -395,5 +395,24 @@ successful SMI disable and captured stopped-state sample to the firmware and
 root/alias checks. Rejection clears old authority. Arming performs no hardware
 access; the helper still refreshes all device state before its write. Tests
 reject all other 16-bit values, BDF/offset changes, reuse, failed stores, stale
-samples, ECAM/EHCI aliases and root/leaf interference. Native store wiring and
-protected physical validation remain outstanding.
+samples, ECAM/EHCI aliases and root/leaf interference. Native store wiring is described below. Protected physical validation remains
+outstanding.
+
+## Native BME-clear experiment
+
+The builder's `--ehci-bme` requires `--ehci-operational` and produces a separate
+`build/qotom-bme-lab` image. Native code rearms the capability and operational
+readers plus the consumed word writer, invokes the bounded helper, and revokes
+all contexts before `EHCI-BME`. Local arming failures use statuses 9–11.
+The compiled primitive uses one `mov WORD PTR [rsi],dx`; it does not store the
+adjacent PCI Status halfword. Success still terminates at qotom-platform-pending.
+
+The protected runner fingerprints the decoder and retains `ehci-bme.json`.
+Validation requires the complete operational prefix, exact stopped sample and
+captured Command before a helper outcome, consistent attempted/before/after
+fields, and the matching terminal. Failed writes and readback remain diagnostic
+observations, including a write that took effect despite reported failure.
+The actual BME terminal replaces the preceding replay projection's terminal.
+Synthetic protected tests cover those outcomes and reject missing, duplicate,
+malformed, out-of-range and contradictory records. Physical BME clear and
+recovery have not yet been attempted by this image.

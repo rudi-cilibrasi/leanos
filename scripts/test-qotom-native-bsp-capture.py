@@ -446,6 +446,46 @@ class Capture(unittest.TestCase):
         with self.assertRaises(ValueError):
             check(success,P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-operational\n')
 
+    def test_bme_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-operational-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL, source=raw):
+            changed = source[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':source[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True)
+        def record(status=0,attempted=1,before=0x406,after=0x402):
+            return f'LEANOS-LAB/1 EHCI-BME profile=qotom-bme-v1 index=10 status={status} attempted={attempted} before={before} after={after}\n'.encode()
+        success=record()
+        result=check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('ehci_bme_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['ehci_bme']['after_command'],0x402)
+        self.assertFalse(result['ehci_bme']['dma_quarantine_established'])
+        failure=P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-bme\n'
+        cases=[(n,0,0,0) for n in (3,4,5,9,10,11)]+[(6,1,0x406,0),(7,1,0x406,0),(7,1,0x406,0x406),
+            (8,1,0x406,0x402),(8,1,0x406,0x406)]
+        for values in cases:
+            result=check(record(*values),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-bme')
+            with self.assertRaises(ValueError):check(record(*values))
+        for bad in [b'',success+success,success.replace(b'status=0',b'status=00'),record(1),record(2),record(12),
+                record(attempted=0),record(before=0x402),record(after=0x406),record(after=65536),record(after=-1)]:
+            with self.assertRaises(ValueError):check(bad)
+        for bad in [record(3,1,0x406,0),record(6,1,0x406,0x402),record(7,1,0x406,0x402),record(8,0,0,0)]:
+            with self.assertRaises(ValueError):check(bad,failure)
+        with self.assertRaises(ValueError):check(success,failure)
+        running=raw.replace(b'command=524288 status_register=4096',b'command=524289 status_register=4096')
+        with self.assertRaises(ValueError):check(success,source=running)
+        self.assertEqual(check(record(11,0,0,0),failure,source=running)['ehci_bme']['status'],11)
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():
