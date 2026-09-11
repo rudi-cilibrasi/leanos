@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Replay actual MADT entry bytes and inventory mutations through scalar Lean."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+CAPTURE = ROOT / 'hardware/lab/observations/qotom-bootstrap-20260911'
+manifest = json.loads((CAPTURE / 'manifest.json').read_text())
+name = 'cycle-1/acpi/00000000b97a6ae0.bin'
+raw = (CAPTURE / name).read_bytes()
+assert hashlib.sha256(raw).hexdigest() == manifest['files'][name]
+records = []
+offset = 44
+while offset < len(raw):
+    size = raw[offset + 1]
+    assert size >= 2 and offset + size <= len(raw)
+    records.append(raw[offset:offset + size])
+    offset += size
+cpu_indices = [i for i, record in enumerate(records) if record[0] == 0]
+assert len(cpu_indices) == 4
+
+def changed(index, byte, value):
+    result = list(records)
+    record = bytearray(result[index]); record[byte] = value
+    result[index] = bytes(record)
+    return result
+
+cases = [('native', records, 0, 0), ('wrong-executing', records, 2, 76)]
+for position, index in enumerate(cpu_indices):
+    cases.append((f'disabled-{position}', changed(index, 4, 0), 0, 77))
+    cases.append((f'online-{position}', changed(index, 4, 3), 0, 73))
+    cases.append((f'wrong-id-{position}', changed(index, 3, 7), 0, 77))
+swapped = list(records)
+a, b = cpu_indices[:2]; swapped[a], swapped[b] = swapped[b], swapped[a]
+cases += [('swapped', swapped, 0, 77),
+          ('missing-last', [r for i, r in enumerate(records) if i != cpu_indices[-1]], 0, 75),
+          ('duplicate', records + [records[cpu_indices[0]]], 0, 74),
+          ('extra', records + [bytes([0, 8, 5, 8, 1, 0, 0, 0])], 0, 77),
+          ('unsupported', records + [bytes([9, 2])], 0, 70),
+          ('wrong-width', records + [bytes([0, 7])], 0, 71),
+          ('truncated', records + [bytes([0])], 0, 72)]
+
+# The test driver allocates lists; byteStepQuery itself has only scalar inputs.
+source = (ROOT / 'LeanOS/QotomMadtStream.lean').read_text()
+source += '''
+def streamTest (bytes : List UInt64) (length executing : UInt64)
+    (state : List UInt64 := [44,0,0,0,0,0,0,256,0,0,0,0]) : UInt64 × UInt64 :=
+  match bytes with
+  | [] => (0, 999)
+  | byte :: rest =>
+    let q := fun word => LeanOS.QotomMadtStream.byteStepQuery
+      state[0]! state[1]! state[2]! state[3]! state[4]! state[5]!
+      state[6]! state[7]! state[8]! state[9]! state[10]! state[11]!
+      length executing state[0]! byte word
+    if q 1 == 2 then (q 1, q 2)
+    else if rest.isEmpty then (q 1, q 2)
+    else streamTest rest length executing ((List.range 12).map fun i => q (UInt64.ofNat (i+3)))
+'''
+for label, recs, executing, error in cases:
+    data = b''.join(recs)
+    words = ','.join(map(str, data))
+    source += f'#eval streamTest [{words}] {44+len(data)} {executing}\n'
+with tempfile.TemporaryDirectory() as tmp:
+    path = Path(tmp) / 'Replay.lean'; path.write_text(source)
+    result = subprocess.run(['lake', 'env', 'lean', str(path)], cwd=ROOT,
+                            text=True, capture_output=True)
+    if result.returncode:
+        raise SystemExit(result.stdout + result.stderr)
+    actual = result.stdout.splitlines()
+    expected = [f'({2 if error else 3}, {error})' for _, _, _, error in cases]
+    if actual != expected:
+        for case, want, got in zip(cases, expected, actual):
+            if want != got: print(case[0], 'expected', want, 'got', got)
+        raise SystemExit('scalar MADT replay mismatch: ' + result.stdout)
+print(f'PASS {len(cases)} native MADT stream cases')
