@@ -75,7 +75,7 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(result['diagnostic']['pci_headers'], [])
         self.assertFalse(result['diagnostic']['platform_admitted'])
 
-    def test_native_wrapper_preserves_reads_and_first_mismatch(self):
+    def test_native_wrapper_rejects_and_preserves_first_mismatch(self):
         source = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -99,10 +99,12 @@ int main(void) {
     assert(lab_pci_read(0, 0, 1, 0, 0, &value));
     assert(value == 0x12345678 && calls == 1 && !lab_pci_trace.mismatches);
     address_readback = 0;
-    assert(lab_pci_read(0, 0, 2, 0, 0, &value));
+    assert(!lab_pci_read(0, 0, 2, 0, 0, &value));
     assert(value == 0x12345678 && calls == 2);
+    /* Exercise a second direct adapter call to check first-trace retention.
+       The real enumerator stops at the first failure (covered separately). */
     address_readback = 4;
-    assert(lab_pci_read(0, 0, 3, 0, 0, &value));
+    assert(!lab_pci_read(0, 0, 3, 0, 0, &value));
     assert(lab_pci_trace.mismatches == 2 && lab_pci_trace.reads == 3);
     assert(lab_pci_trace.first_requested == 0x80001000);
     assert(lab_pci_trace.first_observed == 0);

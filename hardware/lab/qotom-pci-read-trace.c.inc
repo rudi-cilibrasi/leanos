@@ -1,7 +1,9 @@
 #ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
 /* Lab observation only. Read back CF8 after the existing mechanism-1 reader.
  * This adds timing and an I/O read; it cannot prove exclusion of SMM or APs.
- * Never retry, repair, or replace the returned configuration value.
+ * A mismatched selector invalidates the read and stops enumeration. Preserve
+ * the raw value in the trace; never retry, repair, or substitute data. Matching
+ * readback does not prove that the selector was stable during the data read.
  */
 static struct {
     uint32_t reads, mismatches, requested, observed, value;
@@ -26,6 +28,7 @@ static int lab_pci_read(void *context, uint8_t bus, uint8_t device,
             lab_pci_trace.first_value = *value;
         }
         ++lab_pci_trace.mismatches;
+        return 0;
     }
     return ok;
 }
