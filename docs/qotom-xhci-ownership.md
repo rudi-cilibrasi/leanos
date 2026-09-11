@@ -163,7 +163,8 @@ when requesting ownership; Linux also gives BIOS one second to release it.
 The helper waits at most 100 times for 10 ms and samples support after each
 successful delay. Every sample must retain OS-owned and the original nonsemaphore
 bits. Once BIOS-owned clears, a complete final list and PCI/capability refresh
-must agree except for the two semaphore bits, and the final support sample must
+must agree except for the semaphore and documented command-manager status bits,
+and the final support sample must
 still show BIOS-clear/OS-owned. The final control sample is retained separately;
 it may change while firmware processes the request. No SMI-disable or continuing
 firmware-exclusion claim follows from this helper.
@@ -246,12 +247,13 @@ header offset or header-word difference between complete collected lists.
 Kind 6 identifies a final semaphore mismatch. Other handoff outcomes leave all
 four fields zero. The final control field retains its existing publication rule.
 
-The comparison still permits only legacy semaphore changes. It reports the
-reason from already collected values and adds no hardware reads, writes or
-weaker acceptance paths; the 274-read bound is unchanged. Tests cover each
+The final comparison permits legacy semaphore and documented command-manager
+status changes; list identity and reserved fields remain checked. It reports the
+reason from already collected values and adds no hardware reads or writes; the
+274-read bound is unchanged. Tests cover each
 diagnostic kind, every final read-failure status, zero details on other results,
-and equivalence with the preceding comparison for all retained header-bit
-mutations. The versioned native record below carries these fields for the next physical
+and header-bit mutations, including the documented live-status exception below.
+The versioned native record below carries these fields for physical
 handoff experiment.
 
 ## Versioned verification record
@@ -268,5 +270,26 @@ indexed prior header values, actual differences, and semaphore value consistency
 The defensive header-offset diagnostic remains a rejection. It does not grant
 ownership or certify a reconstructed final list. Mutation tests cover both
 versions, missing or contradictory details, scalar bounds and the retained v1
-failure. The next physical capture must identify the cause without weakening
-the handoff acceptance conditions.
+failure. The v2 physical capture identified the cause described below.
+
+## Root cause: live vendor status in an extended header
+
+The [v2 physical capture](../hardware/lab/observations/qotom-native-xhci-handoff-detail-20260911/README.md)
+identified index 2, offset `0x8040`, changing from `0x00010cc1` to `0x00000cc1`.
+Intel's [J1900 datasheet, section 14.7.138, pages 473–474](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf#page=473)
+defines bits 31:20 and 18:16 as live read-only command-manager status. Bit 16 is
+CMD_RING_RUNNING. Bit 19 is reserved; bits 15:8 and 7:0 are the next capability
+pointer and vendor ID. The observed difference is a running-to-stopped status
+transition, not changed capability identity.
+
+The final comparison now allows status mask `0xfff70000` only at `0x8040` with
+identified low word `0x0cc1`. It still checks the reserved bit, ID, link, offsets,
+count, all other headers, complete resource refreshes and final semaphores.
+The pre-request comparison remains exact. This permits live status sampling;
+it does not prove controller quiescence or DMA drain. The historical v1/v2
+rejections remain retained and replayable with their original outcomes.
+
+Tests reproduce the physical bit-16 transition and exercise all 32 bits of the
+vendor header: documented status changes pass final comparison; all others
+reject. Wrong offsets and IDs never receive the status mask. A rebuilt image
+and another protected hardware test are required to validate the corrected path.

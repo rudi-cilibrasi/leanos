@@ -22,6 +22,18 @@ struct qotom_xhci_handoff_result {
     uint32_t write_attempted, polls, last_support, final_control;
     uint32_t verify_kind, verify_index, verify_expected, verify_observed;
 };
+/* J1900 datasheet 329670-002 section 14.7.138: XECP_CMDM_STS0 at 8040
+ * has live RO status in bits31:20 and18:16. Bit19 is reserved; low16 hold
+ * the next pointer and vendor ID. Only the identified status bits may vary
+ * during the final handoff comparison. They do not prove DMA drain. */
+#define QOTOM_XHCI_CMDM_STATUS UINT32_C(0xfff70000)
+static inline uint32_t qotom_xhci_final_mutable_bits(
+        const struct qotom_xhci_ext_header *header,uint32_t legacy_offset) {
+    if(header->offset==legacy_offset)return UINT32_C(0x01010000);
+    if(header->offset==0x8040 && (header->raw&0xffff)==0x0cc1)
+        return QOTOM_XHCI_CMDM_STATUS;
+    return 0;
+}
 /* Both lists are complete successful collector outputs. Report the first
  * comparison failure without extra hardware access or partial collector data. */
 static inline int qotom_xhci_final_difference(const struct qotom_xhci_legacy *a,
@@ -39,7 +51,7 @@ static inline int qotom_xhci_final_difference(const struct qotom_xhci_legacy *a,
             out->verify_kind=QOTOM_XHCI_VERIFY_HEADER_OFFSET;out->verify_index=i;
             out->verify_expected=a->headers[i].offset;out->verify_observed=b->headers[i].offset;return 1;
         }
-        uint32_t mask=a->headers[i].offset==a->legacy_offset?UINT32_C(0x01010000):0;
+        uint32_t mask=qotom_xhci_final_mutable_bits(&a->headers[i],a->legacy_offset);
         if((a->headers[i].raw^b->headers[i].raw)&~mask) {
             out->verify_kind=QOTOM_XHCI_VERIFY_HEADER_RAW;out->verify_index=i;
             out->verify_expected=a->headers[i].raw;out->verify_observed=b->headers[i].raw;return 1;

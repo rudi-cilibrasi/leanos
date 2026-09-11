@@ -7,7 +7,7 @@ static const struct qotom_xhci_capabilities caps={{0x1000080,0x7000820,0x8400005
 static struct qotom_xhci_legacy previous;
 static uint32_t ext[8192];
 static unsigned reads,writes,delays,release_at,fail_read,fail_delay,mutation_at,initial_reads;
-static uint32_t mutation,final_support_xor,final_control,final_other_xor;
+static uint32_t mutation,final_support_xor,final_control,final_other_xor,final_vendor_xor;
 static int fail_write,ignore_write,final_drift,final_mutated;
 static unsigned slot(void) {return (previous.legacy_offset-0x8000)/4;}
 static int config(void *ctx,uint8_t b,uint8_t d,uint8_t f,uint8_t off,uint32_t *v) {
@@ -18,6 +18,7 @@ static int config(void *ctx,uint8_t b,uint8_t d,uint8_t f,uint8_t off,uint32_t *
         if(final_drift)return 0;
         ext[slot()]^=final_support_xor;
         ext[0]^=final_other_xor;
+        ext[16]^=final_vendor_xor;
         ext[slot()+1]=final_control;
     }
     *v=initial.words[off/4];return 1;
@@ -54,7 +55,7 @@ static void reset(void) {
     for(unsigned i=0;i<previous.count;++i)ext[(previous.headers[i].offset-0x8000)/4]=previous.headers[i].raw;
     ext[slot()+1]=0x2001;
     reads=writes=delays=fail_read=fail_delay=mutation_at=0;initial_reads=45;
-    release_at=1;mutation=final_support_xor=final_other_xor=0;final_control=0x2000;
+    release_at=1;mutation=final_support_xor=final_other_xor=final_vendor_xor=0;final_control=0x2000;
     fail_write=ignore_write=final_drift=final_mutated=0;
 }
 static void maximum(void) {
@@ -138,8 +139,19 @@ int main(void) {
         changed=previous;changed.headers[entry].raw^=UINT32_C(1)<<bit;
         out=(struct qotom_xhci_handoff_result){0};
         assert(qotom_xhci_final_difference(&previous,&changed,&out)==
-            !qotom_xhci_same_legacy(&previous,&changed,UINT32_C(0x01010000)));
+            (entry==2 && ((UINT32_C(1)<<bit)&QOTOM_XHCI_CMDM_STATUS)?0:
+                !qotom_xhci_same_legacy(&previous,&changed,UINT32_C(0x01010000))));
     }
+    for(unsigned bit=0;bit<32;++bit) {
+        reset();final_vendor_xor=UINT32_C(1)<<bit;
+        check((final_vendor_xor&QOTOM_XHCI_CMDM_STATUS)?QOTOM_XHCI_HANDOFF_OBSERVED:QOTOM_XHCI_HANDOFF_FINAL);
+    }
+    reset();final_vendor_xor=0x10000;check(QOTOM_XHCI_HANDOFF_OBSERVED);
+    assert(ext[16]==0xcc1 && out.last_support==0x01000801 && out.final_control==0x2000);
+    struct qotom_xhci_ext_header other={0x8044,0x10cc1};
+    assert(!qotom_xhci_final_mutable_bits(&other,0x8460));
+    other=(struct qotom_xhci_ext_header){0x8040,0x10cc0};
+    assert(!qotom_xhci_final_mutable_bits(&other,0x8460));
     reset();previous.count=49;check(QOTOM_XHCI_HANDOFF_DRIFT);
     reset();previous.headers[0].raw^=0x100;check(QOTOM_XHCI_HANDOFF_DRIFT);
     reset();previous.control_status^=1;check(QOTOM_XHCI_HANDOFF_DRIFT);
