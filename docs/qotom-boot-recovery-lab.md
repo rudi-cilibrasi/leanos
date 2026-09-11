@@ -224,3 +224,40 @@ can be captured and replayed without becoming a successful inventory result.
 Neither recovery nor an inventory match authorizes platform admission or CPL3.
 QEMU checks the completion-mode prefix and PCI observations on an unrelated
 host bridge; it does not verify the physical board-specific reset timer.
+
+## Raw GRUB handoff observation
+
+For a diagnostic capture of the actual bootloader bytes, add
+`--handoff-capture` alongside `--pci-diagnostic` to both the lab builder and
+the physical recovery runner. The builder's `boot/kernel.c` input remains
+unchanged; only the opt-in overlay emits the additional lab records. It
+checks the Multiboot2 magic, pointer alignment, initial 16 MiB mapping bound,
+and a 16–65,536 byte aligned extent before reading the payload. Rejected
+extents emit status 1 and no payload. Valid extents are emitted in ordered
+64-byte hex chunks before the ordinary CPU/PCI diagnostic records.
+
+The observer retains `multiboot2.bin` byte-for-byte and a `handoff.json`
+metadata report, including the executing initial APIC ID, raw hash, tag-chain
+shape, memory-map entry format, and advertised framebuffer geometry when
+present. The handoff decoder hash is bound before and after recording.
+Malformed or unknown tag content is retained; a structurally valid chain
+alone does not grant memory, topology, or display authority. Referenced ACPI
+tables outside the Multiboot2 block are not copied by this mode and remain a
+separate capture requirement. The byte stream is an observation, not proof
+that firmware or other processors could not modify memory during the read.
+
+Run the transport and native read-bound checks, then the actual overlay in
+QEMU (including CPU rejection and PCI overflow cases):
+
+```sh
+python3 scripts/test-qotom-handoff-capture.py
+python3 scripts/test-qotom-pci-diagnostic-image.py \
+  --elf build/qotom-pci-lab/leanos-qotom-lab.elf \
+  --output build/qotom-handoff-qemu --lab-completion --handoff-capture
+```
+
+The handoff records use the `LEANOS-LAB/1` namespace. The existing generated
+CPU/PCI stream and its terminal result are unchanged. The runner requires an
+explicit handoff flag so an unexpected prelude cannot silently pass as an
+ordinary diagnostic capture. Physical display acceptance still requires an
+operator observation; framebuffer metadata does not establish visible output.

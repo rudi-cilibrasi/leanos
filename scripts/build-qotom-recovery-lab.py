@@ -13,7 +13,11 @@ p.add_argument('--prepared-repo', type=Path, required=True)
 p.add_argument('--mode', choices=('completion', 'kernel-hang'), default='completion')
 p.add_argument('--pci-diagnostic', action='store_true',
                help='build the PCI diagnostic with completion reset transport')
+p.add_argument('--handoff-capture', action='store_true',
+               help='retain bounded raw GRUB handoff before PCI diagnostic')
 a = p.parse_args()
+if a.handoff_capture and not a.pci_diagnostic:
+    p.error('--handoff-capture requires --pci-diagnostic')
 if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
@@ -50,6 +54,13 @@ else:
     for (;;) {
         __asm__ volatile ("cli; hlt");
     }''')
+if a.handoff_capture:
+    marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
+    if text.count(marker) != 1:
+        raise SystemExit('unsupported kernel entry shape')
+    text = text.replace(marker, (root / 'hardware/lab/qotom-handoff.c.inc').read_text() + '\n' + marker)
+    text = text.replace('    initialize_early_text(multiboot_magic, multiboot_info);',
+                        '    initialize_early_text(multiboot_magic, multiboot_info);\n    lab_capture_handoff(multiboot_magic, multiboot_info);')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -66,7 +77,9 @@ subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
 if a.mode == 'completion':
     files.append(root / 'hardware/lab/qotom-finish.c.inc')
-manifest = {'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.handoff_capture:
+    files.extend([root / 'hardware/lab/qotom-handoff.c.inc', root / 'include/boot_handoff_capture.h'])
+manifest = {'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

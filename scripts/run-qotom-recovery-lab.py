@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import re
+import runpy
 import select
 import shlex
 import subprocess
@@ -196,12 +197,18 @@ def cpu_replay_module(pci=False):
     return module
 
 
-def cpu_diagnostic_bytes(events, protocol):
+def cpu_diagnostic_bytes(events, protocol, handoff=False):
     data = b''.join(bytes.fromhex(e['hex']) for e in events)
     mode = EXPECTED[:-len(EXPECTED_KERNEL)]
     if data.count(mode) != 1:
         raise ValueError('missing or repeated recovery mode record')
     start = data.find(mode) + len(mode)
+    prelude = b''
+    if handoff:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-handoff-capture.py')))
+        consumed, _, _ = decoder['parse_prefix'](data[start:])
+        prelude = data[start:start + consumed]
+        start += consumed
     if not data.startswith(protocol['BOOT'].encode('ascii'), start):
         raise ValueError('CPU diagnostic must immediately follow recovery mode')
     final = data.find(protocol['FINAL'].encode('ascii'), start)
@@ -209,27 +216,34 @@ def cpu_diagnostic_bytes(events, protocol):
     if end < 0:
         raise ValueError('missing CPU diagnostic terminal')
     raw = data[start:end + 1]
-    return mode + raw, raw
+    return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
             'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
     if pci_replay is not None:
         result['pci_replay_executable_sha256'] = hashlib.sha256(Path(pci_replay).read_bytes()).hexdigest()
+    if handoff:
+        result['handoff_decoder_sha256'] = hashlib.sha256(
+            Path(__file__).with_name('check-qotom-handoff-capture.py').read_bytes()).hexdigest()
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False):
     module = cpu_replay_module(pci_replay is not None)
     protocol = module.load_protocol(protocol_path)
-    expected, raw = cpu_diagnostic_bytes(events, protocol)
+    expected, raw = cpu_diagnostic_bytes(events, protocol, handoff)
     result = classify_protected(events, digest, expected, protocol['BOOT'].encode('ascii'))
     replay_paths = [Path(replay).resolve()]
     if pci_replay is not None:
         replay_paths.append(Path(pci_replay).resolve())
     diagnostic = module.classify(raw, protocol, *replay_paths)
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay))
+    if handoff:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-handoff-capture.py')))
+        mode = EXPECTED[:-len(EXPECTED_KERNEL)]
+        _, _, result['handoff'] = decoder['parse_prefix'](expected[len(mode):])
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff))
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
                   diagnostic=diagnostic)
     return result
@@ -258,7 +272,10 @@ def main():
                         default=Path(__file__).resolve().parents[1] / 'build/j1900-cpu-host/host')
     parser.add_argument('--pci-replay', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'build/qotom-pci-inventory-host/host')
+    parser.add_argument('--handoff-capture', action='store_true')
     args = parser.parse_args()
+    if args.handoff_capture and not args.pci_diagnostic:
+        parser.error('--handoff-capture requires --pci-diagnostic')
     has_diagnostic = args.cpu_diagnostic or args.pci_diagnostic
     pci_replay = args.pci_replay if args.pci_diagnostic else None
     if has_diagnostic:
@@ -280,7 +297,7 @@ def main():
                 parser.error('PCI replay did not report its corpus self-test')
             if cpu_replay_module().replay_words(pci_replay.resolve(), 'inventory', [0]) != 65536:
                 parser.error('PCI replay lacks the bounded inventory interface')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay)
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -415,12 +432,18 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
-                _, raw = cpu_diagnostic_bytes(events, protocol)
+                expected, raw = cpu_diagnostic_bytes(events, protocol, args.handoff_capture)
+                if args.handoff_capture:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-handoff-capture.py')))
+                    mode = EXPECTED[:-len(EXPECTED_KERNEL)]
+                    _, binary, metadata = decoder['parse_prefix'](expected[len(mode):])
+                    (directory / 'multiboot2.bin').write_bytes(binary)
+                    (directory / 'handoff.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 (directory / 'diagnostic.raw').write_bytes(raw)
             else:
                 result = classify_protected(events, digest)
