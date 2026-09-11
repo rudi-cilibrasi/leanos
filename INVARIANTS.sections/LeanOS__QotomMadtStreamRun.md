@@ -14,3 +14,9 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `run_cons_success` — A successful nonempty traversal exposes its actual successful first step and remaining run.
 - `step_starts_record` — Starting at a cleared record boundary carries the actual kind-byte projections and preserves all inventory fields.
 - `run_header_retains_framing` — A successful two-byte header run proves a supported kind, its matching length, payload offset two, cleared payload fields and unchanged inventory from the original state.
+
+- `step_payload_framing` — Successful payload steps carry unchanged kind and length with the record offset advanced by one.
+- `step_completes_boundary` — A successful completed record returns the actual carried state to cleared partial fields.
+- `step_nonprocessor_inventory` — Non-processor payload steps preserve all six carried inventory fields.
+- `run_nonprocessor_payload` — Traversing a complete bounded non-processor payload returns to a record boundary with unchanged inventory.
+- `run_nonprocessor_record` — A successful header-plus-payload traversal of a correctly sized non-processor record preserves the original inventory and returns to a boundary.

@@ -75,7 +75,10 @@ composes byte segments through the actual intermediate result, and
 `run_consumes_exact_length` proves exact consumption in natural-number
 arithmetic, with no wrapped offset advancement. `run_header_retains_framing`
 composes the actual kind and length steps from a cleared boundary, establishing
-supported framing and unchanged inventory after both bytes. This model is
+supported framing and unchanged inventory after both bytes.
+`run_nonprocessor_record` composes a complete correctly sized non-processor
+record, proving boundary restoration and inventory preservation for arbitrary
+payload bytes. It does not validate the ignored routing fields. This model is
 not a production export; its full equivalence proof remains unfinished.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
