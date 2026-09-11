@@ -437,6 +437,39 @@ theorem decode_local_apic_record_cons
   · simp [requireByte, byteAt, localApicRecordLength, decoded, bind_ok, map_ok, enough]
   · simp
 
+/-- The reference decoder skips exactly the supported non-processor record
+width while preserving the following record stream. Routing fields remain
+outside processor-topology decoding. -/
+theorem decode_irrelevant_record_cons (fuel : Nat) (kind width : UInt8)
+    (payload rest : List UInt8) (records : List RawMadtRecord)
+    (supported : (kind = 1 ∧ width = 12) ∨ (kind = 2 ∧ width = 10) ∨
+      (kind = 4 ∧ width = 6))
+    (sized : payload.length + 2 = width.toNat)
+    (decoded : decodeMadtBytesAux fuel rest = .ok records) :
+    decodeMadtBytesAux (fuel + 1) ([kind, width] ++ payload ++ rest) =
+      .ok (.topologyIrrelevant kind width.toNat :: records) := by
+  have bind_ok {α β : Type} (a : α) (f : α → Except DecodeError β) :
+      (Except.ok a >>= f) = f a := rfl
+  have map_ok {α β : Type} (a : α) (f : α → β) :
+      f <$> (Except.ok a : Except DecodeError α) = .ok (f a) := rfl
+  have dropped : ([kind, width] ++ payload ++ rest).drop width.toNat = rest := by
+    have prefixLength : ([kind, width] ++ payload).length = width.toNat := by
+      simp only [List.length_append, List.length_cons, List.length_nil]
+      omega
+    rw [← prefixLength]
+    simp
+  have enough : ¬([kind, width] ++ payload ++ rest).length < width.toNat := by
+    simp only [List.length_append, List.length_cons, List.length_nil]
+    omega
+  rcases supported with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    simp at dropped enough
+    rw [decodeMadtBytesAux]
+    · simp [requireByte, byteAt, topologyIrrelevantRecordLength, bind_ok,
+        map_ok, dropped, decoded]
+      omega
+    · simp
+
 def decodeMadtBytes (bytes : List UInt8) : Except DecodeError (List RawMadtRecord) :=
   decodeMadtBytesAux bytes.length bytes
 
@@ -475,6 +508,43 @@ def normalizeMadtRecords (records : List RawMadtRecord)
     executingId
     processors
   }
+
+/-- The normalizer preserves the exact processor fields of valid decoded
+records and attaches its ACPI provenance once their count is bounded. -/
+theorem normalize_valid_madt_records (records : List RawMadtRecord)
+    (processors : List Processor) (bspId executingId : UInt32)
+    (valid : ∀ record ∈ records, match record with
+      | .localApic length _ _ _ => length = localApicRecordLength
+      | .topologyIrrelevant _ _ => True
+      | .unsupported _ _ => False)
+    (fields : records.filterMap (fun record => match record with
+      | .localApic _ id enabled online => some (⟨id, enabled, online⟩ : Processor)
+      | _ => none) = processors)
+    (bounded : processors.length ≤ maxProcessors) :
+    normalizeMadtRecords records bspId executingId = .ok {
+      source := .acpiMadt, version := snapshotVersion, bspId, executingId, processors } := by
+  have bind_ok {α β : Type} (a : α) (f : α → Except DecodeError β) :
+      (Except.ok a >>= f) = f a := rfl
+  have decoded : decodeProcessors records = .ok (records.filterMap (fun record => match record with
+      | .localApic _ id enabled online => some (⟨id, enabled, online⟩ : Processor)
+      | _ => none)) := by
+    clear fields
+    induction records with
+    | nil => rfl
+    | cons record rest ih =>
+      have head := valid record (by simp)
+      have tail := ih (by intro r member; exact valid r (by simp [member]))
+      cases record with
+      | localApic width id enabled online =>
+        simp only at head
+        subst width
+        simp [decodeProcessors, decodeProcessor, localApicRecordLength, tail, bind_ok]
+        rfl
+      | topologyIrrelevant kind width => simpa [decodeProcessors] using tail
+      | unsupported kind width => exact False.elim head
+  rw [fields] at decoded
+  simp [normalizeMadtRecords, decoded, bind_ok, show ¬processors.length > maxProcessors by omega]
+  rfl
 
 def repositoryMadtRecords : List RawMadtRecord :=
   [.localApic localApicRecordLength 0 true false]

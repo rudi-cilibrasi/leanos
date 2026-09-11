@@ -123,3 +123,6 @@ At startup, firmware describes the machine's processors in a family of tables ca
 - `repository_machine_topology_forged_executing_apic_rejected` — A worked check: the same reference data is rejected by the policy when the claimed executing processor's identity is 1 instead of the admitted 0.
 
 - `decode_local_apic_record_cons` — A complete local-APIC record with arbitrary payload bytes decodes to its exact ID and little-endian flags followed by the successfully decoded remaining records.
+
+- `decode_irrelevant_record_cons` — Supported non-processor records consume their exact payload width and preserve the following reference-decoded records.
+- `normalize_valid_madt_records` — The authoritative normalizer preserves the exact bounded processor fields of valid raw records and attaches its ACPI source/version provenance.

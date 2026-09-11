@@ -95,10 +95,21 @@ accepted with terminal status from the initial state has exactly the complete
 ordered baseline processor inventory, without a caller-supplied decomposition
 or final count assumption.
 
-The remaining refinement work is to connect that constructed record view to
-the authoritative complete MADT decoder and normalizer, including the outer
-validated table envelope. This model is not a production export; production
-wiring and its hardware admission obligations remain unfinished.
+`WireRecord.rawValue` retains the reference decoder’s processor fields and
+supported non-processor framing. `run_records_reference_decode` proves that the
+actual successful record sequence decodes to that exact reference view, with
+byte-count fuel sufficient for all records. The normalizer bridge proves its
+exact processor list and ACPI source/version provenance.
+`validated_table_reference_snapshot` establishes complete-table soundness:
+after the existing ACPI envelope and fixed MADT header checks, successful
+terminal traversal of that validated table’s entry bytes yields the exact
+Qotom baseline through `decodeCompleteMadtSnapshot`.
+
+This is a soundness theorem for successful traversal, not a proof that every
+reference-admitted table succeeds in the scalar implementation. The allocating
+model is not a production export. Production consumption still needs the full
+terminal-state/finish contract and machine-boundary integration, including AP
+dormancy, interrupt routing and the other hardware admission obligations.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
 toolchain on PATH and the pinned CI container for sanitizer runs. Pass

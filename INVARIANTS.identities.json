@@ -2223,6 +2223,12 @@
     },
     {
       "source": "LeanOS/BootTopology.lean",
+      "qualified": "LeanOS.BootTopology.decode_irrelevant_record_cons",
+      "display": "decode_irrelevant_record_cons",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootTopology.lean",
       "qualified": "LeanOS.BootTopology.decode_local_apic_record_cons",
       "display": "decode_local_apic_record_cons",
       "kind": "theorem"
@@ -2603,6 +2609,12 @@
       "source": "LeanOS/BootTopology.lean",
       "qualified": "LeanOS.BootTopology.mixed_q35_madt_bytes_admitted",
       "display": "mixed_q35_madt_bytes_admitted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootTopology.lean",
+      "qualified": "LeanOS.BootTopology.normalize_valid_madt_records",
+      "display": "normalize_valid_madt_records",
       "kind": "theorem"
     },
     {
@@ -14445,6 +14457,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.initialized_raw_reference_snapshot",
+      "display": "initialized_raw_reference_snapshot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.initialized_raw_terminal_inventory",
       "display": "initialized_raw_terminal_inventory",
       "kind": "theorem"
@@ -14459,6 +14477,18 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.initialized_terminal_records_inventory",
       "display": "initialized_terminal_records_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.records_length_le_bytes",
+      "display": "records_length_le_bytes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.records_reference_normalize",
+      "display": "records_reference_normalize",
       "kind": "theorem"
     },
     {
@@ -14547,6 +14577,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_record_reference_decode",
+      "display": "run_record_reference_decode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_records_count",
       "display": "run_records_count",
       "kind": "theorem"
@@ -14555,6 +14591,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_records_members",
       "display": "run_records_members",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_records_reference_decode",
+      "display": "run_records_reference_decode",
       "kind": "theorem"
     },
     {
@@ -14639,6 +14681,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_terminal_count",
       "display": "step_terminal_count",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.validated_table_reference_snapshot",
+      "display": "validated_table_reference_snapshot",
       "kind": "theorem"
     },
     {

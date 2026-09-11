@@ -679,6 +679,81 @@ def WireRecord.processorValue : WireRecord → Option BootTopology.Processor
       some ⟨id.toUInt32, value % 2 == 1, (value / 2) % 2 == 1⟩
   | .ignored _ _ _ _ _ => none
 
+/-- Reference decoder record retaining the exact admitted field semantics. -/
+def WireRecord.rawValue : WireRecord → BootTopology.RawMadtRecord
+  | .processor _ id b0 b1 b2 b3 =>
+      let value := b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216
+      .localApic 8 id.toUInt32 (value % 2 == 1) (value / 2 % 2 == 1)
+  | .ignored kind width _ _ _ => .topologyIrrelevant kind width.toNat
+
+/-- Every successfully streamed record decodes to its exact reference record,
+and its resulting carried state is a boundary for the next record. -/
+theorem run_record_reference_decode (length executing : UInt64) (state result : State)
+    (record : WireRecord) (boundary : AtBoundary state)
+    (accepted : run length executing state record.bytes = .ok result) :
+    AtBoundary result ∧ ∀ (fuel : Nat) (rest : List UInt8)
+      (decodedRest : List BootTopology.RawMadtRecord),
+      BootTopology.decodeMadtBytesAux fuel rest = .ok decodedRest →
+      BootTopology.decodeMadtBytesAux (fuel + 1) (record.bytes ++ rest) =
+        .ok (record.rawValue :: decodedRest) := by
+  cases record with
+  | processor uid id b0 b1 b2 b3 =>
+    have done := run_processor_record length executing state result uid id b0 b1 b2 b3 boundary accepted
+    refine ⟨done.1, ?_⟩
+    intro fuel rest decodedRest decoded
+    simpa [WireRecord.bytes, WireRecord.rawValue] using
+      BootTopology.decode_local_apic_record_cons fuel uid id b0 b1 b2 b3 rest decodedRest decoded
+  | ignored kind width payload nonprocessor sized =>
+    have done := run_nonprocessor_record length executing state result kind width payload
+      boundary nonprocessor sized accepted
+    obtain ⟨middle, headerRun, _⟩ := run_append_success length executing state result
+      [kind, width] payload accepted
+    have header := run_header_retains_framing length executing state middle kind width boundary headerRun
+    have supported : (kind = 1 ∧ width = 12) ∨ (kind = 2 ∧ width = 10) ∨
+        (kind = 4 ∧ width = 6) := by
+      have declared := header.2.1
+      rcases header.1 with h | h | h | h
+      · exact False.elim (nonprocessor h)
+      all_goals
+        simp [h] at declared
+        have kindNat := congrArg UInt64.toNat h
+        have widthNat := congrArg UInt64.toNat declared
+        simp at kindNat widthNat
+        simp only [← UInt8.toNat_inj]
+        simp_all
+    refine ⟨done.1, ?_⟩
+    intro fuel rest decodedRest decoded
+    exact BootTopology.decode_irrelevant_record_cons fuel kind width payload rest
+      decodedRest supported sized decoded
+
+/-- Successful record sequences agree with the reference decoder whenever
+its fuel bounds the number of records actually present. -/
+theorem run_records_reference_decode (length executing : UInt64) (state result : State)
+    (records : List WireRecord) (fuel : Nat) (enough : records.length ≤ fuel)
+    (boundary : AtBoundary state)
+    (accepted : run length executing state (records.flatMap WireRecord.bytes) = .ok result) :
+    BootTopology.decodeMadtBytesAux fuel (records.flatMap WireRecord.bytes) =
+      .ok (records.map WireRecord.rawValue) := by
+  induction records generalizing state fuel with
+  | nil => simp [BootTopology.decodeMadtBytesAux]
+  | cons record rest ih =>
+    cases fuel with
+    | zero => simp at enough
+    | succ fuel =>
+      obtain ⟨middle, firstRun, tailRun⟩ := run_append_success length executing state result
+        record.bytes (rest.flatMap WireRecord.bytes) accepted
+      have first := run_record_reference_decode length executing state middle record boundary firstRun
+      have decodedTail := ih middle fuel (by simpa using enough) first.1 tailRun
+      exact first.2 fuel _ _ decodedTail
+
+/-- The reference decoder's byte-count fuel suffices for every record view. -/
+theorem records_length_le_bytes (records : List WireRecord) :
+    records.length ≤ (records.flatMap WireRecord.bytes).length := by
+  induction records with
+  | nil => simp
+  | cons record rest ih =>
+    cases record <;> simp_all [WireRecord.bytes] <;> omega
+
 /-- A correctly sized supported header and its actual payload have a
 byte-preserving record view; processor fields are taken directly from the bytes. -/
 theorem wire_record_of_payload (kind width : UInt8) (payload : List UInt8)
@@ -900,5 +975,68 @@ theorem initialized_raw_terminal_inventory (length executing : UInt64)
   apply initialized_terminal_records_inventory length executing result records
   · simpa [exactBytes] using accepted
   · exact terminal
+
+/-- The authoritative normalizer preserves a bounded record view's exact
+processor list, while supplying its own source/version provenance. -/
+theorem records_reference_normalize (records : List WireRecord)
+    (bspId executingId : UInt32)
+    (bounded : (records.filterMap WireRecord.processorValue).length ≤ BootTopology.maxProcessors) :
+    BootTopology.normalizeMadtRecords (records.map WireRecord.rawValue) bspId executingId =
+      .ok {
+        source := .acpiMadt
+        version := BootTopology.snapshotVersion
+        bspId
+        executingId
+        processors := records.filterMap WireRecord.processorValue } := by
+  apply BootTopology.normalize_valid_madt_records
+  · intro raw member
+    obtain ⟨record, _, rfl⟩ := List.mem_map.mp member
+    cases record <;> simp [WireRecord.rawValue, BootTopology.localApicRecordLength]
+  · induction records with
+    | nil => rfl
+    | cons record rest ih =>
+      have restBound : (rest.filterMap WireRecord.processorValue).length ≤ BootTopology.maxProcessors := by
+        cases record <;> simp_all [WireRecord.processorValue] <;> omega
+      cases record <;> simp_all [WireRecord.rawValue, WireRecord.processorValue]
+  · exact bounded
+
+/-- Terminal raw-byte stream success agrees with the authoritative entry
+ decoder and normalizer, including the complete baseline snapshot. -/
+theorem initialized_raw_reference_snapshot (length executing : UInt64)
+    (result : State) (bytes : List UInt8)
+    (accepted : run length executing initial bytes = .ok result)
+    (terminal : result.status = 3) :
+    ∃ records : List BootTopology.RawMadtRecord,
+      BootTopology.decodeMadtBytes bytes = .ok records ∧
+      BootTopology.normalizeMadtRecords records 0 0 = .ok QotomBspTopology.baseline := by
+  obtain ⟨records, exactBytes, inventory⟩ := initialized_raw_terminal_inventory
+    length executing result bytes accepted terminal
+  have streamed : run length executing initial (records.flatMap WireRecord.bytes) = .ok result := by
+    simpa [exactBytes] using accepted
+  have enough : records.length ≤ bytes.length := by
+    simpa [exactBytes] using records_length_le_bytes records
+  have decoded := run_records_reference_decode length executing initial result records bytes.length
+    enough (by simp [AtBoundary, initial]) streamed
+  refine ⟨records.map WireRecord.rawValue, ?_, ?_⟩
+  · simpa [BootTopology.decodeMadtBytes, exactBytes] using decoded
+  · have bounded : (records.filterMap WireRecord.processorValue).length ≤ BootTopology.maxProcessors := by
+      simp [inventory, QotomBspTopology.processors, BootTopology.maxProcessors]
+    simpa [inventory, QotomBspTopology.baseline] using records_reference_normalize records 0 0 bounded
+
+/-- Once the actual complete table has passed the existing envelope and fixed
+header checks, terminal stream success implies the authoritative complete-table
+snapshot. The stream consumes this validated table's entry bytes. -/
+theorem validated_table_reference_snapshot (bytes : List UInt8)
+    (table : BootTopology.ValidAcpiSdt) (result : State)
+    (validated : BootTopology.validateAcpiSdt [0x41, 0x50, 0x49, 0x43] bytes = .ok table)
+    (header : BootTopology.acpiMadtHeaderLength ≤ table.length)
+    (accepted : run (UInt64.ofNat table.length) 0 initial
+      (table.bytes.drop BootTopology.acpiMadtHeaderLength) = .ok result)
+    (terminal : result.status = 3) :
+    BootTopology.decodeCompleteMadtSnapshot bytes 0 0 = .ok QotomBspTopology.baseline := by
+  obtain ⟨records, decoded, normalized⟩ := initialized_raw_reference_snapshot
+    (UInt64.ofNat table.length) 0 result _ accepted terminal
+  simp [BootTopology.decodeCompleteMadtSnapshot, validated,
+    show ¬table.length < BootTopology.acpiMadtHeaderLength by omega, decoded, normalized]
 
 end LeanOS.QotomMadtStreamRun

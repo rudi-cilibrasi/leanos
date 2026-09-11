@@ -44,3 +44,10 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `wire_record_of_payload` — A correctly sized header and payload construct a record view that preserves every supplied byte.
 - `run_boundary_record_decomposition` — A successful raw-byte traversal between boundaries constructs a complete record decomposition without caller-supplied parsed records.
 - `initialized_raw_terminal_inventory` — Terminal success on arbitrary bytes from the initial state constructs their exact record view and proves the complete ordered baseline processor inventory.
+
+- `run_record_reference_decode` — Every successful complete streamed record produces exactly its reference-decoded raw record and restores a boundary.
+- `run_records_reference_decode` — Successful record sequences agree with the authoritative entry decoder whenever its fuel bounds their record count.
+- `records_length_le_bytes` — Byte-count fuel always suffices for a byte-preserving record sequence.
+- `records_reference_normalize` — Normalizing the reference record view produces its exact bounded processor list with authoritative provenance.
+- `initialized_raw_reference_snapshot` — Terminal success from the initial state agrees with authoritative raw-entry decoding and normalization to the Qotom baseline snapshot.
+- `validated_table_reference_snapshot` — After existing ACPI envelope and fixed-header validation, terminal stream success yields the authoritative complete-table baseline snapshot.
