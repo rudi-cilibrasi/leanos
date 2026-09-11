@@ -219,9 +219,12 @@ def cpu_diagnostic_bytes(events, protocol, handoff=False):
     return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
              'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+    if bsp_replay is not None:
+        result['bsp_replay_executable_sha256'] = hashlib.sha256(Path(bsp_replay).read_bytes()).hexdigest()
+        result['bsp_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-bsp-capture.py').read_bytes()).hexdigest()
     if native_kernel:
         result['native_kernel_inventory_enabled'] = True
     if native_inventory:
@@ -258,7 +261,9 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acp
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None):
+    if bsp_replay is not None and not native_kernel:
+        raise ValueError('native BSP replay requires kernel native inventory')
     if native_kernel and not native_inventory:
         raise ValueError('kernel native inventory requires native replay selection')
     if native_inventory and not ecam_read:
@@ -289,31 +294,36 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     if acpi:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-acpi-capture.py')))
         raw, result['acpi'], tables = decoder['extract'](raw, handoff_bytes, dsdt=dsdt)
+    bsp_rejected = False
+    if bsp_replay is not None:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bsp-capture.py')))
+        raw, result['native_bsp'] = decoder['extract'](raw, protocol, result['acpi'], tables, Path(bsp_replay).resolve())
+        bsp_rejected = result['native_bsp'] is not None and result['native_bsp']['observation']['status'] != 0
     if ecam_read:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-capture.py')))
-        raw, result['ecam'] = decoder['extract'](raw, protocol, result['acpi'], tables)
+        raw, result['ecam'] = decoder['extract'](raw, protocol, result['acpi'], tables, bsp_failure=bsp_rejected)
     if ecam_memory:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-memory-capture.py')))
-        raw, result['ecam_memory'] = decoder['extract'](raw, protocol, ecam_failure=ecam_read)
+        raw, result['ecam_memory'] = decoder['extract'](raw, protocol, ecam_failure=ecam_read, bsp_failure=bsp_rejected)
     if bootstrap:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bootstrap-capture.py')))
-        raw, result['bootstrap'] = decoder['extract'](raw, protocol, ecam_failure=ecam_read)
+        raw, result['bootstrap'] = decoder['extract'](raw, protocol, ecam_failure=ecam_read, bsp_failure=bsp_rejected)
     if pci_read_trace:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-read-trace.py')))
         raw, result['pci_read_trace'] = decoder['extract'](raw, protocol)
     ecam_terminal = ecam_read and any(raw.endswith(protocol['FINAL'].encode() +
         b' status=FAIL reason=' + reason + b'\n') for reason in
         (b'qotom-ecam-arm', b'qotom-ecam-transaction'))
-    if ecam_terminal:
-        # Replay only the CPU/MSR prefix; retain the actual ECAM terminal.
+    if ecam_terminal or bsp_rejected:
+        # Replay only the CPU/MSR prefix; retain the actual BSP/ECAM terminal.
         projection = raw.replace(b'phase=pci-inventory-diagnostic', b'phase=cpu-diagnostic', 1)
-        diagnostic = module.CPU.classify(projection, protocol, replay_paths[0], ecam_failure=True)
+        diagnostic = module.CPU.classify(projection, protocol, replay_paths[0], ecam_failure=ecam_terminal, bsp_failure=bsp_rejected)
         diagnostic['capture_sha256'] = hashlib.sha256(raw).hexdigest()
-        diagnostic['replay_scope'] = 'cpu-msr-before-ecam-failure'
+        diagnostic['replay_scope'] = 'cpu-msr-before-bsp-failure' if bsp_rejected else 'cpu-msr-before-ecam-failure'
     else:
         diagnostic = (module.classify(raw, protocol, *replay_paths, native_inventory=True, native_kernel=native_kernel)
                       if native_inventory else module.classify(raw, protocol, *replay_paths))
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel))
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay))
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
                   diagnostic=diagnostic)
     return result
@@ -351,7 +361,10 @@ def main():
     parser.add_argument('--ecam-read', action='store_true')
     parser.add_argument('--native-inventory', action='store_true')
     parser.add_argument('--native-kernel', action='store_true')
+    parser.add_argument('--bsp-replay', type=Path, help='enable native BSP capture and provide its generated replay executable')
     args = parser.parse_args()
+    if args.bsp_replay is not None and not args.native_kernel:
+        parser.error('--bsp-replay requires --native-kernel')
     if args.native_kernel and not args.native_inventory:
         parser.error('--native-kernel requires --native-inventory')
     if args.native_inventory and not args.ecam_read:
@@ -393,7 +406,11 @@ def main():
                 parser.error('native inventory replay did not report its corpus self-test')
             if cpu_replay_module().replay_words(pci_replay.resolve(), 'inventory', [0]) != 65536:
                 parser.error('PCI replay lacks the bounded inventory interface')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel)
+        if args.bsp_replay is not None:
+            identity = subprocess.run([str(args.bsp_replay.resolve()), '--identity'], capture_output=True, check=True, timeout=30)
+            if identity.stdout != b'LeanOS native BSP replay v1\n':
+                parser.error('native BSP replay identity mismatch')
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -528,10 +545,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(events, protocol, args.handoff_capture)
                 if args.handoff_capture:
@@ -547,17 +564,23 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     for filename, content in tables.items():
                         (directory / 'acpi' / filename).write_bytes(content)
                     (directory / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
+                bsp_rejected = False
+                if args.bsp_replay is not None:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bsp-capture.py')))
+                    raw, bsp_metadata = decoder['extract'](raw, protocol, metadata, tables, args.bsp_replay.resolve())
+                    bsp_rejected = bsp_metadata is not None and bsp_metadata['observation']['status'] != 0
+                    (directory / 'native-bsp.json').write_text(json.dumps(bsp_metadata, indent=2) + '\n')
                 if args.ecam_read:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-capture.py')))
-                    raw, ecam_metadata = decoder['extract'](raw, protocol, metadata, tables)
+                    raw, ecam_metadata = decoder['extract'](raw, protocol, metadata, tables, bsp_failure=bsp_rejected)
                     (directory / 'ecam.json').write_text(json.dumps(ecam_metadata, indent=2) + '\n')
                 if args.ecam_memory_capture:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-memory-capture.py')))
-                    raw, metadata = decoder['extract'](raw, protocol, ecam_failure=args.ecam_read)
+                    raw, metadata = decoder['extract'](raw, protocol, ecam_failure=args.ecam_read, bsp_failure=bsp_rejected)
                     (directory / 'ecam-memory.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 if args.bootstrap_capture:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bootstrap-capture.py')))
-                    raw, metadata = decoder['extract'](raw, protocol, ecam_failure=args.ecam_read)
+                    raw, metadata = decoder['extract'](raw, protocol, ecam_failure=args.ecam_read, bsp_failure=bsp_rejected)
                     (directory / 'bootstrap.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 if args.pci_read_trace:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-read-trace.py')))

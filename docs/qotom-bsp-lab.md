@@ -30,7 +30,21 @@ existing inventory check to `qotom-platform-pending`. This is not allocation
 or platform publication, AP-dormancy evidence, NMI routing admission or CPL3
 entry. Exact foreign firmware rejection still occurs before this new check.
 
-Strict protected-runner decoding of `NATIVE-BSP` and a physical capture are
-still required before deploying this image. The currently installed USB image
+Build the replay tool with `bash scripts/build-qotom-bsp-replay.sh ordinary`
+and pass its path through `--bsp-replay` to the protected runner, alongside
+`--native-kernel` and its prerequisite options. The runner pins executable and
+decoder hashes before arming, rechecks them before classification, and retains
+`native-bsp.json` with the original sample and result. Strict decoding binds
+the unique record to the root-selected MADT from that same capture and compares
+all six result words against generated replay. Missing/duplicate/misplaced
+records, differing addresses/lengths, overflowing scalars and inconsistent
+rejection terminals fail. Earlier CPU/firmware failures need no BSP record;
+BSP failures retain their own terminal reason without claiming an ECAM fault.
+
+Run `python3 scripts/test-qotom-native-bsp-capture.py` for synthetic matching,
+rejecting and malformed records over retained physical firmware/recovery bytes.
+The tests also run with the pinned sanitized replay, instrumenting both the
+host parser/consumer and generated code. These records are synthetic, not a
+physical BSP result. A physical capture is still required. The currently installed USB image
 remains the earlier native PCI diagnostic. This build alone does not satisfy
 issue #331's physical topology admission requirement.
