@@ -55,7 +55,10 @@ transitions and preserve the initialized state across the entire table.
 Successful transitions now have general current-offset/bounds and next-offset
 proofs. Starting a record from cleared state preserves the inventory and
 retains the actual kind byte; non-processor record bytes preserve all inventory
-fields. Completed records clear their partial state, including ignored records. Given an existing topology witness and complete terminal
+fields. Successful header bytes prove a supported kind and its exact retained
+length. Nonterminal payload bytes retain that framing and advance the record
+offset by one. Completed records clear their partial state, including ignored
+records. Given an existing topology witness and complete terminal
 shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
 to scalar arguments preserves success of the existing typed binder. This does
 not construct the topology witness from the byte stream. None of these

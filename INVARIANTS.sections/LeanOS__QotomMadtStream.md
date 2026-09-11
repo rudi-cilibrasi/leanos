@@ -31,3 +31,7 @@ These checks describe the values accepted by the scalar topology stream and its 
 - `nonprocessor_preserves_inventory` — After retaining a non-processor kind, every successful remaining byte preserves the processor count, admitted ID and all duplicate-detection limbs.
 - `record_kind_starts_clean` — Starting from cleared partial fields retains the actual kind byte, advances the record offset to one and preserves the inventory.
 - `completed_record_clears_partial_state` — A completed record past its length byte exposes zero in every partial-record field, including when rejected.
+
+- `record_kind_supported` — A successful kind byte is one of the four supported record types.
+- `record_length_retained` — A successful length byte matches its retained supported kind, is stored unchanged, advances to payload offset two and preserves the inventory.
+- `payload_preserves_framing` — Successful nonterminal payload transitions retain the record kind and length while advancing the record offset by one.

@@ -383,6 +383,57 @@ theorem completed_record_clears_partial_state
   rcases field with h | h | h | h | h <;> subst word <;>
     simp [byteStepQuery, pastLength, nonempty, complete]
 
+/-- A successful kind-byte transition admits only the four supported record
+kinds, providing the premise required by the length-byte framing proof. -/
+theorem record_kind_supported
+    (currentOffset enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset 0 0 0 0 0 enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue 2 = 0) :
+    byteValue = 0 ∨ byteValue = 1 ∨ byteValue = 2 ∨ byteValue = 4 := by
+  apply Classical.byContradiction
+  intro unsupported
+  simp only [not_or] at unsupported
+  simp [byteStepQuery, unsupported.1, unsupported.2.1,
+    unsupported.2.2.1, unsupported.2.2.2] at accepted
+  split at accepted <;> simp_all
+
+/-- The length byte must match the retained supported kind. A successful
+header retains that actual byte and advances to the first payload byte. -/
+theorem record_length_retained
+    (currentOffset kind enabledCount admittedApicId seen0 seen1 seen2 seen3
+      tableLength executingApicId byteOffset byteValue : UInt64)
+    (supported : kind = 0 ∨ kind = 1 ∨ kind = 2 ∨ kind = 4)
+    (accepted : byteStepQuery currentOffset 1 kind 0 0 0 enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue 2 = 0) :
+    let query := byteStepQuery currentOffset 1 kind 0 0 0 enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue
+    byteValue = (if kind = 0 then 8 else if kind = 1 then 12 else if kind = 2 then 10 else 6) ∧
+    (query 4, query 5, query 6, query 7, query 8) = (2, kind, byteValue, 0, 0) ∧
+    (query 9, query 10, query 11, query 12, query 13, query 14) =
+      (enabledCount, admittedApicId, seen0, seen1, seen2, seen3) := by
+  rcases supported with h | h | h | h <;> subst kind <;>
+    simp [byteStepQuery] at accepted ⊢
+  all_goals repeat' (split at accepted <;> (try simp_all))
+
+/-- Between the length byte and completion, successful payload transitions
+preserve the retained framing and advance the record offset by exactly one. -/
+theorem payload_preserves_framing
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (pastKind : recordOffset ≠ 0) (pastLength : recordOffset ≠ 1)
+    (incomplete : recordOffset + 1 ≠ recordLength)
+    (accepted : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 = 0) :
+    let query := byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue
+    (query 4, query 5, query 6) = (recordOffset + 1, recordKind, recordLength) := by
+  simp [byteStepQuery, pastKind, pastLength, incomplete] at accepted ⊢
+  repeat' (split at accepted <;> (try simp_all))
+
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :
