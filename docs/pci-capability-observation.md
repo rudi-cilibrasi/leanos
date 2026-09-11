@@ -37,3 +37,25 @@ absent capabilities, no-list status and the backward-link example in ordinary
 and pinned ASan/UBSan builds. Native ECAM collection and retained raw capability
 records remain the next step. Quarantine control semantics, USB ownership,
 TXE behavior and transaction drain remain unresolved under issue #330.
+
+## Native lab image
+
+The recovery builder's `--pci-capabilities` option requires
+`--native-inventory` and uses the separate `build/qotom-capabilities-lab`
+output directory. After the exact native inventory check accepts the preceding
+scan, it captures each function's conventional list. The ECAM window is armed
+only for each bounded collection and disarmed before serial output or failure.
+The prior scan's disarm remains in place. This adds no configuration writes.
+
+Each function emits a `PCI-CAPS` summary with profile `conventional-v1`, its
+inventory index, collector status, failure offset, and published count.
+Successful lists emit ordered `PCI-CAP` records containing index, slot, offset,
+and raw dword. Failed lists publish zero headers and stop with
+`qotom-pci-capabilities`. Successful observation still stops at
+`qotom-platform-pending`; it does not admit the platform or establish DMA safety.
+
+The capture runner and strict decoder must be extended before deploying this
+option in a protected physical run. Existing native-inventory decoders do not
+accept these additional records. The emission test invokes the actual lab
+function and checks window ownership, backward links, exact output, and failure
+disarm with ordinary and sanitizer builds.
