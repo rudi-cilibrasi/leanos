@@ -93,3 +93,18 @@ Its PDRC resource buffer declares the same 256 MiB ECAM region as MCFG. The
 regression checks manifest hashes, native C/Python pointer agreement, complete
 table transport and protected recovery. This supplies same-boot table bytes
 for the resource review; the physical ECAM callback remains unimplemented.
+
+`hardware/lab/qotom-ecam-firmware.h` supplies a lab-only equality gate for the
+entire captured twelve-table set, including physical addresses, lengths, order
+and every byte. Its generated constants come from manifest-verified files
+reconstructed from serial transport and checked against the recorded metadata.
+Changing any of the 34751 bytes rejects, as do altered extents, counts and order;
+ordinary and pinned ASan/UBSan checks exercise those cases. The freestanding
+gate has no allocation or external runtime dependency.
+
+This gate is deliberately tied to the reviewed firmware snapshot, including
+its resource declaration. It is not a general AML resource interpreter, does
+not admit relocated or revised firmware, and does not prove resource ownership,
+AP/firmware exclusion, mapping cache type or DMA containment. The caller must
+provide immutable validated copies and establish those remaining access
+conditions. The gate is not yet called from the physical diagnostic.
