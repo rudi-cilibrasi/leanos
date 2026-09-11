@@ -25,7 +25,7 @@ assert evidence_spec is not None and evidence_spec.loader is not None
 emulator_evidence = importlib.util.module_from_spec(evidence_spec)
 evidence_spec.loader.exec_module(emulator_evidence)
 SCHEMA = "leanos-toolchain-compatibility-v1"
-PHASES = ("environment", "proof-policy", "proofs", "proof-negative", "hosted", "image", "elf-negative",
+PHASES = ("environment", "proof-policy", "proofs", "proof-negative", "hosted", "image", "pci-diagnostic", "elf-negative",
           "protocol-negatives", "emulator", "verify")
 SEMANTIC_FILES = {
     "oracle": "build/oracle/corpus.tsv",
@@ -131,6 +131,7 @@ def run(profile_id: str, output: Path) -> None:
         "proof-negative": ["bash", "-euc", "if lake env lean -DwarningAsError=true tests/negative/Sorry.lean > build/compatibility/proof-negative.log 2>&1; then exit 1; fi; grep -q 'sorry' build/compatibility/proof-negative.log"],
         "hosted": ["bash", "-euc", "lake build leanos-boot-plan leanos-vtd-plan; ./scripts/check-hosted-generated-boundaries.sh ordinary"],
         "image": ["bash", "scripts/build-image.sh"],
+        "pci-diagnostic": ["bash", "scripts/test-qotom-pci-diagnostic-image.sh", "build/compatibility/pci-diagnostic"],
         "elf-negative": ["bash", "scripts/test-direct-port-sites.sh"],
         "protocol-negatives": ["bash", "scripts/test-run-image.sh"],
         "emulator": ["bash", "-euc", f"./scripts/record-tool-versions.sh {tools}; python3 scripts/run-emulator-evidence.py run --tier pr --shard-index 0 --shard-count 4 --tool-versions {tools} --output {evidence}"],

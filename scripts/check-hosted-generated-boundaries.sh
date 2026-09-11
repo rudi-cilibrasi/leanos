@@ -189,4 +189,15 @@ if [[ "$mode" == sanitized ]]; then
       "$leanos_host_asan_options" "$leanos_host_ubsan_options"
   } >"$evidence/configuration.txt"
 fi
+# The boot capture binds CPU, MSR and inventory observations to one stream.
+# Run after both hosted executables have been built for this mode.
+diagnostic_suffix=""
+if [[ "$mode" == sanitized ]]; then
+  diagnostic_suffix="-sanitized"
+  export ASAN_OPTIONS="$leanos_host_asan_options"
+  export UBSAN_OPTIONS="$leanos_host_ubsan_options"
+fi
+python3 scripts/test-qotom-pci-diagnostic.py \
+  --cpu-replay "build/j1900-cpu-host${diagnostic_suffix}/host" \
+  --pci-replay "build/qotom-pci-inventory-host${diagnostic_suffix}/host"
 echo "Hosted generated-boundary $mode replay passed ($boundaries boundaries)"

@@ -3,6 +3,15 @@
 #include "serial-protocol.h"
 #include "boundary-abi.h"
 #include "boot_text_console.h"
+#ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
+#include "pci-enumeration.h"
+#include "pci-config-read.h"
+#define J1900_CPU_RECORD LEANOS_SERIAL_25_CPU
+#define J1900_CONTROL_RECORD LEANOS_SERIAL_25_CONTROL
+#else
+#define J1900_CPU_RECORD LEANOS_SERIAL_24_CPU
+#define J1900_CONTROL_RECORD LEANOS_SERIAL_24_CONTROL
+#endif
 
 static struct boot_text_console early_text_console;
 #include "leanos/composite-dispatcher.h"
@@ -5196,10 +5205,14 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
         ((volatile uint64_t *)w)[i] = 0;
     w[0] = 1; w[1] = 1;
     j1900_cpuid(0, &w[2]);
+#ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
+    serial_puts(LEANOS_SERIAL_25_BOOT " target=qotom-j1900-candidate phase=pci-inventory-diagnostic platform-admitted=0 cpl3=0\n");
+#else
     if (w[3] != UINT64_C(0x756e6547) ||
         w[5] != UINT64_C(0x49656e69) || w[4] != UINT64_C(0x6c65746e))
         return;
     serial_puts(LEANOS_SERIAL_24_BOOT " target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0\n");
+#endif
     if (w[2] >= 1) { j1900_cpuid(1, &w[6]); w[1] |= 2; }
     if (w[2] >= 7) { j1900_cpuid(7, &w[10]); w[1] |= 4; }
     j1900_cpuid(UINT32_C(0x80000000), &w[14]); w[1] |= 8;
@@ -5210,7 +5223,7 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
         w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9],
         w[10], w[11], w[12], w[13], w[14], w[15], w[16], w[17],
         w[18], w[19], w[20], w[21]);
-    serial_puts(LEANOS_SERIAL_24_CPU " profile=j1900-cpu-v1 codec=1 width=22 words=");
+    serial_puts(J1900_CPU_RECORD " profile=j1900-cpu-v1 codec=1 width=22 words=");
     for (unsigned i = 0; i < 22; ++i) {
         if (i) serial_putc(',');
         serial_u64(w[i]);
@@ -5222,13 +5235,43 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
     read_fast_entry_msrs(msrs);
     result = leanos_j1900_msr_readback(msrs[0], msrs[1], msrs[2], msrs[3],
                                       msrs[4], msrs[5], msrs[6], msrs[7]);
-    serial_puts(LEANOS_SERIAL_24_CONTROL " profile=j1900-cpu-v1 codec=1 width=8 words=");
+    serial_puts(J1900_CONTROL_RECORD " profile=j1900-cpu-v1 codec=1 width=8 words=");
     for (unsigned i = 0; i < 8; ++i) {
         if (i) serial_putc(',');
         serial_u64(msrs[i]);
     }
     serial_puts(" readback="); serial_u64(result); serial_putc('\n');
     if (result != 1) pre_admission_fail("j1900-msr-readback");
+#ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
+    /* Observation only; no device configuration data writes or admission.
+     * Sole BSP and exclusion of other CF8/CFC users are caller assumptions.
+     */
+    static struct pci_enumeration_snapshot snapshot;
+    struct pci_enumeration_result scan =
+        pci_enumerate_segment(pci_config_read, 0, &snapshot);
+    serial_puts(LEANOS_SERIAL_25_PCI_SCAN " codec=1 status=");
+    serial_u64(scan.status);
+    serial_puts(" count="); serial_u64(snapshot.count);
+    serial_puts(" bus="); serial_u64(scan.bus);
+    serial_puts(" device="); serial_u64(scan.device);
+    serial_puts(" function="); serial_u64(scan.function);
+    serial_puts(" offset="); serial_u64(scan.offset); serial_putc('\n');
+    if (scan.status != PCI_ENUMERATION_OK)
+        pre_admission_fail("qotom-pci-enumeration");
+    for (unsigned i = 0; i < snapshot.count; ++i) {
+        const struct pci_enumeration_header *h = &snapshot.headers[i];
+        serial_puts(LEANOS_SERIAL_25_PCI_HEADER " codec=1 index=");
+        serial_u64(i);
+        serial_puts(" width=19 words=");
+        serial_u64(h->bus); serial_putc(',');
+        serial_u64(h->device); serial_putc(',');
+        serial_u64(h->function);
+        for (unsigned j = 0; j < PCI_ENUMERATION_WORDS; ++j) {
+            serial_putc(','); serial_u64(h->words[j]);
+        }
+        serial_putc('\n');
+    }
+#endif
     pre_admission_fail("qotom-platform-pending");
 }
 

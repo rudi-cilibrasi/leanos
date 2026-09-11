@@ -47,7 +47,8 @@ def families : List Family := [
   ⟨21, ["VTD", "VTD-ACTIVATE", "VTD-ASSIGN", "VTD-FAULT", "VTD-PLAN", "VTD-REUSE", "VTD-TABLES", "VTD-TRANSFER", "VTD-UNMAPPED-FAULT", "VTD-WRITE-FAULT"]⟩,
   ⟨22, ["ACCEPT", "BOOT", "DELEGATED-SEND", "DISPATCH", "ENTER", "EXCESS-RIGHT-DENIAL", "FINAL", "OFFER", "SEALED-DENIAL", "UNRELATED"]⟩,
   ⟨23, ["BOOT", "CANCELED-HANDLE-DENIAL", "CANCELED-RECEIPT", "DISPATCH", "ENTER", "FINAL", "FRESH-SEND", "OFFER", "OFFER-DENIAL", "REPLACE", "REVOKE", "REVOKE-DENIAL", "UNRELATED"]⟩,
-  ⟨24, ["BOOT", "CPU", "CONTROL"]⟩
+  ⟨24, ["BOOT", "CPU", "CONTROL"]⟩,
+  ⟨25, ["BOOT", "CPU", "CONTROL", "PCI-SCAN", "PCI-HEADER"]⟩
 ]
 
 /-- Every record identity, in family order. -/
@@ -60,6 +61,7 @@ def preAdmissionRejectionReasons : List String := [
   "j1900-cpu-profile",
   "j1900-msr-readback",
   "qotom-platform-pending",
+  "qotom-pci-enumeration",
   "dma-command-model",
   "dma-command-readback",
   "dma-empty-inventory",
