@@ -19,7 +19,10 @@ p.add_argument('--acpi-capture', action='store_true', help='copy and retain root
 p.add_argument('--pci-read-trace', action='store_true')
 p.add_argument('--bootstrap-capture', action='store_true')
 p.add_argument('--ecam-memory-capture', action='store_true')
+p.add_argument('--dsdt-capture', action='store_true')
 a = p.parse_args()
+if a.dsdt_capture and not a.acpi_capture:
+    p.error('--dsdt-capture requires --acpi-capture')
 if a.ecam_memory_capture and not a.bootstrap_capture:
     p.error('--ecam-memory-capture requires --bootstrap-capture')
 if a.bootstrap_capture and not a.pci_diagnostic:
@@ -49,6 +52,8 @@ for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
+if a.dsdt_capture:
+    text = '#define LEANOS_LAB_DSDT_CAPTURE 1\n' + text
 old = '''static __attribute__((noreturn)) void finish(uint8_t value) {
     out8(DEBUG_EXIT, value);
     for (;;) {
@@ -143,7 +148,9 @@ if a.bootstrap_capture:
     files.append(root / 'hardware/lab/qotom-bootstrap.c.inc')
 if a.ecam_memory_capture:
     files.append(root / 'hardware/lab/qotom-ecam-memory.c.inc')
-manifest = {'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.dsdt_capture:
+    files.append(root / 'boot/acpi-dsdt-address.h')
+manifest = {'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

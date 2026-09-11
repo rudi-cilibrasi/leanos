@@ -69,3 +69,20 @@ consumed. A manifest-checked regression replays these actual serial events.
 The observation supplies the previously missing same-boot register values;
 resource provenance, alias/mapping admission and the physical access callback
 remain unfinished. The capture's PCI rejection does not establish inventory.
+
+`--dsdt-capture` additionally follows the unique copied FADT to its DSDT.
+It requires `--acpi-capture`, preserves the complete ordered root table list,
+and appends the DSDT under the same 64 KiB handoff/table transport budget.
+The explicit `dsdt=1` header prevents interpreting the extended record set
+as the older capture format. Both decoders reject unsupported FADT lengths
+or revisions, null/out-of-range pointers, duplicate FADTs, wrong DSDT identity,
+table overlap and incomplete transport. Publication occurs after copying and
+validating the complete requested set. No AML method is executed.
+
+Pointer selection follows the DSDT and X_DSDT fields in the
+[ACPI FADT format](https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#fixed-acpi-description-table-fadt):
+revision 1 uses the legacy field, while supported extended revisions prefer a
+nonzero X_DSDT. An extended address beyond the lab's 32-bit physical backend
+rejects rather than silently selecting another table. Selecting and copying
+the DSDT supplies bytes for a future resource-policy review; it does not itself
+prove that a particular AML resource declaration authorizes ECAM access.

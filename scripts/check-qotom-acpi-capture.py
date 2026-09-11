@@ -31,7 +31,22 @@ def selected_root(info):
     return 1, struct.unpack_from('<I', rsdp, 16)[0]
 
 
-def extract(data, handoff):
+def fadt_dsdt_address(raw):
+    if (len(raw) < 116 or len(raw) > 65536 or raw[:4] != b'FACP' or
+            struct.unpack_from('<I', raw, 4)[0] != len(raw) or
+            (raw[8] != 1 and raw[8] < 3)):
+        raise ValueError('unsupported FADT envelope/revision')
+    address = struct.unpack_from('<I', raw, 40)[0]
+    if raw[8] >= 3:
+        if len(raw) < 148:
+            raise ValueError('truncated extended FADT')
+        address = struct.unpack_from('<Q', raw, 140)[0] or address
+    if not 0 < address <= 2**32 - 36:
+        raise ValueError('unsupported DSDT address')
+    return address
+
+
+def extract(data, handoff, dsdt=False):
     start = data.find(BEGIN)
     if start < 0:
         if b'FINAL status=FAIL reason=qotom-platform-pending\n' in data:
@@ -40,7 +55,8 @@ def extract(data, handoff):
     if data.count(BEGIN) != 1:
         raise ValueError('repeated ACPI capture')
     block = data[start:]
-    match = re.match(rb'LEANOS-LAB/1 ACPI-BEGIN root-kind=([12]) root-address=(' + D + rb') tables=(' + D + rb')\n', block)
+    match = re.match(rb'LEANOS-LAB/1 ACPI-BEGIN root-kind=([12]) root-address=(' + D + rb') tables=(' + D + rb')'
+                     + (b' dsdt=1' if dsdt else b'') + b'\n', block)
     if match is None:
         raise ValueError('invalid ACPI header')
     kind, address, count = map(int, match.groups())
@@ -49,7 +65,7 @@ def extract(data, handoff):
     position = match.end()
     files, tables, addresses = {}, [], []
     budget = 65536 - len(handoff)
-    for index in range(count + 1):
+    for index in range(count + 1 + int(dsdt)):
         header = re.match(rb'LEANOS-LAB/1 ACPI-TABLE index=' + str(index).encode()
                           + rb' address=(' + D + rb') length=(' + D + rb')\n', block[position:position + 128])
         if header is None:
@@ -84,9 +100,24 @@ def extract(data, handoff):
     if addresses[0] != address or root[:4] != (b'RSDT' if kind == 1 else b'XSDT') or len(root) != 36 + count * width:
         raise ValueError('ACPI root shape or address')
     expected = [int.from_bytes(root[i:i + width], 'little') for i in range(36, len(root), width)]
-    if addresses[1:] != expected:
+    if addresses[1:count + 1] != expected:
         raise ValueError('ACPI children differ from complete ordered root list')
+    if dsdt:
+        fadts = [t for t in tables[1:count + 1] if t['signature_hex'] == b'FACP'.hex()]
+        if len(fadts) != 1:
+            raise ValueError('DSDT requires unique root-selected FADT')
+        parent = fadts[0]['address']
+        selected = fadt_dsdt_address(files[f'{parent:016x}.bin'])
+        child = tables[-1]
+        if child['address'] != selected or child['signature_hex'] != b'DSDT'.hex():
+            raise ValueError('DSDT differs from FADT selection')
+        if any(child['address'] < t['address'] + t['length'] and
+               t['address'] < child['address'] + child['length'] for t in tables[:-1]):
+            raise ValueError('DSDT overlaps root-selected table')
     report = {'schema': 'leanos-native-acpi-lab-v1', 'root_kind': kind,
               'root_address': address, 'tables': tables, 'platform_admitted': False,
               'handoff_sha256': hashlib.sha256(handoff).hexdigest()}
+    if dsdt:
+        report.update(schema='leanos-native-acpi-dsdt-lab-v1', dsdt_fadt_address=parent,
+                      dsdt_address=selected, aml_executed=False)
     return data[:start] + block[position:], report, files

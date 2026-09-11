@@ -47,7 +47,10 @@ def main():
     parser.add_argument('--pci-read-trace', action='store_true')
     parser.add_argument('--bootstrap-capture', action='store_true')
     parser.add_argument('--ecam-memory-capture', action='store_true')
+    parser.add_argument('--dsdt-capture', action='store_true')
     args = parser.parse_args()
+    if args.dsdt_capture and not args.acpi_capture:
+        parser.error('--dsdt-capture requires --acpi-capture')
     if args.ecam_memory_capture and not args.bootstrap_capture:
         parser.error('--ecam-memory-capture requires --bootstrap-capture')
     if args.acpi_capture and not args.handoff_capture:
@@ -137,7 +140,7 @@ def main():
                         payload = payload[consumed:]
                     if args.acpi_capture:
                         acpi = runpy.run_path(str(ROOT / 'scripts/check-qotom-acpi-capture.py'))
-                        payload, metadata, tables = acpi['extract'](payload, binary)
+                        payload, metadata, tables = acpi['extract'](payload, binary, dsdt=args.dsdt_capture)
                         if selected == 65536:
                             if metadata is None:
                                 raise RuntimeError('accepted CPU/MSR lacks ACPI observation before PCI')
@@ -201,7 +204,7 @@ def main():
                     process.wait(timeout=5)
         print('Qotom PCI diagnostic image:', name, 'PASS', flush=True)
     report.write_text(json.dumps({
-        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture,
+        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'dsdt_capture': args.dsdt_capture, 'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture,
         'physical_reset_verified': False,
         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
         'iso_sha256': hashlib.sha256(iso.read_bytes()).hexdigest(),

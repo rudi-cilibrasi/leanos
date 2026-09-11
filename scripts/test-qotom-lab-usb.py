@@ -33,7 +33,10 @@ def main():
     parser.add_argument('--pci-read-trace', action='store_true')
     parser.add_argument('--bootstrap-capture', action='store_true')
     parser.add_argument('--ecam-memory-capture', action='store_true')
+    parser.add_argument('--dsdt-capture', action='store_true')
     args = parser.parse_args()
+    if args.dsdt_capture and not args.acpi_capture:
+        parser.error('--dsdt-capture requires --acpi-capture')
     if args.ecam_memory_capture and not args.bootstrap_capture:
         parser.error('--ecam-memory-capture requires --bootstrap-capture')
     if args.acpi_capture and not args.handoff_capture:
@@ -268,7 +271,7 @@ def main():
                         raw = raw[consumed:]
                     if args.acpi_capture:
                         acpi = runpy.run_path(str(root / 'scripts/check-qotom-acpi-capture.py'))
-                        raw, metadata, tables = acpi['extract'](raw, binary)
+                        raw, metadata, tables = acpi['extract'](raw, binary, dsdt=args.dsdt_capture)
                         assert metadata is not None
                         (output / (name + '.acpi')).mkdir(exist_ok=True)
                         for filename, content in tables.items():
@@ -304,7 +307,7 @@ def main():
             results.append({'case': name, 'serial_sha256': hashlib.sha256(data).hexdigest(),
                             'request_consumed': name != 'bad-env'})
             print(name, 'PASS', flush=True)
-    report.write_text(json.dumps({'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
+    report.write_text(json.dumps({'dsdt_capture': args.dsdt_capture, 'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
         'usb_sha256': hashlib.sha256(args.image.read_bytes()).hexdigest(),
         'elf_sha256': digest, 'results': results}, indent=2) + '\n')
 

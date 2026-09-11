@@ -1,4 +1,7 @@
 /* Opt-in read-only firmware observation. No topology or DMA admission. */
+#ifdef LEANOS_LAB_DSDT_CAPTURE
+#include "acpi-dsdt-address.h"
+#endif
 static void lab_emit_acpi_table(uint32_t index, const struct copied_acpi_sdt *table) {
     serial_puts("LEANOS-LAB/1 ACPI-TABLE index="); serial_u64(index);
     serial_puts(" address="); serial_u64(table->physical_address);
@@ -56,12 +59,45 @@ static void lab_capture_acpi(void) {
         remaining -= table.length;
         arena_offset = table.next_copy_offset;
     }
-    /* Publish only after the whole root-selected set has been copied. */
+#ifdef LEANOS_LAB_DSDT_CAPTURE
+    const struct copied_acpi_sdt *fadt = 0;
+    for (uint32_t i = 0; i < entries.count; ++i) {
+        if (acpi_signature_matches(&boot_acpi_table_copies[i], "FACP")) {
+            if (fadt) handoff_fail("lab-acpi-duplicate-fadt");
+            fadt = &boot_acpi_table_copies[i];
+        }
+    }
+    uint64_t dsdt_address;
+    if (!fadt || !lab_fadt_dsdt_address(fadt->bytes, fadt->length, &dsdt_address))
+        handoff_fail("lab-acpi-dsdt-selection");
+    if (remaining < 36u || arena_offset >= MAX_COPIED_ACPI_TABLE_BYTES)
+        handoff_fail("lab-acpi-dsdt-budget");
+    const struct copied_acpi_sdt dsdt = copy_acpi_sdt(dsdt_address,
+        boot_acpi_table_copy + arena_offset, remaining, arena_offset);
+    validate_copied_acpi_sdt(&dsdt, "DSDT");
+    if (dsdt.next_copy_offset > MAX_COPIED_ACPI_TABLE_BYTES ||
+        dsdt.physical_address + dsdt.length > UINT64_C(0x100000000))
+        handoff_fail("lab-acpi-dsdt-extent");
+    for (uint32_t i = 0; i <= entries.count; ++i) {
+        const struct copied_acpi_sdt *other = i ? &boot_acpi_table_copies[i - 1] : &root;
+        if (dsdt.physical_address < other->physical_address + other->length &&
+            other->physical_address < dsdt.physical_address + dsdt.length)
+            handoff_fail("lab-acpi-dsdt-overlap");
+    }
+#endif
+    /* Publish only after the complete requested set has been copied. */
     serial_puts("LEANOS-LAB/1 ACPI-BEGIN root-kind="); serial_u64(decoded.word[39]);
     serial_puts(" root-address="); serial_u64(root.physical_address);
-    serial_puts(" tables="); serial_u64(entries.count); serial_putc('\n');
+    serial_puts(" tables="); serial_u64(entries.count);
+#ifdef LEANOS_LAB_DSDT_CAPTURE
+    serial_puts(" dsdt=1");
+#endif
+    serial_putc('\n');
     lab_emit_acpi_table(0, &root);
     for (uint32_t i = 0; i < entries.count; ++i)
         lab_emit_acpi_table(i + 1u, &boot_acpi_table_copies[i]);
+#ifdef LEANOS_LAB_DSDT_CAPTURE
+    lab_emit_acpi_table(entries.count + 1u, &dsdt);
+#endif
     serial_puts("LEANOS-LAB/1 ACPI-END\n");
 }
