@@ -92,7 +92,7 @@ retains the FADT-linked 30800-byte DSDT at 0xb979f180 and its offline disassembl
 Its PDRC resource buffer declares the same 256 MiB ECAM region as MCFG. The
 regression checks manifest hashes, native C/Python pointer agreement, complete
 table transport and protected recovery. This supplies same-boot table bytes
-for the resource review; the physical ECAM callback remains unimplemented.
+for the resource review; physical ECAM access has not yet been validated.
 
 `hardware/lab/qotom-ecam-firmware.h` supplies a lab-only equality gate for the
 entire captured twelve-table set, including physical addresses, lengths, order
@@ -107,7 +107,7 @@ its resource declaration. It is not a general AML resource interpreter, does
 not admit relocated or revised firmware, and does not prove resource ownership,
 AP/firmware exclusion, mapping cache type or DMA containment. The caller must
 provide immutable validated copies and establish those remaining access
-conditions. The gate is not yet called from the physical diagnostic.
+conditions. The opt-in diagnostic binding below invokes this gate.
 
 `hardware/lab/qotom-ecam-memory.h` checks the local memory-control conditions:
 the observed PAT layout, exact selected CR3, PG/WP/PE, active long mode/NXE,
@@ -137,9 +137,9 @@ it cannot return a usable sample. The transaction does not switch CR3.
 Hosted ordinary and sanitizer tests use the actual transaction with controlled
 primitives to check ordering, private output, hardware Accessed-bit handling,
 read failure cleanup, changed root, aperture interference and restoration
-failure. The native primitive bindings and root/alias initializer are still
-missing, so this transaction has not executed against physical ECAM. Arming
-remains a caller obligation; an arbitrary supplied context is not authority.
+failure. The bindings and arming checks below connect this transaction to the
+opt-in image, but it has not executed against physical ECAM. An arbitrary
+supplied context is not authority.
 
 `hardware/lab/qotom-ecam-native.S` supplies the three x86-64 SysV primitives
 for that future binding: a single 32-bit load into private output, `invlpg`,
@@ -155,9 +155,9 @@ feature gating, MSR identity, register writes and callee-save preservation.
 The hosted test executes the actual load at the end of a read-only page with
 an inaccessible following page and checks private output bounds. This tests
 ordinary memory access width and output behavior; it does not execute the
-privileged primitives or validate UC device access. Root/alias initialization,
-firmware-gated arming and image-builder integration are still required before
-the diagnostic can execute these primitives against physical ECAM.
+privileged primitives or validate UC device access. The root checks, arming
+gate and image binding below supply the next layers; successful native
+execution against physical ECAM remains unverified.
 
 `hardware/lab/qotom-ecam-root.h` checks a bounded view of the active boot
 arrays: one PML4 entry, one PDPT entry, eight page-table pointers and 4096
@@ -190,4 +190,24 @@ after a previous success, both control-observation failures, an existing ECAM
 alias and a missing callback. Ordinary and pinned ASan/UBSan checks pass.
 The caller still owns binding array views to compiled physical addresses,
 private context storage, immutable firmware copies and exclusion assumptions;
-this helper is not yet invoked by the diagnostic image builder.
+the diagnostic image binding below supplies those local inputs.
+
+The opt-in builder now supports `--ecam-read`, requiring DSDT and memory
+capture and rejecting combination with the mechanism-1 PCI trace. Its native
+binding retains descriptors of the validated firmware copies, uses the actual
+compiled identity addresses for the boot-array view, and selects a dedicated
+aligned aperture. The diagnostic arms after firmware capture, invokes the real
+PCI collector through the ECAM callback, and disarms after the scan. Firmware
+count mismatch retains the complete capture before the arm gate rejects it.
+The native object is included in both prelink and final diagnostic links; its
+source, object, generated firmware header and helper inputs are manifest-pinned.
+
+The integrated image passes the prelink/final page-plan equality and Multiboot2
+checks. `scripts/test-qotom-ecam-image.py --elf <lab ELF> --output <directory>`
+boots it with the accepted CPU fixture and foreign q35 firmware, requires the
+exact ECAM arm failure with no PCI scan, and verifies captured ACPI bytes against
+independent QMP physical-memory reads. This negative boot passed. It does not
+execute the privileged primitives on the accepted firmware path or establish
+physical ECAM access. Positive privileged execution, capture decoder/runner
+integration and protected physical testing remain required. Completion reset
+still uses mechanism-1 host identification outside the ECAM read callback.

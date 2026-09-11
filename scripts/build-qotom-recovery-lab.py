@@ -20,7 +20,10 @@ p.add_argument('--pci-read-trace', action='store_true')
 p.add_argument('--bootstrap-capture', action='store_true')
 p.add_argument('--ecam-memory-capture', action='store_true')
 p.add_argument('--dsdt-capture', action='store_true')
+p.add_argument('--ecam-read', action='store_true', help='use firmware-gated ECAM for the lab PCI scan')
 a = p.parse_args()
+if a.ecam_read and (not a.dsdt_capture or not a.ecam_memory_capture or a.pci_read_trace):
+    p.error('--ecam-read requires --dsdt-capture and --ecam-memory-capture, and excludes --pci-read-trace')
 if a.dsdt_capture and not a.acpi_capture:
     p.error('--dsdt-capture requires --acpi-capture')
 if a.ecam_memory_capture and not a.bootstrap_capture:
@@ -52,6 +55,8 @@ for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
+if a.ecam_read:
+    text = '#define LEANOS_LAB_ECAM_READ 1\n' + text
 if a.dsdt_capture:
     text = '#define LEANOS_LAB_DSDT_CAPTURE 1\n' + text
 old = '''static __attribute__((noreturn)) void finish(uint8_t value) {
@@ -110,12 +115,34 @@ if a.ecam_memory_capture:
         raise SystemExit('unsupported ECAM memory capture shape')
     text = text.replace(marker, (root / 'hardware/lab/qotom-ecam-memory.c.inc').read_text() + '\n' + marker)
     text = text.replace(call, call + '\n    lab_capture_ecam_memory((uint32_t)w[9]);')
+if a.ecam_read:
+    marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
+    call = 'pci_enumerate_segment(pci_config_read, 0, &snapshot);'
+    gate = '    lab_capture_acpi();'
+    if text.count(marker) != 1 or text.count(call) != 1 or text.count(gate) != 1:
+        raise SystemExit('unsupported ECAM diagnostic shape')
+    text = text.replace(marker, (root / 'hardware/lab/qotom-ecam.c.inc').read_text() + '\n' + marker)
+    text = text.replace(gate, gate + '\n    lab_prepare_ecam();')
+    text = text.replace(call, 'pci_enumerate_segment(qotom_ecam_read, &lab_ecam_reader, &snapshot);\n    lab_ecam_window.armed = 0;')
+    subprocess.run(['python3', 'scripts/generate-qotom-ecam-firmware.py',
+                    str(build / 'qotom-ecam-firmware-inputs.h')], cwd=root, check=True)
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
 graph = '\n'.join('IMAGE_CC := gcc -I' + shlex.quote(str(root / 'boot'))
                   if s.startswith('IMAGE_CC :=') else s for s in graph.splitlines()) + '\n'
 graph = graph.replace(str(source), str(overlay))
+if a.ecam_read:
+    graph = graph.replace('IMAGE_CC := gcc ', 'IMAGE_CC := gcc -I' + shlex.quote(str(root / 'hardware/lab')) + ' ')
+    native = build / 'qotom-ecam-native.o'
+    anchor = str(build / 'pci-config-read.o')
+    lines = graph.splitlines()
+    for i, line in enumerate(lines):
+        if ('leanos-qotom-pci-diagnostic-prelink.' in line or
+                'leanos-qotom-pci-diagnostic.' in line) and anchor in line:
+            lines[i] = line.replace(anchor, anchor + ' ' + str(native))
+    graph = '\n'.join(lines) + '\n'
+    graph += f'{native}: {root / "hardware/lab/qotom-ecam-native.S"}\n\t$(IMAGE_CC) -m64 -c $< -o $@\n'
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
@@ -134,6 +161,12 @@ elf = out / ('leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom
 shutil.copy2(target, elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
+if a.ecam_read:
+    files.extend([root / 'hardware/lab' / name for name in (
+        'qotom-ecam.c.inc', 'qotom-ecam-arm.h', 'qotom-ecam-firmware.h',
+        'qotom-ecam-root.h', 'qotom-ecam-window.h', 'qotom-ecam-memory.h',
+        'qotom-ecam-native.h', 'qotom-ecam-native.S')])
+    files.extend([root / 'boot/qotom-ecam-read.h', build / 'qotom-ecam-firmware-inputs.h', native])
 if a.mode == 'completion':
     files.append(root / 'hardware/lab/qotom-finish.c.inc')
 if a.handoff_capture:
@@ -150,7 +183,7 @@ if a.ecam_memory_capture:
     files.append(root / 'hardware/lab/qotom-ecam-memory.c.inc')
 if a.dsdt_capture:
     files.append(root / 'boot/acpi-dsdt-address.h')
-manifest = {'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+manifest = {'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

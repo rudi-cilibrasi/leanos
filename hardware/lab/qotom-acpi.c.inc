@@ -85,6 +85,21 @@ static void lab_capture_acpi(void) {
             handoff_fail("lab-acpi-dsdt-overlap");
     }
 #endif
+#ifdef LEANOS_LAB_ECAM_READ
+    lab_ecam_table_count = 0;
+    if (entries.count + 2u == LAB_ECAM_FIRMWARE_TABLE_COUNT) {
+        lab_ecam_tables[0] = (struct lab_ecam_firmware_table){
+            root.physical_address, root.bytes, root.length};
+        for (uint32_t i = 0; i < entries.count; ++i) {
+            const struct copied_acpi_sdt *table = &boot_acpi_table_copies[i];
+            lab_ecam_tables[i + 1] = (struct lab_ecam_firmware_table){
+                table->physical_address, table->bytes, table->length};
+        }
+        lab_ecam_tables[entries.count + 1] = (struct lab_ecam_firmware_table){
+            dsdt.physical_address, dsdt.bytes, dsdt.length};
+        lab_ecam_table_count = entries.count + 2u;
+    }
+#endif
     /* Publish only after the complete requested set has been copied. */
     serial_puts("LEANOS-LAB/1 ACPI-BEGIN root-kind="); serial_u64(decoded.word[39]);
     serial_puts(" root-address="); serial_u64(root.physical_address);
