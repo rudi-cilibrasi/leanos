@@ -58,7 +58,7 @@ checks, not general EHCI compatibility claims.
 The collector delegates MMIO access to a caller-supplied callback. The callback
 must separately establish the UC mapping, alias exclusion and restoration
 contract described above; this component does not authorize arbitrary MMIO.
-No native adapter or hardware capability-register capture exists yet. Tests
+The native adapter is described below; a physical capability-register capture remains outstanding. Tests
 exercise read failures at every position, identity/BAR drift, all CAPLENGTH
 bytes, and rejection of addresses outside the three selected offsets in both
 ordinary and sanitizer builds.
@@ -82,5 +82,18 @@ exclusion remain explicit assumptions.
 
 Ordinary and sanitizer tests check every leaf slot for aliases, every offset
 within the page against the three-address limit, failed loads, control drift,
-leaf interference and restoration failure. Native image wiring and a physical
-EHCI capability capture are still required before using this candidate.
+leaf interference and restoration failure. The builder's `--ehci-capabilities` option requires `--af-observation` and
+uses the separate `build/qotom-ehci-lab` directory. Native image wiring calls
+the collector after the accepted complete inventory and AF capture. The ECAM
+and EHCI readers serialize their temporary mappings through the same aperture,
+restoring it between operations. Both windows are disarmed before emitting
+`EHCI-CAPS`; failure stops at `qotom-ehci-capabilities`.
+
+The runner's matching flag fingerprints its decoder and retains
+`ehci-capabilities.json`. Decoding requires the preceding complete AF sequence,
+checks field bounds/format and failure publication, and preserves the actual
+terminal alongside the inventory replay projection. Failed hardware reads
+remain observations, not independently replayed results. A native fault without
+a complete record fails capture validation. Synthetic protected-capture tests
+cover success, malformed records, and every publishable failure status.
+A physical EHCI capability capture remains outstanding.

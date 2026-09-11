@@ -159,6 +159,39 @@ class Capture(unittest.TestCase):
                          {'index':10,'status':0,'offset':152,'raw':0})
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_ehci_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-af-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':35,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True)
+        record = b'LEANOS-LAB/1 EHCI-CAPS profile=qotom-ehci-v1 index=10 status=0 capbase=16777248 structural=4 capability=26624\n'
+        result = check(record)
+        self.assertEqual(result['ehci_capabilities']['capability'],26624)
+        self.assertFalse(result['ehci_capabilities']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('ehci_decoder_sha256',result['diagnostic'])
+        mutations = [b'',record+record,record.replace(b'index=10',b'index=11'),
+            record.replace(b'status=0',b'status=1'),record.replace(b'structural=4',b'structural=0'),
+            record.replace(b'capbase=16777248',b'capbase=16777249'),
+            record.replace(b'capability=26624',b'capability=4294967295'),
+            record.replace(b'capability=26624',b'capability=4294967296')]
+        for mutation in mutations:
+            with self.assertRaises(ValueError): check(mutation)
+        for status in (3,4,5,6,7,8):
+            failed = f'LEANOS-LAB/1 EHCI-CAPS profile=qotom-ehci-v1 index=10 status={status} capbase=0 structural=0 capability=0\n'.encode()
+            result = check(failed,P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-capabilities\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-capabilities')
+            with self.assertRaises(ValueError): check(failed)
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():
