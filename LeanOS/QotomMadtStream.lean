@@ -459,6 +459,81 @@ theorem payload_preserves_framing
   simp [byteStepQuery, pastKind, pastLength, incomplete] at accepted ⊢
   repeat' (split at accepted <;> (try simp_all))
 
+/-- Terminal status implies zero error and the final byte position. -/
+theorem terminal_byte_has_no_error
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (terminal : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 1 = 3) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 = 0 ∧ byteOffset + 1 = tableLength := by
+  change (if byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 != 0 then 2
+    else if byteOffset + 1 == tableLength then 3 else 1) = (3 : UInt64) at terminal
+  split at terminal
+  · contradiction
+  · rename_i good
+    simp only [bne_iff_ne] at good
+    split at terminal
+    · rename_i lastByte
+      exact ⟨Classical.byContradiction good, by simpa only [beq_iff_eq] using lastByte⟩
+    · contradiction
+
+/-- Terminal success reports exactly four processors in the returned state. -/
+theorem terminal_byte_count
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (terminal : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 1 = 3) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 9 = 4 := by
+  have success := terminal_byte_has_no_error currentOffset recordOffset recordKind
+    recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+    tableLength executingApicId byteOffset byteValue terminal
+  let kind := if recordOffset == 0 then byteValue else recordKind
+  let width := if recordOffset == 1 then byteValue else recordLength
+  let complete := width != 0 && recordOffset + 1 == width
+  let bits := if kind == 0 && recordOffset >= 4 then
+    flags ||| (byteValue <<< ((recordOffset - 4) * 8)) else flags
+  let count := if complete && kind == 0 && (bits &&& 1) != 0 then
+    enabledCount + 1 else enabledCount
+  change (if byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 != 0 then 0 else count) = 4
+  rw [success.1]
+  change count = 4
+  have noError := success.1
+  have lastByte := success.2
+  clear terminal success
+  simp only [byteStepQuery] at noError
+  simp at noError
+  have peel {condition : Prop} [Decidable condition] (bad rest : UInt64)
+      (nonzero : bad ≠ 0) (ok : (if condition then bad else rest) = 0) :
+      ¬condition ∧ rest = 0 := by
+    split at ok
+    · exact False.elim (nonzero ok)
+    · exact ⟨by assumption, ok⟩
+  obtain ⟨_, noError⟩ := peel 69 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 70 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 71 _ (by decide) noError
+  obtain ⟨notTruncated, noError⟩ := peel 72 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 73 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 74 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 77 _ (by decide) noError
+  obtain ⟨countChecked, _⟩ := peel 75 _ (by decide) noError
+  have completed : complete = true := by
+    simpa [complete, width, lastByte] using notTruncated
+  have checked : ¬((byteOffset + 1 = tableLength ∧ complete = true) ∧ count ≠ 4) := by
+    simpa [count, complete, width, kind, bits] using countChecked
+  exact Classical.byContradiction (fun wrong => checked ⟨⟨lastByte, completed⟩, wrong⟩)
+
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :

@@ -37,3 +37,6 @@ These checks describe the values accepted by the scalar topology stream and its 
 - `payload_preserves_framing` — Successful nonterminal payload transitions retain the record kind and length while advancing the record offset by one.
 
 - `processor_payload_fields` — Each successful nonterminal processor payload byte updates only its specified ID/flags field and record offset while preserving the inventory.
+
+- `terminal_byte_has_no_error` — Terminal status entails zero error and the final byte position.
+- `terminal_byte_count` — Terminal status requires exactly four processors in the returned count projection.

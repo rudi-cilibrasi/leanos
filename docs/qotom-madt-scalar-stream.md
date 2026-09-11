@@ -86,7 +86,10 @@ typed baseline processor using the reference decoder’s fields, and the count
 advance is proved without wraparound. `WireRecord` provides a byte-preserving
 record view for sequence composition. The sequence proofs establish exact
 processor counting and ordered membership; an initialized successful run ending
-at count four yields the complete baseline inventory. This assumes a supplied
+at count four yields the complete baseline inventory. Terminal status itself
+now establishes count four through the scalar error checks and actual carried
+state, removing that separate assumption in
+`initialized_terminal_records_inventory`. This still assumes a supplied
 record decomposition: constructing it from arbitrary accepted bytes and binding
 it to the authoritative decoder remain unfinished. This model is
 not a production export; its full equivalence proof remains unfinished.

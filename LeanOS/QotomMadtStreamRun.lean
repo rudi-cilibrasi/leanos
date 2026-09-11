@@ -52,6 +52,42 @@ theorem step_retains_projections (state result : State) (length executing : UInt
   dsimp only [step] at accepted
   split at accepted <;> simp_all
 
+/-- A terminal step carries the scalar terminal count into its actual state. -/
+theorem step_terminal_count (state result : State) (length executing : UInt64)
+    (byte : UInt8) (accepted : step state length executing byte = .ok result)
+    (terminal : result.status = 3) : result.count = 4 := by
+  have retained := step_retains_projections state result length executing byte accepted
+  rw [retained] at terminal ⊢
+  exact QotomMadtStream.terminal_byte_count state.offset state.recordOffset state.kind
+    state.length state.apicId state.flags state.count state.admitted
+    state.seen0 state.seen1 state.seen2 state.seen3 length executing state.offset
+    byte.toUInt64 terminal
+
+/-- Any nonempty successful traversal with terminal status has count four. -/
+theorem run_terminal_count (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (nonempty : bytes ≠ [])
+    (accepted : run length executing state bytes = .ok result)
+    (terminal : result.status = 3) : result.count = 4 := by
+  induction bytes generalizing state with
+  | nil => exact False.elim (nonempty rfl)
+  | cons byte rest ih =>
+    cases moved : step state length executing byte with
+    | error reason =>
+      simp only [run, moved] at accepted
+      change (Except.error reason : Except UInt64 State) = .ok result at accepted
+      cases accepted
+    | ok middle =>
+      have tail : run length executing middle rest = .ok result := by
+        simp only [run, moved] at accepted
+        exact accepted
+      cases rest with
+      | nil =>
+        have same : middle = result := by simpa [run] using tail
+        subst middle
+        exact step_terminal_count state result length executing byte moved terminal
+      | cons nextByte remaining =>
+        exact ih middle (by simp) tail
+
 /-- Every successful step has the scalar query's zero error projection. -/
 theorem step_has_no_error (state result : State) (length executing : UInt64)
     (byte : UInt8) (accepted : step state length executing byte = .ok result) :
@@ -608,5 +644,21 @@ theorem initialized_records_complete_inventory (length executing : UInt64)
     have selected := List.getElem?_eq_getElem left
     have member := members index (records.filterMap WireRecord.processorValue)[index] selected
     simpa [initial, List.getElem?_eq_getElem right] using member
+
+/-- Terminal success from the actual initial state supplies the count needed
+for the complete record-view inventory theorem. -/
+theorem initialized_terminal_records_inventory (length executing : UInt64)
+    (result : State) (records : List WireRecord)
+    (accepted : run length executing initial (records.flatMap WireRecord.bytes) = .ok result)
+    (terminal : result.status = 3) :
+    records.filterMap WireRecord.processorValue = QotomBspTopology.processors := by
+  have nonempty : records.flatMap WireRecord.bytes ≠ [] := by
+    intro empty
+    rw [empty] at accepted
+    have same : initial = result := by simpa [run] using accepted
+    rw [← same] at terminal
+    simp [initial] at terminal
+  exact initialized_records_complete_inventory length executing result records accepted
+    (run_terminal_count length executing initial result _ nonempty accepted terminal)
 
 end LeanOS.QotomMadtStreamRun

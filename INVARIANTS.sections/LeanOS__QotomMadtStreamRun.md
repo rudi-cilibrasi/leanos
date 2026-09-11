@@ -32,3 +32,7 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `run_records_count` — Successful traversal of a byte-preserving record sequence restores a boundary and advances the count by exactly its number of processor records.
 - `run_records_members` — Every processor in that sequence occupies its exact baseline index despite interspersed ignored records.
 - `initialized_records_complete_inventory` — Starting from the initial state and ending at count four yields exactly the full typed baseline inventory for the supplied record view.
+
+- `step_terminal_count` — An actual terminal step carries count four into its returned state.
+- `run_terminal_count` — A nonempty successful traversal with terminal status ends with count four.
+- `initialized_terminal_records_inventory` — Terminal success from the initial state yields the full ordered baseline inventory for the supplied byte-preserving record view, without a separate count assumption.
