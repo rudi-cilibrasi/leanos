@@ -26,6 +26,12 @@ if [[ "$mode" == sanitizers ]]; then
 else
   "$build/check"
 fi
+"$cc" "${flags[@]}" tests/qotom-pci-read-trace.c -o "$build/trace-check"
+if [[ "$mode" == sanitizers ]]; then
+  leanos_run_sanitized "$build/trace-check"
+else
+  "$build/trace-check"
+fi
 # Compile the actual collector independently of the hosted test runtime.
 cat > "$build/freestanding.c" <<'C'
 #include "pci-command-executor.h"
