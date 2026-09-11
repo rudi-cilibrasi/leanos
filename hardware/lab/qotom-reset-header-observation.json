@@ -1,0 +1,167 @@
+{
+  "schema": "leanos-qotom-reset-header-observation-v1",
+  "source": "hardware/lab/observations/qotom-native-capabilities-20260911/cycle-1/result.json",
+  "source_sha256": "1d217b98aa9b257896736c2e6c3b1180b45168c5a4f4f04c1e0a59ce83b6bbcd",
+  "source_manifest_sha256": "47a960dcacc53c47542ec7e74af0c8af5e6c344713f76d6b49a70907155beb7e",
+  "reset_performed": false,
+  "dma_quarantine_established": false,
+  "functions": [
+    {
+      "bdf": "00:00.0",
+      "vendor_device": "8086:0f00",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:02.0",
+      "vendor_device": "8086:0f31",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:13.0",
+      "vendor_device": "8086:0f23",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:14.0",
+      "vendor_device": "8086:0f35",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:1a.0",
+      "vendor_device": "8086:0f18",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:1b.0",
+      "vendor_device": "8086:0f04",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:1c.0",
+      "vendor_device": "8086:0f48",
+      "af": null,
+      "pcie": {
+        "offset": 64,
+        "raw_header": 21135376,
+        "version": 2,
+        "device_type": 4,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    },
+    {
+      "bdf": "00:1c.1",
+      "vendor_device": "8086:0f4a",
+      "af": null,
+      "pcie": {
+        "offset": 64,
+        "raw_header": 21135376,
+        "version": 2,
+        "device_type": 4,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    },
+    {
+      "bdf": "00:1c.2",
+      "vendor_device": "8086:0f4c",
+      "af": null,
+      "pcie": {
+        "offset": 64,
+        "raw_header": 21135376,
+        "version": 2,
+        "device_type": 4,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    },
+    {
+      "bdf": "00:1c.3",
+      "vendor_device": "8086:0f4e",
+      "af": null,
+      "pcie": {
+        "offset": 64,
+        "raw_header": 21135376,
+        "version": 2,
+        "device_type": 4,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    },
+    {
+      "bdf": "00:1d.0",
+      "vendor_device": "8086:0f34",
+      "af": {
+        "offset": 152,
+        "raw_header": 50724883,
+        "length": 6,
+        "tp_advertised": true,
+        "flr_advertised": true,
+        "reserved_capability_bits": 0,
+        "standard_six_byte_shape": true,
+        "control_offset": 156,
+        "status_offset": 157,
+        "control_observed": false,
+        "pending_status_observed": false
+      },
+      "pcie": null
+    },
+    {
+      "bdf": "00:1f.0",
+      "vendor_device": "8086:0f1c",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "00:1f.3",
+      "vendor_device": "8086:0f12",
+      "af": null,
+      "pcie": null
+    },
+    {
+      "bdf": "01:00.0",
+      "vendor_device": "10ec:8168",
+      "af": null,
+      "pcie": {
+        "offset": 112,
+        "raw_header": 33730576,
+        "version": 2,
+        "device_type": 0,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    },
+    {
+      "bdf": "02:00.0",
+      "vendor_device": "14e4:4353",
+      "af": null,
+      "pcie": {
+        "offset": 208,
+        "raw_header": 65552,
+        "version": 1,
+        "device_type": 0,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    },
+    {
+      "bdf": "03:00.0",
+      "vendor_device": "10ec:8168",
+      "af": null,
+      "pcie": {
+        "offset": 112,
+        "raw_header": 33730576,
+        "version": 2,
+        "device_type": 0,
+        "device_capabilities_observed": false,
+        "flr_advertised": null
+      }
+    }
+  ]
+}
