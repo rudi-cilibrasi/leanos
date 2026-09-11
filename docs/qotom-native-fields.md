@@ -35,3 +35,11 @@ count/status/null rejection, every function's BDF/identity/layout changes,
 bridge routing changes, duplicate rows, a missing function and failure at the
 last scanned function. Source bytes remain unchanged. These are hosted reads
 from the retained capture, not another physical boot.
+
+The sanitized native-inventory wrapper additionally runs 158 standalone C-loop
+and collector cases under the pinned GCC ASan/UBSan configuration. Its output
+matches the ordinary executable. A seventeenth-header mutation must produce a
+stack-buffer-overflow report in the inventory loop. Instrumentation covers the
+C adapter and collector; the linked generated scalar object remains the one
+checked independently for runtime dependencies, not a sanitizer-instrumented
+Lean object.
