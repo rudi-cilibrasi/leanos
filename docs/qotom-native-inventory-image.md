@@ -38,3 +38,9 @@ Six capture tests use synthetic kernel records over the retained physical PCI
 headers; they cover successful protected replay, explicit selection, malformed
 or mismatched records, indexed identity failure, missing-function count failure
 and incomplete scans. They are not a new physical Qotom capture.
+
+The subsequent [physical Qotom capture](../hardware/lab/observations/qotom-native-inventory-20260911/README.md)
+reported a sixteen-function native match. Independent replay agreed, and the
+protected runner verified automatic recovery to FreeBSD and consumed request.
+The retained physical capture is replayed by a seventh test with all bundle
+hashes checked. Platform admission and device policy remain unfinished.

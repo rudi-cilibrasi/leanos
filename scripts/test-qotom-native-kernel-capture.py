@@ -2,6 +2,7 @@
 """Synthetic kernel-result framing over retained physical PCI headers."""
 from pathlib import Path
 import json
+import hashlib
 import runpy
 import unittest
 
@@ -29,6 +30,29 @@ def replay(raw, **kwargs):
 
 
 class KernelCapture(unittest.TestCase):
+    def test_retained_physical_kernel_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-inventory-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(), digest, name)
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        self.assertEqual(b''.join(bytes.fromhex(e['hex']) for e in events),
+                         (capture / 'cycle-1/serial.raw').read_bytes())
+        saved = json.loads((capture / 'cycle-1/result.json').read_text())
+        runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+        result = runner['classify_cpu_protected'](events, saved['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv', CPU, PCI, handoff=True, acpi=True,
+            bootstrap=True, ecam_memory=True, dsdt=True, ecam_read=True,
+            native_inventory=True, native_kernel=True)
+        self.assertEqual(result['diagnostic']['native_kernel_inventory'],
+                         {'status': 0, 'index': 0, 'count': 16})
+        self.assertEqual(result['diagnostic']['inventory_result'], 1)
+        self.assertFalse(result['diagnostic']['platform_admitted'])
+        self.assertFalse(result['diagnostic']['cpl3_authorized'])
+        self.assertTrue(saved['request_consumed'] and saved['watchdog_protected'])
+        self.assertEqual(saved['recovery'], 'freebsd-ssh-restored')
+        self.assertGreater(saved['freebsd_boot_after'], saved['freebsd_boot_before'])
+
     def test_match_and_explicit_selection(self):
         result = replay(frame())
         self.assertEqual(result['native_kernel_inventory'], {'status': 0, 'index': 0, 'count': 16})
