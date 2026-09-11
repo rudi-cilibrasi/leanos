@@ -92,3 +92,9 @@ leanos_run_sanitized "$build/xhci-legacy-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-xhci-handoff.c -o "$build/xhci-handoff-sanitized"
 leanos_run_sanitized "$build/xhci-handoff-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-xhci-smi.c -o "$build/xhci-smi"
+"$build/xhci-smi"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-xhci-smi.c -o "$build/xhci-smi-sanitized"
+leanos_run_sanitized "$build/xhci-smi-sanitized"

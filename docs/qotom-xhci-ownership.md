@@ -306,3 +306,36 @@ This completes the bounded xHCI ownership observation. Legacy SMI policy,
 operational shutdown, bus-master disable, outstanding-transaction drain and
 continuing firmware/AP exclusion remain necessary before DMA quarantine.
 The diagnostic terminal remains `qotom-platform-pending`.
+
+## Bounded legacy SMI disable helper
+
+After successful ownership handoff, `qotom_disable_xhci_smi` validates the prior
+result, refreshes the entire PCI/capability/extended-list observation, and requires
+BIOS-clear/OS-owned support. List identity remains bound to the captured list;
+only the previously documented command-manager status bits may vary. SMI enable
+bits must agree with the accepted handoff control sample. Reserved bits reject.
+
+[Intel's J1900 datasheet, section 14.7.189, page 527](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf#page=527)
+lists RW enable bits 15:13, 4 and 0; RO status bits 20 and 16; and RW/C status
+bits 31:29 at `USBLEGCTLSTS`, offset `0x8464`. Its descriptions label these fields
+reserved despite giving their names and access classes. The helper uses the
+register's listed access classes and zeroes only by writing an all-zero DWORD:
+it clears enable mask `0xe011` without acknowledging W1C status. This is a closed
+J1900 experiment; the EHCI masks do not apply. Linux's
+[xHCI handoff implementation](https://raw.githubusercontent.com/torvalds/linux/master/drivers/usb/host/pci-quirks.c)
+also disables legacy SMI sources after ownership handoff, but additionally
+acknowledges events; this helper leaves status acknowledgements untouched.
+
+The helper admits at most 174 reads and one zero DWORD write to `0xd0908464`.
+It repeats the complete collection after the write, verifies ownership and list
+identity, and accepts only status bits in the control readback. Failed writes
+retain an attempted-write diagnostic because they may have taken effect. No
+rollback or other control access occurs. Callback tests cover every read-failure
+position at the 48-header bound, all enable combinations, retained/new status,
+reasserted enables, ownership/resource/list drift, live vendor status and failed
+writes with and without effects.
+
+This callback helper has no native write backend yet. A consumed write window,
+firmware/root/resource binding, native diagnostics, strict replay and a protected
+physical capture remain to be added. SMI disable alone does not establish
+continuing firmware exclusion, controller halt, transaction drain or quarantine.
