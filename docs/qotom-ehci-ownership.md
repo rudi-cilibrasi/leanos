@@ -222,3 +222,23 @@ prove a wall-time upper bound against arbitrary firmware pauses. No timer or
 event register is written. Tests cover the tick threshold, wraparound, stopped
 and backward clocks, read failures and failed LPC binding. Native I/O callback
 wiring and the protected handoff experiment remain outstanding.
+
+## Opt-in native handoff experiment
+
+The builder's `--ehci-handoff` requires `--ehci-legacy` and creates the separate
+`build/qotom-handoff-lab` image. After retaining the complete initial legacy
+observation, the native helper arms the reader, firmware-bound PM delay and
+single-byte writer. It invokes the bounded request and revokes all four
+contexts before emitting `EHCI-HANDOFF`. Failed local arming has distinct
+statuses 11–13; request failures retain their diagnostic fields and stop at
+`qotom-ehci-handoff`. A successful observation still reaches
+`qotom-platform-pending`. No SMI change or controller stop is added.
+
+The runner's matching option fingerprints the handoff decoder before arming
+and checks it again afterward. The decoder requires the preceding complete
+legacy/capability observations, exact writer binding where the request was
+reached, bounded poll counts and consistent diagnostic fields/terminal. It
+retains `ehci-handoff.json`. Hardware operations are not independently replayed;
+the preceding inventory remains subject to generated replay. Synthetic protected
+capture tests exercise success, failures, malformed framing and contradictory
+attempt/poll/semaphore fields. Physical execution is the next validation step.
