@@ -1,0 +1,21 @@
+{
+  "source_revision": "a0af62aae53967bdf53a2ad7503cab4e8060461c",
+  "files": {
+    "README.md": "f35f40cd5821044b271b0238b7388edd2d5524dc6d7243ccce083430137e9fcd",
+    "build-manifest.json": "5cc7a39b3786bedda48dc20727c8ce6769ace9ad3e3802310c6fedde48cb9d1a",
+    "cycle-1/acpi.json": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed",
+    "cycle-1/diagnostic.raw": "7c6041809d9c5dbe0940b511cb8b7396cfc8a1be4a65626e89154cca0402788b",
+    "cycle-1/events.jsonl": "1db2d78fbe319ff5c6f7be02d9c4037e47a977413ce29e6310059b635d893c53",
+    "cycle-1/handoff.json": "fecad30425f858c32372a5f5bc7e55e5a695fec106bad470d2012c3ee80a2e50",
+    "cycle-1/multiboot2.bin": "42bb5f039101006ce538b149a237a0b23c78912676082edc6f90836dd78327ba",
+    "cycle-1/pci-read-trace.json": "7d95c2e686306e3a5272997bcbd7a35b00ee595abeb26c3cfaf7302f68d1fae4",
+    "cycle-1/reboot.txt": "b715e2bf2829ea8fe3ab405be0a4f539a76fd8571dc45c16059a82ec7b53ad42",
+    "cycle-1/recovery.json": "b353c105986ddd1b466ba675f502b3f80959604ee82c51e2d1b45ef24b4b3469",
+    "cycle-1/result.json": "16bb93e3f75057ab463821d91fff6b92ae3ec894453cd52227be10becbebb44f",
+    "cycle-1/serial.raw": "f0a9f0b95f79889745fe42bc2e49c5b90abde9d5d37f69bc2839ce07adc695ab",
+    "cycle-1/verification.txt": "37fecc358dbeee6c14002ab86b6c70a409998dff4ffd2759b2616e7550f4b98c",
+    "diagnostic-protocol.tsv": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+    "diagnostic-replay-inputs.json": "8b577e53cdc44003bbb17cc3d03b41eb16b8bc85e0e5eb0d9521b6769bfa3ed6",
+    "request.env": "2d23a18380ee1fb82694d51f1dea6643f7e853e69ecda524aea4d7eb6023aaae"
+  }
+}

@@ -30,11 +30,14 @@ def main():
                         help='test the protected PCI diagnostic image and replay its boot records')
     parser.add_argument('--handoff-capture', action='store_true')
     parser.add_argument('--acpi-capture', action='store_true')
+    parser.add_argument('--pci-read-trace', action='store_true')
     args = parser.parse_args()
     if args.acpi_capture and not args.handoff_capture:
         parser.error('--acpi-capture requires --handoff-capture')
     if args.handoff_capture and not args.pci_diagnostic:
         parser.error('--handoff-capture requires --pci-diagnostic')
+    if args.pci_read_trace and not args.pci_diagnostic:
+        parser.error('--pci-read-trace requires --pci-diagnostic')
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
     lab_directory = root / 'build' / ('qotom-pci-lab' if args.pci_diagnostic else 'qotom-lab')
@@ -265,6 +268,11 @@ def main():
                         for filename, content in tables.items():
                             (output / (name + '.acpi') / filename).write_bytes(content)
                         (output / (name + '.acpi.json')).write_text(json.dumps(metadata, indent=2) + '\n')
+                    if args.pci_read_trace:
+                        trace = runpy.run_path(str(root / 'scripts/check-qotom-pci-read-trace.py'))
+                        raw, metadata = trace['extract'](raw, protocol)
+                        assert metadata is not None and metadata['mismatches'] == 0
+                        (output / (name + '.pci-read-trace.json')).write_text(json.dumps(metadata, indent=2) + '\n')
                     replay = diagnostic['classify'](raw, protocol,
                         root / 'build/j1900-cpu-host/host', root / 'build/qotom-pci-inventory-host/host')
                     assert replay['cpu_selection'] == 65536 and replay['msr_readback'] == 1
@@ -280,7 +288,7 @@ def main():
             results.append({'case': name, 'serial_sha256': hashlib.sha256(data).hexdigest(),
                             'request_consumed': name != 'bad-env'})
             print(name, 'PASS', flush=True)
-    report.write_text(json.dumps({'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
+    report.write_text(json.dumps({'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
         'usb_sha256': hashlib.sha256(args.image.read_bytes()).hexdigest(),
         'elf_sha256': digest, 'results': results}, indent=2) + '\n')
 

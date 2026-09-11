@@ -44,6 +44,7 @@ def main():
                         help='require the lab completion-mode prefix before diagnostic records')
     parser.add_argument('--handoff-capture', action='store_true')
     parser.add_argument('--acpi-capture', action='store_true')
+    parser.add_argument('--pci-read-trace', action='store_true')
     args = parser.parse_args()
     if args.acpi_capture and not args.handoff_capture:
         parser.error('--acpi-capture requires --handoff-capture')
@@ -110,7 +111,7 @@ def main():
                     deadline = time.monotonic() + 30
                     while True:
                         raw = capture.read_bytes() if capture.exists() else b''
-                        if len(raw) > diagnostic['MAX_CAPTURE'] + (handoff['MAX_TRANSPORT'] if handoff else 0) + (196608 if args.acpi_capture else 0):
+                        if len(raw) > diagnostic['MAX_CAPTURE'] + (handoff['MAX_TRANSPORT'] if handoff else 0) + (196608 if args.acpi_capture else 0) + (512 if args.pci_read_trace else 0):
                             raise RuntimeError(name + ': capture exceeds bound')
                         if raw.endswith(b'\n') and protocol['FINAL'].encode() in raw:
                             break
@@ -140,6 +141,12 @@ def main():
                             verify_acpi_memory(monitor, directory, metadata, tables)
                             metadata['qmp_memory_match'] = True
                             (directory / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
+                    if args.pci_read_trace:
+                        trace = runpy.run_path(str(ROOT / 'scripts/check-qotom-pci-read-trace.py'))
+                        payload, metadata = trace['extract'](payload, protocol)
+                        if metadata is not None and metadata['mismatches'] != 0:
+                            raise RuntimeError('QEMU PCI address readback mismatch')
+                        (directory / 'pci-read-trace.json').write_text(json.dumps(metadata, indent=2) + '\n')
                     result = diagnostic['classify'](payload, protocol, cpu_replay, pci_replay)
                     if result['cpu_selection'] != selected:
                         raise RuntimeError(name + ': wrong CPU result')
@@ -171,7 +178,7 @@ def main():
                     process.wait(timeout=5)
         print('Qotom PCI diagnostic image:', name, 'PASS', flush=True)
     report.write_text(json.dumps({
-        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'acpi_capture': args.acpi_capture,
+        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture,
         'physical_reset_verified': False,
         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
         'iso_sha256': hashlib.sha256(iso.read_bytes()).hexdigest(),

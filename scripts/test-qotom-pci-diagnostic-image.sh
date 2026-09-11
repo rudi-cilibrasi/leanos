@@ -31,4 +31,5 @@ scripts/check-qotom-pci-inventory-host.sh ordinary > "$output/pci-replay-build.l
 python3 scripts/test-qotom-pci-diagnostic.py
 python3 scripts/test-qotom-handoff-capture.py
 python3 scripts/test-qotom-acpi-capture.py
+python3 scripts/test-qotom-pci-read-trace.py
 python3 scripts/test-qotom-pci-diagnostic-image.py --output "$output"
