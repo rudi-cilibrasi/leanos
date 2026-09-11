@@ -195,6 +195,67 @@ theorem status_eq_decode (bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w1
       List.all_cons, List.all_nil, Error.code, or_assoc, absent, endpoint, bridge] <;>
     repeat' (split <;> simp_all)
 
+/-- Scalar observation projection. Status is checked before any data field;
+endpoint-only queries return canonical zero for bridge register fields. -/
+def query (field count bus device fn
+    w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) : UInt64 :=
+  if field ≥ 20 then 0x105
+  else
+    let checked := status count bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15
+    if checked != 1 then checked
+    else if field == 0 then 1
+    else if field == 1 then w0 &&& 0xffff
+    else if field == 2 then w0 >>> 16
+    else if field == 3 then w2 >>> 8
+    else if field == 4 then w1 &&& 0xffff
+    else if field == 5 then w1 >>> 16
+    else if field == 6 then w2 &&& 0xff
+    else if field == 7 then if ((w3 >>> 16) &&& 0x80) != 0 then 1 else 0
+    else if field == 8 then (w3 >>> 16) &&& 0x7f
+    else if ((w3 >>> 16) &&& 0x7f) == 0 then 0
+    else if field == 9 then w6 &&& 0xff
+    else if field == 10 then (w6 >>> 8) &&& 0xff
+    else if field == 11 then (w6 >>> 16) &&& 0xff
+    else if field == 12 then w15 >>> 16
+    else if field == 13 then w7 &&& 0xffff
+    else if field == 14 then w7 >>> 16
+    else if field == 15 then w8
+    else if field == 16 then w9
+    else if field == 17 then w10
+    else if field == 18 then w11
+    else w12
+
+set_option maxHeartbeats 2000000 in
+/-- Exact reference observation equivalence for every field and sixteen-word
+input. Invalid selectors reject before validating header contents. -/
+theorem query_eq_observe (field bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) :
+    query field 16 bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 =
+      observe ⟨⟨bus, device, fn⟩, [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15]⟩ field := by
+  by_cases outside : field ≥ 20
+  · simp [query, observe, outside]
+  by_cases address : bus < 256 ∧ device < 32 ∧ fn < 8
+  case neg =>
+    have bad : 256 ≤ bus ∨ 32 ≤ device ∨ 8 ≤ fn := by
+      simp only [UInt64.le_iff_toNat_le, UInt64.lt_iff_toNat_lt] at *
+      omega
+    simp [query, status, observe, decode, bdfValid, Error.code, or_assoc, outside, bad]
+  by_cases dwords : w0 < 0x100000000 ∧ w1 < 0x100000000 ∧ w2 < 0x100000000 ∧ w3 < 0x100000000 ∧ w4 < 0x100000000 ∧ w5 < 0x100000000 ∧ w6 < 0x100000000 ∧ w7 < 0x100000000 ∧ w8 < 0x100000000 ∧ w9 < 0x100000000 ∧ w10 < 0x100000000 ∧ w11 < 0x100000000 ∧ w12 < 0x100000000 ∧ w13 < 0x100000000 ∧ w14 < 0x100000000 ∧ w15 < 0x100000000
+  case neg =>
+    have bad : 0x100000000 ≤ w0 ∨ 0x100000000 ≤ w1 ∨ 0x100000000 ≤ w2 ∨ 0x100000000 ≤ w3 ∨ 0x100000000 ≤ w4 ∨ 0x100000000 ≤ w5 ∨ 0x100000000 ≤ w6 ∨ 0x100000000 ≤ w7 ∨ 0x100000000 ≤ w8 ∨ 0x100000000 ≤ w9 ∨ 0x100000000 ≤ w10 ∨ 0x100000000 ≤ w11 ∨ 0x100000000 ≤ w12 ∨ 0x100000000 ≤ w13 ∨ 0x100000000 ≤ w14 ∨ 0x100000000 ≤ w15 := by
+      simp only [UInt64.le_iff_toNat_le, UInt64.lt_iff_toNat_lt] at *
+      omega
+    simp [query, status, observe, decode, bdfValid, Error.code, or_assoc, outside, address, bad]
+  by_cases absent : (w0 &&& 0xffff) = 0xffff
+  · simp [query, status, observe, decode, bdfValid, word, Error.code, outside, address, dwords, absent]
+  have selectors : field = 0 ∨ field = 1 ∨ field = 2 ∨ field = 3 ∨ field = 4 ∨ field = 5 ∨ field = 6 ∨ field = 7 ∨ field = 8 ∨ field = 9 ∨ field = 10 ∨ field = 11 ∨ field = 12 ∨ field = 13 ∨ field = 14 ∨ field = 15 ∨ field = 16 ∨ field = 17 ∨ field = 18 ∨ field = 19 := by
+    simp only [UInt64.le_iff_toNat_le, ← UInt64.toNat_inj] at *
+    simp at *
+    omega
+  rcases selectors with h0 | h1 | h2 | h3 | h4 | h5 | h6 | h7 | h8 | h9 | h10 | h11 | h12 | h13 | h14 | h15 | h16 | h17 | h18 | h19 <;> subst field <;>
+    by_cases endpoint : ((w3 >>> 16) &&& 0x7f) = 0 <;>
+    by_cases bridge : ((w3 >>> 16) &&& 0x7f) = 1 <;>
+    simp_all [query, status, observe, decode, bdfValid, word, project, bridgeRegisters, observationWords, Error.code]
+
 end Scalar
 
 end LeanOS.PCIHeaderObservation

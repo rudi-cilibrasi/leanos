@@ -7,3 +7,4 @@ The decoder retains a conventional PCI header and exposes endpoint or bridge reg
 - `observationWords_width` — Both endpoint and bridge observations produce exactly twenty scalar output words.
 - `observe_success_tag` — A successful decode reports the success tag when the caller requests output field zero.
 - `Scalar.status_eq_decode` — For every sixteen-word scalar input, validation returns exactly the reference decoder status, including BDF, dword, absent-function and layout errors. The separately checked retained object has no Lean runtime dependencies; enumeration and DMA policy remain outside this result.
+- `Scalar.query_eq_observe` — Every selector and sixteen-word input produce exactly the reference observation field or rejection status, including canonical endpoint bridge fields.
