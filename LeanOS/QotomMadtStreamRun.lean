@@ -231,6 +231,59 @@ theorem run_terminal_boundary (length executing : UInt64) (state result : State)
     | cons nextByte remaining =>
       exact ih middle (by simp) tail
 
+/-- Terminal control fields come from the actual last scalar transition.
+The duplicate-detection limbs require a separate traversal invariant. -/
+theorem step_terminal_control_fields (state result : State) (length executing : UInt64)
+    (byte : UInt8) (accepted : step state length executing byte = .ok result)
+    (terminal : result.status = 3) :
+    result.offset = length ∧ 44 < length ∧ length ≤ UInt64.ofNat BootTopology.maxAcpiSdtBytes ∧
+      AtBoundary result ∧ result.count = 4 ∧ result.admitted = 0 ∧ executing = 0 := by
+  have retained := step_retains_projections state result length executing byte accepted
+  have scalarStatus : query state length executing byte 1 = 3 := by
+    rw [retained] at terminal
+    exact terminal
+  have position := QotomMadtStream.terminal_byte_has_no_error state.offset state.recordOffset
+    state.kind state.length state.apicId state.flags state.count state.admitted
+    state.seen0 state.seen1 state.seen2 state.seen3 length executing state.offset
+    byte.toUInt64 scalarStatus
+  have bounds := QotomMadtStream.successful_byte_position_bounded state.offset state.recordOffset
+    state.kind state.length state.apicId state.flags state.count state.admitted
+    state.seen0 state.seen1 state.seen2 state.seen3 length executing state.offset
+    byte.toUInt64 position.1
+  have bsp := QotomMadtStream.terminal_byte_bsp state.offset state.recordOffset
+    state.kind state.length state.apicId state.flags state.count state.admitted
+    state.seen0 state.seen1 state.seen2 state.seen3 length executing state.offset
+    byte.toUInt64 scalarStatus
+  have low : 44 < length := by
+    have atLeast := bounds.2.1
+    have within := bounds.2.2.1
+    simp only [UInt64.le_iff_toNat_le, UInt64.lt_iff_toNat_lt] at atLeast within ⊢
+    omega
+  refine ⟨(step_advances_offset state result length executing byte accepted).trans position.2,
+    low, bounds.2.2.2, step_terminal_boundary state result length executing byte accepted terminal,
+    step_terminal_count state result length executing byte accepted terminal, ?_, bsp.1⟩
+  rw [retained]
+  exact bsp.2
+
+/-- A nonempty terminal traversal supplies its final control fields without
+caller-provided replacements for offsets, counts or the admitted BSP ID. -/
+theorem run_terminal_control_fields (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (nonempty : bytes ≠ [])
+    (accepted : run length executing state bytes = .ok result)
+    (terminal : result.status = 3) :
+    result.offset = length ∧ 44 < length ∧ length ≤ UInt64.ofNat BootTopology.maxAcpiSdtBytes ∧
+      AtBoundary result ∧ result.count = 4 ∧ result.admitted = 0 ∧ executing = 0 := by
+  induction bytes generalizing state with
+  | nil => exact False.elim (nonempty rfl)
+  | cons byte rest ih =>
+    obtain ⟨middle, moved, tail⟩ := run_cons_success length executing state result byte rest accepted
+    cases rest with
+    | nil =>
+      have same : middle = result := by simpa [run] using tail
+      subst middle
+      exact step_terminal_control_fields state result length executing byte moved terminal
+    | cons nextByte remaining => exact ih middle (by simp) tail
+
 /-- Lift the scalar kind-byte contract to the exact carried-state model. -/
 theorem step_starts_record (state result : State) (length executing : UInt64)
     (byte : UInt8) (boundary : AtBoundary state)
@@ -529,6 +582,42 @@ theorem step_processor_payload (state result : State) (length executing : UInt64
   rw [step_retains_projections state result length executing byte accepted]
   simpa [next, query, kind, width] using scalar
 
+/-- A successful processor payload prefix before its final byte preserves
+the inventory and advances framing by its actual number of supplied bytes. -/
+theorem run_processor_prefix_inventory (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (kind : state.kind = 0) (width : state.length = 8)
+    (lower : 2 ≤ state.recordOffset.toNat)
+    (bounded : state.recordOffset.toNat + bytes.length ≤ 7)
+    (accepted : run length executing state bytes = .ok result) :
+    (result.recordOffset.toNat, result.kind, result.length) =
+      (state.recordOffset.toNat + bytes.length, 0, 8) ∧
+    (result.count, result.admitted, result.seen0, result.seen1, result.seen2, result.seen3) =
+      (state.count, state.admitted, state.seen0, state.seen1, state.seen2, state.seen3) := by
+  induction bytes generalizing state with
+  | nil =>
+    have same : state = result := by simpa [run] using accepted
+    subst result
+    exact ⟨by simp [kind, width], rfl⟩
+  | cons byte rest ih =>
+    obtain ⟨middle, moved, tail⟩ := run_cons_success length executing state result byte rest accepted
+    have upper : state.recordOffset.toNat < 7 := by
+      simp only [List.length_cons] at bounded
+      omega
+    have fields := step_processor_payload state middle length executing byte kind width
+      (by simpa [UInt64.le_iff_toNat_le] using lower)
+      (by simpa [UInt64.lt_iff_toNat_lt] using upper) moved
+    have framing := fields.1
+    simp only [Prod.mk.injEq] at framing
+    have nextOffset : middle.recordOffset.toNat = state.recordOffset.toNat + 1 := by
+      rw [framing.1]
+      have nowrap : state.recordOffset.toNat + 1 < 2 ^ 64 := by omega
+      simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
+    have done := ih middle framing.2.1 framing.2.2.1 (by omega) (by
+      simp only [List.length_cons] at bounded
+      omega) tail
+    refine ⟨?_, done.2.trans fields.2⟩
+    simpa [nextOffset, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using done.1
+
 /-- The final carried payload byte checks the reconstructed ID and flags and
 increments the actual processor count before returning to a record boundary. -/
 theorem step_processor_complete (state result : State) (length executing : UInt64)
@@ -661,6 +750,61 @@ theorem run_processor_record_count_nat (length executing : UInt64) (state result
   have nowrap : state.count.toNat + 1 < 2 ^ 64 := by omega
   rw [record.2.1]
   simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
+
+/-- Complete processor records preserve the exact prefix inventory until
+their final byte sets the next baseline bit. -/
+theorem run_processor_record_seen_bits (length executing : UInt64) (state result : State)
+    (uid id b0 b1 b2 b3 : UInt8) (boundary : AtBoundary state)
+    (accepted : run length executing state [0, 8, uid, id, b0, b1, b2, b3] = .ok result) :
+    (result.seen0, result.seen1, result.seen2, result.seen3) =
+      (state.seen0 ||| ((1 : UInt64) <<< (state.count * 2)), state.seen1, state.seen2, state.seen3) := by
+  obtain ⟨headerState, headRun, payloadRun⟩ := run_append_success length executing state result
+    [0, 8] [uid, id, b0, b1, b2, b3] accepted
+  have header := run_header_retains_framing length executing state headerState 0 8 boundary headRun
+  have fields := header.2.2.1
+  simp only [Prod.mk.injEq] at fields
+  obtain ⟨lastState, prefixRun, finalRun⟩ := run_append_success length executing headerState result
+    [uid, id, b0, b1, b2] [b3] payloadRun
+  have prior := run_processor_prefix_inventory length executing headerState lastState
+    [uid, id, b0, b1, b2] fields.2.1 fields.2.2.1
+    (by simp [fields.1]) (by simp [fields.1]) prefixRun
+  have frame := prior.1
+  simp only [Prod.mk.injEq] at frame
+  have position : lastState.recordOffset = 7 := by
+    apply UInt64.toNat.inj
+    simpa [fields.1] using frame.1
+  have inventory := prior.2.trans header.2.2.2
+  obtain ⟨finalState, moved, done⟩ := run_cons_success length executing lastState result b3 [] finalRun
+  have same : finalState = result := by simpa [run] using done
+  subst finalState
+  have error := step_has_no_error lastState result length executing b3 moved
+  have scalar := QotomMadtStream.completed_processor_seen_bits lastState.offset lastState.apicId
+    lastState.flags lastState.count lastState.admitted lastState.seen0 lastState.seen1
+    lastState.seen2 lastState.seen3 length executing lastState.offset b3.toUInt64
+    (by simpa [query, position, frame.2.1, frame.2.2] using error)
+  simp only [Prod.mk.injEq] at inventory
+  rw [step_retains_projections lastState result length executing b3 moved]
+  simpa [next, query, position, frame.2.1, frame.2.2, inventory] using scalar
+
+/-- Duplicate-detection mask after a prefix of the four ordered processors. -/
+def processorPrefixMask (count : UInt64) : UInt64 :=
+  if count = 0 then 0 else if count = 1 then 1 else if count = 2 then 5
+  else if count = 3 then 21 else 85
+
+/-- The next baseline ID extends the exact mask for every admissible prefix. -/
+theorem processor_prefix_mask_step (count : UInt64) (bounded : count.toNat < 4) :
+    processorPrefixMask (count + 1) =
+      processorPrefixMask count ||| ((1 : UInt64) <<< (count * 2)) := by
+  have positions : count = 0 ∨ count = 1 ∨ count = 2 ∨ count = 3 := by
+    simp only [← UInt64.toNat_inj]
+    simp
+    omega
+  rcases positions with h | h | h | h <;> subst count <;> decide
+
+/-- Carried bitsets equal the ordered processor prefix and have no high IDs. -/
+def SeenPrefix (state : State) : Prop :=
+  state.seen0 = processorPrefixMask state.count ∧ state.seen1 = 0 ∧
+    state.seen2 = 0 ∧ state.seen3 = 0
 
 /-- A byte-preserving record view for composition. The decomposition theorem
 constructs this view from successful raw-byte traversal between boundaries. -/
@@ -954,6 +1098,61 @@ theorem initialized_terminal_records_inventory (length executing : UInt64)
   exact initialized_records_complete_inventory length executing result records accepted
     (run_terminal_count length executing initial result _ nonempty accepted terminal)
 
+/-- Successful record traversal carries the exact ordered bitset invariant
+through processor updates and intervening non-processor records. -/
+theorem run_records_seen_prefix (length executing : UInt64) (state result : State)
+    (records : List WireRecord) (boundary : AtBoundary state) (seen : SeenPrefix state)
+    (accepted : run length executing state (records.flatMap WireRecord.bytes) = .ok result) :
+    SeenPrefix result := by
+  induction records generalizing state with
+  | nil =>
+    have same : state = result := by simpa [run] using accepted
+    simpa [← same] using seen
+  | cons record rest ih =>
+    obtain ⟨middle, firstRun, tailRun⟩ := run_append_success length executing state result
+      record.bytes (rest.flatMap WireRecord.bytes) accepted
+    cases record with
+    | processor uid id b0 b1 b2 b3 =>
+      have done := run_processor_record length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      have count := run_processor_record_count_nat length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      have bits := run_processor_record_seen_bits length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      simp only [Prod.mk.injEq] at bits
+      have nextSeen : SeenPrefix middle := by
+        dsimp only [SeenPrefix] at seen ⊢
+        rw [bits.1, bits.2.1, bits.2.2.1, bits.2.2.2, done.2.1,
+          processor_prefix_mask_step state.count count.1, seen.1]
+        exact ⟨rfl, seen.2⟩
+      exact ih middle done.1 nextSeen tailRun
+    | ignored kind width payload nonprocessor sized =>
+      have done := run_nonprocessor_record length executing state middle kind width payload
+        boundary nonprocessor sized firstRun
+      have inventory := done.2
+      simp only [Prod.mk.injEq] at inventory
+      have nextSeen : SeenPrefix middle := by
+        simpa [SeenPrefix, inventory] using seen
+      exact ih middle done.1 nextSeen tailRun
+
+/-- An initialized terminal raw-byte traversal has exactly the four baseline
+ID bits in its returned state, with no bits in the three upper limbs. -/
+theorem initialized_terminal_seen_bits (length executing : UInt64) (result : State)
+    (bytes : List UInt8) (accepted : run length executing initial bytes = .ok result)
+    (terminal : result.status = 3) :
+    result.seen0 = 85 ∧ result.seen1 = 0 ∧ result.seen2 = 0 ∧ result.seen3 = 0 := by
+  have nonempty : bytes ≠ [] := by
+    intro empty
+    rw [empty] at accepted
+    have same : initial = result := by simpa [run] using accepted
+    rw [← same] at terminal
+    simp [initial] at terminal
+  have boundary := run_terminal_boundary length executing initial result bytes nonempty accepted terminal
+  obtain ⟨records, exactBytes⟩ := run_boundary_record_decomposition length executing initial result
+    bytes (by simp [AtBoundary, initial]) accepted boundary
+  have seen := run_records_seen_prefix length executing initial result records
+    (by simp [AtBoundary, initial]) (by simp [SeenPrefix, initial, processorPrefixMask])
+    (by simpa [exactBytes] using accepted)
+  have count := run_terminal_count length executing initial result bytes nonempty accepted terminal
+  simpa [SeenPrefix, count, processorPrefixMask] using seen
+
 /-- Terminal success over arbitrary input bytes constructs a record view
 from those bytes and proves its complete ordered processor inventory. -/
 theorem initialized_raw_terminal_inventory (length executing : UInt64)
@@ -1038,5 +1237,57 @@ theorem validated_table_reference_snapshot (bytes : List UInt8)
     (UInt64.ofNat table.length) 0 result _ accepted terminal
   simp [BootTopology.decodeCompleteMadtSnapshot, validated,
     show ¬table.length < BootTopology.acpiMadtHeaderLength by omega, decoded, normalized]
+
+/-- The actual initialized stream result supplies every finish-shape field;
+acceptance then agrees exactly with the typed BSP binder on the same observation. -/
+theorem initialized_terminal_finish_binding (length executing : UInt64)
+    (result : State) (bytes : List UInt8) (topology : QotomBspTopology.Witness)
+    (observation : QotomBspTopology.BootstrapObservation)
+    (accepted : run length executing initial bytes = .ok result)
+    (terminal : result.status = 3) :
+    QotomMadtStream.finishQuery result.status 0 result.offset result.recordOffset
+      result.kind result.length result.apicId result.flags result.count result.admitted
+      result.seen0 result.seen1 result.seen2 result.seen3 length executing
+      observation.cpuidEdx.toUInt64 (if observation.readAvailable then 1 else 0)
+      observation.apicBase observation.executingId.toUInt64 1 = 1 ↔
+    ∃ witness, QotomBspTopology.bindBootstrap topology observation = .ok witness := by
+  have nonempty : bytes ≠ [] := by
+    intro empty
+    rw [empty] at accepted
+    have same : initial = result := by simpa [run] using accepted
+    rw [← same] at terminal
+    simp [initial] at terminal
+  have control := run_terminal_control_fields length executing initial result bytes nonempty accepted terminal
+  have seen := initialized_terminal_seen_bits length executing result bytes accepted terminal
+  rcases control with ⟨offset, low, high, boundary, count, admitted, bsp⟩
+  rcases boundary with ⟨recordOffset, kind, width, id, flags⟩
+  rcases seen with ⟨seen0, seen1, seen2, seen3⟩
+  simpa [terminal, offset, recordOffset, kind, width, id, flags, count, admitted,
+    seen0, seen1, seen2, seen3, bsp] using
+    QotomMadtStream.finish_typed_binding_iff topology observation length low high
+
+/-- A validated table and its actual terminal stream result construct the
+topology witness consumed by the typed BSP binder. No caller-supplied topology
+witness or terminal-state replacement is needed for this finish contract. -/
+theorem validated_terminal_finish_binding (bytes : List UInt8)
+    (table : BootTopology.ValidAcpiSdt) (result : State)
+    (observation : QotomBspTopology.BootstrapObservation)
+    (validated : BootTopology.validateAcpiSdt [0x41, 0x50, 0x49, 0x43] bytes = .ok table)
+    (header : BootTopology.acpiMadtHeaderLength ≤ table.length)
+    (accepted : run (UInt64.ofNat table.length) 0 initial
+      (table.bytes.drop BootTopology.acpiMadtHeaderLength) = .ok result)
+    (terminal : result.status = 3) :
+    ∃ topology : QotomBspTopology.Witness,
+      BootTopology.decodeCompleteMadtSnapshot bytes 0 0 = .ok topology.observed ∧
+      (QotomMadtStream.finishQuery result.status 0 result.offset result.recordOffset
+        result.kind result.length result.apicId result.flags result.count result.admitted
+        result.seen0 result.seen1 result.seen2 result.seen3 (UInt64.ofNat table.length) 0
+        observation.cpuidEdx.toUInt64 (if observation.readAvailable then 1 else 0)
+        observation.apicBase observation.executingId.toUInt64 1 = 1 ↔
+       ∃ witness, QotomBspTopology.bindBootstrap topology observation = .ok witness) := by
+  refine ⟨⟨QotomBspTopology.baseline, rfl⟩,
+    validated_table_reference_snapshot bytes table result validated header accepted terminal, ?_⟩
+  exact initialized_terminal_finish_binding (UInt64.ofNat table.length) 0 result
+    (table.bytes.drop BootTopology.acpiMadtHeaderLength) _ observation accepted terminal
 
 end LeanOS.QotomMadtStreamRun

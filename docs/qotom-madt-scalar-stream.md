@@ -105,11 +105,22 @@ after the existing ACPI envelope and fixed MADT header checks, successful
 terminal traversal of that validated table’s entry bytes yields the exact
 Qotom baseline through `decodeCompleteMadtSnapshot`.
 
-This is a soundness theorem for successful traversal, not a proof that every
-reference-admitted table succeeds in the scalar implementation. The allocating
-model is not a production export. Production consumption still needs the full
-terminal-state/finish contract and machine-boundary integration, including AP
-dormancy, interrupt routing and the other hardware admission obligations.
+The carried-state proofs also establish the exact terminal offset and bounds,
+cleared partial fields, count four, admitted/executing BSP zero, and bitset
+`85, 0, 0, 0`. Processor payload prefixes preserve inventory until the final
+byte adds the next baseline bit; sequence induction carries that invariant
+through ignored records.
+`validated_terminal_finish_binding` constructs the topology witness from the
+validated table and proves that the finish query on the actual returned state
+accepts exactly when the typed BSP binder accepts the same observation. It
+requires no caller-supplied topology witness or replacement terminal fields.
+
+The decoder result remains a soundness theorem for successful traversal, not
+a proof that every reference-admitted table succeeds in the scalar parser.
+The allocating model is not a production export. Kernel consumption still
+needs machine-boundary integration and review of AP dormancy, interrupt routing
+and the other hardware admission obligations. The proof does not establish
+those physical properties.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
 toolchain on PATH and the pinned CI container for sanitizer runs. Pass

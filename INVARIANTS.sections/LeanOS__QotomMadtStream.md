@@ -42,3 +42,6 @@ These checks describe the values accepted by the scalar topology stream and its 
 - `terminal_byte_count` — Terminal status requires exactly four processors in the returned count projection.
 
 - `terminal_byte_clears_record` — Terminal success clears every partial-record projection, because the final byte must finish its record.
+
+- `completed_processor_seen_bits` — A completed guarded processor sets exactly its next baseline ID bit in the first duplicate-detection limb and preserves the other limbs.
+- `terminal_byte_bsp` — Terminal success binds the executing CPU and returned admitted ID to BSP zero through the actual final error checks.

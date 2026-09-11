@@ -51,3 +51,13 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `records_reference_normalize` — Normalizing the reference record view produces its exact bounded processor list with authoritative provenance.
 - `initialized_raw_reference_snapshot` — Terminal success from the initial state agrees with authoritative raw-entry decoding and normalization to the Qotom baseline snapshot.
 - `validated_table_reference_snapshot` — After existing ACPI envelope and fixed-header validation, terminal stream success yields the authoritative complete-table baseline snapshot.
+
+- `step_terminal_control_fields` — An actual terminal step supplies the final offset, table bounds, cleared partial fields, processor count and BSP IDs.
+- `run_terminal_control_fields` — A nonempty terminal traversal supplies those control fields without caller-provided replacements.
+- `run_processor_prefix_inventory` — Actual processor payload prefixes preserve the inventory until the final byte and advance framing by their consumed length.
+- `run_processor_record_seen_bits` — A complete processor record sets exactly the next baseline bit while retaining the prefix inventory through earlier bytes.
+- `processor_prefix_mask_step` — Extending an admissible processor prefix adds precisely the next ID bit to its exact mask.
+- `run_records_seen_prefix` — Complete record sequences preserve the exact ordered duplicate-detection mask invariant.
+- `initialized_terminal_seen_bits` — Terminal success on arbitrary bytes returns exactly the four baseline ID bits and zero upper limbs.
+- `initialized_terminal_finish_binding` — Every finish-shape field comes from the actual initialized terminal state, and scalar finish acceptance equals typed BSP-binding success.
+- `validated_terminal_finish_binding` — The validated table and actual stream result construct the authoritative topology witness and establish the finish/binder equivalence without supplied topology or replacement terminal fields.

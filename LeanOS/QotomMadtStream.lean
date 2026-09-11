@@ -300,6 +300,34 @@ theorem completed_processor_advances_count
   simp [byteStepQuery] at accepted ⊢
   repeat' (split at accepted <;> (try simp_all))
 
+/-- Completing a guarded processor adds exactly its next baseline ID bit
+to the first duplicate-detection limb and preserves the other three limbs. -/
+theorem completed_processor_seen_bits
+    (currentOffset apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+      tableLength executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset 7 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 2 = 0) :
+    let query := byteStepQuery currentOffset 7 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue
+    (query 11, query 12, query 13, query 14) =
+      (seen0 ||| ((1 : UInt64) <<< (enabledCount * 2)), seen1, seen2, seen3) := by
+  have guarded := completed_processor_requires_guard currentOffset apicId flags
+    enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+    byteOffset byteValue accepted
+  have matched := (processor_matches_iff _ _ _).mp guarded.1
+  have positions : enabledCount = 0 ∨ enabledCount = 1 ∨ enabledCount = 2 ∨ enabledCount = 3 := by
+    have bound := matched.1
+    simp only [UInt64.lt_iff_toNat_lt, ← UInt64.toNat_inj] at *
+    simp at *
+    omega
+  have actualId := matched.2.1
+  clear guarded matched
+  rcases positions with h | h | h | h <;> subst enabledCount <;>
+    simp at actualId <;> subst apicId <;>
+    simp [byteStepQuery] at accepted ⊢
+  all_goals repeat' (split at accepted <;> (try simp_all))
+
 /-- A completed local-APIC record clears every partial-record field before
 another record starts. A prior record's ID or flags cannot carry over. -/
 theorem completed_processor_clears_partial_state
@@ -569,6 +597,62 @@ theorem terminal_byte_clears_record
     simpa [lastByte] using notTruncated
   rcases projection with h | h | h | h | h <;> subst word <;>
     simp [byteStepQuery, complete.1, complete.2]
+
+/-- Terminal success binds the executing CPU and returned admitted ID to
+BSP zero, using the actual final error checks and returned projection. -/
+theorem terminal_byte_bsp
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (terminal : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 1 = 3) :
+    executingApicId = 0 ∧ byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 10 = 0 := by
+  have success := terminal_byte_has_no_error currentOffset recordOffset recordKind
+    recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+    tableLength executingApicId byteOffset byteValue terminal
+  let kind := if recordOffset == 0 then byteValue else recordKind
+  let width := if recordOffset == 1 then byteValue else recordLength
+  let complete := width != 0 && recordOffset + 1 == width
+  let bits := if kind == 0 && recordOffset >= 4 then
+    flags ||| (byteValue <<< ((recordOffset - 4) * 8)) else flags
+  let id := if kind == 0 && recordOffset == 3 then byteValue else apicId
+  let admitted := if complete && kind == 0 && (bits &&& 1) != 0 && enabledCount == 0 then
+    id else admittedApicId
+  change executingApicId = 0 ∧
+    (if byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 != 0 then 0 else admitted) = 0
+  rw [success.1]
+  change executingApicId = 0 ∧ admitted = 0
+  have noError := success.1
+  have lastByte := success.2
+  clear terminal success
+  simp only [byteStepQuery] at noError
+  simp at noError
+  have peel {condition : Prop} [Decidable condition] (bad rest : UInt64)
+      (nonzero : bad ≠ 0) (ok : (if condition then bad else rest) = 0) :
+      ¬condition ∧ rest = 0 := by
+    split at ok
+    · exact False.elim (nonzero ok)
+    · exact ⟨by assumption, ok⟩
+  obtain ⟨_, noError⟩ := peel 69 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 70 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 71 _ (by decide) noError
+  obtain ⟨notTruncated, noError⟩ := peel 72 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 73 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 74 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 77 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 75 _ (by decide) noError
+  obtain ⟨bspChecked, _⟩ := peel 76 _ (by decide) noError
+  have completed : complete = true := by
+    simpa [complete, width, lastByte] using notTruncated
+  have checked : ¬((byteOffset + 1 = tableLength ∧ complete = true) ∧
+      (executingApicId ≠ 0 ∨ admitted ≠ 0)) := by
+    simpa [admitted, complete, width, kind, bits, id] using bspChecked
+  simpa [lastByte, completed] using checked
 
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range

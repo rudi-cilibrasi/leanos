@@ -14313,6 +14313,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.completed_processor_seen_bits",
+      "display": "completed_processor_seen_bits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.completed_record_clears_partial_state",
       "display": "completed_record_clears_partial_state",
       "kind": "theorem"
@@ -14439,6 +14445,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.terminal_byte_bsp",
+      "display": "terminal_byte_bsp",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.terminal_byte_clears_record",
       "display": "terminal_byte_clears_record",
       "kind": "theorem"
@@ -14475,8 +14487,26 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.initialized_terminal_finish_binding",
+      "display": "initialized_terminal_finish_binding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.initialized_terminal_records_inventory",
       "display": "initialized_terminal_records_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.initialized_terminal_seen_bits",
+      "display": "initialized_terminal_seen_bits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.processor_prefix_mask_step",
+      "display": "processor_prefix_mask_step",
       "kind": "theorem"
     },
     {
@@ -14559,6 +14589,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_processor_prefix_inventory",
+      "display": "run_processor_prefix_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record",
       "display": "run_processor_record",
       "kind": "theorem"
@@ -14567,6 +14603,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record_count_nat",
       "display": "run_processor_record_count_nat",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record_seen_bits",
+      "display": "run_processor_record_seen_bits",
       "kind": "theorem"
     },
     {
@@ -14601,8 +14643,20 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_records_seen_prefix",
+      "display": "run_records_seen_prefix",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_terminal_boundary",
       "display": "run_terminal_boundary",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_terminal_control_fields",
+      "display": "run_terminal_control_fields",
       "kind": "theorem"
     },
     {
@@ -14679,6 +14733,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_terminal_control_fields",
+      "display": "step_terminal_control_fields",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_terminal_count",
       "display": "step_terminal_count",
       "kind": "theorem"
@@ -14687,6 +14747,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.validated_table_reference_snapshot",
       "display": "validated_table_reference_snapshot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.validated_terminal_finish_binding",
+      "display": "validated_terminal_finish_binding",
       "kind": "theorem"
     },
     {
