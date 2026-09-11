@@ -134,6 +134,15 @@ def main():
                     if args.acpi_capture:
                         acpi = runpy.run_path(str(ROOT / 'scripts/check-qotom-acpi-capture.py'))
                         payload, metadata, tables = acpi['extract'](payload, binary)
+                        if selected == 65536:
+                            if metadata is None:
+                                raise RuntimeError('accepted CPU/MSR lacks ACPI observation before PCI')
+                            if not payload.startswith(protocol['BOOT'].encode()):
+                                raise RuntimeError('ACPI stripping lost boot record')
+                            if not raw.index(protocol['CONTROL'].encode()) < raw.index(acpi['BEGIN']) < raw.index(protocol['PCI-SCAN'].encode()):
+                                raise RuntimeError('ACPI observation is not between CPU/MSR and PCI')
+                        elif metadata is not None:
+                            raise RuntimeError('rejected CPU entered ACPI capture')
                         if metadata is not None:
                             (directory / 'acpi').mkdir(exist_ok=True)
                             for filename, content in tables.items():

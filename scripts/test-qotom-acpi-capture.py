@@ -96,6 +96,32 @@ class ACPITests(unittest.TestCase):
         with self.assertRaises(ValueError):
             lab['classify_cpu_protected'](*args, handoff=True)
 
+    def test_retained_native_tables(self):
+        import hashlib
+        root = Path(__file__).resolve().parents[1]
+        directory = root / 'hardware/lab/observations/qotom-native-acpi-20260911'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
+        events = [json.loads(line) for line in (directory / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(event['hex']) for event in events)
+        self.assertEqual(raw, (directory / 'cycle-1/serial.raw').read_bytes())
+        binary = (directory / 'cycle-1/multiboot2.bin').read_bytes()
+        _, metadata, tables = D['extract'](raw, binary)
+        self.assertEqual(metadata, json.loads((directory / 'cycle-1/acpi.json').read_text()))
+        self.assertEqual(len(tables), 11)
+        self.assertEqual(sum(map(len, tables.values())), 3951)
+        for name, data in tables.items():
+            self.assertEqual(data, (directory / 'cycle-1/acpi' / name).read_bytes())
+        lab = runpy.run_path(str(root / 'scripts/run-qotom-recovery-lab.py'))
+        recorded = json.loads((directory / 'cycle-1/result.json').read_text())
+        result = lab['classify_cpu_protected'](events, recorded['elf_sha256'],
+            directory / 'diagnostic-protocol.tsv', root / 'build/j1900-cpu-host/host',
+            root / 'build/qotom-pci-inventory-host/host', True, True, True)
+        self.assertEqual(result['acpi'], recorded['acpi'])
+        self.assertEqual(result['pci_read_trace']['mismatches'], 2)
+        self.assertFalse(result['diagnostic']['platform_admitted'])
+
     def test_cpu_rejection_needs_no_acpi(self):
         rejected = b'FINAL status=FAIL reason=j1900-cpu-profile\n'
         self.assertEqual(D['extract'](rejected, handoff()), (rejected, None, {}))

@@ -266,8 +266,7 @@ operator observation; framebuffer metadata does not establish visible output.
 
 Add `--acpi-capture` together with `--handoff-capture --pci-diagnostic` to the
 lab builder and recovery runner to retain the SDTs selected by the actual
-GRUB handoff. This mode runs after CPU/MSR acceptance and successful PCI
-observation. It uses the existing generated handoff copy/decode path, checked
+GRUB handoff. This mode runs after CPU/MSR acceptance and before PCI observation. It uses the existing generated handoff copy/decode path, checked
 physical ACPI copy aperture, and SDT envelope/checksum validation. It stops
 before single-core topology admission, allocation publication, or CPL3.
 
@@ -324,3 +323,18 @@ The decoder hash is pinned before and after each protected hardware trial.
 This instrument targets the changing physical overflow addresses retained in
 qotom-acpi-pci-rejection-20260911. Those two uninstrumented attempts failed at
 `a8:01.6` and `33:04.6`; neither location proves a real additional device.
+
+## Independent firmware observation ordering
+
+The ACPI lab hook now runs immediately after the CPU/MSR checks, before PCI
+enumeration. Neither the earlier successful PCI observation nor this firmware
+copy grants device or DMA admission. The copier retains its existing bounded
+handoff, root selection, physical aperture, checksum and complete-copy checks.
+This ordering allows a valid ACPI observation to coexist with a later PCI
+rejection; it does not bypass that rejection or admit a partial PCI inventory.
+A copy failure remains terminal. Rejected CPUs/MSRs never enter the copier.
+
+The QEMU capacity case must now retain the root-selected ACPI bytes, match
+independent QMP physical memory, and still reject PCI enumeration. CPU-rejection
+cases must not emit ACPI records. The original physical traces from the earlier
+ordering remain unchanged as historical evidence.

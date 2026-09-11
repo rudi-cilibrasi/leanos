@@ -70,8 +70,10 @@ if a.handoff_capture:
 if a.acpi_capture:
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
     text = text.replace(marker, 'static uint32_t lab_mb2_magic, lab_mb2_address;\nstatic void lab_capture_acpi(void);\n' + marker)
-    text = text.replace('    pre_admission_fail("qotom-platform-pending");',
-                        '    lab_capture_acpi();\n    pre_admission_fail("qotom-platform-pending");')
+    gate = '    if (result != 1) pre_admission_fail("j1900-msr-readback");'
+    if text.count(gate) != 1:
+        raise SystemExit('unsupported CPU/MSR gate shape')
+    text = text.replace(gate, gate + '\n    lab_capture_acpi();')
     marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
     text = text.replace(marker, (root / 'hardware/lab/qotom-acpi.c.inc').read_text() + '\n' + marker)
     text = text.replace('    lab_capture_handoff(multiboot_magic, multiboot_info);',
