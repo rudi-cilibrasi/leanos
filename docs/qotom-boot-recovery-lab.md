@@ -192,7 +192,21 @@ The builder retains the completion-reset overlay and links the diagnostic's
 native PCI reader. Its output directory is `build/qotom-pci-lab`; the default
 lab image stays in `build/qotom-lab`. `create-qotom-lab-usb.py --pci-diagnostic`
 selects the new directory when creating a local USB disk image. This packaging
-option does not write or install anything on the physical Qotom.
+option does not write or install anything on the physical Qotom. Exercise the
+resulting disk image with the matching test mode:
+
+```sh
+python3 scripts/create-qotom-lab-usb.py \
+  --pci-diagnostic --freebsd-boot-uuid UUID_OF_ADA0P2
+python3 scripts/test-qotom-lab-usb.py \
+  --pci-diagnostic --image build/qotom-pci-lab/usb.img \
+  --freebsd-boot-uuid UUID_OF_ADA0P2
+```
+
+This uses a fake fallback disk and retains serial logs and replay results under
+`build/qotom-pci-lab/usb-tests`. Kernel-launch cases use an emulated J1900 CPU
+profile so they reach the PCI diagnostic. The watchdog recipe is mocked in the
+loader tests; request consumption, bad hashes, and fallback remain checked.
 
 After provisioning the corresponding protected lab image, pass
 `--pci-diagnostic` to `run-qotom-recovery-lab.py` with the usual host, USB serial,
