@@ -74,3 +74,9 @@ leanos_run_sanitized "$build/ehci-operational-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ehci-bme.c -o "$build/ehci-bme-sanitized"
 leanos_run_sanitized "$build/ehci-bme-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-xhci-capabilities.c -o "$build/xhci-capabilities"
+"$build/xhci-capabilities"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-xhci-capabilities.c -o "$build/xhci-capabilities-sanitized"
+leanos_run_sanitized "$build/xhci-capabilities-sanitized"
