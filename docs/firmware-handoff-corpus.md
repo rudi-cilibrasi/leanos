@@ -294,3 +294,10 @@ and address; native bundles carry the recorded values into both the Lean and
 generated-C queries. Normalized digests include non-default handoff arguments.
 Large raw byte arrays are named separately in generated Lean to keep query
 expressions manageable without changing their bytes or result expectations.
+
+The existing Qotom topology-only candidate is also replayed with these native
+bytes by `scripts/test-qotom-bsp-capture.py --native`. Its eight cases accept
+the unchanged four-processor inventory and reject the selected CPU, root and
+checksum mutations. This hosted Lean check preserves the distinction between
+a candidate inventory witness and runtime authority; it does not establish AP
+dormancy or replace the original single-core rejection.

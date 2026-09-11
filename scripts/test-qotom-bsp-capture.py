@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Replay the source-validated Qotom capture through the topology candidate.
 
-This is hosted model evidence, not a physical GRUB handoff or runtime admission.
+This is hosted model replay. Native mode uses physical GRUB capture bytes;
+neither mode establishes runtime admission or AP dormancy.
 """
+import argparse
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -17,13 +19,20 @@ spec.loader.exec_module(corpus)
 
 
 def main():
-    cases = corpus.validate(corpus.load_manifest())
-    case = next(c for c in cases if c['id'] == 'qotom-j1900-freebsd-uefi')
-    directory = corpus.CORPUS / case['id']
-    roots.validate_freebsd_projection(directory)
-    memory = corpus.multiboot2_information(corpus.read_memmap(directory / 'memmap.tsv'))
-    base = roots.from_capture(directory, memory)
-    executing = int((directory / 'executing-apic-id.txt').read_text().strip(), 0)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--native', action='store_true', help='replay the exact native handoff and ACPI copies')
+    args = parser.parse_args()
+    if args.native:
+        import native_firmware_root_corpus as native
+        base, executing = native.load()
+    else:
+        cases = corpus.validate(corpus.load_manifest())
+        case = next(c for c in cases if c['id'] == 'qotom-j1900-freebsd-uefi')
+        directory = corpus.CORPUS / case['id']
+        roots.validate_freebsd_projection(directory)
+        memory = corpus.multiboot2_information(corpus.read_memmap(directory / 'memmap.tsv'))
+        base = roots.from_capture(directory, memory)
+        executing = int((directory / 'executing-apic-id.txt').read_text().strip(), 0)
     variants = {'root': base, **roots.mutations(base)}
     expectations = {
         'root': '.candidate',
@@ -77,11 +86,12 @@ def observe (magic infoAddress : UInt64) (info rootBytes : ByteArray)
         queries.append(f'-- {name}\nexample : {query} = {expected} := by native_decide\n')
     source += ''.join(f'def {name} : ByteArray := {literal}\n' for literal, name in blobs.items())
     source += ''.join(queries)
-    out = ROOT / 'build/qotom-bsp-capture/Replay.lean'
+    out = ROOT / ('build/qotom-bsp-capture/native/Replay.lean' if args.native else
+                  'build/qotom-bsp-capture/Replay.lean')
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(source)
     subprocess.run(['lake', 'env', 'lean', str(out)], cwd=ROOT, check=True)
-    print(f'PASS: {len(expectations)} source-validated captured Qotom topology cases')
+    print(f'PASS: {len(expectations)} source-validated Qotom topology cases (native={args.native})')
 
 
 if __name__ == '__main__':
