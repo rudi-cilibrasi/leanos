@@ -50,3 +50,9 @@ done
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ehci-legacy.c -o "$build/ehci-legacy-sanitized"
 leanos_run_sanitized "$build/ehci-legacy-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ehci-handoff.c -o "$build/ehci-handoff"
+"$build/ehci-handoff"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ehci-handoff.c -o "$build/ehci-handoff-sanitized"
+leanos_run_sanitized "$build/ehci-handoff-sanitized"

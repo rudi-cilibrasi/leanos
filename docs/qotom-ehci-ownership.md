@@ -135,3 +135,41 @@ success, corrupt records and all publishable failure statuses. The [physical leg
 retained one header at `0x68`, raw `0x00010001`, and control/status
 `0x00082005`. Its complete protected replay matches the native inventory and
 legacy metadata. FreeBSD recovered automatically; ownership remains unresolved.
+
+## Bounded semaphore request candidate
+
+`boot/qotom-ehci-handoff.h` adds a callback-based request sequence, without
+native hardware wiring. It refreshes the capability registers and complete
+extended list and requires exact agreement with the preceding observation,
+including control/status. It accepts only BIOS-owned, OS-clear legacy support
+with zero reserved semaphore bits. The captured `0x00010001` satisfies that
+initial semaphore shape; it does not establish firmware cooperation.
+
+The only write callback receives one byte, value `1`, at the validated legacy
+offset plus three, on `00:1d.0`. It requests OS ownership without writing the
+BIOS byte or the control/status dword. This follows the request mechanism in
+the linked Linux implementation. Unlike its timeout fallback, this candidate
+never forcibly clears the BIOS semaphore. A failed callback may have changed
+hardware; the diagnostic result records that a write was attempted.
+
+After each requested ten-millisecond delay, it reads legacy support, requiring
+the OS bit to remain set and all non-semaphore bits to remain unchanged.
+It permits at most 100 polls. BIOS release triggers another full capability
+and extended-list refresh; the final support must still show OS ownership and
+BIOS release. Final control/status is retained without requiring equality with
+its pre-request value, since firmware may change it during handoff. Timeout,
+read/delay failure, lost OS request, changed structure or failed final refresh
+rejects the sequence. No rollback or further write follows rejection.
+
+The bound is 214 reads, one byte write and 100 delay calls requesting 1000 ms
+in total. Actual elapsed-time bounds depend on bounded callbacks and firmware
+execution. The caller must supply real delays, stable PCI resources, serialized
+mapping transactions and immutable nonaliasing inputs. An observed semaphore
+release does not itself prove firmware exclusion, controller halt, outstanding
+transaction drain or DMA containment.
+
+Synthetic tests cover release at every poll, timeout, every poll read/delay
+failure, every refresh read failure, changed support bits, BIOS reassertion
+and exact write width/address/value. Native write-aperture authority, a checked
+timing backend, protected hardware execution, SMI policy and controller stop
+remain to be integrated. No physical handoff was attempted by this candidate.
