@@ -1,0 +1,13 @@
+READY cycle=1
+Traceback (most recent call last):
+  File "/home/ruclaw/fun/serial/leanos-qotom-ecam-read/scripts/run-qotom-recovery-lab.py", line 561, in <module>
+    main()
+  File "/home/ruclaw/fun/serial/leanos-qotom-ecam-read/scripts/run-qotom-recovery-lab.py", line 514, in main
+    result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ruclaw/fun/serial/leanos-qotom-ecam-read/scripts/run-qotom-recovery-lab.py", line 284, in classify_cpu_protected
+    raw, result['ecam'] = decoder['extract'](raw, protocol, result['acpi'], tables)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ruclaw/fun/serial/leanos-qotom-ecam-read/scripts/check-qotom-ecam-capture.py", line 54, in extract
+    raise ValueError('ECAM arm disagrees with captured firmware')
+ValueError: ECAM arm disagrees with captured firmware

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic ECAM envelopes built from retained native observations; no hardware claim."""
 import json
+import hashlib
 from pathlib import Path
 import re
 import runpy
@@ -34,6 +35,26 @@ def classify(payload, **changes):
 
 
 class Protected(unittest.TestCase):
+    def test_native_capture(self):
+        directory = ROOT / 'hardware/lab/observations/qotom-ecam-20260911'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest)
+        cycle = directory / 'cycle-1'
+        captured = [json.loads(s) for s in (cycle / 'events.jsonl').read_text().splitlines()]
+        self.assertEqual(b''.join(bytes.fromhex(e['hex']) for e in captured), (cycle / 'serial.raw').read_bytes())
+        recorded = json.loads((cycle / 'reclassified-result.json').read_text())
+        result = R['classify_cpu_protected'](captured, recorded['elf_sha256'],
+            directory / 'diagnostic-protocol.tsv', ROOT / 'build/j1900-cpu-host/host',
+            ROOT / 'build/qotom-pci-inventory-host/host', handoff=True, acpi=True,
+            bootstrap=True, ecam_memory=True, dsdt=True, ecam_read=True)
+        for key in ['ecam', 'quiet_seconds', 'watchdog_protected', 'acpi']:
+            self.assertEqual(result[key], recorded[key])
+        self.assertEqual(result['diagnostic']['pci_scan']['count'], 16)
+        self.assertEqual(result['diagnostic']['pci_scan']['status'], 0)
+        self.assertEqual(result['diagnostic']['inventory_result'], 65536)
+        self.assertFalse(result['diagnostic']['platform_admitted'])
+
     def test_scan(self):
         result = classify(PAYLOAD)
         self.assertTrue(result['ecam']['armed'] and result['watchdog_protected'])

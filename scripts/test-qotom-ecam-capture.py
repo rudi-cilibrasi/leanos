@@ -33,6 +33,9 @@ class Capture(unittest.TestCase):
                 D['extract'](raw, P, META, FILES)
 
     def test_firmware(self):
+        relocated_handoff = copy.deepcopy(META)
+        relocated_handoff['handoff_sha256'] = 'a' * 64
+        self.assertTrue(D['firmware_matches'](relocated_handoff, FILES))
         bad = copy.deepcopy(META); bad['tables'][0]['address'] += 4096
         self.assertFalse(D['firmware_matches'](bad, FILES))
         for name in FILES:

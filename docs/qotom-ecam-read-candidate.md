@@ -1,3 +1,15 @@
+# Native ECAM diagnostic result
+
+The [2026-09-11 physical capture](../hardware/lab/observations/qotom-ecam-20260911/README.md)
+completed the guarded ECAM scan with 16 functions and recovered to FreeBSD.
+The 15-function inventory policy still rejects the observed set; no platform
+admission or CPL3 result follows. The original runner rejected the changed
+handoff hash after recovery; corrected offline replay now passes, with both
+the original failure and reclassification provenance retained. The firmware
+gate compares exact table bytes and addresses, while handoff provenance is
+validated independently by the ACPI transport decoder. Component descriptions
+and their narrower validation scopes follow.
+
 # Qotom ECAM reader candidate
 
 `boot/qotom-ecam-read.h` calculates aligned conventional configuration dword
