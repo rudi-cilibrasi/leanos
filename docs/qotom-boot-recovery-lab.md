@@ -301,3 +301,27 @@ The QEMU test independently reads each reported physical table through QMP and
 compares it byte-for-byte with the serial copy. The USB boot-path test accepts
 the same three diagnostic flags. A passing emulator capture does not replace
 the physical Qotom capture or its topology-policy review.
+
+
+## PCI read trace investigation
+
+The lab builder and recovery runner accept `--pci-read-trace` together with
+`--pci-diagnostic`. The QEMU image and USB checks accept the same trace flag.
+This records the last raw configuration value, requested CF8 address, and CF8
+readback after the existing address/data reader returns. It also records the
+number of reads, number of differing address readbacks, and first mismatch.
+The count is bounded by the existing complete-segment collector and capacity.
+No configuration value is retried, corrected, filtered, or replaced. The
+existing collector still discards partial inventories and rejects overflow.
+
+The additional CF8 read changes timing. A mismatch is an observation, not an
+attribution to SMM or another CPU; matching readback cannot prove ownership or
+absence of interference between the address write and data read. Diagnostic
+metadata does not grant inventory, DMA, platform, or CPL3 admission. The raw
+serial stream is preserved, and the trace is separated into pci-read-trace.json
+before replay through the unchanged generated CPU/PCI admission interfaces.
+The decoder hash is pinned before and after each protected hardware trial.
+
+This instrument targets the changing physical overflow addresses retained in
+qotom-acpi-pci-rejection-20260911. Those two uninstrumented attempts failed at
+`a8:01.6` and `33:04.6`; neither location proves a real additional device.

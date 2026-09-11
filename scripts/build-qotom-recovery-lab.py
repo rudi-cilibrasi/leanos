@@ -16,7 +16,10 @@ p.add_argument('--pci-diagnostic', action='store_true',
 p.add_argument('--handoff-capture', action='store_true',
                help='retain bounded raw GRUB handoff before PCI diagnostic')
 p.add_argument('--acpi-capture', action='store_true', help='copy and retain root-selected ACPI tables')
+p.add_argument('--pci-read-trace', action='store_true')
 a = p.parse_args()
+if a.pci_read_trace and not a.pci_diagnostic:
+    p.error('--pci-read-trace requires --pci-diagnostic')
 if a.acpi_capture and not a.handoff_capture:
     p.error('--acpi-capture requires --handoff-capture')
 if a.handoff_capture and not a.pci_diagnostic:
@@ -73,6 +76,13 @@ if a.acpi_capture:
     text = text.replace(marker, (root / 'hardware/lab/qotom-acpi.c.inc').read_text() + '\n' + marker)
     text = text.replace('    lab_capture_handoff(multiboot_magic, multiboot_info);',
                         '    lab_mb2_magic = multiboot_magic; lab_mb2_address = multiboot_info;\n    lab_capture_handoff(multiboot_magic, multiboot_info);')
+if a.pci_read_trace:
+    marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
+    call = 'pci_enumerate_segment(pci_config_read, 0, &snapshot);'
+    if text.count(marker) != 1 or text.count(call) != 1:
+        raise SystemExit('unsupported PCI diagnostic shape')
+    text = text.replace(marker, (root / 'hardware/lab/qotom-pci-read-trace.c.inc').read_text() + '\n' + marker)
+    text = text.replace(call, 'pci_enumerate_segment(lab_pci_read, 0, &snapshot);\n    lab_report_pci_read();')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -82,13 +92,13 @@ graph = graph.replace(str(source), str(overlay))
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
-if a.acpi_capture:
+if a.acpi_capture or a.pci_read_trace:
     plan = build / 'boot-page-plan-qotom-pci-diagnostic.h'
     prelink = build / 'leanos-qotom-pci-diagnostic-prelink.elf'
     subprocess.run(['make', '-f', str(makefile), '-j4', str(prelink)], cwd=root, check=True)
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(prelink), str(plan)], cwd=root, check=True)
 subprocess.run(['make', '-f', str(makefile), '-j4', str(target)], cwd=root, check=True)
-if a.acpi_capture:
+if a.acpi_capture or a.pci_read_trace:
     final_plan = out / 'final-page-plan.h'
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(target), str(final_plan)], cwd=root, check=True)
     if final_plan.read_bytes() != plan.read_bytes():
@@ -102,8 +112,12 @@ if a.mode == 'completion':
 if a.handoff_capture:
     files.extend([root / 'hardware/lab/qotom-handoff.c.inc', root / 'include/boot_handoff_capture.h'])
 if a.acpi_capture:
-    files.extend([root / 'hardware/lab/qotom-acpi.c.inc', plan, final_plan])
-manifest = {'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+    files.append(root / 'hardware/lab/qotom-acpi.c.inc')
+if a.pci_read_trace:
+    files.append(root / 'hardware/lab/qotom-pci-read-trace.c.inc')
+if a.acpi_capture or a.pci_read_trace:
+    files.extend([plan, final_plan])
+manifest = {'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
