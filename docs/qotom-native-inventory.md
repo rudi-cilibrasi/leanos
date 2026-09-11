@@ -37,3 +37,19 @@ exports covered. The CLI also replays the retained capture successfully and
 rejects malformed decimal transport and non-dword values at every header
 position. The 77-export vocabulary, harness registration and current invariant
 index checks pass.
+
+Capture replay selects this model explicitly with `--native-inventory` and the
+native replay executable. The protected runner additionally requires
+`--ecam-read`; it records the selected profile and decoder hash, and retains all
+existing firmware and recovery checks. The default historical replay still
+rejects a sixteen-function success. A historical executable cannot be passed
+as the native model. The CLI accepts `--pci-replay
+build/qotom-native-inventory-host/host` together with the selection flag.
+
+Tests replay the retained physical bytes successfully through the native model
+(result1), preserve historical count rejection (65536), reject cross-profile
+executable/flag combinations, and retain indexed rejection at function15.
+The complete protected replay also passes. This is a new offline interpretation
+of the retained capture, not another boot or kernel-side inventory admission.
+The generated-C array transport still allocates Lean objects; a freestanding
+bridge and complete device/DMA policy remain necessary for runtime selection.
