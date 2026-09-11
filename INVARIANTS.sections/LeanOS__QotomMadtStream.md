@@ -11,3 +11,6 @@ These checks describe the values accepted by the scalar topology stream and its 
 
 - `finish_typed_observation_iff` — For a supplied topology witness and complete terminal shape, widening any typed BSP observation to scalar arguments preserves exactly the typed validity condition.
 - `finish_typed_binding_iff` — Under those same assumptions, scalar acceptance is equivalent to the existing typed bootstrap binder succeeding on the same observation.
+
+- `processor_matches_typed_record` — When the scalar guard accepts a decoded processor and its online-capable flag is clear, that record equals the typed baseline member at the same position.
+- `guarded_processors_equal_baseline` — Any four-record decoded list satisfying those guards at every index equals the complete typed baseline inventory. Parsing must still establish the guards.

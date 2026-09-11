@@ -31,6 +31,47 @@ theorem processor_matches_rejects_disabled (position apicId : UInt64) :
     processorMatches position apicId false = false := by
   simp [processorMatches]
 
+/-- The scalar processor guard selects exactly the corresponding typed
+baseline record when the independently checked online-capable bit is clear. -/
+theorem processor_matches_typed_record (position : UInt64) (processor : Processor)
+    (matched : processorMatches position processor.apicId.toUInt64 processor.enabled = true)
+    (offline : processor.onlineCapable = false) :
+    some processor = QotomBspTopology.processors[position.toNat]? := by
+  have conditions := (processor_matches_iff _ _ _).mp matched
+  have positions : position = 0 ∨ position = 1 ∨ position = 2 ∨ position = 3 := by
+    have bound := conditions.1
+    simp only [UInt64.lt_iff_toNat_lt, ← UInt64.toNat_inj] at *
+    simp at *
+    omega
+  rcases processor with ⟨id, enabled, online⟩
+  rcases positions with h | h | h | h <;> subst position <;>
+    simp_all [QotomBspTopology.processors]
+  all_goals
+    simp only [← UInt64.toNat_inj] at conditions
+    simp at conditions
+    simp only [← UInt32.toNat_inj]
+    simp_all
+
+/-- Four decoded records satisfying the actual scalar guard at each index
+form exactly the typed baseline inventory. Parsing must establish these guards. -/
+theorem guarded_processors_equal_baseline (observed : List Processor)
+    (count : observed.length = 4)
+    (guards : ∀ (index : Nat) (within : index < observed.length),
+      processorMatches (UInt64.ofNat index) observed[index].apicId.toUInt64
+        observed[index].enabled = true ∧ observed[index].onlineCapable = false) :
+    observed = QotomBspTopology.processors := by
+  apply List.ext_getElem
+  · simpa [QotomBspTopology.processors] using count
+  · intro index left right
+    have checked := guards index left
+    have same := processor_matches_typed_record (UInt64.ofNat index)
+      observed[index] checked.1 checked.2
+    have bounded : index < 4 := by omega
+    have index_exact : (UInt64.ofNat index).toNat = index := by
+      simp
+      omega
+    simpa [index_exact, List.getElem?_eq_getElem right] using same
+
 def byteStepQuery
     (currentOffset recordOffset recordKind recordLength apicId flags
       enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength

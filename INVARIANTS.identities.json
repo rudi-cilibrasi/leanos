@@ -14301,6 +14301,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.guarded_processors_equal_baseline",
+      "display": "guarded_processors_equal_baseline",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.processor_matches_iff",
       "display": "processor_matches_iff",
       "kind": "theorem"
@@ -14309,6 +14315,12 @@
       "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.processor_matches_rejects_disabled",
       "display": "processor_matches_rejects_disabled",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.processor_matches_typed_record",
+      "display": "processor_matches_typed_record",
       "kind": "theorem"
     },
     {

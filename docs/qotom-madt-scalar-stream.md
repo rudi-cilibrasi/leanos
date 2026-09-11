@@ -39,7 +39,9 @@ Higher projection indices return zero.
 scalar inputs, including every terminal-state field and numeric bound.
 This is a contract about values: it does not establish their provenance.
 The full byte-stream refinement proof against the authoritative list decoder
-remains unfinished. Given an existing topology witness and complete terminal
+remains unfinished. `guarded_processors_equal_baseline` proves that any four
+decoded records satisfying the scalar guard at every index form the exact typed
+inventory; the parser still must establish those per-record premises. Given an existing topology witness and complete terminal
 shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
 to scalar arguments preserves success of the existing typed binder. This does
 not construct the topology witness from the byte stream. None of these
