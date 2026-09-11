@@ -14289,6 +14289,18 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.finish_typed_binding_iff",
+      "display": "finish_typed_binding_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.finish_typed_observation_iff",
+      "display": "finish_typed_observation_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.processor_matches_iff",
       "display": "processor_matches_iff",
       "kind": "theorem"

@@ -8,3 +8,6 @@ These checks describe the values accepted by the scalar topology stream and its 
 - `byte_step_version` — The version word is always one, even for invalid stream inputs.
 - `finish_acceptance_requires` — Acceptance requires every complete terminal-state field, valid length and observation bounds, available BSP observation, required CPU features, matching executing ID, and the expected APIC base.
 - `finish_acceptance_iff` — Those complete scalar conditions are also sufficient for acceptance; this equivalence does not establish the provenance of the supplied state.
+
+- `finish_typed_observation_iff` — For a supplied topology witness and complete terminal shape, widening any typed BSP observation to scalar arguments preserves exactly the typed validity condition.
+- `finish_typed_binding_iff` — Under those same assumptions, scalar acceptance is equivalent to the existing typed bootstrap binder succeeding on the same observation.

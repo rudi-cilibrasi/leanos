@@ -39,7 +39,10 @@ Higher projection indices return zero.
 scalar inputs, including every terminal-state field and numeric bound.
 This is a contract about values: it does not establish their provenance.
 The full byte-stream refinement proof against the authoritative list decoder
-and the general bridge to its typed witness remain unfinished. None of these
+remains unfinished. Given an existing topology witness and complete terminal
+shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
+to scalar arguments preserves success of the existing typed binder. This does
+not construct the topology witness from the byte stream. None of these
 candidate results establishes AP dormancy, DMA quarantine, interrupt routing,
 no-SMAP isolation, or permission to enter CPL3.
 

@@ -240,6 +240,43 @@ theorem finish_acceptance_iff
       exact UInt64.not_lt.mpr h
     simp_all [finishQuery, QotomBspTopology.expectedApicBase]
 
+/-- For a complete terminal shape, widening a typed BSP observation preserves
+exactly the existing typed bootstrap predicate. The topology witness is supplied
+by the caller; this theorem does not construct it from scalar state. -/
+theorem finish_typed_observation_iff
+    (topology : QotomBspTopology.Witness)
+    (observation : QotomBspTopology.BootstrapObservation)
+    (length : UInt64) (low : 44 < length)
+    (high : length ≤ UInt64.ofNat maxAcpiSdtBytes) :
+    finishQuery 3 0 length 0 0 0 0 0 4 0 85 0 0 0 length 0
+      observation.cpuidEdx.toUInt64 (if observation.readAvailable then 1 else 0)
+      observation.apicBase observation.executingId.toUInt64 1 = 1 ↔
+    QotomBspTopology.BootstrapValid topology observation := by
+  have widened_bound (value : UInt32) : value.toUInt64 ≤ 0xffffffff := by
+    have bound := value.toNat_lt
+    simp only [UInt64.le_iff_toNat_le]
+    simp
+    omega
+  rw [finish_acceptance_iff]
+  simp only [QotomBspTopology.BootstrapValid, topology.matchesBaseline]
+  simp [low, high, widened_bound, QotomBspTopology.baseline]
+  simp only [← UInt64.toNat_inj, ← UInt32.toNat_inj]
+  simp
+
+/-- With a caller-supplied topology witness, scalar finish acceptance is
+exactly success of the existing typed bootstrap binder on the same observation. -/
+theorem finish_typed_binding_iff
+    (topology : QotomBspTopology.Witness)
+    (observation : QotomBspTopology.BootstrapObservation)
+    (length : UInt64) (low : 44 < length)
+    (high : length ≤ UInt64.ofNat maxAcpiSdtBytes) :
+    finishQuery 3 0 length 0 0 0 0 0 4 0 85 0 0 0 length 0
+      observation.cpuidEdx.toUInt64 (if observation.readAvailable then 1 else 0)
+      observation.apicBase observation.executingId.toUInt64 1 = 1 ↔
+    ∃ witness, QotomBspTopology.bindBootstrap topology observation = .ok witness := by
+  rw [finish_typed_observation_iff topology observation length low high,
+    QotomBspTopology.bootstrap_acceptance_iff_valid]
+
 @[export leanos_qotom_madt_stream_finish_query]
 def exportedFinishQuery
     (status error offset recordOffset recordKind recordLength apicId flags
