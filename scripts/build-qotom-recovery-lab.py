@@ -22,7 +22,10 @@ p.add_argument('--ecam-memory-capture', action='store_true')
 p.add_argument('--dsdt-capture', action='store_true')
 p.add_argument('--ecam-read', action='store_true', help='use firmware-gated ECAM for the lab PCI scan')
 p.add_argument('--native-inventory', action='store_true', help='check the complete native PCI snapshot in the ECAM lab image')
+p.add_argument('--bsp-topology', action='store_true', help='bind root-selected MADT entries to a fresh BSP observation')
 a = p.parse_args()
+if a.bsp_topology and not a.native_inventory:
+    p.error('--bsp-topology requires --native-inventory')
 if a.native_inventory and not a.ecam_read:
     p.error('--native-inventory requires --ecam-read')
 if a.ecam_read and (not a.dsdt_capture or not a.ecam_memory_capture or a.pci_read_trace):
@@ -43,7 +46,8 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-pci-lab' if a.pci_diagnostic else
+out = root / 'build' / ('qotom-bsp-lab' if a.bsp_topology else
+                       'qotom-pci-lab' if a.pci_diagnostic else
                        'qotom-lab' if a.mode == 'completion' else 'qotom-kernel-hang')
 out.mkdir(parents=True, exist_ok=True)
 build = root / 'build' / 'boot'
@@ -141,6 +145,22 @@ if a.native_inventory:
     native_pci = native_pci_dir / 'native-pci.o'
     # Prepared canonical inputs predate this export; refresh the generated ABI.
     shutil.copy2(root / 'build/boundary-abi/boundary-abi.h', build / 'boundary-abi.h')
+if a.bsp_topology:
+    marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
+    end = '    serial_puts("LEANOS-LAB/1 ACPI-END\\n");'
+    if text.count(marker) != 1 or text.count(end) != 1:
+        raise SystemExit('unsupported BSP copy-consumer shape')
+    text = text.replace(marker, 'static uint32_t lab_bsp_copied_count;\n' +
+                        (root / 'hardware/lab/qotom-bsp.c.inc').read_text() + '\n' + marker)
+    text = text.replace(end, end + '\n    lab_bsp_copied_count = entries.count;')
+    gate = '    lab_prepare_ecam();'
+    if text.count(gate) != 1:
+        raise SystemExit('unsupported BSP firmware gate shape')
+    text = text.replace(gate, gate + '\n    lab_check_bsp(lab_bsp_copied_count);')
+    bsp_dir = out / 'bsp'
+    subprocess.run(['scripts/build-qotom-bsp-object.sh', str(bsp_dir)], cwd=root, check=True)
+    bsp_object = bsp_dir / 'bsp.o'
+    shutil.copy2(root / 'build/boundary-abi/boundary-abi.h', build / 'boundary-abi.h')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -169,6 +189,18 @@ if a.native_inventory:
             inserted += 1
     if inserted < 2:
         raise SystemExit('native inventory object missing prelink/final graph anchors')
+    graph = '\n'.join(lines) + '\n'
+if a.bsp_topology:
+    anchor = str(build / 'pci-config-read.o')
+    lines = graph.splitlines()
+    inserted = 0
+    for i, line in enumerate(lines):
+        if ('leanos-qotom-pci-diagnostic-prelink.' in line or
+                'leanos-qotom-pci-diagnostic.' in line) and anchor in line:
+            lines[i] = line.replace(anchor, anchor + ' ' + str(bsp_object))
+            inserted += 1
+    if inserted < 2:
+        raise SystemExit('BSP object missing prelink/final graph anchors')
     graph = '\n'.join(lines) + '\n'
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
@@ -219,7 +251,13 @@ if a.native_inventory:
                   root / '.lake/build/ir/LeanOS/PCIHeaderObservation.c',
                   root / '.lake/build/ir/LeanOS/QotomNativePCIFields.c',
                   build / 'boundary-abi.h', native_pci, native_pci_dir / 'symbols.txt'])
-manifest = {'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.bsp_topology:
+    files.extend([root / 'hardware/lab/qotom-bsp.c.inc',
+                  root / 'include/qotom_bsp_consumer.h',
+                  root / 'scripts/build-qotom-bsp-object.sh',
+                  root / 'LeanOS/QotomMadtStream.lean', bsp_dir / 'QotomMadtStream.c',
+                  bsp_object, bsp_dir / 'symbols.txt'])
+manifest = {'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
