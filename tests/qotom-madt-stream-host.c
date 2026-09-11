@@ -41,5 +41,17 @@ int main(void) {
                            state[9] || state[10] || state[11])) return 5;
         printf("%s %"PRIu64" %"PRIu64"\n",cases[c].name,result[1],result[2]);
     }
+    for (size_t p = 0; p < sizeof(probes)/sizeof(probes[0]); ++p) {
+        const uint64_t *a = probes[p].args;
+        for (uint64_t word = 0; word < 18; ++word) {
+            const uint64_t expected = word == 0 ? 1 : word == 1 ? 2 :
+                                      word == 2 ? probes[p].error : 0;
+            if (query(a,a[12],a[13],a[14],a[15],word) != expected) {
+                fprintf(stderr,"%s: word=%"PRIu64"\n",probes[p].name,word);
+                return 6;
+            }
+        }
+        printf("%s 2 %"PRIu64"\n",probes[p].name,probes[p].error);
+    }
     return 0;
 }

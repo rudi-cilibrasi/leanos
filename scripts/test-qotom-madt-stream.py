@@ -91,6 +91,24 @@ for label, recs, executing, error in cases:
     table[4:8] = len(table).to_bytes(4, 'little')
     table[9] = 0; table[9] = (-sum(table)) & 255
     source += f'#eval fullTableTest [{",".join(map(str, table))}] {executing}\n'
+# Probe invalid scalar inputs directly, independent of table traversal.
+initial = [44,0,0,0,0,0,0,256,0,0,0,0,132,0,44,0]
+probes = []
+for label, field, value in [
+    ('offset-mismatch',0,45), ('record-offset',1,12), ('record-kind',2,256),
+    ('record-length',3,13), ('apic-width',4,256), ('flags-width',5,2**32),
+    ('processor-count',6,5), ('admitted-width',7,257),
+    ('table-overflow',12,2**64-1), ('table-too-short',12,43),
+    ('executing-width',13,256), ('byte-offset',14,43), ('byte-width',15,256),
+]:
+    args = list(initial); args[field] = value
+    probes.append((label, args, 69))
+args = list(initial); args[12] = 45
+probes.append(('terminal-incomplete-record', args, 72))
+for _, args, error in probes:
+    query = 'LeanOS.QotomMadtStream.byteStepQuery ' + ' '.join(map(str,args))
+    source += f'#eval (List.range 18).map (fun w => {query} (UInt64.ofNat w))\n'
+
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp) / 'Replay.lean'; path.write_text(source)
     result = subprocess.run(['lake', 'env', 'lean', str(path)], cwd=ROOT,
@@ -100,9 +118,11 @@ with tempfile.TemporaryDirectory() as tmp:
     actual = result.stdout.splitlines()
     expected = [value for _, _, _, error in cases
                 for value in (f'({2 if error else 3}, {error})', 'false' if error else 'true')]
+    expected += ['[1, 2, ' + str(error) + ', ' + ', '.join(['0']*15) + ']'
+                 for _, _, error in probes]
     if actual != expected:
         for index, (want, got) in enumerate(zip(expected, actual)):
-            if want != got: print(cases[index // 2][0], 'expected', want, 'got', got)
+            if want != got: print(index, 'expected', want, 'got', got)
         raise SystemExit('scalar MADT replay mismatch: ' + result.stdout)
 print(f'PASS {len(cases)} native MADT scalar/full-table cases')
 # The independent C runner consumes these same named cases and expectations.
@@ -115,4 +135,9 @@ header += 'static const struct { const char *name; const uint8_t *bytes; size_t 
 for i, (label, _, executing, error) in enumerate(cases):
     header += f'{{"{label}",input_{i},sizeof(input_{i}),{executing},{error}}},\n'
 header += '};\n'
+header += 'static const struct { const char *name; uint64_t args[16], error; } probes[] = {\n'
+for label, args, error in probes:
+    header += '{"' + label + '",{' + ','.join(str(x)+'ULL' for x in args) + '},' + str(error) + '},\n'
+header += '};\n'
 (out / 'cases.h').write_text(header)
+print(f'PASS {len(probes)} malformed scalar probes, all 18 projection words')
