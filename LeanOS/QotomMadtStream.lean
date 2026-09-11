@@ -22,6 +22,7 @@ def byteStepQuery
     (currentOffset recordOffset recordKind recordLength apicId flags
       enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
       executingApicId byteOffset byteValue word : UInt64) : UInt64 :=
+  if word > 15 then 0 else
   let malformedState := currentOffset != byteOffset || byteOffset < 44 ||
     byteOffset >= tableLength || tableLength < 44 ||
     tableLength > UInt64.ofNat maxAcpiSdtBytes || recordOffset > 11 ||
@@ -112,5 +113,22 @@ def byteStepQuery
   else if word == 14 then nextSeen3
   else if word == 15 then byteValue
   else 0
+
+/-- Unsupported projection indices never expose state, for any caller inputs. -/
+theorem byte_step_out_of_range
+    (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word = 0 := by
+  simp only [byteStepQuery, outside, ↓reduceIte]
+
+/-- The version word is independent of input validity and transition state. -/
+theorem byte_step_version
+    (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue : UInt64) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue 0 = 1 := by
+  simp [byteStepQuery]
+
+@[export leanos_qotom_madt_stream_byte_step_query]
+def exportedByteStepQuery
+    (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) : UInt64 :=
+  byteStepQuery currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word
 
 end LeanOS.QotomMadtStream
