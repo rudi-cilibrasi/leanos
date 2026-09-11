@@ -38,7 +38,11 @@ def load_protocol(path):
     return found
 
 
-def classify(raw, protocol, cpu_replay, pci_replay):
+def classify(raw, protocol, cpu_replay, pci_replay, *, native_inventory=False):
+    if native_inventory:
+        checked = subprocess.run([str(pci_replay)], capture_output=True, timeout=30, check=True)
+        if checked.stdout != b'Hosted native Qotom inventory replay passed\n':
+            raise DiagnosticError('native inventory replay identity mismatch')
     if not raw or len(raw) > MAX_CAPTURE or not raw.endswith(b'\n'):
         raise DiagnosticError('capture length or terminator')
     if any(byte != 10 and not 32 <= byte <= 126 for byte in raw):
@@ -107,7 +111,13 @@ def classify(raw, protocol, cpu_replay, pci_replay):
                                          [len(headers), *(word for header in headers for word in header)])
             # The executable is generated from the inventory model; its result
             # is observational and never substitutes for DMA quarantine.
-            if inventory not in INVENTORY_RESULTS:
+            allowed = INVENTORY_RESULTS
+            if native_inventory:
+                allowed = allowed | {0x20000 + reason * 256 + 15 for reason in range(5)} | {
+                    base + 15 for base in (0x30000, 0x40000, 0x50000, 0x60000)}
+            if inventory == 1 and len(headers) != (16 if native_inventory else 15):
+                raise DiagnosticError('inventory success disagrees with selected profile count')
+            if inventory not in allowed:
                 raise DiagnosticError('unknown generated inventory result')
             reason = 'qotom-platform-pending'
         if lines[-1] != protocol['FINAL'] + ' status=FAIL reason=' + reason:
@@ -116,6 +126,8 @@ def classify(raw, protocol, cpu_replay, pci_replay):
     result.update(schema='leanos-qotom-pci-diagnostic-replay-v1',
                   capture_sha256=hashlib.sha256(raw).hexdigest(),
                   pci_scan=scan, pci_headers=headers, inventory_result=inventory)
+    if native_inventory:
+        result['inventory_profile'] = 'qotom-native-ecam-v1'
     return result
 
 
@@ -125,11 +137,12 @@ def main():
     parser.add_argument('--protocol', type=Path, default=Path('build/boot/serial-protocol.tsv'))
     parser.add_argument('--cpu-replay', type=Path, default=Path('build/j1900-cpu-host/host'))
     parser.add_argument('--pci-replay', type=Path, default=Path('build/qotom-pci-inventory-host/host'))
+    parser.add_argument('--native-inventory', action='store_true')
     args = parser.parse_args()
     try:
         with args.capture.open('rb') as stream:
             raw = stream.read(MAX_CAPTURE + 1)
-        result = classify(raw, load_protocol(args.protocol), args.cpu_replay.resolve(), args.pci_replay.resolve())
+        result = classify(raw, load_protocol(args.protocol), args.cpu_replay.resolve(), args.pci_replay.resolve(), native_inventory=args.native_inventory)
         for name, path in [('protocol', args.protocol), ('cpu_replay', args.cpu_replay), ('pci_replay', args.pci_replay)]:
             result[name + '_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
         print(json.dumps(result, indent=2))

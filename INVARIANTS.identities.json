@@ -14762,6 +14762,36 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomNativePCIInventory.lean",
+      "qualified": "LeanOS.QotomNativePCIInventory.check_preserves_raw",
+      "display": "check_preserves_raw",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIInventory.lean",
+      "qualified": "LeanOS.QotomNativePCIInventory.decodeAll_preserves_raw",
+      "display": "decodeAll_preserves_raw",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIInventory.lean",
+      "qualified": "LeanOS.QotomNativePCIInventory.distinct_from_historical",
+      "display": "distinct_from_historical",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIInventory.lean",
+      "qualified": "LeanOS.QotomNativePCIInventory.witness_has_complete_inventory",
+      "display": "witness_has_complete_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIInventory.lean",
+      "qualified": "LeanOS.QotomNativePCIInventory.witness_has_sixteen_functions",
+      "display": "witness_has_sixteen_functions",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIInventory.lean",
       "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",

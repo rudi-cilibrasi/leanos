@@ -110,14 +110,15 @@ cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
 export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
-if [[ "$export_count" -ne 76 ]]; then
-  echo "error: expected 76 generated boundary exports, found $export_count" >&2
+if [[ "$export_count" -ne 77 ]]; then
+  echo "error: expected 77 generated boundary exports, found $export_count" >&2
   exit 1
 fi
 
 grep -Fq '  X(leanos_boot_text_surface, 6)' "$tmp/out/boundary-abi.h"
 grep -Fq '  X(leanos_pci_header_observe, 21)' "$tmp/out/boundary-abi.h"
 grep -Fxq 'uint64_t leanos_qotom_pci_inventory_check(uint64_t, lean_object *);' "$tmp/out/boundary-abi.h"
+grep -Fxq 'uint64_t leanos_qotom_native_pci_inventory_check(uint64_t, lean_object *);' "$tmp/out/boundary-abi.h"
 grep -Fxq 'uint64_t leanos_qotom_pci_quarantine_observe(uint64_t, lean_object *);' "$tmp/out/boundary-abi.h"
 grep -Fxq 'uint64_t leanos_qotom_pci_quarantine_transition(uint64_t, lean_object *);' "$tmp/out/boundary-abi.h"
 grep -Fxq $'object-export\tleanos_qotom_bootstrap_query\tu64,u64,ByteArray,ByteArray,u64,Array.{0} UInt64,Array.{0} ByteArray,u64,u64,u64,u64,u64,u64,u64\tLeanOS.QotomBootstrapABI.exportedQuery\tLeanOS.QotomBootstrapABI' "$tmp/out/boundary-abi.tsv"
