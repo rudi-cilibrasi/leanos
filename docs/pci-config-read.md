@@ -31,3 +31,29 @@ the exact save/CLI/address-write/data-read/restore/return sequence and rejects
 nine mutations. Hosted tests substitute the I/O leaf; they do not execute
 privileged I/O, establish hardware behavior or prove the external exclusion
 assumptions. Run with pinned GCC and Clang using `LEANOS_CC`.
+
+`scripts/test-pci-config-read-qemu.py` executes the actual assembly leaf and
+callback in an isolated freestanding QEMU fixture. The fixture masks both
+PICs, runs one CPU and identity-maps its RAM. It captures flags immediately
+after native reads with IF clear and set, checking both the host identity
+and exact seeded flags (`0x47` and `0x247`). It then runs the actual complete
+segment collector and emits all sixteen dwords of each header to debugcon.
+The guest halts after a completion marker while the runner queries QMP.
+
+Two topologies cover the root bus alone and endpoints behind two bridges.
+The runner compares the complete, strictly ordered set of BDFs, vendor/device
+identities and class/subclass values with QMP's independently reported device
+inventory. The bridged case must contain two distinct nonzero buses. QMP does
+not independently validate the remaining header dwords. Four executed
+mutations must fail validation: bus forced to zero, reading the address port
+instead of the data port, discarding saved flags and unconditionally enabling
+interrupts. A guest timeout or crash fails the test, including negative cases;
+it cannot substitute for the expected completed capture and rejection.
+
+Run `LEANOS_CC=gcc python3 scripts/test-pci-config-read-qemu.py` and repeat
+with `LEANOS_CC=clang-18` in the pinned CI image. Per-compiler artifacts under
+`build/pci-config-read/qemu-*` include the ELF, native object, QEMU command,
+raw guest output, QMP inventory, compiler/QEMU versions and object/ELF hashes.
+The ordinary check script includes this test. These emulator observations do
+not establish physical Qotom behavior, interrupt interleaving correctness,
+NMI/SMM exclusion, bus-master quarantine or production platform admission.
