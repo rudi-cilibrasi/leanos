@@ -129,6 +129,35 @@ class Capture(unittest.TestCase):
                 self.assertEqual(function['status'],1)
         self.assertFalse(result['pcie_device']['dma_quarantine_established'])
 
+    def test_retained_ahci_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ahci-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True)
+        self.assertEqual(result['ahci_capabilities'],expected['ahci_capabilities'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],expected['diagnostic']['terminal_reason'])
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
+        self.assertFalse(result['ahci_capabilities']['dma_quarantine_established'])
+
+        observed=result['ahci_capabilities']
+        self.assertEqual(observed['status'],0)
+        self.assertEqual(tuple(observed[k] for k in
+            ('capability','control','ports','version','extended')),
+            (0xc720ff01,0x80000002,2,0x10300,0x38))
+
     def test_pcie_device_protected_projection(self):
         fixture = runpy.run_path(str(ROOT / 'scripts/test-qotom-pcie-device-capture.py'))
         capture = fixture['CAPTURE']

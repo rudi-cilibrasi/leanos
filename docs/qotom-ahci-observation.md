@@ -57,6 +57,10 @@ AHCI terminal survives projection through the earlier decoders. Synthetic
 protected replays cover success, all reachable helper/arm failures, malformed
 records, all-ones fields and terminal contradictions.
 
-Native image validation and protected physical capture are still pending.
-No hardware access has yet been performed by this helper.
+The [protected physical capture](../hardware/lab/observations/qotom-native-ahci-20260911/README.md)
+passed with CAP `c720ff01`, GHC `80000002`, PI `2`, VS `10300`, CAP2 `38`.
+It reports AHCI/global interrupts enabled, port 1 implemented, AHCI 1.3 and BOH
+clear. FreeBSD recovered automatically with the request consumed. The retained
+regression replays the exact values and recovery bytes. Port engine state and
+outstanding commands remain unobserved; no SATA write or DMA proof is supplied.
 It advances the SATA portion of #330 and #291 without granting boot admission.
