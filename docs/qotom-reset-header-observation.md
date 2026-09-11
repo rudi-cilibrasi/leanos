@@ -29,3 +29,26 @@ stop-and-drain contract, and recovery validation. A pending-status timeout must
 remain a failed quarantine result. USB recovery and firmware ownership must be
 accounted for before any controller reset is attempted. The present audit
 performs no hardware access and leaves issue #330 open.
+
+## Bounded AF observer
+
+`boot/pci-af-observation.h` provides a read-only observer for a previously
+collected list and its immutable PCI header. It refreshes the identity/list,
+requires exact agreement, selects a unique AF structure, and requires the
+standard six-byte shape with both TP and FLR bits and no reserved capability
+bits. It rejects a following capability header overlapping control/status.
+The payload read stays within conventional configuration space. At most 53
+configuration reads occur; no allocation or write callback is available.
+
+A successful result retains the raw control/status dword and AF offset.
+Neither pending-bit value is classified as quarantine success. The upper two
+bytes are retained without interpretation. Every rejection returns zero for
+the published offset and payload. Refreshing the list does not make hardware
+reads atomic; serialized access, immutable inputs, and nonaliasing remain
+caller obligations.
+
+The ordinary and sanitizer tests cover all 65,536 header length/support bit
+combinations, all payload-safe aligned offsets, the unsafe final slot,
+collection/payload failures, all-ones payload, list drift, overlap, duplicate
+AF entries, absent AF and invalid bounds. Native image emission and protected
+capture decoding for this observer remain to be integrated before hardware use.
