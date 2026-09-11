@@ -338,3 +338,26 @@ The QEMU capacity case must now retain the root-selected ACPI bytes, match
 independent QMP physical memory, and still reject PCI enumeration. CPU-rejection
 cases must not emit ACPI records. The original physical traces from the earlier
 ordering remain unchanged as historical evidence.
+
+## Bootstrap-processor observation
+
+`--bootstrap-capture` adds one lab record after successful CPU/MSR checks and
+before optional ACPI copying or PCI enumeration. It requires `--pci-diagnostic`
+on the builder and physical runner. Pass the same flag to the QEMU image and
+USB tests. The runner writes `bootstrap.json` and pins the decoder hash in its
+replay inputs; the original CPU/PCI bytes still pass the generated-C decoders.
+
+The sample retains CPUID.1:EDX, read availability and the complete 64-bit
+IA32_APIC_BASE value. CPUID MSR and APIC feature bits gate the read of MSR 0x1b;
+if either is absent, the record says unavailable and performs no RDMSR.
+The transport verifies that these CPUID bits match the existing accepted CPU
+record. The observer writes no MSR or APIC register and starts no processor.
+
+Intel's [SDM Volume 3A, Local APIC Status and Location and Figure 10-26](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf)
+identifies bit 8 as BSP, bit 11 as APIC global enable, and bit 10 as x2APIC
+mode enable. The JSON exposes those bits without repairing or admitting the
+value. A BSP sample identifies the executing processor's architectural role;
+it does not establish AP dormancy, safe interrupt routing, exclusive PCI access,
+or production runtime authority. The [physical Qotom capture](../hardware/lab/observations/qotom-bootstrap-20260911/README.md)
+reports `0xfee00900` with initial APIC ID 0 and verifies recovery to FreeBSD.
+PCI enumeration still rejects; no platform admission is claimed.
