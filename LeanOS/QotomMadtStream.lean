@@ -179,6 +179,36 @@ def finishQuery
     else if word == 3 then count
     else apicBase
 
+/-- Acceptance requires the complete terminal shape and BSP observation, for
+all scalar inputs. This does not establish the provenance of those inputs. -/
+theorem finish_acceptance_requires
+    (status error offset recordOffset recordKind recordLength apicId flags
+      count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId : UInt64)
+    (accepted : finishQuery status error offset recordOffset recordKind recordLength
+      apicId flags count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId 1 = 1) :
+    status = 3 ∧ error = 0 ∧ offset = tableLength ∧
+    44 < tableLength ∧ tableLength ≤ UInt64.ofNat maxAcpiSdtBytes ∧
+    recordOffset = 0 ∧ recordKind = 0 ∧ recordLength = 0 ∧
+    apicId = 0 ∧ flags = 0 ∧ count = 4 ∧ admitted = 0 ∧
+    seen0 = 85 ∧ seen1 = 0 ∧ seen2 = 0 ∧ seen3 = 0 ∧ executing = 0 ∧
+    cpuidEdx ≤ 0xffffffff ∧ sampleId ≤ 0xffffffff ∧
+    available = 1 ∧ cpuidEdx &&& 0x220 = 0x220 ∧ sampleId = executing ∧
+    apicBase = QotomBspTopology.expectedApicBase := by
+  simp [finishQuery] at accepted
+  repeat' (split at accepted <;> (try simp_all))
+  all_goals
+    by_cases hav : available = 0 <;> simp_all
+    by_cases hfeatures : cpuidEdx &&& 0x220 = 0x220 <;> simp_all
+    by_cases hid : sampleId = 0 <;> simp_all
+    by_cases hbsp : apicBase &&& 0x100 = 0 <;> simp_all
+    by_cases hbase : apicBase = QotomBspTopology.expectedApicBase <;> simp_all
+    simp only [UInt64.le_iff_toNat_le, ← UInt64.toNat_inj] at *
+    simp at *
+    omega
+
+
 @[export leanos_qotom_madt_stream_finish_query]
 def exportedFinishQuery
     (status error offset recordOffset recordKind recordLength apicId flags
