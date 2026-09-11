@@ -50,5 +50,12 @@ caller obligations.
 The ordinary and sanitizer tests cover all 65,536 header length/support bit
 combinations, all payload-safe aligned offsets, the unsafe final slot,
 collection/payload failures, all-ones payload, list drift, overlap, duplicate
-AF entries, absent AF and invalid bounds. Native image emission and protected
-capture decoding for this observer remain to be integrated before hardware use.
+AF entries, absent AF and invalid bounds. The builder's `--af-observation` option requires `--pci-capabilities` and
+uses `build/qotom-af-lab`. It retains the complete lists in bounded private
+storage and emits AF results only after the complete capability capture.
+The runner's matching flag fingerprints the decoder and retains
+`af-observation.json`. It validates framing and advertised structure against
+preceding capability records; failed refresh/read outcomes remain reported
+observations, not independently replayed hardware results. Synthetic protected
+capture tests cover success, missing/malformed records, and a failed refresh.
+A physical AF control/status capture remains outstanding.

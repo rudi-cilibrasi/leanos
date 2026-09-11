@@ -109,6 +109,39 @@ class Capture(unittest.TestCase):
         self.assertEqual(result['diagnostic']['inventory_result'],1)
         self.assertEqual(sum(len(f['headers']) for f in result['pci_capabilities']['functions']),47)
 
+    def test_af_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-capabilities-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(records, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, records + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':35,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True)
+        records = b''.join(f'LEANOS-LAB/1 PCI-AF profile=af-observation-v1 index={i} status={0 if i==10 else 1} offset={152 if i==10 else 0} raw={256 if i==10 else 0}\n'.encode() for i in range(16))
+        result = check(records)
+        self.assertEqual(result['af_observation']['functions'][10]['raw'],256)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('af_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['af_observation']['dma_quarantine_established'])
+        mutations = [b'', records+records, records.replace(b'index=10',b'index=09'),
+            records.replace(b'offset=152',b'offset=156'),
+            records.replace(b'raw=256',b'raw=4294967295'),
+            records.replace(b'raw=256',b'raw=4294967296'),
+            records.replace(b'status=1 offset=0',b'status=2 offset=0',1),
+            records.replace(b'offset=152 raw=256',b'offset=0 raw=0').replace(b'index=10 status=0',b'index=10 status=1')]
+        for mutation in mutations:
+            with self.assertRaises(ValueError): check(mutation)
+        failure = b'LEANOS-LAB/1 PCI-AF profile=af-observation-v1 index=0 status=4 offset=0 raw=0\n'
+        result = check(failure,P['FINAL'].encode()+b' status=FAIL reason=qotom-pci-af\n')
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-pci-af')
+        with self.assertRaises(ValueError): check(failure)
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():
