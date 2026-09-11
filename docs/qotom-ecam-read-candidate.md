@@ -124,3 +124,19 @@ check the active boot map, invalidate the aperture translation after each leaf
 change, restore the exact saved leaf, and publish only after a completed dword
 read. Existing ACPI copying performs byte loads through a writable aperture and
 must not be reused unchanged for this operation.
+
+`hardware/lab/qotom-ecam-window.h` implements the transaction over trusted
+control-read, invalidation, dword-load and terminal-fault primitives. It checks
+the armed context and controls, requires an identity-mapped supervisor RW/NX
+saved leaf, installs the read-only UC leaf, invalidates, samples privately,
+restores the exact original leaf including Accessed/Dirty bits, and invalidates
+again before publication. A failed read publishes nothing. A changed aperture,
+failed restoration or invalid post-read controls takes the terminal callback;
+it cannot return a usable sample. The transaction does not switch CR3.
+
+Hosted ordinary and sanitizer tests use the actual transaction with controlled
+primitives to check ordering, private output, hardware Accessed-bit handling,
+read failure cleanup, changed root, aperture interference and restoration
+failure. The native primitive bindings and root/alias initializer are still
+missing, so this transaction has not executed against physical ECAM. Arming
+remains a caller obligation; an arbitrary supplied context is not authority.
