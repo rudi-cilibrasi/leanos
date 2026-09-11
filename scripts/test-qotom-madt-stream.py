@@ -2,6 +2,7 @@
 """Replay actual MADT entry bytes and inventory mutations through scalar Lean."""
 import hashlib
 import json
+import itertools
 from pathlib import Path
 import subprocess
 import tempfile
@@ -43,6 +44,18 @@ cases += [('swapped', swapped, 0, 77),
           ('wrong-width', records + [bytes([0, 7])], 0, 71),
           ('truncated', records + [bytes([0])], 0, 72)]
 
+# Every permutation has the same ID bitset/count; only the baseline order passes.
+for order in itertools.permutations(range(4)):
+    permuted = list(records)
+    for position, source_index in enumerate(order):
+        permuted[cpu_indices[position]] = records[cpu_indices[source_index]]
+    cases.append(('order-' + ''.join(map(str, order)), permuted, 0,
+                  0 if order == (0, 1, 2, 3) else 77))
+# Reserved flag bits and firmware processor UIDs are not part of Processor.
+# Preserve the reference decoder's semantics rather than silently tightening them.
+cases += [('reserved-flags', changed(cpu_indices[0], 7, 128), 0, 0),
+          ('firmware-uid', changed(cpu_indices[0], 2, 255), 0, 0)]
+
 # The test driver allocates lists; byteStepQuery itself has only scalar inputs.
 source = (ROOT / 'LeanOS/QotomMadtStream.lean').read_text()
 source += '''
@@ -59,10 +72,25 @@ def streamTest (bytes : List UInt64) (length executing : UInt64)
     else if rest.isEmpty then (q 1, q 2)
     else streamTest rest length executing ((List.range 12).map fun i => q (UInt64.ofNat (i+3)))
 '''
+source += """
+def fullTableTest (bytes : List UInt8) (executing : UInt32) : Bool :=
+  match LeanOS.BootTopology.decodeCompleteMadtSnapshot bytes executing executing with
+  | .error _ => false
+  | .ok snapshot =>
+    match LeanOS.QotomBspTopology.check snapshot with
+    | .error _ => false
+    | .ok _ => true
+"""
 for label, recs, executing, error in cases:
     data = b''.join(recs)
     words = ','.join(map(str, data))
     source += f'#eval streamTest [{words}] {44+len(data)} {executing}\n'
+    # Repair only the outer SDT envelope of each named entry mutation so that
+    # the reference reaches the same entry bytes as the scalar stream.
+    table = bytearray(raw[:44] + data)
+    table[4:8] = len(table).to_bytes(4, 'little')
+    table[9] = 0; table[9] = (-sum(table)) & 255
+    source += f'#eval fullTableTest [{",".join(map(str, table))}] {executing}\n'
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp) / 'Replay.lean'; path.write_text(source)
     result = subprocess.run(['lake', 'env', 'lean', str(path)], cwd=ROOT,
@@ -70,9 +98,10 @@ with tempfile.TemporaryDirectory() as tmp:
     if result.returncode:
         raise SystemExit(result.stdout + result.stderr)
     actual = result.stdout.splitlines()
-    expected = [f'({2 if error else 3}, {error})' for _, _, _, error in cases]
+    expected = [value for _, _, _, error in cases
+                for value in (f'({2 if error else 3}, {error})', 'false' if error else 'true')]
     if actual != expected:
-        for case, want, got in zip(cases, expected, actual):
-            if want != got: print(case[0], 'expected', want, 'got', got)
+        for index, (want, got) in enumerate(zip(expected, actual)):
+            if want != got: print(cases[index // 2][0], 'expected', want, 'got', got)
         raise SystemExit('scalar MADT replay mismatch: ' + result.stdout)
-print(f'PASS {len(cases)} native MADT stream cases')
+print(f'PASS {len(cases)} native MADT scalar/full-table cases')
