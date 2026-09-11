@@ -32,7 +32,10 @@ def main():
     parser.add_argument('--acpi-capture', action='store_true')
     parser.add_argument('--pci-read-trace', action='store_true')
     parser.add_argument('--bootstrap-capture', action='store_true')
+    parser.add_argument('--ecam-memory-capture', action='store_true')
     args = parser.parse_args()
+    if args.ecam_memory_capture and not args.bootstrap_capture:
+        parser.error('--ecam-memory-capture requires --bootstrap-capture')
     if args.acpi_capture and not args.handoff_capture:
         parser.error('--acpi-capture requires --handoff-capture')
     if args.handoff_capture and not args.pci_diagnostic:
@@ -271,6 +274,10 @@ def main():
                         for filename, content in tables.items():
                             (output / (name + '.acpi') / filename).write_bytes(content)
                         (output / (name + '.acpi.json')).write_text(json.dumps(metadata, indent=2) + '\n')
+                    if args.ecam_memory_capture:
+                        memory = runpy.run_path(str(root / 'scripts/check-qotom-ecam-memory-capture.py'))
+                        raw, metadata = memory['extract'](raw, protocol)
+                        (output / (name + '.ecam-memory.json')).write_text(json.dumps(metadata, indent=2) + '\n')
                     if args.bootstrap_capture:
                         bootstrap = runpy.run_path(str(root / 'scripts/check-qotom-bootstrap-capture.py'))
                         raw, metadata = bootstrap['extract'](raw, protocol)
@@ -297,7 +304,7 @@ def main():
             results.append({'case': name, 'serial_sha256': hashlib.sha256(data).hexdigest(),
                             'request_consumed': name != 'bad-env'})
             print(name, 'PASS', flush=True)
-    report.write_text(json.dumps({'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
+    report.write_text(json.dumps({'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
         'usb_sha256': hashlib.sha256(args.image.read_bytes()).hexdigest(),
         'elf_sha256': digest, 'results': results}, indent=2) + '\n')
 
