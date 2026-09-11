@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 D = runpy.run_path(str(ROOT / 'scripts/check-qotom-ecam-capture.py'))
 A = runpy.run_path(str(ROOT / 'scripts/check-qotom-acpi-capture.py'))
-P = runpy.run_path(str(ROOT / 'scripts/check-qotom-pci-diagnostic.py'))['load_protocol'](ROOT / 'build/boot/serial-protocol.tsv')
+P = runpy.run_path(str(ROOT / 'scripts/check-qotom-pci-diagnostic.py'))['load_protocol'](ROOT / 'hardware/lab/observations/qotom-dsdt-20260911/diagnostic-protocol.tsv')
 C = ROOT / 'hardware/lab/observations/qotom-dsdt-20260911/cycle-1'
 _, META, FILES = A['extract']((C / 'serial.raw').read_bytes(), (C / 'multiboot2.bin').read_bytes(), dsdt=True)
 # Synthetic transport boundary fixture; this is not a native ECAM capture.

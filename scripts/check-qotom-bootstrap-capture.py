@@ -7,11 +7,14 @@ NUMBER = rb'(0|[1-9][0-9]*)'
 PATTERN = PREFIX + b'cpuid-edx=' + NUMBER + b' available=([01]) apic-base=' + NUMBER + b'\n'
 
 
-def extract(raw, protocol):
+def extract(raw, protocol, *, ecam_failure=False):
     lines = raw.splitlines(keepends=True)
+    rejected_ecam = ecam_failure and any(raw.endswith(protocol['FINAL'].encode() +
+        b' status=FAIL reason=' + reason + b'\n') for reason in
+        (b'qotom-ecam-arm', b'qotom-ecam-transaction'))
     indices = [i for i, line in enumerate(lines) if line.startswith(PREFIX)]
     scan = protocol['PCI-SCAN'].encode() + b' '
-    if not any(line.startswith(scan) for line in lines):
+    if not rejected_ecam and not any(line.startswith(scan) for line in lines):
         if indices:
             raise ValueError('bootstrap sample without completed CPU/MSR gate')
         return raw, None

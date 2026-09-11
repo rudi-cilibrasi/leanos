@@ -237,3 +237,19 @@ Five synthetic boundary tests pass, including one-byte changes in each firmware
 table. The actual foreign-firmware QEMU boot also passes this decoder and the
 independent ACPI memory comparison. Protected-runner integration remains pending;
 synthetic successful-arm records are not physical ECAM evidence.
+
+The protected runner now accepts `--ecam-read` with DSDT/memory capture and
+without mechanism-1 tracing. It decodes the arm before the bootstrap/memory
+records and retains `ecam.json`. Decoder and firmware-manifest hashes are
+included in the input-stability check. Exact ECAM arm/transaction failures may
+retain completed CPU/MSR observations without a PCI scan; their CPU/MSR replay
+keeps the original terminal reason and explicitly reports its limited scope.
+The default decoders still reject those extended terminal paths unless the
+ECAM option is enabled. No PCI scan is synthesized for an early failure.
+
+Three composed regression tests cover synthetic completed scans, both early
+failure paths, CPU/MSR disagreement, malformed records and option conflicts.
+The retained DSDT/bootstrap/memory and recovery tests continue to pass. An
+actual QEMU rejection capture also passes classification with a synthetic
+recovery envelope. These are classifier tests; the new runner path has not yet
+completed a physical protected cycle.

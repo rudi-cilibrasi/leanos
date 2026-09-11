@@ -132,6 +132,7 @@ python3 ./scripts/test-kvm-preflight.py
 
 if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-generated-boundaries.sh ordinary
+  python3 scripts/test-qotom-ecam-protected.py
 
   ./scripts/check-hosted-generated-boundaries.sh sanitized
 
