@@ -18,6 +18,19 @@ namespace LeanOS.QotomMadtStream
 
 open BootTopology
 
+/-- One completed processor must be the next enabled baseline member. -/
+@[inline] def processorMatches (position apicId : UInt64) (enabled : Bool) : Bool :=
+  position < 4 && apicId == position * 2 && enabled
+
+theorem processor_matches_iff (position apicId : UInt64) (enabled : Bool) :
+    processorMatches position apicId enabled = true ↔
+      position < 4 ∧ apicId = position * 2 ∧ enabled = true := by
+  simp [processorMatches, and_assoc]
+
+theorem processor_matches_rejects_disabled (position apicId : UInt64) :
+    processorMatches position apicId false = false := by
+  simp [processorMatches]
+
 def byteStepQuery
     (currentOffset recordOffset recordKind recordLength apicId flags
       enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
@@ -78,7 +91,7 @@ def byteStepQuery
   -- Every processor record must occupy the next exact baseline position.
   -- Count all processor records by rejecting disabled records immediately.
   let inventoryError := recordComplete && nextKind == 0 &&
-    (enabledCount >= 4 || nextApicId != enabledCount * 2 || !enabled)
+    !processorMatches enabledCount nextApicId enabled
   let inventoryCountError := tableComplete && recordComplete &&
     nextEnabledCount != 4
   let executingError := tableComplete && recordComplete &&
