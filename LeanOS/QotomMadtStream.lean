@@ -275,6 +275,66 @@ theorem completed_processor_advances_count
   simp [byteStepQuery] at accepted ⊢
   repeat' (split at accepted <;> (try simp_all))
 
+/-- A completed local-APIC record clears every partial-record field before
+another record starts. A prior record's ID or flags cannot carry over. -/
+theorem completed_processor_clears_partial_state
+    (currentOffset apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+      tableLength executingApicId byteOffset byteValue word : UInt64)
+    (field : word = 4 ∨ word = 5 ∨ word = 6 ∨ word = 7 ∨ word = 8)
+ :
+    byteStepQuery currentOffset 7 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue word = 0 := by
+  rcases field with h | h | h | h | h <;> subst word <;>
+    simp [byteStepQuery]
+
+/-- On success the exposed next byte offset advances exactly once. -/
+theorem successful_byte_advances_offset
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 = 0) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 3 = byteOffset + 1 := by
+  simp [byteStepQuery] at accepted ⊢
+  intro rejected
+  exact (rejected accepted).elim
+
+/-- Successful byte transitions are bound to the caller's current offset
+inside the bounded MADT, so the next-offset addition cannot wrap. -/
+theorem successful_byte_position_bounded
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 = 0) :
+    currentOffset = byteOffset ∧ 44 ≤ byteOffset ∧ byteOffset < tableLength ∧
+      tableLength ≤ UInt64.ofNat maxAcpiSdtBytes := by
+  have same : currentOffset = byteOffset := by
+    apply Classical.byContradiction
+    intro h
+    simp [byteStepQuery, h] at accepted
+  have low : 44 ≤ byteOffset := by
+    apply Classical.byContradiction
+    intro h
+    have bad := UInt64.not_le.mp h
+    simp [byteStepQuery, bad] at accepted
+  have within : byteOffset < tableLength := by
+    apply Classical.byContradiction
+    intro h
+    have bad := UInt64.not_lt.mp h
+    simp [byteStepQuery, bad] at accepted
+  have bound : tableLength ≤ UInt64.ofNat maxAcpiSdtBytes := by
+    apply Classical.byContradiction
+    intro h
+    have bad := UInt64.not_le.mp h
+    simp [byteStepQuery, bad] at accepted
+  exact ⟨same, low, within, bound⟩
+
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :

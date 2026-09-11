@@ -23,3 +23,7 @@ These checks describe the values accepted by the scalar topology stream and its 
 
 - `flags_bytes_match_reference` — Accumulating four arbitrary bytes with shifts and bitwise OR yields exactly the reference decoder’s natural-number flags value, without overflow.
 - `flags_predicates_match_reference` — Testing the reconstructed enabled and online-capable bits agrees with the reference arithmetic predicates for all byte values, including reserved high bits.
+
+- `completed_processor_clears_partial_state` — At the last byte of a local-APIC record, every partial-record projection is zero, including on rejection.
+- `successful_byte_advances_offset` — Every error-free transition exposes exactly the preceding byte offset plus one as its next offset.
+- `successful_byte_position_bounded` — An error-free transition uses the supplied current offset and lies within the bounded MADT entry region.

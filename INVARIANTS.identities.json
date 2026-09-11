@@ -14289,6 +14289,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.completed_processor_clears_partial_state",
+      "display": "completed_processor_clears_partial_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.completed_processor_requires_guard",
       "display": "completed_processor_requires_guard",
       "kind": "theorem"
@@ -14363,6 +14369,18 @@
       "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.processor_matches_typed_record",
       "display": "processor_matches_typed_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.successful_byte_advances_offset",
+      "display": "successful_byte_advances_offset",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.successful_byte_position_bounded",
+      "display": "successful_byte_position_bounded",
       "kind": "theorem"
     },
     {
