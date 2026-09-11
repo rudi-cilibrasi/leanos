@@ -23,6 +23,7 @@ import re
 import struct
 import sys
 import firmware_root_corpus as roots
+import native_handoff_corpus as native
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -241,6 +242,7 @@ def validate_case(case: dict, seen_ids: set) -> None:
 
 
 def validate(manifest: dict) -> list[dict]:
+    native.inputs()  # validates the separately retained native boot provenance
     seen: set = set()
     for case in manifest["cases"]:
         try:
@@ -443,7 +445,7 @@ def normalize(cases: list[dict], out: Path) -> list[dict]:
             rows.append({"case": case["id"], "input": f"{case['id']}/{name}", "stage": stage,
                          "path": path, "words": result_words(stage, case["mutations"][name], tables),
                          "result": case["mutations"][name]})
-    return rows
+    return rows + native.rows(out)
 
 
 def write_replay(rows: list[dict], cases: list[dict], out: Path) -> None:
@@ -454,7 +456,7 @@ def write_replay(rows: list[dict], cases: list[dict], out: Path) -> None:
         handle.write("# input\tstage\tfile\targ0\targ1\twords\n")
         for row in rows:
             if row["stage"] == "handoff":
-                arg0, arg1 = MULTIBOOT2_MAGIC, INFO_ADDRESS
+                arg0, arg1 = row.get("handoff_args", (MULTIBOOT2_MAGIC, INFO_ADDRESS))
             else:
                 arg0, arg1 = ids[row["case"]]["bsp"], ids[row["case"]]["executing"]
             if row["stage"] == "root" and row["root"].executing_override is not None:
@@ -482,7 +484,8 @@ def write_lean(rows: list[dict], cases: list[dict], out: Path) -> None:
         if row["stage"] == "root":
             query = roots.lean_query(row["root"], ids[row["case"]]["executing"])
         elif row["stage"] == "handoff":
-            query = f"BootMemoryMapDecoderABI.query {MULTIBOOT2_MAGIC} {INFO_ADDRESS} input{index}"
+            magic, address = row.get("handoff_args", (MULTIBOOT2_MAGIC, INFO_ADDRESS))
+            query = f"BootMemoryMapDecoderABI.query {magic} {address} input{index}"
         else:
             apic = ids[row["case"]]
             query = f"BootTopology.completeTopologyQuery input{index} {apic['bsp']} {apic['executing']}"
