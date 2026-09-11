@@ -96,5 +96,15 @@ while arming. Read restoration and post-control checks remain mandatory.
 Window/arm tests cover every byte offset, all six permitted loads, failed loads,
 mapping/control interference, 4096 possible resource aliases, all bound header
 bits and prior-global bits, and failed prior statuses. Both accepted global
-interrupt states remain covered. Native emission, protected decoding and the
-physical port capture remain necessary before this can guide device shutdown.
+interrupt states remain covered.
+
+The opt-in `--ahci-port` build requires the global AHCI capture and records all
+seven port samples after disarming its access contexts. Local arm failures use
+status 8 (global window) or 9 (port window); helper failures remain 3 through 7.
+The protected runner fingerprints the port decoder, retains `ahci-port.json`,
+and preserves the actual failure terminal while replaying preceding stages.
+Decoding rejects missing/duplicate records, malformed values, failed observations
+with nonzero payload, all-ones successful samples, mismatched terminals, and
+helper observations without the bound prior global profile. Port samples do not
+establish an atomic snapshot or DMA quarantine. A physical port capture remains
+necessary before this can guide device shutdown.

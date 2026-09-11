@@ -8,6 +8,9 @@ static struct lab_ahci_window lab_ahci_window = {
     .controls=lab_ecam_native_controls, .invalidate=lab_ecam_native_invalidate,
     .load32=lab_ecam_native_load32, .fault=lab_ahci_fault
 };
+#ifdef LEANOS_QOTOM_AHCI_PORT
+#include "qotom-ahci-port.c.inc"
+#endif
 /* Prior device stages have returned with their contexts disarmed. The private
  * ECAM and AHCI reads serialize through the same restored identity aperture. */
 static __attribute__((noinline)) void lab_capture_ahci(
@@ -35,5 +38,8 @@ static __attribute__((noinline)) void lab_capture_ahci(
     serial_puts(" version=");serial_u64(result.version);
     serial_puts(" extended=");serial_u64(result.extended);serial_putc('\n');
     if(status!=QOTOM_AHCI_OK)pre_admission_fail("qotom-ahci-capabilities");
+#ifdef LEANOS_QOTOM_AHCI_PORT
+    lab_capture_ahci_port(&view,&snapshot->headers[2],&result);
+#endif
 }
 #endif
