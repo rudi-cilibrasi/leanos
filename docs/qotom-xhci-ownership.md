@@ -407,8 +407,8 @@ raw command/status values, including state changes between reads; they are not
 an atomic snapshot or a halt, drain, firmware-exclusion or DMA-containment proof.
 Tests cover every read-failure position at the maximum list length, exact access
 order and addresses, CNR guards, missing-device samples, ownership/SMI/resource/
-list drift, live vendor status and zero failed output. A protected physical
-capture remains to be added.
+list drift, live vendor status and zero failed output. The physical capture
+below exercises the native path.
 
 ## Restricted operational read mapping
 
@@ -440,4 +440,18 @@ The decoder requires a successful SMI prefix and exact SMI binding for helper
 results. It rejects impossible statuses, nonzero failed output, CNR/missing-device
 success samples and contradictory terminals. It retains changes between the two
 status reads without inferring an atomic snapshot or controller halt. Physical
-state and automatic recovery still require a protected boot of the built image.
+state and automatic recovery are retained in the protected capture below.
+
+## Physical operational result
+
+The [protected operational capture](../hardware/lab/observations/qotom-native-xhci-operational-20260911/README.md)
+reported USBSTS `0x1`, USBCMD `0`, USBSTS `0x1`, with successful before/after
+resource/list/ownership verification. Both status samples report halted and the
+command has Run/Stop and interrupt enables clear. No stop or reset was needed
+for this observation. FreeBSD recovered automatically with the request consumed;
+independent SSH verified the installed image and configuration.
+
+The next BME step must refresh this exact stopped state before its write and
+verify it afterward. These samples do not establish outstanding-transaction
+drain or continuing firmware/AP exclusion. DMA quarantine and whole-platform
+integration remain incomplete; the terminal is still `qotom-platform-pending`.
