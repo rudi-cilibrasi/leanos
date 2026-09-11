@@ -272,3 +272,25 @@ reversed maps retain their original normalized regions. The overlapping maps
 remain accepted and pin their changed region projections. Independent drift
 tests change source entry count/order and update the raw hashes, then require
 the unchanged normalized expectation to reject the alteration.
+
+## Native Qotom firmware-root replay
+
+The native Qotom case retains the actual Multiboot2 information block, captured
+magic and physical address, executing APIC ID, selected XSDT and its ten full
+physical table copies. It checks the capture manifest, serial/event identity,
+raw handoff transport, root binding and table bytes before producing replay
+inputs. No E820 or ACPI tag reconstruction is used for this case.
+
+`firmware-corpus/qotom-native-root.json` pins the complete six-word projection
+(five ABI words and an out-of-range zero) for the original input and 24 derived
+negative cases. The original result is admission rejection
+`multipleEnabledProcessors`, not a malformed-root or missing-copy rejection.
+It does not establish BSP/AP dormancy, DMA containment, exclusive PCI access,
+FADT/display authorization, or production hardware admission.
+
+The root bundle supports an optional captured magic/address pair after the
+existing three header fields. Historical bundles retain their default magic
+and address; native bundles carry the recorded values into both the Lean and
+generated-C queries. Normalized digests include non-default handoff arguments.
+Large raw byte arrays are named separately in generated Lean to keep query
+expressions manageable without changing their bytes or result expectations.

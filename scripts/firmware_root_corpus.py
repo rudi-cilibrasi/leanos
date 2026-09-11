@@ -14,6 +14,8 @@ class RootReplay:
     root_address: int
     tables: tuple[tuple[int, bytes], ...]
     executing_override: int | None = None
+    magic: int = 0x36d76289
+    info_address: int = 0x1000
 
     def digest(self):
         # Content-only encoding: output paths never affect normalized identity.
@@ -22,6 +24,8 @@ class RootReplay:
             'root_address': self.root_address,
             'tables': [[address, data.hex()] for address, data in self.tables],
         }
+        if (self.magic, self.info_address) != (0x36d76289, 0x1000):
+            content.update(magic=self.magic, info_address=self.info_address)
         if self.executing_override is not None:
             content['executing_override'] = self.executing_override
         return hashlib.sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
@@ -32,7 +36,10 @@ class RootReplay:
         root = target / 'root.bin'
         info.write_bytes(self.info)
         root.write_bytes(self.root)
-        lines = [f'{self.root_address}\t{info}\t{root}']
+        header = f'{self.root_address}\t{info}\t{root}'
+        if (self.magic, self.info_address) != (0x36d76289, 0x1000):
+            header += f'\t{self.magic}\t{self.info_address}'
+        lines = [header]
         for index, (address, data) in enumerate(self.tables):
             table = target / f'table-{index}.bin'
             table.write_bytes(data)
@@ -185,7 +192,7 @@ def lean_query(replay, executing):
         return '⟨#[' + ', '.join(map(str, data)) + ']⟩'
     addresses = '#[' + ', '.join(str(a) for a, _ in replay.tables) + ']'
     tables = '#[' + ', '.join(array(b) for _, b in replay.tables) + ']'
-    return (f'BootMemoryMapDecoderABI.capturedRootQuery 0x36d76289 0x1000 '
+    return (f'BootMemoryMapDecoderABI.capturedRootQuery {replay.magic} {replay.info_address} '
             f'{array(replay.info)} {array(replay.root)} {replay.root_address} '
             f'{addresses} {tables} {executing}')
 
@@ -296,6 +303,7 @@ def rejection_name(words):
         100:'truncatedTag',101:'malformedTagSize',102:'tagOutOfBounds',103:'missingEndTag',
         104:'misplacedEndTag',105:'tooManyTags',106:'invalidSignature',107:'unsupportedRevision',
         108:'invalidRsdpLength',109:'invalidLegacyChecksum',110:'invalidExtendedChecksum',
+        201:'handoff.badMagic',202:'handoff.unalignedInfo',
         300:'copyCountExceeded',301:'copyCountMismatch',302:'copyBytesExceeded',
         303:'tableBytesExceeded',304:'executingApicIdOverflow',305:'handoffBytesExceeded',
     }
@@ -330,3 +338,22 @@ def lean_bounds():
         lines += [f'example : (List.range 5).map (fun word => {query} (UInt64.ofNat word)) = [1, 2, {code}, 0, 0] := by',
                   '  native_decide']
     return lines
+
+
+def lean_definitions(replay, executing, prefix):
+    """Name large captured byte arrays before constructing the query closure."""
+    def array(data):
+        return '⟨#[' + ', '.join(map(str, data)) + ']⟩'
+    lines = [f'def {prefix}Info : ByteArray := {array(replay.info)}',
+             f'def {prefix}Root : ByteArray := {array(replay.root)}']
+    for i, (_, data) in enumerate(replay.tables):
+        lines.append(f'def {prefix}Table{i} : ByteArray := {array(data)}')
+    lines.append(f'def {prefix}Addresses : Array UInt64 := #[' +
+                 ', '.join(str(address) for address, _ in replay.tables) + ']')
+    lines.append(f'def {prefix}Tables : Array ByteArray := #[' +
+                 ', '.join(f'{prefix}Table{i}' for i in range(len(replay.tables))) + ']')
+    if replay.executing_override is not None:
+        executing = replay.executing_override
+    query = (f'BootMemoryMapDecoderABI.capturedRootQuery {replay.magic} {replay.info_address} '
+             f'{prefix}Info {prefix}Root {replay.root_address} {prefix}Addresses {prefix}Tables {executing}')
+    return lines, query
