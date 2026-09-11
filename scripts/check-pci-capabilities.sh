@@ -124,3 +124,9 @@ leanos_run_sanitized "$build/express-sanitized"
 leanos_run_sanitized "$build/pcie-device-lab-sanitized"
 
 python3 scripts/test-qotom-pcie-device-capture.py
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ahci-capabilities.c -o "$build/ahci-capabilities"
+"$build/ahci-capabilities"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ahci-capabilities.c -o "$build/ahci-capabilities-sanitized"
+leanos_run_sanitized "$build/ahci-capabilities-sanitized"
