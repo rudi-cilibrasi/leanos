@@ -44,16 +44,18 @@ candidate results establishes AP dormancy, DMA quarantine, interrupt routing,
 no-SMAP isolation, or permission to enter CPL3.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
-toolchain on PATH. It checks 47 native-derived table cases against the full
+toolchain on PATH and the pinned CI container for sanitizer runs. Pass
+`ordinary` or `sanitized` to run one mode; the default runs both. It checks 47 native-derived table cases against the full
 MADT decoder and Qotom policy, 14 malformed scalar probes, 28 finish cases,
 and 9 typed BSP-policy comparisons. The physical MADT and BSP observations
 are manifest-hash pinned; mutated tables have their outer length/checksum
 repaired only to compare the same entry bytes. The C harness carries actual
 stream terminal outputs into the finish query for all table cases.
 
-Ordinary and ASan/UBSan generated C must agree. A separate retained-symbol
+Ordinary and ASan/UBSan generated C must agree. Both modes check runtime
+function-entry coverage of both exports from the hosted-boundary manifest.
+Sanitized mode uses the shared pinned compiler, flags and runtime settings,
+and verifies sanitizer switches on the generated object. A separate retained-symbol
 link probe requires both scalar exports to link without undefined symbols or
 Lean runtime dependencies. That probe is not a bootable kernel and does not
-establish a final production object's hardware-write contract. The runner
-still needs the shared hosted-boundary sanitizer and function-entry coverage
-integration before joining the repository-wide hosted manifest.
+establish a final production object's hardware-write contract. The runner is registered in the repository-wide hosted manifest.

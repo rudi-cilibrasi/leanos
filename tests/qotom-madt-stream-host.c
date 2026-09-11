@@ -20,7 +20,12 @@ static uint64_t finish(const uint64_t a[20], uint64_t word) {
         a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15],a[16],a[17],
         a[18],a[19],word);
 }
+extern void leanos_register_boundary_target(const char *, void *);
 int main(void) {
+    leanos_register_boundary_target("leanos_qotom_madt_stream_byte_step_query",
+        (void *)(uintptr_t)&leanos_qotom_madt_stream_byte_step_query);
+    leanos_register_boundary_target("leanos_qotom_madt_stream_finish_query",
+        (void *)(uintptr_t)&leanos_qotom_madt_stream_finish_query);
     for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
         uint64_t state[12] = {44,0,0,0,0,0,0,256,0,0,0,0};
         uint64_t result[18] = {0};
