@@ -1,0 +1,329 @@
+nexus0
+  smbios0 <System Management BIOS>
+  vtvga0 <VT VGA driver>
+      I/O memory addresses:
+          0xa0000-0xaffff
+  cryptosoft0 <software crypto>
+  aesni0
+  ram0 <System RAM>
+      I/O memory addresses:
+          0x0-0x8d7ff
+          0x100000-0x1effffff
+          0x20100000-0xb9767fff
+          0xb9bb1000-0xb9bb1fff
+          0xb9bf4000-0xb9d62fff
+          0xb9ffa000-0xb9ffffff
+          0x100000000-0x23fffffff
+  apic0 <APIC resources>
+      I/O memory addresses:
+          0xfec00000-0xfec0001f
+  acpi0 <ALASKA A M I >
+      Interrupt request lines:
+          0x9
+      I/O ports:
+          0x2e-0x2f
+          0x4e-0x4f
+          0x61
+          0x63
+          0x65
+          0x67
+          0x70
+          0x80-0x8f
+          0x92
+          0xb2-0xb3
+          0x400-0x47f
+          0x500-0x5fe
+          0x600-0x61f
+          0x680-0x69f
+          0xa00-0xa1f
+          0xa20-0xa2f
+          0xa30-0xa3f
+      I/O memory addresses:
+          0xe0000000-0xefffffff
+          0xfed01000-0xfed01fff
+          0xfed03000-0xfed03fff
+          0xfed04000-0xfed04fff
+          0xfed08000-0xfed08fff
+          0xfed0c000-0xfed0ffff
+          0xfed1c000-0xfed1cfff
+          0xfee00000-0xfeefffff
+          0xfef00000-0xfeffffff
+    cpu0 <ACPI CPU> pnpinfo _HID=none _UID=0 _CID=none at handle=\_PR_.CPU0
+      acpi_throttle0
+      est0
+      p4tcc0
+    cpu1 <ACPI CPU> pnpinfo _HID=none _UID=0 _CID=none at handle=\_PR_.CPU1
+      acpi_throttle1
+      est1
+      p4tcc1
+    cpu2 <ACPI CPU> pnpinfo _HID=none _UID=0 _CID=none at handle=\_PR_.CPU2
+      acpi_throttle2
+      est2
+      p4tcc2
+    cpu3 <ACPI CPU> pnpinfo _HID=none _UID=0 _CID=none at handle=\_PR_.CPU3
+      acpi_throttle3
+      est3
+      p4tcc3
+    atrtc0 <AT realtime clock> pnpinfo _HID=PNP0B00 _UID=0 _CID=none at handle=\_SB_.RTC0
+        Interrupt request lines:
+            0x8
+    hpet0 <High Precision Event Timer> pnpinfo _HID=PNP0103 _UID=0 _CID=none at handle=\_SB_.HPET
+        Interrupt request lines:
+            0x14
+        I/O memory addresses:
+            0xfed00000-0xfed003ff
+    pcib0 <ACPI Host-PCI bridge> pnpinfo _HID=PNP0A08 _UID=0 _CID=PNP0A03 at handle=\_SB_.PCI0
+        I/O ports:
+            0xcf8-0xcff
+      pci0 <ACPI PCI bus>
+          PCI domain 0 bus numbers:
+              0
+        hostb0 <Host to PCI bridge> pnpinfo vendor=0x8086 device=0x0f00 subvendor=0x8086 subdevice=0x0f31 class=0x060000 at slot=0 function=0 dbsf=pci0:0:0:0 handle=\_SB_.PCI0.VLVC
+        vgapci0 <VGA-compatible display> pnpinfo vendor=0x8086 device=0x0f31 subvendor=0x8086 subdevice=0x0f31 class=0x030000 at slot=2 function=0 dbsf=pci0:0:2:0 handle=\_SB_.PCI0.GFX0
+            I/O ports:
+                0xf080-0xf087
+            I/O memory addresses:
+                0xc0000000-0xcfffffff
+                0xd0000000-0xd03fffff
+          drmn0
+        ahci0 <Intel BayTrail AHCI SATA controller> pnpinfo vendor=0x8086 device=0x0f23 subvendor=0x8086 subdevice=0x0f23 class=0x010601 at slot=19 function=0 dbsf=pci0:0:19:0 handle=\_SB_.PCI0.SATA
+            Interrupt request lines:
+                0x57
+            I/O ports:
+                0xf020-0xf03f
+                0xf040-0xf043
+                0xf050-0xf057
+                0xf060-0xf063
+                0xf070-0xf077
+            I/O memory addresses:
+                0xd0916000-0xd09167ff
+          ahcich0 at channel=0 (disabled)
+          ahcich1 <AHCI channel> at channel=1
+              I/O memory addresses:
+                  0xd0916180-0xd09161ff
+        xhci0 <Intel BayTrail USB 3.0 controller> pnpinfo vendor=0x8086 device=0x0f35 subvendor=0x8086 subdevice=0x0f35 class=0x0c0330 at slot=20 function=0 dbsf=pci0:0:20:0 handle=\_SB_.PCI0.XHC1
+            Interrupt request lines:
+                0x58
+            I/O memory addresses:
+                0xd0900000-0xd090ffff
+          usbus0
+            uhub0 <Intel XHCI root HUB, class 9/0, rev 3.00/1.00, addr 1>
+              umass0 <Generic Mass Storage, class 0/0, rev 2.00/1.00, addr 1> pnpinfo vendor=0x058f product=0x6387 devclass=0x00 devsubclass=0x00 devproto=0x00 sernum="11758C40" release=0x0100 mode=host intclass=0x08 intsubclass=0x06 intprotocol=0x50 at bus=0 hubaddr=1 port=1 devaddr=2 interface=0 ugen=ugen0.2
+              usbhid0 <vendor 0x30fa USB Optical Mouse, class 0/0, rev 1.10/1.00, addr 2> pnpinfo vendor=0x30fa product=0x0300 devclass=0x00 devsubclass=0x00 devproto=0x00 sernum="" release=0x0100 mode=host intclass=0x03 intsubclass=0x01 intprotocol=0x02 at bus=0 hubaddr=1 port=2 devaddr=3 interface=0 ugen=ugen0.3
+                hidbus0 <HID bus>
+                  hms0 <vendor 0x30fa USB Optical Mouse> pnpinfo page=0x0001 usage=0x0002 bus=0x03 vendor=0x30fa product=0x0300 version=0x0100 at index=0
+              uhub1 <vendor 0x05e3 USB2.0 Hub, class 9/0, rev 2.00/32.98, addr 3> pnpinfo vendor=0x05e3 product=0x0610 devclass=0x09 devsubclass=0x00 devproto=0x02 sernum="" release=0x3298 mode=host intclass=0x09 intsubclass=0x00 intprotocol=0x02 at bus=0 hubaddr=1 port=4 devaddr=4 interface=0 ugen=ugen0.4
+                usbhid1 <Chicony USB Keyboard, class 0/0, rev 2.00/1.44, addr 4> pnpinfo vendor=0x04f2 product=0x0402 devclass=0x00 devsubclass=0x00 devproto=0x00 sernum="" release=0x0144 mode=host intclass=0x03 intsubclass=0x01 intprotocol=0x01 at bus=0 hubaddr=4 port=3 devaddr=5 interface=0 ugen=ugen0.5
+                  hidbus1 <HID bus>
+                    hkbd0 <Chicony USB Keyboard> pnpinfo page=0x0001 usage=0x0006 bus=0x03 vendor=0x04f2 product=0x0402 version=0x0144 at index=0
+                usbhid2 <Chicony USB Keyboard, class 0/0, rev 2.00/1.44, addr 4> pnpinfo vendor=0x04f2 product=0x0402 devclass=0x00 devsubclass=0x00 devproto=0x00 sernum="" release=0x0144 mode=host intclass=0x03 intsubclass=0x00 intprotocol=0x00 at bus=0 hubaddr=4 port=3 devaddr=5 interface=1 ugen=ugen0.5
+                  hidbus2 <HID bus>
+                    hsctrl0 <Chicony USB Keyboard System Control> pnpinfo page=0x0001 usage=0x0080 bus=0x03 vendor=0x04f2 product=0x0402 version=0x0144 at index=0
+                    hcons0 <Chicony USB Keyboard Consumer Control> pnpinfo page=0x000c usage=0x0001 bus=0x03 vendor=0x04f2 product=0x0402 version=0x0144 at index=1
+                    unknown pnpinfo page=0xff00 usage=0x0001 bus=0x03 vendor=0x04f2 product=0x0402 version=0x0144 at index=2
+        unknown pnpinfo vendor=0x8086 device=0x0f18 subvendor=0x8086 subdevice=0x0f18 class=0x108000 at slot=26 function=0 dbsf=pci0:0:26:0 handle=\_SB_.PCI0.SEC0
+            I/O memory addresses:
+                0xd0400000-0xd04fffff
+                0xd0500000-0xd05fffff
+        hdac0 <Intel BayTrail HDA Controller> pnpinfo vendor=0x8086 device=0x0f04 subvendor=0x8086 subdevice=0x0f04 class=0x040300 at slot=27 function=0 dbsf=pci0:0:27:0 handle=\_SB_.PCI0.HDEF
+            Interrupt request lines:
+                0x59
+            I/O memory addresses:
+                0xd0910000-0xd0913fff
+          hdacc0 <Realtek ALC662 rev3 HDA CODEC> pnpinfo vendor=0x10ec device=0x0662 revision=0x03 stepping=0x00 at cad=0
+            hdaa0 <Realtek ALC662 rev3 Audio Function Group> pnpinfo type=0x01 subsystem=0x10ec0000 at nid=1
+              pcm0 <Realtek ALC662 rev3 (Rear Analog)> at nid=20,24
+              pcm1 <Realtek ALC662 rev3 (Front Analog)> at nid=27,25
+              pcm2 <Realtek ALC662 rev3 (Internal Digital)> at nid=30
+          hdacc1 <Intel Valleyview2 HDA CODEC> pnpinfo vendor=0x8086 device=0x2882 revision=0x00 stepping=0x00 at cad=2
+            hdaa1 <Intel Valleyview2 Audio Function Group> pnpinfo type=0x01 subsystem=0x80860101 at nid=1
+              pcm3 <Intel Valleyview2 (HDMI/DP 8ch)> at nid=4
+        pcib1 <ACPI PCI-PCI bridge> pnpinfo vendor=0x8086 device=0x0f48 subvendor=0x8086 subdevice=0x0f48 class=0x060400 at slot=28 function=0 dbsf=pci0:0:28:0 handle=\_SB_.PCI0.RP01
+            I/O ports:
+                0xe000-0xefff
+            I/O memory addresses:
+                0xd0800000-0xd08fffff
+            PCI domain 0 bus numbers:
+                1
+          pci1 <ACPI PCI bus>
+              pcib1 bus numbers:
+                  1
+            re0 <RealTek 8168/8111 B/C/CP/D/DP/E/F/G PCIe Gigabit Ethernet> pnpinfo vendor=0x10ec device=0x8168 subvendor=0x10ec subdevice=0x0123 class=0x020000 at slot=0 function=0 dbsf=pci0:1:0:0 handle=\_SB_.PCI0.RP01.PXSX
+                Interrupt request lines:
+                    0x5a
+                pcib1 I/O port window:
+                    0xe000-0xe0ff
+                pcib1 memory window:
+                    0xd0800000-0xd0803fff
+                    0xd0804000-0xd0804fff
+              miibus0 <MII bus>
+                rgephy0 <RTL8169S/8110S/8211 1000BASE-T media interface> pnpinfo oui=0xe04c model=0x11 rev=0x5 at phyno=1
+        pcib2 <ACPI PCI-PCI bridge> pnpinfo vendor=0x8086 device=0x0f4a subvendor=0x8086 subdevice=0x0f4a class=0x060400 at slot=28 function=1 dbsf=pci0:0:28:1 handle=\_SB_.PCI0.RP02
+            I/O memory addresses:
+                0xd0700000-0xd07fffff
+            PCI domain 0 bus numbers:
+                2
+          pci2 <ACPI PCI bus>
+              pcib2 bus numbers:
+                  2
+            bwn_pci0 <Broadcom BCM43224 802.11n Dual-Band Wireless> pnpinfo vendor=0x14e4 device=0x4353 subvendor=0x14e4 subdevice=0x04d8 class=0x028000 at slot=0 function=0 dbsf=pci0:2:0:0 handle=\_SB_.PCI0.RP02.PXSX
+                Interrupt request lines:
+                    0x5c
+                pcib2 memory window:
+                    0xd0700000-0xd0703fff
+              bhndb0 <PCI-BHND bridge>
+                bhnd0 <BCM43224 BCMA bus> at base=0x18107000
+                    BHNDB bridged memory:
+                        0x18100000-0x18100fff
+                        0x18101000-0x18101fff
+                        0x18102000-0x18102fff
+                        0x18104000-0x18104fff
+                        0x18105000-0x18105fff
+                        0x18108000-0x18108fff
+                  bhnd_chipc0 <Broadcom ChipCommon I/O Controller, rev 34> pnpinfo vendor=0x4bf device=0x800 rev=0x22 at port0.0=0x18000000
+                      BHNDB bridged memory:
+                          0x18000000-0x18000fff
+                    bhnd_nvram0 <SPROM/OTP>
+                    bhnd_pmu0 <Broadcom ChipCommon PMU, rev 6>
+                    gpio0 <Broadcom ChipCommon GPIO>
+                        BHNDB bridged memory:
+                            0x18000000-0x18000fff
+                  unknown pnpinfo vendor=0x4bf device=0x812 rev=0x17 at port0.0=0x18001000
+                  bhnd_hostb0 <Broadcom PCIe-G1 Host-PCI bridge, rev 15> pnpinfo vendor=0x4bf device=0x820 rev=0xf at port0.0=0x18002000
+                      BHNDB bridged memory:
+                          0x18002000-0x18002fff
+                  unknown pnpinfo vendor=0x43b device=0x135 rev=0x0
+                  unknown pnpinfo vendor=0x43b device=0x135 rev=0x0
+                  unknown pnpinfo vendor=0x43b device=0x367 rev=0x0 at port0.0=0x18106000
+                  unknown pnpinfo vendor=0x43b device=0x366 rev=0x0 at port0.0=0x18107000
+                  unknown pnpinfo vendor=0x43b device=0x301 rev=0x0 at port0.0=0x18003000
+                  unknown pnpinfo vendor=0x43b device=0xfff rev=0x0 at port0.0=0x0
+        pcib3 <ACPI PCI-PCI bridge> pnpinfo vendor=0x8086 device=0x0f4c subvendor=0x8086 subdevice=0x0f4c class=0x060400 at slot=28 function=2 dbsf=pci0:0:28:2 handle=\_SB_.PCI0.RP03
+            I/O ports:
+                0xd000-0xdfff
+            I/O memory addresses:
+                0xd0600000-0xd06fffff
+            PCI domain 0 bus numbers:
+                3
+          pci3 <ACPI PCI bus>
+              pcib3 bus numbers:
+                  3
+            re1 <RealTek 8168/8111 B/C/CP/D/DP/E/F/G PCIe Gigabit Ethernet> pnpinfo vendor=0x10ec device=0x8168 subvendor=0x10ec subdevice=0x0123 class=0x020000 at slot=0 function=0 dbsf=pci0:3:0:0 handle=\_SB_.PCI0.RP03.PXSX
+                Interrupt request lines:
+                    0x5b
+                pcib3 I/O port window:
+                    0xd000-0xd0ff
+                pcib3 memory window:
+                    0xd0600000-0xd0603fff
+                    0xd0604000-0xd0604fff
+              miibus1 <MII bus>
+                rgephy1 <RTL8169S/8110S/8211 1000BASE-T media interface> pnpinfo oui=0xe04c model=0x11 rev=0x5 at phyno=1
+        pcib4 <ACPI PCI-PCI bridge> pnpinfo vendor=0x8086 device=0x0f4e subvendor=0x8086 subdevice=0x0f4e class=0x060400 at slot=28 function=3 dbsf=pci0:0:28:3 handle=\_SB_.PCI0.RP04
+            PCI domain 0 bus numbers:
+                4
+          pci4 <ACPI PCI bus>
+              pcib4 bus numbers:
+                  4
+        isab0 <PCI-ISA bridge> pnpinfo vendor=0x8086 device=0x0f1c subvendor=0x8086 subdevice=0x0f1c class=0x060100 at slot=31 function=0 dbsf=pci0:0:31:0 handle=\_SB_.PCI0.SBRG
+          isa0 <ISA bus>
+            sc0
+            vga0
+            atkbdc0 <Keyboard controller (i8042)>
+                I/O ports:
+                    0x60
+                    0x64
+              atkbd0 <AT Keyboard>
+                  Interrupt request lines:
+                      0x1
+              psm0
+        ichsmb0 <Intel Baytrail SMBus controller> pnpinfo vendor=0x8086 device=0x0f12 subvendor=0x8086 subdevice=0x0f12 class=0x0c0500 at slot=31 function=3 dbsf=pci0:0:31:3 handle=\_SB_.PCI0.SBUS
+            Interrupt request lines:
+                0x12
+            I/O ports:
+                0xf000-0xf01f
+            I/O memory addresses:
+                0xd0914000-0xd091401f
+          smbus0 <System Management Bus>
+    unknown pnpinfo _HID=PNP0C09 _UID=1 _CID=none at handle=\_SB_.PCI0.SBRG.H_EC (disabled)
+    unknown pnpinfo _HID=PNP0C0A _UID=0 _CID=none at handle=\_SB_.PCI0.SBRG.H_EC.BAT0 (disabled)
+    unknown pnpinfo _HID=PNP0C0A _UID=1 _CID=none at handle=\_SB_.PCI0.SBRG.H_EC.BAT1 (disabled)
+    unknown pnpinfo _HID=PNP0C0A _UID=2 _CID=none at handle=\_SB_.PCI0.SBRG.H_EC.BAT2 (disabled)
+    unknown pnpinfo _HID=INT0800 _UID=0 _CID=none at handle=\_SB_.PCI0.SBRG.FWHD
+        I/O memory addresses:
+            0xff000000-0xffffffff
+    unknown pnpinfo _HID=PNP0000 _UID=0 _CID=none at handle=\_SB_.PCI0.SBRG.IPIC
+        I/O ports:
+            0x20-0x21
+            0x24-0x25
+            0x28-0x29
+            0x2c-0x2d
+            0x30-0x31
+            0x34-0x35
+            0x38-0x39
+            0x3c-0x3d
+            0xa0-0xa1
+            0xa4-0xa5
+            0xa8-0xa9
+            0xac-0xad
+            0xb0-0xb1
+            0xb4-0xb5
+            0xb8-0xb9
+            0xbc-0xbd
+            0x4d0-0x4d1
+    acpi_sysresource0 <System Resource> pnpinfo _HID=PNP0C02 _UID=2 _CID=none at handle=\_SB_.PCI0.SBRG.LDRC
+    attimer0 <AT timer> pnpinfo _HID=PNP0100 _UID=0 _CID=none at handle=\_SB_.PCI0.SBRG.TIMR
+        Interrupt request lines:
+            0x0
+        I/O ports:
+            0x40-0x43
+            0x50-0x53
+    acpi_sysresource1 <System Resource> pnpinfo _HID=PNP0C02 _UID=0 _CID=none at handle=\_SB_.PCI0.SBRG.SIO1
+    uart0 <16550 or compatible> pnpinfo _HID=PNP0501 _UID=0 _CID=none at handle=\_SB_.PCI0.SBRG.UAR1
+        Interrupt request lines:
+            0x4
+        I/O ports:
+            0x3f8-0x3ff
+    unknown pnpinfo _HID=PNP0C08 _UID=1 _CID=none at handle=\_SB_.PCI0.SBRG.SHWM (disabled)
+    acpi_sysresource2 <System Resource> pnpinfo _HID=PNP0C02 _UID=1 _CID=none at handle=\_SB_.PCI0.SBRG.SIO2
+    uart1 <16950 or compatible> pnpinfo _HID=PNP0501 _UID=12 _CID=none at handle=\_SB_.PCI0.SBRG.UR11
+        Interrupt request lines:
+            0x3
+        I/O ports:
+            0x2f8-0x2ff
+    uart2 <16950 or compatible> pnpinfo _HID=PNP0501 _UID=13 _CID=none at handle=\_SB_.PCI0.SBRG.UR12
+        Interrupt request lines:
+            0xa
+        I/O ports:
+            0x3e8-0x3ef
+    uart3 <16950 or compatible> pnpinfo _HID=PNP0501 _UID=14 _CID=none at handle=\_SB_.PCI0.SBRG.UR13
+        Interrupt request lines:
+            0xb
+        I/O ports:
+            0x2e8-0x2ef
+    acpi_sysresource3 <System Resource> pnpinfo _HID=PNP0C02 _UID=1 _CID=none at handle=\_SB_.PCI0.PDRC
+    pci_link0 <ACPI PCI Link LNKA> pnpinfo _HID=PNP0C0F _UID=1 _CID=none at handle=\_SB_.LNKA
+    pci_link1 <ACPI PCI Link LNKB> pnpinfo _HID=PNP0C0F _UID=2 _CID=none at handle=\_SB_.LNKB
+    pci_link2 <ACPI PCI Link LNKC> pnpinfo _HID=PNP0C0F _UID=3 _CID=none at handle=\_SB_.LNKC
+    pci_link3 <ACPI PCI Link LNKD> pnpinfo _HID=PNP0C0F _UID=4 _CID=none at handle=\_SB_.LNKD
+    pci_link4 <ACPI PCI Link LNKE> pnpinfo _HID=PNP0C0F _UID=5 _CID=none at handle=\_SB_.LNKE
+    pci_link5 <ACPI PCI Link LNKF> pnpinfo _HID=PNP0C0F _UID=6 _CID=none at handle=\_SB_.LNKF
+    pci_link6 <ACPI PCI Link LNKG> pnpinfo _HID=PNP0C0F _UID=7 _CID=none at handle=\_SB_.LNKG
+    pci_link7 <ACPI PCI Link LNKH> pnpinfo _HID=PNP0C0F _UID=8 _CID=none at handle=\_SB_.LNKH
+    unknown pnpinfo _HID=PNP0C0D _UID=0 _CID=none at handle=\_SB_.LID0 (disabled)
+    unknown pnpinfo _HID=80860F28 _UID=1 _CID=80860F28 at handle=\_SB_.LPEA (disabled)
+    unknown pnpinfo _HID=none _UID=0 _CID=none at handle=\_SB_.LPEA.PLPE
+    unknown pnpinfo _HID=LPE0F28 _UID=1 _CID=LPE0F28 at handle=\_SB_.LPA2 (disabled)
+    unknown pnpinfo _HID=none _UID=0 _CID=none at handle=\_SB_.LPA2.PLPE
+    unknown pnpinfo _HID=DMA0F28 _UID=1 _CID=DMA0F28 at handle=\_SB_.LPA2.ADMA
+        I/O memory addresses:
+            0x98000-0x98fff
+    unknown pnpinfo _HID=none _UID=0 _CID=none at handle=\_SB_.USBC
+    acpi_button0 <Power Button> pnpinfo _HID=PNP0C0C _UID=0 _CID=none at handle=\_SB_.PWRB
+    acpi_button1 <Sleep Button> pnpinfo _HID=PNP0C0E _UID=0 _CID=none at handle=\_SB_.SLPB
+    unknown pnpinfo _HID=INT0002 _UID=1 _CID=INT0002 at handle=\_SB_.GPED (disabled)
+    unknown pnpinfo _HID=none _UID=0 _CID=none at handle=\_TZ_.FN00
+    unknown pnpinfo _HID=PNP0C0B _UID=0 _CID=none at handle=\_TZ_.FAN0
+    acpi_tz0 <Thermal Zone> pnpinfo _HID=none _UID=0 _CID=none at handle=\_TZ_.TZ01
+    acpi_timer0 <24-bit timer at 3.579545MHz> pnpinfo unknown
+        ACPI I/O ports:
+            0x408-0x40b

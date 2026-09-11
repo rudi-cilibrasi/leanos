@@ -1,0 +1,20 @@
+{
+  "schema": "leanos-freebsd-usb-topology-observation-v1",
+  "checked_utc": "2026-09-11T17:30:16.589954+00:00",
+  "host": "192.168.6.21",
+  "commands": {
+    "usbconfig.txt": "sudo -n usbconfig list",
+    "devinfo.txt": "devinfo -rv",
+    "pciconf.txt": "sudo -n pciconf -l",
+    "boottime.txt": "sysctl kern.boottime"
+  },
+  "source_os": "FreeBSD",
+  "hardware_writes_performed": false,
+  "native_firmware_ownership_established": false,
+  "files": {
+    "usbconfig.txt": "4dc71ea2ff126a023be55fcdcf2dc8a3ab0f69efe15a294f841c1faf0f30cb3b",
+    "devinfo.txt": "f48bbc0178295507659aad41c366514315b193472838dfa36dbc23c7439bc122",
+    "pciconf.txt": "0c9e19c6910f2283c4f3fd1917b9fa5c37ece60ea6b8bda5a9d8c798ad0b7324",
+    "boottime.txt": "6b5517917aaf079d9a92b1267b37bf21a7f4587ba1886dacb25e3daead65ff9d"
+  }
+}
