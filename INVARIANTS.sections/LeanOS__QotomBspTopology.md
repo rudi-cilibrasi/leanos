@@ -1,6 +1,8 @@
 # Checking the captured Qotom processor inventory
 
-This topology-only candidate binds the complete observation to BSP 0 and ordered enabled processor IDs 0, 2, 4, 6. It grants no runtime authority and makes no AP-dormancy or interrupt-routing safety claim. The first five results are general witness laws; the remaining results check concrete inputs, including explicitly synthetic root-table fixtures.
+This processor candidate binds the complete observation to BSP 0 and ordered enabled processor IDs 0, 2, 4, 6. It grants no runtime authority and makes no AP-dormancy or interrupt-routing safety claim. The topology results include general witness laws and concrete input checks, including explicitly synthetic root-table fixtures.
+
+The bootstrap binding additionally checks the observed executing processor and APIC-base register. These results concern supplied observations; they do not prove register-read fidelity or that other processors are dormant.
 
 - `check_preserves_observation` — Every successful check retains the exact input snapshot in its witness.
 - `witness_has_complete_baseline` — Every witness carries the complete fixed processor baseline together.
@@ -28,3 +30,10 @@ This topology-only candidate binds the complete observation to BSP 0 and ordered
 - `damaged_madt_cannot_reach_candidate` — A damaged selected MADT checksum fails before candidate matching.
 - `authoritative_wrong_executing_bsp_rejected` — The authoritative synthetic path rejects executing processor 2.
 - `authoritative_q35_cannot_supply_candidate` — The authoritative q35 table path cannot satisfy the Qotom inventory.
+
+- `bootstrap_preserves_observation` — Successful bootstrap binding retains the exact supplied register observation.
+- `bootstrap_binds_executing_id` — Every bound bootstrap witness identifies executing processor 0.
+- `bootstrap_requires_msr_and_apic` — Every bootstrap witness requires an available read and the MSR and APIC capability bits.
+- `bootstrap_requires_architectural_bsp` — Every bootstrap witness has the architectural BSP bit set in its observed APIC-base value.
+- `bootstrap_acceptance_iff_valid` — Binding succeeds exactly when the supplied observation satisfies the complete bootstrap predicate for the topology witness.
+- `bootstrap_entry_remains_multicore` — The combined bootstrap candidate still receives the existing single-core policy's multiple-processor rejection.

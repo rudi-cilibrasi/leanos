@@ -14066,6 +14066,12 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomBootstrapABI.lean",
+      "qualified": "LeanOS.QotomBootstrapABI.out_of_range_is_zero",
+      "display": "out_of_range_is_zero",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomBspTopology.lean",
       "qualified": "LeanOS.QotomBspTopology.authoritative_q35_cannot_supply_candidate",
       "display": "authoritative_q35_cannot_supply_candidate",
@@ -14087,6 +14093,42 @@
       "source": "LeanOS/QotomBspTopology.lean",
       "qualified": "LeanOS.QotomBspTopology.baseline_candidate_accepted",
       "display": "baseline_candidate_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.bootstrap_acceptance_iff_valid",
+      "display": "bootstrap_acceptance_iff_valid",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.bootstrap_binds_executing_id",
+      "display": "bootstrap_binds_executing_id",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.bootstrap_entry_remains_multicore",
+      "display": "bootstrap_entry_remains_multicore",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.bootstrap_preserves_observation",
+      "display": "bootstrap_preserves_observation",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.bootstrap_requires_architectural_bsp",
+      "display": "bootstrap_requires_architectural_bsp",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBspTopology.lean",
+      "qualified": "LeanOS.QotomBspTopology.bootstrap_requires_msr_and_apic",
+      "display": "bootstrap_requires_msr_and_apic",
       "kind": "theorem"
     },
     {
