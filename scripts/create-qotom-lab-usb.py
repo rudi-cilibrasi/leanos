@@ -16,10 +16,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--freebsd-boot-uuid', required=True)
     parser.add_argument('--kernel-hang-elf', type=Path)
+    parser.add_argument('--pci-diagnostic', action='store_true',
+                        help='package the completion-reset PCI diagnostic from build/qotom-pci-lab')
     args = parser.parse_args()
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
-    output = root / 'build/qotom-lab'
+    output = root / 'build' / ('qotom-pci-lab' if args.pci_diagnostic else 'qotom-lab')
     elf = output / 'leanos-qotom-lab.elf'
     digest = hashlib.sha256(elf.read_bytes()).hexdigest()
     template = (root / 'hardware/lab/grub-qotom.cfg.in').read_text()

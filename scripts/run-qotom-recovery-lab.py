@@ -187,9 +187,10 @@ def classify_protected(events, digest, expected=EXPECTED, boot_record=None):
     return result
 
 
-def cpu_replay_module():
+def cpu_replay_module(pci=False):
     spec = importlib.util.spec_from_file_location(
-        'j1900_diagnostic', Path(__file__).with_name('check-j1900-diagnostic.py'))
+        'boot_diagnostic', Path(__file__).with_name(
+            'check-qotom-pci-diagnostic.py' if pci else 'check-j1900-diagnostic.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -211,19 +212,26 @@ def cpu_diagnostic_bytes(events, protocol):
     return mode + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay):
-    return {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None):
+    result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
             'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+    if pci_replay is not None:
+        result['pci_replay_executable_sha256'] = hashlib.sha256(Path(pci_replay).read_bytes()).hexdigest()
+    return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay):
-    module = cpu_replay_module()
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None):
+    module = cpu_replay_module(pci_replay is not None)
     protocol = module.load_protocol(protocol_path)
     expected, raw = cpu_diagnostic_bytes(events, protocol)
     result = classify_protected(events, digest, expected, protocol['BOOT'].encode('ascii'))
-    diagnostic = module.classify(raw, protocol, Path(replay).resolve())
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay))
-    result.update(scenario='j1900-cpu-diagnostic', diagnostic=diagnostic)
+    replay_paths = [Path(replay).resolve()]
+    if pci_replay is not None:
+        replay_paths.append(Path(pci_replay).resolve())
+    diagnostic = module.classify(raw, protocol, *replay_paths)
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay))
+    result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
+                  diagnostic=diagnostic)
     return result
 
 
@@ -239,23 +247,40 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
     parser.add_argument('--scenario', choices=('leanos', 'rtc-probe', 'watchdog-test', 'watchdog-kernel', 'watchdog-leanos'), default='watchdog-leanos')
-    parser.add_argument('--cpu-diagnostic', action='store_true',
-                        help='replay J1900 CPU/MSR records; only with watchdog-leanos')
+    diagnostics = parser.add_mutually_exclusive_group()
+    diagnostics.add_argument('--pci-diagnostic', action='store_true',
+                             help='replay CPU/MSR/PCI records; only with watchdog-leanos')
+    diagnostics.add_argument('--cpu-diagnostic', action='store_true',
+                             help='replay J1900 CPU/MSR records; only with watchdog-leanos')
     parser.add_argument('--diagnostic-protocol', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'build/boot/serial-protocol.tsv')
     parser.add_argument('--diagnostic-replay', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'build/j1900-cpu-host/host')
+    parser.add_argument('--pci-replay', type=Path,
+                        default=Path(__file__).resolve().parents[1] / 'build/qotom-pci-inventory-host/host')
     args = parser.parse_args()
-    if args.cpu_diagnostic:
+    has_diagnostic = args.cpu_diagnostic or args.pci_diagnostic
+    pci_replay = args.pci_replay if args.pci_diagnostic else None
+    if has_diagnostic:
         if args.scenario != 'watchdog-leanos':
-            parser.error('--cpu-diagnostic requires --scenario watchdog-leanos')
-        cpu_replay_module().load_protocol(args.diagnostic_protocol)
+            parser.error('diagnostic capture requires --scenario watchdog-leanos')
+        cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
         # Establish that the native corpus self-test runs before any SSH/arming.
         selftest = subprocess.run([str(args.diagnostic_replay.resolve())], check=True,
                                   capture_output=True, timeout=30)
         if selftest.stdout != b'Hosted generated-C J1900 CPU replay passed\n':
             parser.error('diagnostic replay did not report its corpus self-test')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay)
+        if pci_replay is not None:
+            selftest = subprocess.run([str(pci_replay.resolve())], check=True,
+                                      capture_output=True, timeout=30)
+            if not re.fullmatch(
+                    rb'Hosted Qotom PCI inventory replay passed \([1-9][0-9]* cases\)\n'
+                    rb'Collected PCI snapshots passed generated inventory admission and 32 negative cases\n',
+                    selftest.stdout):
+                parser.error('PCI replay did not report its corpus self-test')
+            if cpu_replay_module().replay_words(pci_replay.resolve(), 'inventory', [0]) != 65536:
+                parser.error('PCI replay lacks the bounded inventory interface')
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -263,7 +288,7 @@ def main():
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
                                         '-o', 'HostKeyAlias=' + args.host_key_alias, args.host]
     args.output.mkdir(parents=True, exist_ok=False)
-    if args.cpu_diagnostic:
+    if has_diagnostic:
         (args.output / 'diagnostic-protocol.tsv').write_bytes(args.diagnostic_protocol.read_bytes())
         (args.output / 'diagnostic-replay-inputs.json').write_text(
             json.dumps(diagnostic_inputs, indent=2) + '\n')
@@ -389,12 +414,12 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         if args.scenario == 'watchdog-kernel':
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
-            if args.cpu_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay) != diagnostic_inputs:
+            if has_diagnostic:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay)
-                protocol = cpu_replay_module().load_protocol(args.diagnostic_protocol)
+                                                args.diagnostic_replay, pci_replay)
+                protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 _, raw = cpu_diagnostic_bytes(events, protocol)
                 (directory / 'diagnostic.raw').write_bytes(raw)
             else:

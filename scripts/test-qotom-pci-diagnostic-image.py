@@ -17,6 +17,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--elf', type=Path, default=ROOT / 'build/boot/leanos-qotom-pci-diagnostic.elf')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/qotom-pci-diagnostic-image')
+    parser.add_argument('--lab-completion', action='store_true',
+                        help='require the lab completion-mode prefix before diagnostic records')
     args = parser.parse_args()
     elf = args.elf.resolve()
     output = args.output.resolve()
@@ -85,7 +87,13 @@ def main():
                         if process.poll() is not None or time.monotonic() >= deadline:
                             raise RuntimeError(f'{name}: incomplete guest execution: {raw!r}')
                         time.sleep(0.05)
-                    result = diagnostic['classify'](raw, protocol, cpu_replay, pci_replay)
+                    payload = raw
+                    if args.lab_completion:
+                        mode = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n'
+                        if not raw.startswith(mode) or raw.count(mode) != 1:
+                            raise RuntimeError(name + ': missing or repeated lab completion mode')
+                        payload = raw[len(mode):]
+                    result = diagnostic['classify'](payload, protocol, cpu_replay, pci_replay)
                     if result['cpu_selection'] != selected:
                         raise RuntimeError(name + ': wrong CPU result')
                     qmp = native['query_pci'](monitor)
@@ -116,6 +124,8 @@ def main():
                     process.wait(timeout=5)
         print('Qotom PCI diagnostic image:', name, 'PASS', flush=True)
     report.write_text(json.dumps({
+        'lab_completion_transport': args.lab_completion,
+        'physical_reset_verified': False,
         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
         'iso_sha256': hashlib.sha256(iso.read_bytes()).hexdigest(),
         'protocol_sha256': hashlib.sha256(protocol_path.read_bytes()).hexdigest(),
