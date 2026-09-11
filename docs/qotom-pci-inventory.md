@@ -52,3 +52,22 @@ ASan/UBSan modes, with generated export declarations and execution coverage;
 both modes pass. Run `./scripts/check-qotom-pci-inventory-host.sh ordinary`,
 then `./scripts/check-qotom-pci-inventory-host.sh sanitized` in the pinned CI
 container. Production integration remains pending.
+
+The hosted executable also accepts `inventory COUNT WORD...` for offline
+replay of external observations. Supply nineteen words per function: bus,
+device, function, then the sixteen raw configuration dwords. The transport
+accepts at most sixteen functions, requires exactly the declared number of
+words, and parses canonical unsigned decimal values through `UINT64_MAX`.
+It rejects signs, whitespace, leading zeroes, overflow and trailing text
+before allocating the input array. The generated decoder remains responsible
+for BDF and dword widths and the complete candidate inventory policy.
+
+For example, `build/qotom-pci-inventory-host/host inventory 0` prints `65536`
+and exits zero: parsing succeeded, but the model rejected the empty inventory.
+A matching complete observation prints `1`. Malformed arguments exit with
+status two and no result on stdout. The fixed ABI corpus runs before external
+replay; invoking the executable without arguments retains the original test
+mode. `scripts/test-qotom-pci-replay-cli.py --replay EXECUTABLE` checks the
+hash-verified retained capture, model rejection and malformed CLI inputs, and
+is included in both ordinary and sanitized hosted checks. This input interface
+does not establish the provenance or completeness of an external observation.

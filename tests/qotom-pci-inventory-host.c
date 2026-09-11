@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
+#include <inttypes.h>
+#include <string.h>
 #include "../boot/pci-enumeration.h"
 #define LEANOS_BOUNDARY_ABI_OBJECTS
 #include "boundary-abi.h"
@@ -75,7 +77,38 @@ static void test_collected_inventory(void) {
     puts("Collected PCI snapshots passed generated inventory admission and 32 negative cases");
 }
 
-int main(void) {
+static int decimal_word(const char *text, uint64_t *value) {
+    if (!*text || (text[0] == '0' && text[1])) return 0;
+    uint64_t parsed = 0;
+    for (; *text; ++text) {
+        if (*text < '0' || *text > '9') return 0;
+        unsigned digit = (unsigned)(*text - '0');
+        if (parsed > (UINT64_MAX - digit) / 10) return 0;
+        parsed = parsed * 10 + digit;
+    }
+    *value = parsed;
+    return 1;
+}
+
+/* Bounded hosted transport for independently captured raw inventories.
+ * Parsing is not admission: the generated model decides the result.
+ */
+static int replay_arguments(int argc, char **argv) {
+    uint64_t count;
+    if (argc < 3 || strcmp(argv[1], "inventory") ||
+            !decimal_word(argv[2], &count) || count > PCI_ENUMERATION_CAPACITY ||
+            (uint64_t)(argc - 3) != count * 19) return 2;
+    uint64_t input[PCI_ENUMERATION_CAPACITY * 19];
+    for (unsigned i = 0; i < count * 19; ++i)
+        if (!decimal_word(argv[i + 3], &input[i])) return 2;
+    lean_object *words = lean_mk_empty_array_with_capacity(lean_box(count * 19));
+    for (unsigned i = 0; i < count * 19; ++i)
+        words = lean_array_push(words, lean_box_uint64(input[i]));
+    printf("%" PRIu64 "\n", leanos_qotom_pci_inventory_check(count, words));
+    return 0;
+}
+
+int main(int argc, char **argv) {
     lean_initialize();
     lean_object *init = initialize_leanos_LeanOS_QotomPCIInventory(1);
     if (lean_io_result_is_error(init)) {
@@ -100,6 +133,7 @@ int main(void) {
             return 1;
         }
     }
+    if (argc > 1) return replay_arguments(argc, argv);
     printf("Hosted Qotom PCI inventory replay passed (%zu cases)\n", count);
     test_collected_inventory();
     return 0;
