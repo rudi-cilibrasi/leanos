@@ -86,3 +86,10 @@ nonzero X_DSDT. An extended address beyond the lab's 32-bit physical backend
 rejects rather than silently selecting another table. Selecting and copying
 the DSDT supplies bytes for a future resource-policy review; it does not itself
 prove that a particular AML resource declaration authorizes ECAM access.
+
+The [native DSDT capture](../hardware/lab/observations/qotom-dsdt-20260911/README.md)
+retains the FADT-linked 30800-byte DSDT at 0xb979f180 and its offline disassembly.
+Its PDRC resource buffer declares the same 256 MiB ECAM region as MCFG. The
+regression checks manifest hashes, native C/Python pointer agreement, complete
+table transport and protected recovery. This supplies same-boot table bytes
+for the resource review; the physical ECAM callback remains unimplemented.

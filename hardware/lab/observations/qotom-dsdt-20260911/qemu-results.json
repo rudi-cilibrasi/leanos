@@ -1,0 +1,74 @@
+{
+  "lab_completion_transport": true,
+  "handoff_capture": true,
+  "dsdt_capture": true,
+  "ecam_memory_capture": true,
+  "bootstrap_capture": true,
+  "pci_read_trace": true,
+  "acpi_capture": true,
+  "physical_reset_verified": false,
+  "elf_sha256": "d02ea7892b4f31b96372beab8daadbd0b1ca215943d623419a1c58dd501eeadb",
+  "iso_sha256": "725242aa96e371fa25cc6dac38f698934ca665d4b0b0b1c85ebf4650fe0e9bda",
+  "protocol_sha256": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+  "cpu_replay_sha256": "9241693e5fee8cc47321846e3020efeec800c9cb37cc05ecf80cbbb8a9233416",
+  "pci_replay_sha256": "de54157e3fbb06c455f9c5217bfd5ad0826eadbc5290d023e490107604e7eb67",
+  "qemu": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+  "results": [
+    {
+      "case": "root-bus",
+      "capture_sha256": "551a8245f2ccec34a58b43617dbc5e4e25096b26e555ec70361a98c002491aff",
+      "cpu_selection": 65536,
+      "qmp_device_count": 5,
+      "terminal_reason": "qotom-platform-pending"
+    },
+    {
+      "case": "two-bridges",
+      "capture_sha256": "452773de53c0183bcbcd943a6ee9f6ceca2846408df968def42990cc885ba5d6",
+      "cpu_selection": 65536,
+      "qmp_device_count": 9,
+      "terminal_reason": "qotom-platform-pending"
+    },
+    {
+      "case": "capacity",
+      "capture_sha256": "d7aa4e4c66537ad29877849d96e3c49ba7cc1ed6ef8190d088807613a4d6110a",
+      "cpu_selection": 65536,
+      "qmp_device_count": 19,
+      "terminal_reason": "qotom-pci-enumeration"
+    },
+    {
+      "case": "wrong-vendor",
+      "capture_sha256": "118ad81a649c5bc3bff0fda35f69626f8efb490191e5d900c4fcf8c739fa982a",
+      "cpu_selection": 5,
+      "qmp_device_count": 5,
+      "terminal_reason": "j1900-cpu-profile"
+    },
+    {
+      "case": "wrong-stepping",
+      "capture_sha256": "0ae7043e094dc339d2b104546a0fc8d979796f6ed8162fdfab2267c1ad1a32b5",
+      "cpu_selection": 6,
+      "qmp_device_count": 5,
+      "terminal_reason": "j1900-cpu-profile"
+    },
+    {
+      "case": "missing-smep",
+      "capture_sha256": "a6ec9871e4fff7c4acbf9769d35435eecdbe7646397cc4800cd0d4620bbc9e04",
+      "cpu_selection": 9,
+      "qmp_device_count": 5,
+      "terminal_reason": "j1900-cpu-profile"
+    },
+    {
+      "case": "unexpected-smap",
+      "capture_sha256": "99714e4556b4388c6278d627bd90af8b722e7436c5a99a0f995680afa5ecc13f",
+      "cpu_selection": 11,
+      "qmp_device_count": 5,
+      "terminal_reason": "j1900-cpu-profile"
+    },
+    {
+      "case": "missing-structured-leaf",
+      "capture_sha256": "33f7cdf7ef69083c54d6500ae302def51cb8a618d301fd42e8a23ae44bf1b5ab",
+      "cpu_selection": 2,
+      "qmp_device_count": 5,
+      "terminal_reason": "j1900-cpu-profile"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+SHA256 (/var/tmp/leanos-native-dsdt-490c082.aml) = e02b949e57c1e9eae6714dd67bce15dc25df349167235612f19e8cd2df14543f
+File appears to be binary: found 9536 non-ASCII characters, disassembling
+Binary file appears to be a valid ACPI table, disassembling
+Input file /var/tmp/leanos-native-dsdt-490c082.aml, Length 0x7850 (30800) bytes
+ACPI: DSDT 0x0000000000000000 007850 (v02 ALASKA A M I    01072009 INTL 20120913)
+Pass 1 parse of [DSDT]
+Pass 2 parse of [DSDT]
+Parsing Deferred Opcodes (Methods/Buffers/Packages/Regions)
+
+Parsing completed
+Pass 1 parse of [DSDT]
+Pass 2 parse of [DSDT]
+Parsing Deferred Opcodes (Methods/Buffers/Packages/Regions)
+
+Parsing completed
+
+ iASL Warning: There was 1 external control method found during
+ disassembly, but only 0 were resolved (1 unresolved). Additional
+ ACPI tables may be required to properly disassemble the code. This
+ resulting disassembler output file may not compile because the
+ disassembler did not know how many arguments to assign to the
+ unresolved methods. Note: SSDTs can be dynamically loaded at
+ runtime and may or may not be available via the host OS.
+
+ To specify the tables needed to resolve external control method
+ references, the -e option can be used to specify the filenames.
+ Example iASL invocations:
+     iasl -e ssdt1.aml ssdt2.aml ssdt3.aml -d dsdt.aml
+     iasl -e dsdt.aml ssdt2.aml -d ssdt1.aml
+     iasl -e ssdt*.aml -d dsdt.aml
+
+ In addition, the -fe option can be used to specify a file containing
+ control method external declarations with the associated method
+ argument counts. Each line of the file must be of the form:
+     External (<method pathname>, MethodObj, <argument count>)
+ Invocation:
+     iasl -fe refs.txt -d dsdt.aml
+
+
+Intel ACPI Component Architecture
+ASL+ Optimizing Compiler/Disassembler version 20250807
+Copyright (c) 2000 - 2025 Intel Corporation
+
+
+Found 1 external control methods, reparsing with new information
+Disassembly completed
+ASL Output:    /var/tmp/leanos-native-dsdt-490c082.dsl - 289305 bytes

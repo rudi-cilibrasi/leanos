@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check FADT pointer selection and complete bounded DSDT transport."""
 import ctypes
+import hashlib
+import json
 from pathlib import Path
 import runpy
 import struct
@@ -109,6 +111,39 @@ class DSDTTests(unittest.TestCase):
         self.assertEqual(metadata['tables'][-1]['length'], payload_limit + 36)
         for data in (capture(child=child), capture(child=T['table'](b'DSDT', bytes(payload_limit + 1)))):
             with self.assertRaises(ValueError): D['extract'](data, T['handoff'](), dsdt=True)
+
+    def test_native_fadt_binding_and_protected_recovery(self):
+        directory = ROOT / 'hardware/lab/observations/qotom-dsdt-20260911'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
+        cycle = directory / 'cycle-1'
+        raw = (cycle / 'serial.raw').read_bytes()
+        _, metadata, files = D['extract'](raw, (cycle / 'multiboot2.bin').read_bytes(), dsdt=True)
+        self.assertEqual(metadata, json.loads((cycle / 'acpi.json').read_text()))
+        self.assertEqual(metadata['dsdt_address'], 0xb979f180)
+        self.assertEqual(len(metadata['tables']), 12)
+        parent = files[f"{metadata['dsdt_fadt_address']:016x}.bin"]
+        address = ctypes.c_uint64(42)
+        self.assertEqual(self.select(ctypes.create_string_buffer(parent), len(parent), ctypes.byref(address)), 1)
+        self.assertEqual(address.value, metadata['dsdt_address'])
+        dsdt = files[f'{address.value:016x}.bin']
+        self.assertEqual(len(dsdt), 30800)
+        self.assertEqual(hashlib.sha256(dsdt).hexdigest(),
+                         'e02b949e57c1e9eae6714dd67bce15dc25df349167235612f19e8cd2df14543f')
+        events = [json.loads(line) for line in (cycle / 'events.jsonl').read_text().splitlines()]
+        self.assertEqual(b''.join(bytes.fromhex(e['hex']) for e in events), raw)
+        recorded = json.loads((cycle / 'result.json').read_text())
+        lab = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+        result = lab['classify_cpu_protected'](events, recorded['elf_sha256'],
+            directory / 'diagnostic-protocol.tsv', ROOT / 'build/j1900-cpu-host/host',
+            ROOT / 'build/qotom-pci-inventory-host/host', handoff=True, acpi=True,
+            pci_read_trace=True, bootstrap=True, ecam_memory=True, dsdt=True)
+        self.assertEqual(result['acpi'], metadata)
+        self.assertEqual(result['pci_read_trace']['mismatches'], 4)
+        self.assertFalse(result['diagnostic']['platform_admitted'])
+        self.assertTrue(result['watchdog_protected'])
+        self.assertGreater(result['quiet_seconds'], 30)
 
 
 if __name__ == '__main__': unittest.main()
