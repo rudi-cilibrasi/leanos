@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 from dataclasses import replace
 import native_firmware_root_corpus as native
 import firmware_root_corpus as roots
@@ -43,6 +44,30 @@ class NativeRootTests(unittest.TestCase):
             p.write_bytes(p.read_bytes()[:-1] + b'X')
             with self.assertRaisesRegex(ValueError, 'hash mismatch'):
                 native.load(target)
+
+    def test_result_only_mutations_rejected(self):
+        metadata_path = native.ROOT / 'firmware-corpus/qotom-native-root.json'
+        original = metadata_path.read_text()
+        real_read_text = Path.read_text
+        # Exercise ordinary decoder, nested SDT detail, and admission names.
+        mutations = {
+            'root-rsdp-signature': 'decoder-rejected:invalidLegacyChecksum',
+            'root-checksum': 'decoder-rejected:madtSelection.root.invalidLength',
+            'native-root': 'admission-rejected:bspMismatch',
+            'root-duplicate-cpu': 'accepted',
+            'root-missing-cpus': 'admission-rejected:unknownReason',
+        }
+        for name, wrong_result in mutations.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                metadata = json.loads(original)
+                metadata['inputs'][name]['result'] = wrong_result
+                def read_text(path, *args, **kwargs):
+                    if path == metadata_path:
+                        return json.dumps(metadata)
+                    return real_read_text(path, *args, **kwargs)
+                with patch.object(Path, 'read_text', read_text):
+                    with self.assertRaisesRegex(ValueError, 'result disagrees with words'):
+                        native.rows(Path(tmp))
 
     def test_all_mutations_pin_same_native_arguments(self):
         cases, executing = native.inputs()
