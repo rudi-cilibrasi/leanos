@@ -73,3 +73,28 @@ in register order. In particular, HCSPARAMS3 and HCCPARAMS differ from defaults
 used in synthetic fixtures; future binding must use the retained hardware values.
 Both resource refreshes and protected replay passed, and FreeBSD recovered with
 the request consumed. No xHCI writes or pointer-following occurred.
+
+## Bounded extended-capability reader
+
+`boot/qotom-xhci-legacy.h` refreshes all seven captured capability words and PCI
+binding before following xECP. The [Linux xHCI extended-capability definitions](https://github.com/torvalds/linux/blob/master/drivers/usb/host/xhci-ext-caps.h)
+confirm that xECP uses DWORD units from BAR, while each next field is a forward
+DWORD displacement from the current header. The observed HCCPARAMS `0x200077c1`
+therefore starts the walk at offset `0x8000`.
+
+The closed reader accepts only aligned offsets `0x8000..0xfffc` inside the
+captured 64-KiB resource and at most 48 headers. Nonzero next fields strictly
+advance; bounds checks prevent wraparound or escape. IDs 0 and 255 reject.
+Other IDs are retained without interpreting payloads. Duplicate legacy structures,
+legacy control outside the resource, and a next header overlapping that control
+reject. The reader samples legacy control/status at legacy offset+4 only after
+the list terminates, then refreshes PCI and capability binding again.
+
+At most 87 reads occur. All output, including staged headers, stays zero on
+failure. Zero legacy offset means no legacy structure was found, not ownership.
+The tests cover a 48-header list, all 87 read-failure positions, relative offsets,
+resource boundaries, missing/duplicate/overlapping legacy structures, capability
+drift and failed-publication rules. List and control samples remain sequential;
+no ownership write or continuing firmware-exclusion claim is added. Native
+extended-read mapping, capture decoding and physical list observation remain
+outstanding.
