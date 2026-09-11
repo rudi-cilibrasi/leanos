@@ -158,3 +158,20 @@ ordinary memory access width and output behavior; it does not execute the
 privileged primitives or validate UC device access. Root/alias initialization,
 firmware-gated arming and image-builder integration are still required before
 the diagnostic can execute these primitives against physical ECAM.
+
+`hardware/lab/qotom-ecam-root.h` checks a bounded view of the active boot
+arrays: one PML4 entry, one PDPT entry, eight page-table pointers and 4096
+leaves. Only hardware Accessed bits may vary in present ancestors; all unused
+ancestors must be zero. Physical table extents must be aligned, disjoint and
+below 16 MiB, and the aperture must not overlap them. Every present leaf is
+checked for an existing mapping into the ECAM allocation. The selected aperture
+must retain its supervisor RW/NX identity leaf, allowing hardware A/D bits.
+
+The caller must bind these views to the actual compiled arrays and active CR3;
+the helper never follows an untrusted page-table pointer. It does not validate
+the full generated leaf permission plan, stale translations from other roots,
+or concurrent firmware/AP changes. Native binding, firmware validation and
+control checks remain required. Hosted tests reject aliases at every leaf
+position, unexpected ancestors and huge pages, changed aperture attributes,
+root mismatch, overlapping storage and invalid extents. The freestanding
+object has no external runtime dependency.
