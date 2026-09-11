@@ -173,3 +173,29 @@ failure, every refresh read failure, changed support bits, BIOS reassertion
 and exact write width/address/value. Native write-aperture authority, a checked
 timing backend, protected hardware execution, SMI policy and controller stop
 remain to be integrated. No physical handoff was attempted by this candidate.
+
+## Single-byte write aperture candidate
+
+`hardware/lab/qotom-ehci-semaphore.h` supplies a separate transaction type for
+one OS-semaphore request. It accepts only BDF `00:1d.0`, offset `0x6b`, value
+`1`, and consumes its armed state before checking the request. It temporarily
+maps ECAM page `0xe00e8000` supervisor-only, writable, NX and UC, then invokes
+a trusted byte-store callback at aperture offset `0x6b`. Hardware Accessed and
+Dirty changes are permitted. The original leaf is restored and invalidated
+before post-checking controls and returning. Mapping or control interference
+terminates after the restoration attempt. A failed store can still have affected
+the device; neither rejection nor mapping restoration implies rollback.
+
+`qotom-ehci-semaphore-arm.h` binds authorization to the exact captured identity,
+BAR, three capability dwords and one-entry legacy list/control observation.
+It checks the firmware fixture, root/ancestors, aperture ownership and absence
+of ECAM/EHCI aliases. It performs no device access and clears old authority on
+rejection. The handoff collector must refresh the hardware binding before using
+this authorization; immutable views, serialized callbacks and firmware/AP
+exclusion remain caller obligations.
+
+Ordinary and sanitizer transaction tests check every byte value and selector,
+a second request after consumption, failed stores, mapping restoration and
+terminal interference. Arm tests reject all 4096 ECAM and EHCI alias slots and
+mutations to the captured legacy/capability fields. Native store/timing wiring
+and the protected physical handoff capture remain outstanding.
