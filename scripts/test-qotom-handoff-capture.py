@@ -87,7 +87,9 @@ class HandoffTests(unittest.TestCase):
         mode = lab['EXPECTED'][:-len(lab['EXPECTED_KERNEL'])]
         extra = transport(empty_handoff())
         raw = raw.replace(mode, mode + extra)
-        final = raw.index(b'LEANOS/3 FINAL')
+        protocol = lab['cpu_replay_module'](True).load_protocol(
+            capture / 'diagnostic-protocol.tsv')
+        final = raw.index(protocol['FINAL'].encode('ascii'))
         end = raw.index(b'\n', final) + 1
         events = [{'hex': raw[:end].hex(), 'elapsed': 1},
                   {'hex': raw[end:].hex(), 'elapsed': 36}]
