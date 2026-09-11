@@ -83,7 +83,7 @@ static char *next_field(char **cursor) {
 }
 
 struct root_bundle {
-  uint64_t address;
+  uint64_t address, magic, info_address;
   lean_object *info, *root, *addresses, *tables;
 };
 
@@ -97,10 +97,13 @@ static struct root_bundle read_root_bundle(const char *path) {
   *strchr(line, '\n') = '\0';
   char *cursor = line;
   char *address = next_field(&cursor), *info = next_field(&cursor), *root = next_field(&cursor);
-  if (!address || !info || !root || cursor) {
+  char *magic = next_field(&cursor), *info_address = next_field(&cursor);
+  if (!address || !info || !root || cursor || (magic == NULL) != (info_address == NULL)) {
     fprintf(stderr, "firmware corpus: malformed root bundle header\n"); exit(1);
   }
   struct root_bundle bundle = {parse_u64(address, "root address"),
+    magic ? parse_u64(magic, "handoff magic") : UINT64_C(0x36d76289),
+    info_address ? parse_u64(info_address, "handoff address") : UINT64_C(0x1000),
     read_byte_array(info), read_byte_array(root), lean_mk_empty_array(), lean_mk_empty_array()};
   size_t count = 0;
   while (fgets(line, sizeof(line), file)) {
@@ -196,7 +199,7 @@ static lean_object *run_host(int argc, char **argv) {
       if (rooted) {
         lean_inc(bundle.info); lean_inc(bundle.root);
         lean_inc(bundle.addresses); lean_inc(bundle.tables);
-        actual = leanos_boot_captured_root_query(0x36d76289, 0x1000,
+        actual = leanos_boot_captured_root_query(bundle.magic, bundle.info_address,
           bundle.info, bundle.root, bundle.address, bundle.addresses, bundle.tables, second, word);
       } else {
         lean_inc(bytes);

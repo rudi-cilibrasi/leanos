@@ -273,6 +273,35 @@ remain accepted and pin their changed region projections. Independent drift
 tests change source entry count/order and update the raw hashes, then require
 the unchanged normalized expectation to reject the alteration.
 
+## Native Qotom firmware-root replay
+
+The native Qotom case retains the actual Multiboot2 information block, captured
+magic and physical address, executing APIC ID, selected XSDT and its ten full
+physical table copies. It checks the capture manifest, serial/event identity,
+raw handoff transport, root binding and table bytes before producing replay
+inputs. No E820 or ACPI tag reconstruction is used for this case.
+
+`firmware-corpus/qotom-native-root.json` pins the complete six-word projection
+(five ABI words and an out-of-range zero) for the original input and 24 derived
+negative cases. The original result is admission rejection
+`multipleEnabledProcessors`, not a malformed-root or missing-copy rejection.
+It does not establish BSP/AP dormancy, DMA containment, exclusive PCI access,
+FADT/display authorization, or production hardware admission.
+
+The root bundle supports an optional captured magic/address pair after the
+existing three header fields. Historical bundles retain their default magic
+and address; native bundles carry the recorded values into both the Lean and
+generated-C queries. Normalized digests include non-default handoff arguments.
+Large raw byte arrays are named separately in generated Lean to keep query
+expressions manageable without changing their bytes or result expectations.
+
+The existing Qotom topology-only candidate is also replayed with these native
+bytes by `scripts/test-qotom-bsp-capture.py --native`. Its eight cases accept
+the unchanged four-processor inventory and reject the selected CPU, root and
+checksum mutations. This hosted Lean check preserves the distinction between
+a candidate inventory witness and runtime authority; it does not establish AP
+dormancy or replace the original single-core rejection.
+
 ## Native Qotom GRUB handoff
 
 The separately pinned `firmware-corpus/qotom-native-handoff.json` adds the
@@ -286,8 +315,8 @@ The accepted projection preserves all 19 memory entries and four normalized
 regions in the existing 16 MiB allocation domain. All 74 result words plus an
 out-of-range zero query are pinned. This is memory decode/normalization only;
 it neither admits the four-core topology nor certifies memory outside that
-existing allocation domain. The externally referenced ACPI tables remain a
-separate native capture requirement.
+existing allocation domain. The separately captured ACPI tables are covered by the native firmware-root
+replay above.
 
 Eight explicitly synthetic mutations exercise wrong magic, unaligned pointer,
 truncation, nonzero header reservation, unsupported entry version, zero-length
