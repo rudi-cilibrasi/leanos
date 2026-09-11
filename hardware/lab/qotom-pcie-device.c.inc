@@ -1,3 +1,4 @@
+#ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
 #include "pci-express-observation.h"
 
 /* Exact native inventory and the complete earlier capability capture precede
@@ -19,3 +20,4 @@ static __attribute__((noinline)) void lab_capture_pcie_device(
             pre_admission_fail("qotom-pcie-device");
     }
 }
+#endif
