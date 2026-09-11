@@ -209,6 +209,37 @@ theorem finish_acceptance_requires
     omega
 
 
+/-- Exact scalar acceptance contract. It describes the checked values, not
+how the caller obtained them or whether application processors are dormant. -/
+theorem finish_acceptance_iff
+    (status error offset recordOffset recordKind recordLength apicId flags
+      count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId : UInt64)
+    : finishQuery status error offset recordOffset recordKind recordLength
+      apicId flags count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId 1 = 1 ↔
+    status = 3 ∧ error = 0 ∧ offset = tableLength ∧
+    44 < tableLength ∧ tableLength ≤ UInt64.ofNat maxAcpiSdtBytes ∧
+    recordOffset = 0 ∧ recordKind = 0 ∧ recordLength = 0 ∧
+    apicId = 0 ∧ flags = 0 ∧ count = 4 ∧ admitted = 0 ∧
+    seen0 = 85 ∧ seen1 = 0 ∧ seen2 = 0 ∧ seen3 = 0 ∧ executing = 0 ∧
+    cpuidEdx ≤ 0xffffffff ∧ sampleId ≤ 0xffffffff ∧
+    available = 1 ∧ cpuidEdx &&& 0x220 = 0x220 ∧ sampleId = executing ∧
+    apicBase = QotomBspTopology.expectedApicBase := by
+  constructor
+  · exact finish_acceptance_requires status error offset recordOffset recordKind recordLength
+      apicId flags count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId
+  · intro valid
+    have bsp : (4276095232 : UInt64) &&& 256 ≠ 0 := by decide
+    have low : ¬tableLength ≤ 44 := by
+      have h := valid.2.2.2.1
+      exact UInt64.not_le.mpr h
+    have high : ¬UInt64.ofNat maxAcpiSdtBytes < tableLength := by
+      have h := valid.2.2.2.2.1
+      exact UInt64.not_lt.mpr h
+    simp_all [finishQuery, QotomBspTopology.expectedApicBase]
+
 @[export leanos_qotom_madt_stream_finish_query]
 def exportedFinishQuery
     (status error offset recordOffset recordKind recordLength apicId flags
