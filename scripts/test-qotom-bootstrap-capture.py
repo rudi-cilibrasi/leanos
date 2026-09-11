@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check BSP observations, feature gates, and unchanged CPU/PCI replay bytes."""
 import json
+import hashlib
 from pathlib import Path
 import runpy
 import unittest
@@ -77,6 +78,29 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('bootstrap_decoder_sha256', result['diagnostic'])
         with self.assertRaises(ValueError):
             lab['classify_cpu_protected'](*args, handoff=True, acpi=True, pci_read_trace=True)
+
+    def test_retained_physical_bootstrap_and_recovery(self):
+        directory = ROOT / 'hardware/lab/observations/qotom-bootstrap-20260911'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
+        cycle = directory / 'cycle-1'
+        recorded = json.loads((cycle / 'result.json').read_text())
+        events = [json.loads(line) for line in (cycle / 'events.jsonl').read_text().splitlines()]
+        lab = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+        result = lab['classify_cpu_protected'](events, recorded['elf_sha256'],
+            directory / 'diagnostic-protocol.tsv', ROOT / 'build/j1900-cpu-host/host',
+            ROOT / 'build/qotom-pci-inventory-host/host', handoff=True, acpi=True,
+            pci_read_trace=True, bootstrap=True)
+        self.assertEqual(result['bootstrap'], json.loads((cycle / 'bootstrap.json').read_text()))
+        self.assertEqual(result['bootstrap']['ia32_apic_base'], 0xfee00900)
+        self.assertEqual(result['handoff']['apic'], 0)
+        self.assertEqual(result['diagnostic']['terminal_reason'], 'qotom-pci-enumeration')
+        self.assertEqual(result['diagnostic']['pci_headers'], [])
+        self.assertEqual(result['pci_read_trace']['mismatches'], 1)
+        self.assertEqual(len(result['acpi']['tables']), 11)
+        self.assertTrue(result['watchdog_protected'])
+        self.assertGreater(result['quiet_seconds'], 30)
 
     def test_early_rejection_has_no_sample(self):
         rejected = PROTOCOL['FINAL'].encode() + b' status=FAIL reason=j1900-cpu-profile\n'

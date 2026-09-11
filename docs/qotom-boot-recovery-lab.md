@@ -358,4 +358,6 @@ identifies bit 8 as BSP, bit 11 as APIC global enable, and bit 10 as x2APIC
 mode enable. The JSON exposes those bits without repairing or admitting the
 value. A BSP sample identifies the executing processor's architectural role;
 it does not establish AP dormancy, safe interrupt routing, exclusive PCI access,
-or production runtime authority. Physical Qotom validation is still required.
+or production runtime authority. The [physical Qotom capture](../hardware/lab/observations/qotom-bootstrap-20260911/README.md)
+reports `0xfee00900` with initial APIC ID 0 and verifies recovery to FreeBSD.
+PCI enumeration still rejects; no platform admission is claimed.
