@@ -24,7 +24,10 @@ p.add_argument('--ecam-read', action='store_true', help='use firmware-gated ECAM
 p.add_argument('--native-inventory', action='store_true', help='check the complete native PCI snapshot in the ECAM lab image')
 p.add_argument('--bsp-topology', action='store_true', help='bind root-selected MADT entries to a fresh BSP observation')
 p.add_argument('--pci-capabilities', action='store_true', help='capture bounded conventional capability lists after native inventory acceptance')
+p.add_argument('--af-observation', action='store_true', help='observe AF control/status after native capability capture')
 a = p.parse_args()
+if a.af_observation and not a.pci_capabilities:
+    p.error('--af-observation requires --pci-capabilities')
 if a.pci_capabilities and not a.native_inventory:
     p.error('--pci-capabilities requires --native-inventory')
 if a.bsp_topology and not a.native_inventory:
@@ -49,7 +52,8 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-capabilities-lab' if a.pci_capabilities else
+out = root / 'build' / ('qotom-af-lab' if a.af_observation else
+                       'qotom-capabilities-lab' if a.pci_capabilities else
                        'qotom-bsp-lab' if a.bsp_topology else
                        'qotom-pci-lab' if a.pci_diagnostic else
                        'qotom-lab' if a.mode == 'completion' else 'qotom-kernel-hang')
@@ -66,6 +70,8 @@ for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
+if a.af_observation:
+    text = '#define LEANOS_QOTOM_AF_OBSERVATION 1\n' + text
 if a.ecam_read:
     text = '#define LEANOS_LAB_ECAM_READ 1\n' + text
 if a.dsdt_capture:
@@ -277,7 +283,9 @@ if a.bsp_topology:
 if a.pci_capabilities:
     files.extend([root / 'hardware/lab/qotom-pci-capabilities.c.inc',
                   root / 'boot/pci-capabilities.h'])
-manifest = {'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.af_observation:
+    files.append(root / 'boot/pci-af-observation.h')
+manifest = {'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

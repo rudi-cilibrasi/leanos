@@ -17,3 +17,15 @@ printf '%s\n' 'PASS bounded capability lists: maximum size, cycles, read failure
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   -Iboot tests/qotom-pci-capabilities-lab.c -o "$build/lab-sanitized"
 leanos_run_sanitized "$build/lab-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/pci-af-observation.c -o "$build/af-ordinary"
+"$build/af-ordinary"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/pci-af-observation.c -o "$build/af-sanitized"
+leanos_run_sanitized "$build/af-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -Iboot -DLEANOS_QOTOM_AF_OBSERVATION tests/qotom-pci-capabilities-lab.c -o "$build/af-lab-ordinary"
+"$build/af-lab-ordinary"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  -Iboot -DLEANOS_QOTOM_AF_OBSERVATION tests/qotom-pci-capabilities-lab.c -o "$build/af-lab-sanitized"
+leanos_run_sanitized "$build/af-lab-sanitized"

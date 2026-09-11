@@ -37,6 +37,19 @@ static void pre_admission_fail(const char *s) {
 int main(void) {
     assert(pci_enumerate_segment(NULL, NULL, NULL).status == PCI_ENUMERATION_INVALID_ARGUMENT);
     struct pci_enumeration_snapshot snapshot = {.count=1};
+#ifdef LEANOS_QOTOM_AF_OBSERVATION
+    config[0] = 0x12348086; config[1] = 0x100000; config[13] = 88;
+    config[22] = 0x03060013; config[23] = 256;
+    memcpy(snapshot.headers[0].words, config, sizeof snapshot.headers[0].words);
+    lab_capture_pci_capabilities(&snapshot);
+    assert(reads == 11 && !lab_ecam_window.armed);
+    assert(strstr(output, "PCI-AF profile=af-observation-v1 index=0 status=0 offset=88 raw=256\n"));
+    used = reads = 0; output[0] = 0; failed_offset = 92;
+    if (!setjmp(terminal)) { lab_capture_pci_capabilities(&snapshot); assert(0); }
+    assert(reads == 11 && !strcmp(reason, "qotom-pci-af"));
+    assert(strstr(output, "PCI-AF profile=af-observation-v1 index=0 status=5 offset=0 raw=0\n"));
+    puts("PASS AF lab emission and window disarm");
+#else
     config[0] = 0x12348086; config[1] = 0x100000; config[13] = 0x58;
     config[0x58/4] = 0x4809; config[0x48/4] = 5;
     memcpy(snapshot.headers[0].words, config, sizeof snapshot.headers[0].words);
@@ -52,4 +65,5 @@ int main(void) {
     assert(!strcmp(output,
         "LEANOS-LAB/1 PCI-CAPS profile=conventional-v1 index=0 status=2 offset=72 count=0\n"));
     puts("PASS native capability emission: bounded read window and failure disarm");
+#endif
 }

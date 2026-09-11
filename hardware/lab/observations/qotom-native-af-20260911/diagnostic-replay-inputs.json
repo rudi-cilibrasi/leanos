@@ -1,0 +1,20 @@
+{
+  "protocol_sha256": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+  "replay_executable_sha256": "9241693e5fee8cc47321846e3020efeec800c9cb37cc05ecf80cbbb8a9233416",
+  "af_decoder_sha256": "a8640935589445ed8ac0d3ef17b4489b57082cbb54287519c9ff95e0721d5319",
+  "pci_capabilities_decoder_sha256": "f5dc20d32290dcaeb96117751b25234daabb5507239b5310de8196017bd2f8bc",
+  "bsp_replay_executable_sha256": "152ab53376e868a1246253fbbc0215bea691bcebd4cb36674dafc14542ff2b12",
+  "bsp_decoder_sha256": "6a27f53c0be5d74bd2a0ac10a9e1b5392af5178d1855c62c4b8da69b3068f29e",
+  "native_kernel_inventory_enabled": true,
+  "inventory_profile": "qotom-native-ecam-v1",
+  "inventory_profile_decoder_sha256": "9c366ff792dcd1e24eb631f4963bcf886f02b8c15b0cbe61021593410e096c8b",
+  "dsdt_capture": true,
+  "ecam_decoder_sha256": "da7ab1fe4cd4b2dafc4e1b6a50d87d0ec17643bd3fd628fb4204739715867b88",
+  "ecam_cpu_decoder_sha256": "87698c6cba1d180136d60604e1395118002384d8636f57c1f85f6da78b161d93",
+  "ecam_firmware_manifest_sha256": "1d94eced3c24f72f86cf04c4d2c42a21851d3d17fed9556f571a05fb6297a5c9",
+  "pci_replay_executable_sha256": "6233d026a997e91f52960bde28f2849b7e3e1ae54655d1ce31b1adef8a079022",
+  "handoff_decoder_sha256": "974caff652a8b120018feb5404df2ed1e64f820688b6d5656d613904d5c05101",
+  "acpi_decoder_sha256": "905d18cbf64ed809f10dc1547c587d409d556399ce2379d7d6f5e610800dce92",
+  "bootstrap_decoder_sha256": "2d72f2278616bd09bbc5b4222e87710e62e0f4be2e5cb98c658196eafa25182c",
+  "ecam_memory_decoder_sha256": "a4c38100eee2dccb9ce532173e8a8a967d9b09f4ec67961e9be3526323cb02ed"
+}
