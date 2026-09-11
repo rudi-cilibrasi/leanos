@@ -208,6 +208,18 @@ boots it with the accepted CPU fixture and foreign q35 firmware, requires the
 exact ECAM arm failure with no PCI scan, and verifies captured ACPI bytes against
 independent QMP physical-memory reads. This negative boot passed. It does not
 execute the privileged primitives on the accepted firmware path or establish
-physical ECAM access. Positive privileged execution, capture decoder/runner
-integration and protected physical testing remain required. Completion reset
+physical ECAM access. Capture decoder/runner integration and protected
+physical testing remain required; the isolated privileged tests below cover
+the native primitives separately. Completion reset
 still uses mechanism-1 host identification outside the ECAM read callback.
+
+`scripts/test-qotom-ecam-native-qemu.py` executes the actual native assembly
+in an isolated single-CPU fixture. Its control/MSR outputs match independent
+reads. It replaces a huge RAM mapping with equivalent 4 KiB leaves, remaps a
+reserved aperture between two RAM pages, and verifies that invalidation makes
+the second page's value visible. The aperture cannot overlap the linked image.
+A second boot disables CPUID PAT support and requires rejection with every
+output field unchanged. Both pinned QEMU cases pass and are registered in the
+aggregate check script. These tests validate privileged primitive execution
+and RAM translation changes; they do not bypass the diagnostic firmware gate,
+exercise UC ECAM device transactions or establish physical resource ownership.
