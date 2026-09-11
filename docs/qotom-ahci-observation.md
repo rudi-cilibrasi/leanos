@@ -31,7 +31,18 @@ an atomic snapshot or continuing firmware exclusion.
 Ordinary and sanitizer tests in `scripts/check-pci-capabilities.sh` exercise
 all 15 read failures, every bit of initial and refreshed resource/identity
 fields, allowed unrelated changes, each raw payload bit, all-ones rejection,
-address bounds and invalid arguments. The future native experiment still needs
-its mapping window, firmware/root binding, record decoder, protected recovery
-and physical capture. No hardware access has yet been performed by this helper.
+address bounds and invalid arguments. The lab window and arm gate now bind the same PCI header and captured firmware
+copies to the validated root. They exclude all present aliases to the mapped
+4 KiB page containing the 2 KiB ABAR resource. The temporary leaf is
+`80000000d0916019`: supervisor, read-only, NX, with the reviewed UC PAT slot.
+Only the five listed dwords can be loaded. Reads restore the exact saved leaf
+and invalidate before checking post-read controls; mapping or restoration
+interference terminates rather than publishing a value. Failed rearming clears
+all saved authority, without performing device access.
+
+Window tests exercise every byte offset in the page, all five permitted loads,
+load failure and pre/post-read control or mapping interference. Arm tests cover
+all 4096 possible alias leaves, every bound PCI-header bit, changed firmware,
+missing callbacks and failed rearming. The future native experiment still needs
+record emission/decoding, protected recovery and physical capture. No hardware access has yet been performed by this helper.
 It advances the SATA portion of #330 and #291 without granting boot admission.
