@@ -44,3 +44,21 @@ section 14.3, printed page 340, describes EHCI as a legacy alternative to xHCI.
 That is consistent with the differing observations, but does not prove when or
 how this BIOS switches port ownership. No new MMIO read, ownership write,
 controller stop or reset was performed for this audit. Issue #330 remains open.
+
+## Capability collector
+
+`boot/qotom-ehci-capabilities.h` binds its candidate to the captured EHCI BDF,
+identity, class/revision, endpoint layout, memory-decode bit and exact BAR0.
+It rechecks those five configuration dwords before reading BAR0 offsets 0, 4
+and 8. Success retains all three raw capability dwords. Any failed read or
+validation publishes zero fields. The format check requires EHCI 1.0, a
+non-overlapping aligned CAPLENGTH, and a nonzero port count. These are candidate
+checks, not general EHCI compatibility claims.
+
+The collector delegates MMIO access to a caller-supplied callback. The callback
+must separately establish the UC mapping, alias exclusion and restoration
+contract described above; this component does not authorize arbitrary MMIO.
+No native adapter or hardware capability-register capture exists yet. Tests
+exercise read failures at every position, identity/BAR drift, all CAPLENGTH
+bytes, and rejection of addresses outside the three selected offsets in both
+ordinary and sanitizer builds.

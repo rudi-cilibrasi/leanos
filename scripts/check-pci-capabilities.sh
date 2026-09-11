@@ -29,3 +29,9 @@ leanos_run_sanitized "$build/af-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   -Iboot -DLEANOS_QOTOM_AF_OBSERVATION tests/qotom-pci-capabilities-lab.c -o "$build/af-lab-sanitized"
 leanos_run_sanitized "$build/af-lab-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ehci-capabilities.c -o "$build/ehci-ordinary"
+"$build/ehci-ordinary"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ehci-capabilities.c -o "$build/ehci-sanitized"
+leanos_run_sanitized "$build/ehci-sanitized"
