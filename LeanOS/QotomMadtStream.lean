@@ -144,4 +144,48 @@ def exportedByteStepQuery
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) : UInt64 :=
   byteStepQuery currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word
 
+/-- Bind a terminal stream state to a same-CPU architectural observation.
+The caller must pass the actual terminal result of an initialized byte stream;
+scalar words alone cannot prove their own provenance. Status 1 is candidate
+only. Status 2 rejects malformed/incomplete stream state or scalar widths;
+status 5 carries the existing bootstrap error ordering. -/
+def finishQuery
+    (status error offset recordOffset recordKind recordLength apicId flags
+      count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId word : UInt64) : UInt64 :=
+  if word == 0 then 1
+  else if word > 4 then 0
+  else
+    let streamInvalid := status != 3 || error != 0 || offset != tableLength ||
+      tableLength <= 44 || tableLength > UInt64.ofNat maxAcpiSdtBytes ||
+      recordOffset != 0 || recordKind != 0 || recordLength != 0 ||
+      apicId != 0 || flags != 0 || count != 4 || admitted != 0 ||
+      seen0 != 85 || seen1 != 0 || seen2 != 0 || seen3 != 0 || executing != 0
+    let boundsError := if cpuidEdx > 0xffffffff then 306
+      else if available > 1 then 307 else if sampleId > 0xffffffff then 308 else 0
+    let bindingError := if available == 0 then 1
+      else if cpuidEdx &&& 0x220 != 0x220 then 2
+      else if sampleId != executing then 3
+      else if apicBase &&& 0x100 == 0 then 4
+      else if apicBase != QotomBspTopology.expectedApicBase then 5 else 0
+    if streamInvalid || boundsError != 0 then
+      if word == 1 then 2 else if word == 2 then
+        if streamInvalid then 78 else boundsError
+      else 0
+    else if bindingError != 0 then
+      if word == 1 then 5 else if word == 2 then bindingError else 0
+    else if word == 1 then 1
+    else if word == 2 then executing
+    else if word == 3 then count
+    else apicBase
+
+@[export leanos_qotom_madt_stream_finish_query]
+def exportedFinishQuery
+    (status error offset recordOffset recordKind recordLength apicId flags
+      count admitted seen0 seen1 seen2 seen3 tableLength executing
+      cpuidEdx available apicBase sampleId word : UInt64) : UInt64 :=
+  finishQuery status error offset recordOffset recordKind recordLength apicId flags
+    count admitted seen0 seen1 seen2 seen3 tableLength executing
+    cpuidEdx available apicBase sampleId word
+
 end LeanOS.QotomMadtStream
