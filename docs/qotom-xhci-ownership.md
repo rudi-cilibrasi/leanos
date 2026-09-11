@@ -335,7 +335,24 @@ position at the 48-header bound, all enable combinations, retained/new status,
 reasserted enables, ownership/resource/list drift, live vendor status and failed
 writes with and without effects.
 
-This callback helper has no native write backend yet. A consumed write window,
-firmware/root/resource binding, native diagnostics, strict replay and a protected
-physical capture remain to be added. SMI disable alone does not establish
-continuing firmware exclusion, controller halt, transaction drain or quarantine.
+SMI disable alone does not establish continuing firmware exclusion, controller
+halt, transaction drain or quarantine. Native diagnostics, strict replay and a
+protected physical capture remain to be added.
+
+## Consumed SMI write window
+
+The separate `lab_xhci_smi_window` accepts only address `0xd0908464` and value
+zero, consuming its authority on every request. The trusted DWORD store uses
+an RW/NX/supervisor/UC aperture; exact mapping restoration, invalidations and
+control checks precede return. Interference is terminal. The semaphore register
+and every nonzero write value are excluded.
+
+Arming requires the exact captured six-header list and seven capability words,
+plus successful handoff with support `0x01000801`, control `0x2000`, bounded polls
+and zero verification details. It binds the PCI identity/BAR pair, firmware
+copies and boot root, rejects aliases across the complete 64-KiB resource, and
+revokes all authority on failed rearming. Arming itself reads or writes no device
+register. Tests exercise every resource byte address, all address/value bits,
+all nonzero 16-bit values, restoration failures, all page-table alias slots,
+captured-state mutations and handoff-result fields. The native stage still
+needs to connect this window to the helper and retain its physical result.
