@@ -1,0 +1,10 @@
+{
+  "reads": 16004,
+  "mismatches": 1,
+  "requested": 2151518976,
+  "observed": 2147543148,
+  "value": 532485,
+  "first_requested": 2151518976,
+  "first_observed": 2147543148,
+  "first_value": 532485
+}

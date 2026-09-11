@@ -17,7 +17,10 @@ p.add_argument('--handoff-capture', action='store_true',
                help='retain bounded raw GRUB handoff before PCI diagnostic')
 p.add_argument('--acpi-capture', action='store_true', help='copy and retain root-selected ACPI tables')
 p.add_argument('--pci-read-trace', action='store_true')
+p.add_argument('--bootstrap-capture', action='store_true')
 a = p.parse_args()
+if a.bootstrap_capture and not a.pci_diagnostic:
+    p.error('--bootstrap-capture requires --pci-diagnostic')
 if a.pci_read_trace and not a.pci_diagnostic:
     p.error('--pci-read-trace requires --pci-diagnostic')
 if a.acpi_capture and not a.handoff_capture:
@@ -85,6 +88,13 @@ if a.pci_read_trace:
         raise SystemExit('unsupported PCI diagnostic shape')
     text = text.replace(marker, (root / 'hardware/lab/qotom-pci-read-trace.c.inc').read_text() + '\n' + marker)
     text = text.replace(call, 'pci_enumerate_segment(lab_pci_read, 0, &snapshot);\n    lab_report_pci_read();')
+if a.bootstrap_capture:
+    marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
+    gate = '    if (result != 1) pre_admission_fail("j1900-msr-readback");'
+    if text.count(marker) != 1 or text.count(gate) != 1:
+        raise SystemExit('unsupported CPU/MSR bootstrap gate shape')
+    text = text.replace(marker, (root / 'hardware/lab/qotom-bootstrap.c.inc').read_text() + '\n' + marker)
+    text = text.replace(gate, gate + '\n    lab_capture_bootstrap((uint32_t)w[9]);')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -94,13 +104,13 @@ graph = graph.replace(str(source), str(overlay))
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
-if a.acpi_capture or a.pci_read_trace:
+if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
     plan = build / 'boot-page-plan-qotom-pci-diagnostic.h'
     prelink = build / 'leanos-qotom-pci-diagnostic-prelink.elf'
     subprocess.run(['make', '-f', str(makefile), '-j4', str(prelink)], cwd=root, check=True)
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(prelink), str(plan)], cwd=root, check=True)
 subprocess.run(['make', '-f', str(makefile), '-j4', str(target)], cwd=root, check=True)
-if a.acpi_capture or a.pci_read_trace:
+if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
     final_plan = out / 'final-page-plan.h'
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(target), str(final_plan)], cwd=root, check=True)
     if final_plan.read_bytes() != plan.read_bytes():
@@ -117,9 +127,11 @@ if a.acpi_capture:
     files.append(root / 'hardware/lab/qotom-acpi.c.inc')
 if a.pci_read_trace:
     files.append(root / 'hardware/lab/qotom-pci-read-trace.c.inc')
-if a.acpi_capture or a.pci_read_trace:
+if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
     files.extend([plan, final_plan])
-manifest = {'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.bootstrap_capture:
+    files.append(root / 'hardware/lab/qotom-bootstrap.c.inc')
+manifest = {'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
