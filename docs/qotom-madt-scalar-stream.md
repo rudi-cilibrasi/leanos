@@ -47,7 +47,10 @@ online-flag premises at a successful final byte of a local-APIC record, and
 The stream also proves retention of the actual ID byte and accumulation of
 each nonterminal flags byte. The reference decoder has a matching single-record
 lemma, `BootTopology.decode_local_apic_record_cons`, for arbitrary payload
-bytes and a decoded tail. The full proof still must compose those field
+bytes and a decoded tail. `flags_bytes_match_reference` and
+`flags_predicates_match_reference` prove exact agreement of the accumulated
+flags and both flag predicates with the reference arithmetic. The full proof
+still must compose those field
 transitions and preserve the initialized state across the entire table. Given an existing topology witness and complete terminal
 shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
 to scalar arguments preserves success of the existing typed binder. This does

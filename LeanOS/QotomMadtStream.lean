@@ -1,4 +1,5 @@
 import LeanOS.QotomBspTopology
+import Std.Tactic.BVDecide
 
 /-! Allocation-free byte stream for the Qotom processor inventory candidate.
 
@@ -167,6 +168,49 @@ def byteStepQuery
   else if word == 14 then nextSeen3
   else if word == 15 then byteValue
   else 0
+
+/-- Bitwise byte accumulation and the authoritative decoder's natural-number
+little-endian arithmetic produce exactly the same flags value, without wrap. -/
+theorem flags_bytes_match_reference (b0 b1 b2 b3 : UInt8) :
+    (b0.toUInt64 ||| (b1.toUInt64 <<< 8) ||| (b2.toUInt64 <<< 16) |||
+      (b3.toUInt64 <<< 24)).toNat =
+    b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216 := by
+  have words :
+      b0.toUInt64 ||| (b1.toUInt64 <<< 8) ||| (b2.toUInt64 <<< 16) |||
+        (b3.toUInt64 <<< 24) =
+      b0.toUInt64 + b1.toUInt64 * 256 + b2.toUInt64 * 65536 +
+        b3.toUInt64 * 16777216 := by
+    bv_decide
+  rw [words]
+  have h0 := b0.toNat_lt
+  have h1 := b1.toNat_lt
+  have h2 := b2.toNat_lt
+  have h3 := b3.toNat_lt
+  simp [UInt64.toNat_add, UInt64.toNat_mul]
+  omega
+
+/-- Both processor flag predicates agree with the reference decoder for all
+four-byte payloads, including reserved high bits. -/
+theorem flags_predicates_match_reference (b0 b1 b2 b3 : UInt8) :
+    let word := b0.toUInt64 ||| (b1.toUInt64 <<< 8) |||
+      (b2.toUInt64 <<< 16) ||| (b3.toUInt64 <<< 24)
+    let value := b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216
+    (word &&& 1 != 0) = (value % 2 == 1) ∧
+      (word &&& 2 != 0) = ((value / 2) % 2 == 1) := by
+  have enabled (word : UInt64) : (word &&& 1 != 0) = (word % 2 == 1) := by
+    apply Bool.eq_iff_iff.mpr
+    simp only [bne_iff_ne, beq_iff_eq]
+    bv_decide
+  have online (word : UInt64) : (word &&& 2 != 0) = ((word / 2) % 2 == 1) := by
+    apply Bool.eq_iff_iff.mpr
+    simp only [bne_iff_ne, beq_iff_eq]
+    bv_decide
+  dsimp only
+  rw [enabled, online]
+  constructor <;> apply Bool.eq_iff_iff.mpr <;>
+    simp only [beq_iff_eq, ← UInt64.toNat_inj] <;>
+    simp only [UInt64.toNat_mod, UInt64.toNat_div, flags_bytes_match_reference] <;>
+    simp
 
 /-- The APIC-ID byte is retained exactly, rather than supplied from an
 expected inventory value, on every successful local-APIC transition. -/

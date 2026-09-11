@@ -20,3 +20,6 @@ These checks describe the values accepted by the scalar topology stream and its 
 
 - `processor_id_byte_retained` — A successful local-APIC ID-byte transition stores the supplied byte exactly.
 - `processor_flags_byte_accumulated` — A successful nonterminal flags-byte transition ORs the byte into its little-endian position in the supplied accumulator.
+
+- `flags_bytes_match_reference` — Accumulating four arbitrary bytes with shifts and bitwise OR yields exactly the reference decoder’s natural-number flags value, without overflow.
+- `flags_predicates_match_reference` — Testing the reconstructed enabled and online-capable bits agrees with the reference arithmetic predicates for all byte values, including reserved high bits.

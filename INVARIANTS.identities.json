@@ -14319,6 +14319,18 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.flags_bytes_match_reference",
+      "display": "flags_bytes_match_reference",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.flags_predicates_match_reference",
+      "display": "flags_predicates_match_reference",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.guarded_processors_equal_baseline",
       "display": "guarded_processors_equal_baseline",
       "kind": "theorem"
