@@ -149,3 +149,34 @@ header is `0x00010801` (BIOS-owned set, OS-owned clear); control/status is
 request consumed. The retained-capture test revalidates all six relative links
 and the selected control sample through the protected decoder. Cooperative
 ownership handoff and subsequent xHCI shutdown remain outstanding.
+
+## Bounded cooperative handoff helper
+
+`boot/qotom-xhci-handoff.h` refreshes the complete capability/list observation
+and requires exact agreement with the prior list and control sample. It accepts
+an initial legacy support word only with BIOS-owned set, OS-owned clear and
+reserved semaphore bits zero. One aligned DWORD MMIO request writes the sampled
+support word with OS-owned set. This is the access width used by the
+[Linux xHCI handoff implementation](https://github.com/torvalds/linux/blob/master/drivers/usb/host/pci-quirks.c)
+when requesting ownership; Linux also gives BIOS one second to release it.
+
+The helper waits at most 100 times for 10 ms and samples support after each
+successful delay. Every sample must retain OS-owned and the original nonsemaphore
+bits. Once BIOS-owned clears, a complete final list and PCI/capability refresh
+must agree except for the two semaphore bits, and the final support sample must
+still show BIOS-clear/OS-owned. The final control sample is retained separately;
+it may change while firmware processes the request. No SMI-disable or continuing
+firmware-exclusion claim follows from this helper.
+
+The bound is 274 reads, one DWORD write and 100 delay callbacks. Timeout, drift,
+read failure, delay failure and write failure reject. The helper never clears
+BIOS-owned itself, writes control/status, resets a controller or rolls back.
+A failed write may have taken effect, so output reports the attempted write
+and last sample on failure. These fields are diagnostics, not authority.
+Native write mapping and physical handoff validation remain outstanding.
+
+Tests use the retained six-header list and a maximum 48-header list. They cover
+every successful release delay, all 274 read-failure positions, every delay
+failure, a timeout, an ignored write, write failure with a hardware side effect,
+all non-BIOS support-bit changes, all prior header-bit mutations, final support
+and list drift, absent legacy support, and malformed initial semaphore state.
