@@ -168,6 +168,38 @@ def byteStepQuery
   else if word == 15 then byteValue
   else 0
 
+/-- The final byte of an eight-byte local-APIC record can report no error
+only when its reconstructed flags and APIC ID pass the inventory guard. -/
+theorem completed_processor_requires_guard
+    (currentOffset apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+      tableLength executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset 7 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 2 = 0) :
+    processorMatches enabledCount apicId
+      ((flags ||| (byteValue <<< 24)) &&& 1 != 0) = true ∧
+    (flags ||| (byteValue <<< 24)) &&& 2 = 0 := by
+  simp [byteStepQuery] at accepted
+  repeat' (split at accepted <;> (try simp_all))
+
+/-- A successful completed processor record advances the processor position
+by exactly one; disabled records cannot preserve the count and slip through. -/
+theorem completed_processor_advances_count
+    (currentOffset apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+      tableLength executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset 7 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 2 = 0) :
+    byteStepQuery currentOffset 7 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 9 = enabledCount + 1 := by
+  have guarded := completed_processor_requires_guard currentOffset apicId flags
+    enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+    byteOffset byteValue accepted
+  have enabled := (processor_matches_iff _ _ _).mp guarded.1
+  simp [byteStepQuery] at accepted ⊢
+  repeat' (split at accepted <;> (try simp_all))
+
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :

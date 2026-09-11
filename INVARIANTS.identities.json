@@ -14277,6 +14277,18 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.completed_processor_advances_count",
+      "display": "completed_processor_advances_count",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.completed_processor_requires_guard",
+      "display": "completed_processor_requires_guard",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.finish_acceptance_iff",
       "display": "finish_acceptance_iff",
       "kind": "theorem"
