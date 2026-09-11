@@ -1,0 +1,19 @@
+{
+  "source_revision": "02d8b59b745b286924414536c8e95591e6d761e1",
+  "files": {
+    "README.md": "16c78a95d7ffd1b5cea34a14c9a8e98268badae9cc8dfebf7a5d3a64372a613a",
+    "cycle-1/acpi.json": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed",
+    "cycle-1/diagnostic.raw": "5bc90b9732a23567c1e81347fd6a2c0f24307e9574c555ffdb9c60bebb309369",
+    "cycle-1/events.jsonl": "30ef8fb31515b0b33dd7a9f38cdf35fc3e9031c9ee270e0a54727ad46c38d282",
+    "cycle-1/handoff.json": "4cc917e61c9d10add00df2d49496ebc9ee62b3b177d38b84e3bd274f22efb80d",
+    "cycle-1/multiboot2.bin": "fe5d96c31122a17ec842701e18984aaf71cc9befaff715b21f8b6c72f171c26b",
+    "cycle-1/reboot.txt": "b8204129f17ad34b544f4f4c48df888af0da626c727cbc2ac75b05802cdbded2",
+    "cycle-1/recovery.json": "aec51e6b50c022e84c2ec71fb08f51d01ff8cfa00b855f0f5c793c32b05f38df",
+    "cycle-1/result.json": "1aef3be0e0addc233b0d1ff1858e91e9f6999996efec9025b0e15d00cc35fcf8",
+    "cycle-1/serial.raw": "8f3fdc236150a59e51878842199d26aec06e5dd7f59a9ca6a39f4941b5d2bdff",
+    "cycle-1/verification.txt": "e9799c6cf798b39eb8af16dfc8367360c66e15fa7b8029ce4f629baf04732c37",
+    "diagnostic-protocol.tsv": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+    "diagnostic-replay-inputs.json": "35210507dd04b7b47329b376c3e75cc9d00fe00b2c2098d4ba0b8967d2f65de5",
+    "request.env": "a6c3c3fa9fc9d0da82bbdefe879f8d7b6f15f233fc08c3376dd9ff02a7ac4e08"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "scenario": "qotom-pci-diagnostic",
+  "recovery": "freebsd-ssh-restored",
+  "quiet_seconds": 34.32046353901387,
+  "raw_sha256": "8f3fdc236150a59e51878842199d26aec06e5dd7f59a9ca6a39f4941b5d2bdff",
+  "watchdog_protected": true,
+  "handoff": {
+    "status": 0,
+    "magic": 920085129,
+    "address": 2732304,
+    "length": 2680,
+    "apic": 0,
+    "schema": "leanos-raw-multiboot2-lab-v1",
+    "raw_sha256": "fe5d96c31122a17ec842701e18984aaf71cc9befaff715b21f8b6c72f171c26b",
+    "platform_admitted": false,
+    "display_authorized": false,
+    "tag_chain_valid": true,
+    "tags": [
+      {
+        "offset": 8,
+        "type": 21,
+        "size": 12
+      },
+      {
+        "offset": 24,
+        "type": 1,
+        "size": 9
+      },
+      {
+        "offset": 40,
+        "type": 2,
+        "size": 29
+      },
+      {
+        "offset": 72,
+        "type": 6,
+        "size": 472,
+        "memory_map_entry_size": 24,
+        "memory_map_entry_version": 0
+      },
+      {
+        "offset": 544,
+        "type": 9,
+        "size": 2004
+      },
+      {
+        "offset": 2552,
+        "type": 4,
+        "size": 16
+      },
+      {
+        "offset": 2568,
+        "type": 5,
+        "size": 20
+      },
+      {
+        "offset": 2592,
+        "type": 8,
+        "size": 32,
+        "framebuffer": {
+          "address": 753664,
+          "pitch": 160,
+          "width": 80,
+          "height": 25,
+          "bits": 16,
+          "kind": 2
+        }
+      },
+      {
+        "offset": 2624,
+        "type": 15,
+        "size": 44
+      },
+      {
+        "offset": 2672,
+        "type": 0,
+        "size": 8
+      }
+    ]
+  },
+  "acpi": null,
+  "diagnostic": {
+    "schema": "leanos-qotom-pci-diagnostic-replay-v1",
+    "capture_sha256": "5bc90b9732a23567c1e81347fd6a2c0f24307e9574c555ffdb9c60bebb309369",
+    "cpu_words": [
+      1,
+      31,
+      11,
+      1970169159,
+      1818588270,
+      1231384169,
+      198264,
+      1050624,
+      1104733119,
+      3219913727,
+      0,
+      8834,
+      0,
+      0,
+      2147483656,
+      0,
+      0,
+      0,
+      0,
+      0,
+      257,
+      672139264
+    ],
+    "cpu_selection": 65536,
+    "msr_words": [
+      3328,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "msr_readback": 1,
+    "terminal_reason": "qotom-pci-enumeration",
+    "platform_admitted": false,
+    "cpl3_authorized": false,
+    "pci_scan": {
+      "status": 2,
+      "count": 0,
+      "bus": 168,
+      "device": 1,
+      "function": 6,
+      "offset": 0
+    },
+    "pci_headers": [],
+    "inventory_result": null,
+    "protocol_sha256": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+    "replay_executable_sha256": "9241693e5fee8cc47321846e3020efeec800c9cb37cc05ecf80cbbb8a9233416",
+    "pci_replay_executable_sha256": "de54157e3fbb06c455f9c5217bfd5ad0826eadbc5290d023e490107604e7eb67",
+    "handoff_decoder_sha256": "974caff652a8b120018feb5404df2ed1e64f820688b6d5656d613904d5c05101",
+    "acpi_decoder_sha256": "4800c2a0cf21c5345a0c052d2ab8d06f030d21e5a13a2591824da48fa802fdbb"
+  },
+  "freebsd_boot_before": 1789100610,
+  "freebsd_boot_after": 1789102749,
+  "elf_sha256": "22d2b53973bfbc7af01b54be683336b1e5fcf20b3b159c44573cee4bda51d4b3",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": true,
+  "request_consumed": true
+}
