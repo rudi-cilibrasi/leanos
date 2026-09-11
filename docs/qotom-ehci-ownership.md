@@ -414,5 +414,11 @@ fields, and the matching terminal. Failed writes and readback remain diagnostic
 observations, including a write that took effect despite reported failure.
 The actual BME terminal replaces the preceding replay projection's terminal.
 Synthetic protected tests cover those outcomes and reject missing, duplicate,
-malformed, out-of-range and contradictory records. Physical BME clear and
-recovery have not yet been attempted by this image.
+malformed, out-of-range and contradictory records. The physical result is retained below.
+
+The [physical BME capture](../hardware/lab/observations/qotom-native-ehci-bme-20260911/README.md)
+reported Command `0x0406` to `0x0402` with status 0. Final ownership, disabled
+SMIs, stopped-state refresh and Command readback passed. The full protected
+replay agrees, and FreeBSD recovered automatically with the request consumed.
+This verifies the bounded transition on EHCI; other devices and continuing
+firmware/AP exclusion remain outside this observation.
