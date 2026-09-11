@@ -49,6 +49,31 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_pcie_device_protected_projection(self):
+        fixture = runpy.run_path(str(ROOT / 'scripts/test-qotom-pcie-device-capture.py'))
+        capture = fixture['CAPTURE']
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        success = b''.join(fixture['RECORDS'])
+        failure = b''.join(fixture['RECORDS'][:13]) + fixture['record'](13,8)
+        for records,terminal,reason in [(success,FINAL,'qotom-platform-pending'),
+                (failure,FINAL.replace(b'qotom-platform-pending',b'qotom-pcie-device'),'qotom-pcie-device')]:
+            changed = raw[:end].replace(FINAL,records+terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            result = R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True)
+            self.assertEqual(result['diagnostic']['terminal_reason'],reason)
+            self.assertEqual(result['pcie_device']['terminal_reason'],reason)
+            self.assertIn('pcie_device_decoder_sha256',result['diagnostic'])
+
     def test_retained_physical_bsp_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-bsp-20260911'
         manifest = json.loads((capture / 'manifest.json').read_text())

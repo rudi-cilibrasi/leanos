@@ -43,6 +43,21 @@ payloads, and each payload bit. FLR support and pending values are independent
 successful observations. The ordinary and pinned sanitizer runs are included
 in `scripts/check-pci-capabilities.sh`.
 
-Native emission, protected decoding and the physical capture are still pending.
+The native stage runs after the successful xHCI BME step and reuses the earlier
+private capability lists. It arms the ECAM reader only around each observation
+and disarms before emitting `PCIE-DEVICE` or taking a failure terminal. It emits
+one result per function, stopping at the first result other than OK or
+NOT_PRESENT. The builder flag `--pcie-device-observation` requires `--xhci-bme`
+and selects `build/qotom-pcie-device-lab`.
+
+The matching runner option fingerprints the decoder, checks the entire prior
+USB prefix, binds records to earlier capability/header observations, and saves
+`pcie-device.json`. Successful, absent, malformed-shape and payload/final-failure
+results must agree with the supplied structure. Failure records publish zero
+payload; the actual failure terminal survives prefix replay. Synthetic tests
+exercise framing, reachable failures, malformed advertised flags and raw payload
+combinations, plus protected recovery replay for success and final-check failure.
+
+Native image validation and the physical capture are still pending.
 This helper supports the remaining device-control work for #330 and #291; it
 neither closes those issues nor changes production boot admission.

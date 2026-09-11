@@ -4,14 +4,15 @@
 #include "pci-af-observation.h"
 #endif
 
+#if defined(LEANOS_QOTOM_AF_OBSERVATION) || defined(LEANOS_QOTOM_PCIE_DEVICE_OBSERVATION)
+static struct pci_capability_snapshot lab_retained_pci_caps[PCI_ENUMERATION_CAPACITY];
+#endif
+
 /* Called only after exact native inventory acceptance. The prior scan has
  * disarmed the read window; enable it for each bounded collection and disable
  * it before emitting records or taking a terminal path. No config writes. */
 static void lab_capture_pci_capabilities(
         const struct pci_enumeration_snapshot *snapshot) {
-#ifdef LEANOS_QOTOM_AF_OBSERVATION
-    static struct pci_capability_snapshot retained[PCI_ENUMERATION_CAPACITY];
-#endif
     for (uint32_t i = 0; i < snapshot->count; ++i) {
         struct pci_capability_snapshot caps;
         lab_ecam_window.armed = 1;
@@ -32,15 +33,15 @@ static void lab_capture_pci_capabilities(
         }
         if (result.status != PCI_CAPABILITY_OK)
             pre_admission_fail("qotom-pci-capabilities");
-#ifdef LEANOS_QOTOM_AF_OBSERVATION
-        retained[i] = caps;
+#if defined(LEANOS_QOTOM_AF_OBSERVATION) || defined(LEANOS_QOTOM_PCIE_DEVICE_OBSERVATION)
+        lab_retained_pci_caps[i] = caps;
 #endif
     }
 #ifdef LEANOS_QOTOM_AF_OBSERVATION
     for (uint32_t i = 0; i < snapshot->count; ++i) {
         lab_ecam_window.armed = 1;
         struct pci_af_observation af = pci_observe_af(qotom_ecam_read,
-            &lab_ecam_reader, &snapshot->headers[i], &retained[i]);
+            &lab_ecam_reader, &snapshot->headers[i], &lab_retained_pci_caps[i]);
         lab_ecam_window.armed = 0;
         serial_puts("LEANOS-LAB/1 PCI-AF profile=af-observation-v1 index=");
         serial_u64(i);
