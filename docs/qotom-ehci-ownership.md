@@ -42,8 +42,8 @@ transactions and firmware/AP access, and preserve the protected recovery path.
 Intel's [329670-002 datasheet](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf),
 section 14.3, printed page 340, describes EHCI as a legacy alternative to xHCI.
 That is consistent with the differing observations, but does not prove when or
-how this BIOS switches port ownership. The observations below add bounded reads; no ownership write, controller stop
-or reset has been performed. Issue #330 remains open.
+how this BIOS switches port ownership. The observations below now include a cooperative ownership request and legacy
+SMI disable. Controller stop and reset remain outstanding. Issue #330 remains open.
 
 ## Capability collector
 
@@ -170,9 +170,8 @@ transaction drain or DMA containment.
 
 Synthetic tests cover release at every poll, timeout, every poll read/delay
 failure, every refresh read failure, changed support bits, BIOS reassertion
-and exact write width/address/value. Native write-aperture authority, a checked
-timing backend, protected hardware execution, SMI policy and controller stop
-remain to be integrated. No physical handoff was attempted by this candidate.
+and exact write width/address/value. The native write aperture, checked timing backend and physical handoff evidence
+are described below. Controller stop remains outstanding.
 
 ## Single-byte write aperture candidate
 
@@ -197,8 +196,7 @@ exclusion remain caller obligations.
 Ordinary and sanitizer transaction tests check every byte value and selector,
 a second request after consumption, failed stores, mapping restoration and
 terminal interference. Arm tests reject all 4096 ECAM and EHCI alias slots and
-mutations to the captured legacy/capability fields. Native store/timing wiring
-and the protected physical handoff capture remain outstanding.
+mutations to the captured legacy/capability fields. Native store/timing wiring and the protected physical capture are described below.
 
 ## Checked ten-millisecond delay
 
@@ -220,8 +218,7 @@ The arithmetic assumes a continuous standards-compliant clock and bounded
 callbacks. It cannot detect whole counter cycles hidden between samples or
 prove a wall-time upper bound against arbitrary firmware pauses. No timer or
 event register is written. Tests cover the tick threshold, wraparound, stopped
-and backward clocks, read failures and failed LPC binding. Native I/O callback
-wiring and the protected handoff experiment remain outstanding.
+and backward clocks, read failures and failed LPC binding. Native I/O wiring and the protected handoff result are described below.
 
 ## Opt-in native handoff experiment
 
@@ -245,8 +242,8 @@ attempt/poll/semaphore fields. The [physical handoff capture](../hardware/lab/ob
 reported release at the first poll and passed final refresh: support `0x01000001`,
 control/status `0x2000`. The full protected replay agrees, and FreeBSD recovered
 automatically with the one-shot request consumed. This is a semaphore observation;
-controller shutdown, SMI policy, outstanding transactions and DMA containment
-remain unresolved.
+the subsequent SMI step is described below. Controller shutdown, outstanding
+transactions and DMA containment remain unresolved.
 
 ## Bounded legacy SMI disable candidate
 
@@ -268,7 +265,7 @@ rollback, controller stop or reset, and does not establish firmware exclusion
 or DMA containment. Tests cover all 512 enable combinations, asynchronous
 status changes, every refresh read failure, ownership reassertion, reserved
 bits, ignored writes and failed writes that nevertheless take effect. Native
-write-aperture integration and physical SMI-disable evidence remain outstanding.
+write-aperture integration and physical SMI-disable evidence are described below.
 
 ## Native SMI-disable experiment
 
@@ -291,3 +288,26 @@ The compiled native primitive is one DWORD store. The [physical SMI capture](../
 read back control/status changing from `0x2000` to `0`, with final ownership
 refresh accepted. Protected replay agrees, and FreeBSD recovered automatically.
 This does not establish controller halt or DMA containment.
+
+## Operational-state collector before shutdown
+
+`boot/qotom-ehci-operational.h` requires the successful SMI-disable result and
+exact captured capabilities. It refreshes the full PCI/capability/legacy binding,
+requires OS ownership with BIOS ownership clear and all legacy SMI enables clear,
+then samples USBCMD, USBSTS, USBINTR and CONFIGFLAG. Another complete refresh
+must accept the ownership and disabled enables before any result is published.
+Asynchronous legacy status changes are allowed. Any failure publishes zero fields.
+
+[EHCI 1.0 table 2-8](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/ehci-specification-for-usb.pdf)
+defines DWORD operational accesses relative to CAPLENGTH. The checked captured
+CAPLENGTH `0x20` produces addresses `0xd0915020`, `0xd0915024`, `0xd0915028`
+and `0xd0915060`. The helper allows at most 118 reads, with separate callbacks
+for capabilities and operational samples. It grants no mapping or write authority.
+Native restricted mapping, decoder integration and a protected physical capture
+remain to be implemented.
+
+The four values are sequential raw observations, not an atomic snapshot. Reserved
+bits are retained for review, while all-ones reads reject. No operational write,
+controller halt, reset or DMA admission is added. Tests cover every read-failure
+position in the pinned one-entry list, ownership/SMI/BAR/capability drift, all
+CAPLENGTH bytes and in-page offsets, raw sample bits and failed-publication rules.
