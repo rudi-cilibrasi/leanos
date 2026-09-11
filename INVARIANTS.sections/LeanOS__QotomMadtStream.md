@@ -40,3 +40,5 @@ These checks describe the values accepted by the scalar topology stream and its 
 
 - `terminal_byte_has_no_error` — Terminal status entails zero error and the final byte position.
 - `terminal_byte_count` — Terminal status requires exactly four processors in the returned count projection.
+
+- `terminal_byte_clears_record` — Terminal success clears every partial-record projection, because the final byte must finish its record.

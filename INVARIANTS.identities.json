@@ -14427,6 +14427,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.terminal_byte_clears_record",
+      "display": "terminal_byte_clears_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.terminal_byte_count",
       "display": "terminal_byte_count",
       "kind": "theorem"
@@ -14435,6 +14441,12 @@
       "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.terminal_byte_has_no_error",
       "display": "terminal_byte_has_no_error",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.initialized_raw_terminal_inventory",
+      "display": "initialized_raw_terminal_inventory",
       "kind": "theorem"
     },
     {
@@ -14459,6 +14471,18 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_append_success",
       "display": "run_append_success",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_boundary_record_decomposition",
+      "display": "run_boundary_record_decomposition",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_boundary_requires_payload",
+      "display": "run_boundary_requires_payload",
       "kind": "theorem"
     },
     {
@@ -14489,6 +14513,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_nonprocessor_record",
       "display": "run_nonprocessor_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_payload_boundary",
+      "display": "run_payload_boundary",
       "kind": "theorem"
     },
     {
@@ -14525,6 +14555,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_records_members",
       "display": "run_records_members",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_terminal_boundary",
+      "display": "run_terminal_boundary",
       "kind": "theorem"
     },
     {
@@ -14595,8 +14631,20 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_terminal_boundary",
+      "display": "step_terminal_boundary",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_terminal_count",
       "display": "step_terminal_count",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.wire_record_of_payload",
+      "display": "wire_record_of_payload",
       "kind": "theorem"
     },
     {

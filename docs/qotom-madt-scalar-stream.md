@@ -85,14 +85,20 @@ restores a clean boundary. `run_processor_record_typed` identifies the exact
 typed baseline processor using the reference decoder’s fields, and the count
 advance is proved without wraparound. `WireRecord` provides a byte-preserving
 record view for sequence composition. The sequence proofs establish exact
-processor counting and ordered membership; an initialized successful run ending
-at count four yields the complete baseline inventory. Terminal status itself
-now establishes count four through the scalar error checks and actual carried
-state, removing that separate assumption in
-`initialized_terminal_records_inventory`. This still assumes a supplied
-record decomposition: constructing it from arbitrary accepted bytes and binding
-it to the authoritative decoder remain unfinished. This model is
-not a production export; its full equivalence proof remains unfinished.
+processor counting and ordered membership. Terminal status establishes count
+four and clears all partial record fields. The payload framing proofs show
+that a successful traversal ending at a boundary has enough bytes to complete
+each declared record. `run_boundary_record_decomposition` recursively constructs
+a byte-preserving record view from those actual bytes.
+`initialized_raw_terminal_inventory` therefore proves that arbitrary raw input
+accepted with terminal status from the initial state has exactly the complete
+ordered baseline processor inventory, without a caller-supplied decomposition
+or final count assumption.
+
+The remaining refinement work is to connect that constructed record view to
+the authoritative complete MADT decoder and normalizer, including the outer
+validated table envelope. This model is not a production export; production
+wiring and its hardware admission obligations remain unfinished.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
 toolchain on PATH and the pinned CI container for sanitizer runs. Pass

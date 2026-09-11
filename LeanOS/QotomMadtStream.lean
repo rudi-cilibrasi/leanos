@@ -534,6 +534,42 @@ theorem terminal_byte_count
     simpa [count, complete, width, kind, bits] using countChecked
   exact Classical.byContradiction (fun wrong => checked ⟨⟨lastByte, completed⟩, wrong⟩)
 
+/-- Terminal success cannot leave any partial record fields behind. -/
+theorem terminal_byte_clears_record
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue word : UInt64)
+    (terminal : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 1 = 3)
+    (projection : word = 4 ∨ word = 5 ∨ word = 6 ∨ word = 7 ∨ word = 8) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue word = 0 := by
+  have success := terminal_byte_has_no_error currentOffset recordOffset recordKind
+    recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+    tableLength executingApicId byteOffset byteValue terminal
+  have noError := success.1
+  have lastByte := success.2
+  clear terminal success
+  simp only [byteStepQuery] at noError
+  simp at noError
+  have peel {condition : Prop} [Decidable condition] (bad rest : UInt64)
+      (nonzero : bad ≠ 0) (ok : (if condition then bad else rest) = 0) :
+      ¬condition ∧ rest = 0 := by
+    split at ok
+    · exact False.elim (nonzero ok)
+    · exact ⟨by assumption, ok⟩
+  obtain ⟨_, noError⟩ := peel 69 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 70 _ (by decide) noError
+  obtain ⟨_, noError⟩ := peel 71 _ (by decide) noError
+  obtain ⟨notTruncated, _⟩ := peel 72 _ (by decide) noError
+  have complete : (if recordOffset = 1 then byteValue else recordLength) ≠ 0 ∧
+      recordOffset + 1 = (if recordOffset = 1 then byteValue else recordLength) := by
+    simpa [lastByte] using notTruncated
+  rcases projection with h | h | h | h | h <;> subst word <;>
+    simp [byteStepQuery, complete.1, complete.2]
+
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :

@@ -202,6 +202,35 @@ def AtBoundary (state : State) : Prop :=
   state.recordOffset = 0 ∧ state.kind = 0 ∧ state.length = 0 ∧
     state.apicId = 0 ∧ state.flags = 0
 
+/-- A terminal transition clears every partial field in the carried state. -/
+theorem step_terminal_boundary (state result : State) (length executing : UInt64)
+    (byte : UInt8) (accepted : step state length executing byte = .ok result)
+    (terminal : result.status = 3) : AtBoundary result := by
+  have retained := step_retains_projections state result length executing byte accepted
+  rw [retained] at terminal ⊢
+  have clear := QotomMadtStream.terminal_byte_clears_record state.offset state.recordOffset
+    state.kind state.length state.apicId state.flags state.count state.admitted
+    state.seen0 state.seen1 state.seen2 state.seen3 length executing state.offset byte.toUInt64
+  exact ⟨clear 4 terminal (by simp), clear 5 terminal (by simp),
+    clear 6 terminal (by simp), clear 7 terminal (by simp), clear 8 terminal (by simp)⟩
+
+/-- A nonempty terminal traversal ends at a genuine record boundary. -/
+theorem run_terminal_boundary (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (nonempty : bytes ≠ [])
+    (accepted : run length executing state bytes = .ok result)
+    (terminal : result.status = 3) : AtBoundary result := by
+  induction bytes generalizing state with
+  | nil => exact False.elim (nonempty rfl)
+  | cons byte rest ih =>
+    obtain ⟨middle, moved, tail⟩ := run_cons_success length executing state result byte rest accepted
+    cases rest with
+    | nil =>
+      have same : middle = result := by simpa [run] using tail
+      subst middle
+      exact step_terminal_boundary state result length executing byte moved terminal
+    | cons nextByte remaining =>
+      exact ih middle (by simp) tail
+
 /-- Lift the scalar kind-byte contract to the exact carried-state model. -/
 theorem step_starts_record (state result : State) (length executing : UInt64)
     (byte : UInt8) (boundary : AtBoundary state)
@@ -296,6 +325,93 @@ theorem step_completes_boundary (state result : State) (length executing : UInt6
     clear 6 pastLength nonempty complete (by simp),
     clear 7 pastLength nonempty complete (by simp),
     clear 8 pastLength nonempty complete (by simp)⟩
+
+/-- Reaching a record boundary from inside a payload requires enough actual
+input bytes to finish that payload; a short successful prefix cannot masquerade
+as a complete record. This applies to every supported record kind. -/
+theorem run_boundary_requires_payload (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (lower : 2 ≤ state.recordOffset.toNat)
+    (remaining : state.recordOffset.toNat < state.length.toNat)
+    (bounded : state.length.toNat ≤ 12)
+    (accepted : run length executing state bytes = .ok result)
+    (boundary : AtBoundary result) :
+    state.length.toNat ≤ state.recordOffset.toNat + bytes.length := by
+  induction bytes generalizing state with
+  | nil =>
+    have same : state = result := by simpa [run] using accepted
+    have zero := boundary.1
+    rw [← same] at zero
+    simp [zero] at lower
+  | cons byte rest ih =>
+    obtain ⟨middle, moved, tail⟩ := run_cons_success length executing state result byte rest accepted
+    have advance : (state.recordOffset + 1).toNat = state.recordOffset.toNat + 1 := by
+      have nowrap : state.recordOffset.toNat + 1 < 2 ^ 64 := by omega
+      simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
+    by_cases complete : state.recordOffset + 1 = state.length
+    · have same := congrArg UInt64.toNat complete
+      simp only [List.length_cons]
+      omega
+    · have pastKind : state.recordOffset ≠ 0 := by intro h; simp [h] at lower
+      have pastLength : state.recordOffset ≠ 1 := by intro h; simp [h] at lower
+      have framing := step_payload_framing state middle length executing byte
+        pastKind pastLength complete moved
+      simp only [Prod.mk.injEq] at framing
+      have nextOffset : middle.recordOffset.toNat = state.recordOffset.toNat + 1 := by
+        rw [framing.1, advance]
+      have nextLength : middle.length.toNat = state.length.toNat := congrArg UInt64.toNat framing.2.2
+      have unequal : state.recordOffset.toNat + 1 ≠ state.length.toNat := by
+        intro same
+        apply complete
+        apply UInt64.toNat.inj
+        omega
+      have enough := ih middle (by omega) (by omega) (by omega) tail
+      simp only [List.length_cons]
+      omega
+
+/-- Consuming exactly the remaining payload returns to a boundary, independent
+of processor inventory effects and the supported record kind. -/
+theorem run_payload_boundary (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (lower : 2 ≤ state.recordOffset.toNat)
+    (remaining : state.recordOffset.toNat < state.length.toNat)
+    (bounded : state.length.toNat ≤ 12)
+    (exactBytes : state.recordOffset.toNat + bytes.length = state.length.toNat)
+    (accepted : run length executing state bytes = .ok result) : AtBoundary result := by
+  induction bytes generalizing state with
+  | nil => simp only [List.length_nil] at exactBytes; omega
+  | cons byte rest ih =>
+    obtain ⟨middle, moved, tail⟩ := run_cons_success length executing state result byte rest accepted
+    have pastKind : state.recordOffset ≠ 0 := by intro h; simp [h] at lower
+    have pastLength : state.recordOffset ≠ 1 := by intro h; simp [h] at lower
+    have nonempty : state.length ≠ 0 := by intro h; simp [h] at remaining
+    have advance : (state.recordOffset + 1).toNat = state.recordOffset.toNat + 1 := by
+      have nowrap : state.recordOffset.toNat + 1 < 2 ^ 64 := by omega
+      simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
+    cases rest with
+    | nil =>
+      have complete : state.recordOffset + 1 = state.length := by
+        apply UInt64.toNat.inj
+        simp only [List.length_cons, List.length_nil] at exactBytes
+        omega
+      have boundary := step_completes_boundary state middle length executing byte pastLength nonempty complete moved
+      change Except.ok middle = Except.ok result at tail
+      cases tail
+      exact boundary
+    | cons nextByte rest =>
+      have incomplete : state.recordOffset + 1 ≠ state.length := by
+        intro h
+        have same := congrArg UInt64.toNat h
+        simp only [List.length_cons] at exactBytes
+        omega
+      have framing := step_payload_framing state middle length executing byte pastKind pastLength incomplete moved
+      simp only [Prod.mk.injEq] at framing
+      have nextOffset : middle.recordOffset.toNat = state.recordOffset.toNat + 1 := by
+        rw [framing.1, advance]
+      have nextLength : middle.length.toNat = state.length.toNat := congrArg UInt64.toNat framing.2.2
+      exact ih middle (by omega) (by
+        simp only [List.length_cons] at exactBytes
+        omega) (by omega) (by
+        simp only [List.length_cons] at exactBytes ⊢
+        omega) tail
 
 /-- Non-processor payload steps preserve all carried inventory fields. -/
 theorem step_nonprocessor_inventory (state result : State) (length executing : UInt64)
@@ -546,8 +662,8 @@ theorem run_processor_record_count_nat (length executing : UInt64) (state result
   rw [record.2.1]
   simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
 
-/-- A byte-preserving record view for composition. Constructing this view from
-arbitrary accepted input is a separate framing obligation, not assumed admission. -/
+/-- A byte-preserving record view for composition. The decomposition theorem
+constructs this view from successful raw-byte traversal between boundaries. -/
 inductive WireRecord where
   | processor (uid id b0 b1 b2 b3 : UInt8)
   | ignored (kind width : UInt8) (payload : List UInt8)
@@ -562,6 +678,108 @@ def WireRecord.processorValue : WireRecord → Option BootTopology.Processor
       let value := b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216
       some ⟨id.toUInt32, value % 2 == 1, (value / 2) % 2 == 1⟩
   | .ignored _ _ _ _ _ => none
+
+/-- A correctly sized supported header and its actual payload have a
+byte-preserving record view; processor fields are taken directly from the bytes. -/
+theorem wire_record_of_payload (kind width : UInt8) (payload : List UInt8)
+    (processorWidth : kind.toUInt64 = 0 → width.toUInt64 = 8)
+    (sized : payload.length + 2 = width.toNat) :
+    ∃ record : WireRecord, record.bytes = [kind, width] ++ payload := by
+  by_cases processor : kind.toUInt64 = 0
+  · have kindZero : kind = 0 := by
+      apply UInt8.toNat.inj
+      have value := congrArg UInt64.toNat processor
+      simpa using value
+    have widthEight : width = 8 := by
+      apply UInt8.toNat.inj
+      have value := congrArg UInt64.toNat (processorWidth processor)
+      simpa using value
+    subst kind
+    subst width
+    simp at sized
+    rcases payload with _ | ⟨uid, tail⟩
+    · simp at sized
+    rcases tail with _ | ⟨id, tail⟩
+    · simp at sized
+    rcases tail with _ | ⟨b0, tail⟩
+    · simp at sized
+    rcases tail with _ | ⟨b1, tail⟩
+    · simp at sized
+    rcases tail with _ | ⟨b2, tail⟩
+    · simp at sized
+    rcases tail with _ | ⟨b3, tail⟩
+    · simp at sized
+    have empty : tail = [] := by
+      have zero : tail.length = 0 := by
+        simp only [List.length_cons] at sized
+        omega
+      simpa using zero
+    subst tail
+    exact ⟨.processor uid id b0 b1 b2 b3, rfl⟩
+  · exact ⟨.ignored kind width payload processor sized, rfl⟩
+
+/-- Any successful raw-byte traversal between record boundaries admits a
+complete byte-preserving record decomposition. No parsed records are supplied
+by the caller. -/
+theorem run_boundary_record_decomposition (length executing : UInt64)
+    (state result : State) (bytes : List UInt8) (start : AtBoundary state)
+    (accepted : run length executing state bytes = .ok result)
+    (finish : AtBoundary result) :
+    ∃ records : List WireRecord, records.flatMap WireRecord.bytes = bytes := by
+  generalize sizeEq : bytes.length = size
+  induction size using Nat.strongRecOn generalizing bytes state with
+  | ind size ih =>
+    cases bytes with
+    | nil => exact ⟨[], rfl⟩
+    | cons kind rest =>
+      cases rest with
+      | nil =>
+        obtain ⟨middle, moved, tail⟩ := run_cons_success length executing state result kind [] accepted
+        have same : middle = result := by simpa [run] using tail
+        have fields := step_starts_record state middle length executing kind start moved
+        have one : middle.recordOffset = 1 := congrArg Prod.fst fields.1
+        rw [same, finish.1] at one
+        contradiction
+      | cons width rest =>
+        obtain ⟨headerState, headerRun, payloadRun⟩ := run_append_success length executing state result
+          [kind, width] rest accepted
+        have header := run_header_retains_framing length executing state headerState kind width start headerRun
+        have fields := header.2.2.1
+        simp only [Prod.mk.injEq] at fields
+        have offset : headerState.recordOffset.toNat = 2 := by simp [fields.1]
+        have declared : headerState.length.toNat = width.toNat := by simp [fields.2.2.1]
+        have limits : 6 ≤ width.toNat ∧ width.toNat ≤ 12 := by
+          have widthEq := header.2.1
+          rcases header.1 with k | k | k | k
+          all_goals
+            simp [k] at widthEq
+            have natural := congrArg UInt64.toNat widthEq
+            simp at natural
+            omega
+        have enough := run_boundary_requires_payload length executing headerState result rest
+          (by omega) (by omega) (by omega) payloadRun finish
+        let payload := rest.take (width.toNat - 2)
+        let back := rest.drop (width.toNat - 2)
+        have joined : payload ++ back = rest := List.take_append_drop _ _
+        have sized : payload.length + 2 = width.toNat := by
+          simp only [payload, List.length_take]
+          omega
+        have splitRun : run length executing headerState (payload ++ back) = .ok result := by
+          rw [joined]
+          exact payloadRun
+        obtain ⟨middle, firstRun, tailRun⟩ := run_append_success length executing headerState result payload back splitRun
+        have middleBoundary := run_payload_boundary length executing headerState middle payload
+          (by omega) (by omega) (by omega) (by omega) firstRun
+        have smaller : back.length < size := by
+          simp only [List.length_cons] at sizeEq
+          have bound : back.length ≤ rest.length := by simp [back]
+          omega
+        obtain ⟨records, recordBytes⟩ := ih back.length smaller middle back middleBoundary tailRun rfl
+        obtain ⟨record, actualBytes⟩ := wire_record_of_payload kind width payload
+          (by intro zero; simpa [zero] using header.2.1) sized
+        refine ⟨record :: records, ?_⟩
+        simp only [List.flatMap_cons, actualBytes, recordBytes]
+        simp only [joined, List.cons_append, List.nil_append]
 
 /-- For any byte-preserving record sequence, successful traversal returns to
 a boundary and advances its count by exactly the number of processor records. -/
@@ -660,5 +878,27 @@ theorem initialized_terminal_records_inventory (length executing : UInt64)
     simp [initial] at terminal
   exact initialized_records_complete_inventory length executing result records accepted
     (run_terminal_count length executing initial result _ nonempty accepted terminal)
+
+/-- Terminal success over arbitrary input bytes constructs a record view
+from those bytes and proves its complete ordered processor inventory. -/
+theorem initialized_raw_terminal_inventory (length executing : UInt64)
+    (result : State) (bytes : List UInt8)
+    (accepted : run length executing initial bytes = .ok result)
+    (terminal : result.status = 3) :
+    ∃ records : List WireRecord, records.flatMap WireRecord.bytes = bytes ∧
+      records.filterMap WireRecord.processorValue = QotomBspTopology.processors := by
+  have nonempty : bytes ≠ [] := by
+    intro empty
+    rw [empty] at accepted
+    have same : initial = result := by simpa [run] using accepted
+    rw [← same] at terminal
+    simp [initial] at terminal
+  have boundary := run_terminal_boundary length executing initial result bytes nonempty accepted terminal
+  obtain ⟨records, exactBytes⟩ := run_boundary_record_decomposition length executing initial result
+    bytes (by simp [AtBoundary, initial]) accepted boundary
+  refine ⟨records, exactBytes, ?_⟩
+  apply initialized_terminal_records_inventory length executing result records
+  · simpa [exactBytes] using accepted
+  · exact terminal
 
 end LeanOS.QotomMadtStreamRun

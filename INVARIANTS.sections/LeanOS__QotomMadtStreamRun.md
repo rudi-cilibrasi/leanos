@@ -36,3 +36,11 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `step_terminal_count` — An actual terminal step carries count four into its returned state.
 - `run_terminal_count` — A nonempty successful traversal with terminal status ends with count four.
 - `initialized_terminal_records_inventory` — Terminal success from the initial state yields the full ordered baseline inventory for the supplied byte-preserving record view, without a separate count assumption.
+
+- `step_terminal_boundary` — An actual terminal transition clears all partial fields in the carried state.
+- `run_terminal_boundary` — A nonempty terminal traversal ends at a record boundary.
+- `run_boundary_requires_payload` — Reaching a boundary from inside a payload requires enough actual remaining bytes to complete it.
+- `run_payload_boundary` — Successfully consuming exactly the remaining payload restores a boundary for any record kind.
+- `wire_record_of_payload` — A correctly sized header and payload construct a record view that preserves every supplied byte.
+- `run_boundary_record_decomposition` — A successful raw-byte traversal between boundaries constructs a complete record decomposition without caller-supplied parsed records.
+- `initialized_raw_terminal_inventory` — Terminal success on arbitrary bytes from the initial state constructs their exact record view and proves the complete ordered baseline processor inventory.
