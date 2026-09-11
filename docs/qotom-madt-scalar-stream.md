@@ -83,7 +83,12 @@ payload bytes. It does not validate the ignored routing fields.
 binds the guard to their ID and flags, advances the original count once and
 restores a clean boundary. `run_processor_record_typed` identifies the exact
 typed baseline processor using the reference decoder’s fields, and the count
-advance is proved without wraparound. Whole-table refinement remains unfinished. This model is
+advance is proved without wraparound. `WireRecord` provides a byte-preserving
+record view for sequence composition. The sequence proofs establish exact
+processor counting and ordered membership; an initialized successful run ending
+at count four yields the complete baseline inventory. This assumes a supplied
+record decomposition: constructing it from arbitrary accepted bytes and binding
+it to the authoritative decoder remain unfinished. This model is
 not a production export; its full equivalence proof remains unfinished.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean

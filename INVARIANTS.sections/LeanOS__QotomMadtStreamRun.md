@@ -28,3 +28,7 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 
 - `run_processor_record_typed` — The actual ID and reference-decoded flags of a successful processor record identify the exact typed baseline member at the original processor count.
 - `run_processor_record_count_nat` — That original count is below four and advances by exactly one in natural-number arithmetic, without wraparound.
+
+- `run_records_count` — Successful traversal of a byte-preserving record sequence restores a boundary and advances the count by exactly its number of processor records.
+- `run_records_members` — Every processor in that sequence occupies its exact baseline index despite interspersed ignored records.
+- `initialized_records_complete_inventory` — Starting from the initial state and ending at count four yields exactly the full typed baseline inventory for the supplied record view.

@@ -510,4 +510,103 @@ theorem run_processor_record_count_nat (length executing : UInt64) (state result
   rw [record.2.1]
   simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
 
+/-- A byte-preserving record view for composition. Constructing this view from
+arbitrary accepted input is a separate framing obligation, not assumed admission. -/
+inductive WireRecord where
+  | processor (uid id b0 b1 b2 b3 : UInt8)
+  | ignored (kind width : UInt8) (payload : List UInt8)
+      (nonprocessor : kind.toUInt64 ≠ 0) (sized : payload.length + 2 = width.toNat)
+
+def WireRecord.bytes : WireRecord → List UInt8
+  | .processor uid id b0 b1 b2 b3 => [0, 8, uid, id, b0, b1, b2, b3]
+  | .ignored kind width payload _ _ => [kind, width] ++ payload
+
+def WireRecord.processorValue : WireRecord → Option BootTopology.Processor
+  | .processor _ id b0 b1 b2 b3 =>
+      let value := b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216
+      some ⟨id.toUInt32, value % 2 == 1, (value / 2) % 2 == 1⟩
+  | .ignored _ _ _ _ _ => none
+
+/-- For any byte-preserving record sequence, successful traversal returns to
+a boundary and advances its count by exactly the number of processor records. -/
+theorem run_records_count (length executing : UInt64) (state result : State)
+    (records : List WireRecord) (boundary : AtBoundary state)
+    (accepted : run length executing state (records.flatMap WireRecord.bytes) = .ok result) :
+    AtBoundary result ∧ result.count.toNat = state.count.toNat +
+      (records.filterMap WireRecord.processorValue).length := by
+  induction records generalizing state with
+  | nil =>
+    change Except.ok state = Except.ok result at accepted
+    cases accepted
+    exact ⟨boundary, by simp⟩
+  | cons record rest ih =>
+    obtain ⟨middle, firstRun, tailRun⟩ := run_append_success length executing state result
+      record.bytes (rest.flatMap WireRecord.bytes) accepted
+    cases record with
+    | processor uid id b0 b1 b2 b3 =>
+      have typed := run_processor_record_typed length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      have count := run_processor_record_count_nat length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      have tail := ih middle typed.2.1 tailRun
+      refine ⟨tail.1, ?_⟩
+      simp only [List.filterMap_cons, WireRecord.processorValue, List.length_cons]
+      omega
+    | ignored kind width payload nonprocessor sized =>
+      have ignored := run_nonprocessor_record length executing state middle kind width payload boundary nonprocessor sized firstRun
+      have count : middle.count = state.count := congrArg Prod.fst ignored.2
+      have tail := ih middle ignored.1 tailRun
+      simpa [WireRecord.processorValue, count] using tail
+
+/-- Every processor in a successfully traversed record view occupies its
+exact baseline index, retaining order through interspersed ignored records. -/
+theorem run_records_members (length executing : UInt64) (state result : State)
+    (records : List WireRecord) (boundary : AtBoundary state)
+    (accepted : run length executing state (records.flatMap WireRecord.bytes) = .ok result) :
+    ∀ (index : Nat) (processor : BootTopology.Processor),
+      (records.filterMap WireRecord.processorValue)[index]? = some processor →
+      some processor = QotomBspTopology.processors[state.count.toNat + index]? := by
+  induction records generalizing state with
+  | nil => intro index processor selected; simp at selected
+  | cons record rest ih =>
+    obtain ⟨middle, firstRun, tailRun⟩ := run_append_success length executing state result
+      record.bytes (rest.flatMap WireRecord.bytes) accepted
+    cases record with
+    | processor uid id b0 b1 b2 b3 =>
+      have typed := run_processor_record_typed length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      have count := run_processor_record_count_nat length executing state middle uid id b0 b1 b2 b3 boundary firstRun
+      have tail := ih middle typed.2.1 tailRun
+      intro index processor selected
+      cases index with
+      | zero =>
+        simp [WireRecord.processorValue] at selected
+        simpa [selected] using typed.1
+      | succ index =>
+        have found : (rest.filterMap WireRecord.processorValue)[index]? = some processor := by
+          simpa [WireRecord.processorValue] using selected
+        have member := tail index processor found
+        simpa [count.2, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using member
+    | ignored kind width payload nonprocessor sized =>
+      have ignored := run_nonprocessor_record length executing state middle kind width payload boundary nonprocessor sized firstRun
+      have count : middle.count = state.count := congrArg Prod.fst ignored.2
+      have tail := ih middle ignored.1 tailRun
+      simpa [WireRecord.processorValue, count] using tail
+
+/-- An initialized successful record-view traversal ending at count four has
+exactly the complete typed baseline, not merely the same count or ID bitset. -/
+theorem initialized_records_complete_inventory (length executing : UInt64)
+    (result : State) (records : List WireRecord)
+    (accepted : run length executing initial (records.flatMap WireRecord.bytes) = .ok result)
+    (complete : result.count = 4) :
+    records.filterMap WireRecord.processorValue = QotomBspTopology.processors := by
+  have boundary : AtBoundary initial := by simp [AtBoundary, initial]
+  have count := run_records_count length executing initial result records boundary accepted
+  have size : (records.filterMap WireRecord.processorValue).length = 4 := by
+    simpa [initial, complete] using count.2.symm
+  have members := run_records_members length executing initial result records boundary accepted
+  apply List.ext_getElem
+  · simpa [QotomBspTopology.processors] using size
+  · intro index left right
+    have selected := List.getElem?_eq_getElem left
+    have member := members index (records.filterMap WireRecord.processorValue)[index] selected
+    simpa [initial, List.getElem?_eq_getElem right] using member
+
 end LeanOS.QotomMadtStreamRun

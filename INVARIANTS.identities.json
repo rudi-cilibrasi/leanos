@@ -14427,6 +14427,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.initialized_records_complete_inventory",
+      "display": "initialized_records_complete_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_append",
       "display": "run_append",
       "kind": "theorem"
@@ -14489,6 +14495,18 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record_typed",
       "display": "run_processor_record_typed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_records_count",
+      "display": "run_records_count",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_records_members",
+      "display": "run_records_members",
       "kind": "theorem"
     },
     {
