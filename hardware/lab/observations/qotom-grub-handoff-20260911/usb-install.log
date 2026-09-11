@@ -1,0 +1,13 @@
+SHA256 (/var/tmp/leanos-before-handoff-32731db.tar.gz) = de1a6a4a387b81a390ce28827816c15b1acae975fc158502218ceb7cc9e0121d
+** /dev/da0s1
+** Phase 1 - Read FAT and checking connectivity
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Lost Files
+307 files, 75 MiB free (152696 clusters)
+SHA256 (/mnt/leanos-handoff/boot/leanos-qotom-lab.elf) = 04cd51e070d9badf16b015c2898433dcbda268bfde37de8b843fea9273dd1bff
+SHA256 (/mnt/leanos-handoff/boot/grub/grub.cfg) = 3ad5d7aefcf33f746eefbbb49719a03eb227f9c16b9ad9346bd568e54f104919
+SHA256 (/mnt/leanos-handoff/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+SHA256 (/mnt/leanos-handoff/boot/grub/watchdog-window.cfg) = 09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce
+SHA256 (/mnt/leanos-handoff/boot/grub/watchdog.cfg) = 62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86
+SHA256 (/mnt/leanos-handoff/boot/leanos.sha256) = f9cf86677b3a8b905e6f5cd9864e126c5ccab4284e22b34e09fa4b1395346844
+request=none

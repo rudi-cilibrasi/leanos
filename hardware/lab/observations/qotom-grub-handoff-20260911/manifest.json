@@ -1,0 +1,23 @@
+{
+  "schema": "leanos-physical-capture-files-v1",
+  "files": {
+    "README.md": "15db59bcad37ec87839702299003d99aed6e8eafc223768f8f4ac1ba28d79ce5",
+    "build-manifest.json": "34c0abf13d22f4617e8ed6600e738ce8d0b5fbadac789229e8a938255444d009",
+    "cycle-1/diagnostic.raw": "8a3f24e8cfc61acc341eee55fc94b15b244ff44952d49b01f5771907ba57e5b9",
+    "cycle-1/events.jsonl": "b5248a510e1a32365fd5c94358cf891fa388950c8d88f0174277729568043961",
+    "cycle-1/handoff.json": "8c73f2f8bd6b5c62dfaba8a1b67a0d170ca413c79a2de5745b5a3b4731aac8b2",
+    "cycle-1/multiboot2.bin": "531a72e236ba70d24eaf7ab30c498070f2bf2414102d50f8e53acf83e6118f9b",
+    "cycle-1/reboot.txt": "43539b2bac0e450cfd8632a41a762c511336aa4fb96224eff837af22b29bdd05",
+    "cycle-1/recovery.json": "52be3c789d0a3e60b0e921f2153e05cae8e2281c8ab5a21ce21fa332ad416b42",
+    "cycle-1/result.json": "b2155f9c5f0f6884d203681a97db39543c86aad0cbf681cce2619eef16145641",
+    "cycle-1/serial.raw": "7b9ab8c4871ca2176b8c90e1d064170928a70c678d7792097baa63a495444d89",
+    "cycle-1/verification.txt": "ea25a972b6508cff7fa2d3596a815a4dbe48c2bb431e5250667959bb6422d336",
+    "diagnostic-protocol.tsv": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+    "diagnostic-replay-inputs.json": "ac340cc59f18ff24479fc6ea5db1648d4f5c9a9716c411be61ad008957355cd8",
+    "handoff-projection.json": "ee43555c00f669cd22bc148bbd61614312c9fffad2437f12afd29e2c6c8bb4c7",
+    "qemu-tests.json": "5a22acd15b14250b6c79da775d169f002957df6ada9de389528ccca56c0e82e3",
+    "request.env": "0b7fd6a5ba7911852633f33427fcf7480856ad3b2a603d40676e6bc52ff53135",
+    "usb-install.log": "5beae29aa38069a72c4ed7615ea57e078f37960d8cdd9d342d47f3392e1ac2bd",
+    "usb-tests.json": "26f95ec9b66ee1f38bd149a0c6abc2f397094b87779adb4cb2327b63e33ecc7e"
+  }
+}

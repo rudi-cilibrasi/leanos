@@ -28,7 +28,10 @@ def main():
     parser.add_argument('--kernel-hang-elf', type=Path, help='also test the deliberately stalled lab kernel')
     parser.add_argument('--pci-diagnostic', action='store_true',
                         help='test the protected PCI diagnostic image and replay its boot records')
+    parser.add_argument('--handoff-capture', action='store_true')
     args = parser.parse_args()
+    if args.handoff_capture and not args.pci_diagnostic:
+        parser.error('--handoff-capture requires --pci-diagnostic')
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
     lab_directory = root / 'build' / ('qotom-pci-lab' if args.pci_diagnostic else 'qotom-lab')
@@ -244,6 +247,13 @@ def main():
                     mode = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n'
                     assert data.count(mode) == 1
                     raw = data[data.index(mode) + len(mode):]
+                    if args.handoff_capture:
+                        handoff = runpy.run_path(str(root / 'scripts/check-qotom-handoff-capture.py'))
+                        consumed, binary, metadata = handoff['parse_prefix'](raw)
+                        assert metadata['status'] == 0 and metadata['tag_chain_valid']
+                        (output / (name + '.multiboot2.bin')).write_bytes(binary)
+                        (output / (name + '.handoff.json')).write_text(json.dumps(metadata, indent=2) + '\n')
+                        raw = raw[consumed:]
                     replay = diagnostic['classify'](raw, protocol,
                         root / 'build/j1900-cpu-host/host', root / 'build/qotom-pci-inventory-host/host')
                     assert replay['cpu_selection'] == 65536 and replay['msr_readback'] == 1
@@ -259,7 +269,7 @@ def main():
             results.append({'case': name, 'serial_sha256': hashlib.sha256(data).hexdigest(),
                             'request_consumed': name != 'bad-env'})
             print(name, 'PASS', flush=True)
-    report.write_text(json.dumps({'pci_diagnostic': args.pci_diagnostic,
+    report.write_text(json.dumps({'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
         'usb_sha256': hashlib.sha256(args.image.read_bytes()).hexdigest(),
         'elf_sha256': digest, 'results': results}, indent=2) + '\n')
 
