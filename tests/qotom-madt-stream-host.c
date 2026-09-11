@@ -20,6 +20,7 @@ int main(void) {
         (void *)(uintptr_t)&leanos_qotom_madt_stream_byte_step_query);
     leanos_register_boundary_target("leanos_qotom_madt_stream_finish_query",
         (void *)(uintptr_t)&leanos_qotom_madt_stream_finish_query);
+    size_t composed_cases = 0;
     for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
         uint64_t state[12] = {44,0,0,0,0,0,0,256,0,0,0,0};
         uint64_t result[18] = {0};
@@ -57,6 +58,26 @@ int main(void) {
         for (uint64_t word = 0; word < 6; ++word)
             if (finish(bound,word) != (status == 3 ? accepted[word] : rejected[word]))
                 return 7;
+        /* Compose actual parser projections with every independently checked
+           BSP observation, including the manifest-pinned native observation.
+           Shape mutations remain standalone probes below. */
+        for (size_t observation = 0;
+             observation < sizeof(finish_cases)/sizeof(finish_cases[0]);
+             ++observation) {
+            if (memcmp(finish_cases[observation].args, finish_cases[0].args,
+                       16*sizeof(uint64_t)) != 0) continue;
+            memcpy(bound+16, finish_cases[observation].args+16, 4*sizeof(uint64_t));
+            for (uint64_t word = 0; word < 6; ++word) {
+                const uint64_t expected = status == 3 ?
+                    finish_cases[observation].words[word] : rejected[word];
+                if (finish(bound,word) != expected) {
+                    fprintf(stderr,"%s / %s: composed finish word=%"PRIu64"\n",
+                            cases[c].name,finish_cases[observation].name,word);
+                    return 10;
+                }
+            }
+            ++composed_cases;
+        }
         printf("%s %"PRIu64" %"PRIu64"\n",cases[c].name,result[1],result[2]);
     }
     for (size_t p = 0; p < sizeof(probes)/sizeof(probes[0]); ++p) {
@@ -80,5 +101,6 @@ int main(void) {
         if (finish(finish_cases[c].args,UINT64_MAX) != 0) return 9;
         printf("finish %s OK\n",finish_cases[c].name);
     }
+    printf("composed parser/BSP cases %zu\n",composed_cases);
     return 0;
 }

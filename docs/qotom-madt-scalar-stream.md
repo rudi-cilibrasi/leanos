@@ -35,35 +35,20 @@ ID/count/APIC base in words 2/3/4; status 2 rejects terminal shape or scalar
 bounds; status 5 returns the existing BSP-binding error code in word 2.
 Higher projection indices return zero.
 
-`finish_acceptance_iff` proves the exact acceptance conditions for arbitrary
-scalar inputs, including every terminal-state field and numeric bound.
-This is a contract about values: it does not establish their provenance.
-The full byte-stream refinement proof against the authoritative list decoder
-remains unfinished. `guarded_processors_equal_baseline` proves that any four
-decoded records satisfying the scalar guard at every index form the exact typed
-inventory. `completed_processor_requires_guard` establishes those guard and
-online-flag premises at a successful final byte of a local-APIC record, and
-`completed_processor_advances_count` proves that the count advances by one.
-The stream also proves retention of the actual ID byte and accumulation of
-each nonterminal flags byte. The reference decoder has a matching single-record
-lemma, `BootTopology.decode_local_apic_record_cons`, for arbitrary payload
-bytes and a decoded tail. `flags_bytes_match_reference` and
-`flags_predicates_match_reference` prove exact agreement of the accumulated
-flags and both flag predicates with the reference arithmetic. The full proof
-still must compose those field
-transitions and preserve the initialized state across the entire table.
-Successful transitions now have general current-offset/bounds and next-offset
-proofs. Starting a record from cleared state preserves the inventory and
-retains the actual kind byte; non-processor record bytes preserve all inventory
-fields. Successful header bytes prove a supported kind and its exact retained
-length. Nonterminal payload bytes retain that framing and advance the record
-offset by one. Completed records clear their partial state, including ignored
-records. Given an existing topology witness and complete terminal
-shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
-to scalar arguments preserves success of the existing typed binder. This does
-not construct the topology witness from the byte stream. None of these
-candidate results establishes AP dormancy, DMA quarantine, interrupt routing,
-no-SMAP isolation, or permission to enter CPL3.
+`finish_acceptance_iff` characterizes acceptance for arbitrary scalar inputs.
+The byte-level proofs establish exact ID retention, little-endian flags,
+processor guards, count advancement, framing, and state preservation. Their
+composition in the carried-state model connects the actual validated bytes and
+returned terminal fields to the authoritative decoder and typed BSP binder.
+
+Each projection of a transition must use the same old state, table length,
+executing ID, offset and byte. Read all needed projections into temporary
+storage, validate status/error/version, and only then replace the twelve state
+words. Updating state between projection calls would describe different
+transitions and falls outside the proven contract. Reject immediately on an
+error; require active status before the last byte and terminal status on the
+last byte. Pass the actual final status, error and state to finish, together
+with the same executing ID and the observed BSP values.
 
 `LeanOS.QotomMadtStreamRun` is an allocating proof-side traversal of the actual
 scalar query. The replay starts it from the documented initial state; the
@@ -130,7 +115,9 @@ same cases, plus 14 malformed scalar probes, 28 finish cases,
 and 9 typed BSP-policy comparisons. The physical MADT and BSP observations
 are manifest-hash pinned; mutated tables have their outer length/checksum
 repaired only to compare the same entry bytes. The C harness carries actual
-stream terminal outputs into the finish query for all table cases.
+stream terminal outputs into the finish query for all table cases and composes
+each with every observation whose standalone terminal shape is valid, including
+the captured BSP observation and malformed/unavailable observation probes.
 
 Ordinary and ASan/UBSan generated C must agree. Both modes check runtime
 function-entry coverage of both exports from the hosted-boundary manifest.
@@ -139,3 +126,6 @@ and verifies sanitizer switches on the generated object. A separate retained-sym
 link probe requires both scalar exports to link without undefined symbols or
 Lean runtime dependencies. That probe is not a bootable kernel and does not
 establish a final production object's hardware-write contract. The runner is registered in the repository-wide hosted manifest.
+
+See [the consumer review](qotom-madt-consumer-review.md) for the checked caller
+contract and the remaining production integration obligations.
