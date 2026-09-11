@@ -94,6 +94,21 @@ class Capture(unittest.TestCase):
                              'qotom-pci-capabilities' if rejected else 'qotom-platform-pending')
             self.assertIn('pci_capabilities_decoder_sha256',result['diagnostic'])
 
+    def test_retained_physical_capabilities(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-capabilities-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,pci_capabilities=True)
+        self.assertEqual(result['pci_capabilities'],expected['pci_capabilities'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertEqual(sum(len(f['headers']) for f in result['pci_capabilities']['functions']),47)
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():
