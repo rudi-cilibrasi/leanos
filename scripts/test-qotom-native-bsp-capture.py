@@ -208,6 +208,40 @@ class Capture(unittest.TestCase):
         self.assertEqual(result['ehci_capabilities']['capability'],0x36881)
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_legacy_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(records, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, records + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':35,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True)
+        records = (b'LEANOS-LAB/1 EHCI-LEGACY profile=qotom-legacy-v1 index=10 status=0 count=1 offset=104 control=1\n'
+                   b'LEANOS-LAB/1 EHCI-EXT index=0 offset=104 raw=16842753\n')
+        result = check(records)
+        self.assertEqual(result['ehci_legacy']['legacy_offset'],104)
+        self.assertEqual(result['ehci_legacy']['control_status'],1)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('ehci_legacy_decoder_sha256',result['diagnostic'])
+        mutations = [b'',records+records,records.replace(b'count=1',b'count=49'),
+            records.replace(b'offset=104',b'offset=108'),records.replace(b'raw=16842753',b'raw=26625'),
+            records.replace(b'raw=16842753',b'raw=0'),records.replace(b'control=1',b'control=4294967295'),
+            records.replace(b'control=1',b'control=4294967296'),records.replace(b'index=0',b'index=1')]
+        for mutation in mutations:
+            with self.assertRaises(ValueError): check(mutation)
+        for status in range(2,12):
+            failed = f'LEANOS-LAB/1 EHCI-LEGACY profile=qotom-legacy-v1 index=10 status={status} count=0 offset=0 control=0\n'.encode()
+            result = check(failed,P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-legacy\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-legacy')
+            with self.assertRaises(ValueError): check(failed)
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():

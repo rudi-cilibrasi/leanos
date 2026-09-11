@@ -119,4 +119,17 @@ bytes are not authoritative. Success with legacy offset zero means no legacy
 structure was found in the observed list. It does not establish ownership.
 The support and control/status fields are sequential observations and may
 change asynchronously. No semaphore write, SMI change or reset is performed.
-Native emission and protected capture replay for this list remain to be added.
+The builder's `--ehci-legacy` option requires `--ehci-capabilities` and uses
+`build/qotom-legacy-lab`. It rearms the checked window, refreshes the same
+capability sample, and emits `EHCI-LEGACY` plus ordered `EHCI-EXT` records with
+both windows disabled. Failure publishes no list and stops at
+`qotom-ehci-legacy`.
+
+The runner's matching option fingerprints the legacy decoder and retains
+`ehci-legacy.json`. Validation follows the preceding HCCPARAMS pointer, checks
+all links, duplicate legacy structures, overlap, selected offset and terminal
+framing. The remaining prefix still passes the preceding capture decoders and
+generated inventory replay. Failed reads remain observations rather than
+independently replayed hardware events. Synthetic full protected tests cover
+success, corrupt records and all publishable failure statuses. A physical
+legacy-register capture remains outstanding.

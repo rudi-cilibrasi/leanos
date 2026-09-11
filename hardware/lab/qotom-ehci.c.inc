@@ -1,5 +1,8 @@
 #ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
 #include "qotom-ehci-arm.h"
+#ifdef LEANOS_QOTOM_EHCI_LEGACY
+#include "qotom-ehci-legacy.h"
+#endif
 static __attribute__((noreturn)) void lab_ehci_fault(void *opaque) {
     (void)opaque;
     pre_admission_fail("qotom-ehci-capabilities");
@@ -34,5 +37,28 @@ static void lab_capture_ehci(const struct pci_enumeration_snapshot *snapshot) {
     serial_puts(" structural="); serial_u64(result.structural);
     serial_puts(" capability="); serial_u64(result.capability); serial_putc('\n');
     if (status != QOTOM_EHCI_OK) pre_admission_fail("qotom-ehci-capabilities");
+#ifdef LEANOS_QOTOM_EHCI_LEGACY
+    struct qotom_ehci_legacy_snapshot legacy = {0};
+    uint32_t legacy_status = 11; /* Separate local rearm failure. */
+    if (lab_ehci_arm(&lab_ehci_window, &view, lab_ecam_tables,
+            lab_ecam_table_count, (uintptr_t)lab_ecam_aperture, &snapshot->headers[10])) {
+        lab_ecam_window.armed = 1;
+        legacy_status = qotom_collect_ehci_legacy(qotom_ecam_read, &lab_ecam_reader,
+            lab_ehci_window_read, &lab_ehci_window, &snapshot->headers[10], &result, &legacy);
+    }
+    lab_ecam_window.armed = 0;
+    lab_ehci_window.armed = 0;
+    serial_puts("LEANOS-LAB/1 EHCI-LEGACY profile=qotom-legacy-v1 index=10 status=");
+    serial_u64(legacy_status);
+    serial_puts(" count="); serial_u64(legacy.count);
+    serial_puts(" offset="); serial_u64(legacy.legacy_offset);
+    serial_puts(" control="); serial_u64(legacy.control_status); serial_putc('\n');
+    for (uint32_t i = 0; i < legacy.count; ++i) {
+        serial_puts("LEANOS-LAB/1 EHCI-EXT index="); serial_u64(i);
+        serial_puts(" offset="); serial_u64(legacy.headers[i].offset);
+        serial_puts(" raw="); serial_u64(legacy.headers[i].raw); serial_putc('\n');
+    }
+    if (legacy_status != QOTOM_EHCI_LEGACY_OK) pre_admission_fail("qotom-ehci-legacy");
+#endif
 }
 #endif
