@@ -92,6 +92,8 @@ python3 ./scripts/test-build-manifest-consumers.py
 python3 scripts/check-pci-config-read.py
 python3 scripts/test-pci-config-read-qemu.py
 ./scripts/check-pci-enumeration.sh sanitizers
+./scripts/check-qotom-ecam-read.sh ordinary
+./scripts/check-qotom-ecam-read.sh sanitizers
 python3 ./scripts/test-assigned-negative-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
 python3 ./scripts/test-bare-metal-observation.py
