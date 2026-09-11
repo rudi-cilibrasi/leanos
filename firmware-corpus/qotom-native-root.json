@@ -1,0 +1,306 @@
+{
+  "schema": "leanos-native-root-replay-v1",
+  "capture_manifest_sha256": "d21d871019945631920f077c37343dd21882df8d88f79b1d899ee313d58625c0",
+  "inputs": {
+    "native-root": {
+      "words": [
+        1,
+        3,
+        7,
+        0,
+        0,
+        0
+      ],
+      "result": "admission-rejected:multipleEnabledProcessors",
+      "normalized_sha256": "726976fea9ceb76c6f01e949fe04f5cdb8239ce0ce26c419dfacbb82c62f5114"
+    },
+    "root-rsdp-signature": {
+      "words": [
+        1,
+        2,
+        106,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:invalidSignature",
+      "normalized_sha256": "d8c9486cada6208ac6cf9a5922d68d6dae3346c22435971c0bae9908b56dd5f0"
+    },
+    "root-rsdp-legacy-checksum": {
+      "words": [
+        1,
+        2,
+        109,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:invalidLegacyChecksum",
+      "normalized_sha256": "a566f4e3287bff4b5c497ad58c9bc1147e990b4383b40d555410a232378ef386"
+    },
+    "root-missing-rsdp": {
+      "words": [
+        1,
+        2,
+        20,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:rsdp.missingRoot",
+      "normalized_sha256": "fa560f362aa50f3bfd0c154b8f729e80f5c07773ab99ce631143648cc46e1f45"
+    },
+    "root-duplicate-rsdp": {
+      "words": [
+        1,
+        2,
+        22,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:rsdp.duplicateNewRoot",
+      "normalized_sha256": "4ca151af76527f3f37a440f758e9c0874134878a10ee73e932a249d34cfc03da"
+    },
+    "root-checksum": {
+      "words": [
+        1,
+        2,
+        25,
+        5,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.root.invalidChecksum",
+      "normalized_sha256": "28ea55c2d7eec672bc270911f0a8e0db06a6c6391ee47d7a70ce764e49cfb217"
+    },
+    "root-declared-length": {
+      "words": [
+        1,
+        2,
+        25,
+        3,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.root.invalidLength",
+      "normalized_sha256": "45801eeeac0e183cdb8383221f910dfc922143ec304c84591e7c791e254a4d08"
+    },
+    "root-truncated": {
+      "words": [
+        1,
+        2,
+        25,
+        3,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.root.invalidLength",
+      "normalized_sha256": "ee2dfcb50c7c9cfbabc6ec802da8680548285ace080b50960c369df3f88b3e71"
+    },
+    "root-wrong-address": {
+      "words": [
+        1,
+        2,
+        24,
+        3111776376,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:selectedRootAddressMismatch",
+      "normalized_sha256": "6154cc09854196f94a0fef283a4235a6581ac9a2877c0435f023e69032c80317"
+    },
+    "root-missing-copy": {
+      "words": [
+        1,
+        2,
+        26,
+        3111807440,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.untranslatedRootEntry",
+      "normalized_sha256": "5ca97dd9e8840b9215ccfb4b1a1e22c1b6615381c9e3c5ed14474aa29c704562"
+    },
+    "root-duplicate-copy": {
+      "words": [
+        1,
+        2,
+        27,
+        3111807440,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.duplicateTranslation",
+      "normalized_sha256": "0d7a9f316c944f8b80b3143de55a8aad89f49e764b179fdfad0213aebea49f4e"
+    },
+    "root-zero-entry": {
+      "words": [
+        1,
+        2,
+        26,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.untranslatedRootEntry",
+      "normalized_sha256": "26a9f40dacaec3da7b7a237b4eb8e6c3c1759171fec9e23514b8de44e95c630d"
+    },
+    "root-missing-madt": {
+      "words": [
+        1,
+        2,
+        28,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.missingMadt",
+      "normalized_sha256": "66020695785e9dbab26353def9790bccc1b1a286363c6b53e87d728da54a192f"
+    },
+    "root-duplicate-madt": {
+      "words": [
+        1,
+        2,
+        29,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:madtSelection.duplicateMadt",
+      "normalized_sha256": "066c9c777277de9b9de34bab70233a147cb60518106bdee97d3f5faadb0291c6"
+    },
+    "root-madt-checksum": {
+      "words": [
+        1,
+        2,
+        43,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:completeMadt.sdt.invalidChecksum",
+      "normalized_sha256": "384675dc95aaad4a915d8819412a78506330be5af6596b465ad7e4ad71fc98d3"
+    },
+    "root-madt-truncated": {
+      "words": [
+        1,
+        2,
+        41,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:completeMadt.sdt.invalidLength",
+      "normalized_sha256": "956c98c0959bdb016a2587c2ddb97ff2d0e4beb8091f7bcadc4ffeb2f5ad60fa"
+    },
+    "root-madt-unknown-record": {
+      "words": [
+        1,
+        2,
+        36,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:completeMadt.entry.unsupportedRecordKind",
+      "normalized_sha256": "8cdd6d57f5755694e69c5edc694e003badf5fadd5275bc7f3b00cb133a002bb4"
+    },
+    "root-duplicate-cpu": {
+      "words": [
+        1,
+        3,
+        4,
+        0,
+        0,
+        0
+      ],
+      "result": "admission-rejected:duplicateApicId",
+      "normalized_sha256": "e81438507258de40acfa61dbf41c8d63ccd1dea8a6765eae773ed6c4b42e6129"
+    },
+    "root-missing-cpus": {
+      "words": [
+        1,
+        3,
+        6,
+        0,
+        0,
+        0
+      ],
+      "result": "admission-rejected:noEnabledProcessor",
+      "normalized_sha256": "73e830d1c994cc5dad32825793d030d551e59817abe26898627e432961d04c36"
+    },
+    "root-bsp-mismatch": {
+      "words": [
+        1,
+        3,
+        8,
+        0,
+        0,
+        0
+      ],
+      "result": "admission-rejected:bspMismatch",
+      "normalized_sha256": "0c4a6680d0d138c475e7e61831ab98b263919a3feaf4617fd573e38f33c727cc"
+    },
+    "root-executing-overflow": {
+      "words": [
+        1,
+        2,
+        304,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:executingApicIdOverflow",
+      "normalized_sha256": "a1018fbc4fa6b69f1ebd8e3b2599e2c88a9dc761112ef51c35cd96fedc29ba2e"
+    },
+    "root-conflicting-rsdps": {
+      "words": [
+        1,
+        2,
+        23,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:rsdp.conflictingRoots",
+      "normalized_sha256": "299afe0c283f659c10a69fe12e4d5de76f42ea80794a0a58e015c5a4680ecbf9"
+    },
+    "root-rsdp-extended-checksum": {
+      "words": [
+        1,
+        2,
+        110,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:invalidExtendedChecksum",
+      "normalized_sha256": "cf2b2fb770467062ecbc029cc49be950c88a51501fa7c64d14e2b1b6820d7ccf"
+    },
+    "native-bad-magic": {
+      "words": [
+        1,
+        2,
+        201,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:handoff.badMagic",
+      "normalized_sha256": "5b39652f199011d202178d5a4cbfcbdff6bbaef51e70ff8454d21fe07ea1e0a5"
+    },
+    "native-unaligned-address": {
+      "words": [
+        1,
+        2,
+        202,
+        0,
+        0,
+        0
+      ],
+      "result": "decoder-rejected:handoff.unalignedInfo",
+      "normalized_sha256": "56fc0d66b002c3816bd17a8c67a4b07bbbe9dc1a090a682d451c65d277109d1f"
+    }
+  }
+}

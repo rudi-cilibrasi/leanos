@@ -47,6 +47,7 @@ record_check_phase() {
 
 lake build
 python3 scripts/test-qotom-bsp-capture.py
+python3 scripts/test-qotom-bsp-capture.py --native
 lake env lean tests/kernel-user-root.lean
 lake env lean tests/user-copy-prefix.lean
 lake env lean tests/user-copy-aliases.lean
