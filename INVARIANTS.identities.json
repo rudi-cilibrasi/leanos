@@ -14264,6 +14264,42 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.byte_step_out_of_range",
+      "display": "byte_step_out_of_range",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.byte_step_version",
+      "display": "byte_step_version",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.finish_acceptance_iff",
+      "display": "finish_acceptance_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.finish_acceptance_requires",
+      "display": "finish_acceptance_requires",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.processor_matches_iff",
+      "display": "processor_matches_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.processor_matches_rejects_disabled",
+      "display": "processor_matches_rejects_disabled",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIInventory.lean",
       "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",

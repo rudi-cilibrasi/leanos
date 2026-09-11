@@ -10,6 +10,7 @@ if [[ "$mode" != ordinary ]]; then leanos_assert_pinned_toolchain; fi
 python3 scripts/test-qotom-madt-stream.py
 python3 scripts/test-qotom-madt-finish.py
 bash scripts/check-qotom-madt-stream-object.sh
+bash scripts/generate-oracle.sh build/boundary-abi
 corpus=build/qotom-madt-stream
 prefix="$(lean --print-prefix)"
 exports="$(awk -F '\t' '$1 == "qotom-madt-stream" { print $7; found=1 } END { exit !found }' scripts/hosted-generated-boundaries.tsv)"
@@ -32,7 +33,7 @@ for current in "${modes[@]}"; do
   if [[ "$current" == sanitized ]]; then
     leanos_require_sanitized_object "$build/generated.o"
   fi
-  "$cc_command" "${flags[@]}" -Wall -Wextra -Werror -I"$corpus" \
+  "$cc_command" "${flags[@]}" -Wall -Wextra -Werror -I"$corpus" -Ibuild/boundary-abi -I"$prefix/include" \
     -c tests/qotom-madt-stream-host.c -o "$build/host.o"
   "$cc_command" -fno-pie -c "$build/boundary-coverage.c" -o "$build/coverage.o"
   "$cc_command" "${flags[@]}" -no-pie -Wl,--gc-sections \

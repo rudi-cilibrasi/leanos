@@ -63,6 +63,7 @@
     "LeanOS/PrivilegeEntryStack.lean",
     "LeanOS/QotomBootstrapABI.lean",
     "LeanOS/QotomBspTopology.lean",
+    "LeanOS/QotomMadtStream.lean",
     "LeanOS/QotomPCIInventory.lean",
     "LeanOS/QotomPCIQuarantineObservation.lean",
     "LeanOS/QotomPCIQuarantineTransition.lean",

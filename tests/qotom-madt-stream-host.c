@@ -1,20 +1,14 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include "boundary-abi.h"
 #include "cases.h"
 #include "finish-cases.h"
-extern uint64_t leanos_qotom_madt_stream_byte_step_query(
-    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,
-    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
 static uint64_t query(const uint64_t s[12], uint64_t length, uint64_t executing,
                       uint64_t offset, uint64_t byte, uint64_t word) {
     return leanos_qotom_madt_stream_byte_step_query(s[0],s[1],s[2],s[3],s[4],s[5],
         s[6],s[7],s[8],s[9],s[10],s[11],length,executing,offset,byte,word);
 }
-extern uint64_t leanos_qotom_madt_stream_finish_query(
-    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,
-    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,
-    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
 static uint64_t finish(const uint64_t a[20], uint64_t word) {
     return leanos_qotom_madt_stream_finish_query(a[0],a[1],a[2],a[3],a[4],a[5],
         a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15],a[16],a[17],
