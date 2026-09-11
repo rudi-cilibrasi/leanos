@@ -106,5 +106,14 @@ and preserves the actual failure terminal while replaying preceding stages.
 Decoding rejects missing/duplicate records, malformed values, failed observations
 with nonzero payload, all-ones successful samples, mismatched terminals, and
 helper observations without the bound prior global profile. Port samples do not
-establish an atomic snapshot or DMA quarantine. A physical port capture remains
-necessary before this can guide device shutdown.
+establish an atomic snapshot or DMA quarantine.
+
+The [physical port capture](../hardware/lab/observations/qotom-native-ahci-port-20260911/README.md)
+returned status 0 with CMD `6` before and after, IE `0`, TFD `50`, SSTS `123`,
+SACT `0` and CI `0` (hexadecimal). Both CMD samples had ST/FRE/CR/FR clear;
+command-list and FIS-receive engines reported stopped. No SATA write, stop or
+reset was needed for this observation. Global interrupts remained enabled.
+The retained protected replay agrees and FreeBSD recovered automatically with
+the request consumed. These samples guide a subsequent guarded interrupt/BME
+transition; transaction drain, continuing firmware/AP exclusion and whole-profile
+integration remain open.
