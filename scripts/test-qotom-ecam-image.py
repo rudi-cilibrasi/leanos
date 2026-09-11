@@ -71,10 +71,14 @@ def main():
                 consumed, binary, handoff_meta = handoff['parse_prefix'](payload)
                 if handoff_meta['status'] or not handoff_meta['tag_chain_valid']:
                     raise RuntimeError('invalid handoff')
-                _, metadata, tables = acpi['extract'](payload[consumed:], binary, dsdt=True)
+                remaining, metadata, tables = acpi['extract'](payload[consumed:], binary, dsdt=True)
                 if metadata is None:
                     raise RuntimeError('missing complete firmware evidence')
                 image['verify_acpi_memory'](monitor, output, metadata, tables)
+                decoder = runpy.run_path(str(ROOT / 'scripts/check-qotom-ecam-capture.py'))
+                _, ecam = decoder['extract'](remaining, protocol, metadata, tables)
+                if ecam is None or ecam['armed'] or ecam['firmware_matches']:
+                    raise RuntimeError('foreign firmware rejection decoder mismatch')
                 (output / 'multiboot2.bin').write_bytes(binary)
                 (output / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 result.write_text(json.dumps({

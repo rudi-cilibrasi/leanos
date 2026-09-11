@@ -223,3 +223,17 @@ output field unchanged. Both pinned QEMU cases pass and are registered in the
 aggregate check script. These tests validate privileged primitive execution
 and RAM translation changes; they do not bypass the diagnostic firmware gate,
 exercise UC ECAM device transactions or establish physical resource ownership.
+
+`scripts/check-qotom-ecam-capture.py` checks the ECAM transport after ACPI
+extraction and before the existing bootstrap/memory decoders and diagnostic
+replay. An armed record requires matching ordered firmware metadata and every
+captured table byte against the manifest-pinned native snapshot. Missing,
+repeated, misplaced or modified records reject. The decoder distinguishes a
+rejected arm from a terminal transaction fault after arming. Its metadata does
+not grant platform admission; CPU/MSR observations and PCI payload validation
+remain the responsibility of the subsequent existing decoders/replay.
+
+Five synthetic boundary tests pass, including one-byte changes in each firmware
+table. The actual foreign-firmware QEMU boot also passes this decoder and the
+independent ACPI memory comparison. Protected-runner integration remains pending;
+synthetic successful-arm records are not physical ECAM evidence.
