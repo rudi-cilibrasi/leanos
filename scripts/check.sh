@@ -85,6 +85,7 @@ python3 ./scripts/test-scenario-manifest.py
 python3 ./scripts/test-release-artifact-consumers.py
 python3 ./scripts/test-build-manifest-consumers.py
 ./scripts/check-pci-enumeration.sh ordinary
+python3 scripts/check-pci-config-read.py
 ./scripts/check-pci-enumeration.sh sanitizers
 python3 ./scripts/test-assigned-negative-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
