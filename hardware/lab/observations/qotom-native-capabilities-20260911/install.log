@@ -1,0 +1,12 @@
+** /dev/da0s1
+** Phase 1 - Read FAT and checking connectivity
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Lost Files
+307 files, 74 MiB free (152510 clusters)
+SHA256 (/mnt/leanos-verify/boot/leanos-qotom-lab.elf) = 27773506501f290f107cf80b860e8f9a92034496d05b86787240d543b4b3ec37
+SHA256 (/mnt/leanos-verify/boot/leanos.sha256) = d251b97fc4ac368df12b9f22fc02592049126eba816a941585d9af54cd157647
+SHA256 (/mnt/leanos-verify/boot/grub/grub.cfg) = d21dfa818f80b9779604ce9de9ef4b4956d3072c024dc21bff75ce6b05809c13
+SHA256 (/mnt/leanos-verify/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+SHA256 (/mnt/leanos-verify/boot/grub/watchdog-window.cfg) = 09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce
+SHA256 (/mnt/leanos-verify/boot/grub/watchdog.cfg) = 62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86
+kern.boottime: { sec = 1789144499, usec = 947369 } Fri Sep 11 09:34:59 2026

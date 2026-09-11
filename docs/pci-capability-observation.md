@@ -1,0 +1,75 @@
+# Bounded conventional PCI capability observation
+
+`boot/pci-capabilities.h` follows a function's conventional capability list
+through the existing read-only configuration callback. Type-0 and type-1
+headers use Status bit 4 and the byte pointer at offset 0x34. Every capability
+header is retained as its raw dword and offset. There is no capability-payload
+interpretation, extended-capability traversal, device write or DMA admission.
+
+The conventional header locations and capability IDs are also defined in the
+[Linux PCI register declarations](https://github.com/torvalds/linux/blob/master/include/uapi/linux/pci_regs.h).
+This collector deliberately rejects nonzero reserved alignment bits rather
+than silently masking them. Each followed pointer must be an aligned slot in
+0x40–0xfc. A 48-bit visited set prevents cycles, including self-links. Acyclic
+backward links remain valid. At most four initial checks and 48 capability
+reads occur, with fixed storage and no allocation.
+
+Before traversal, the callback rechecks identity, the capability-list status
+bit, the full header-type byte and the list-head byte against the supplied
+immutable initial header. Other Command/Status bits may change and are not
+certified by this check. Serialization, read fidelity and input/output
+non-aliasing are caller obligations; the initial recheck cannot make later
+hardware observations atomic. Failed reads, changed checked fields, absent
+capability headers, malformed pointers and cycles publish count zero. Staged
+array entries on failure must not be consumed.
+
+The [FreeBSD survey](../hardware/lab/observations/qotom-freebsd-capabilities-20260911/pciconf-lc.txt)
+records a read-only `pciconf -lc` run. It provides capability locations for
+controller-policy investigation. For example, the Broadcom list follows
+0x40, 0x58, 0x48, 0xd0; the backward-link test uses that ordering with synthetic
+header contents. This is an OS-derived survey, not native LeanOS capability
+bytes. FreeBSD's list also lacks the EHCI function present in the retained
+native boot, so it cannot replace the native sixteen-function baseline.
+
+`check-pci-capabilities.sh` checks maximum-length lists, every cycle/failure
+position in that list, every invalid nonzero pointer, initial-header drift,
+absent capabilities, no-list status and the backward-link example in ordinary
+and pinned ASan/UBSan builds. Native ECAM collection and retained raw capability
+records remain the next step. Quarantine control semantics, USB ownership,
+TXE behavior and transaction drain remain unresolved under issue #330.
+
+## Native lab image
+
+The recovery builder's `--pci-capabilities` option requires
+`--native-inventory` and uses the separate `build/qotom-capabilities-lab`
+output directory. After the exact native inventory check accepts the preceding
+scan, it captures each function's conventional list. The ECAM window is armed
+only for each bounded collection and disarmed before serial output or failure.
+The prior scan's disarm remains in place. This adds no configuration writes.
+
+Each function emits a `PCI-CAPS` summary with profile `conventional-v1`, its
+inventory index, collector status, failure offset, and published count.
+Successful lists emit ordered `PCI-CAP` records containing index, slot, offset,
+and raw dword. Failed lists publish zero headers and stop with
+`qotom-pci-capabilities`. Successful observation still stops at
+`qotom-platform-pending`; it does not admit the platform or establish DMA safety.
+
+The recovery runner's matching `--pci-capabilities` flag requires
+`--native-kernel`, fingerprints the decoder before arming, and retains
+`pci-capabilities.json`. Extraction checks record ordering, the initial pointer
+against the same capture's PCI header, link progression, bounds, cycles, and
+termination. The remaining prefix must pass the generated native inventory
+replay. The actual capability terminal is retained separately from that prefix
+projection. A failed read has no returned raw value to replay: its status and
+location remain observations, with `failed_reads_replayed=false`.
+
+The emission test invokes the actual lab function and checks window ownership,
+backward links, exact output, and failure disarm with ordinary and sanitizer
+builds. Decoder mutation tests and synthetic capability records inserted into a
+retained protected BSP capture exercise both success and rejection paths.
+These synthetic capability values are not hardware observations. The separate
+[protected physical capture](../hardware/lab/observations/qotom-native-capabilities-20260911/README.md)
+retains 47 capability headers across 16 native functions and the recovered
+FreeBSD boot. `test_retained_physical_capabilities` validates that retained
+capture. Controller ownership, reset and DMA containment require further work;
+this capture only observes the conventional capability lists.

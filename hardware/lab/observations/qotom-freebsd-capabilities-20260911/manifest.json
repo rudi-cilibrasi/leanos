@@ -1,0 +1,12 @@
+{
+  "schema": "leanos-freebsd-pci-capability-survey-v1",
+  "host": "freebsd@192.168.6.21",
+  "command": "sudo -n pciconf -lc",
+  "source": "running FreeBSD, not native LeanOS",
+  "output_file_mtime_utc": "2026-09-11T16:53:05.946733+00:00",
+  "files": {
+    "pciconf-lc.txt": "dac7b596ad79a4515047165c6ed2e33e5e4bed0dded4cdb125683db204c27074"
+  },
+  "hardware_writes_performed": false,
+  "quarantine_established": false
+}
