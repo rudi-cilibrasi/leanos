@@ -21,7 +21,10 @@ p.add_argument('--bootstrap-capture', action='store_true')
 p.add_argument('--ecam-memory-capture', action='store_true')
 p.add_argument('--dsdt-capture', action='store_true')
 p.add_argument('--ecam-read', action='store_true', help='use firmware-gated ECAM for the lab PCI scan')
+p.add_argument('--native-inventory', action='store_true', help='check the complete native PCI snapshot in the ECAM lab image')
 a = p.parse_args()
+if a.native_inventory and not a.ecam_read:
+    p.error('--native-inventory requires --ecam-read')
 if a.ecam_read and (not a.dsdt_capture or not a.ecam_memory_capture or a.pci_read_trace):
     p.error('--ecam-read requires --dsdt-capture and --ecam-memory-capture, and excludes --pci-read-trace')
 if a.dsdt_capture and not a.acpi_capture:
@@ -126,6 +129,18 @@ if a.ecam_read:
     text = text.replace(call, 'pci_enumerate_segment(qotom_ecam_read, &lab_ecam_reader, &snapshot);\n    lab_ecam_window.armed = 0;')
     subprocess.run(['python3', 'scripts/generate-qotom-ecam-firmware.py',
                     str(build / 'qotom-ecam-firmware-inputs.h')], cwd=root, check=True)
+if a.native_inventory:
+    marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
+    stop = '#endif\n    pre_admission_fail("qotom-platform-pending");'
+    if text.count(marker) != 1 or text.count(stop) != 1:
+        raise SystemExit('unsupported native inventory diagnostic shape')
+    text = text.replace(marker, (root / 'hardware/lab/qotom-native-inventory.c.inc').read_text() + '\n' + marker)
+    text = text.replace(stop, '    lab_check_native_inventory(scan.status, &snapshot);\n' + stop)
+    native_pci_dir = out / 'native-pci'
+    subprocess.run(['scripts/build-qotom-native-pci-object.sh', str(native_pci_dir)], cwd=root, check=True)
+    native_pci = native_pci_dir / 'native-pci.o'
+    # Prepared canonical inputs predate this export; refresh the generated ABI.
+    shutil.copy2(root / 'build/boundary-abi/boundary-abi.h', build / 'boundary-abi.h')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -143,6 +158,18 @@ if a.ecam_read:
             lines[i] = line.replace(anchor, anchor + ' ' + str(native))
     graph = '\n'.join(lines) + '\n'
     graph += f'{native}: {root / "hardware/lab/qotom-ecam-native.S"}\n\t$(IMAGE_CC) -m64 -c $< -o $@\n'
+if a.native_inventory:
+    anchor = str(build / 'pci-config-read.o')
+    lines = graph.splitlines()
+    inserted = 0
+    for i, line in enumerate(lines):
+        if ('leanos-qotom-pci-diagnostic-prelink.' in line or
+                'leanos-qotom-pci-diagnostic.' in line) and anchor in line:
+            lines[i] = line.replace(anchor, anchor + ' ' + str(native_pci))
+            inserted += 1
+    if inserted < 2:
+        raise SystemExit('native inventory object missing prelink/final graph anchors')
+    graph = '\n'.join(lines) + '\n'
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
@@ -183,7 +210,16 @@ if a.ecam_memory_capture:
     files.append(root / 'hardware/lab/qotom-ecam-memory.c.inc')
 if a.dsdt_capture:
     files.append(root / 'boot/acpi-dsdt-address.h')
-manifest = {'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.native_inventory:
+    files.extend([root / 'hardware/lab/qotom-native-inventory.c.inc',
+                  root / 'boot/qotom-native-inventory.h',
+                  root / 'scripts/build-qotom-native-pci-object.sh',
+                  root / 'LeanOS/PCIHeaderObservation.lean',
+                  root / 'LeanOS/QotomNativePCIFields.lean',
+                  root / '.lake/build/ir/LeanOS/PCIHeaderObservation.c',
+                  root / '.lake/build/ir/LeanOS/QotomNativePCIFields.c',
+                  build / 'boundary-abi.h', native_pci, native_pci_dir / 'symbols.txt'])
+manifest = {'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
