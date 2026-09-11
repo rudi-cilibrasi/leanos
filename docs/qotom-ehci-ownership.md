@@ -241,4 +241,9 @@ reached, bounded poll counts and consistent diagnostic fields/terminal. It
 retains `ehci-handoff.json`. Hardware operations are not independently replayed;
 the preceding inventory remains subject to generated replay. Synthetic protected
 capture tests exercise success, failures, malformed framing and contradictory
-attempt/poll/semaphore fields. Physical execution is the next validation step.
+attempt/poll/semaphore fields. The [physical handoff capture](../hardware/lab/observations/qotom-native-ehci-handoff-20260911/README.md)
+reported release at the first poll and passed final refresh: support `0x01000001`,
+control/status `0x2000`. The full protected replay agrees, and FreeBSD recovered
+automatically with the one-shot request consumed. This is a semaphore observation;
+controller shutdown, SMI policy, outstanding transactions and DMA containment
+remain unresolved.
