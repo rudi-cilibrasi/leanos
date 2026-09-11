@@ -100,3 +100,23 @@ The [physical capture](../hardware/lab/observations/qotom-native-ehci-20260911/R
 returned capability base `0x01000020`, HCSPARAMS `0x00200008` and HCCPARAMS
 `0x00036881`. Thus the observed extended-list pointer is `0x68`; the list and
 ownership semaphores remain to be read. FreeBSD recovered automatically.
+
+## Bounded extended-list reader
+
+`boot/qotom-ehci-legacy.h` refreshes the same PCI binding and three MMIO
+capability values before following the observed HCCPARAMS pointer. It compares
+those values to the preceding capability sample, then reads at most 48 aligned
+configuration headers in `0x40..0xfc`. A visited-slot set rejects cycles;
+zero or all-ones IDs, invalid pointers and duplicate legacy structures fail.
+Unknown nonzero IDs are retained as headers without interpreting their payloads.
+A legacy structure must fit its control/status dword inside configuration space
+and must not overlap another list header. Only after the entire list terminates
+does the reader sample that control/status dword.
+
+The read-only operation uses at most 57 reads including refresh. Rejections
+publish zero count, legacy offset and control/status; partially staged array
+bytes are not authoritative. Success with legacy offset zero means no legacy
+structure was found in the observed list. It does not establish ownership.
+The support and control/status fields are sequential observations and may
+change asynchronously. No semaphore write, SMI change or reset is performed.
+Native emission and protected capture replay for this list remain to be added.

@@ -44,3 +44,9 @@ for test in qotom-ehci-window qotom-ehci-arm; do
     -Iboot -Ihardware/lab -I"$build" "tests/$test.c" -o "$build/$test-sanitized"
   leanos_run_sanitized "$build/$test-sanitized"
 done
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ehci-legacy.c -o "$build/ehci-legacy"
+"$build/ehci-legacy"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ehci-legacy.c -o "$build/ehci-legacy-sanitized"
+leanos_run_sanitized "$build/ehci-legacy-sanitized"
