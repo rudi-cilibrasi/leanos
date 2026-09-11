@@ -95,6 +95,24 @@ failure. Zero legacy offset means no legacy structure was found, not ownership.
 The tests cover a 48-header list, all 87 read-failure positions, relative offsets,
 resource boundaries, missing/duplicate/overlapping legacy structures, capability
 drift and failed-publication rules. List and control samples remain sequential;
-no ownership write or continuing firmware-exclusion claim is added. Native
-extended-read mapping, capture decoding and physical list observation remain
+no ownership write or continuing firmware-exclusion claim is added. Native integration, capture decoding and physical list observation remain
 outstanding.
+
+## Extended-read mapping gate
+
+`hardware/lab/qotom-xhci-ext-window.h` gives the bounded reader a separate
+read-only aperture for aligned physical addresses `d0908000..d090fffc`. Each
+transaction derives the physical page from the accepted address and maps it
+supervisor-only, NX and UC. It restores the exact saved leaf and invalidates
+before publishing the private sample. Mapping or control interference terminates
+instead of returning a sample; a rejected address performs no mapping or load.
+The existing seven-register capability window is unchanged.
+
+The extended arming gate binds all seven retained physical capability DWORDs
+and reuses the xHCI PCI identity, firmware, root and 64-KiB alias checks through
+private staging. Failed rearm clears authority. Arming does not access hardware;
+the collector still refreshes the resource before following links. Tests exercise
+every byte offset through the resource boundary, every admitted DWORD read across
+all eight pages, restoration and interference, every single-bit capability
+mutation, and the existing resource/ECAM alias and failed-rearm cases. These
+checks do not establish continuing firmware or AP exclusion.
