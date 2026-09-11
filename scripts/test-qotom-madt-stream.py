@@ -105,3 +105,14 @@ with tempfile.TemporaryDirectory() as tmp:
             if want != got: print(cases[index // 2][0], 'expected', want, 'got', got)
         raise SystemExit('scalar MADT replay mismatch: ' + result.stdout)
 print(f'PASS {len(cases)} native MADT scalar/full-table cases')
+# The independent C runner consumes these same named cases and expectations.
+out = ROOT / 'build/qotom-madt-stream'
+out.mkdir(parents=True, exist_ok=True)
+header = '#include <stddef.h>\n#include <stdint.h>\n'
+for i, (_, recs, _, _) in enumerate(cases):
+    header += f'static const uint8_t input_{i}[] = {{{",".join(map(str, b"".join(recs)))}}};\n'
+header += 'static const struct { const char *name; const uint8_t *bytes; size_t length; uint64_t executing, error; } cases[] = {\n'
+for i, (label, _, executing, error) in enumerate(cases):
+    header += f'{{"{label}",input_{i},sizeof(input_{i}),{executing},{error}}},\n'
+header += '};\n'
+(out / 'cases.h').write_text(header)

@@ -1,0 +1,45 @@
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include "cases.h"
+extern uint64_t leanos_qotom_madt_stream_byte_step_query(
+    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,
+    uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
+static uint64_t query(const uint64_t s[12], uint64_t length, uint64_t executing,
+                      uint64_t offset, uint64_t byte, uint64_t word) {
+    return leanos_qotom_madt_stream_byte_step_query(s[0],s[1],s[2],s[3],s[4],s[5],
+        s[6],s[7],s[8],s[9],s[10],s[11],length,executing,offset,byte,word);
+}
+int main(void) {
+    for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
+        uint64_t state[12] = {44,0,0,0,0,0,0,256,0,0,0,0};
+        uint64_t result[18] = {0};
+        for (size_t i = 0; i < cases[c].length; ++i) {
+            for (uint64_t word = 0; word < 18; ++word)
+                result[word] = query(state, 44+cases[c].length, cases[c].executing,
+                                     44+i, cases[c].bytes[i], word);
+            if (result[0] != 1 || result[16] != 0 || result[17] != 0 ||
+                query(state,44+cases[c].length,cases[c].executing,44+i,
+                      cases[c].bytes[i],UINT64_MAX) != 0) return 2;
+            if (result[1] == 2) {
+                for (size_t word = 3; word < 18; ++word)
+                    if (result[word] != 0) return 3;
+                break;
+            }
+            if (result[1] != (i+1 == cases[c].length ? 3u : 1u) ||
+                result[2] != 0 || result[3] != 45+i ||
+                result[15] != cases[c].bytes[i]) return 4;
+            memcpy(state, result+3, sizeof(state));
+        }
+        uint64_t status = cases[c].error ? 2 : 3;
+        if (result[1] != status || result[2] != cases[c].error) {
+            fprintf(stderr,"%s: status=%"PRIu64" error=%"PRIu64"\n",
+                    cases[c].name,result[1],result[2]);
+            return 1;
+        }
+        if (status == 3 && (state[6] != 4 || state[7] != 0 || state[8] != 85 ||
+                           state[9] || state[10] || state[11])) return 5;
+        printf("%s %"PRIu64" %"PRIu64"\n",cases[c].name,result[1],result[2]);
+    }
+    return 0;
+}
