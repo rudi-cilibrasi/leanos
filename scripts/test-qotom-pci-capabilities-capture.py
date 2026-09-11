@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Synthetic capability transport mutations, independent of image emitter."""
 import runpy
+import importlib.util
 from pathlib import Path
 import unittest
 
 extract = runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-capabilities-capture.py')))['extract']
-PROTOCOL = {'FINAL': 'LEANOS/3 FINAL', 'PCI-HEADER': 'LEANOS/25 PCI-HEADER'}
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location('diagnostic', ROOT / 'scripts/check-qotom-pci-diagnostic.py')
+D = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(D)
+# Use the generated protocol retained with the physical fixture. This test runs
+# before hosted executables are built and must not depend on a warm build tree.
+PROTOCOL = D.load_protocol(ROOT / 'hardware/lab/observations/qotom-native-capabilities-20260911/diagnostic-protocol.tsv')
 NATIVE = b'LEANOS-LAB/1 NATIVE-PCI profile=qotom-native-ecam-v1 status=0 index=0 count=16\n'
-PENDING = b'LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending\n'
-FAILURE = b'LEANOS/3 FINAL status=FAIL reason=qotom-pci-capabilities\n'
+PENDING = PROTOCOL['FINAL'].encode() + b' status=FAIL reason=qotom-platform-pending\n'
+FAILURE = PROTOCOL['FINAL'].encode() + b' status=FAIL reason=qotom-pci-capabilities\n'
 
 
 def fixture():
@@ -19,7 +26,7 @@ def fixture():
         words[3] = 0x12348086
         words[4] = 0x100000 if i == 0 else 0
         words[16] = 88 if i == 0 else 0
-        headers.append(f'LEANOS/25 PCI-HEADER codec=1 index={i} width=19 words={",".join(map(str,words))}\n'.encode())
+        headers.append(f'{PROTOCOL["PCI-HEADER"]} codec=1 index={i} width=19 words={",".join(map(str,words))}\n'.encode())
         caps.append(f'LEANOS-LAB/1 PCI-CAPS profile=conventional-v1 index={i} status=0 offset=0 count={2 if i == 0 else 0}\n'.encode())
         if i == 0:
             caps.extend([b'LEANOS-LAB/1 PCI-CAP index=0 slot=0 offset=88 raw=18441\n',
@@ -73,7 +80,7 @@ class Capture(unittest.TestCase):
             with self.assertRaises(ValueError): extract(prefix + summary + FAILURE, PROTOCOL)
 
     def test_earlier_rejection(self):
-        raw = b'LEANOS/3 FINAL status=FAIL reason=qotom-native-inventory\n'
+        raw = PROTOCOL['FINAL'].encode() + b' status=FAIL reason=qotom-native-inventory\n'
         self.assertEqual(extract(raw, PROTOCOL), (raw, None))
 
 
