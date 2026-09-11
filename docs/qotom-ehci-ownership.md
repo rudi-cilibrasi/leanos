@@ -269,3 +269,23 @@ or DMA containment. Tests cover all 512 enable combinations, asynchronous
 status changes, every refresh read failure, ownership reassertion, reserved
 bits, ignored writes and failed writes that nevertheless take effect. Native
 write-aperture integration and physical SMI-disable evidence remain outstanding.
+
+## Native SMI-disable experiment
+
+`qotom-ehci-smi-window.h` grants a separate consumed transaction for one zero
+DWORD at `00:1d.0` offset `0x6c`. The temporary UC, writable, supervisor/NX
+mapping is restored and invalidated before returning. Arming binds the exact
+controller/capabilities, successful handoff result, firmware and root/alias
+checks. The bounded collector refreshes the hardware again before writing.
+Tests reject other selectors, every nonzero value bit, reuse, failed rearming
+and mapping/control interference, including all ECAM/EHCI alias slots.
+
+The builder's `--ehci-smi` requires `--ehci-handoff` and creates
+`build/qotom-smi-lab`. Native code invokes the SMI helper after retaining the
+successful handoff record, revokes the contexts, and emits `EHCI-SMI` with
+status, attempt and both control samples. Local arm failures use statuses 8–9.
+The runner fingerprints its matching decoder and retains `ehci-smi.json`.
+Validation distinguishes disabled enable bits from retained status bits and
+preserves a failed SMI terminal alongside the earlier inventory replay.
+The compiled native primitive is one DWORD store. Physical SMI-disable
+execution remains the next validation step; no controller stop is introduced.
