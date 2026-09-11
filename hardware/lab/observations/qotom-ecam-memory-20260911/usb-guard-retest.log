@@ -1,0 +1,4 @@
+normal-guard-boot PASS
+normal-guard-bad-hash PASS
+normal-guard-bad-elf PASS
+normal-guard-wrong-digest PASS

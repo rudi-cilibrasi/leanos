@@ -1,0 +1,33 @@
+{
+  "ecam_memory_capture": true,
+  "bootstrap_capture": true,
+  "pci_read_trace": true,
+  "acpi_capture": true,
+  "handoff_capture": true,
+  "evidence_class": "lab-recovery-experiment",
+  "canonical_halt_evidence": false,
+  "mode": "completion",
+  "pci_diagnostic": true,
+  "recovery_seconds": 30,
+  "hang_recovery": false,
+  "source_revision": "d21d55bd0ea320f43bc5880fa7e3f93463935068",
+  "source_dirty": false,
+  "prepared_revision": "4d54cc91b4bab758c2c990ff6c7f33e853880e55",
+  "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "files": {
+    "boot/kernel.c": "c68048ce353b2420cde0a059e6b034a0f3819c591d4df5ca7757de582e29e28c",
+    "build/qotom-pci-lab/kernel.c": "c5a605804ee0e1cc89b4d0c57d81e793f6434e1e22b47aa330f0cc3ae331e7b1",
+    "scripts/build-qotom-recovery-lab.py": "8dc420e8de80ecea29360f3a8c69f45e798441a57767fc1fd5c41a61e2d1ac40",
+    "build/qotom-pci-lab/objects.mk": "90456ea66b91b281a4ef5f3d9d29729005f2ce3283eb52536b92bc140a8b5755",
+    "build/qotom-pci-lab/leanos-qotom-lab.elf": "9bad6db87275f06417f1b85de1d3cd520ae19fcc14fc67864bac2fd74aef241a",
+    "hardware/lab/qotom-finish.c.inc": "66e33ac21644cef4e8c96bff12c2317f6d1cdf9fd13b7e353c534fcb387c599e",
+    "hardware/lab/qotom-handoff.c.inc": "2a9747259be2f37f3db8cde0319d095dc65e1bc405f6342e938b4cbe82c6faf4",
+    "include/boot_handoff_capture.h": "fff92fef014c8711f78adf5814e9a7d8e48c18f41b36429df730c8f1d9b53cc0",
+    "hardware/lab/qotom-acpi.c.inc": "e82c755bdb182127a1f256095dbcb2880113de25e829f3de823c10597fed48f0",
+    "hardware/lab/qotom-pci-read-trace.c.inc": "e926664e2167ce0ff56727128f00f50600f213a9164a939d437668535655fb2d",
+    "build/boot/boot-page-plan-qotom-pci-diagnostic.h": "9ad77d8b992e9454269cedb801aecd48323301a9e66fe1de21ab7b2ae13d41e8",
+    "build/qotom-pci-lab/final-page-plan.h": "9ad77d8b992e9454269cedb801aecd48323301a9e66fe1de21ab7b2ae13d41e8",
+    "hardware/lab/qotom-bootstrap.c.inc": "55e567f8180550c8e9aa0e0340a7b302872f2f42ccd8b92611b1b03dd3243433",
+    "hardware/lab/qotom-ecam-memory.c.inc": "8a707f7a10c1fa525e815c1d3d183ee643c13697039f9d578e0482779f13df9e"
+  }
+}

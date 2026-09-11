@@ -90,8 +90,13 @@ python3 ./scripts/test-release-artifact-consumers.py
 python3 ./scripts/test-build-manifest-consumers.py
 ./scripts/check-pci-enumeration.sh ordinary
 python3 scripts/check-pci-config-read.py
+python3 scripts/check-qotom-ecam-native.py
+python3 scripts/test-qotom-ecam-capture.py
+python3 scripts/test-qotom-ecam-native-qemu.py
 python3 scripts/test-pci-config-read-qemu.py
 ./scripts/check-pci-enumeration.sh sanitizers
+./scripts/check-qotom-ecam-read.sh ordinary
+./scripts/check-qotom-ecam-read.sh sanitizers
 python3 ./scripts/test-assigned-negative-manifest.py
 python3 ./scripts/test-bare-metal-rejection.py
 python3 ./scripts/test-bare-metal-observation.py
@@ -127,6 +132,7 @@ python3 ./scripts/test-kvm-preflight.py
 
 if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-generated-boundaries.sh ordinary
+  python3 scripts/test-qotom-ecam-protected.py
 
   ./scripts/check-hosted-generated-boundaries.sh sanitized
 

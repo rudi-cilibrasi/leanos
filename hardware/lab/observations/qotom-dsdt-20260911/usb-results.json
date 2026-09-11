@@ -1,0 +1,128 @@
+{
+  "dsdt_capture": true,
+  "ecam_memory_capture": true,
+  "bootstrap_capture": true,
+  "pci_read_trace": true,
+  "acpi_capture": true,
+  "handoff_capture": true,
+  "pci_diagnostic": true,
+  "usb_sha256": "33e1ffba1f1e4588ddcbd7b1e0dbe366c329b3969b86247a9e30097eed54b06c",
+  "elf_sha256": "d02ea7892b4f31b96372beab8daadbd0b1ca215943d623419a1c58dd501eeadb",
+  "results": [
+    {
+      "case": "default",
+      "serial_sha256": "e6ef837c2326f7f3da1348b14498916eb717289711819152ee5ef45a95244724",
+      "request_consumed": true
+    },
+    {
+      "case": "oneshot",
+      "serial_sha256": "38cfe8dcd82306ad80d215fc49c279588209d9786b1e02e0778a78c322d621d4",
+      "request_consumed": true
+    },
+    {
+      "case": "rtc-probe",
+      "serial_sha256": "d391b957c2823f3b6563146807fa633a77ac6d47c21aeea412e29f6d000ab683",
+      "request_consumed": true
+    },
+    {
+      "case": "rtc-missing-guard",
+      "serial_sha256": "1ec016d01966acce99c6072e4b849cd210efe7f0dd6a447e0a9fe1439b4604c3",
+      "request_consumed": true
+    },
+    {
+      "case": "watchdog-expired",
+      "serial_sha256": "ea38d7b056841faf292b5ff8bed751f64d904d1d4fd54bde9fb8f5ad4d291709",
+      "request_consumed": true
+    },
+    {
+      "case": "watchdog-arm-rejected",
+      "serial_sha256": "8dbd1136f2d03fc9188093b3209671d03e8f8bca9dd5c35f821e571e170efcfe",
+      "request_consumed": true
+    },
+    {
+      "case": "watchdog-missing-recipe",
+      "serial_sha256": "1040dcf0a3a401d23c3a998c2d4dc8c3f147963bd351b5b0270b2b08a832db55",
+      "request_consumed": true
+    },
+    {
+      "case": "unknown",
+      "serial_sha256": "b64de58fe98ccfd5708d34566eccba3c3c12112e4b482d828b58a43a1a120f46",
+      "request_consumed": true
+    },
+    {
+      "case": "watchdog-disabled",
+      "serial_sha256": "768c21e678343fc8b2bfae86ef6a3f80a07d18144ece1fab7d81137786a2cbd9",
+      "request_consumed": true
+    },
+    {
+      "case": "bad-env",
+      "serial_sha256": "2de0c6296acba6474bf93b71ac60de03befb0b97514e592027bbdc0c38f687c7",
+      "request_consumed": false
+    },
+    {
+      "case": "bad-image",
+      "serial_sha256": "5a18f71bfe493237446671ff905a21f7b21458c3bdb7949569b4844aa35f4e76",
+      "request_consumed": true
+    },
+    {
+      "case": "leanos",
+      "serial_sha256": "c9d66e8c006871b130258dc987e350b24f99272a7a447dcd7105329461c78555",
+      "request_consumed": true
+    },
+    {
+      "case": "window-current",
+      "serial_sha256": "640b771c1adda103149a087283ed1fe64f046c88aa9819470af800e971fb2de9",
+      "request_consumed": true
+    },
+    {
+      "case": "window-stale-replay",
+      "serial_sha256": "7f627020ca2293b5b4b40d333932943ca829bcc15d0b15e493844ae55b5eb160",
+      "request_consumed": true
+    },
+    {
+      "case": "window-future",
+      "serial_sha256": "7f627020ca2293b5b4b40d333932943ca829bcc15d0b15e493844ae55b5eb160",
+      "request_consumed": true
+    },
+    {
+      "case": "window-old-date",
+      "serial_sha256": "7f627020ca2293b5b4b40d333932943ca829bcc15d0b15e493844ae55b5eb160",
+      "request_consumed": true
+    },
+    {
+      "case": "window-unbounded",
+      "serial_sha256": "7f627020ca2293b5b4b40d333932943ca829bcc15d0b15e493844ae55b5eb160",
+      "request_consumed": true
+    },
+    {
+      "case": "window-malformed",
+      "serial_sha256": "7f627020ca2293b5b4b40d333932943ca829bcc15d0b15e493844ae55b5eb160",
+      "request_consumed": true
+    },
+    {
+      "case": "window-invalid-clock",
+      "serial_sha256": "7f627020ca2293b5b4b40d333932943ca829bcc15d0b15e493844ae55b5eb160",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-boot",
+      "serial_sha256": "00afd3f156a8e69d2f40694fb44afb5722fa9865c9083473e877d46027221f7c",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-bad-hash",
+      "serial_sha256": "5acd9658704d59599beb53fa2a71c43635b57d72971ec0f9f43070106ee66c40",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-bad-elf",
+      "serial_sha256": "17068dae75a4b7e0d0e6553bd538a92fa2b810767a963f3b56fe905cdc7c2df0",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-wrong-digest",
+      "serial_sha256": "ea38d7b056841faf292b5ff8bed751f64d904d1d4fd54bde9fb8f5ad4d291709",
+      "request_consumed": true
+    }
+  ]
+}

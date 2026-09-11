@@ -219,9 +219,19 @@ def cpu_diagnostic_bytes(events, protocol, handoff=False):
     return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
-            'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+             'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+    if dsdt:
+        result['dsdt_capture'] = True
+    if ecam_read:
+        result['ecam_decoder_sha256'] = hashlib.sha256(
+            Path(__file__).with_name('check-qotom-ecam-capture.py').read_bytes()).hexdigest()
+        result['ecam_cpu_decoder_sha256'] = hashlib.sha256(
+            Path(__file__).with_name('check-j1900-diagnostic.py').read_bytes()).hexdigest()
+        result['ecam_firmware_manifest_sha256'] = hashlib.sha256(
+            (Path(__file__).resolve().parents[1] /
+             'hardware/lab/observations/qotom-dsdt-20260911/manifest.json').read_bytes()).hexdigest()
     if pci_replay is not None:
         result['pci_replay_executable_sha256'] = hashlib.sha256(Path(pci_replay).read_bytes()).hexdigest()
     if handoff:
@@ -236,10 +246,19 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acp
     if bootstrap:
         result['bootstrap_decoder_sha256'] = hashlib.sha256(
             Path(__file__).with_name('check-qotom-bootstrap-capture.py').read_bytes()).hexdigest()
+    if ecam_memory:
+        result['ecam_memory_decoder_sha256'] = hashlib.sha256(
+            Path(__file__).with_name('check-qotom-ecam-memory-capture.py').read_bytes()).hexdigest()
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False):
+    if ecam_read and (not dsdt or not ecam_memory or pci_read_trace):
+        raise ValueError('ECAM read requires DSDT/memory capture and excludes PCI trace')
+    if dsdt and not acpi:
+        raise ValueError('DSDT capture requires ACPI capture')
+    if ecam_memory and not bootstrap:
+        raise ValueError('ECAM memory capture requires bootstrap capture')
     if bootstrap and pci_replay is None:
         raise ValueError('bootstrap capture requires PCI replay')
     if pci_read_trace and pci_replay is None:
@@ -259,15 +278,31 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         _, handoff_bytes, result['handoff'] = decoder['parse_prefix'](expected[len(mode):])
     if acpi:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-acpi-capture.py')))
-        raw, result['acpi'], _ = decoder['extract'](raw, handoff_bytes)
+        raw, result['acpi'], tables = decoder['extract'](raw, handoff_bytes, dsdt=dsdt)
+    if ecam_read:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-capture.py')))
+        raw, result['ecam'] = decoder['extract'](raw, protocol, result['acpi'], tables)
+    if ecam_memory:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-memory-capture.py')))
+        raw, result['ecam_memory'] = decoder['extract'](raw, protocol, ecam_failure=ecam_read)
     if bootstrap:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bootstrap-capture.py')))
-        raw, result['bootstrap'] = decoder['extract'](raw, protocol)
+        raw, result['bootstrap'] = decoder['extract'](raw, protocol, ecam_failure=ecam_read)
     if pci_read_trace:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-read-trace.py')))
         raw, result['pci_read_trace'] = decoder['extract'](raw, protocol)
-    diagnostic = module.classify(raw, protocol, *replay_paths)
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap))
+    ecam_terminal = ecam_read and any(raw.endswith(protocol['FINAL'].encode() +
+        b' status=FAIL reason=' + reason + b'\n') for reason in
+        (b'qotom-ecam-arm', b'qotom-ecam-transaction'))
+    if ecam_terminal:
+        # Replay only the CPU/MSR prefix; retain the actual ECAM terminal.
+        projection = raw.replace(b'phase=pci-inventory-diagnostic', b'phase=cpu-diagnostic', 1)
+        diagnostic = module.CPU.classify(projection, protocol, replay_paths[0], ecam_failure=True)
+        diagnostic['capture_sha256'] = hashlib.sha256(raw).hexdigest()
+        diagnostic['replay_scope'] = 'cpu-msr-before-ecam-failure'
+    else:
+        diagnostic = module.classify(raw, protocol, *replay_paths)
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read))
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
                   diagnostic=diagnostic)
     return result
@@ -300,7 +335,16 @@ def main():
     parser.add_argument('--acpi-capture', action='store_true')
     parser.add_argument('--pci-read-trace', action='store_true')
     parser.add_argument('--bootstrap-capture', action='store_true')
+    parser.add_argument('--ecam-memory-capture', action='store_true')
+    parser.add_argument('--dsdt-capture', action='store_true')
+    parser.add_argument('--ecam-read', action='store_true')
     args = parser.parse_args()
+    if args.ecam_read and (not args.dsdt_capture or not args.ecam_memory_capture or args.pci_read_trace):
+        parser.error('--ecam-read requires DSDT/memory capture and excludes PCI trace')
+    if args.dsdt_capture and not args.acpi_capture:
+        parser.error('--dsdt-capture requires --acpi-capture')
+    if args.ecam_memory_capture and not args.bootstrap_capture:
+        parser.error('--ecam-memory-capture requires --bootstrap-capture')
     if args.bootstrap_capture and not args.pci_diagnostic:
         parser.error('--bootstrap-capture requires --pci-diagnostic')
     if args.pci_read_trace and not args.pci_diagnostic:
@@ -330,7 +374,7 @@ def main():
                 parser.error('PCI replay did not report its corpus self-test')
             if cpu_replay_module().replay_words(pci_replay.resolve(), 'inventory', [0]) != 65536:
                 parser.error('PCI replay lacks the bounded inventory interface')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture)
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -465,10 +509,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(events, protocol, args.handoff_capture)
                 if args.handoff_capture:
@@ -479,14 +523,22 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     (directory / 'handoff.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 if args.acpi_capture:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-acpi-capture.py')))
-                    raw, metadata, tables = decoder['extract'](raw, binary)
+                    raw, metadata, tables = decoder['extract'](raw, binary, dsdt=args.dsdt_capture)
                     (directory / 'acpi').mkdir()
                     for filename, content in tables.items():
                         (directory / 'acpi' / filename).write_bytes(content)
                     (directory / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
+                if args.ecam_read:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-capture.py')))
+                    raw, ecam_metadata = decoder['extract'](raw, protocol, metadata, tables)
+                    (directory / 'ecam.json').write_text(json.dumps(ecam_metadata, indent=2) + '\n')
+                if args.ecam_memory_capture:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-ecam-memory-capture.py')))
+                    raw, metadata = decoder['extract'](raw, protocol, ecam_failure=args.ecam_read)
+                    (directory / 'ecam-memory.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 if args.bootstrap_capture:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bootstrap-capture.py')))
-                    raw, metadata = decoder['extract'](raw, protocol)
+                    raw, metadata = decoder['extract'](raw, protocol, ecam_failure=args.ecam_read)
                     (directory / 'bootstrap.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 if args.pci_read_trace:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-read-trace.py')))

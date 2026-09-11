@@ -1,0 +1,32 @@
+{
+  "ecam_memory_capture": true,
+  "bootstrap_capture": true,
+  "pci_read_trace": true,
+  "acpi_capture": true,
+  "handoff_capture": true,
+  "pci_diagnostic": true,
+  "usb_sha256": "7d2d4da6e02cc141e35108b2faba78ea21f8d94de1726ab96017111c0e46470d",
+  "elf_sha256": "9bad6db87275f06417f1b85de1d3cd520ae19fcc14fc67864bac2fd74aef241a",
+  "results": [
+    {
+      "case": "normal-guard-boot",
+      "serial_sha256": "c3f722b8c656b0d2be5476577648aa26c0a11a5c67e1f64e7de48a819151f031",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-bad-hash",
+      "serial_sha256": "90d3e6f82e94eae3284bac9e7f11315372550106d043c0319fe0e101f47c82d5",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-bad-elf",
+      "serial_sha256": "17068dae75a4b7e0d0e6553bd538a92fa2b810767a963f3b56fe905cdc7c2df0",
+      "request_consumed": true
+    },
+    {
+      "case": "normal-guard-wrong-digest",
+      "serial_sha256": "ea38d7b056841faf292b5ff8bed751f64d904d1d4fd54bde9fb8f5ad4d291709",
+      "request_consumed": true
+    }
+  ]
+}

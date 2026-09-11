@@ -32,7 +32,13 @@ def main():
     parser.add_argument('--acpi-capture', action='store_true')
     parser.add_argument('--pci-read-trace', action='store_true')
     parser.add_argument('--bootstrap-capture', action='store_true')
+    parser.add_argument('--ecam-memory-capture', action='store_true')
+    parser.add_argument('--dsdt-capture', action='store_true')
     args = parser.parse_args()
+    if args.dsdt_capture and not args.acpi_capture:
+        parser.error('--dsdt-capture requires --acpi-capture')
+    if args.ecam_memory_capture and not args.bootstrap_capture:
+        parser.error('--ecam-memory-capture requires --bootstrap-capture')
     if args.acpi_capture and not args.handoff_capture:
         parser.error('--acpi-capture requires --handoff-capture')
     if args.handoff_capture and not args.pci_diagnostic:
@@ -184,7 +190,14 @@ def main():
                 expected = protocol['FINAL'].encode() + b' status=FAIL reason=qotom-platform-pending\n'
             if name in ('kernel-hang', 'kernel-guard-hang'):
                 expected = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
-            deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
+            # ACPI may emit up to 196608 transport bytes at 38400 baud, 8N1
+            # (3840 bytes/s). The original 15s loader allowance alone can
+            # expire while a valid DSDT is still arriving. Keep a fixed bound
+            # and require the same complete terminal record below.
+            seconds = 90 if name == 'rtc-probe' else 15
+            if args.acpi_capture and name in ('leanos', 'normal-guard-boot'):
+                seconds += (196608 + 3839) // 3840
+            deadline = time.monotonic() + seconds
             try:
                 while time.monotonic() < deadline:
                     if log.exists() and expected in log.read_bytes():
@@ -265,12 +278,16 @@ def main():
                         raw = raw[consumed:]
                     if args.acpi_capture:
                         acpi = runpy.run_path(str(root / 'scripts/check-qotom-acpi-capture.py'))
-                        raw, metadata, tables = acpi['extract'](raw, binary)
+                        raw, metadata, tables = acpi['extract'](raw, binary, dsdt=args.dsdt_capture)
                         assert metadata is not None
                         (output / (name + '.acpi')).mkdir(exist_ok=True)
                         for filename, content in tables.items():
                             (output / (name + '.acpi') / filename).write_bytes(content)
                         (output / (name + '.acpi.json')).write_text(json.dumps(metadata, indent=2) + '\n')
+                    if args.ecam_memory_capture:
+                        memory = runpy.run_path(str(root / 'scripts/check-qotom-ecam-memory-capture.py'))
+                        raw, metadata = memory['extract'](raw, protocol)
+                        (output / (name + '.ecam-memory.json')).write_text(json.dumps(metadata, indent=2) + '\n')
                     if args.bootstrap_capture:
                         bootstrap = runpy.run_path(str(root / 'scripts/check-qotom-bootstrap-capture.py'))
                         raw, metadata = bootstrap['extract'](raw, protocol)
@@ -297,7 +314,7 @@ def main():
             results.append({'case': name, 'serial_sha256': hashlib.sha256(data).hexdigest(),
                             'request_consumed': name != 'bad-env'})
             print(name, 'PASS', flush=True)
-    report.write_text(json.dumps({'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
+    report.write_text(json.dumps({'dsdt_capture': args.dsdt_capture, 'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture, 'handoff_capture': args.handoff_capture, 'pci_diagnostic': args.pci_diagnostic,
         'usb_sha256': hashlib.sha256(args.image.read_bytes()).hexdigest(),
         'elf_sha256': digest, 'results': results}, indent=2) + '\n')
 

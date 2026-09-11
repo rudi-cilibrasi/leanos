@@ -52,7 +52,7 @@ def parse_words(line, prefix, count, field):
     return words, int(match[2])
 
 
-def classify(raw, protocol, executable):
+def classify(raw, protocol, executable, *, ecam_failure=False):
     if not raw or len(raw) > MAX_CAPTURE or not raw.endswith(b'\n'):
         raise DiagnosticError('capture length or terminator')
     if any(byte != 10 and not 32 <= byte <= 126 for byte in raw):
@@ -84,6 +84,10 @@ def classify(raw, protocol, executable):
         if claimed != readback:
             raise DiagnosticError('MSR result disagrees with generated replay')
         reason = 'qotom-platform-pending' if readback == 1 else 'j1900-msr-readback'
+        if ecam_failure and readback == 1:
+            for failure in ('qotom-ecam-arm', 'qotom-ecam-transaction'):
+                if lines[-1] == protocol['FINAL'] + ' status=FAIL reason=' + failure:
+                    reason = failure
     if lines[-1] != protocol['FINAL'] + ' status=FAIL reason=' + reason:
         raise DiagnosticError('terminal result disagrees with replay')
     return {'schema': 'leanos-j1900-diagnostic-replay-v1',

@@ -46,7 +46,13 @@ def main():
     parser.add_argument('--acpi-capture', action='store_true')
     parser.add_argument('--pci-read-trace', action='store_true')
     parser.add_argument('--bootstrap-capture', action='store_true')
+    parser.add_argument('--ecam-memory-capture', action='store_true')
+    parser.add_argument('--dsdt-capture', action='store_true')
     args = parser.parse_args()
+    if args.dsdt_capture and not args.acpi_capture:
+        parser.error('--dsdt-capture requires --acpi-capture')
+    if args.ecam_memory_capture and not args.bootstrap_capture:
+        parser.error('--ecam-memory-capture requires --bootstrap-capture')
     if args.acpi_capture and not args.handoff_capture:
         parser.error('--acpi-capture requires --handoff-capture')
     if args.handoff_capture and not args.lab_completion:
@@ -112,7 +118,7 @@ def main():
                     deadline = time.monotonic() + 30
                     while True:
                         raw = capture.read_bytes() if capture.exists() else b''
-                        if len(raw) > diagnostic['MAX_CAPTURE'] + (handoff['MAX_TRANSPORT'] if handoff else 0) + (196608 if args.acpi_capture else 0) + (512 if args.pci_read_trace else 0) + (160 if args.bootstrap_capture else 0):
+                        if len(raw) > diagnostic['MAX_CAPTURE'] + (handoff['MAX_TRANSPORT'] if handoff else 0) + (196608 if args.acpi_capture else 0) + (512 if args.pci_read_trace else 0) + (160 if args.bootstrap_capture else 0) + (256 if args.ecam_memory_capture else 0):
                             raise RuntimeError(name + ': capture exceeds bound')
                         if raw.endswith(b'\n') and protocol['FINAL'].encode() in raw:
                             break
@@ -134,7 +140,7 @@ def main():
                         payload = payload[consumed:]
                     if args.acpi_capture:
                         acpi = runpy.run_path(str(ROOT / 'scripts/check-qotom-acpi-capture.py'))
-                        payload, metadata, tables = acpi['extract'](payload, binary)
+                        payload, metadata, tables = acpi['extract'](payload, binary, dsdt=args.dsdt_capture)
                         if selected == 65536:
                             if metadata is None:
                                 raise RuntimeError('accepted CPU/MSR lacks ACPI observation before PCI')
@@ -151,6 +157,10 @@ def main():
                             verify_acpi_memory(monitor, directory, metadata, tables)
                             metadata['qmp_memory_match'] = True
                             (directory / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
+                    if args.ecam_memory_capture:
+                        memory = runpy.run_path(str(ROOT / 'scripts/check-qotom-ecam-memory-capture.py'))
+                        payload, metadata = memory['extract'](payload, protocol)
+                        (directory / 'ecam-memory.json').write_text(json.dumps(metadata, indent=2) + '\n')
                     if args.bootstrap_capture:
                         bootstrap = runpy.run_path(str(ROOT / 'scripts/check-qotom-bootstrap-capture.py'))
                         payload, metadata = bootstrap['extract'](payload, protocol)
@@ -194,7 +204,7 @@ def main():
                     process.wait(timeout=5)
         print('Qotom PCI diagnostic image:', name, 'PASS', flush=True)
     report.write_text(json.dumps({
-        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture,
+        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'dsdt_capture': args.dsdt_capture, 'ecam_memory_capture': args.ecam_memory_capture, 'bootstrap_capture': args.bootstrap_capture, 'pci_read_trace': args.pci_read_trace, 'acpi_capture': args.acpi_capture,
         'physical_reset_verified': False,
         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
         'iso_sha256': hashlib.sha256(iso.read_bytes()).hexdigest(),
