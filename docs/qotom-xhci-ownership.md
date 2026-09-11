@@ -473,5 +473,21 @@ rollback. Tests exercise all read-failure positions at the maximum list bound,
 ignored and failed writes, before/after stopped-state changes, ownership/SMI/
 resource/list drift, BME reassertion and preservation of each PCI Status bit.
 Successful callback tests do not establish a physical clear or transaction drain.
-Native write authority, capture integration and a protected boot remain to be
-added. Firmware/AP exclusion and system-wide DMA quarantine remain separate work.
+Capture integration and a protected boot remain to be added. Firmware/AP
+exclusion and system-wide DMA quarantine remain separate work.
+
+## Consumed xHCI Command write window
+
+The native BME window admits only a 16-bit value `0x0002` at 00:14.0 offset 4.
+It maps the corresponding ECAM page with leaf `0x80000000e00a001b`, consumes
+its authority on every request, and restores the prior mapping with invalidation
+and control checks before returning. Failed writes may have effects; interference
+is terminal. No adjacent Status write or general configuration write is admitted.
+
+Arming requires the exact xHCI PCI identity, paired BAR, Command `0x0006`, seven
+capability words, SMI result (before `0x2000`, after 0) and stopped samples
+(status 1, command 0, status 1). It binds firmware/root views, rejects ECAM and
+64-KiB resource aliases, and revokes all authority on failed rearming. Tests cover
+every alternative 16-bit value, request coordinates, mapping interference,
+all alias slots/resource pages and captured-state mutations. Arming performs no
+device access. Native collector/capture integration remains outstanding.
