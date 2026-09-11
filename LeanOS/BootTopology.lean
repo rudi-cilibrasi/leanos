@@ -415,6 +415,28 @@ def decodeMadtBytesAux : Nat → List UInt8 → Except DecodeError (List RawMadt
             pure (.topologyIrrelevant (UInt8.ofNat kind) length :: rest)
         | none => throw .unsupportedRecordKind
 
+/-- Decode one complete local-APIC record with arbitrary payload bytes and
+remaining records. This exposes the reference decoder's exact field semantics. -/
+theorem decode_local_apic_record_cons
+    (fuel : Nat) (uid id flag0 flag1 flag2 flag3 : UInt8)
+    (rest : List UInt8) (records : List RawMadtRecord)
+    (decoded : decodeMadtBytesAux fuel rest = .ok records) :
+    decodeMadtBytesAux (fuel + 1)
+      ([0, 8, uid, id, flag0, flag1, flag2, flag3] ++ rest) =
+      .ok (.localApic 8 (UInt32.ofNat id.toNat)
+        ((flag0.toNat + flag1.toNat * 256 + flag2.toNat * 65536 +
+          flag3.toNat * 16777216) % 2 == 1)
+        (((flag0.toNat + flag1.toNat * 256 + flag2.toNat * 65536 +
+          flag3.toNat * 16777216) / 2) % 2 == 1) :: records) := by
+  have bind_ok {α β : Type} (a : α) (f : α → Except DecodeError β) :
+      (Except.ok a >>= f) = f a := rfl
+  have map_ok {α β : Type} (a : α) (f : α → β) :
+      f <$> (Except.ok a : Except DecodeError α) = .ok (f a) := rfl
+  have enough : ¬rest.length + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 < 8 := by omega
+  rw [decodeMadtBytesAux]
+  · simp [requireByte, byteAt, localApicRecordLength, decoded, bind_ok, map_ok, enough]
+  · simp
+
 def decodeMadtBytes (bytes : List UInt8) : Except DecodeError (List RawMadtRecord) :=
   decodeMadtBytesAux bytes.length bytes
 

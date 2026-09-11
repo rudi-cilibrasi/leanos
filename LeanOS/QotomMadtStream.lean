@@ -168,6 +168,37 @@ def byteStepQuery
   else if word == 15 then byteValue
   else 0
 
+/-- The APIC-ID byte is retained exactly, rather than supplied from an
+expected inventory value, on every successful local-APIC transition. -/
+theorem processor_id_byte_retained
+    (currentOffset apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+      tableLength executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset 3 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 2 = 0) :
+    byteStepQuery currentOffset 3 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 7 = byteValue := by
+  simp [byteStepQuery] at accepted ⊢
+  repeat' (split at accepted <;> (try simp_all))
+
+/-- Each nonterminal flags byte contributes at its little-endian position
+while preserving the supplied accumulator. Whole-stream provenance additionally
+requires that accumulator to come from the preceding successful transition. -/
+theorem processor_flags_byte_accumulated
+    (currentOffset recordOffset apicId flags enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue : UInt64)
+    (position : recordOffset = 4 ∨ recordOffset = 5 ∨ recordOffset = 6)
+    (accepted : byteStepQuery currentOffset recordOffset 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 2 = 0) :
+    byteStepQuery currentOffset recordOffset 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 8 = flags ||| (byteValue <<< ((recordOffset - 4) * 8)) := by
+  rcases position with h | h | h <;> subst recordOffset <;>
+    simp [byteStepQuery] at accepted ⊢
+  all_goals repeat' (split at accepted <;> (try simp_all))
+
 /-- The final byte of an eight-byte local-APIC record can report no error
 only when its reconstructed flags and APIC ID pass the inventory guard. -/
 theorem completed_processor_requires_guard

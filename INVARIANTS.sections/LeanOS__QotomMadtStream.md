@@ -17,3 +17,6 @@ These checks describe the values accepted by the scalar topology stream and its 
 
 - `completed_processor_requires_guard` — An error-free final byte of an eight-byte local-APIC record establishes the actual processor guard and a clear online-capable flag in the reconstructed flags.
 - `completed_processor_advances_count` — That successful completed record advances the processor count by exactly one, so disabled records cannot silently keep the old position.
+
+- `processor_id_byte_retained` — A successful local-APIC ID-byte transition stores the supplied byte exactly.
+- `processor_flags_byte_accumulated` — A successful nonterminal flags-byte transition ORs the byte into its little-endian position in the supplied accumulator.

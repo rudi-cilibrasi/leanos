@@ -44,8 +44,11 @@ decoded records satisfying the scalar guard at every index form the exact typed
 inventory. `completed_processor_requires_guard` establishes those guard and
 online-flag premises at a successful final byte of a local-APIC record, and
 `completed_processor_advances_count` proves that the count advances by one.
-The full proof still must connect accumulated record fields to preceding
-bytes and preserve the initialized state across the entire table. Given an existing topology witness and complete terminal
+The stream also proves retention of the actual ID byte and accumulation of
+each nonterminal flags byte. The reference decoder has a matching single-record
+lemma, `BootTopology.decode_local_apic_record_cons`, for arbitrary payload
+bytes and a decoded tail. The full proof still must compose those field
+transitions and preserve the initialized state across the entire table. Given an existing topology witness and complete terminal
 shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
 to scalar arguments preserves success of the existing typed binder. This does
 not construct the topology witness from the byte stream. None of these

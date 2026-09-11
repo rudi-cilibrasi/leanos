@@ -121,3 +121,5 @@ At startup, firmware describes the machine's processors in a family of tables ca
 - `machine_topology_byte_copy_count_overflow_rejected` — A worked check: supplying more table byte copies than the 256-entry cap is likewise refused.
 - `machine_topology_unknown_root_kind_rejected` — A worked check: an unrecognized selected-root kind is refused before any table selection happens.
 - `repository_machine_topology_forged_executing_apic_rejected` — A worked check: the same reference data is rejected by the policy when the claimed executing processor's identity is 1 instead of the admitted 0.
+
+- `decode_local_apic_record_cons` — A complete local-APIC record with arbitrary payload bytes decodes to its exact ID and little-endian flags followed by the successfully decoded remaining records.
