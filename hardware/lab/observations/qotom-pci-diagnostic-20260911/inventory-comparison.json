@@ -1,0 +1,164 @@
+{
+  "before_inventory_sha256": "20730fcf1a4ebd8ab2058865dba0c00bb2cd7596da9f112cf42db854c3cacd50",
+  "after_diagnostic_sha256": "8a3f24e8cfc61acc341eee55fc94b15b244ff44952d49b01f5771907ba57e5b9",
+  "added": [
+    {
+      "bdf": "00:1d.0",
+      "identity": "0f348086",
+      "class": "0c0320"
+    }
+  ],
+  "removed": [],
+  "register_changes": [
+    {
+      "bdf": "00:02.0",
+      "dwords": [
+        {
+          "offset": 4,
+          "before": "00100407",
+          "after": "00100007"
+        },
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    },
+    {
+      "bdf": "00:13.0",
+      "dwords": [
+        {
+          "offset": 4,
+          "before": "02b00407",
+          "after": "02b00007"
+        },
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    },
+    {
+      "bdf": "00:14.0",
+      "dwords": [
+        {
+          "offset": 4,
+          "before": "02900406",
+          "after": "02900006"
+        },
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    },
+    {
+      "bdf": "00:1b.0",
+      "dwords": [
+        {
+          "offset": 4,
+          "before": "00100406",
+          "after": "00100006"
+        },
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    },
+    {
+      "bdf": "00:1c.0",
+      "dwords": [
+        {
+          "offset": 60,
+          "before": "001001ff",
+          "after": "00100105"
+        }
+      ]
+    },
+    {
+      "bdf": "00:1c.1",
+      "dwords": [
+        {
+          "offset": 60,
+          "before": "001002ff",
+          "after": "00100205"
+        }
+      ]
+    },
+    {
+      "bdf": "00:1c.2",
+      "dwords": [
+        {
+          "offset": 60,
+          "before": "001003ff",
+          "after": "00100305"
+        }
+      ]
+    },
+    {
+      "bdf": "00:1c.3",
+      "dwords": [
+        {
+          "offset": 60,
+          "before": "001004ff",
+          "after": "00100405"
+        }
+      ]
+    },
+    {
+      "bdf": "00:1f.3",
+      "dwords": [
+        {
+          "offset": 60,
+          "before": "00000212",
+          "after": "00000205"
+        }
+      ]
+    },
+    {
+      "bdf": "01:00.0",
+      "dwords": [
+        {
+          "offset": 4,
+          "before": "00100407",
+          "after": "00100007"
+        },
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    },
+    {
+      "bdf": "02:00.0",
+      "dwords": [
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    },
+    {
+      "bdf": "03:00.0",
+      "dwords": [
+        {
+          "offset": 4,
+          "before": "00100407",
+          "after": "00100007"
+        },
+        {
+          "offset": 60,
+          "before": "000001ff",
+          "after": "00000105"
+        }
+      ]
+    }
+  ]
+}

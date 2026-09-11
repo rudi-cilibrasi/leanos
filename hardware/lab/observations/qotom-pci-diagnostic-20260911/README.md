@@ -48,3 +48,16 @@ Serial connection: mgnuc FTDI FT232R BG03A20M, null modem, Qotom COM1,
 | 01:00.0 | 10ec:8168 | 020000 | 0007 |
 | 02:00.0 | 14e4:4353 | 028000 | 0006 |
 | 03:00.0 | 10ec:8168 | 020000 | 0007 |
+
+## Difference from the earlier inventory
+
+The extra function relative to the 2026-09-10 retained FreeBSD inventory is
+`00:1d.0`, `8086:0f34`, class `0c0320` (EHCI USB controller). The Broadcom
+`02:00.0` endpoint was already present. No earlier BDF is missing. The two
+captures also differ in register state; inventory-comparison.json records
+all differing header dwords. These observations do not identify which BIOS
+setting or software stage caused the differences.
+
+The additional bus-master-capable USB controller must be included in the
+reviewed device/quarantine contract before admission. Increasing only the
+accepted function count would not establish that contract.

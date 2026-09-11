@@ -1,7 +1,7 @@
 {
   "schema": "leanos-physical-capture-files-v1",
   "files": {
-    "README.md": "7a68ce98505dd2c41f6d37ec341010748e8353d6160f47459cc9ac29ce6672ed",
+    "README.md": "9612cc092820d50ad95b02364a8ac72eeafce02a7bc0065fc0b73bc8f4249da3",
     "build-manifest.json": "577bdd56c240dc6ef9041b65f8bb503ba3ec60c22eca5d4cc1ad9725ad54fbe8",
     "cycle-1/diagnostic.raw": "8a3f24e8cfc61acc341eee55fc94b15b244ff44952d49b01f5771907ba57e5b9",
     "cycle-1/events.jsonl": "4bb53fbec954a2a7e34b85d560b2e026147ddf5f3a13845d3aa7937a80793b98",
@@ -12,6 +12,7 @@
     "cycle-1/verification.txt": "29d533c0b23a04fc2620f53d2ca9af5884895ae61f4013d7a7b3c6a0c2aeffd8",
     "diagnostic-protocol.tsv": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
     "diagnostic-replay-inputs.json": "b8cf90dee045b5e6dcaf81a60b257ff77cd992131bcfa8287c66b71c1e9e8135",
+    "inventory-comparison.json": "2f5e0a979a52f7d5c411af913fe39048e4a502659e1a08e5d4baf80d3925427c",
     "request.env": "671a2c60e113ed92b3dd07cee0fd616fc1143f73d6b40d5d208179688cade177"
   }
 }
