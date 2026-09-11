@@ -58,6 +58,11 @@ payload; the actual failure terminal survives prefix replay. Synthetic tests
 exercise framing, reachable failures, malformed advertised flags and raw payload
 combinations, plus protected recovery replay for success and final-check failure.
 
-Native image validation and the physical capture are still pending.
+The [protected physical capture](../hardware/lab/observations/qotom-native-pcie-device-20260911/README.md)
+completed all seven PCIe observations and nine NOT_PRESENT results, then
+recovered FreeBSD automatically. None of the seven functions advertises PCIe
+FLR; all sampled Transactions Pending bits were clear. These observations do
+not prove transaction drain or authorize a reset. The exact raw values and
+build/recovery provenance are retained and replayed by a regression test.
 This helper supports the remaining device-control work for #330 and #291; it
 neither closes those issues nor changes production boot admission.

@@ -49,6 +49,46 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_retained_pcie_device_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-pcie-device-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True)
+        self.assertEqual(result['pcie_device'],expected['pcie_device'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],expected['diagnostic']['terminal_reason'])
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
+        functions = result['pcie_device']['functions']
+        self.assertEqual(len(functions),16)
+        expected_payloads = {
+            6:(64,0x8000,0x110000),7:(64,0x8000,0x110000),
+            8:(64,0x8000,0x110000),9:(64,0x8000,0x100000),
+            13:(112,0x5908cc0,0x192000),14:(208,0x5908fa0,0x190000),
+            15:(112,0x5908cc0,0x192000)}
+        for function in functions:
+            index=function['index']
+            if index in expected_payloads:
+                self.assertEqual(function['status'],0)
+                self.assertEqual(tuple(function[k] for k in
+                    ('offset','device_capabilities','device_control_status')),expected_payloads[index])
+                self.assertFalse(function['device_capabilities'] & (1<<28))
+                self.assertFalse(function['device_control_status'] & (1<<21))
+            else:
+                self.assertEqual(function['status'],1)
+        self.assertFalse(result['pcie_device']['dma_quarantine_established'])
+
     def test_pcie_device_protected_projection(self):
         fixture = runpy.run_path(str(ROOT / 'scripts/test-qotom-pcie-device-capture.py'))
         capture = fixture['CAPTURE']
