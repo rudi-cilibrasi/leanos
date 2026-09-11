@@ -27,10 +27,10 @@ for row in rows:
 lines.append('}};')
 Path(sys.argv[1]).write_text('\n'.join(lines) + '\n')
 PY
-"$leanos_host_cc" -O2 -Wall -Wextra -Werror -I"$build" \
+"$leanos_host_cc" -O2 -Wall -Wextra -Werror -I"$build" -Ibuild/boundary-abi \
   tests/qotom-native-snapshot-sanitizers.c "$build/retained.o" -o "$build/snapshot-ordinary"
 "$build/snapshot-ordinary" > "$build/snapshot-ordinary.log"
-"$leanos_host_cc" "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror -I"$build" \
+"$leanos_host_cc" "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror -I"$build" -Ibuild/boundary-abi \
   -c tests/qotom-native-snapshot-sanitizers.c -o "$build/snapshot-sanitized.o"
 leanos_require_sanitized_object "$build/snapshot-sanitized.o"
 "$leanos_host_cc" "${leanos_host_sanitizer_flags[@]}" \
@@ -49,7 +49,7 @@ if source.count(needle) != 1:
 Path(sys.argv[1]).write_text(source.replace(needle, 'i < 17; ++i'))
 PY
 "$leanos_host_cc" "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
-  -Iboot -I"$build" -include "$build/overrun.h" \
+  -Iboot -I"$build" -Ibuild/boundary-abi -include "$build/overrun.h" \
   tests/qotom-native-snapshot-sanitizers.c "$build/retained.o" -o "$build/snapshot-overrun"
 ulimit -c 0
 if leanos_run_sanitized "$build/snapshot-overrun" > "$build/snapshot-overrun.log" 2>&1; then

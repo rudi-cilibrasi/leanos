@@ -10,3 +10,4 @@ The twelve-field representation includes BDF, identity, multifunction, layout an
 - `matches_row` — Successful scalar comparison binds all supplied fields to the baseline slot.
 - `matches_entry` — Matching fields that encode a typed entry establish that entry at the specified index.
 - `checkHeader_binds_raw` — Successful direct scalar validation decodes the supplied raw header and binds its projection to the exact native slot.
+- `exported_check_iff` — The stable UInt64 export returns one exactly when the proved raw-header checker succeeds; zero rejects.

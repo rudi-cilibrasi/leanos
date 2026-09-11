@@ -14799,6 +14799,12 @@
     },
     {
       "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.exported_check_iff",
+      "display": "exported_check_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
       "qualified": "LeanOS.QotomNativePCIFields.matches_entry",
       "display": "matches_entry",
       "kind": "theorem"

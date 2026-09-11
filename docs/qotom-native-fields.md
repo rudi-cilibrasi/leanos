@@ -19,8 +19,13 @@ hash-bound native ECAM capture and tests every field, every non-dword position,
 wrong inventory positions and invalid indices/selectors: 1,464 cases. The native
 inventory hosted wrapper invokes this test. GCC and pinned Clang 18 are tested.
 
-The functions are internal, without a new exported ABI. The production kernel
-has not selected them. The C loop in `boot/qotom-native-inventory.h` requires a completed scan,
+`leanos_qotom_native_pci_header_check` is the stable twenty-argument UInt64
+boundary. Its UInt64 result is one for a matched raw header and zero for
+rejection; `exported_check_iff` ties that result to the proved Boolean checker.
+The prototype comes from the generated boundary inventory. The native hosted
+harness registers and exercises this export along with both array checkers,
+including fully instrumented generated-C ASan/UBSan parity. The production
+kernel has not selected it. The C loop in `boot/qotom-native-inventory.h` requires a completed scan,
 exactly sixteen entries and success at every canonical index. Its snapshot and
 checker binding must remain private and immutable throughout execution.
 `QotomNativePCISnapshot.complete_snapshot` proves that this exact loop contract

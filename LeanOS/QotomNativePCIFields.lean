@@ -364,4 +364,14 @@ theorem checkHeader_binds_raw (index bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9
     simp only [PCIHeaderObservation.Scalar.query_eq_observe]
     exact (observed_entry_words _ header decoded).symm
 
+/-- Stable freestanding boundary: one means this raw header matches its native
+inventory slot; zero rejects. It grants no platform or DMA authority. -/
+@[export leanos_qotom_native_pci_header_check]
+def exportedCheckHeader (index bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) : UInt64 :=
+  if checkHeader index bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 then 1 else 0
+
+theorem exported_check_iff (index bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) :
+    exportedCheckHeader index bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 = 1 ↔ checkHeader index bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 = true := by
+  simp [exportedCheckHeader]
+
 end LeanOS.QotomNativePCIFields

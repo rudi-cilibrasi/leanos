@@ -1,14 +1,11 @@
 #include "../boot/qotom-native-inventory.h"
-extern uint8_t lp_leanos_LeanOS_QotomNativePCIFields_checkHeader(
-    uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+#include "boundary-abi.h"
 
 uint64_t qotom_native_snapshot_replay(uint32_t status,
     const struct pci_enumeration_snapshot *snapshot) {
     struct qotom_native_inventory_result r = qotom_check_native_inventory(
         (enum pci_enumeration_status)status, snapshot,
-        lp_leanos_LeanOS_QotomNativePCIFields_checkHeader);
+        leanos_qotom_native_pci_header_check);
     return ((uint64_t)r.status << 32) | r.index;
 }
 

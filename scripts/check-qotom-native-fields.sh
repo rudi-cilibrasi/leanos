@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 build=build/qotom-native-fields
 mkdir -p "$build"
 lake build LeanOS.QotomNativePCISnapshot
+./scripts/generate-oracle.sh build/boundary-abi
 "${CC:-gcc}" -O2 -ffreestanding -fno-stack-protector -fPIC -mno-red-zone \
   -ffunction-sections -fdata-sections -I"$(lean --print-prefix)/include" \
   -c .lake/build/ir/LeanOS/QotomNativePCIFields.c -o "$build/fields.o"
@@ -11,7 +12,7 @@ lake build LeanOS.QotomNativePCISnapshot
   -ffunction-sections -fdata-sections -I"$(lean --print-prefix)/include" \
   -c .lake/build/ir/LeanOS/PCIHeaderObservation.c -o "$build/header.o"
 prefix=lp_leanos_LeanOS_QotomNativePCIFields
-ld -r --gc-sections -u "${prefix}_expected" -u "${prefix}_matchesFields" -u "${prefix}_checkHeader" \
+ld -r --gc-sections -u "${prefix}_expected" -u "${prefix}_matchesFields" -u "${prefix}_checkHeader" -u leanos_qotom_native_pci_header_check \
   "$build/fields.o" "$build/header.o" -o "$build/retained.o"
 objcopy --strip-unneeded "$build/retained.o"
 test -z "$(nm -u "$build/retained.o")"
@@ -23,6 +24,7 @@ import sys
 symbols = [line.split() for line in Path(sys.argv[1]).read_text().splitlines()]
 expected = {'lp_leanos_LeanOS_QotomNativePCIFields_' + name
             for name in ('expected', 'matchesFields', 'checkHeader')}
+expected.add('leanos_qotom_native_pci_header_check')
 expected |= {'lp_leanos_LeanOS_PCIHeaderObservation_Scalar_' + name
              for name in ('status', 'query')}
 if any(len(s) != 3 or s[1] not in ('T', 'r', 'R') for s in symbols):
@@ -33,7 +35,7 @@ CHECK
 "${CC:-gcc}" -shared -nostdlib -Wl,--no-undefined "$build/retained.o" -o "$build/fields.so"
 python3 scripts/test-qotom-native-fields.py "$build/fields.so"
 "${CC:-gcc}" -O2 -Wall -Wextra -Werror -ffreestanding -fno-stack-protector -fPIC -mno-red-zone \
-  -c tests/qotom-native-snapshot.c -o "$build/snapshot.o"
+  -Ibuild/boundary-abi -c tests/qotom-native-snapshot.c -o "$build/snapshot.o"
 "${CC:-gcc}" -shared -nostdlib -Wl,--no-undefined "$build/snapshot.o" \
   "$build/retained.o" -o "$build/snapshot.so"
 python3 scripts/test-qotom-native-snapshot.py "$build/snapshot.so"
