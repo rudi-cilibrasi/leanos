@@ -10,7 +10,7 @@ gate compares exact table bytes and addresses, while handoff provenance is
 validated independently by the ACPI transport decoder. Component descriptions
 and their narrower validation scopes follow.
 
-# Qotom ECAM reader candidate
+## Qotom ECAM reader candidate
 
 `boot/qotom-ecam-read.h` calculates aligned conventional configuration dword
 addresses only for the captured allocation: segment 0, base 0xe0000000, buses
