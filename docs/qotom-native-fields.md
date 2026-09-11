@@ -20,8 +20,18 @@ wrong inventory positions and invalid indices/selectors: 1,464 cases. The native
 inventory hosted wrapper invokes this test. GCC and pinned Clang 18 are tested.
 
 The functions are internal, without a new exported ABI. The production kernel
-has not selected them. A complete snapshot loop must check exactly sixteen
-entries and preserve the same private raw inputs across all calls; the
-whole-loop proof and kernel integration remain pending. Successful inventory
+has not selected them. The C loop in `boot/qotom-native-inventory.h` requires a completed scan,
+exactly sixteen entries and success at every canonical index. Its snapshot and
+checker binding must remain private and immutable throughout execution.
+`QotomNativePCISnapshot.complete_snapshot` proves that this exact loop contract
+produces a native witness preserving all supplied raw headers. The proof model's
+lists and records are not runtime transport. Kernel integration remains pending. Successful inventory
 comparison still establishes no Command policy, USB/TXE quiescence or DMA
 containment and grants no permission to enter CPL3.
+
+The test harness binds the C loop to the actual generated scalar checker and
+also exercises the existing complete-segment collector. Snapshot tests cover
+count/status/null rejection, every function's BDF/identity/layout changes,
+bridge routing changes, duplicate rows, a missing function and failure at the
+last scanned function. Source bytes remain unchanged. These are hosted reads
+from the retained capture, not another physical boot.

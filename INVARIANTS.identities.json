@@ -14852,6 +14852,18 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomNativePCISnapshot.lean",
+      "qualified": "LeanOS.QotomNativePCISnapshot.Input.check_binds",
+      "display": "Input.check_binds",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCISnapshot.lean",
+      "qualified": "LeanOS.QotomNativePCISnapshot.complete_snapshot",
+      "display": "complete_snapshot",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIInventory.lean",
       "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",

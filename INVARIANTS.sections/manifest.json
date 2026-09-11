@@ -67,6 +67,7 @@
     "LeanOS/QotomMadtStreamRun.lean",
     "LeanOS/QotomNativePCIFields.lean",
     "LeanOS/QotomNativePCIInventory.lean",
+    "LeanOS/QotomNativePCISnapshot.lean",
     "LeanOS/QotomPCIInventory.lean",
     "LeanOS/QotomPCIQuarantineObservation.lean",
     "LeanOS/QotomPCIQuarantineTransition.lean",

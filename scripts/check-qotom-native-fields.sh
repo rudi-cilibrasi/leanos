@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 build=build/qotom-native-fields
 mkdir -p "$build"
-lake build LeanOS.QotomNativePCIFields
+lake build LeanOS.QotomNativePCISnapshot
 "${CC:-gcc}" -O2 -ffreestanding -fno-stack-protector -fPIC -mno-red-zone \
   -ffunction-sections -fdata-sections -I"$(lean --print-prefix)/include" \
   -c .lake/build/ir/LeanOS/QotomNativePCIFields.c -o "$build/fields.o"
@@ -32,3 +32,8 @@ if {s[2] for s in symbols if s[1] == 'T'} != expected:
 CHECK
 "${CC:-gcc}" -shared -nostdlib -Wl,--no-undefined "$build/retained.o" -o "$build/fields.so"
 python3 scripts/test-qotom-native-fields.py "$build/fields.so"
+"${CC:-gcc}" -O2 -Wall -Wextra -Werror -ffreestanding -fno-stack-protector -fPIC -mno-red-zone \
+  -c tests/qotom-native-snapshot.c -o "$build/snapshot.o"
+"${CC:-gcc}" -shared -nostdlib -Wl,--no-undefined "$build/snapshot.o" \
+  "$build/retained.o" -o "$build/snapshot.so"
+python3 scripts/test-qotom-native-snapshot.py "$build/snapshot.so"
