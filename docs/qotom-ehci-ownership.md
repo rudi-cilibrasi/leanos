@@ -135,3 +135,115 @@ success, corrupt records and all publishable failure statuses. The [physical leg
 retained one header at `0x68`, raw `0x00010001`, and control/status
 `0x00082005`. Its complete protected replay matches the native inventory and
 legacy metadata. FreeBSD recovered automatically; ownership remains unresolved.
+
+## Bounded semaphore request candidate
+
+`boot/qotom-ehci-handoff.h` adds a callback-based request sequence, without
+native hardware wiring. It refreshes the capability registers and complete
+extended list and requires exact agreement with the preceding observation,
+including control/status. It accepts only BIOS-owned, OS-clear legacy support
+with zero reserved semaphore bits. The captured `0x00010001` satisfies that
+initial semaphore shape; it does not establish firmware cooperation.
+
+The only write callback receives one byte, value `1`, at the validated legacy
+offset plus three, on `00:1d.0`. It requests OS ownership without writing the
+BIOS byte or the control/status dword. This follows the request mechanism in
+the linked Linux implementation. Unlike its timeout fallback, this candidate
+never forcibly clears the BIOS semaphore. A failed callback may have changed
+hardware; the diagnostic result records that a write was attempted.
+
+After each requested ten-millisecond delay, it reads legacy support, requiring
+the OS bit to remain set and all non-semaphore bits to remain unchanged.
+It permits at most 100 polls. BIOS release triggers another full capability
+and extended-list refresh; the final support must still show OS ownership and
+BIOS release. Final control/status is retained without requiring equality with
+its pre-request value, since firmware may change it during handoff. Timeout,
+read/delay failure, lost OS request, changed structure or failed final refresh
+rejects the sequence. No rollback or further write follows rejection.
+
+The bound is 214 reads, one byte write and 100 delay calls requesting 1000 ms
+in total. Actual elapsed-time bounds depend on bounded callbacks and firmware
+execution. The caller must supply real delays, stable PCI resources, serialized
+mapping transactions and immutable nonaliasing inputs. An observed semaphore
+release does not itself prove firmware exclusion, controller halt, outstanding
+transaction drain or DMA containment.
+
+Synthetic tests cover release at every poll, timeout, every poll read/delay
+failure, every refresh read failure, changed support bits, BIOS reassertion
+and exact write width/address/value. Native write-aperture authority, a checked
+timing backend, protected hardware execution, SMI policy and controller stop
+remain to be integrated. No physical handoff was attempted by this candidate.
+
+## Single-byte write aperture candidate
+
+`hardware/lab/qotom-ehci-semaphore.h` supplies a separate transaction type for
+one OS-semaphore request. It accepts only BDF `00:1d.0`, offset `0x6b`, value
+`1`, and consumes its armed state before checking the request. It temporarily
+maps ECAM page `0xe00e8000` supervisor-only, writable, NX and UC, then invokes
+a trusted byte-store callback at aperture offset `0x6b`. Hardware Accessed and
+Dirty changes are permitted. The original leaf is restored and invalidated
+before post-checking controls and returning. Mapping or control interference
+terminates after the restoration attempt. A failed store can still have affected
+the device; neither rejection nor mapping restoration implies rollback.
+
+`qotom-ehci-semaphore-arm.h` binds authorization to the exact captured identity,
+BAR, three capability dwords and one-entry legacy list/control observation.
+It checks the firmware fixture, root/ancestors, aperture ownership and absence
+of ECAM/EHCI aliases. It performs no device access and clears old authority on
+rejection. The handoff collector must refresh the hardware binding before using
+this authorization; immutable views, serialized callbacks and firmware/AP
+exclusion remain caller obligations.
+
+Ordinary and sanitizer transaction tests check every byte value and selector,
+a second request after consumption, failed stores, mapping restoration and
+terminal interference. Arm tests reject all 4096 ECAM and EHCI alias slots and
+mutations to the captured legacy/capability fields. Native store/timing wiring
+and the protected physical handoff capture remain outstanding.
+
+## Checked ten-millisecond delay
+
+`qotom-pm-delay.h` binds the pinned FADT's 24-bit timer at I/O port `0x408`
+and its 32-bit access format, then rechecks LPC identity, Command `0x0007`
+and ACPI-base decode `0x403`. It performs no timer read while arming and
+revokes prior authority if the binding fails. Native resource stability and
+firmware exclusion remain assumptions.
+
+The [ACPI timer specification](https://uefi.org/specs/ACPI/6.5/04_ACPI_Hardware_Specification.html)
+defines a 3,579,545-Hz free-running counter. The helper accepts only the
+handoff's ten-millisecond delay. It requires 35,797 elapsed ticks: the rounded-up
+interval plus one tick to cover unknown phase at the initial sample. It allows
+24-bit wraparound, rejects upper bits, backward elapsed samples and differences
+of half a cycle or more, and caps each delay at one million reads including
+the initial sample. A read failure or exhausted bound revokes the context.
+
+The arithmetic assumes a continuous standards-compliant clock and bounded
+callbacks. It cannot detect whole counter cycles hidden between samples or
+prove a wall-time upper bound against arbitrary firmware pauses. No timer or
+event register is written. Tests cover the tick threshold, wraparound, stopped
+and backward clocks, read failures and failed LPC binding. Native I/O callback
+wiring and the protected handoff experiment remain outstanding.
+
+## Opt-in native handoff experiment
+
+The builder's `--ehci-handoff` requires `--ehci-legacy` and creates the separate
+`build/qotom-handoff-lab` image. After retaining the complete initial legacy
+observation, the native helper arms the reader, firmware-bound PM delay and
+single-byte writer. It invokes the bounded request and revokes all four
+contexts before emitting `EHCI-HANDOFF`. Failed local arming has distinct
+statuses 11–13; request failures retain their diagnostic fields and stop at
+`qotom-ehci-handoff`. A successful observation still reaches
+`qotom-platform-pending`. No SMI change or controller stop is added.
+
+The runner's matching option fingerprints the handoff decoder before arming
+and checks it again afterward. The decoder requires the preceding complete
+legacy/capability observations, exact writer binding where the request was
+reached, bounded poll counts and consistent diagnostic fields/terminal. It
+retains `ehci-handoff.json`. Hardware operations are not independently replayed;
+the preceding inventory remains subject to generated replay. Synthetic protected
+capture tests exercise success, failures, malformed framing and contradictory
+attempt/poll/semaphore fields. The [physical handoff capture](../hardware/lab/observations/qotom-native-ehci-handoff-20260911/README.md)
+reported release at the first poll and passed final refresh: support `0x01000001`,
+control/status `0x2000`. The full protected replay agrees, and FreeBSD recovered
+automatically with the one-shot request consumed. This is a semaphore observation;
+controller shutdown, SMI policy, outstanding transactions and DMA containment
+remain unresolved.

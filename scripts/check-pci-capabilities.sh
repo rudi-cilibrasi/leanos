@@ -37,7 +37,7 @@ leanos_run_sanitized "$build/af-lab-sanitized"
 leanos_run_sanitized "$build/ehci-sanitized"
 
 python3 scripts/generate-qotom-ecam-firmware.py "$build/qotom-ecam-firmware-inputs.h"
-for test in qotom-ehci-window qotom-ehci-arm; do
+for test in qotom-ehci-window qotom-ehci-arm qotom-ehci-semaphore qotom-ehci-semaphore-arm qotom-pm-delay; do
   "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -Iboot -Ihardware/lab -I"$build" "tests/$test.c" -o "$build/$test"
   "$build/$test"
   "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
@@ -50,3 +50,9 @@ done
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ehci-legacy.c -o "$build/ehci-legacy-sanitized"
 leanos_run_sanitized "$build/ehci-legacy-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ehci-handoff.c -o "$build/ehci-handoff"
+"$build/ehci-handoff"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ehci-handoff.c -o "$build/ehci-handoff-sanitized"
+leanos_run_sanitized "$build/ehci-handoff-sanitized"

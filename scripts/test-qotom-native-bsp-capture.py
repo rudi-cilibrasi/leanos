@@ -239,6 +239,27 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['ehci_legacy']['ownership_established'])
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_retained_handoff_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-handoff-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True)
+        self.assertEqual(result['ehci_handoff'],expected['ehci_handoff'])
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
     def test_legacy_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
@@ -272,6 +293,44 @@ class Capture(unittest.TestCase):
             result = check(failed,P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-legacy\n')
             self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-legacy')
             with self.assertRaises(ValueError): check(failed)
+
+    def test_handoff_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-legacy-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':35,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True)
+        def record(status,attempted,polls,support,control):
+            return f'LEANOS-LAB/1 EHCI-HANDOFF profile=qotom-handoff-v1 index=10 status={status} attempted={attempted} polls={polls} support={support} control={control}\n'.encode()
+        success = record(0,1,1,0x1000001,0)
+        result = check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('ehci_handoff_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['ehci_handoff']['firmware_exclusion_established'])
+        failures = [(2,0,0,0,0),(3,0,0,0,0),(5,1,0,0x10001,0),
+            (6,1,0,0x10001,0),(6,1,99,0x1010001,0),
+            (7,1,1,0x10001,0),(7,1,100,0x1010001,0),
+            (8,1,1,0x10001,0),(9,1,100,0x1010001,0),
+            (10,1,1,0x1000001,0),(10,1,1,0x1010001,0),
+            (11,0,0,0,0),(12,0,0,0,0),(13,0,0,0,0)]
+        for values in failures:
+            result = check(record(*values),P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-handoff\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-handoff')
+            with self.assertRaises(ValueError): check(record(*values))
+        for changed in [b'',success+success,success.replace(b'attempted=1',b'attempted=0'),
+                success.replace(b'polls=1',b'polls=0'),success.replace(b'polls=1',b'polls=101'),
+                success.replace(b'status=0',b'status=00'),record(0,1,1,0x1010001,0),
+                record(0,1,1,0x1000001,0xffffffff),record(1,0,0,0,0),record(4,0,0,0,0)]:
+            with self.assertRaises(ValueError): check(changed)
 
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
