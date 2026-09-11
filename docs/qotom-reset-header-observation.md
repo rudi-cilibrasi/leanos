@@ -58,4 +58,7 @@ The runner's matching flag fingerprints the decoder and retains
 preceding capability records; failed refresh/read outcomes remain reported
 observations, not independently replayed hardware results. Synthetic protected
 capture tests cover success, missing/malformed records, and a failed refresh.
-A physical AF control/status capture remains outstanding.
+The [physical AF capture](../hardware/lab/observations/qotom-native-af-20260911/README.md)
+returned EHCI raw control/status zero and no AF structure on the other 15
+functions. Its protected boot recovered to FreeBSD automatically. This adds
+one live status sample; it does not establish stopped DMA or a drain contract.
