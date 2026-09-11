@@ -60,11 +60,44 @@ or executing IDs, a clear BSP flag, disabled APIC, x2APIC mode, changed APIC
 base, reserved bits, duplicate/missing CPUs and root/MADT checksum errors.
 Original bytes are preserved; only named negative-case fields are mutated.
 
-This is hosted Lean candidate validation. No independent generated-C binding
-ABI or production-kernel consumer is added here. Register read fidelity and
+The candidate also has a generated-C replay boundary described below. No
+production-kernel consumer is added here. Register read fidelity and
 same-CPU temporal binding remain caller obligations; the captured lab runner
 supplies evidence for one boot, not a general hardware proof. The BSP flag
 also cannot establish the state of the other processors.
+
+## Generated-C bootstrap boundary
+
+`LeanOS.QotomBootstrapABI.query` / `leanos_qotom_bootstrap_query` takes the
+actual handoff bytes, root address/bytes, ordered table addresses/bytes,
+executing ID and bootstrap scalars. The existing captured-root adapter checks
+its bounds and decoder envelope first. Its single-core policy result does not
+authorize this candidate: the complete Qotom topology and BSP binding must
+then pass separately. The existing captured-root ABI is unchanged.
+
+The five result words are version, status, ID/error, processor count/detail,
+and APIC-base/extra. Word 0 is version 1 and words beyond 4 are zero. Status 1
+means a bound candidate with ID 0, four processors and APIC-base `0xfee00900`;
+it never means platform or runtime admission. Status 2 preserves the existing
+root-adapter rejection projection. Additional adapter errors 306, 307 and 308
+reject overflowing CPUID, non-Boolean availability and overflowing sample ID;
+309 rejects an inconsistent prior adapter/decode result. Executing-ID and
+byte/table bounds retain their existing adapter codes.
+
+Status 4 encodes Qotom topology errors in order: unsupported source (1),
+version (2), excess processors (3), duplicate ID (4), no enabled processor (5),
+wrong BSP (6), or differing inventory (7). Status 5 encodes bootstrap errors:
+unavailable (1), missing features (2), sample ID mismatch (3), BSP flag clear
+(4), or unsupported APIC state (5). Rejected bootstrap/topology results expose
+no accepted processor count or register value.
+
+`python3 scripts/qotom-bootstrap-corpus.py` writes the same 19 input bundles
+and 114 expected words for Lean and C, including four scalar-boundary cases
+in addition to the typed model's 15 cases. Run its generated
+`build/qotom-bootstrap-corpus/Replay.lean` with `lake env lean`, and run
+`scripts/check-qotom-bootstrap-host.sh ordinary` followed by `sanitized` for
+independent C execution. The runner uses the shared hosted-boundary compiler,
+full sanitizer module closure, export-entry coverage and output comparison.
 
 ## Remaining admission requirements
 

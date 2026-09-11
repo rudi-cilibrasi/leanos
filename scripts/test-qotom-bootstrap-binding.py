@@ -34,7 +34,7 @@ def load():
     return base, executing, observed
 
 
-def main():
+def replay_cases():
     base, executing, sample = load()
     edx, available, value = sample['cpuid_edx'], sample['available'], sample['ia32_apic_base']
     mutations = roots.mutations(base)
@@ -62,6 +62,11 @@ def main():
                       f'.pipeline (.topology ({error}))'))
     cases.append(('wrong-executing-id', base, 2, edx, available, value, 2,
                   '.pipeline (.topology (.topology .wrongBsp))'))
+    return cases
+
+
+def main():
+    cases = replay_cases()
     source = '''import LeanOS.QotomBspTopology
 import LeanOS.BootMemoryMapDecoderABI
 open LeanOS QotomBspTopology

@@ -74,3 +74,5 @@ import LeanOS.PCIHeaderObservation
 import LeanOS.QotomPCIInventory
 import LeanOS.QotomPCIQuarantineObservation
 import LeanOS.QotomPCIQuarantineTransition
+
+import LeanOS.QotomBootstrapABI
