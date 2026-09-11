@@ -151,4 +151,50 @@ def checkRaw (field count bus device fn
   else observe ⟨⟨bus, device, fn⟩,
     [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15]⟩ field
 
+namespace Scalar
+open DMAQuarantine PCIHeaderObservation
+
+/-- Fixed-width status path intended for a freestanding inventory bridge.
+The sixteen argument slots are physical; count is the declared logical width. -/
+def status (count bus device fn
+    w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) : UInt64 :=
+  if !(bus < 256 && device < 32 && fn < 8) then 0x100
+  else if count != 16 then 0x101
+  else if !(w0 < 0x100000000 &&
+      w1 < 0x100000000 &&
+      w2 < 0x100000000 &&
+      w3 < 0x100000000 &&
+      w4 < 0x100000000 &&
+      w5 < 0x100000000 &&
+      w6 < 0x100000000 &&
+      w7 < 0x100000000 &&
+      w8 < 0x100000000 &&
+      w9 < 0x100000000 &&
+      w10 < 0x100000000 &&
+      w11 < 0x100000000 &&
+      w12 < 0x100000000 &&
+      w13 < 0x100000000 &&
+      w14 < 0x100000000 &&
+      w15 < 0x100000000) then 0x102
+  else if (w0 &&& 0xffff) == 0xffff then 0x103
+  else if ((w3 >>> 16) &&& 0x7f) == 0 then 1
+  else if ((w3 >>> 16) &&& 0x7f) == 1 then 1
+  else 0x104
+
+/-- For an actual sixteen-word transport, scalar validation returns exactly
+its reference decoder status, including all rejection classes. -/
+theorem status_eq_decode (bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt64) :
+    status 16 bus device fn w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 =
+      match decode ⟨⟨bus, device, fn⟩, [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15]⟩ with
+      | .ok _ => 1
+      | .error reason => reason.code := by
+  by_cases absent : (w0 &&& 0xffff) = 0xffff <;>
+    by_cases endpoint : ((w3 >>> 16) &&& 0x7f) = 0 <;>
+    by_cases bridge : ((w3 >>> 16) &&& 0x7f) = 1 <;>
+    simp [status, decode, bdfValid, PCIHeaderObservation.word,
+      List.all_cons, List.all_nil, Error.code, or_assoc, absent, endpoint, bridge] <;>
+    repeat' (split <;> simp_all)
+
+end Scalar
+
 end LeanOS.PCIHeaderObservation

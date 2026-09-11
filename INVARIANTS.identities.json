@@ -13845,6 +13845,12 @@
     },
     {
       "source": "LeanOS/PCIHeaderObservation.lean",
+      "qualified": "LeanOS.PCIHeaderObservation.Scalar.status_eq_decode",
+      "display": "Scalar.status_eq_decode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PCIHeaderObservation.lean",
       "qualified": "LeanOS.PCIHeaderObservation.decode_preserves_raw",
       "display": "decode_preserves_raw",
       "kind": "theorem"
