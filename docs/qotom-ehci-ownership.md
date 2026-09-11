@@ -21,12 +21,12 @@ and [handoff implementation](https://github.com/torvalds/linux/blob/master/drive
 The conventional PCI list collected earlier is a different list and cannot
 supply this pointer. Guessing a familiar legacy offset is insufficient.
 
-The current lab window admits only ECAM addresses `0xe0000000..0xefffffff`.
-It correctly rejects BAR0+8. A new read path must bind the fresh EHCI identity,
+The original configuration-space lab window admits only ECAM addresses `0xe0000000..0xefffffff`.
+It correctly rejects BAR0+8. The separate read path described below must bind the fresh EHCI identity,
 header layout, enabled memory decode and BAR0 to the native inventory, then
 validate effective UC mapping, alias exclusion and the existing root/leaf
 restoration contract for the separate MMIO page. Do not widen the ECAM
-address gate globally. The initial bounded MMIO observation should retain the
+address gate globally. The initial bounded MMIO observation retains the
 capability base, HCSPARAMS and HCCPARAMS before following a checked configuration
 pointer. Operational register offsets must derive from the observed CAPLENGTH.
 
@@ -42,8 +42,8 @@ transactions and firmware/AP access, and preserve the protected recovery path.
 Intel's [329670-002 datasheet](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf),
 section 14.3, printed page 340, describes EHCI as a legacy alternative to xHCI.
 That is consistent with the differing observations, but does not prove when or
-how this BIOS switches port ownership. No new MMIO read, ownership write,
-controller stop or reset was performed for this audit. Issue #330 remains open.
+how this BIOS switches port ownership. The observations below add bounded reads; no ownership write, controller stop
+or reset has been performed. Issue #330 remains open.
 
 ## Capability collector
 
@@ -98,8 +98,8 @@ a complete record fails capture validation. Synthetic protected-capture tests
 cover success, malformed records, and every publishable failure status.
 The [physical capture](../hardware/lab/observations/qotom-native-ehci-20260911/README.md)
 returned capability base `0x01000020`, HCSPARAMS `0x00200008` and HCCPARAMS
-`0x00036881`. Thus the observed extended-list pointer is `0x68`; the list and
-ownership semaphores remain to be read. FreeBSD recovered automatically.
+`0x00036881`. Thus the observed extended-list pointer is `0x68`; the subsequent
+legacy capture below follows that pointer. FreeBSD recovered automatically.
 
 ## Bounded extended-list reader
 
@@ -131,5 +131,7 @@ all links, duplicate legacy structures, overlap, selected offset and terminal
 framing. The remaining prefix still passes the preceding capture decoders and
 generated inventory replay. Failed reads remain observations rather than
 independently replayed hardware events. Synthetic full protected tests cover
-success, corrupt records and all publishable failure statuses. A physical
-legacy-register capture remains outstanding.
+success, corrupt records and all publishable failure statuses. The [physical legacy capture](../hardware/lab/observations/qotom-native-legacy-20260911/README.md)
+retained one header at `0x68`, raw `0x00010001`, and control/status
+`0x00082005`. Its complete protected replay matches the native inventory and
+legacy metadata. FreeBSD recovered automatically; ownership remains unresolved.
