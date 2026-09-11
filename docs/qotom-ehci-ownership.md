@@ -354,3 +354,28 @@ write. Final ownership/SMI refresh and protected replay passed, and FreeBSD
 recovered automatically. This changes the next shutdown review: the observed
 controller was already halted. Continuing exclusion and system-wide DMA
 containment still require separate evidence.
+
+## Bus-master disable candidate after a stopped sample
+
+The physical sample justifies examining a BME-only transition without a redundant
+operational stop. EHCI 1.0 section 2.3.1 ties HCHalted to completion of current and
+pipelined USB transactions. This is controller state, not independent evidence
+of all fabric posted writes completing or continuing firmware exclusion.
+
+`boot/qotom-ehci-bme.h` requires the exact captured stopped operational result
+and PCI Command `0x0406`, then refreshes ownership, disabled SMIs and the operational
+sample. A separate fresh Command read must still be `0x0406`. It requests one
+16-bit write of `0x0402` at `00:1d.0` offset 4, verifies readback, repeats the
+complete operational collector, and checks Command again. This clears only BME,
+retains MMIO decoding and INTx disable, and avoids writing adjacent PCI Status.
+Linux's [PCI bus-master helper](https://github.com/torvalds/linux/blob/master/drivers/pci/pci.c)
+also uses a word-sized Command update to clear the master bit.
+
+The operation allows at most 239 reads and one write. It records attempted
+writes and command observations, including ambiguous failure; it never restores
+BME as rollback. Unexpected state rejects. Tests cover all 51 read positions in
+the captured one-entry list, every prior operational bit mutation, command and
+status-halfword preservation, ignored writes, failed writes with effects, and
+post-write restart or BME reassertion. Native word-store authority, physical
+execution and continuing device/firmware assumptions remain outstanding. No
+system-wide DMA containment or platform admission follows from this candidate.
