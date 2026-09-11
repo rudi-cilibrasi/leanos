@@ -1,0 +1,23 @@
+{
+  "handoff_capture": true,
+  "evidence_class": "lab-recovery-experiment",
+  "canonical_halt_evidence": false,
+  "mode": "completion",
+  "pci_diagnostic": true,
+  "recovery_seconds": 30,
+  "hang_recovery": false,
+  "source_revision": "32731dbbee8259990883381c99189cb99d271c50",
+  "source_dirty": false,
+  "prepared_revision": "4d54cc91b4bab758c2c990ff6c7f33e853880e55",
+  "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "files": {
+    "boot/kernel.c": "c68048ce353b2420cde0a059e6b034a0f3819c591d4df5ca7757de582e29e28c",
+    "build/qotom-pci-lab/kernel.c": "fbeb49d4a4af5ccdf2b8eeae8d15eeff13e00bae401bf51dc7926349d95f977d",
+    "scripts/build-qotom-recovery-lab.py": "eaf62d999da3c8a12b29c2f45d35be31cf1a7b5a33afd0008a33f1341d21b2db",
+    "build/qotom-pci-lab/objects.mk": "a1f9d8b0c27665d706c7c5769f0e69c4164507b5d7fa298440998bb6dc978b01",
+    "build/qotom-pci-lab/leanos-qotom-lab.elf": "04cd51e070d9badf16b015c2898433dcbda268bfde37de8b843fea9273dd1bff",
+    "hardware/lab/qotom-finish.c.inc": "66e33ac21644cef4e8c96bff12c2317f6d1cdf9fd13b7e353c534fcb387c599e",
+    "hardware/lab/qotom-handoff.c.inc": "2a9747259be2f37f3db8cde0319d095dc65e1bc405f6342e938b4cbe82c6faf4",
+    "include/boot_handoff_capture.h": "fff92fef014c8711f78adf5814e9a7d8e48c18f41b36429df730c8f1d9b53cc0"
+  }
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise raw handoff transport boundaries and preserve malformed metadata."""
 import json
+import hashlib
 from pathlib import Path
 import runpy
 import struct
@@ -98,6 +99,27 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(result['diagnostic']['platform_admitted'])
         with self.assertRaises(ValueError):
             lab['classify_cpu_protected'](*args)
+
+    def test_retained_physical_handoff(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-grub-handoff-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(), digest, name)
+        raw = (capture / 'cycle-1/serial.raw').read_bytes()
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        self.assertEqual(raw, b''.join(bytes.fromhex(e['hex']) for e in events))
+        offset = raw.index(b'LEANOS-LAB/1 HANDOFF status=')
+        _, binary, metadata = D['parse_prefix'](raw[offset:])
+        self.assertEqual(binary, (capture / 'cycle-1/multiboot2.bin').read_bytes())
+        self.assertEqual(metadata, json.loads((capture / 'cycle-1/handoff.json').read_text()))
+        recorded = json.loads((capture / 'cycle-1/result.json').read_text())
+        lab = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+        result = lab['classify_cpu_protected'](
+            events, recorded['elf_sha256'], capture / 'diagnostic-protocol.tsv',
+            ROOT / 'build/j1900-cpu-host/host', ROOT / 'build/qotom-pci-inventory-host/host', True)
+        self.assertEqual(result['handoff'], recorded['handoff'])
+        self.assertEqual(result['diagnostic']['capture_sha256'], recorded['diagnostic']['capture_sha256'])
+        self.assertFalse(result['diagnostic']['platform_admitted'])
 
     def test_native_read_bounds(self):
         source = r'''
