@@ -49,6 +49,24 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_retained_physical_bsp_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-bsp-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(s) for s in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP)
+        self.assertEqual(result['native_bsp'],expected['native_bsp'])
+        self.assertEqual(result['native_bsp']['observation'],VALUES)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():

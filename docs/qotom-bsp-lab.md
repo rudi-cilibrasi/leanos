@@ -44,7 +44,9 @@ BSP failures retain their own terminal reason without claiming an ECAM fault.
 Run `python3 scripts/test-qotom-native-bsp-capture.py` for synthetic matching,
 rejecting and malformed records over retained physical firmware/recovery bytes.
 The tests also run with the pinned sanitized replay, instrumenting both the
-host parser/consumer and generated code. These records are synthetic, not a
-physical BSP result. A physical capture is still required. The currently installed USB image
-remains the earlier native PCI diagnostic. This build alone does not satisfy
-issue #331's physical topology admission requirement.
+host parser/consumer and generated code. Eight test groups now include strict
+replay of the [retained physical BSP capture](../hardware/lab/observations/qotom-native-bsp-20260911/README.md),
+separately from the synthetic cases. That boot matched the four-processor BSP
+candidate and sixteen-function inventory, then automatically returned to
+FreeBSD. It did not allocate/publish the complete Qotom platform or enter CPL3;
+issue #331's full physical admission requirement remains outstanding.
