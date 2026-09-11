@@ -38,7 +38,9 @@ def load_protocol(path):
     return found
 
 
-def classify(raw, protocol, cpu_replay, pci_replay, *, native_inventory=False):
+def classify(raw, protocol, cpu_replay, pci_replay, *, native_inventory=False, native_kernel=False):
+    if native_kernel and not native_inventory:
+        raise DiagnosticError("kernel native inventory requires the native replay profile")
     if native_inventory:
         checked = subprocess.run([str(pci_replay)], capture_output=True, timeout=30, check=True)
         if checked.stdout != b'Hosted native Qotom inventory replay passed\n':
@@ -48,6 +50,14 @@ def classify(raw, protocol, cpu_replay, pci_replay, *, native_inventory=False):
     if any(byte != 10 and not 32 <= byte <= 126 for byte in raw):
         raise DiagnosticError('capture contains non-text bytes')
     lines = raw.decode('ascii').splitlines()
+    kernel_inventory = None
+    if native_kernel and len(lines) >= 2 and lines[-2].startswith('LEANOS-LAB/1 NATIVE-PCI '):
+        record = re.fullmatch(
+            r'LEANOS-LAB/1 NATIVE-PCI profile=qotom-native-ecam-v1 status=([034])'
+            r' index=(' + CPU.DECIMAL + r') count=(' + CPU.DECIMAL + r')', lines.pop(-2))
+        if not record:
+            raise DiagnosticError('malformed kernel native inventory record')
+        kernel_inventory = dict(zip(('status', 'index', 'count'), map(int, record.groups())))
     if not 3 <= len(lines) <= 21:
         raise DiagnosticError('record count')
     boot = protocol['BOOT'] + ' target=qotom-j1900-candidate phase=pci-inventory-diagnostic platform-admitted=0 cpl3=0'
@@ -120,14 +130,26 @@ def classify(raw, protocol, cpu_replay, pci_replay, *, native_inventory=False):
             if inventory not in allowed:
                 raise DiagnosticError('unknown generated inventory result')
             reason = 'qotom-platform-pending'
+            if native_kernel:
+                status = 0 if inventory == 1 else 3 if inventory == 0x10000 else 4
+                index = inventory & 0xff if status == 4 else 0
+                expected = {'status': status, 'index': index, 'count': len(headers)}
+                if kernel_inventory != expected:
+                    raise DiagnosticError('kernel native inventory disagrees with generated replay')
+                if status != 0:
+                    reason = 'qotom-native-inventory'
         if lines[-1] != protocol['FINAL'] + ' status=FAIL reason=' + reason:
             raise DiagnosticError('terminal result disagrees with scan')
         result['terminal_reason'] = reason
+    if kernel_inventory is not None and (scan is None or scan['status'] != 0):
+        raise DiagnosticError('kernel native inventory follows an incomplete scan')
     result.update(schema='leanos-qotom-pci-diagnostic-replay-v1',
                   capture_sha256=hashlib.sha256(raw).hexdigest(),
                   pci_scan=scan, pci_headers=headers, inventory_result=inventory)
     if native_inventory:
         result['inventory_profile'] = 'qotom-native-ecam-v1'
+    if native_kernel:
+        result['native_kernel_inventory'] = kernel_inventory
     return result
 
 
@@ -138,11 +160,12 @@ def main():
     parser.add_argument('--cpu-replay', type=Path, default=Path('build/j1900-cpu-host/host'))
     parser.add_argument('--pci-replay', type=Path, default=Path('build/qotom-pci-inventory-host/host'))
     parser.add_argument('--native-inventory', action='store_true')
+    parser.add_argument('--native-kernel', action='store_true')
     args = parser.parse_args()
     try:
         with args.capture.open('rb') as stream:
             raw = stream.read(MAX_CAPTURE + 1)
-        result = classify(raw, load_protocol(args.protocol), args.cpu_replay.resolve(), args.pci_replay.resolve(), native_inventory=args.native_inventory)
+        result = classify(raw, load_protocol(args.protocol), args.cpu_replay.resolve(), args.pci_replay.resolve(), native_inventory=args.native_inventory, native_kernel=args.native_kernel)
         for name, path in [('protocol', args.protocol), ('cpu_replay', args.cpu_replay), ('pci_replay', args.pci_replay)]:
             result[name + '_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
         print(json.dumps(result, indent=2))

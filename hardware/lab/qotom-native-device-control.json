@@ -1,0 +1,337 @@
+{
+  "schema": "leanos-native-device-control-audit-v1",
+  "source": "hardware/lab/observations/qotom-native-inventory-20260911/cycle-1/result.json",
+  "source_sha256": "3ea5fc7c5e3b6419da3faa816c71e8f14f1436b16cc5fde2c818d232e2b0da82",
+  "source_manifest_sha256": "f4bacf86d9e478eeeddfd2a38ace6bd2fac7de9f141ca99e99777ade6afd9f2a",
+  "bme_set": [
+    "00:00.0",
+    "00:02.0",
+    "00:13.0",
+    "00:14.0",
+    "00:1a.0",
+    "00:1b.0",
+    "00:1c.0",
+    "00:1c.1",
+    "00:1c.2",
+    "00:1c.3",
+    "00:1d.0",
+    "00:1f.0",
+    "01:00.0",
+    "02:00.0",
+    "03:00.0"
+  ],
+  "bme_clear": [
+    "00:1f.3"
+  ],
+  "fixed_command_bme": [
+    "00:00.0",
+    "00:1f.0"
+  ],
+  "other_bme_set": [
+    "00:02.0",
+    "00:13.0",
+    "00:14.0",
+    "00:1a.0",
+    "00:1b.0",
+    "00:1c.0",
+    "00:1c.1",
+    "00:1c.2",
+    "00:1c.3",
+    "00:1d.0",
+    "01:00.0",
+    "02:00.0",
+    "03:00.0"
+  ],
+  "containment_established": false,
+  "writes_authorized": false,
+  "functions": [
+    {
+      "bdf": "00:00.0",
+      "vendor_device": "8086:0f00",
+      "class_code": "060000",
+      "command": "0007",
+      "status": "0000",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:02.0",
+      "vendor_device": "8086:0f31",
+      "class_code": "030000",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0000000",
+        "00000000",
+        "c0000008",
+        "00000000",
+        "0000f081",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:13.0",
+      "vendor_device": "8086:0f23",
+      "class_code": "010601",
+      "command": "0007",
+      "status": "02b0",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "0000f071",
+        "0000f061",
+        "0000f051",
+        "0000f041",
+        "0000f021",
+        "d0916000"
+      ]
+    },
+    {
+      "bdf": "00:14.0",
+      "vendor_device": "8086:0f35",
+      "class_code": "0c0330",
+      "command": "0006",
+      "status": "0290",
+      "io_decode": false,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0900004",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1a.0",
+      "vendor_device": "8086:0f18",
+      "class_code": "108000",
+      "command": "0106",
+      "status": "0010",
+      "io_decode": false,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0500000",
+        "d0400000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1b.0",
+      "vendor_device": "8086:0f04",
+      "class_code": "040300",
+      "command": "0006",
+      "status": "0010",
+      "io_decode": false,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0910004",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1c.0",
+      "vendor_device": "8086:0f48",
+      "class_code": "060400",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "bridge",
+      "raw_bar_dwords": [
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1c.1",
+      "vendor_device": "8086:0f4a",
+      "class_code": "060400",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "bridge",
+      "raw_bar_dwords": [
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1c.2",
+      "vendor_device": "8086:0f4c",
+      "class_code": "060400",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "bridge",
+      "raw_bar_dwords": [
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1c.3",
+      "vendor_device": "8086:0f4e",
+      "class_code": "060400",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "bridge",
+      "raw_bar_dwords": [
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1d.0",
+      "vendor_device": "8086:0f34",
+      "class_code": "0c0320",
+      "command": "0406",
+      "status": "0290",
+      "io_decode": false,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0915000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1f.0",
+      "vendor_device": "8086:0f1c",
+      "class_code": "060100",
+      "command": "0007",
+      "status": "0210",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "00:1f.3",
+      "vendor_device": "8086:0f12",
+      "class_code": "0c0500",
+      "command": "0003",
+      "status": "0290",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": false,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0914000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "0000f001",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "01:00.0",
+      "vendor_device": "10ec:8168",
+      "class_code": "020000",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "0000e001",
+        "00000000",
+        "d0804004",
+        "00000000",
+        "d080000c",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "02:00.0",
+      "vendor_device": "14e4:4353",
+      "class_code": "028000",
+      "command": "0006",
+      "status": "0010",
+      "io_decode": false,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "d0700004",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ]
+    },
+    {
+      "bdf": "03:00.0",
+      "vendor_device": "10ec:8168",
+      "class_code": "020000",
+      "command": "0007",
+      "status": "0010",
+      "io_decode": true,
+      "memory_decode": true,
+      "bus_master_enable": true,
+      "layout": "endpoint",
+      "raw_bar_dwords": [
+        "0000d001",
+        "00000000",
+        "d0604004",
+        "00000000",
+        "d060000c",
+        "00000000"
+      ]
+    }
+  ]
+}

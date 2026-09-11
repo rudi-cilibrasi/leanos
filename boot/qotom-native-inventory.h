@@ -5,7 +5,7 @@
 /* Bind this callback to the proved generated scalar header checker. Snapshot
  * storage must be private and immutable throughout the loop. A matching
  * inventory conveys no command-write, DMA, or CPL3 authority. */
-typedef uint8_t (*qotom_native_header_check)(uint64_t, uint64_t, uint64_t, uint64_t,
+typedef uint64_t (*qotom_native_header_check)(uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 

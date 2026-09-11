@@ -35,7 +35,7 @@ compare model results with generated C, including count/size boundaries and
 identity/address changes at all sixteen positions. Ordinary and pinned ASan/UBSan runs pass with identical output and both
 exports covered. The CLI also replays the retained capture successfully and
 rejects malformed decimal transport and non-dword values at every header
-position. The 77-export vocabulary, harness registration and current invariant
+position. The 78-export vocabulary, harness registration and current invariant
 index checks pass.
 
 Capture replay selects this model explicitly with `--native-inventory` and the
