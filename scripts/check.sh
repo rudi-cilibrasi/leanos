@@ -46,8 +46,8 @@ record_check_phase() {
 ./scripts/check-native-decide-policy.py
 
 lake build
-python3 scripts/test-qotom-native-bsp-capture.py
-python3 scripts/test-qotom-native-bsp-capture.py --native
+python3 scripts/test-qotom-bsp-capture.py
+python3 scripts/test-qotom-bsp-capture.py --native
 python3 scripts/test-qotom-bootstrap-binding.py
 python3 scripts/qotom-bootstrap-corpus.py
 lake env lean build/qotom-bootstrap-corpus/Replay.lean
