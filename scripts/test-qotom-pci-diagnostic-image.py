@@ -6,11 +6,34 @@ import json
 from pathlib import Path
 import runpy
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def verify_acpi_memory(monitor, directory, metadata, tables):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.connect(str(monitor))
+        with connection.makefile('rwb') as stream:
+            json.loads(stream.readline())
+            commands = [{'execute': 'qmp_capabilities'}]
+            for table in metadata['tables']:
+                path = directory / f"qmp-{table['address']:016x}.bin"
+                commands.append({'execute': 'pmemsave', 'arguments': {
+                    'val': table['address'], 'size': table['length'], 'filename': str(path)}})
+            for command in commands:
+                stream.write((json.dumps(command) + '\n').encode()); stream.flush()
+                while True:
+                    response = json.loads(stream.readline())
+                    if 'error' in response: raise RuntimeError(response['error'])
+                    if 'return' in response: break
+            for table in metadata['tables']:
+                name = f"{table['address']:016x}.bin"
+                if (directory / ('qmp-' + name)).read_bytes() != tables[name]:
+                    raise RuntimeError('serial ACPI copy differs from independent QMP physical memory')
 
 
 def main():
@@ -20,7 +43,10 @@ def main():
     parser.add_argument('--lab-completion', action='store_true',
                         help='require the lab completion-mode prefix before diagnostic records')
     parser.add_argument('--handoff-capture', action='store_true')
+    parser.add_argument('--acpi-capture', action='store_true')
     args = parser.parse_args()
+    if args.acpi_capture and not args.handoff_capture:
+        parser.error('--acpi-capture requires --handoff-capture')
     if args.handoff_capture and not args.lab_completion:
         parser.error('--handoff-capture requires --lab-completion')
     handoff = runpy.run_path(str(ROOT / 'scripts/check-qotom-handoff-capture.py')) if args.handoff_capture else None
@@ -84,7 +110,7 @@ def main():
                     deadline = time.monotonic() + 30
                     while True:
                         raw = capture.read_bytes() if capture.exists() else b''
-                        if len(raw) > diagnostic['MAX_CAPTURE'] + (handoff['MAX_TRANSPORT'] if handoff else 0):
+                        if len(raw) > diagnostic['MAX_CAPTURE'] + (handoff['MAX_TRANSPORT'] if handoff else 0) + (196608 if args.acpi_capture else 0):
                             raise RuntimeError(name + ': capture exceeds bound')
                         if raw.endswith(b'\n') and protocol['FINAL'].encode() in raw:
                             break
@@ -104,6 +130,16 @@ def main():
                         (directory / 'multiboot2.bin').write_bytes(binary)
                         (directory / 'handoff.json').write_text(json.dumps(metadata, indent=2) + '\n')
                         payload = payload[consumed:]
+                    if args.acpi_capture:
+                        acpi = runpy.run_path(str(ROOT / 'scripts/check-qotom-acpi-capture.py'))
+                        payload, metadata, tables = acpi['extract'](payload, binary)
+                        if metadata is not None:
+                            (directory / 'acpi').mkdir(exist_ok=True)
+                            for filename, content in tables.items():
+                                (directory / 'acpi' / filename).write_bytes(content)
+                            verify_acpi_memory(monitor, directory, metadata, tables)
+                            metadata['qmp_memory_match'] = True
+                            (directory / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
                     result = diagnostic['classify'](payload, protocol, cpu_replay, pci_replay)
                     if result['cpu_selection'] != selected:
                         raise RuntimeError(name + ': wrong CPU result')
@@ -135,7 +171,7 @@ def main():
                     process.wait(timeout=5)
         print('Qotom PCI diagnostic image:', name, 'PASS', flush=True)
     report.write_text(json.dumps({
-        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture,
+        'lab_completion_transport': args.lab_completion, 'handoff_capture': args.handoff_capture, 'acpi_capture': args.acpi_capture,
         'physical_reset_verified': False,
         'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
         'iso_sha256': hashlib.sha256(iso.read_bytes()).hexdigest(),

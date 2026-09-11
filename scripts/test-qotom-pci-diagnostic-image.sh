@@ -30,4 +30,5 @@ scripts/check-j1900-cpu-host.sh ordinary > "$output/cpu-replay-build.log" 2>&1
 scripts/check-qotom-pci-inventory-host.sh ordinary > "$output/pci-replay-build.log" 2>&1
 python3 scripts/test-qotom-pci-diagnostic.py
 python3 scripts/test-qotom-handoff-capture.py
+python3 scripts/test-qotom-acpi-capture.py
 python3 scripts/test-qotom-pci-diagnostic-image.py --output "$output"

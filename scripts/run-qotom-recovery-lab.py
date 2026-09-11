@@ -219,7 +219,7 @@ def cpu_diagnostic_bytes(events, protocol, handoff=False):
     return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
             'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
     if pci_replay is not None:
@@ -227,10 +227,15 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False):
     if handoff:
         result['handoff_decoder_sha256'] = hashlib.sha256(
             Path(__file__).with_name('check-qotom-handoff-capture.py').read_bytes()).hexdigest()
+    if acpi:
+        result['acpi_decoder_sha256'] = hashlib.sha256(
+            Path(__file__).with_name('check-qotom-acpi-capture.py').read_bytes()).hexdigest()
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False):
+    if acpi and not handoff:
+        raise ValueError('ACPI capture requires raw handoff')
     module = cpu_replay_module(pci_replay is not None)
     protocol = module.load_protocol(protocol_path)
     expected, raw = cpu_diagnostic_bytes(events, protocol, handoff)
@@ -238,12 +243,15 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     replay_paths = [Path(replay).resolve()]
     if pci_replay is not None:
         replay_paths.append(Path(pci_replay).resolve())
-    diagnostic = module.classify(raw, protocol, *replay_paths)
     if handoff:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-handoff-capture.py')))
         mode = EXPECTED[:-len(EXPECTED_KERNEL)]
-        _, _, result['handoff'] = decoder['parse_prefix'](expected[len(mode):])
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff))
+        _, handoff_bytes, result['handoff'] = decoder['parse_prefix'](expected[len(mode):])
+    if acpi:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-acpi-capture.py')))
+        raw, result['acpi'], _ = decoder['extract'](raw, handoff_bytes)
+    diagnostic = module.classify(raw, protocol, *replay_paths)
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi))
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
                   diagnostic=diagnostic)
     return result
@@ -273,7 +281,10 @@ def main():
     parser.add_argument('--pci-replay', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'build/qotom-pci-inventory-host/host')
     parser.add_argument('--handoff-capture', action='store_true')
+    parser.add_argument('--acpi-capture', action='store_true')
     args = parser.parse_args()
+    if args.acpi_capture and not args.handoff_capture:
+        parser.error('--acpi-capture requires --handoff-capture')
     if args.handoff_capture and not args.pci_diagnostic:
         parser.error('--handoff-capture requires --pci-diagnostic')
     has_diagnostic = args.cpu_diagnostic or args.pci_diagnostic
@@ -297,7 +308,7 @@ def main():
                 parser.error('PCI replay did not report its corpus self-test')
             if cpu_replay_module().replay_words(pci_replay.resolve(), 'inventory', [0]) != 65536:
                 parser.error('PCI replay lacks the bounded inventory interface')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture)
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -432,10 +443,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay, args.handoff_capture)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(events, protocol, args.handoff_capture)
                 if args.handoff_capture:
@@ -444,6 +455,13 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     _, binary, metadata = decoder['parse_prefix'](expected[len(mode):])
                     (directory / 'multiboot2.bin').write_bytes(binary)
                     (directory / 'handoff.json').write_text(json.dumps(metadata, indent=2) + '\n')
+                if args.acpi_capture:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-acpi-capture.py')))
+                    raw, metadata, tables = decoder['extract'](raw, binary)
+                    (directory / 'acpi').mkdir()
+                    for filename, content in tables.items():
+                        (directory / 'acpi' / filename).write_bytes(content)
+                    (directory / 'acpi.json').write_text(json.dumps(metadata, indent=2) + '\n')
                 (directory / 'diagnostic.raw').write_bytes(raw)
             else:
                 result = classify_protected(events, digest)

@@ -1,0 +1,7 @@
+{
+  "protocol_sha256": "ef0e7d3babfa22bdb90700cff3867f392c66809be00711eff979e0a0d550fed1",
+  "replay_executable_sha256": "9241693e5fee8cc47321846e3020efeec800c9cb37cc05ecf80cbbb8a9233416",
+  "pci_replay_executable_sha256": "de54157e3fbb06c455f9c5217bfd5ad0826eadbc5290d023e490107604e7eb67",
+  "handoff_decoder_sha256": "974caff652a8b120018feb5404df2ed1e64f820688b6d5656d613904d5c05101",
+  "acpi_decoder_sha256": "4800c2a0cf21c5345a0c052d2ab8d06f030d21e5a13a2591824da48fa802fdbb"
+}

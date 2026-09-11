@@ -261,3 +261,43 @@ CPU/PCI stream and its terminal result are unchanged. The runner requires an
 explicit handoff flag so an unexpected prelude cannot silently pass as an
 ordinary diagnostic capture. Physical display acceptance still requires an
 operator observation; framebuffer metadata does not establish visible output.
+
+## Root-selected native ACPI capture
+
+Add `--acpi-capture` together with `--handoff-capture --pci-diagnostic` to the
+lab builder and recovery runner to retain the SDTs selected by the actual
+GRUB handoff. This mode runs after CPU/MSR acceptance and successful PCI
+observation. It uses the existing generated handoff copy/decode path, checked
+physical ACPI copy aperture, and SDT envelope/checksum validation. It stops
+before single-core topology admission, allocation publication, or CPL3.
+
+The complete selected root and its ordered child list are copied before any
+ACPI transport record is emitted. A combined 64 KiB handoff-plus-SDT limit
+bounds serial transport under the protected trial's watchdog window; it does
+not broaden the production table budget. Duplicate root entries, root cycles,
+invalid checksums, and insufficient remaining capacity reject. Tables reached
+through pointers inside a child (such as the FADT's DSDT pointer) are outside
+this root-list capture scope. Copies are observations, not a proof of firmware
+or AP dormancy or DMA containment.
+
+Because this brings additional code and buffers into the image, the builder
+regenerates the diagnostic page plan from the overlay prelink and compares it
+with the final ELF before accepting the build. The observer checks the root
+against the captured RSDP, verifies every table hash/length/checksum and ordered
+child address, and retains `acpi/*.bin` and `acpi.json` alongside the raw serial
+stream. Decoder hashes are checked before and after the physical trial.
+Copy failure retains the existing typed BOOTALLOC rejection and raw recovery
+evidence; it is not a successful ACPI capture.
+
+```sh
+python3 scripts/test-qotom-acpi-capture.py
+python3 scripts/test-qotom-pci-diagnostic-image.py \
+  --elf build/qotom-pci-lab/leanos-qotom-lab.elf \
+  --output build/qotom-acpi-qemu \
+  --lab-completion --handoff-capture --acpi-capture
+```
+
+The QEMU test independently reads each reported physical table through QMP and
+compares it byte-for-byte with the serial copy. The USB boot-path test accepts
+the same three diagnostic flags. A passing emulator capture does not replace
+the physical Qotom capture or its topology-policy review.
