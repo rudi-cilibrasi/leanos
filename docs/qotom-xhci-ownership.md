@@ -29,3 +29,20 @@ and restore the private aperture. Callbacks must be bounded and serialized with
 immutable, nonaliasing input/output views. Bracketed refresh is not atomicity or
 continuing firmware/AP exclusion. No ownership request, stop, reset, BME write,
 DMA containment or platform admission is implemented here.
+
+## Separate capability read mapping
+
+`hardware/lab/qotom-xhci-window.h` admits only aligned DWORD addresses
+`0xd0900000..0xd0900018`. Each transaction maps the first resource page UC,
+read-only, supervisor-only and NX, performs a trusted load into a private sample,
+then restores and invalidates the original leaf before publishing. Control or
+mapping interference terminates after restoration. A failed load publishes no
+value; the gate does not authorize operational or extended-capability accesses.
+
+`qotom-xhci-arm.h` binds both BAR DWORDs and the exact captured controller header
+to the firmware/root checks. It rejects present mappings into any page of the
+64-KiB xHCI resource, in addition to the existing ECAM alias checks. Failed rearm
+clears all authority and arming itself performs no device access. Tests cover
+all in-page offsets, upper-BAR bit changes, all 4096 leaf positions for first-page
+and ECAM aliases, every resource page, failed loads, restoration and terminal
+interference. Native integration and physical capture remain outstanding.
