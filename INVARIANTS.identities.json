@@ -14481,6 +14481,18 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record_count_nat",
+      "display": "run_processor_record_count_nat",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record_typed",
+      "display": "run_processor_record_typed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_advances_offset",
       "display": "step_advances_offset",
       "kind": "theorem"

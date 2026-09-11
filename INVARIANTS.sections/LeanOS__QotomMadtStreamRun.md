@@ -25,3 +25,6 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `step_processor_complete` — The final payload byte checks the actual reconstructed ID/flags, advances the processor count and restores a boundary.
 - `run_processor_payload` — A successful six-byte processor payload binds its final guard to the supplied ID and four flags bytes through actual intermediate states.
 - `run_processor_record` — A successful complete eight-byte processor record validates the supplied payload, advances the original count once and restores a boundary.
+
+- `run_processor_record_typed` — The actual ID and reference-decoded flags of a successful processor record identify the exact typed baseline member at the original processor count.
+- `run_processor_record_count_nat` — That original count is below four and advances by exactly one in natural-number arithmetic, without wraparound.

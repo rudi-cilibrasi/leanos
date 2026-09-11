@@ -469,4 +469,45 @@ theorem run_processor_record (length executing : UInt64) (state result : State)
   have done := run_processor_payload length executing middle result uid id b0 b1 b2 b3 start tailRun
   simpa [inventory.1] using done
 
+/-- A successful complete processor record supplies exactly the typed
+baseline member at its original count, using the reference decoder's fields. -/
+theorem run_processor_record_typed (length executing : UInt64) (state result : State)
+    (uid id b0 b1 b2 b3 : UInt8) (boundary : AtBoundary state)
+    (accepted : run length executing state [0, 8, uid, id, b0, b1, b2, b3] = .ok result) :
+    let value := b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216
+    let decoded : BootTopology.Processor :=
+      ⟨id.toUInt32, value % 2 == 1, (value / 2) % 2 == 1⟩
+    some decoded = QotomBspTopology.processors[state.count.toNat]? ∧
+      AtBoundary result ∧ result.count = state.count + 1 := by
+  have record := run_processor_record length executing state result uid id b0 b1 b2 b3 boundary accepted
+  have predicates := QotomMadtStream.flags_predicates_match_reference b0 b1 b2 b3
+  dsimp only at record predicates ⊢
+  have matched := record.2.2.1
+  rw [predicates.1] at matched
+  have offline : ((b0.toNat + b1.toNat * 256 + b2.toNat * 65536 +
+      b3.toNat * 16777216) / 2 % 2 == 1) = false := by
+    rw [← predicates.2]
+    simp [record.2.2.2]
+  have member := QotomMadtStream.processor_matches_typed_record state.count
+    (⟨id.toUInt32,
+      (b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216) % 2 == 1,
+      ((b0.toNat + b1.toNat * 256 + b2.toNat * 65536 + b3.toNat * 16777216) / 2) % 2 == 1⟩)
+    (by simpa using matched) offline
+  exact ⟨member, record.1, record.2.1⟩
+
+/-- A successful processor record advances a count below four without wrap,
+so table-level record counting can use ordinary natural-number arithmetic. -/
+theorem run_processor_record_count_nat (length executing : UInt64) (state result : State)
+    (uid id b0 b1 b2 b3 : UInt8) (boundary : AtBoundary state)
+    (accepted : run length executing state [0, 8, uid, id, b0, b1, b2, b3] = .ok result) :
+    state.count.toNat < 4 ∧ result.count.toNat = state.count.toNat + 1 := by
+  have record := run_processor_record length executing state result uid id b0 b1 b2 b3 boundary accepted
+  have guard := (QotomMadtStream.processor_matches_iff _ _ _).mp record.2.2.1
+  have bound := guard.1
+  simp [UInt64.lt_iff_toNat_lt] at bound
+  refine ⟨bound, ?_⟩
+  have nowrap : state.count.toNat + 1 < 2 ^ 64 := by omega
+  rw [record.2.1]
+  simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
+
 end LeanOS.QotomMadtStreamRun
