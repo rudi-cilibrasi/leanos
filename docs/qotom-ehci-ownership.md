@@ -247,3 +247,25 @@ control/status `0x2000`. The full protected replay agrees, and FreeBSD recovered
 automatically with the one-shot request consumed. This is a semaphore observation;
 controller shutdown, SMI policy, outstanding transactions and DMA containment
 remain unresolved.
+
+## Bounded legacy SMI disable candidate
+
+`boot/qotom-ehci-smi.h` follows a successful handoff with another complete
+capability/list refresh. It requires the captured single legacy structure with
+OS ownership set and BIOS ownership clear. Enable bits must agree with the
+handoff result; status bits may change asynchronously. Reserved bits reject.
+
+[EHCI 1.0 section 2.1.8](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/ehci-specification-for-usb.pdf)
+defines enable mask `0x0000e03f`, read-only status mask `0x003f0000` and
+write-one-to-clear status mask `0xe0000000`. The candidate writes one zero dword
+to `00:1d.0` offset `0x6c`. This disables enables without acknowledging status.
+A final complete refresh must retain the ownership/list binding and read all
+enables clear; status bits can remain set. The result preserves both control
+samples and whether a write was attempted, including ambiguous write failure.
+
+The callback sequence allows at most 114 reads and one write. It performs no
+rollback, controller stop or reset, and does not establish firmware exclusion
+or DMA containment. Tests cover all 512 enable combinations, asynchronous
+status changes, every refresh read failure, ownership reassertion, reserved
+bits, ignored writes and failed writes that nevertheless take effect. Native
+write-aperture integration and physical SMI-disable evidence remain outstanding.

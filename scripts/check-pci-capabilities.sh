@@ -56,3 +56,9 @@ leanos_run_sanitized "$build/ehci-legacy-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ehci-handoff.c -o "$build/ehci-handoff-sanitized"
 leanos_run_sanitized "$build/ehci-handoff-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ehci-smi.c -o "$build/ehci-smi"
+"$build/ehci-smi"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ehci-smi.c -o "$build/ehci-smi-sanitized"
+leanos_run_sanitized "$build/ehci-smi-sanitized"
