@@ -180,3 +180,29 @@ every successful release delay, all 274 read-failure positions, every delay
 failure, a timeout, an ignored write, write failure with a hardware side effect,
 all non-BIOS support-bit changes, all prior header-bit mutations, final support
 and list drift, absent legacy support, and malformed initial semaphore state.
+
+## Ownership-request mapping gate
+
+`hardware/lab/qotom-xhci-semaphore-window.h` admits one DWORD MMIO request:
+address `0xd0908460`, value `0x01010801`. This sets OS-owned while retaining the
+captured BIOS-owned bit and the other support fields. Every request consumes
+its authority, including a rejected address or value. It maps physical page
+`0xd0908000` supervisor-only, RW, NX and UC, performs one store, restores the
+exact saved leaf, invalidates and checks controls before returning. Only hardware
+Accessed/Dirty changes are allowed during the store. Interference is terminal;
+a store failure can still have affected the device and does not trigger rollback.
+
+Arming requires the successful captured six-header list, legacy offset `0x8460`,
+control `0x2001`, all seven physical capability DWORDs, the xHCI PCI identity and
+BAR pair, exact firmware tables, the validated active root, and exclusion of all
+present aliases into the 64-KiB resource. Failed rearm clears all authority and
+arming performs no device access. The handoff helper must refresh the complete
+observation before invoking this window. Firmware/AP exclusion is still an
+external assumption; the mapping checks do not establish it.
+
+Tests exercise all byte offsets through the resource boundary, every address
+and value bit mutation, all other low-word values, missing callbacks, repeated
+requests, failed stores, restoration and terminal interference. Arming tests
+cover every captured capability/header/offset/control bit, invalid list counts
+and prior statuses, BAR drift, all 4096 leaf slots and all resource pages for
+aliases, and failed rearm. Native wiring and physical handoff remain outstanding.
