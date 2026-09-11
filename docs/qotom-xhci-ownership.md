@@ -354,5 +354,23 @@ copies and boot root, rejects aliases across the complete 64-KiB resource, and
 revokes all authority on failed rearming. Arming itself reads or writes no device
 register. Tests exercise every resource byte address, all address/value bits,
 all nonzero 16-bit values, restoration failures, all page-table alias slots,
-captured-state mutations and handoff-result fields. The native stage still
-needs to connect this window to the helper and retain its physical result.
+captured-state mutations and handoff-result fields. The native stage below connects the window to the helper; its physical result
+still needs to be captured.
+
+## Native SMI diagnostic integration
+
+The opt-in builder flag `--xhci-smi` requires `--xhci-handoff` and creates
+`build/qotom-xhci-smi-lab`. The out-of-line native stage arms capability and
+extended-list readers, then the separate SMI writer. It uses the bounded helper,
+disarms all contexts, and emits `XHCI-SMI profile=qotom-xhci-smi-v1` with status,
+write-attempt, before-control and after-control fields. Local arm failures are
+8 (capability), 9 (extended list) and 10 (writer). Failed results terminate with
+`qotom-xhci-smi`; success continues to the existing platform-pending boundary.
+
+The runner extracts this record before the handoff prefix and fingerprints its
+decoder. It retains `xhci-smi.json` and restores the actual terminal reason after
+prefix replay. The decoder requires successful prior handoff, exact control
+binding for helper results, reachable attempt/readback fields and consistent
+terminals. Mutation tests cover valid failure outcomes, impossible statuses,
+changed enables, forbidden readback bits, missing/duplicate records and bounds.
+Synthetic replay does not establish a physical SMI-disable result.
