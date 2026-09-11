@@ -71,3 +71,51 @@ mode. `scripts/test-qotom-pci-replay-cli.py --replay EXECUTABLE` checks the
 hash-verified retained capture, model rejection and malformed CLI inputs, and
 is included in both ordinary and sanitized hosted checks. This input interface
 does not establish the provenance or completeness of an external observation.
+
+## Native boot diagnostic
+
+The separate `leanos-qotom-pci-diagnostic` image links the native CF8/CFC
+reader and enables `LEANOS_QOTOM_PCI_DIAGNOSTIC`. It emits protocol family 25:
+BOOT, CPU, CONTROL, PCI-SCAN, and zero to sixteen PCI-HEADER records, followed
+by the existing family-3 FINAL record. The default image retains family 24.
+CPU or MSR rejection terminates before PCI enumeration. A collector failure
+publishes its status and indexed location with count zero and no partial
+headers. Successful enumeration emits all sixteen raw header dwords with each
+BDF, in increasing address order. It still terminates with
+`qotom-platform-pending`; it performs no PCI configuration data writes and
+does not establish DMA quarantine, platform admission, or CPL3 authorization.
+CF8 address writes and the reader's BSP/exclusion assumptions still apply.
+
+`python3 scripts/check-qotom-pci-diagnostic.py CAPTURE` checks the generated
+protocol vocabulary, bounded ASCII transport, CPU/MSR replay, scan status,
+count, header widths, ordering, and terminal reason. It passes the raw snapshot
+to the generated inventory replay executable and reports that result alongside
+the raw words and hashes of the capture, protocol, and replay executables.
+The maximum capture is 16 KiB. No admission is inferred from an inventory
+match. In particular, the retained AHCI inventory does not admit the distinct
+Legacy IDE controller identity. The parser accepts an accurately replayed
+inventory rejection as diagnostic evidence.
+
+`python3 scripts/test-qotom-pci-diagnostic.py` uses the ordinary hosted CPU and
+PCI inventory executables and `build/boundary-abi/serial-protocol.tsv`.
+Those executables must first be built by their respective hosted check scripts.
+The tests cover retained, empty, and altered inventories; CPU/MSR failures;
+scan failure without partial publication; and malformed or reordered captures.
+Physical capture validation remains required before using this diagnostic as
+hardware evidence. The pinned GCC image passed all eight QEMU cases below.
+
+After `scripts/build-image.sh`, run
+`scripts/test-qotom-pci-diagnostic-image.sh`. The wrapper builds the dedicated
+ELF through the generated object graph and its own accepted page plan, audits
+the native reader, builds the replay executables, packages a diagnostic ISO,
+and executes the image under QEMU TCG. Outputs default to
+`build/ci/cpu-diagnostics/qotom-pci`, including the ISO, exact QEMU commands,
+serial captures, independent `query-pci` responses, replay reports, and hashes.
+The fixtures cover root-bus and two-bridge inventories, the seventeenth-device
+capacity failure, and five CPU rejection cases. The QMP comparison checks BDFs,
+vendor/device identities, and class/subclass; it does not independently validate
+every raw configuration dword. These emulated observations do not establish
+physical Qotom admission. CI invokes this wrapper with the existing early-IDT
+and CPU image tests, and runs the capture parser after both ordinary and
+sanitized hosted boundary suites. The toolchain compatibility runner also
+executes the diagnostic image with its selected compiler.

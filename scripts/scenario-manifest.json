@@ -197,6 +197,10 @@
       "kernel-integer-fault": [
         "-DLEANOS_INTEGER_FAULT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-integer-fault.h\""
+      ],
+      "kernel-qotom-pci-diagnostic": [
+        "-DLEANOS_QOTOM_PCI_DIAGNOSTIC=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-qotom-pci-diagnostic.h\""
       ]
     },
     "boot_objects": {
@@ -433,6 +437,10 @@
           "-DLEANOS_INTEGER_FAULT_SCENARIO=1",
           "-DLEANOS_INTEGER_FAULT_PROBE_BP=1"
         ]
+      },
+      "pci-config-read": {
+        "source": "boot/pci-config-read.S",
+        "definitions": []
       }
     },
     "images": {
@@ -716,6 +724,16 @@
         "extra_objects": [],
         "final_link": false,
         "prelink_plan": "boot-page-plan-guard.h",
+        "plan_equal_to": null
+      },
+      "leanos-qotom-pci-diagnostic": {
+        "boot": "boot",
+        "kernel": "kernel-qotom-pci-diagnostic",
+        "extra_objects": [
+          "pci-config-read"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-qotom-pci-diagnostic.h",
         "plan_equal_to": null
       }
     },

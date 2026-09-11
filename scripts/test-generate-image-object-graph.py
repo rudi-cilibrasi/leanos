@@ -1275,6 +1275,9 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
             (source / "boot/peer-pke-fixture.S").write_text(
                 ".text\n", encoding="utf-8"
             )
+            (source / "boot/pci-config-read.S").write_text(
+                ".text\n", encoding="utf-8"
+            )
             (source / "boot/linker.ld").write_text(
                 "SECTIONS { . = 0x100000; .text : { *(.text*) } }\n",
                 encoding="utf-8",

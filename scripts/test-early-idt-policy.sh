@@ -116,4 +116,5 @@ cpu_image="$build/leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso"
 if [[ "$elf" == "$build/leanos.elf" && -f "$cpu_image" ]]; then
   ./scripts/test-early-cpu-image.sh "$cpu_image" build/ci/cpu-diagnostics/early
   ./scripts/test-j1900-cpu-image.sh "$cpu_image" build/ci/cpu-diagnostics/j1900
+  ./scripts/test-qotom-pci-diagnostic-image.sh build/ci/cpu-diagnostics/qotom-pci
 fi
