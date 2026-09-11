@@ -18,11 +18,18 @@ nm --defined-only "$build/retained.elf" > "$build/retained-symbols.txt"
 python3 - "$build/retained-symbols.txt" <<'PY'
 import sys
 from pathlib import Path
-symbols = {line.split()[-1] for line in Path(sys.argv[1]).read_text().splitlines()}
-expected = {'l_LeanOS_QotomMadtStream_byteStepQuery',
-            'leanos_qotom_madt_stream_byte_step_query',
-            'l_LeanOS_QotomMadtStream_finishQuery', 'leanos_qotom_madt_stream_finish_query', '__bss_start', '_edata', '_end'}
-if symbols != expected:
-    raise SystemExit(f'unexpected retained symbols: {symbols ^ expected}')
+rows = [line.split() for line in Path(sys.argv[1]).read_text().splitlines()]
+symbols = {row[-1] for row in rows}
+required = {'leanos_qotom_madt_stream_byte_step_query',
+            'leanos_qotom_madt_stream_finish_query', '__bss_start', '_edata', '_end'}
+# Clang may inline the generated internal functions into the exported wrappers.
+optional = {'l_LeanOS_QotomMadtStream_byteStepQuery',
+            'l_LeanOS_QotomMadtStream_finishQuery'}
+if not required <= symbols or symbols - required - optional:
+    raise SystemExit(f'unexpected retained symbols: {symbols ^ required}')
+for _, kind, name in rows:
+    if name not in {'__bss_start', '_edata', '_end'} and kind not in {'T', 't', 'R', 'r'}:
+        raise SystemExit(f'unexpected writable or special symbol: {kind} {name}')
+
 PY
 printf '%s\n' 'PASS scalar export links without allocation or Lean runtime dependencies'

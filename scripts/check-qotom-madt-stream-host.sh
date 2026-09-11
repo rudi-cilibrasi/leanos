@@ -11,6 +11,7 @@ python3 scripts/test-qotom-madt-stream.py
 python3 scripts/test-qotom-madt-finish.py
 bash scripts/check-qotom-madt-stream-object.sh
 bash scripts/generate-oracle.sh build/boundary-abi
+bash scripts/check-qotom-bsp-consumer-object.sh
 corpus=build/qotom-madt-stream
 prefix="$(lean --print-prefix)"
 exports="$(awk -F '\t' '$1 == "qotom-madt-stream" { print $7; found=1 } END { exit !found }' scripts/hosted-generated-boundaries.tsv)"

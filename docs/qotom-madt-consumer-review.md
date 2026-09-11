@@ -33,3 +33,8 @@ standalone terminal-field mutation probes remain independent negative checks.
 No production source or hardware state was changed by this review. Kernel
 integration needs its own profile, final-object, emulator and physical evidence;
 it is not a reason to describe this candidate interface as full Qotom admission.
+
+The reusable bounded C caller is now described in
+[qotom-bsp-consumer.md](qotom-bsp-consumer.md). It carries actual stream outputs
+into the BSP binding under the obligations above; production selection and
+physical admission remain outstanding.
