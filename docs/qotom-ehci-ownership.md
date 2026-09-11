@@ -303,8 +303,7 @@ defines DWORD operational accesses relative to CAPLENGTH. The checked captured
 CAPLENGTH `0x20` produces addresses `0xd0915020`, `0xd0915024`, `0xd0915028`
 and `0xd0915060`. The helper allows at most 118 reads, with separate callbacks
 for capabilities and operational samples. It grants no mapping or write authority.
-The restricted mapping and native wiring are described below. A protected
-physical capture remains to be performed.
+The restricted mapping, native wiring and protected physical result are described below.
 
 The four values are sequential raw observations, not an atomic snapshot. Reserved
 bits are retained for review, while all-ones reads reject. No operational write,
@@ -347,3 +346,11 @@ complete successful SMI prefix, canonical scalar fields, exact record order and
 consistent failure publication. Earlier generated inventory replay is retained,
 and the actual operational terminal is restored after prefix projections. Raw
 observations are not claimed to be independent hardware replay or atomic samples.
+
+The [physical operational capture](../hardware/lab/observations/qotom-native-ehci-operational-20260911/README.md)
+retained command `0x80000`, status `0x1000`, interrupt enable `0` and configuration
+flag `0`. Run/Stop was clear and HCHalted set when sampled, without an operational
+write. Final ownership/SMI refresh and protected replay passed, and FreeBSD
+recovered automatically. This changes the next shutdown review: the observed
+controller was already halted. Continuing exclusion and system-wide DMA
+containment still require separate evidence.
