@@ -110,3 +110,9 @@ leanos_run_sanitized "$build/xhci-operational-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-xhci-bme.c -o "$build/xhci-bme-sanitized"
 leanos_run_sanitized "$build/xhci-bme-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/pci-express-observation.c -o "$build/express"
+"$build/express"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/pci-express-observation.c -o "$build/express-sanitized"
+leanos_run_sanitized "$build/express-sanitized"
