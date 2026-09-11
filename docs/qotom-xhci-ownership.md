@@ -455,3 +455,23 @@ The next BME step must refresh this exact stopped state before its write and
 verify it afterward. These samples do not establish outstanding-transaction
 drain or continuing firmware/AP exclusion. DMA quarantine and whole-platform
 integration remain incomplete; the terminal is still `qotom-platform-pending`.
+
+## Bounded xHCI bus-master disable helper
+
+The retained operational capture's PCI header at index 3 (00:14.0) has
+Command/Status `0x02900006`: Command is `0x0006`, independently of EHCI's
+`0x0406`. `qotom_clear_xhci_bme` requires the accepted operational observation
+(status `1`, command `0`, status `1`), refreshes that exact state, then reads
+Command immediately before one 16-bit write of `0x0002` at PCI offset 4.
+This clears only bus mastering, leaves MMIO decoding enabled and does not write
+the adjacent Status halfword. Immediate readback must agree; a full final
+operational/resource/list/ownership refresh and last Command read must also pass.
+
+The helper performs at most 357 reads and one word write. Failed writes retain
+an attempted-write diagnostic because they may have taken effect; there is no
+rollback. Tests exercise all read-failure positions at the maximum list bound,
+ignored and failed writes, before/after stopped-state changes, ownership/SMI/
+resource/list drift, BME reassertion and preservation of each PCI Status bit.
+Successful callback tests do not establish a physical clear or transaction drain.
+Native write authority, capture integration and a protected boot remain to be
+added. Firmware/AP exclusion and system-wide DMA quarantine remain separate work.
