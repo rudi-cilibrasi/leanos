@@ -287,5 +287,7 @@ status, attempt and both control samples. Local arm failures use statuses 8–9.
 The runner fingerprints its matching decoder and retains `ehci-smi.json`.
 Validation distinguishes disabled enable bits from retained status bits and
 preserves a failed SMI terminal alongside the earlier inventory replay.
-The compiled native primitive is one DWORD store. Physical SMI-disable
-execution remains the next validation step; no controller stop is introduced.
+The compiled native primitive is one DWORD store. The [physical SMI capture](../hardware/lab/observations/qotom-native-ehci-smi-20260911/README.md)
+read back control/status changing from `0x2000` to `0`, with final ownership
+refresh accepted. Protected replay agrees, and FreeBSD recovered automatically.
+This does not establish controller halt or DMA containment.
