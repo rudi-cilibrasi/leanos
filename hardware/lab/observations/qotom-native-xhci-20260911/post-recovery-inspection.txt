@@ -1,0 +1,5 @@
+kern.boottime: { sec = 1789157198, usec = 946977 } Fri Sep 11 13:06:38 2026
+SHA256 (/mnt/leanos-verify/boot/leanos-qotom-lab.elf) = aeab1521c05f702627c0aff177d707e3e2cad94891e17a731fcf392f7a25c911
+SHA256 (/mnt/leanos-verify/boot/grub/grub.cfg) = 54d98dc446ac617210df24f862d63144d0bb4e809492b4902b1ce5502aa65b40
+SHA256 (/mnt/leanos-verify/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+request=none

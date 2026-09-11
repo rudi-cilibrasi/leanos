@@ -45,7 +45,7 @@ to the firmware/root checks. It rejects present mappings into any page of the
 clears all authority and arming itself performs no device access. Tests cover
 all in-page offsets, upper-BAR bit changes, all 4096 leaf positions for first-page
 and ECAM aliases, every resource page, failed loads, restoration and terminal
-interference. Native integration is described below; physical capture remains outstanding.
+interference. Native integration is described below; the physical capture is retained below.
 
 ## Native capture integration
 
@@ -64,3 +64,12 @@ captured xHCI header/BAR pair, exact record order and scalar count, and zero
 publication on failure. Synthetic parameter words test framing, not physical
 controller values. The built image must pass foreign-firmware rejection and
 manifest verification before a guarded physical capture.
+
+## Physical capability result
+
+The [protected xHCI capture](../hardware/lab/observations/qotom-native-xhci-20260911/README.md)
+returned status 0 and DWORDs `01000080,07000820,84000054,0200000a,200077c1,00003000,00002000`
+in register order. In particular, HCSPARAMS3 and HCCPARAMS differ from defaults
+used in synthetic fixtures; future binding must use the retained hardware values.
+Both resource refreshes and protected replay passed, and FreeBSD recovered with
+the request consumed. No xHCI writes or pointer-following occurred.

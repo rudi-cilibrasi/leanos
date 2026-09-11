@@ -336,6 +336,44 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['ehci_legacy']['ownership_established'])
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_retained_xhci_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,xhci_capabilities=True)
+        self.assertEqual(result['xhci_capabilities'],expected['xhci_capabilities'])
+        self.assertEqual(result['xhci_capabilities']['status'],0)
+        self.assertEqual(result['xhci_capabilities']['words'],[0x1000080,0x7000820,0x84000054,0x200000a,0x200077c1,0x3000,0x2000])
+        self.assertEqual(result['ehci_bme'],expected['ehci_bme'])
+        self.assertEqual(result['ehci_bme']['status'],0)
+        self.assertEqual(result['ehci_bme']['write_attempted'],1)
+        self.assertEqual(result['ehci_bme']['before_command'],0x406)
+        self.assertEqual(result['ehci_bme']['after_command'],0x402)
+        self.assertEqual(result['ehci_operational'],expected['ehci_operational'])
+        self.assertEqual(result['ehci_operational']['status'],0)
+        self.assertEqual(result['ehci_operational']['command'],0x80000)
+        self.assertEqual(result['ehci_operational']['status_register'],0x1000)
+        self.assertEqual(result['ehci_operational']['interrupt_enable'],0)
+        self.assertEqual(result['ehci_operational']['configured'],0)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
     def test_legacy_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
