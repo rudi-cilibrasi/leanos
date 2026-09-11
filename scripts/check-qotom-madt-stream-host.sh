@@ -3,6 +3,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 python3 scripts/test-qotom-madt-stream.py
+python3 scripts/test-qotom-madt-finish.py
 bash scripts/check-qotom-madt-stream-object.sh
 build=build/qotom-madt-stream
 prefix="$(lean --print-prefix)"
