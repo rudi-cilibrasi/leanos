@@ -20,3 +20,8 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `step_nonprocessor_inventory` — Non-processor payload steps preserve all six carried inventory fields.
 - `run_nonprocessor_payload` — Traversing a complete bounded non-processor payload returns to a record boundary with unchanged inventory.
 - `run_nonprocessor_record` — A successful header-plus-payload traversal of a correctly sized non-processor record preserves the original inventory and returns to a boundary.
+
+- `step_processor_payload` — The carried-state model retains the scalar processor payload update and unchanged inventory.
+- `step_processor_complete` — The final payload byte checks the actual reconstructed ID/flags, advances the processor count and restores a boundary.
+- `run_processor_payload` — A successful six-byte processor payload binds its final guard to the supplied ID and four flags bytes through actual intermediate states.
+- `run_processor_record` — A successful complete eight-byte processor record validates the supplied payload, advances the original count once and restores a boundary.

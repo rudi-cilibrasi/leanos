@@ -35,3 +35,5 @@ These checks describe the values accepted by the scalar topology stream and its 
 - `record_kind_supported` — A successful kind byte is one of the four supported record types.
 - `record_length_retained` — A successful length byte matches its retained supported kind, is stored unchanged, advances to payload offset two and preserves the inventory.
 - `payload_preserves_framing` — Successful nonterminal payload transitions retain the record kind and length while advancing the record offset by one.
+
+- `processor_payload_fields` — Each successful nonterminal processor payload byte updates only its specified ID/flags field and record offset while preserving the inventory.

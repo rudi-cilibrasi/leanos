@@ -14391,6 +14391,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.processor_payload_fields",
+      "display": "processor_payload_fields",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.record_kind_starts_clean",
       "display": "record_kind_starts_clean",
       "kind": "theorem"
@@ -14463,6 +14469,18 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_processor_payload",
+      "display": "run_processor_payload",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_processor_record",
+      "display": "run_processor_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_advances_offset",
       "display": "step_advances_offset",
       "kind": "theorem"
@@ -14495,6 +14513,18 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_payload_framing",
       "display": "step_payload_framing",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_processor_complete",
+      "display": "step_processor_complete",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_processor_payload",
+      "display": "step_processor_payload",
       "kind": "theorem"
     },
     {

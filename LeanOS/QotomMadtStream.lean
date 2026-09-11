@@ -243,6 +243,31 @@ theorem processor_flags_byte_accumulated
     simp [byteStepQuery] at accepted ⊢
   all_goals repeat' (split at accepted <;> (try simp_all))
 
+/-- Every successful nonterminal local-APIC payload byte updates only its
+specified ID/flags field and record offset, preserving the complete inventory. -/
+theorem processor_payload_fields
+    (currentOffset recordOffset apicId flags enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue : UInt64)
+    (lower : 2 ≤ recordOffset) (upper : recordOffset < 7)
+    (accepted : byteStepQuery currentOffset recordOffset 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId
+      byteOffset byteValue 2 = 0) :
+    let query := byteStepQuery currentOffset recordOffset 0 8 apicId flags enabledCount
+      admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue
+    (query 4, query 5, query 6, query 7, query 8) =
+      (recordOffset + 1, 0, 8, if recordOffset = 3 then byteValue else apicId,
+        if 4 ≤ recordOffset then flags ||| (byteValue <<< ((recordOffset - 4) * 8)) else flags) ∧
+    (query 9, query 10, query 11, query 12, query 13, query 14) =
+      (enabledCount, admittedApicId, seen0, seen1, seen2, seen3) := by
+  have positions : recordOffset = 2 ∨ recordOffset = 3 ∨ recordOffset = 4 ∨
+      recordOffset = 5 ∨ recordOffset = 6 := by
+    simp only [UInt64.le_iff_toNat_le, UInt64.lt_iff_toNat_lt, ← UInt64.toNat_inj] at *
+    simp at *
+    omega
+  rcases positions with h | h | h | h | h <;> subst recordOffset <;>
+    simp [byteStepQuery] at accepted ⊢
+  all_goals repeat' (split at accepted <;> (try simp_all))
+
 /-- The final byte of an eight-byte local-APIC record can report no error
 only when its reconstructed flags and APIC ID pass the inventory guard. -/
 theorem completed_processor_requires_guard

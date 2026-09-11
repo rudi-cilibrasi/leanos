@@ -78,7 +78,10 @@ composes the actual kind and length steps from a cleared boundary, establishing
 supported framing and unchanged inventory after both bytes.
 `run_nonprocessor_record` composes a complete correctly sized non-processor
 record, proving boundary restoration and inventory preservation for arbitrary
-payload bytes. It does not validate the ignored routing fields. This model is
+payload bytes. It does not validate the ignored routing fields.
+`run_processor_record` composes all eight actual bytes of a local-APIC record,
+binds the guard to their ID and flags, advances the original count once and
+restores a clean boundary. Whole-table refinement remains unfinished. This model is
 not a production export; its full equivalence proof remains unfinished.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean

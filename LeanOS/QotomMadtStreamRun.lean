@@ -357,4 +357,116 @@ theorem run_nonprocessor_record (length executing : UInt64) (state result : Stat
     (by omega) (by omega) (by omega) (by omega) tailRun
   exact ⟨done.1, done.2.trans header.2.2.2⟩
 
+/-- Carry the exact nonterminal local-APIC payload update through the model. -/
+theorem step_processor_payload (state result : State) (length executing : UInt64)
+    (byte : UInt8) (kind : state.kind = 0) (width : state.length = 8)
+    (lower : 2 ≤ state.recordOffset) (upper : state.recordOffset < 7)
+    (accepted : step state length executing byte = .ok result) :
+    (result.recordOffset, result.kind, result.length, result.apicId, result.flags) =
+      (state.recordOffset + 1, 0, 8,
+        if state.recordOffset = 3 then byte.toUInt64 else state.apicId,
+        if 4 ≤ state.recordOffset then state.flags |||
+          (byte.toUInt64 <<< ((state.recordOffset - 4) * 8)) else state.flags) ∧
+    (result.count, result.admitted, result.seen0, result.seen1, result.seen2, result.seen3) =
+      (state.count, state.admitted, state.seen0, state.seen1, state.seen2, state.seen3) := by
+  have error := step_has_no_error state result length executing byte accepted
+  have scalar := QotomMadtStream.processor_payload_fields state.offset state.recordOffset
+    state.apicId state.flags state.count state.admitted state.seen0 state.seen1
+    state.seen2 state.seen3 length executing state.offset byte.toUInt64 lower upper
+    (by simpa [query, kind, width] using error)
+  rw [step_retains_projections state result length executing byte accepted]
+  simpa [next, query, kind, width] using scalar
+
+/-- The final carried payload byte checks the reconstructed ID and flags and
+increments the actual processor count before returning to a record boundary. -/
+theorem step_processor_complete (state result : State) (length executing : UInt64)
+    (byte : UInt8) (kind : state.kind = 0) (width : state.length = 8)
+    (position : state.recordOffset = 7)
+    (accepted : step state length executing byte = .ok result) :
+    AtBoundary result ∧ result.count = state.count + 1 ∧
+    QotomMadtStream.processorMatches state.count state.apicId
+      ((state.flags ||| (byte.toUInt64 <<< 24)) &&& 1 != 0) = true ∧
+    (state.flags ||| (byte.toUInt64 <<< 24)) &&& 2 = 0 := by
+  have error := step_has_no_error state result length executing byte accepted
+  have scalarError : QotomMadtStream.byteStepQuery state.offset 7 0 8 state.apicId
+      state.flags state.count state.admitted state.seen0 state.seen1 state.seen2
+      state.seen3 length executing state.offset byte.toUInt64 2 = 0 := by
+    simpa [query, kind, width, position] using error
+  have guarded := QotomMadtStream.completed_processor_requires_guard state.offset
+    state.apicId state.flags state.count state.admitted state.seen0 state.seen1
+    state.seen2 state.seen3 length executing state.offset byte.toUInt64 scalarError
+  have counted := QotomMadtStream.completed_processor_advances_count state.offset
+    state.apicId state.flags state.count state.admitted state.seen0 state.seen1
+    state.seen2 state.seen3 length executing state.offset byte.toUInt64 scalarError
+  refine ⟨step_completes_boundary state result length executing byte
+    (by simp [position]) (by simp [width]) (by simp [position, width]) accepted, ?_, guarded⟩
+  rw [step_retains_projections state result length executing byte accepted]
+  simpa [next, query, kind, width, position] using counted
+
+/-- A complete local-APIC payload binds its final guard to the supplied ID
+and four flag bytes, carrying every intermediate state from actual execution. -/
+theorem run_processor_payload (length executing : UInt64) (state result : State)
+    (uid id b0 b1 b2 b3 : UInt8)
+    (start : state.recordOffset = 2 ∧ state.kind = 0 ∧ state.length = 8 ∧
+      state.apicId = 0 ∧ state.flags = 0)
+    (accepted : run length executing state [uid, id, b0, b1, b2, b3] = .ok result) :
+    let flags := b0.toUInt64 ||| (b1.toUInt64 <<< 8) |||
+      (b2.toUInt64 <<< 16) ||| (b3.toUInt64 <<< 24)
+    AtBoundary result ∧ result.count = state.count + 1 ∧
+    QotomMadtStream.processorMatches state.count id.toUInt64 (flags &&& 1 != 0) = true ∧
+      flags &&& 2 = 0 := by
+  obtain ⟨s1, m1, t1⟩ := run_cons_success length executing state result
+    uid [id, b0, b1, b2, b3] accepted
+  obtain ⟨s2, m2, t2⟩ := run_cons_success length executing s1 result
+    id [b0, b1, b2, b3] t1
+  obtain ⟨s3, m3, t3⟩ := run_cons_success length executing s2 result
+    b0 [b1, b2, b3] t2
+  obtain ⟨s4, m4, t4⟩ := run_cons_success length executing s3 result
+    b1 [b2, b3] t3
+  obtain ⟨s5, m5, t5⟩ := run_cons_success length executing s4 result
+    b2 [b3] t4
+  obtain ⟨s6, m6, t6⟩ := run_cons_success length executing s5 result
+    b3 [] t5
+  change Except.ok s6 = Except.ok result at t6
+  cases t6
+  have p1 := step_processor_payload state s1 length executing uid
+    (by simp_all) (by simp_all) (by simp_all) (by simp_all) m1
+  simp only [Prod.mk.injEq] at p1
+  have p2 := step_processor_payload s1 s2 length executing id
+    (by simp_all) (by simp_all) (by simp_all) (by simp_all) m2
+  simp only [Prod.mk.injEq] at p2
+  have p3 := step_processor_payload s2 s3 length executing b0
+    (by simp_all) (by simp_all) (by simp_all) (by simp_all) m3
+  simp only [Prod.mk.injEq] at p3
+  have p4 := step_processor_payload s3 s4 length executing b1
+    (by simp_all) (by simp_all) (by simp_all) (by simp_all) m4
+  simp only [Prod.mk.injEq] at p4
+  have p5 := step_processor_payload s4 s5 length executing b2
+    (by simp_all) (by simp_all) (by simp_all) (by simp_all) m5
+  simp only [Prod.mk.injEq] at p5
+  have done := step_processor_complete s5 result length executing b3
+    (by simp_all) (by simp_all) (by simp_all) m6
+  simpa [start, p1, p2, p3, p4, p5] using done
+
+/-- A complete eight-byte processor record validates its actual payload and
+advances the original inventory count before restoring a clean boundary. -/
+theorem run_processor_record (length executing : UInt64) (state result : State)
+    (uid id b0 b1 b2 b3 : UInt8) (boundary : AtBoundary state)
+    (accepted : run length executing state [0, 8, uid, id, b0, b1, b2, b3] = .ok result) :
+    let flags := b0.toUInt64 ||| (b1.toUInt64 <<< 8) |||
+      (b2.toUInt64 <<< 16) ||| (b3.toUInt64 <<< 24)
+    AtBoundary result ∧ result.count = state.count + 1 ∧
+    QotomMadtStream.processorMatches state.count id.toUInt64 (flags &&& 1 != 0) = true ∧
+      flags &&& 2 = 0 := by
+  obtain ⟨middle, headRun, tailRun⟩ := run_append_success length executing state result
+    [0, 8] [uid, id, b0, b1, b2, b3] accepted
+  have header := run_header_retains_framing length executing state middle 0 8 boundary headRun
+  have fields := header.2.2.1
+  have inventory := header.2.2.2
+  simp only [Prod.mk.injEq] at fields inventory
+  have start : middle.recordOffset = 2 ∧ middle.kind = 0 ∧ middle.length = 8 ∧
+      middle.apicId = 0 ∧ middle.flags = 0 := by simpa using fields
+  have done := run_processor_payload length executing middle result uid id b0 b1 b2 b3 start tailRun
+  simpa [inventory.1] using done
+
 end LeanOS.QotomMadtStreamRun
