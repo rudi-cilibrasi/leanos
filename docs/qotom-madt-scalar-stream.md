@@ -73,7 +73,9 @@ status. Successful steps retain those exact values. Its `run_append` theorem
 composes byte segments through the actual intermediate result, and
 `run_append_success` extracts that state from a successful combined run.
 `run_consumes_exact_length` proves exact consumption in natural-number
-arithmetic, with no wrapped offset advancement. This model is
+arithmetic, with no wrapped offset advancement. `run_header_retains_framing`
+composes the actual kind and length steps from a cleared boundary, establishing
+supported framing and unchanged inventory after both bytes. This model is
 not a production export; its full equivalence proof remains unfinished.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean

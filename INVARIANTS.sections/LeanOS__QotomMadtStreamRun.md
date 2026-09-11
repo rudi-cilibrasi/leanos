@@ -10,3 +10,7 @@ This proof-side model carries actual scalar projections between consumed bytes. 
 - `step_advances_offset_nat` — Each successful step increases the natural-number offset by one without machine-word wraparound.
 - `run_consumes_exact_length` — A successful traversal advances by precisely the length of the supplied byte list.
 - `run_append_success` — A successful concatenated traversal yields an actual intermediate state through which both segments succeed.
+
+- `run_cons_success` — A successful nonempty traversal exposes its actual successful first step and remaining run.
+- `step_starts_record` — Starting at a cleared record boundary carries the actual kind-byte projections and preserves all inventory fields.
+- `run_header_retains_framing` — A successful two-byte header run proves a supported kind, its matching length, payload offset two, cleared payload fields and unchanged inventory from the original state.

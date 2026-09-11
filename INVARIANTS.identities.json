@@ -14433,8 +14433,20 @@
     },
     {
       "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_cons_success",
+      "display": "run_cons_success",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.run_consumes_exact_length",
       "display": "run_consumes_exact_length",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_header_retains_framing",
+      "display": "run_header_retains_framing",
       "kind": "theorem"
     },
     {
@@ -14459,6 +14471,12 @@
       "source": "LeanOS/QotomMadtStreamRun.lean",
       "qualified": "LeanOS.QotomMadtStreamRun.step_retains_projections",
       "display": "step_retains_projections",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_starts_record",
+      "display": "step_starts_record",
       "kind": "theorem"
     },
     {
