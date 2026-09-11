@@ -91,6 +91,7 @@ python3 ./scripts/test-build-manifest-consumers.py
 ./scripts/check-pci-enumeration.sh ordinary
 python3 scripts/check-pci-config-read.py
 python3 scripts/check-qotom-ecam-native.py
+python3 scripts/test-qotom-msr-writes.py
 python3 scripts/test-qotom-ecam-capture.py
 python3 scripts/test-qotom-ecam-native-qemu.py
 python3 scripts/test-pci-config-read-qemu.py
