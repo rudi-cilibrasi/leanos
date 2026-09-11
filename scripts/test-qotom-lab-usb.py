@@ -3,6 +3,8 @@
 import argparse
 from datetime import datetime
 import hashlib
+import json
+import runpy
 from pathlib import Path
 import re
 import shutil
@@ -24,10 +26,21 @@ def main():
     parser.add_argument('--freebsd-boot-uuid', required=True)
     parser.add_argument('--case', action='append', help='run only named cases; default runs every case')
     parser.add_argument('--kernel-hang-elf', type=Path, help='also test the deliberately stalled lab kernel')
+    parser.add_argument('--pci-diagnostic', action='store_true',
+                        help='test the protected PCI diagnostic image and replay its boot records')
     args = parser.parse_args()
     boot_uuid = str(uuid.UUID(args.freebsd_boot_uuid))
     root = Path(__file__).resolve().parent.parent
-    elf = root / 'build/qotom-lab/leanos-qotom-lab.elf'
+    lab_directory = root / 'build' / ('qotom-pci-lab' if args.pci_diagnostic else 'qotom-lab')
+    elf = lab_directory / 'leanos-qotom-lab.elf'
+    output = lab_directory / 'usb-tests'
+    output.mkdir(parents=True, exist_ok=True)
+    report = output / 'results.json'
+    report.unlink(missing_ok=True)
+    results = []
+    if args.pci_diagnostic:
+        diagnostic = runpy.run_path(str(root / 'scripts/check-qotom-pci-diagnostic.py'))
+        protocol = diagnostic['load_protocol'](root / 'build/boot/serial-protocol.tsv')
     digest = hashlib.sha256(elf.read_bytes()).hexdigest()
     with tempfile.TemporaryDirectory(prefix='qotom-grub-test-') as directory:
         tmp = Path(directory)
@@ -146,14 +159,17 @@ def main():
                 run('mcopy', '-o', '-i', str(image) + '@@1048576', str(original),
                     '::/boot/grub/grub.cfg')
             log = tmp / (name + '.log')
+            cpu_args = ['-cpu', 'max,vendor=GenuineIntel,family=6,model=55,stepping=8,xsave=off,avx=off,smap=off'] if args.pci_diagnostic else []
             process = subprocess.Popen([
                 'qemu-system-x86_64', '-machine', 'pc', '-m', '128', '-display', 'none',
-                '-serial', 'file:' + str(log), '-monitor', 'none',
+                '-serial', 'file:' + str(log), '-monitor', 'none', *cpu_args,
                 '-rtc', 'base=' + rtc + ',clock=vm',
                 '-drive', 'file=' + str(image) + ',format=raw,if=ide,index=0',
                 '-drive', 'file=' + str(sentinel) + ',format=raw,if=ide,index=1'],
                 stderr=subprocess.DEVNULL)
             expected = b'FINAL status=FAIL reason=dma-identity' if name in ('leanos', 'normal-guard-boot') else b'FREEBSD-CHAIN-SENTINEL'
+            if args.pci_diagnostic and name in ('leanos', 'normal-guard-boot'):
+                expected = protocol['FINAL'].encode() + b' status=FAIL reason=qotom-platform-pending\n'
             if name in ('kernel-hang', 'kernel-guard-hang'):
                 expected = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
             deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
@@ -171,6 +187,8 @@ def main():
             finally:
                 process.terminate()
                 process.wait(timeout=5)
+                if log.exists():
+                    (output / (name + '.serial.log')).write_bytes(log.read_bytes())
             data = log.read_bytes()
             if name in ('kernel-hang', 'kernel-guard-hang'):
                 assert data.count(expected) == 1 and data.endswith(expected), data
@@ -218,15 +236,32 @@ def main():
                 assert b'HASH MISMATCH' in data and b'LOAD-FAILED' in data
             if name not in ('leanos', 'normal-guard-boot'):
                 assert record(10, 'BOOT') not in data
+                if args.pci_diagnostic:
+                    assert protocol['BOOT'].encode() not in data
             else:
                 assert b'LEANOS-LAB/1 MODE' in data
+                if args.pci_diagnostic:
+                    mode = b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n'
+                    assert data.count(mode) == 1
+                    raw = data[data.index(mode) + len(mode):]
+                    replay = diagnostic['classify'](raw, protocol,
+                        root / 'build/j1900-cpu-host/host', root / 'build/qotom-pci-inventory-host/host')
+                    assert replay['cpu_selection'] == 65536 and replay['msr_readback'] == 1
+                    assert replay['pci_scan']['status'] == 0 and replay['pci_headers']
+                    assert not replay['platform_admitted'] and not replay['cpl3_authorized']
+                    (output / (name + '.replay.json')).write_text(json.dumps(replay, indent=2) + '\n')
             run('mcopy', '-o', '-i', str(image) + '@@1048576', '::/boot/grub/grubenv', str(env))
             if name == 'bad-env':
                 assert b'DISARM-FAILED fallback=freebsd' in data
             else:
                 state = subprocess.check_output(['grub-editenv', str(env), 'list'], text=True)
                 assert state == 'request=none\n', (name, state)
+            results.append({'case': name, 'serial_sha256': hashlib.sha256(data).hexdigest(),
+                            'request_consumed': name != 'bad-env'})
             print(name, 'PASS', flush=True)
+    report.write_text(json.dumps({'pci_diagnostic': args.pci_diagnostic,
+        'usb_sha256': hashlib.sha256(args.image.read_bytes()).hexdigest(),
+        'elf_sha256': digest, 'results': results}, indent=2) + '\n')
 
 
 if __name__ == '__main__':

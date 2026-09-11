@@ -173,3 +173,54 @@ To bypass the lab entirely, select the internal FreeBSD disk in firmware or
 remove the USB. To restore the pre-experiment USB prefix, verify the recorded
 backup hash and USB identity, then restore exactly the backed-up 96 MiB and
 verify its readback. The remaining USB bytes were not changed.
+
+## PCI diagnostic capture
+
+The optional PCI mode uses protocol family 25 and the generated CPU, MSR, and
+PCI inventory replay boundaries. Build it in a separate lab checkout from
+prepared inputs with identical kernel source:
+
+```sh
+python3 scripts/build-qotom-recovery-lab.py \
+  --prepared-repo ../leanos --pci-diagnostic
+python3 scripts/test-qotom-pci-diagnostic-image.py \
+  --elf build/qotom-pci-lab/leanos-qotom-lab.elf \
+  --lab-completion --output build/qotom-pci-lab/qemu
+```
+
+The builder retains the completion-reset overlay and links the diagnostic's
+native PCI reader. Its output directory is `build/qotom-pci-lab`; the default
+lab image stays in `build/qotom-lab`. `create-qotom-lab-usb.py --pci-diagnostic`
+selects the new directory when creating a local USB disk image. This packaging
+option does not write or install anything on the physical Qotom. Exercise the
+resulting disk image with the matching test mode:
+
+```sh
+python3 scripts/create-qotom-lab-usb.py \
+  --pci-diagnostic --freebsd-boot-uuid UUID_OF_ADA0P2
+python3 scripts/test-qotom-lab-usb.py \
+  --pci-diagnostic --image build/qotom-pci-lab/usb.img \
+  --freebsd-boot-uuid UUID_OF_ADA0P2
+```
+
+This uses a fake fallback disk and retains serial logs and replay results under
+`build/qotom-pci-lab/usb-tests`. Kernel-launch cases use an emulated J1900 CPU
+profile so they reach the PCI diagnostic. The watchdog recipe is mocked in the
+loader tests; request consumption, bad hashes, and fallback remain checked.
+
+After provisioning the corresponding protected lab image, pass
+`--pci-diagnostic` to `run-qotom-recovery-lab.py` with the usual host, USB serial,
+serial-device, ELF, and output arguments. It requires `watchdog-leanos` mode
+and is mutually exclusive with `--cpu-diagnostic`. `--diagnostic-replay` selects
+the CPU/MSR executable; `--pci-replay` selects the PCI inventory executable.
+Before any SSH or boot arming, both executable self-tests must pass and the
+PCI executable must reject an empty inventory through its bounded CLI.
+The tool retains the protocol and hashes of both executables, rejects changed
+replay inputs during capture, and saves the extracted diagnostic bytes.
+
+The existing image digest, watchdog launch, quiet interval, FreeBSD chain,
+SSH restoration, and consumed-request checks remain required. A scan failure
+can be captured and replayed without becoming a successful inventory result.
+Neither recovery nor an inventory match authorizes platform admission or CPL3.
+QEMU checks the completion-mode prefix and PCI observations on an unrelated
+host bridge; it does not verify the physical board-specific reset timer.

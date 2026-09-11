@@ -5,15 +5,21 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--prepared-repo', type=Path, required=True)
 p.add_argument('--mode', choices=('completion', 'kernel-hang'), default='completion')
+p.add_argument('--pci-diagnostic', action='store_true',
+               help='build the PCI diagnostic with completion reset transport')
 a = p.parse_args()
+if a.pci_diagnostic and a.mode != 'completion':
+    p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-lab' if a.mode == 'completion' else 'qotom-kernel-hang')
+out = root / 'build' / ('qotom-pci-lab' if a.pci_diagnostic else
+                       'qotom-lab' if a.mode == 'completion' else 'qotom-kernel-hang')
 out.mkdir(parents=True, exist_ok=True)
 build = root / 'build' / 'boot'
 build.mkdir(parents=True, exist_ok=True)
@@ -24,7 +30,7 @@ prepared_graph = (prepared / 'build/boot/generated-image-objects.mk').read_text(
 if str(prepared / 'boot/kernel.c') not in prepared_graph:
     raise SystemExit('prepared graph names a different checkout; regenerate it in the prepared repository')
 for item in (prepared / 'build/boot').iterdir():
-    if item.is_file() and item.suffix in {'.h', '.c', '.mk'}:
+    if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
 old = '''static __attribute__((noreturn)) void finish(uint8_t value) {
@@ -47,19 +53,22 @@ else:
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
-graph = '\n'.join('IMAGE_CC := gcc' if s.startswith('IMAGE_CC :=') else s for s in graph.splitlines()) + '\n'
+graph = '\n'.join('IMAGE_CC := gcc -I' + shlex.quote(str(root / 'boot'))
+                  if s.startswith('IMAGE_CC :=') else s for s in graph.splitlines()) + '\n'
 graph = graph.replace(str(source), str(overlay))
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
-subprocess.run(['make', '-f', str(makefile), '-j4', str(build / 'leanos.elf')], cwd=root, check=True)
+target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
+subprocess.run(['make', '-f', str(makefile), '-j4', str(target)], cwd=root, check=True)
 elf = out / ('leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
-shutil.copy2(build / 'leanos.elf', elf)
+shutil.copy2(target, elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
 if a.mode == 'completion':
     files.append(root / 'hardware/lab/qotom-finish.c.inc')
 manifest = {'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
-            'mode': a.mode, 'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
+            'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
+            'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
             'source_dirty': bool(subprocess.check_output(['git','status','--porcelain'], cwd=root, text=True)),
             'prepared_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=prepared, text=True).strip(),

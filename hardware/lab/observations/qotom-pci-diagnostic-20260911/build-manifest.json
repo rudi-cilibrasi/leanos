@@ -1,0 +1,20 @@
+{
+  "evidence_class": "lab-recovery-experiment",
+  "canonical_halt_evidence": false,
+  "mode": "completion",
+  "pci_diagnostic": true,
+  "recovery_seconds": 30,
+  "hang_recovery": false,
+  "source_revision": "37e945d2ea41fbe91bf898c4d4adef5a3a3a5875",
+  "source_dirty": false,
+  "prepared_revision": "4d54cc91b4bab758c2c990ff6c7f33e853880e55",
+  "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "files": {
+    "boot/kernel.c": "c68048ce353b2420cde0a059e6b034a0f3819c591d4df5ca7757de582e29e28c",
+    "build/qotom-pci-lab/kernel.c": "8f7d74172b7549bd8025fb7689d519bebc895f6baf96b72ad9837fd59f3f47fe",
+    "scripts/build-qotom-recovery-lab.py": "eba20c0e01dceada9887ad295af131611a63ad0a65ecb8b20648286b3878f200",
+    "build/qotom-pci-lab/objects.mk": "1101e4dd15d8e1bd7556995996c0fdce75f5f22a470784aa615aff8a5c16a3f7",
+    "build/qotom-pci-lab/leanos-qotom-lab.elf": "a2259622890a97f7a0e74682a6a4a6e5ef29742c9020f0de78b9a8f6d709547a",
+    "hardware/lab/qotom-finish.c.inc": "66e33ac21644cef4e8c96bff12c2317f6d1cdf9fd13b7e353c534fcb387c599e"
+  }
+}

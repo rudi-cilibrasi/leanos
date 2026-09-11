@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Exercise native model replay and malformed PCI boot capture boundaries."""
 import argparse
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,6 +110,84 @@ class CaptureTests(unittest.TestCase):
         for headers in (HEADERS[::-1], [HEADERS[0], HEADERS[0]]):
             with self.assertRaises(D.DiagnosticError):
                 self.classify(capture(headers))
+
+    def test_protected_recovery_binds_pci_capture(self):
+        spec = importlib.util.spec_from_file_location('lab', ROOT / 'scripts/run-qotom-recovery-lab.py')
+        lab = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lab)
+        digest = 'a' * 64
+        before = (b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'
+                  b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n'
+                  b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD sha256=' + digest.encode() + b'\n')
+        mode = lab.EXPECTED[:-len(lab.EXPECTED_KERNEL)]
+        after = b'LEANOS-LAB/1 DEFAULT request=none\n' + lab.CHAIN + b'fixture\n'
+
+        def event(data, elapsed):
+            return {'hex': data.hex(), 'elapsed': elapsed}
+
+        def classify(events):
+            return lab.classify_cpu_protected(events, digest,
+                ROOT / 'build/boundary-abi/serial-protocol.tsv', args.cpu_replay, args.pci_replay)
+
+        valid = [event(before, 14), event(mode + capture(), 20), event(after, 55)]
+        result = classify(valid)
+        self.assertEqual(result['scenario'], 'qotom-pci-diagnostic')
+        self.assertTrue(result['watchdog_protected'])
+        self.assertEqual(result['quiet_seconds'], 35)
+        self.assertEqual(result['diagnostic']['pci_headers'], HEADERS)
+        self.assertFalse(result['diagnostic']['platform_admitted'])
+        self.assertEqual(result['diagnostic']['pci_replay_executable_sha256'],
+                         hashlib.sha256(args.pci_replay.read_bytes()).hexdigest())
+        rejected_scan = [valid[0], event(mode + capture([], 2, (3, 0, 0, 0)), 20), valid[2]]
+        self.assertEqual(classify(rejected_scan)['diagnostic']['terminal_reason'], 'qotom-pci-enumeration')
+        bad_events = [
+            [event(before.replace(digest.encode(), b'b' * 64), 14), *valid[1:]],
+            [*valid[:2], event(after, 25)],
+            [valid[0], event(capture(), 20), valid[2]],
+            [valid[0], event(mode + mode + capture(), 20), valid[2]],
+            [valid[0], event(mode + capture().replace(b'count=15', b'count=14'), 20), valid[2]],
+            [event(before + P['PCI-HEADER'].encode() + b' unexpected\n', 14), *valid[1:]],
+            [*valid[:2], event(after + P['PCI-HEADER'].encode() + b' unexpected\n', 55)],
+            [valid[0], event(mode + capture() + b'extra', 20), valid[2]],
+        ]
+        for stamp in (float('nan'), float('inf'), -1, True, '20'):
+            bad_events.append([valid[0], event(mode + capture(), stamp), valid[2]])
+        for events in bad_events:
+            with self.subTest(events=events), self.assertRaises(ValueError):
+                classify(events)
+
+    def test_pci_preflight_rejects_before_remote_actions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / 'remote-called'
+            remote = root / 'remote'
+            remote.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n')
+            remote.chmod(0o755)
+            replay = root / 'wrong-replay'
+            replay.write_text('#!/bin/sh\nexit 0\n')
+            replay.chmod(0o755)
+            image = root / 'image.elf'
+            image.write_bytes(b'not executed')
+            output = root / 'capture'
+            command = ['python3', str(ROOT / 'scripts/run-qotom-recovery-lab.py'),
+                       '--host', 'unused', '--host-key-alias', 'unused',
+                       '--ssh-prefix', str(remote), '--usb-serial', 'unused',
+                       '--serial-device', 'unused', '--elf', str(image),
+                       '--output', str(output), '--pci-diagnostic',
+                       '--diagnostic-protocol', str(ROOT / 'build/boundary-abi/serial-protocol.tsv'),
+                       '--diagnostic-replay', str(args.cpu_replay.resolve()),
+                       '--pci-replay', str(replay)]
+            for extra in (['--scenario', 'leanos'], ['--cpu-diagnostic'], []):
+                result = subprocess.run(command + extra, capture_output=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(marker.exists())
+                self.assertFalse(output.exists())
+            valid = command.copy()
+            valid[-1] = str(args.pci_replay.resolve())
+            result = subprocess.run(valid, capture_output=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)  # The fake SSH endpoint fails.
+            self.assertTrue(marker.exists(), result.stderr)
+            self.assertTrue((output / 'diagnostic-replay-inputs.json').exists())
 
     def test_protocol_requires_unique_complete_identities(self):
         source = (ROOT / 'build/boundary-abi/serial-protocol.tsv').read_text()
