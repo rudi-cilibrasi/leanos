@@ -79,9 +79,13 @@ class ACPITests(unittest.TestCase):
         raw = (directory / 'cycle-1/serial.raw').read_bytes()
         mode = lab['EXPECTED'][:-len(lab['EXPECTED_KERNEL'])]
         raw = raw.replace(mode, mode + helpers['transport'](handoff()))
-        begin = raw.index(b'LEANOS/3 FINAL')
+        protocol = lab['cpu_replay_module'](True).load_protocol(
+            directory / 'diagnostic-protocol.tsv')
+        terminal = protocol['FINAL'].encode('ascii')
+        begin = raw.index(terminal)
         raw = raw[:begin] + capture()[4:-len(FINAL)] + raw[begin:]
-        final = raw.index(b'LEANOS/3 FINAL'); end = raw.index(b'\n', final) + 1
+        final = raw.index(terminal)
+        end = raw.index(b'\n', final) + 1
         events = [{'hex': raw[:end].hex(), 'elapsed': 1}, {'hex': raw[end:].hex(), 'elapsed': 36}]
         args = (events, recorded['elf_sha256'], directory / 'diagnostic-protocol.tsv',
                 root / 'build/j1900-cpu-host/host', root / 'build/qotom-pci-inventory-host/host')
