@@ -30,9 +30,22 @@ if [[ "$mode" == sanitizers ]]; then
 else
   "$build/firmware-check"
 fi
+"$cc" "${flags[@]}" tests/qotom-ecam-memory.c -o "$build/memory-check"
+if [[ "$mode" == sanitizers ]]; then
+  leanos_run_sanitized "$build/memory-check"
+else
+  "$build/memory-check"
+fi
 cat > "$build/freestanding.c" <<'C'
 #include "qotom-ecam-read.h"
 #include "qotom-ecam-firmware.h"
+#include "qotom-ecam-memory.h"
+int controls_match(const struct lab_ecam_controls *controls, uint64_t root) {
+    return lab_ecam_controls_match(controls, root);
+}
+int make_read_leaf(uint64_t address, uint64_t *leaf) {
+    return lab_ecam_read_leaf(address, leaf);
+}
 int firmware_matches(const struct lab_ecam_firmware_table *tables, uint32_t count) {
     return lab_ecam_firmware_matches(tables, count);
 }

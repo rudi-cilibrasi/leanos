@@ -108,3 +108,19 @@ not admit relocated or revised firmware, and does not prove resource ownership,
 AP/firmware exclusion, mapping cache type or DMA containment. The caller must
 provide immutable validated copies and establish those remaining access
 conditions. The gate is not yet called from the physical diagnostic.
+
+`hardware/lab/qotom-ecam-memory.h` checks the local memory-control conditions:
+the observed PAT layout, exact selected CR3, PG/WP/PE, active long mode/NXE,
+PAE, and absence of CD/NW, PCIDE, LA57, PGE, IF and VM. It constructs a
+present supervisor read-only NX leaf with PCD/PWT set and PAT clear, selecting
+PAT slot 3 (UC). It changes no register or page table. Ordinary and sanitizer
+tests exercise control-bit rejection and all 4194304 supported dword leaves.
+
+These scalar checks are necessary inputs to the future mapping transaction.
+They do not establish that supplied observations are fresh, that root/ancestor
+tables have the expected shape, that ECAM has no cache aliases, or that no
+firmware/AP agent changes state. The transaction must bind actual observations,
+check the active boot map, invalidate the aperture translation after each leaf
+change, restore the exact saved leaf, and publish only after a completed dword
+read. Existing ACPI copying performs byte loads through a writable aperture and
+must not be reused unchanged for this operation.
