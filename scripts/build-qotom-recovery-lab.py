@@ -26,7 +26,10 @@ p.add_argument('--bsp-topology', action='store_true', help='bind root-selected M
 p.add_argument('--pci-capabilities', action='store_true', help='capture bounded conventional capability lists after native inventory acceptance')
 p.add_argument('--af-observation', action='store_true', help='observe AF control/status after native capability capture')
 p.add_argument('--ehci-capabilities', action='store_true', help='read native EHCI capability registers through a separate window')
+p.add_argument('--ehci-legacy', action='store_true', help='observe bounded EHCI extended list and legacy control/status')
 a = p.parse_args()
+if a.ehci_legacy and not a.ehci_capabilities:
+    p.error('--ehci-legacy requires --ehci-capabilities')
 if a.ehci_capabilities and not a.af_observation:
     p.error('--ehci-capabilities requires --af-observation')
 if a.af_observation and not a.pci_capabilities:
@@ -55,7 +58,8 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-ehci-lab' if a.ehci_capabilities else
+out = root / 'build' / ('qotom-legacy-lab' if a.ehci_legacy else
+                       'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
                        'qotom-bsp-lab' if a.bsp_topology else
@@ -74,6 +78,8 @@ for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
+if a.ehci_legacy:
+    text = '#define LEANOS_QOTOM_EHCI_LEGACY 1\n' + text
 if a.af_observation:
     text = '#define LEANOS_QOTOM_AF_OBSERVATION 1\n' + text
 if a.ecam_read:
@@ -301,7 +307,9 @@ if a.ehci_capabilities:
                   root / 'hardware/lab/qotom-ehci-arm.h',
                   root / 'hardware/lab/qotom-ehci-window.h',
                   root / 'boot/qotom-ehci-capabilities.h'])
-manifest = {'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.ehci_legacy:
+    files.append(root / 'boot/qotom-ehci-legacy.h')
+manifest = {'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

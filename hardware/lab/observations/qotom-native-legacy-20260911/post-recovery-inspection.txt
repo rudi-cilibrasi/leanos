@@ -1,0 +1,319 @@
+Fri Sep 11 18:04:32 UTC 2026
+11758C40
+=>       63  122879937    da0  MBR  (59G)
+         63       1985         - free -  (993K)
+       2048     194560  da0s1  fat32lba  [active]  (95M)
+     196608  122683392         - free -  (59G)
+
+machdep.bootmethod: BIOS
+kern.boottime: { sec = 1789149591, usec = 918706 } Fri Sep 11 10:59:51 2026
+** /dev/da0s1
+** Phase 1 - Read FAT and checking connectivity
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Lost Files
+307 files, 74 MiB free (152447 clusters)
+SHA256 (boot/leanos-qotom-lab.elf) = 64a5e46f2f99c3d273569be2abea03e9633e11817cc8123657532e0510810723
+SHA256 (boot/leanos.sha256) = 2f3749a622ed9167babbbe59fa7600144b3161dd0635bc125e3c4343ee319f0a
+SHA256 (boot/grub/grub.cfg) = b015f099870dd252b0ee91f636269297dc24a18e793c25c35a4a98235fa3c6b6
+SHA256 (boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+SHA256 (boot/grub/watchdog-window.cfg) = 09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce
+SHA256 (boot/grub/watchdog.cfg) = 62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86
+64a5e46f2f99c3d273569be2abea03e9633e11817cc8123657532e0510810723  /boot/leanos-qotom-lab.elf
+# Lab-only BIOS disk. Persistent default is the existing FreeBSD disk.
+insmod part_gpt
+insmod part_msdos
+insmod fat
+insmod probe
+insmod chain
+insmod loadenv
+serial --unit=0 --speed=38400 --word=8 --parity=no --stop=1
+terminal_input console serial
+terminal_output console serial
+set timeout=0
+set labroot=$root
+set request=none
+load_env --file=($labroot)/boot/grub/grubenv request
+set selected=$request
+set request=none
+if save_env --file=($labroot)/boot/grub/grubenv request; then
+    if [ "$selected" = "none" ]; then
+        echo 'LEANOS-LAB/1 DEFAULT request=none'
+    fi
+    if [ "$selected" = "leanos-64a5e46f2f99c3d273569be2abea03e9633e11817cc8123657532e0510810723" ]; then
+        echo 'LEANOS-LAB/1 SELECT leanos consumed=1'
+        if hashsum --hash sha256 --check ($labroot)/boot/leanos.sha256; then
+          if multiboot2 ($labroot)/boot/leanos-qotom-lab.elf; then
+            boot
+          fi
+        fi
+        echo 'LEANOS-LAB/1 LOAD-FAILED fallback=freebsd'
+    fi
+    if [ "$selected" = "watchdog-test" ]; then
+        # Physical testing repeated this request after a watchdog reset.
+        # Disabled until durable consumption under that reset is established.
+        echo 'LEANOS-LAB/1 WATCHDOG-DISABLED fallback=freebsd'
+    fi
+    insmod regexp
+    set wd_prefix=watchdog-test
+    set wd_image=none
+    if [ "0" = "1" ]; then
+        if regexp '^watchdog-kernel-' "$selected"; then
+            set wd_prefix=watchdog-kernel-disabled
+            set wd_image=kernel
+        fi
+    fi
+    if regexp '^watchdog-leanos-' "$selected"; then
+        set wd_prefix=watchdog-leanos-64a5e46f2f99c3d273569be2abea03e9633e11817cc8123657532e0510810723
+        set wd_image=leanos
+    fi
+    if regexp '^watchdog-(test|kernel|leanos)-' "$selected"; then
+        if [ -f ($labroot)/boot/grub/watchdog-window.cfg ]; then
+            source ($labroot)/boot/grub/watchdog-window.cfg
+            if qotom_watchdog_window "$selected" "$wd_prefix"; then
+                echo 'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1'
+                if [ -f ($labroot)/boot/grub/watchdog.cfg ]; then
+                    source ($labroot)/boot/grub/watchdog.cfg
+                    if qotom_watchdog_arm; then
+                        if [ "$wd_image" != "none" ]; then
+                            if [ "$wd_image" = "kernel" ]; then
+                                echo 'LEANOS-LAB/1 WATCHDOG-KERNEL-LOAD sha256=disabled'
+                                set wd_checksum=kernel-hang.sha256
+                                set wd_elf=leanos-qotom-kernel-hang.elf
+                            else
+                                echo 'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD sha256=64a5e46f2f99c3d273569be2abea03e9633e11817cc8123657532e0510810723'
+                                set wd_checksum=leanos.sha256
+                                set wd_elf=leanos-qotom-lab.elf
+                            fi
+                            if hashsum --hash sha256 --check ($labroot)/boot/$wd_checksum; then
+                                if multiboot2 ($labroot)/boot/$wd_elf; then
+                                    boot
+                                fi
+                            fi
+                            echo 'LEANOS-LAB/1 WATCHDOG-LOAD-FAILED fallback=freebsd'
+                            qotom_watchdog_stop
+                        else
+                            # Deliberate loader-stage stall, with a bounded software
+                            # escape if the independent reset fails to happen.
+                            sleep 300
+                            echo 'LEANOS-LAB/1 WATCHDOG-NO-RESET fallback=freebsd'
+                            qotom_watchdog_stop
+                        fi
+                    fi
+                fi
+            else
+                echo 'LEANOS-LAB/1 WATCHDOG-WINDOW expired-or-invalid=1 fallback=freebsd'
+            fi
+        fi
+    fi
+    if [ "$selected" = "rtc-probe" ]; then
+        # Read the clock and exercise expiry without touching watchdog registers.
+        if [ -f ($labroot)/boot/grub/watchdog-window.cfg ]; then
+            source ($labroot)/boot/grub/watchdog-window.cfg
+            set probe_token="watchdog-test-${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}"
+            echo "LEANOS-LAB/1 RTC-BEGIN ${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}-${SECOND}"
+            if qotom_watchdog_window "$probe_token"; then
+                echo 'LEANOS-LAB/1 RTC-CURRENT accepted=1'
+            else
+                echo 'LEANOS-LAB/1 RTC-CURRENT accepted=0'
+            fi
+            sleep 65
+            echo "LEANOS-LAB/1 RTC-END ${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}-${SECOND}"
+            if qotom_watchdog_window "$probe_token"; then
+                echo 'LEANOS-LAB/1 RTC-EXPIRED rejected=0'
+            else
+                echo 'LEANOS-LAB/1 RTC-EXPIRED rejected=1'
+            fi
+        else
+            echo 'LEANOS-LAB/1 RTC-UNAVAILABLE fallback=freebsd'
+        fi
+    fi
+    if [ "$selected" = "reboot-test" ]; then
+        echo 'LEANOS-LAB/1 SELECT reboot-test consumed=1'
+        sleep 3
+        reboot
+    fi
+else
+    echo 'LEANOS-LAB/1 DISARM-FAILED fallback=freebsd'
+fi
+# Identify the installed disk by its FreeBSD boot partition UUID, not hd order.
+for disk in hd0 hd1 hd2 hd3; do
+    set candidate=unknown
+    if probe --set=candidate --part-uuid ($disk,gpt2); then
+        if [ "$candidate" = "c61fe515-abe3-11f1-9563-000ec4cca294" ]; then
+            echo "LEANOS-LAB/1 CHAIN freebsd disk=$disk"
+            set root=($disk)
+            chainloader +1
+            boot
+        fi
+    fi
+done
+echo 'LEANOS-LAB/1 CHAIN-FAILED manual-recovery-required'
+set timeout=-1
+menuentry 'Retry FreeBSD default' {
+    configfile ($labroot)/boot/grub/grub.cfg
+}
+# Optional lab guard. The caller supplies a fixed digest-bound kernel prefix.
+# Requests name one RTC minute. A 120-tick watchdog reset must outlast it.
+# RTC advancement and the firmware/FreeBSD clock convention require physical
+# validation before this can guard an armed experiment.
+insmod datehook
+function qotom_watchdog_window {
+    set wd_window_prefix=watchdog-test
+    if [ -n "$2" ]; then
+        set wd_window_prefix=$2
+    fi
+    set wd_window="${wd_window_prefix}-${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}"
+    if [ "$YEAR" -ge 2026 -a "$YEAR" -le 2099 -a "$MONTH" -ge 1 -a "$MONTH" -le 12 -a "$DAY" -ge 1 -a "$DAY" -le 31 -a "$HOUR" -ge 0 -a "$HOUR" -le 23 -a "$MINUTE" -ge 0 -a "$MINUTE" -le 59 ]; then
+        # Re-sample to reject rollover while constructing the first string.
+        if [ "$1" = "$wd_window" -a "$wd_window" = "${wd_window_prefix}-${YEAR}-${MONTH}-${DAY}-${HOUR}-${MINUTE}" ]; then
+            true
+        else
+            false
+        fi
+    else
+        false
+    fi
+}
+# Opt-in, closed Bay Trail TCO v3 experiment. Source only after consuming request.
+# Register recipe follows FreeBSD ichwd; unknown register state is rejected.
+insmod setpci
+insmod iorw
+insmod memrw
+
+function qotom_watchdog_stop {
+    # Called only after the exact pre-arm state below has been accepted.
+    outw 0x468 0x800
+    outw 0x472 4 0x3ff
+    write_dword 0xfed03008 0x10 0x10
+    inw -v wd_count 0x468
+    read_dword -v wd_pmc 0xfed03008
+    if [ "$wd_count" = "800" -a "$wd_pmc" = "10" ]; then
+        set wd_armed=0
+        true
+    else
+        echo 'LEANOS-LAB/1 WATCHDOG-STOP-FAILED'
+        false
+    fi
+}
+
+function qotom_watchdog_arm {
+    set wd_armed=0
+    set wd_host=unknown
+    set wd_lpc=unknown
+    set wd_acpi=unknown
+    set wd_pbase=unknown
+    setpci -s 00:00.0 -v wd_host 0.l
+    setpci -s 00:1f.0 -v wd_lpc 0.l
+    setpci -s 00:1f.0 -v wd_acpi 40.l
+    setpci -s 00:1f.0 -v wd_pbase 44.l
+    if [ "$wd_host" = "f008086" -a "$wd_lpc" = "f1c8086" -a "$wd_acpi" = "403" -a "$wd_pbase" = "fed03002" ]; then
+        read_dword -v wd_pmc 0xfed03008
+        inl -v wd_smi 0x430
+        inw -v wd_count 0x468
+        inw -v wd_timer 0x472
+        echo "LEANOS-LAB/1 WATCHDOG-STATE pmc=$wd_pmc smi=$wd_smi count=$wd_count timer=$wd_timer"
+        set wd_smi_ok=0
+        if [ "$wd_smi" = "20033" -o "$wd_smi" = "20073" ]; then
+            set wd_smi_ok=1
+        fi
+        if [ "$wd_pmc" = "10" -a "$wd_count" = "800" -a "$wd_timer" = "4" -a "$wd_smi_ok" = "1" ]; then
+            # TCO SMI is already disabled. Preserve unrelated PMC/timer bits.
+            write_dword 0xfed03008 0 0x10
+            outw 0x464 8
+            outw 0x466 2
+            outw 0x466 4
+            outw 0x472 120 0x3ff
+            outw 0x460 1
+            read_dword -v wd_pmc 0xfed03008
+            inw -v wd_timer 0x472
+            if [ "$wd_pmc" = "0" -a "$wd_timer" = "78" ]; then
+                # Initial control was exactly HALT, so no preserve bit is set.
+                outw 0x468 0
+                inw -v wd_count 0x468
+                if [ "$wd_count" = "0" ]; then
+                    set wd_armed=1
+                    echo 'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
+                fi
+            fi
+            if [ "$wd_armed" != "1" ]; then
+                qotom_watchdog_stop
+            fi
+        fi
+    fi
+    if [ "$wd_armed" = "1" ]; then
+        true
+    else
+        echo 'LEANOS-LAB/1 WATCHDOG-ARM-REJECTED'
+        false
+    fi
+}
+request=none
+-rwxr-xr-x  1 root wheel   3396 Sep  9 09:52 boot/grub/i386-pc/chain.mod
+-rwxr-xr-x  1 root wheel   6060 Sep  9 09:52 boot/grub/i386-pc/fat.mod
+-rwxr-xr-x  1 root wheel  15940 Sep  9 09:52 boot/grub/i386-pc/multiboot2.mod
+-rwxr-xr-x  1 root wheel 115044 Sep  9 09:52 boot/grub/i386-pc/normal.mod
+-rwxr-xr-x  1 root wheel   2264 Sep  9 09:52 boot/grub/i386-pc/part_msdos.mod
+Geom name: ada0
+modified: false
+state: OK
+fwheads: 16
+fwsectors: 63
+last: 250069639
+first: 40
+entries: 128
+scheme: GPT
+Providers:
+1. Name: ada0p1
+   Mediasize: 272629760 (260M)
+   Sectorsize: 512
+   Stripesize: 0
+   Stripeoffset: 20480
+   Mode: r1w1e2
+   efimedia: HD(1,GPT,c614dfa6-abe3-11f1-9563-000ec4cca294,0x28,0x82000)
+   rawuuid: c614dfa6-abe3-11f1-9563-000ec4cca294
+   rawtype: c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+   label: efiboot0
+   length: 272629760
+   offset: 20480
+   type: efi
+   index: 1
+   end: 532519
+   start: 40
+2. Name: ada0p2
+   Mediasize: 524288 (512K)
+   Sectorsize: 512
+   Stripesize: 0
+   Stripeoffset: 272650240
+   Mode: r0w0e0
+   efimedia: HD(2,GPT,c61fe515-abe3-11f1-9563-000ec4cca294,0x82028,0x400)
+   rawuuid: c61fe515-abe3-11f1-9563-000ec4cca294
+   rawtype: 83bd6b9d-7f41-11dc-be0b-001560b84f0f
+   label: gptboot0
+   length: 524288
+   offset: 272650240
+   type: freebsd-boot
+   index: 2
+   end: 533543
+   start: 532520
+3. Name: ada0p3
+   Mediasize: 127761645568 (119G)
+   Sectorsize: 512
+   Stripesize: 0
+   Stripeoffset: 273678336
+   Mode: r1w1e1
+   efimedia: HD(3,GPT,c62dd460-abe3-11f1-9563-000ec4cca294,0x82800,0xedf9800)
+   rawuuid: c62dd460-abe3-11f1-9563-000ec4cca294
+   rawtype: 516e7cba-6ecf-11d6-8ff8-00022d09712b
+   label: zfs0
+   length: 127761645568
+   offset: 273678336
+   type: freebsd-zfs
+   index: 3
+   end: 250068991
+   start: 534528
+Consumers:
+1. Name: ada0
+   Mediasize: 128035676160 (119G)
+   Sectorsize: 512
+   Mode: r2w2e5
+
