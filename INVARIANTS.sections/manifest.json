@@ -65,6 +65,7 @@
     "LeanOS/QotomBspTopology.lean",
     "LeanOS/QotomMadtStream.lean",
     "LeanOS/QotomMadtStreamRun.lean",
+    "LeanOS/QotomNativePCIFields.lean",
     "LeanOS/QotomNativePCIInventory.lean",
     "LeanOS/QotomPCIInventory.lean",
     "LeanOS/QotomPCIQuarantineObservation.lean",

@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 lake build LeanOS.QotomNativePCIInventory
+./scripts/check-qotom-native-fields.sh
 lake env python3 scripts/test-qotom-native-inventory.py
 export LEANOS_HOSTED_BOUNDARY_ID=qotom-native-inventory
 ./scripts/check-boot-handoff-host.sh "${1:-ordinary}"

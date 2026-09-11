@@ -14774,6 +14774,54 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.checkHeader_binds_raw",
+      "display": "checkHeader_binds_raw",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.entries_eq_of_words",
+      "display": "entries_eq_of_words",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.entryWords_injective",
+      "display": "entryWords_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.expected_row",
+      "display": "expected_row",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.matches_entry",
+      "display": "matches_entry",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.matches_row",
+      "display": "matches_row",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.native_inventory_of_words",
+      "display": "native_inventory_of_words",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNativePCIFields.lean",
+      "qualified": "LeanOS.QotomNativePCIFields.observed_entry_words",
+      "display": "observed_entry_words",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomNativePCIInventory.lean",
       "qualified": "LeanOS.QotomNativePCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",
