@@ -225,3 +225,13 @@ Protected mutations cover valid failure outcomes, contradictory success and
 failure terminals, altered prior control, impossible poll counts and stale
 support values. No physical handoff outcome is established by those synthetic
 records; a protected boot is required after build verification.
+
+## First physical handoff result
+
+The [protected handoff capture](../hardware/lab/observations/qotom-native-xhci-handoff-rejection-20260911/README.md)
+observed BIOS-clear/OS-owned support `0x01000801` at poll two, then rejected final
+verification with status 10. It recovered FreeBSD with the request consumed.
+The final control field is zero because no accepted final sample was published.
+This is a rejected experiment, not a completed handoff. Additional diagnostics
+must distinguish final collection, list comparison and semaphore checks before
+further xHCI changes. The strict acceptance checks remain required.

@@ -1,0 +1,12 @@
+{
+  "schema": "leanos-qotom-xhci-handoff-observation-v1",
+  "status": 10,
+  "write_attempted": 1,
+  "polls": 2,
+  "last_support": 16779265,
+  "final_control": 0,
+  "terminal_reason": "qotom-xhci-handoff",
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false
+}
