@@ -49,6 +49,46 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_ahci_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-pcie-device-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(status=0,values=(0,0,0,0,0)):
+            return (f'LEANOS-LAB/1 AHCI-CAPS profile=qotom-ahci-v1 index=2 status={status}'+
+                ''.join(f' {key}={value}' for key,value in zip(
+                    ('capability','control','ports','version','extended'),values))+'\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True)
+        result=check(record(values=(1,2,3,0x10300,0x3c)))
+        self.assertEqual(result['ahci_capabilities']['extended'],0x3c)
+        self.assertFalse(result['ahci_capabilities']['dma_quarantine_established'])
+        self.assertIn('ahci_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-ahci-capabilities')
+        for status in range(3,8):
+            result=check(record(status),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ahci-capabilities')
+            with self.assertRaises(ValueError):check(record(status))
+            with self.assertRaises(ValueError):check(record(status,(1,0,0,0,0)),failure)
+        for bad in (b'',record()+record(),record(1),record(2),record(8),
+                record().replace(b'index=2',b'index=3'),record().replace(b'status=0',b'status=00')):
+            with self.assertRaises(ValueError):check(bad)
+        for i in range(5):
+            values=[0]*5;values[i]=0xffffffff
+            with self.assertRaises(ValueError):check(record(values=values))
+        with self.assertRaises(ValueError):check(record(),failure)
+
     def test_retained_pcie_device_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-pcie-device-20260911'
         manifest = json.loads((capture / 'manifest.json').read_text())

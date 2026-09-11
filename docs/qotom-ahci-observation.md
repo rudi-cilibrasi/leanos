@@ -43,6 +43,20 @@ all saved authority, without performing device access.
 Window tests exercise every byte offset in the page, all five permitted loads,
 load failure and pre/post-read control or mapping interference. Arm tests cover
 all 4096 possible alias leaves, every bound PCI-header bit, changed firmware,
-missing callbacks and failed rearming. The future native experiment still needs
-record emission/decoding, protected recovery and physical capture. No hardware access has yet been performed by this helper.
+missing callbacks and failed rearming. The native stage now emits one `AHCI-CAPS` result after successful PCIe Device
+capture. It disarms the configuration and MMIO contexts before serial output
+or a failure terminal. The builder option `--ahci-capabilities` requires
+`--pcie-device-observation` and selects `build/qotom-ahci-lab`.
+
+The matching runner option fingerprints the decoder and saves
+`ahci-capabilities.json`. The decoder validates the preceding PCIe/USB sequence,
+requires the exact bound SATA header for helper results, rejects impossible
+native argument/header failures, and preserves raw successful values without
+interpreting controller state. Every failure has zero payload, and the actual
+AHCI terminal survives projection through the earlier decoders. Synthetic
+protected replays cover success, all reachable helper/arm failures, malformed
+records, all-ones fields and terminal contradictions.
+
+Native image validation and protected physical capture are still pending.
+No hardware access has yet been performed by this helper.
 It advances the SATA portion of #330 and #291 without granting boot admission.
