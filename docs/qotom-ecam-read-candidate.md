@@ -175,3 +175,19 @@ control checks remain required. Hosted tests reject aliases at every leaf
 position, unexpected ancestors and huge pages, changed aperture attributes,
 root mismatch, overlapping storage and invalid extents. The freestanding
 object has no external runtime dependency.
+
+`hardware/lab/qotom-ecam-arm.h` composes the firmware equality gate with
+fresh control observations before and after root validation. Success selects
+the checked aperture leaf from the supplied boot-array view and arms the
+transaction. Every rejected rearm clears the previous arm, leaf, root and
+window. Arming itself performs no invalidation, page-table write or device
+load. The root view exposes mutable leaf storage explicitly rather than
+casting away constness when selecting the aperture.
+
+The composed hosted test exercises successful arming followed by the actual
+window transaction, firmware rejection without primitive calls, revocation
+after a previous success, both control-observation failures, an existing ECAM
+alias and a missing callback. Ordinary and pinned ASan/UBSan checks pass.
+The caller still owns binding array views to compiled physical addresses,
+private context storage, immutable firmware copies and exclusion assumptions;
+this helper is not yet invoked by the diagnostic image builder.

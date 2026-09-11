@@ -48,7 +48,18 @@ if [[ "$mode" == sanitizers ]]; then
 else
   "$build/root-check"
 fi
+"$cc" "${flags[@]}" tests/qotom-ecam-arm.c -o "$build/arm-check"
+if [[ "$mode" == sanitizers ]]; then
+  leanos_run_sanitized "$build/arm-check"
+else
+  "$build/arm-check"
+fi
 cat > "$build/freestanding.c" <<'C'
+#include "qotom-ecam-arm.h"
+int arm(struct lab_ecam_window *window, const struct lab_ecam_root_view *view,
+        const struct lab_ecam_firmware_table *tables, uint32_t count, uint64_t address) {
+    return lab_ecam_arm(window, view, tables, count, address);
+}
 #include "qotom-ecam-root.h"
 int root_matches(const struct lab_ecam_root_view *view, uint64_t root, uint64_t window) {
     return lab_ecam_root_matches(view, root, window);

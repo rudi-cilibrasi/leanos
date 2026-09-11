@@ -6,7 +6,8 @@
  * input. The native caller must bind each view to its identity physical address
  * and keep all arrays stable during validation and the aperture transaction. */
 struct lab_ecam_root_view {
-    const volatile uint64_t *root, *pdpt, *pd, *pt;
+    const volatile uint64_t *root, *pdpt, *pd;
+    volatile uint64_t *pt;
     uint64_t root_address, pdpt_address, pd_address, pt_address;
 };
 
