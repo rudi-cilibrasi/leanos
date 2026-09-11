@@ -912,6 +912,45 @@ class Capture(unittest.TestCase):
                 record(1,0,0,0),record(2,0,0,0),record(11,0,0,0),record(0,1,0x100002000,0)]:
             with self.assertRaises(ValueError): check(changed)
 
+    def test_xhci_operational_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-smi-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,xhci_operational=True)
+        def record(status=0,before=1,command=0,after=1):
+            return f'LEANOS-LAB/1 XHCI-OPERATIONAL profile=qotom-xhci-operational-v1 index=3 status={status} sampled={before} command={command} final={after}\n'.encode()
+        success=record();result=check(success)
+        self.assertEqual(result['xhci_operational']['status_before'],1)
+        self.assertEqual(result['xhci_operational']['command'],0)
+        self.assertEqual(result['xhci_operational']['status_after'],1)
+        self.assertIn('xhci_operational_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['xhci_operational']['atomic_snapshot'])
+        self.assertFalse(result['xhci_operational']['dma_quarantine_established'])
+        self.assertEqual(check(record(before=0x10,command=0xd,after=1))['xhci_operational']['command'],0xd)
+        failure=P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-operational\n'
+        for status in range(3,12):
+            failed=record(status,0,0,0)
+            self.assertEqual(check(failed,failure)['diagnostic']['terminal_reason'],'qotom-xhci-operational')
+            with self.assertRaises(ValueError): check(failed)
+            with self.assertRaises(ValueError): check(record(status,1,0,0),failure)
+        for changed in [b'',success+success,record(1,0,0,0),record(2,0,0,0),record(12,0,0,0),
+                record(before=0x800),record(after=0x800),record(command=0xffffffff),
+                record(before=0xffffffff),record(after=0xffffffff),record(command=0x100000000),
+                success.replace(b'index=3',b'index=4'),success.replace(b'status=0',b'status=00')]:
+            with self.assertRaises(ValueError): check(changed)
+        with self.assertRaises(ValueError): check(success,failure)
+
     def test_operational_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-smi-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())

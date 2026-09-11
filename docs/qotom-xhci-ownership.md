@@ -407,8 +407,8 @@ raw command/status values, including state changes between reads; they are not
 an atomic snapshot or a halt, drain, firmware-exclusion or DMA-containment proof.
 Tests cover every read-failure position at the maximum list length, exact access
 order and addresses, CNR guards, missing-device samples, ownership/SMI/resource/
-list drift, live vendor status and zero failed output. Diagnostic integration
-and a protected physical capture remain to be added.
+list drift, live vendor status and zero failed output. A protected physical
+capture remains to be added.
 
 ## Restricted operational read mapping
 
@@ -423,4 +423,21 @@ firmware/root/PCI checks and excludes aliases across the entire 64-KiB resource.
 Failed rearming clears all authority, and arming performs no device access.
 Tests cover all resource-byte offsets and boundaries, mapping/control failures,
 all page-table alias slots, capability and SMI-result mutations, and failed
-rearming. Native capture wiring remains the next step.
+rearming. The native stage below connects this mapping to the collector.
+
+## Native operational diagnostic integration
+
+`--xhci-operational` requires `--xhci-smi` and selects the separate operational
+lab output. The out-of-line native stage arms the capability, extended-list and
+operational readers, samples through the bounded collector, and disarms all
+contexts before emitting `XHCI-OPERATIONAL`. The record carries status, first
+status sample (`sampled`), command and second status sample (`final`). Native
+arm failures are 9, 10 and 11 respectively; helper failure fields remain zero.
+
+The runner extracts this record before the SMI prefix, fingerprints the decoder,
+retains `xhci-operational.json` and restores the actual terminal after replay.
+The decoder requires a successful SMI prefix and exact SMI binding for helper
+results. It rejects impossible statuses, nonzero failed output, CNR/missing-device
+success samples and contradictory terminals. It retains changes between the two
+status reads without inferring an atomic snapshot or controller halt. Physical
+state and automatic recovery still require a protected boot of the built image.
