@@ -15,6 +15,9 @@ static __attribute__((noreturn)) void lab_smi_fault(void *opaque) {
     (void)opaque;lab_smi_writer.armed=0;lab_handoff_disarm();
     pre_admission_fail("qotom-ehci-smi");
 }
+#ifdef LEANOS_QOTOM_EHCI_OPERATIONAL
+#include "qotom-ehci-operational.c.inc"
+#endif
 static void lab_disable_ehci_smi(const struct lab_ecam_root_view *view,
         const struct pci_enumeration_header *header,
         const struct qotom_ehci_capabilities *caps,
@@ -39,4 +42,7 @@ static void lab_disable_ehci_smi(const struct lab_ecam_root_view *view,
     serial_puts(" before=");serial_u64(result.before_control);
     serial_puts(" after=");serial_u64(result.after_control);serial_putc('\n');
     if(status!=QOTOM_EHCI_SMI_OBSERVED)pre_admission_fail("qotom-ehci-smi");
+#ifdef LEANOS_QOTOM_EHCI_OPERATIONAL
+    lab_observe_ehci_operational(view,header,caps,&result);
+#endif
 }

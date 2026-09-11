@@ -303,8 +303,8 @@ defines DWORD operational accesses relative to CAPLENGTH. The checked captured
 CAPLENGTH `0x20` produces addresses `0xd0915020`, `0xd0915024`, `0xd0915028`
 and `0xd0915060`. The helper allows at most 118 reads, with separate callbacks
 for capabilities and operational samples. It grants no mapping or write authority.
-The restricted mapping is described below. Native wiring, decoder integration
-and a protected physical capture remain to be implemented.
+The restricted mapping and native wiring are described below. A protected
+physical capture remains to be performed.
 
 The four values are sequential raw observations, not an atomic snapshot. Reserved
 bits are retained for review, while all-ones reads reject. No operational write,
@@ -330,3 +330,20 @@ before its operational samples; immutable views and serialized trusted callbacks
 remain caller obligations. Tests cover all in-page address offsets, ECAM/EHCI
 alias slots, capability and SMI-result mutations, load failures, restoration and
 terminal interference.
+
+## Native operational observation
+
+The builder's `--ehci-operational` requires `--ehci-smi` and creates a separate
+`build/qotom-operational-lab` image with all four new source files in its manifest.
+After the successful SMI record, native code rearms the capability and operational
+readers, invokes the bounded collector, and revokes all read contexts before
+emitting `EHCI-OPERATIONAL`. Local arming failures use statuses 8 and 9. Successful
+sampling still terminates at `qotom-platform-pending`; failed sampling terminates
+at `qotom-ehci-operational`. No controller stop or reset is requested.
+
+The protected runner fingerprints the matching decoder before arming, rechecks
+it after recovery, and retains `ehci-operational.json`. The decoder requires the
+complete successful SMI prefix, canonical scalar fields, exact record order and
+consistent failure publication. Earlier generated inventory replay is retained,
+and the actual operational terminal is restored after prefix projections. Raw
+observations are not claimed to be independent hardware replay or atomic samples.
