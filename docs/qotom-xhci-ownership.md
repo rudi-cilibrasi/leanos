@@ -336,8 +336,8 @@ reasserted enables, ownership/resource/list drift, live vendor status and failed
 writes with and without effects.
 
 SMI disable alone does not establish continuing firmware exclusion, controller
-halt, transaction drain or quarantine. Native diagnostics, strict replay and a
-protected physical capture remain to be added.
+halt, transaction drain or quarantine. Native diagnostics and the physical
+result are described below.
 
 ## Consumed SMI write window
 
@@ -354,8 +354,8 @@ copies and boot root, rejects aliases across the complete 64-KiB resource, and
 revokes all authority on failed rearming. Arming itself reads or writes no device
 register. Tests exercise every resource byte address, all address/value bits,
 all nonzero 16-bit values, restoration failures, all page-table alias slots,
-captured-state mutations and handoff-result fields. The native stage below connects the window to the helper; its physical result
-still needs to be captured.
+captured-state mutations and handoff-result fields. The native stage below connects the window to the helper and retains its
+physical result.
 
 ## Native SMI diagnostic integration
 
@@ -374,3 +374,13 @@ binding for helper results, reachable attempt/readback fields and consistent
 terminals. Mutation tests cover valid failure outcomes, impossible statuses,
 changed enables, forbidden readback bits, missing/duplicate records and bounds.
 Synthetic replay does not establish a physical SMI-disable result.
+
+## Physical SMI result
+
+The [protected SMI capture](../hardware/lab/observations/qotom-native-xhci-smi-20260911/README.md)
+observed control `0x2000` before the zero DWORD write and `0` afterward, with
+status 0 and complete refresh checks passing. FreeBSD recovered automatically;
+independent SSH verified the image and consumed request. The retained replay
+checks this result together with all preceding EHCI and xHCI observations.
+Operational shutdown, BME disable, device/fabric drain and continuing firmware/AP
+exclusion remain outstanding. The terminal stays `qotom-platform-pending`.
