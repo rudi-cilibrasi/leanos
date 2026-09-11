@@ -58,7 +58,7 @@ checks, not general EHCI compatibility claims.
 The collector delegates MMIO access to a caller-supplied callback. The callback
 must separately establish the UC mapping, alias exclusion and restoration
 contract described above; this component does not authorize arbitrary MMIO.
-The native adapter is described below; a physical capability-register capture remains outstanding. Tests
+The native adapter is described below; the physical result is linked below. Tests
 exercise read failures at every position, identity/BAR drift, all CAPLENGTH
 bytes, and rejection of addresses outside the three selected offsets in both
 ordinary and sanitizer builds.
@@ -96,4 +96,7 @@ terminal alongside the inventory replay projection. Failed hardware reads
 remain observations, not independently replayed results. A native fault without
 a complete record fails capture validation. Synthetic protected-capture tests
 cover success, malformed records, and every publishable failure status.
-A physical EHCI capability capture remains outstanding.
+The [physical capture](../hardware/lab/observations/qotom-native-ehci-20260911/README.md)
+returned capability base `0x01000020`, HCSPARAMS `0x00200008` and HCCPARAMS
+`0x00036881`. Thus the observed extended-list pointer is `0x68`; the list and
+ownership semaphores remain to be read. FreeBSD recovered automatically.

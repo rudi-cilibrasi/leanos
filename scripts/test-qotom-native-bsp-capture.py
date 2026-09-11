@@ -192,6 +192,22 @@ class Capture(unittest.TestCase):
             self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-capabilities')
             with self.assertRaises(ValueError): check(failed)
 
+    def test_retained_physical_ehci(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True)
+        self.assertEqual(result['ehci_capabilities'],expected['ehci_capabilities'])
+        self.assertEqual(result['ehci_capabilities']['capability'],0x36881)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():

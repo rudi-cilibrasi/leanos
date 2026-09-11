@@ -1,0 +1,389 @@
+{
+  "schema": "leanos-pci-capability-capture-v1",
+  "capture_sha256": "97a21900d2efcd8aa57a4b3d5575eaff990aafb7094aa0763b65a1b748cc6f1c",
+  "functions": [
+    {
+      "index": 0,
+      "address": [
+        0,
+        0,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": []
+    },
+    {
+      "index": 1,
+      "address": [
+        0,
+        2,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 208,
+          "raw": 2265089
+        },
+        {
+          "offset": 144,
+          "raw": 45061
+        },
+        {
+          "offset": 176,
+          "raw": 17235977
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "address": [
+        0,
+        19,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 128,
+          "raw": 28677
+        },
+        {
+          "offset": 112,
+          "raw": 1073981441
+        },
+        {
+          "offset": 168,
+          "raw": 1048594
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "address": [
+        0,
+        20,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 112,
+          "raw": 3250749441
+        },
+        {
+          "offset": 128,
+          "raw": 8781829
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "address": [
+        0,
+        26,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 128,
+          "raw": 1208197121
+        },
+        {
+          "offset": 160,
+          "raw": 5
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "address": [
+        0,
+        27,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 80,
+          "raw": 3359793153
+        },
+        {
+          "offset": 96,
+          "raw": 8388613
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "address": [
+        0,
+        28,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 21135376
+        },
+        {
+          "offset": 128,
+          "raw": 36869
+        },
+        {
+          "offset": 144,
+          "raw": 40973
+        },
+        {
+          "offset": 160,
+          "raw": 3355639809
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "address": [
+        0,
+        28,
+        1
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 21135376
+        },
+        {
+          "offset": 128,
+          "raw": 36869
+        },
+        {
+          "offset": 144,
+          "raw": 40973
+        },
+        {
+          "offset": 160,
+          "raw": 3355639809
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "address": [
+        0,
+        28,
+        2
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 21135376
+        },
+        {
+          "offset": 128,
+          "raw": 36869
+        },
+        {
+          "offset": 144,
+          "raw": 40973
+        },
+        {
+          "offset": 160,
+          "raw": 3355639809
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "address": [
+        0,
+        28,
+        3
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 21135376
+        },
+        {
+          "offset": 128,
+          "raw": 36869
+        },
+        {
+          "offset": 144,
+          "raw": 40973
+        },
+        {
+          "offset": 160,
+          "raw": 3355639809
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "address": [
+        0,
+        29,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 80,
+          "raw": 3385022465
+        },
+        {
+          "offset": 88,
+          "raw": 547395594
+        },
+        {
+          "offset": 152,
+          "raw": 50724883
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "address": [
+        0,
+        31,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 224,
+          "raw": 269221897
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "address": [
+        0,
+        31,
+        3
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 80,
+          "raw": 196609
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "address": [
+        1,
+        0,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 4290990081
+        },
+        {
+          "offset": 80,
+          "raw": 8417285
+        },
+        {
+          "offset": 112,
+          "raw": 33730576
+        },
+        {
+          "offset": 176,
+          "raw": 249873
+        },
+        {
+          "offset": 208,
+          "raw": 3
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "address": [
+        2,
+        0,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 3456325633
+        },
+        {
+          "offset": 88,
+          "raw": 7882761
+        },
+        {
+          "offset": 72,
+          "raw": 8441861
+        },
+        {
+          "offset": 208,
+          "raw": 65552
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "address": [
+        3,
+        0,
+        0
+      ],
+      "status": 0,
+      "offset": 0,
+      "headers": [
+        {
+          "offset": 64,
+          "raw": 4290990081
+        },
+        {
+          "offset": 80,
+          "raw": 8417285
+        },
+        {
+          "offset": 112,
+          "raw": 33730576
+        },
+        {
+          "offset": 176,
+          "raw": 249873
+        },
+        {
+          "offset": 208,
+          "raw": 3
+        }
+      ]
+    }
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "failed_reads_replayed": false,
+  "platform_admitted": false,
+  "dma_quarantine_established": false
+}
