@@ -32,4 +32,5 @@ python3 scripts/test-qotom-pci-diagnostic.py
 python3 scripts/test-qotom-handoff-capture.py
 python3 scripts/test-qotom-acpi-capture.py
 python3 scripts/test-qotom-pci-read-trace.py
+python3 scripts/test-qotom-bootstrap-capture.py
 python3 scripts/test-qotom-pci-diagnostic-image.py --output "$output"
