@@ -199,3 +199,26 @@ a second request after consumption, failed stores, mapping restoration and
 terminal interference. Arm tests reject all 4096 ECAM and EHCI alias slots and
 mutations to the captured legacy/capability fields. Native store/timing wiring
 and the protected physical handoff capture remain outstanding.
+
+## Checked ten-millisecond delay
+
+`qotom-pm-delay.h` binds the pinned FADT's 24-bit timer at I/O port `0x408`
+and its 32-bit access format, then rechecks LPC identity, Command `0x0007`
+and ACPI-base decode `0x403`. It performs no timer read while arming and
+revokes prior authority if the binding fails. Native resource stability and
+firmware exclusion remain assumptions.
+
+The [ACPI timer specification](https://uefi.org/specs/ACPI/6.5/04_ACPI_Hardware_Specification.html)
+defines a 3,579,545-Hz free-running counter. The helper accepts only the
+handoff's ten-millisecond delay. It requires 35,797 elapsed ticks: the rounded-up
+interval plus one tick to cover unknown phase at the initial sample. It allows
+24-bit wraparound, rejects upper bits, backward elapsed samples and differences
+of half a cycle or more, and caps each delay at one million reads including
+the initial sample. A read failure or exhausted bound revokes the context.
+
+The arithmetic assumes a continuous standards-compliant clock and bounded
+callbacks. It cannot detect whole counter cycles hidden between samples or
+prove a wall-time upper bound against arbitrary firmware pauses. No timer or
+event register is written. Tests cover the tick threshold, wraparound, stopped
+and backward clocks, read failures and failed LPC binding. Native I/O callback
+wiring and the protected handoff experiment remain outstanding.
