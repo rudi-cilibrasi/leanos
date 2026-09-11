@@ -54,8 +54,18 @@ and raw dword. Failed lists publish zero headers and stop with
 `qotom-pci-capabilities`. Successful observation still stops at
 `qotom-platform-pending`; it does not admit the platform or establish DMA safety.
 
-The capture runner and strict decoder must be extended before deploying this
-option in a protected physical run. Existing native-inventory decoders do not
-accept these additional records. The emission test invokes the actual lab
-function and checks window ownership, backward links, exact output, and failure
-disarm with ordinary and sanitizer builds.
+The recovery runner's matching `--pci-capabilities` flag requires
+`--native-kernel`, fingerprints the decoder before arming, and retains
+`pci-capabilities.json`. Extraction checks record ordering, the initial pointer
+against the same capture's PCI header, link progression, bounds, cycles, and
+termination. The remaining prefix must pass the generated native inventory
+replay. The actual capability terminal is retained separately from that prefix
+projection. A failed read has no returned raw value to replay: its status and
+location remain observations, with `failed_reads_replayed=false`.
+
+The emission test invokes the actual lab function and checks window ownership,
+backward links, exact output, and failure disarm with ordinary and sanitizer
+builds. Decoder mutation tests and synthetic capability records inserted into a
+retained protected BSP capture exercise both success and rejection paths.
+These synthetic capability values are not hardware observations. A fresh
+protected physical capture remains necessary.

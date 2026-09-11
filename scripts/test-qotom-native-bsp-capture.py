@@ -67,6 +67,33 @@ class Capture(unittest.TestCase):
         self.assertTrue(expected['request_consumed'])
         self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
 
+    def test_capability_protected_projection(self):
+        # Synthetic capability contents over real inventory/recovery framing.
+        # This is transport validation, not a physical capability observation.
+        caps = b''
+        for line in RAW[:END].splitlines():
+            if line.startswith(P['PCI-HEADER'].encode()):
+                words = list(map(int, line.split(b' words=')[1].split(b',')))
+                index = len(caps.split(b'PCI-CAPS')) - 1
+                head = words[16] & 255 if words[4] & 0x100000 else 0
+                caps += f'LEANOS-LAB/1 PCI-CAPS profile=conventional-v1 index={index} status=0 offset=0 count={1 if head else 0}\n'.encode()
+                if head:
+                    caps += f'LEANOS-LAB/1 PCI-CAP index={index} slot=0 offset={head} raw=1\n'.encode()
+        for rejected in (False, True):
+            emitted = (b'LEANOS-LAB/1 PCI-CAPS profile=conventional-v1 index=0 status=2 offset=0 count=0\n'
+                       if rejected else caps)
+            terminal = P['FINAL'].encode() + b' status=FAIL reason=qotom-pci-capabilities\n' if rejected else FINAL
+            prefix = RAW[:END].replace(ARM, ARM + record()).replace(FINAL, emitted + terminal)
+            events = [{'elapsed':0,'hex':prefix.hex()},{'elapsed':35,'hex':RAW[END:].hex()}]
+            result = R['classify_cpu_protected'](events,DIGEST,C / 'diagnostic-protocol.tsv',CPU,PCI,
+                handoff=True,acpi=True,bootstrap=True,ecam_memory=True,dsdt=True,
+                ecam_read=True,native_inventory=True,native_kernel=True,
+                bsp_replay=BSP,pci_capabilities=True)
+            self.assertEqual(result['diagnostic']['inventory_result'],1)
+            self.assertEqual(result['diagnostic']['terminal_reason'],
+                             'qotom-pci-capabilities' if rejected else 'qotom-platform-pending')
+            self.assertIn('pci_capabilities_decoder_sha256',result['diagnostic'])
+
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
         for name,digest in manifest['files'].items():

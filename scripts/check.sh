@@ -92,6 +92,7 @@ python3 ./scripts/test-build-manifest-consumers.py
 python3 scripts/check-pci-config-read.py
 python3 scripts/check-qotom-ecam-native.py
 bash scripts/check-pci-capabilities.sh
+python3 scripts/test-qotom-pci-capabilities-capture.py
 python3 scripts/test-qotom-msr-writes.py
 python3 scripts/test-qotom-ecam-capture.py
 python3 scripts/test-qotom-ecam-native-qemu.py
