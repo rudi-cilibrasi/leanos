@@ -272,3 +272,26 @@ reversed maps retain their original normalized regions. The overlapping maps
 remain accepted and pin their changed region projections. Independent drift
 tests change source entry count/order and update the raw hashes, then require
 the unchanged normalized expectation to reject the alteration.
+
+## Native Qotom GRUB handoff
+
+The separately pinned `firmware-corpus/qotom-native-handoff.json` adds the
+actual 2026-09-11 legacy GRUB information block to the shared Lean/generated-C
+memory replay. The converter verifies the retained capture hashes and emits
+the original 2,680 bytes unchanged, with the captured magic and physical
+information address (2,728,208). It does not reconstruct a memory-only block
+or replace that address with the conventional corpus address.
+
+The accepted projection preserves all 19 memory entries and four normalized
+regions in the existing 16 MiB allocation domain. All 74 result words plus an
+out-of-range zero query are pinned. This is memory decode/normalization only;
+it neither admits the four-core topology nor certifies memory outside that
+existing allocation domain. The externally referenced ACPI tables remain a
+separate native capture requirement.
+
+Eight explicitly synthetic mutations exercise wrong magic, unaligned pointer,
+truncation, nonzero header reservation, unsupported entry version, zero-length
+and overflowing entries, and a duplicate memory-map tag. Both the native row
+and these mutations use the same ordinary/sanitized generated-C corpus harness
+and Lean query checks as the reconstructed firmware rows. Native capture bytes
+are never changed to produce the accepted result.

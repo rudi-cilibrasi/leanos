@@ -15,6 +15,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 python3 hardware/lab/test-freebsd-efi-map.py
 python3 scripts/test-freebsd-firmware-corpus.py
+python3 scripts/test-native-handoff-corpus.py
 python3 scripts/test-capture-acpi-root-tables.py
 python3 scripts/test-firmware-root-corpus.py
 python3 "$tool" validate
@@ -31,7 +32,8 @@ cases="$(python3 "$tool" list | wc -l)"
 rows="$(grep -c -v '^#' "$out/replay.tsv")"
 (( cases >= 3 )) || { echo "error: the corpus must hold at least three firmware captures" >&2; exit 1; }
 root_rows="$(python3 -c 'import json; print(sum(1 + len(c["root_mutations"]) for c in json.load(open("firmware-corpus/manifest.json"))["cases"] if c["root_tables"] in ("acpidump", "freebsd-physical")))')"
-(( rows == cases * 18 + root_rows )) || { echo "error: expected $((cases * 18 + root_rows)) replay rows, found $rows" >&2; exit 1; }
+native_rows="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import native_handoff_corpus as n; print(len(n.inputs()))')"
+(( rows == cases * 18 + root_rows + native_rows )) || { echo "error: expected $((cases * 18 + root_rows + native_rows)) replay rows, found $rows" >&2; exit 1; }
 python3 "$tool" list | awk -F '\t' '
   $3 == "accepted" { handoff++ }
   $4 == "accepted" { admitted++ }
