@@ -102,4 +102,35 @@ theorem witness_has_sixteen_functions (w : Witness) : w.headers.length = 16 := b
   simpa [baseline, QotomPCIInventory.baseline] using h
 
 
+/-- The native witness cannot be substituted for the historical inventory. -/
+theorem distinct_from_historical (native : Witness)
+    (historical : QotomPCIInventory.Witness) : native.headers ≠ historical.headers := by
+  intro same
+  have impossible : (16 : Nat) = 15 := by
+    calc
+      16 = native.headers.length := (witness_has_sixteen_functions native).symm
+      _ = historical.headers.length := congrArg List.length same
+      _ = 15 := QotomPCIInventory.witness_has_fifteen_functions historical
+  cases impossible
+
+/-- Complete immutable snapshot transport: sixteen slots of BDF plus sixteen
+raw dwords. Both the declared count and physical array size are checked before
+reading any slot. This hosted boundary allocates Lean objects; it is not yet
+a freestanding or hardware enumeration adapter. Success is inventory match
+only, not quarantine. The array argument is consumed by the generated C ABI. -/
+@[export leanos_qotom_native_pci_inventory_check]
+def checkWords (count : UInt64) (words : Array UInt64) : UInt64 :=
+  if count != 16 then QotomPCIInventory.Error.count.code
+  else if words.size != 304 then 0x10001
+  else
+    let raw := (List.range 16).map fun index =>
+      let offset := index * 19
+      let bdf : BDF := ⟨words.getD offset 0, words.getD (offset + 1) 0,
+        words.getD (offset + 2) 0⟩
+      let dwords := (List.range 16).map fun i => words.getD (offset + 3 + i) 0
+      ({ bdf := bdf, words := dwords } : RawHeader)
+    match check raw with
+    | .ok _ => 1
+    | .error reason => QotomPCIInventory.Error.code reason
+
 end LeanOS.QotomNativePCIInventory

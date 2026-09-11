@@ -34,11 +34,28 @@ def main():
     for i in range(6, 10):
         rejects(f'captured.set {i} ⟨raw{i}.bdf, raw{i}.words.set 15 0⟩', f'.routing {i}')
     lines.append('example : (match LeanOS.QotomPCIInventory.check captured with | .error e => e == .count | .ok _ => false) = true := by decide')
+    flat = [word for header in headers for word in header]
+    cases = [('native', 16, flat, 1), ('old-count', 15, flat, 0x10000),
+             ('short-array', 16, flat[:-1], 0x10001), ('long-array', 16, flat + [0], 0x10001)]
+    for i in range(16):
+        changed = flat.copy(); changed[i * 19 + 3] = 0x12348086
+        cases.append((f'identity-{i}', 16, changed, 0x40000 + i))
+        changed = flat.copy(); changed[i * 19:i * 19 + 3] = [255, 31, 7]
+        cases.append((f'address-{i}', 16, changed, 0x30000 + i))
+    c = ['#include <stdint.h>', 'static const struct { const char *name; uint64_t count; unsigned size; uint64_t expected; uint64_t words[305]; } native_cases[] = {']
+    for name, count, words, expected in cases:
+        values = ','.join(str(w) for w in words)
+        lines.append(f'example : checkWords {count} #[{values}] = {expected} := by decide')
+        c.append(f'{{"{name}",{count},{len(words)},{expected},{{{values}}}}},')
+    c.append('};')
+    case_header = ROOT / 'build/native-inventory/cases.h'
+    case_header.parent.mkdir(parents=True, exist_ok=True)
+    case_header.write_text('\n'.join(c) + '\n')
     output = ROOT / 'build/native-inventory/replay.lean'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text('\n'.join(lines) + '\n')
     subprocess.run(['lean', str(output)], cwd=ROOT, check=True)
-    print('Native inventory: captured 16-function acceptance, raw preservation and 41 rejection examples PASS')
+    print('Native inventory: raw preservation, 41 rejections and 36 array ABI cases PASS')
 
 
 if __name__ == '__main__': main()
