@@ -1,0 +1,90 @@
+hostb0@pci0:0:0:0:	class=0x060000 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f00 subvendor=0x8086 subdevice=0x0f31
+vgapci0@pci0:0:2:0:	class=0x030000 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f31 subvendor=0x8086 subdevice=0x0f31
+    cap 01[d0] = powerspec 2  supports D0 D3  current D0
+    cap 05[90] = MSI supports 1 message 
+    cap 09[b0] = vendor (length 7) Intel cap 0 version 1
+ahci0@pci0:0:19:0:	class=0x010601 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f23 subvendor=0x8086 subdevice=0x0f23
+    cap 05[80] = MSI supports 1 message enabled with 1 message
+    cap 01[70] = powerspec 3  supports D0 D3  current D0
+    cap 12[a8] = SATA Index-Data Pair
+xhci0@pci0:0:20:0:	class=0x0c0330 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f35 subvendor=0x8086 subdevice=0x0f35
+    cap 01[70] = powerspec 2  supports D0 D3  current D0
+    cap 05[80] = MSI supports 8 messages, 64 bit enabled with 1 message
+none0@pci0:0:26:0:	class=0x108000 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f18 subvendor=0x8086 subdevice=0x0f18
+    cap 01[80] = powerspec 3  supports D0 D3  current D0
+    cap 05[a0] = MSI supports 1 message 
+hdac0@pci0:0:27:0:	class=0x040300 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f04 subvendor=0x8086 subdevice=0x0f04
+    cap 01[50] = powerspec 2  supports D0 D3  current D0
+    cap 05[60] = MSI supports 1 message, 64 bit enabled with 1 message
+pcib1@pci0:0:28:0:	class=0x060400 rev=0x0e hdr=0x01 vendor=0x8086 device=0x0f48 subvendor=0x8086 subdevice=0x0f48
+    cap 10[40] = PCI-Express 2 root port max data 128(128)
+                 max read 128
+                 link x1(x1) speed 2.5(5.0) ASPM L1(L0s/L1)
+                 slot 0 power limit 100 mW HotPlug(present) surprise
+    cap 05[80] = MSI supports 1 message 
+    cap 0d[90] = PCI Bridge subvendor=0x8086 subdevice=0x0f48
+    cap 01[a0] = powerspec 3  supports D0 D3  current D0
+pcib2@pci0:0:28:1:	class=0x060400 rev=0x0e hdr=0x01 vendor=0x8086 device=0x0f4a subvendor=0x8086 subdevice=0x0f4a
+    cap 10[40] = PCI-Express 2 root port max data 128(128)
+                 max read 128
+                 link x1(x1) speed 2.5(5.0) ASPM L0s/L1(L0s/L1)
+                 slot 1 power limit 100 mW HotPlug(present) surprise
+    cap 05[80] = MSI supports 1 message 
+    cap 0d[90] = PCI Bridge subvendor=0x8086 subdevice=0x0f4a
+    cap 01[a0] = powerspec 3  supports D0 D3  current D0
+pcib3@pci0:0:28:2:	class=0x060400 rev=0x0e hdr=0x01 vendor=0x8086 device=0x0f4c subvendor=0x8086 subdevice=0x0f4c
+    cap 10[40] = PCI-Express 2 root port max data 128(128)
+                 max read 128
+                 link x1(x1) speed 2.5(5.0) ASPM L1(L0s/L1)
+                 slot 2 power limit 100 mW HotPlug(present) surprise
+    cap 05[80] = MSI supports 1 message 
+    cap 0d[90] = PCI Bridge subvendor=0x8086 subdevice=0x0f4c
+    cap 01[a0] = powerspec 3  supports D0 D3  current D0
+pcib4@pci0:0:28:3:	class=0x060400 rev=0x0e hdr=0x01 vendor=0x8086 device=0x0f4e subvendor=0x8086 subdevice=0x0f4e
+    cap 10[40] = PCI-Express 2 root port max data 128(128)
+                 max read 128
+                 link x0(x1) speed 0.0(5.0) ASPM L0s/L1(L0s/L1)
+                 slot 3 power limit 100 mW HotPlug(empty) surprise
+    cap 05[80] = MSI supports 1 message 
+    cap 0d[90] = PCI Bridge subvendor=0x8086 subdevice=0x0f4e
+    cap 01[a0] = powerspec 3  supports D0 D3  current D0
+isab0@pci0:0:31:0:	class=0x060100 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f1c subvendor=0x8086 subdevice=0x0f1c
+    cap 09[e0] = vendor (length 12) Intel cap 1 version 0
+		 features: 4 PCI-e x1 slots
+ichsmb0@pci0:0:31:3:	class=0x0c0500 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f12 subvendor=0x8086 subdevice=0x0f12
+    cap 01[50] = powerspec 3  supports D0 D3  current D0
+re0@pci0:1:0:0:	class=0x020000 rev=0x07 hdr=0x00 vendor=0x10ec device=0x8168 subvendor=0x10ec subdevice=0x0123
+    cap 01[40] = powerspec 3  supports D0 D1 D2 D3  current D0
+    cap 05[50] = MSI supports 1 message, 64 bit 
+    cap 10[70] = PCI-Express 2 endpoint MSI 1 max data 128(128)
+                 max read 4096
+                 link x1(x1) speed 2.5(2.5) ASPM disabled(L0s/L1) ClockPM disabled
+    cap 11[b0] = MSI-X supports 4 messages, enabled
+                 Table in map 0x20[0x0], PBA in map 0x20[0x800]
+    cap 03[d0] = VPD
+    ecap 0001[100] = AER 1 0 fatal 0 non-fatal 3 corrected
+    ecap 0002[140] = VC 1 max VC0
+    ecap 0003[160] = Serial 1 01000000684ce000
+bwn_pci0@pci0:2:0:0:	class=0x028000 rev=0x01 hdr=0x00 vendor=0x14e4 device=0x4353 subvendor=0x14e4 subdevice=0x04d8
+    cap 01[40] = powerspec 3  supports D0 D1 D2 D3  current D0
+    cap 09[58] = vendor (length 120)
+    cap 05[48] = MSI supports 1 message, 64 bit 
+    cap 10[d0] = PCI-Express 1 endpoint max data 128(128)
+                 max read 128
+                 link x1(x1) speed 2.5(2.5) ASPM L0s/L1(L0s/L1) ClockPM enabled
+    ecap 0001[100] = AER 1 0 fatal 0 non-fatal 3 corrected
+    ecap 0002[13c] = VC 1 max VC0
+    ecap 0003[160] = Serial 1 75f17fffffc9100d
+    ecap 0004[16c] = Power Budgeting 1
+re1@pci0:3:0:0:	class=0x020000 rev=0x07 hdr=0x00 vendor=0x10ec device=0x8168 subvendor=0x10ec subdevice=0x0123
+    cap 01[40] = powerspec 3  supports D0 D1 D2 D3  current D0
+    cap 05[50] = MSI supports 1 message, 64 bit 
+    cap 10[70] = PCI-Express 2 endpoint MSI 1 max data 128(128)
+                 max read 512
+                 link x1(x1) speed 2.5(2.5) ASPM disabled(L0s/L1) ClockPM disabled
+    cap 11[b0] = MSI-X supports 4 messages, enabled
+                 Table in map 0x20[0x0], PBA in map 0x20[0x800]
+    cap 03[d0] = VPD
+    ecap 0001[100] = AER 1 0 fatal 0 non-fatal 3 corrected
+    ecap 0002[140] = VC 1 max VC0
+    ecap 0003[160] = Serial 1 01000000684ce000
