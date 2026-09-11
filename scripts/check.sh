@@ -134,9 +134,15 @@ if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-generated-boundaries.sh ordinary
   python3 scripts/test-qotom-ecam-protected.py
   python3 scripts/test-qotom-native-inventory-capture.py
-python3 scripts/test-qotom-native-kernel-capture.py
+  python3 scripts/test-qotom-native-kernel-capture.py
+  bash scripts/build-qotom-bsp-replay.sh ordinary
+  python3 scripts/test-qotom-native-bsp-capture.py
 
   ./scripts/check-hosted-generated-boundaries.sh sanitized
+  bash scripts/build-qotom-bsp-replay.sh sanitized
+  source scripts/hosted-sanitizer-config.sh
+  ASAN_OPTIONS="$leanos_host_asan_options" UBSAN_OPTIONS="$leanos_host_ubsan_options" \
+    LEANOS_BSP_REPLAY="$PWD/build/qotom-bsp-replay-sanitized/host" python3 scripts/test-qotom-native-bsp-capture.py
 
   ./scripts/check-hosted-sanitizer-negatives.sh
 fi

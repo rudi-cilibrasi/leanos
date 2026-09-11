@@ -31,7 +31,7 @@ def firmware_matches(metadata, files):
     return all(files[name] == pinned('cycle-1/acpi/' + name) for name in names)
 
 
-def extract(raw, protocol, metadata, files):
+def extract(raw, protocol, metadata, files, *, bsp_failure=False):
     """Consume after ACPI extraction and before bootstrap/memory extraction."""
     lines = raw.splitlines(keepends=True)
     if not lines or not raw.endswith(b'\n'):
@@ -41,8 +41,9 @@ def extract(raw, protocol, metadata, files):
              if line.startswith(protocol['PCI-SCAN'].encode() + b' ')]
     rejected = lines[-1] == protocol['FINAL'].encode() + b' status=FAIL reason=qotom-ecam-arm\n'
     fault = lines[-1] == protocol['FINAL'].encode() + b' status=FAIL reason=qotom-ecam-transaction\n'
+    bsp_rejected = bsp_failure and lines[-1] == protocol['FINAL'].encode() + b' status=FAIL reason=qotom-native-bsp\n'
     if not indices:
-        if scans or fault:
+        if scans or fault or bsp_rejected:
             raise ValueError('ECAM scan/fault without arm record')
         if not rejected:
             return raw, None  # The ordinary diagnostic replay checks earlier CPU failures.
@@ -53,7 +54,7 @@ def extract(raw, protocol, metadata, files):
                      'platform_admitted': False}
     if indices != [5] or lines[5] != ARM:
         raise ValueError('missing, repeated or misplaced ECAM arm record')
-    if rejected or (scans != [6] and not (fault and not scans and len(lines) == 7)):
+    if rejected or (scans != [6] and not ((fault or bsp_rejected) and not scans and len(lines) == 7)):
         raise ValueError('ECAM arm/scan/terminal ordering')
     if not firmware_matches(metadata, files):
         raise ValueError('ECAM arm disagrees with captured firmware')
