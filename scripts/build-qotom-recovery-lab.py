@@ -18,7 +18,10 @@ p.add_argument('--handoff-capture', action='store_true',
 p.add_argument('--acpi-capture', action='store_true', help='copy and retain root-selected ACPI tables')
 p.add_argument('--pci-read-trace', action='store_true')
 p.add_argument('--bootstrap-capture', action='store_true')
+p.add_argument('--ecam-memory-capture', action='store_true')
 a = p.parse_args()
+if a.ecam_memory_capture and not a.bootstrap_capture:
+    p.error('--ecam-memory-capture requires --bootstrap-capture')
 if a.bootstrap_capture and not a.pci_diagnostic:
     p.error('--bootstrap-capture requires --pci-diagnostic')
 if a.pci_read_trace and not a.pci_diagnostic:
@@ -95,6 +98,13 @@ if a.bootstrap_capture:
         raise SystemExit('unsupported CPU/MSR bootstrap gate shape')
     text = text.replace(marker, (root / 'hardware/lab/qotom-bootstrap.c.inc').read_text() + '\n' + marker)
     text = text.replace(gate, gate + '\n    lab_capture_bootstrap((uint32_t)w[9]);')
+if a.ecam_memory_capture:
+    marker = 'static void lab_capture_bootstrap(uint32_t cpuid_edx) {'
+    call = '    lab_capture_bootstrap((uint32_t)w[9]);'
+    if text.count(marker) != 1 or text.count(call) != 1:
+        raise SystemExit('unsupported ECAM memory capture shape')
+    text = text.replace(marker, (root / 'hardware/lab/qotom-ecam-memory.c.inc').read_text() + '\n' + marker)
+    text = text.replace(call, call + '\n    lab_capture_ecam_memory((uint32_t)w[9]);')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -131,7 +141,9 @@ if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
     files.extend([plan, final_plan])
 if a.bootstrap_capture:
     files.append(root / 'hardware/lab/qotom-bootstrap.c.inc')
-manifest = {'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.ecam_memory_capture:
+    files.append(root / 'hardware/lab/qotom-ecam-memory.c.inc')
+manifest = {'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

@@ -47,3 +47,17 @@ This is an incomplete ECAM implementation. No physical callback, kernel call,
 MMIO read, resource-admission witness, device quiescence or DMA containment is
 provided. Issue #330 remains open. The candidate is kept separate from q35 and
 from the mechanism-1 diagnostic fix.
+
+The lab builder and protected capture runner accept `--ecam-memory-capture`
+with `--bootstrap-capture --pci-diagnostic`. The sampler records IA32_PAT only
+when CPUID reports both MSR and PAT support, plus CR0, CR3 and CR4. It performs
+no register writes or MMIO accesses. The record follows the bootstrap sample
+after the CPU/control gate. The decoder binds its CPUID word to the CPU and
+bootstrap records, checks widths and ordering, and retains the eight observed
+PAT bytes without interpreting them as mapping admission. The runner hashes
+the decoder and saves `ecam-memory.json` alongside the capture artifacts.
+
+The hosted tests insert a synthetic memory record into retained serial bytes
+and replay CPU, PCI, ACPI, bootstrap and protected recovery together. This tests
+transport integration; it is not a physical PAT observation or evidence that
+the ECAM mapping preconditions above have been satisfied.
