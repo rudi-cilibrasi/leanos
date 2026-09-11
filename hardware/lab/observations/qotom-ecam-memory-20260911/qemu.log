@@ -1,0 +1,8 @@
+Qotom PCI diagnostic image: root-bus PASS
+Qotom PCI diagnostic image: two-bridges PASS
+Qotom PCI diagnostic image: capacity PASS
+Qotom PCI diagnostic image: wrong-vendor PASS
+Qotom PCI diagnostic image: wrong-stepping PASS
+Qotom PCI diagnostic image: missing-smep PASS
+Qotom PCI diagnostic image: unexpected-smap PASS
+Qotom PCI diagnostic image: missing-structured-leaf PASS

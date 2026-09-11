@@ -61,3 +61,11 @@ The hosted tests insert a synthetic memory record into retained serial bytes
 and replay CPU, PCI, ACPI, bootstrap and protected recovery together. This tests
 transport integration; it is not a physical PAT observation or evidence that
 the ECAM mapping preconditions above have been satisfied.
+
+The [retained physical capture](../hardware/lab/observations/qotom-ecam-memory-20260911/README.md)
+observes PAT 0x0007040600070406, CR0 0x8001001f, CR3 0x150000 and CR4 0x68
+on the Qotom. Its protected recovery returned to FreeBSD with the request
+consumed. A manifest-checked regression replays these actual serial events.
+The observation supplies the previously missing same-boot register values;
+resource provenance, alias/mapping admission and the physical access callback
+remain unfinished. The capture's PCI rejection does not establish inventory.

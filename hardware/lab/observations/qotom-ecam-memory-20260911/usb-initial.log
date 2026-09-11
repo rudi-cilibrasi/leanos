@@ -1,0 +1,25 @@
+default PASS
+oneshot PASS
+rtc-probe PASS
+rtc-missing-guard PASS
+watchdog-expired PASS
+watchdog-arm-rejected PASS
+watchdog-missing-recipe PASS
+unknown PASS
+watchdog-disabled PASS
+bad-env PASS
+bad-image PASS
+leanos PASS
+window-current PASS
+window-stale-replay PASS
+window-future PASS
+window-old-date PASS
+window-unbounded PASS
+window-malformed PASS
+window-invalid-clock PASS
+Traceback (most recent call last):
+  File "/home/ruclaw/fun/serial/leanos-qotom-ecam-read/scripts/test-qotom-lab-usb.py", line 313, in <module>
+    main()
+  File "/home/ruclaw/fun/serial/leanos-qotom-ecam-read/scripts/test-qotom-lab-usb.py", line 197, in main
+    raise AssertionError((name, log.read_bytes()))
+AssertionError: ('normal-guard-boot', b'\x1b[H\x1b[J\x1b[1;1HLEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n\rWATCHDOG-MOCK-ARM\n\rLEANOS-LAB/1 WATCHDOG-LEANOS-LOAD\n\rsha256=9bad6db87275f06417f1b85de1d\n\r3cd520ae19fcc14fc67864bac2fd74aef241a\n\r')

@@ -2,6 +2,7 @@
 """Check strict PAT/control observation decoding and preserve existing replay."""
 from pathlib import Path
 import json
+import hashlib
 import runpy
 import unittest
 
@@ -112,6 +113,32 @@ class MemoryCaptureTests(unittest.TestCase):
         self.assertIn('ecam_memory_decoder_sha256', result['diagnostic'])
         with self.assertRaises(ValueError):
             lab['classify_cpu_protected'](*args, **options)
+
+    def test_retained_physical_memory_and_recovery(self):
+        directory = ROOT / 'hardware/lab/observations/qotom-ecam-memory-20260911'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
+        cycle = directory / 'cycle-1'
+        recorded = json.loads((cycle / 'result.json').read_text())
+        events = [json.loads(line) for line in (cycle / 'events.jsonl').read_text().splitlines()]
+        self.assertEqual(b''.join(bytes.fromhex(e['hex']) for e in events),
+                         (cycle / 'serial.raw').read_bytes())
+        lab = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+        result = lab['classify_cpu_protected'](events, recorded['elf_sha256'],
+            directory / 'diagnostic-protocol.tsv', ROOT / 'build/j1900-cpu-host/host',
+            ROOT / 'build/qotom-pci-inventory-host/host', handoff=True, acpi=True,
+            pci_read_trace=True, bootstrap=True, ecam_memory=True)
+        self.assertEqual(result['ecam_memory'], json.loads((cycle / 'ecam-memory.json').read_text()))
+        self.assertEqual(result['ecam_memory']['ia32_pat'], 0x0007040600070406)
+        self.assertEqual([result['ecam_memory'][k] for k in ('cr0', 'cr3', 'cr4')],
+                         [0x8001001f, 0x150000, 0x68])
+        self.assertFalse(result['ecam_memory']['memory_type_admitted'])
+        self.assertEqual(result['diagnostic']['pci_headers'], [])
+        self.assertEqual(result['diagnostic']['terminal_reason'], 'qotom-pci-enumeration')
+        self.assertEqual(result['pci_read_trace']['mismatches'], 1)
+        self.assertTrue(result['watchdog_protected'])
+        self.assertGreater(result['quiet_seconds'], 30)
 
 
 if __name__ == '__main__':

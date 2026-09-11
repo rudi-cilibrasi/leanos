@@ -1,0 +1,5 @@
+LEANOS/25 BOOT target=qotom-j1900-candidate phase=pci-inventory-diagnostic platform-admitted=0 cpl3=0
+LEANOS/25 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/25 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS/25 PCI-SCAN codec=1 status=2 count=0 bus=11 device=17 function=3 offset=0
+LEANOS/3 FINAL status=FAIL reason=qotom-pci-enumeration
