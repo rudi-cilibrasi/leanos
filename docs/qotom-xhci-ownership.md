@@ -173,7 +173,7 @@ read failure, delay failure and write failure reject. The helper never clears
 BIOS-owned itself, writes control/status, resets a controller or rolls back.
 A failed write may have taken effect, so output reports the attempted write
 and last sample on failure. These fields are diagnostics, not authority.
-Native write mapping and physical handoff validation remain outstanding.
+Physical handoff validation remains outstanding.
 
 Tests use the retained six-header list and a maximum 48-header list. They cover
 every successful release delay, all 274 read-failure positions, every delay
@@ -205,4 +205,23 @@ and value bit mutation, all other low-word values, missing callbacks, repeated
 requests, failed stores, restoration and terminal interference. Arming tests
 cover every captured capability/header/offset/control bit, invalid list counts
 and prior statuses, BAR drift, all 4096 leaf slots and all resource pages for
-aliases, and failed rearm. Native wiring and physical handoff remain outstanding.
+aliases, and failed rearm. Physical handoff remains outstanding.
+
+## Native handoff integration
+
+The builder and protected runner accept `--xhci-handoff` only with the complete
+`--xhci-legacy` path. The native stage separately arms capability reads, extended
+reads, the bounded ACPI PM timer and the consumed DWORD writer. Local statuses
+11 through 14 identify those respective arm failures. It uses the existing
+volatile 32-bit store primitive through the restricted MMIO window and disarms
+all contexts before emitting `XHCI-HANDOFF`. Timeout or any rejected observation
+terminates with `qotom-xhci-handoff`; success still ends at platform-pending.
+
+The decoder requires the exact writer binding for helper results, validates
+attempt/poll/support/control combinations for every reachable status, rejects
+impossible native statuses, and preserves the actual final reason after prefix
+replay. The runner fingerprints the decoder and retains `xhci-handoff.json`.
+Protected mutations cover valid failure outcomes, contradictory success and
+failure terminals, altered prior control, impossible poll counts and stale
+support values. No physical handoff outcome is established by those synthetic
+records; a protected boot is required after build verification.

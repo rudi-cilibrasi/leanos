@@ -506,6 +506,56 @@ class Capture(unittest.TestCase):
                 record(0,1,1,0x1000001,0xffffffff),record(1,0,0,0,0),record(4,0,0,0,0)]:
             with self.assertRaises(ValueError): check(changed)
 
+    def test_xhci_handoff_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-legacy-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL, source=None):
+            changed = (raw[:end] if source is None else source).replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,
+                ehci_bme=True,xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True)
+        def record(status,attempted,polls,support,control):
+            return f'LEANOS-LAB/1 XHCI-HANDOFF profile=qotom-xhci-handoff-v1 index=3 status={status} attempted={attempted} polls={polls} support={support} control={control}\n'.encode()
+        success = record(0,1,1,0x1000801,0)
+        result = check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('xhci_handoff_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['xhci_handoff']['firmware_exclusion_established'])
+        failures = [(2,0,0,0,0),(3,0,0,0,0),(5,1,0,0x10801,0),
+            (6,1,0,0x10801,0),(6,1,99,0x1010801,0),
+            (7,1,1,0x10801,0),(7,1,100,0x1010801,0),
+            (8,1,1,0x10801,0),(9,1,100,0x1010801,0),
+            (10,1,1,0x1000801,0),(10,1,1,0x1010801,0),
+            (11,0,0,0,0),(12,0,0,0,0),(13,0,0,0,0),(14,0,0,0,0)]
+        for values in failures:
+            result = check(record(*values),P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-handoff\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-xhci-handoff')
+            with self.assertRaises(ValueError): check(record(*values))
+        for changed in [b'',success+success,success.replace(b'attempted=1',b'attempted=0'),
+                success.replace(b'polls=1',b'polls=0'),success.replace(b'polls=1',b'polls=101'),
+                success.replace(b'status=0',b'status=00'),record(0,1,1,0x1010801,0),
+                record(0,1,1,0x1000801,0xffffffff),record(1,0,0,0,0),record(4,0,0,0,0)]:
+            with self.assertRaises(ValueError): check(changed)
+
+        failure=P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-handoff\n'
+        with self.assertRaises(ValueError):check(success,failure)
+        changed=raw[:end].replace(b'count=6 offset=33888 control=8193',b'count=6 offset=33888 control=8192')
+        self.assertNotEqual(changed,raw[:end])
+        with self.assertRaises(ValueError):check(success,source=changed)
+        self.assertEqual(check(record(14,0,0,0,0),failure,changed)['xhci_handoff']['status'],14)
+        for values in [(5,1,1,0x10801,0),(6,1,100,0x1010801,0),
+                (7,1,0,0x10801,0),(8,1,1,0x1000801,0),(9,1,99,0x1010801,0),
+                (10,1,1,0x1000802,0),(11,1,0,0,0),(15,0,0,0,0)]:
+            with self.assertRaises(ValueError):check(record(*values),failure)
+
     def test_smi_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-handoff-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
