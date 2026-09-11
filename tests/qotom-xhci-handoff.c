@@ -74,6 +74,8 @@ static void check(enum qotom_xhci_handoff_status expected) {
     assert(out.write_attempted==writes);
     if(expected!=QOTOM_XHCI_HANDOFF_OBSERVED)assert(!out.final_control);
     if(!writes)assert(!out.polls && !out.last_support);
+    if(expected==QOTOM_XHCI_HANDOFF_FINAL)assert(out.verify_kind>=1 && out.verify_kind<=6);
+    else assert(!out.verify_kind && !out.verify_index && !out.verify_expected && !out.verify_observed);
 }
 int main(void) {
     assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
@@ -87,6 +89,10 @@ int main(void) {
     for(unsigned i=1;i<=274;++i) {
         maximum();release_at=100;fail_read=i;
         check(i<=87?QOTOM_XHCI_HANDOFF_REFRESH:i<=187?QOTOM_XHCI_HANDOFF_READ:QOTOM_XHCI_HANDOFF_FINAL);
+        if(i>187)assert(out.verify_kind==QOTOM_XHCI_VERIFY_COLLECTOR &&
+            !out.verify_index && !out.verify_expected &&
+            out.verify_observed==(i<=206?QOTOM_XHCI_LEGACY_REFRESH:
+                i<=255?QOTOM_XHCI_LEGACY_READ:QOTOM_XHCI_LEGACY_FINAL));
     }
     for(unsigned i=1;i<=100;++i) {
         reset();release_at=101;fail_delay=i;check(QOTOM_XHCI_HANDOFF_DELAY);assert(out.polls==i-1);
@@ -98,16 +104,42 @@ int main(void) {
     reset();fail_write=1;check(QOTOM_XHCI_HANDOFF_WRITE);assert(writes==1 && !delays && ext[slot()]==0x1010801);
     reset();ignore_write=1;check(QOTOM_XHCI_HANDOFF_CHANGED);
     reset();final_drift=1;check(QOTOM_XHCI_HANDOFF_FINAL);
+    assert(out.verify_kind==QOTOM_XHCI_VERIFY_COLLECTOR && !out.verify_index &&
+        !out.verify_expected && out.verify_observed==QOTOM_XHCI_LEGACY_REFRESH);
     for(unsigned bit=0;bit<32;++bit) {
         reset();final_support_xor=UINT32_C(1)<<bit;check(QOTOM_XHCI_HANDOFF_FINAL);
     }
     reset();final_other_xor=0x10000;check(QOTOM_XHCI_HANDOFF_FINAL);
+    assert(out.verify_kind==QOTOM_XHCI_VERIFY_HEADER_RAW && out.verify_index==0 &&
+        out.verify_expected==0x02000802 && out.verify_observed==0x02010802);
     reset();final_control=UINT32_MAX;check(QOTOM_XHCI_HANDOFF_FINAL);
     for(unsigned entry=0;entry<6;++entry)for(unsigned bit=0;bit<32;++bit) {
         reset();previous.headers[entry].raw^=UINT32_C(1)<<bit;check(QOTOM_XHCI_HANDOFF_DRIFT);
     }
     reset();ext[slot()]=previous.headers[4].raw=0x108c0;
     previous.legacy_offset=previous.control_status=0;check(QOTOM_XHCI_HANDOFF_INITIAL);
+    reset();
+    struct qotom_xhci_legacy changed=previous;
+    changed.count=5;out=(struct qotom_xhci_handoff_result){0};
+    assert(qotom_xhci_final_difference(&previous,&changed,&out));
+    assert(out.verify_kind==QOTOM_XHCI_VERIFY_COUNT && out.verify_expected==6 && out.verify_observed==5);
+    changed=previous;changed.legacy_offset=0;out=(struct qotom_xhci_handoff_result){0};
+    assert(qotom_xhci_final_difference(&previous,&changed,&out));
+    assert(out.verify_kind==QOTOM_XHCI_VERIFY_LEGACY_OFFSET && out.verify_expected==0x8460 && !out.verify_observed);
+    changed=previous;changed.headers[1].offset+=4;out=(struct qotom_xhci_handoff_result){0};
+    assert(qotom_xhci_final_difference(&previous,&changed,&out));
+    assert(out.verify_kind==QOTOM_XHCI_VERIFY_HEADER_OFFSET && out.verify_index==1 &&
+        out.verify_expected==0x8020 && out.verify_observed==0x8024);
+    reset();final_support_xor=0x10000;check(QOTOM_XHCI_HANDOFF_FINAL);
+    assert(out.verify_kind==QOTOM_XHCI_VERIFY_SEMAPHORE && out.verify_index==4 &&
+        out.verify_expected==0x01000801 && out.verify_observed==0x01010801);
+    reset();
+    for(unsigned entry=0;entry<6;++entry)for(unsigned bit=0;bit<32;++bit) {
+        changed=previous;changed.headers[entry].raw^=UINT32_C(1)<<bit;
+        out=(struct qotom_xhci_handoff_result){0};
+        assert(qotom_xhci_final_difference(&previous,&changed,&out)==
+            !qotom_xhci_same_legacy(&previous,&changed,UINT32_C(0x01010000)));
+    }
     reset();previous.count=49;check(QOTOM_XHCI_HANDOFF_DRIFT);
     reset();previous.headers[0].raw^=0x100;check(QOTOM_XHCI_HANDOFF_DRIFT);
     reset();previous.control_status^=1;check(QOTOM_XHCI_HANDOFF_DRIFT);

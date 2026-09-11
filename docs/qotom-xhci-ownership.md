@@ -235,3 +235,21 @@ The final control field is zero because no accepted final sample was published.
 This is a rejected experiment, not a completed handoff. Additional diagnostics
 must distinguish final collection, list comparison and semaphore checks before
 further xHCI changes. The strict acceptance checks remain required.
+
+## Final-verification diagnostics
+
+The callback helper now retains four diagnostic fields: verification kind,
+header index, expected value and observed value. Kind 1 identifies a failed
+final collector and records its status without publishing partial collector
+output. Kinds 2 through 5 identify the first count, selected legacy offset,
+header offset or header-word difference between complete collected lists.
+Kind 6 identifies a final semaphore mismatch. Other handoff outcomes leave all
+four fields zero. The final control field retains its existing publication rule.
+
+The comparison still permits only legacy semaphore changes. It reports the
+reason from already collected values and adds no hardware reads, writes or
+weaker acceptance paths; the 274-read bound is unchanged. Tests cover each
+diagnostic kind, every final read-failure status, zero details on other results,
+and equivalence with the preceding comparison for all retained header-bit
+mutations. Native record emission and decoding of these fields are the next
+step before another physical handoff experiment.

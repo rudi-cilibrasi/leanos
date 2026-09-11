@@ -12,9 +12,41 @@ enum qotom_xhci_handoff_status {
     QOTOM_XHCI_HANDOFF_CHANGED, QOTOM_XHCI_HANDOFF_TIMEOUT,
     QOTOM_XHCI_HANDOFF_FINAL
 };
+enum qotom_xhci_verify_kind {
+    QOTOM_XHCI_VERIFY_NONE, QOTOM_XHCI_VERIFY_COLLECTOR,
+    QOTOM_XHCI_VERIFY_COUNT, QOTOM_XHCI_VERIFY_LEGACY_OFFSET,
+    QOTOM_XHCI_VERIFY_HEADER_OFFSET, QOTOM_XHCI_VERIFY_HEADER_RAW,
+    QOTOM_XHCI_VERIFY_SEMAPHORE
+};
 struct qotom_xhci_handoff_result {
     uint32_t write_attempted, polls, last_support, final_control;
+    uint32_t verify_kind, verify_index, verify_expected, verify_observed;
 };
+/* Both lists are complete successful collector outputs. Report the first
+ * comparison failure without extra hardware access or partial collector data. */
+static inline int qotom_xhci_final_difference(const struct qotom_xhci_legacy *a,
+        const struct qotom_xhci_legacy *b,struct qotom_xhci_handoff_result *out) {
+    if(a->count!=b->count) {
+        out->verify_kind=QOTOM_XHCI_VERIFY_COUNT;
+        out->verify_expected=a->count;out->verify_observed=b->count;return 1;
+    }
+    if(a->legacy_offset!=b->legacy_offset) {
+        out->verify_kind=QOTOM_XHCI_VERIFY_LEGACY_OFFSET;
+        out->verify_expected=a->legacy_offset;out->verify_observed=b->legacy_offset;return 1;
+    }
+    for(uint32_t i=0;i<a->count;++i) {
+        if(a->headers[i].offset!=b->headers[i].offset) {
+            out->verify_kind=QOTOM_XHCI_VERIFY_HEADER_OFFSET;out->verify_index=i;
+            out->verify_expected=a->headers[i].offset;out->verify_observed=b->headers[i].offset;return 1;
+        }
+        uint32_t mask=a->headers[i].offset==a->legacy_offset?UINT32_C(0x01010000):0;
+        if((a->headers[i].raw^b->headers[i].raw)&~mask) {
+            out->verify_kind=QOTOM_XHCI_VERIFY_HEADER_RAW;out->verify_index=i;
+            out->verify_expected=a->headers[i].raw;out->verify_observed=b->headers[i].raw;return 1;
+        }
+    }
+    return 0;
+}
 /* Complete list equality, optionally allowing only the legacy semaphore bits
  * to change. Both inputs must have come from successful collectors. */
 static inline int qotom_xhci_same_legacy(
@@ -79,14 +111,22 @@ static inline enum qotom_xhci_handoff_status qotom_request_xhci_handoff(
            !(raw&UINT32_C(0x01000000)))return QOTOM_XHCI_HANDOFF_CHANGED;
         if(raw&UINT32_C(0x00010000))continue;
         struct qotom_xhci_legacy final={0};
-        if(qotom_collect_xhci_legacy(config,config_context,mmio,mmio_context,extended,extended_context,initial,caps,&final)!=QOTOM_XHCI_LEGACY_OK ||
-           !qotom_xhci_same_legacy(&fresh,&final,UINT32_C(0x01010000)))
+        enum qotom_xhci_legacy_status collected=qotom_collect_xhci_legacy(config,config_context,
+            mmio,mmio_context,extended,extended_context,initial,caps,&final);
+        if(collected!=QOTOM_XHCI_LEGACY_OK) {
+            out->verify_kind=QOTOM_XHCI_VERIFY_COLLECTOR;out->verify_observed=collected;
             return QOTOM_XHCI_HANDOFF_FINAL;
+        }
+        if(qotom_xhci_final_difference(&fresh,&final,out))return QOTOM_XHCI_HANDOFF_FINAL;
         for(uint32_t j=0;j<final.count;++j)
             if(final.headers[j].offset==offset) {
                 out->last_support=final.headers[j].raw;
-                if((out->last_support&UINT32_C(0x01010000))!=UINT32_C(0x01000000))
+                if((out->last_support&UINT32_C(0x01010000))!=UINT32_C(0x01000000)) {
+                    out->verify_kind=QOTOM_XHCI_VERIFY_SEMAPHORE;out->verify_index=j;
+                    out->verify_expected=(support&~UINT32_C(0x01010000))|UINT32_C(0x01000000);
+                    out->verify_observed=out->last_support;
                     return QOTOM_XHCI_HANDOFF_FINAL;
+                }
             }
         out->final_control=final.control_status;
         return QOTOM_XHCI_HANDOFF_OBSERVED;
