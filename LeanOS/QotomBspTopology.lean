@@ -238,4 +238,111 @@ theorem authoritative_q35_cannot_supply_candidate :
     pipelineFailure repositoryAcpiRootTags repositoryXsdtCopy repositoryCopiedAcpiTables =
       some (.topology .processorInventoryMismatch) := by native_decide
 
+/-- Hardware observation from the same executing CPU as the ACPI snapshot.
+Read fidelity and temporal binding remain caller obligations. -/
+structure BootstrapObservation where
+  cpuidEdx : UInt32
+  readAvailable : Bool
+  apicBase : UInt64
+  executingId : UInt32
+  deriving DecidableEq, Repr
+
+/-- Exact architectural state observed on Qotom. Pinning the complete register
+also rejects changed APIC base, disabled APIC, x2APIC and reserved bits. -/
+def expectedApicBase : UInt64 := 0xfee00900
+
+/-- The topology witness alone does not prove the architectural BSP flag. -/
+def BootstrapValid (topology : Witness) (observation : BootstrapObservation) : Prop :=
+  observation.readAvailable = true ∧
+  observation.cpuidEdx &&& 0x220 = 0x220 ∧
+  observation.executingId = topology.observed.executingId ∧
+  observation.apicBase = expectedApicBase
+
+instance (topology : Witness) (observation : BootstrapObservation) :
+    Decidable (BootstrapValid topology observation) := inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _))
+
+inductive BootstrapError where
+  | unavailable
+  | missingFeatures
+  | executingIdMismatch
+  | notBootstrapProcessor
+  | unsupportedApicState
+  deriving DecidableEq, Repr
+
+structure BootstrapWitness (topology : Witness) where
+  observed : BootstrapObservation
+  valid : BootstrapValid topology observed
+
+/-- Reject observed missing features/role and identity disagreement before the
+remaining complete-register mismatch. No baseline observation is substituted. -/
+def bindBootstrap (topology : Witness) (observation : BootstrapObservation) :
+    Except BootstrapError (BootstrapWitness topology) :=
+  if h : BootstrapValid topology observation then .ok ⟨observation, h⟩
+  else if !observation.readAvailable then .error .unavailable
+  else if observation.cpuidEdx &&& 0x220 != 0x220 then .error .missingFeatures
+  else if observation.executingId != topology.observed.executingId then .error .executingIdMismatch
+  else if observation.apicBase &&& 0x100 == 0 then .error .notBootstrapProcessor
+  else .error .unsupportedApicState
+
+inductive BootstrapPipelineError where
+  | topology (reason : PipelineError)
+  | bootstrap (reason : BootstrapError)
+  deriving DecidableEq, Repr
+
+structure BootstrapEntryWitness where
+  topology : Witness
+  bootstrap : BootstrapWitness topology
+
+/-- Compose the existing authoritative table decoder with the architectural
+BSP observation. This remains a candidate, not runtime or AP-dormancy authority. -/
+def checkBootstrapAuthoritative (tags : List RawAcpiRootTag) (root : CopiedAcpiSdt)
+    (tables : List CopiedAcpiSdt) (executingApicId : UInt32)
+    (observation : BootstrapObservation) : Except BootstrapPipelineError BootstrapEntryWitness := do
+  let topology ← (checkAuthoritative tags root tables executingApicId).mapError .topology
+  let bootstrap ← (bindBootstrap topology observation).mapError .bootstrap
+  pure ⟨topology, bootstrap⟩
+
+theorem bootstrap_preserves_observation (topology : Witness)
+    (observation : BootstrapObservation) (witness : BootstrapWitness topology)
+    (accepted : bindBootstrap topology observation = .ok witness) :
+    witness.observed = observation := by
+  unfold bindBootstrap at accepted
+  split at accepted
+  · cases accepted; rfl
+  · split at accepted <;> try simp_all
+    split at accepted <;> try simp_all
+    split at accepted <;> try simp_all
+    split at accepted <;> try simp_all
+
+theorem bootstrap_binds_executing_id (topology : Witness)
+    (witness : BootstrapWitness topology) : witness.observed.executingId = 0 := by
+  rw [witness.valid.2.2.1, topology.matchesBaseline]
+  rfl
+
+theorem bootstrap_requires_msr_and_apic (topology : Witness)
+    (witness : BootstrapWitness topology) :
+    witness.observed.readAvailable = true ∧ witness.observed.cpuidEdx &&& 0x220 = 0x220 :=
+  ⟨witness.valid.1, witness.valid.2.1⟩
+
+theorem bootstrap_requires_architectural_bsp (topology : Witness)
+    (witness : BootstrapWitness topology) : witness.observed.apicBase &&& 0x100 = 0x100 := by
+  rw [witness.valid.2.2.2]
+  decide
+
+theorem bootstrap_acceptance_iff_valid (topology : Witness)
+    (observation : BootstrapObservation) :
+    (∃ witness, bindBootstrap topology observation = .ok witness) ↔
+      BootstrapValid topology observation := by
+  constructor
+  · rintro ⟨witness, accepted⟩
+    have same := bootstrap_preserves_observation topology observation witness accepted
+    rw [← same]
+    exact witness.valid
+  · intro valid
+    exact ⟨⟨observation, valid⟩, by simp [bindBootstrap, valid]⟩
+
+theorem bootstrap_entry_remains_multicore (entry : BootstrapEntryWitness) :
+    BootTopology.admit entry.topology.observed = .rejected .multipleEnabledProcessors :=
+  witness_still_rejected_by_single_core entry.topology
+
 end LeanOS.QotomBspTopology
