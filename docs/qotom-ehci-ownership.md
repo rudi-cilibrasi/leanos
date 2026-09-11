@@ -303,11 +303,30 @@ defines DWORD operational accesses relative to CAPLENGTH. The checked captured
 CAPLENGTH `0x20` produces addresses `0xd0915020`, `0xd0915024`, `0xd0915028`
 and `0xd0915060`. The helper allows at most 118 reads, with separate callbacks
 for capabilities and operational samples. It grants no mapping or write authority.
-Native restricted mapping, decoder integration and a protected physical capture
-remain to be implemented.
+The restricted mapping is described below. Native wiring, decoder integration
+and a protected physical capture remain to be implemented.
 
 The four values are sequential raw observations, not an atomic snapshot. Reserved
 bits are retained for review, while all-ones reads reject. No operational write,
 controller halt, reset or DMA admission is added. Tests cover every read-failure
 position in the pinned one-entry list, ownership/SMI/BAR/capability drift, all
 CAPLENGTH bytes and in-page offsets, raw sample bits and failed-publication rules.
+
+## Restricted operational read mapping
+
+`hardware/lab/qotom-ehci-operational-window.h` supplies a distinct read-window
+transaction admitting only the four selected DWORD addresses. It maps the EHCI
+page read-only, supervisor-only, NX and UC, performs one trusted load, and restores
+and invalidates the saved leaf before publishing the value. It permits hardware
+Accessed updates; permission, root or restoration interference terminates after
+the restoration attempt. A failed load returns no value.
+
+`qotom-ehci-operational-arm.h` requires the exact captured capabilities and a
+successful SMI-disable result. It reuses the capability reader's firmware, root
+and alias validation through private staging, then populates the distinct window.
+No mapping or device access occurs while arming. Failed rearming clears all
+previous authority. The collector still refreshes device binding and ownership
+before its operational samples; immutable views and serialized trusted callbacks
+remain caller obligations. Tests cover all in-page address offsets, ECAM/EHCI
+alias slots, capability and SMI-result mutations, load failures, restoration and
+terminal interference.
