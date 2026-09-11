@@ -335,6 +335,54 @@ theorem successful_byte_position_bounded
     simp [byteStepQuery, bad] at accepted
   exact ⟨same, low, within, bound⟩
 
+/-- Once a non-processor record's kind byte is retained, its remaining bytes
+cannot change the processor count, admitted ID or any duplicate-detection limb. -/
+theorem nonprocessor_preserves_inventory
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (pastKind : recordOffset ≠ 0) (nonprocessor : recordKind ≠ 0)
+    (accepted : byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue 2 = 0) :
+    let query := byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue
+    (query 9, query 10, query 11, query 12, query 13, query 14) =
+      (enabledCount, admittedApicId, seen0, seen1, seen2, seen3) := by
+  simp [byteStepQuery, pastKind, nonprocessor] at accepted ⊢
+  repeat' (split at accepted <;> (try simp_all))
+
+/-- Starting a record from cleared partial state retains its actual kind byte,
+sets the next record offset to one, and preserves all processor inventory. -/
+theorem record_kind_starts_clean
+    (currentOffset enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue : UInt64)
+    (accepted : byteStepQuery currentOffset 0 0 0 0 0 enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue 2 = 0) :
+    let query := byteStepQuery currentOffset 0 0 0 0 0 enabledCount admittedApicId
+      seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue
+    (query 4, query 5, query 6, query 7, query 8) = (1, byteValue, 0, 0, 0) ∧
+    (query 9, query 10, query 11, query 12, query 13, query 14) =
+      (enabledCount, admittedApicId, seen0, seen1, seen2, seen3) := by
+  simp [byteStepQuery] at accepted ⊢
+  repeat' (split at accepted <;> (try simp_all))
+
+/-- Every completed record past its header clears all partial fields,
+including non-processor records between local-APIC entries. -/
+theorem completed_record_clears_partial_state
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue word : UInt64)
+    (pastLength : recordOffset ≠ 1) (nonempty : recordLength ≠ 0)
+    (complete : recordOffset + 1 = recordLength)
+    (field : word = 4 ∨ word = 5 ∨ word = 6 ∨ word = 7 ∨ word = 8) :
+    byteStepQuery currentOffset recordOffset recordKind recordLength
+      apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue word = 0 := by
+  rcases field with h | h | h | h | h <;> subst word <;>
+    simp [byteStepQuery, pastLength, nonempty, complete]
+
 /-- Unsupported projection indices never expose state, for any caller inputs. -/
 theorem byte_step_out_of_range
     (currentOffset recordOffset recordKind recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength executingApicId byteOffset byteValue word : UInt64) (outside : word > 15) :

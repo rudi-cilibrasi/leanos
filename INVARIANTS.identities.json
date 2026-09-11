@@ -14301,6 +14301,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.completed_record_clears_partial_state",
+      "display": "completed_record_clears_partial_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.finish_acceptance_iff",
       "display": "finish_acceptance_iff",
       "kind": "theorem"
@@ -14343,6 +14349,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.nonprocessor_preserves_inventory",
+      "display": "nonprocessor_preserves_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.processor_flags_byte_accumulated",
       "display": "processor_flags_byte_accumulated",
       "kind": "theorem"
@@ -14369,6 +14381,12 @@
       "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.processor_matches_typed_record",
       "display": "processor_matches_typed_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.record_kind_starts_clean",
+      "display": "record_kind_starts_clean",
       "kind": "theorem"
     },
     {

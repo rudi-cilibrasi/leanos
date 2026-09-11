@@ -53,7 +53,9 @@ flags and both flag predicates with the reference arithmetic. The full proof
 still must compose those field
 transitions and preserve the initialized state across the entire table.
 Successful transitions now have general current-offset/bounds and next-offset
-proofs; completed local-APIC records also clear all partial-record fields. Given an existing topology witness and complete terminal
+proofs. Starting a record from cleared state preserves the inventory and
+retains the actual kind byte; non-processor record bytes preserve all inventory
+fields. Completed records clear their partial state, including ignored records. Given an existing topology witness and complete terminal
 shape, `finish_typed_binding_iff` proves that widening any typed BSP observation
 to scalar arguments preserves success of the existing typed binder. This does
 not construct the topology witness from the byte stream. None of these

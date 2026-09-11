@@ -27,3 +27,7 @@ These checks describe the values accepted by the scalar topology stream and its 
 - `completed_processor_clears_partial_state` — At the last byte of a local-APIC record, every partial-record projection is zero, including on rejection.
 - `successful_byte_advances_offset` — Every error-free transition exposes exactly the preceding byte offset plus one as its next offset.
 - `successful_byte_position_bounded` — An error-free transition uses the supplied current offset and lies within the bounded MADT entry region.
+
+- `nonprocessor_preserves_inventory` — After retaining a non-processor kind, every successful remaining byte preserves the processor count, admitted ID and all duplicate-detection limbs.
+- `record_kind_starts_clean` — Starting from cleared partial fields retains the actual kind byte, advances the record offset to one and preserves the inventory.
+- `completed_record_clears_partial_state` — A completed record past its length byte exposes zero in every partial-record field, including when rejected.
