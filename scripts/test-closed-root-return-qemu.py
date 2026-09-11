@@ -43,9 +43,15 @@ def main():
     cc = os.environ.get('LEANOS_CC', 'gcc')
     subprocess.run([cc, '-m64', '-c', 'experiments/copy-roots/return.S', '-o', str(OUT / 'return.o')], cwd=ROOT, check=True)
     cases = list(enumerate(['returns', 'zero-root', 'unaligned-root', 'outside-arena',
-                           'pge', 'pcid', 'interrupts-enabled', 'not-closed', 'same-root']))
+                           'pge', 'pcid', 'interrupts-enabled', 'not-closed', 'same-root',
+                           'iret-gp', 'iret-np', 'iret-stack-not-present', 'iret-double-fault',
+                           'fault-missing-closure', 'fault-wrong-ist']))
     exit_cases = {'returns': (33, b'RP'), 'wrong-register': (35, b'RF'),
                   'nmi-before-restore': (33, b'RIN'), 'nmi-before-iret': (33, b'RIN')}
+    exit_cases.update({'iret-gp': (33, b'REN'), 'iret-np': (33, b'REL'),
+                       'iret-stack-not-present': (33, (b'REL', b'REM')),
+                       'iret-double-fault': (33, b'REI'),
+                       'fault-missing-closure': (35, b'RF'), 'fault-wrong-ist': (35, b'RF')})
     source = (ROOT / 'experiments/copy-roots/return.S').read_text()
     checkpoint = "    mov $'I', %al\n    out %al, $0xe9\n99: pause\n    jmp 99b\n"
     mutations = {
@@ -74,7 +80,7 @@ def main():
                         '-o', str(directory / 'fixture.o')], cwd=ROOT, check=True)
         subprocess.run(['ld', '-nostdlib', '--build-id=none', '-T', 'experiments/copy-roots/fixture.ld',
                         '-o', str(elf), str(directory / 'fixture.o'), str(reload_object)], cwd=ROOT, check=True)
-        if name == 'returns':
+        if name not in mutations:
             audit(elf, within_bundle=True)
         symbols = subprocess.check_output(['nm', '-S', str(elf)], text=True)
         terminal = next(line.split() for line in symbols.splitlines() if line.endswith(' leanos_closed_root_return_terminal'))
@@ -106,9 +112,12 @@ def main():
                             injected_nmi = True
                         if name in exit_cases and status is not None:
                             expected_status, expected_raw = exit_cases[name]
-                            if status != expected_status or raw != expected_raw:
+                            expected_captures = (expected_raw,) if isinstance(expected_raw, bytes) else expected_raw
+                            if status != expected_status or raw not in expected_captures:
                                 raise RuntimeError(f'{name}: exit={status}, capture={raw!r}')
                             observation = {'kind': 'exit', 'status': status, 'injected_nmi': injected_nmi}
+                            if name.startswith('iret-'):
+                                observation['exception_vector'] = raw[-1] - 65
                             break
                         if name not in exit_cases and raw == b'R' and status is None and monitor.exists():
                             registers = qmp_command(monitor)

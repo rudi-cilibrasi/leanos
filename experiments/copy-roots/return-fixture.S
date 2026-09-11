@@ -94,6 +94,11 @@ long_mode:
     movb %ah, gdt+47(%rip)
     movq $stack_top, tss+4(%rip)
     movq $nmi_stack_top, tss+36(%rip)
+    movq $fault_stack_top, tss+44(%rip)
+    movq $df_stack_top, tss+52(%rip)
+#if FIXTURE == 14
+    movq $nmi_stack_top, tss+44(%rip) /* wrong fault IST negative */
+#endif
     movw $104, tss+102(%rip)
     mov $0x28, %eax
     ltr %ax
@@ -113,6 +118,33 @@ long_mode:
     movb $0x8e, 5(%rdi)
     shr $16, %rax
     movw %ax, 6(%rdi)
+    /* Separate ISTs for return faults and failed contributory-fault delivery. */
+.macro fault_gate vector, handler, ist
+    lea \handler(%rip), %rax
+    lea idt64+\vector*16(%rip), %rdi
+    movw %ax, (%rdi)
+    movw $8, 2(%rdi)
+    movb $\ist, 4(%rdi)
+    movb $0x8e, 5(%rdi)
+    shr $16, %rax
+    movw %ax, 6(%rdi)
+.endm
+    fault_gate 13, gp_entry, 2
+    fault_gate 11, np_entry, 2
+    fault_gate 12, ss_entry, 2
+    fault_gate 8, df_entry, 3
+#if FIXTURE == 9 || FIXTURE == 12 || FIXTURE == 13 || FIXTURE == 14
+    /* Deliberately violate caller frame validation to exercise terminal entry. */
+    movq $0x73, context+128(%rip)
+#elif FIXTURE == 10
+    andb $0x7f, gdt+37(%rip) /* user code descriptor not present */
+#elif FIXTURE == 11
+    andb $0x7f, gdt+29(%rip) /* user stack descriptor not present */
+#endif
+#if FIXTURE == 12
+    /* #GP delivery to an absent gate raises #NP, producing #DF. */
+    movb $0x0e, idt64+13*16+5(%rip)
+#endif
     lidt idt_pointer(%rip)
     mov $'R', %al
     out %al, $0xe9
@@ -141,6 +173,79 @@ long_mode:
     mov $root_a, %edi
 #endif
     jmp leanos_closed_root_return
+
+gp_entry:
+    mov $13, %ebx
+    jmp fault_entry
+np_entry:
+    mov $11, %ebx
+    jmp fault_entry
+ss_entry:
+    mov $12, %ebx
+    jmp fault_entry
+df_entry:
+    mov $8, %ebx
+fault_entry:
+    cli
+    mov %cr3, %rdx
+    mov $root_a, %eax
+#if FIXTURE != 13
+    mov %rax, %cr3
+#endif
+    mov %cr3, %rcx
+    cmp %rax, %rcx
+    jne failed
+    cmp $root_b, %rdx
+    jne failed
+#if FIXTURE == 12
+    cmp $8, %ebx
+    jne failed
+    cmp $df_stack_top-48, %rsp
+    jne failed
+    cmpq $0, (%rsp)
+#else
+    cmp $fault_stack_top-48, %rsp
+    jne failed
+#if FIXTURE == 9 || FIXTURE == 13 || FIXTURE == 14
+    cmp $13, %ebx
+    jne failed
+    cmpq $0x70, (%rsp)
+#elif FIXTURE == 10
+    cmp $11, %ebx
+    jne failed
+    cmpq $0x20, (%rsp)
+#elif FIXTURE == 11
+    /* QEMU TCG versions report #NP here; Intel specifies #SS. Record which
+     * vector arrived, while requiring the same closure for either entry. */
+    cmp $11, %ebx
+    je 1f
+    cmp $12, %ebx
+    jne failed
+1:  cmpq $0x18, (%rsp)
+#else
+    jmp failed
+#endif
+#endif
+    jne failed
+    /* #DF is an abort: its saved instruction pointer is not restart evidence. */
+#if FIXTURE != 12
+    /* Audited return.S ends with the two-byte IRETQ, then its terminal. */
+    cmpq $leanos_closed_root_return_terminal-2, 8(%rsp)
+    jne failed
+#endif
+    cmpq $8, 16(%rsp)
+    jne failed
+    cmpq $context+120, 32(%rsp)
+    jne failed
+    cmpq $0x10, 40(%rsp)
+    jne failed
+    mov $'E', %al
+    out %al, $0xe9
+    lea 65(%rbx), %eax
+    out %al, $0xe9
+    mov $0x10, %eax
+    out %eax, $0xf4
+    jmp failed
 
 nmi_entry:
     cli
@@ -253,6 +358,12 @@ tss: .skip 104
 .balign 4096
 nmi_stack: .skip 4096
 nmi_stack_top:
+.balign 4096
+fault_stack: .skip 4096
+fault_stack_top:
+.balign 4096
+df_stack: .skip 4096
+df_stack_top:
 .balign 4096
 user_stack: .skip 4096
 user_stack_top:
