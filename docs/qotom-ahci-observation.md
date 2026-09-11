@@ -86,5 +86,15 @@ than an atomic snapshot, halt, transaction-drain or DMA-containment proof.
 Tests check exact access order, all 37 failures, all global-field bit changes
 before/after port access, each port payload bit, all-ones rejection, prior
 profile rejection, both permitted global-interrupt states, and address bounds.
-A dedicated port mapping window, native emission, protected decoder and physical
-capture remain necessary before these observations can guide device shutdown.
+The dedicated port window admits exactly the six listed addresses through a
+read-only, NX, supervisor UC leaf. Its private arm gate validates prior collection
+success and the captured single-port profile, then reuses the AHCI firmware,
+root, PCI-resource and alias checks without exporting the global reader's
+authority. Every failed rearm clears prior authority; no device access occurs
+while arming. Read restoration and post-control checks remain mandatory.
+
+Window/arm tests cover every byte offset, all six permitted loads, failed loads,
+mapping/control interference, 4096 possible resource aliases, all bound header
+bits and prior-global bits, and failed prior statuses. Both accepted global
+interrupt states remain covered. Native emission, protected decoding and the
+physical port capture remain necessary before this can guide device shutdown.
