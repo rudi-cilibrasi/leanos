@@ -70,7 +70,10 @@ scalar query. The replay starts it from the documented initial state; the
 traversal also accepts an explicit state for segment composition. It rejects
 nonzero error projections and carries all twelve state projections plus terminal
 status. Successful steps retain those exact values. Its `run_append` theorem
-composes byte segments through the actual intermediate result. This model is
+composes byte segments through the actual intermediate result, and
+`run_append_success` extracts that state from a successful combined run.
+`run_consumes_exact_length` proves exact consumption in natural-number
+arithmetic, with no wrapped offset advancement. This model is
 not a production export; its full equivalence proof remains unfinished.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean

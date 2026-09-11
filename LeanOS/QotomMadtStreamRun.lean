@@ -69,6 +69,48 @@ theorem step_advances_offset (state result : State) (length executing : UInt64)
     state.seen0 state.seen1 state.seen2 state.seen3 length executing state.offset
     byte.toUInt64 (step_has_no_error state result length executing byte accepted)
 
+/-- Successful offset advancement is exact natural-number addition, not a
+wrapped machine-word increment, because the scalar query enforces its bound. -/
+theorem step_advances_offset_nat (state result : State) (length executing : UInt64)
+    (byte : UInt8) (accepted : step state length executing byte = .ok result) :
+    result.offset.toNat = state.offset.toNat + 1 := by
+  have bounds := QotomMadtStream.successful_byte_position_bounded state.offset
+    state.recordOffset state.kind state.length state.apicId state.flags state.count
+    state.admitted state.seen0 state.seen1 state.seen2 state.seen3 length executing
+    state.offset byte.toUInt64 (step_has_no_error state result length executing byte accepted)
+  have within := bounds.2.2.1
+  have cap := bounds.2.2.2
+  simp only [UInt64.lt_iff_toNat_lt] at within
+  simp [UInt64.le_iff_toNat_le, BootTopology.maxAcpiSdtBytes] at cap
+  have nowrap : state.offset.toNat + 1 < 2 ^ 64 := by omega
+  rw [step_advances_offset state result length executing byte accepted]
+  simp [UInt64.toNat_add, Nat.mod_eq_of_lt nowrap]
+
+/-- A successful traversal consumes precisely the supplied list length. -/
+theorem run_consumes_exact_length (length executing : UInt64) (state result : State)
+    (bytes : List UInt8) (accepted : run length executing state bytes = .ok result) :
+    result.offset.toNat = state.offset.toNat + bytes.length := by
+  induction bytes generalizing state with
+  | nil =>
+    simp only [run, Except.ok.injEq] at accepted
+    subst result
+    simp
+  | cons byte rest ih =>
+    simp only [run] at accepted
+    cases moved : step state length executing byte with
+    | error reason =>
+      rw [moved] at accepted
+      change (Except.error reason : Except UInt64 State) = .ok result at accepted
+      cases accepted
+    | ok middle =>
+      have tail : run length executing middle rest = .ok result := by
+        rw [moved] at accepted
+        exact accepted
+      have advance := step_advances_offset_nat state middle length executing byte moved
+      have remaining := ih middle tail
+      simp only [List.length_cons]
+      omega
+
 /-- Splitting a byte sequence cannot replace its intermediate state: the
 second segment receives exactly the first segment's successful output. -/
 theorem run_append (length executing : UInt64) (state : State)
@@ -83,5 +125,23 @@ theorem run_append (length executing : UInt64) (state : State)
     cases h : step state length executing byte with
     | error reason => rfl
     | ok middle => exact ih middle
+
+/-- Successful concatenated traversal supplies a concrete intermediate state
+and successful traversals of both segments, without substituting any fields. -/
+theorem run_append_success (length executing : UInt64) (state result : State)
+    (front back : List UInt8)
+    (accepted : run length executing state (front ++ back) = .ok result) :
+    ∃ middle, run length executing state front = .ok middle ∧
+      run length executing middle back = .ok result := by
+  rw [run_append] at accepted
+  cases firstRun : run length executing state front with
+  | error reason =>
+    rw [firstRun] at accepted
+    change (Except.error reason : Except UInt64 State) = .ok result at accepted
+    cases accepted
+  | ok middle =>
+    refine ⟨middle, rfl, ?_⟩
+    rw [firstRun] at accepted
+    exact accepted
 
 end LeanOS.QotomMadtStreamRun
