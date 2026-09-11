@@ -45,4 +45,22 @@ to the firmware/root checks. It rejects present mappings into any page of the
 clears all authority and arming itself performs no device access. Tests cover
 all in-page offsets, upper-BAR bit changes, all 4096 leaf positions for first-page
 and ECAM aliases, every resource page, failed loads, restoration and terminal
-interference. Native integration and physical capture remain outstanding.
+interference. Native integration is described below; physical capture remains outstanding.
+
+## Native capture integration
+
+The builder's `--xhci-capabilities` requires `--ehci-bme` and creates
+`build/qotom-xhci-lab`. Native code invokes the collector on the immutable
+inventory's index 3 after successful EHCI BME handling. The new reader and
+existing ECAM reader share the restored private aperture sequentially. All
+contexts are disabled before `XHCI-CAPS`, containing status and seven raw DWORDs.
+Local arm rejection uses status 8; collector failure stops at
+qotom-xhci-capabilities, and success remains qotom-platform-pending.
+
+The protected runner fingerprints the matching decoder, retains
+`xhci-capabilities.json`, and preserves the actual terminal after earlier replay
+projections. Decoding requires the complete successful EHCI BME prefix, the
+captured xHCI header/BAR pair, exact record order and scalar count, and zero
+publication on failure. Synthetic parameter words test framing, not physical
+controller values. The built image must pass foreign-firmware rejection and
+manifest verification before a guarded physical capture.

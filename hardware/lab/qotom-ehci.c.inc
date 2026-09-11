@@ -14,6 +14,9 @@ static struct lab_ehci_window lab_ehci_window = {
 #ifdef LEANOS_QOTOM_EHCI_HANDOFF
 #include "qotom-ehci-handoff.c.inc"
 #endif
+#ifdef LEANOS_QOTOM_XHCI_CAPABILITIES
+#include "qotom-xhci.c.inc"
+#endif
 /* The complete native inventory has already matched. Both readers serialize
  * their temporary mappings through the same private aperture; each restores
  * the identity leaf before returning. No operation overlaps another. */
@@ -64,6 +67,9 @@ static void lab_capture_ehci(const struct pci_enumeration_snapshot *snapshot) {
     if (legacy_status != QOTOM_EHCI_LEGACY_OK) pre_admission_fail("qotom-ehci-legacy");
 #ifdef LEANOS_QOTOM_EHCI_HANDOFF
     lab_handoff_ehci(&view,&snapshot->headers[10],&result,&legacy);
+#ifdef LEANOS_QOTOM_XHCI_CAPABILITIES
+    lab_capture_xhci(&view,&snapshot->headers[3]);
+#endif
 #endif
 #endif
 }
