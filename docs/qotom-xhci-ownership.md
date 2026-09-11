@@ -407,5 +407,20 @@ raw command/status values, including state changes between reads; they are not
 an atomic snapshot or a halt, drain, firmware-exclusion or DMA-containment proof.
 Tests cover every read-failure position at the maximum list length, exact access
 order and addresses, CNR guards, missing-device samples, ownership/SMI/resource/
-list drift, live vendor status and zero failed output. Native read mapping,
-diagnostic integration and a protected physical capture remain to be added.
+list drift, live vendor status and zero failed output. Diagnostic integration
+and a protected physical capture remain to be added.
+
+## Restricted operational read mapping
+
+The separate operational window admits only `0xd0900080` and `0xd0900084`,
+using a read-only, supervisor, NX, UC leaf. It restores the exact prior mapping
+and checks controls before publishing a private sample; interference terminates.
+The capability and extended-list readers retain their existing address limits.
+
+Arming binds the seven captured capability words and the successful physical SMI
+result (attempted 1, before `0x2000`, after 0). Private staging reuses the existing
+firmware/root/PCI checks and excludes aliases across the entire 64-KiB resource.
+Failed rearming clears all authority, and arming performs no device access.
+Tests cover all resource-byte offsets and boundaries, mapping/control failures,
+all page-table alias slots, capability and SMI-result mutations, and failed
+rearming. Native capture wiring remains the next step.
