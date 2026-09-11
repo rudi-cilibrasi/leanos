@@ -190,7 +190,14 @@ def main():
                 expected = protocol['FINAL'].encode() + b' status=FAIL reason=qotom-platform-pending\n'
             if name in ('kernel-hang', 'kernel-guard-hang'):
                 expected = b'LEANOS-LAB/1 KERNEL-HANG stage=before-boot-record interrupts=disabled\n'
-            deadline = time.monotonic() + (90 if name == 'rtc-probe' else 15)
+            # ACPI may emit up to 196608 transport bytes at 38400 baud, 8N1
+            # (3840 bytes/s). The original 15s loader allowance alone can
+            # expire while a valid DSDT is still arriving. Keep a fixed bound
+            # and require the same complete terminal record below.
+            seconds = 90 if name == 'rtc-probe' else 15
+            if args.acpi_capture and name in ('leanos', 'normal-guard-boot'):
+                seconds += (196608 + 3839) // 3840
+            deadline = time.monotonic() + seconds
             try:
                 while time.monotonic() < deadline:
                     if log.exists() and expected in log.read_bytes():
