@@ -95,7 +95,7 @@ failure. Zero legacy offset means no legacy structure was found, not ownership.
 The tests cover a 48-header list, all 87 read-failure positions, relative offsets,
 resource boundaries, missing/duplicate/overlapping legacy structures, capability
 drift and failed-publication rules. List and control samples remain sequential;
-no ownership write or continuing firmware-exclusion claim is added. Physical list observation remains outstanding.
+no ownership write or continuing firmware-exclusion claim is added. The retained physical list observation below exercises the complete path.
 
 ## Extended-read mapping gate
 
@@ -139,3 +139,13 @@ address displacement in the enlarged capture path contained an additional raw
 `0f 30` pair. The unchanged MSR-site audit rejected that image, including the
 possible unaligned WRMSR entry. Separating the stage keeps its implementation
 reviewable; the resulting linked image must still pass that exact byte audit.
+
+## Physical extended-list result
+
+The [protected extended-list capture](../hardware/lab/observations/qotom-native-xhci-legacy-20260911/README.md)
+returned six headers and selected the legacy structure at `0x8460`. Its support
+header is `0x00010801` (BIOS-owned set, OS-owned clear); control/status is
+`0x00002001`. Both resource refreshes passed and FreeBSD recovered with the
+request consumed. The retained-capture test revalidates all six relative links
+and the selected control sample through the protected decoder. Cooperative
+ownership handoff and subsequent xHCI shutdown remain outstanding.
