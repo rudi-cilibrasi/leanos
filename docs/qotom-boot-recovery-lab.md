@@ -302,7 +302,6 @@ compares it byte-for-byte with the serial copy. The USB boot-path test accepts
 the same three diagnostic flags. A passing emulator capture does not replace
 the physical Qotom capture or its topology-policy review.
 
-
 ## PCI read trace investigation
 
 The lab builder and recovery runner accept `--pci-read-trace` together with

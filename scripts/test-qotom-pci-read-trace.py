@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise lab PCI read evidence without granting inventory admission."""
 import json
+import hashlib
 from pathlib import Path
 import runpy
 import subprocess
@@ -53,6 +54,26 @@ class TraceTests(unittest.TestCase):
         raw = PROTOCOL['FINAL'].encode() + b' status=FAIL reason=j1900-cpu-profile\n'
         self.assertEqual(D['extract'](raw, PROTOCOL), (raw, None))
         with self.assertRaises(ValueError): D['extract'](trace() + raw, PROTOCOL)
+
+    def test_retained_physical_mismatch(self):
+        directory = ROOT / 'hardware/lab/observations/qotom-pci-cf8-mismatch-20260911'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
+        lab = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+        events = [json.loads(line) for line in (directory / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(event['hex']) for event in events)
+        self.assertEqual(raw, (directory / 'cycle-1/serial.raw').read_bytes())
+        recorded = json.loads((directory / 'cycle-1/result.json').read_text())
+        result = lab['classify_cpu_protected'](events, recorded['elf_sha256'],
+            directory / 'diagnostic-protocol.tsv', ROOT / 'build/j1900-cpu-host/host',
+            ROOT / 'build/qotom-pci-inventory-host/host', True, True, True)
+        self.assertEqual(result['pci_read_trace'], recorded['pci_read_trace'])
+        self.assertEqual(result['pci_read_trace']['requested'], 0x8018e900)
+        self.assertEqual(result['pci_read_trace']['observed'], 0x8000e86c)
+        self.assertEqual(result['pci_read_trace']['value'], 0x82005)
+        self.assertEqual(result['diagnostic']['pci_headers'], [])
+        self.assertFalse(result['diagnostic']['platform_admitted'])
 
     def test_native_wrapper_preserves_reads_and_first_mismatch(self):
         source = r'''
