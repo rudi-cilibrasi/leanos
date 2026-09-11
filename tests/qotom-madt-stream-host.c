@@ -4,6 +4,7 @@
 #include "boundary-abi.h"
 #include "cases.h"
 #include "finish-cases.h"
+#include "../include/qotom_bsp_consumer.h"
 static uint64_t query(const uint64_t s[12], uint64_t length, uint64_t executing,
                       uint64_t offset, uint64_t byte, uint64_t word) {
     return leanos_qotom_madt_stream_byte_step_query(s[0],s[1],s[2],s[3],s[4],s[5],
@@ -20,6 +21,14 @@ int main(void) {
         (void *)(uintptr_t)&leanos_qotom_madt_stream_byte_step_query);
     leanos_register_boundary_target("leanos_qotom_madt_stream_finish_query",
         (void *)(uintptr_t)&leanos_qotom_madt_stream_finish_query);
+    const struct qotom_bsp_observation empty_observation = {0};
+    const uint8_t one_byte = 0;
+    if (qotom_bind_validated_madt_entries(NULL,1,&empty_observation).status != 1 ||
+        qotom_bind_validated_madt_entries(&one_byte,1,NULL).status != 1 ||
+        qotom_bind_validated_madt_entries(&one_byte,0,&empty_observation).status != 1 ||
+        qotom_bind_validated_madt_entries(&one_byte,65536-43,&empty_observation).status != 1 ||
+        qotom_bind_validated_madt_entries(&one_byte,SIZE_MAX,&empty_observation).status != 1)
+        return 14;
     size_t composed_cases = 0;
     for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
         uint64_t state[12] = {44,0,0,0,0,0,0,256,0,0,0,0};
@@ -75,6 +84,24 @@ int main(void) {
                             cases[c].name,finish_cases[observation].name,word);
                     return 10;
                 }
+            }
+            struct qotom_bsp_observation obs = {cases[c].executing,
+                bound[16],bound[17],bound[18],bound[19]};
+            struct qotom_bsp_result candidate = qotom_bind_validated_madt_entries(
+                cases[c].bytes,cases[c].length,&obs);
+            uint64_t want_status = status != 3 ? 2 :
+                finish_cases[observation].words[1] == 1 ? 0 : 4;
+            if (candidate.status != want_status) return 11;
+            if (!candidate.status) {
+                if (candidate.apic_id != finish_cases[observation].words[2] ||
+                    candidate.processor_count != finish_cases[observation].words[3] ||
+                    candidate.apic_base != finish_cases[observation].words[4] ||
+                    candidate.offset != 44+cases[c].length) return 12;
+            } else {
+                uint64_t detail = status != 3 ? cases[c].error :
+                    finish_cases[observation].words[2];
+                if (candidate.detail != detail || candidate.apic_id ||
+                    candidate.processor_count || candidate.apic_base) return 13;
             }
             ++composed_cases;
         }
