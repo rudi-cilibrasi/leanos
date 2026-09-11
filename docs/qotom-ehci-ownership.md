@@ -379,3 +379,21 @@ status-halfword preservation, ignored writes, failed writes with effects, and
 post-write restart or BME reassertion. Native word-store authority, physical
 execution and continuing device/firmware assumptions remain outstanding. No
 system-wide DMA containment or platform admission follows from this candidate.
+
+## Consumed word-store mapping
+
+`hardware/lab/qotom-ehci-bme-window.h` permits only the BME-clear request at
+`00:1d.0` offset 4, value `0x0402`, through a trusted 16-bit store callback.
+It consumes its armed flag before validation, temporarily maps the ECAM page
+UC, writable, supervisor-only and NX, then restores and invalidates the original
+leaf before reporting the store result. Hardware Accessed/Dirty updates are
+allowed; other mapping or control interference terminates after restoration.
+Failed stores can have taken effect and do not authorize retry or rollback.
+
+`qotom-ehci-bme-arm.h` binds the exact controller, capabilities, PCI Command,
+successful SMI disable and captured stopped-state sample to the firmware and
+root/alias checks. Rejection clears old authority. Arming performs no hardware
+access; the helper still refreshes all device state before its write. Tests
+reject all other 16-bit values, BDF/offset changes, reuse, failed stores, stale
+samples, ECAM/EHCI aliases and root/leaf interference. Native store wiring and
+protected physical validation remain outstanding.
