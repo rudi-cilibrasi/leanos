@@ -1,0 +1,5 @@
+ugen0.1: <XHCI root HUB Intel> at usbus0, cfg=0 md=HOST spd=SUPER (5.0Gbps) pwr=SAVE (0mA)
+ugen0.2: <Flash Drive Alcor Micro Corp.> at usbus0, cfg=0 md=HOST spd=HIGH (480Mbps) pwr=ON (200mA)
+ugen0.3: <USB Optical Mouse vendor 0x30fa> at usbus0, cfg=0 md=HOST spd=LOW (1.5Mbps) pwr=ON (100mA)
+ugen0.4: <Hub Genesys Logic, Inc.> at usbus0, cfg=0 md=HOST spd=HIGH (480Mbps) pwr=SAVE (100mA)
+ugen0.5: <Genius LuxeMate i200 Keyboard Chicony Electronics Co., Ltd> at usbus0, cfg=0 md=HOST spd=LOW (1.5Mbps) pwr=ON (100mA)
