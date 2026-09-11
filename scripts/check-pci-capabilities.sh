@@ -130,3 +130,9 @@ python3 scripts/test-qotom-pcie-device-capture.py
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ahci-capabilities.c -o "$build/ahci-capabilities-sanitized"
 leanos_run_sanitized "$build/ahci-capabilities-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ahci-port.c -o "$build/ahci-port"
+"$build/ahci-port"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ahci-port.c -o "$build/ahci-port-sanitized"
+leanos_run_sanitized "$build/ahci-port-sanitized"

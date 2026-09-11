@@ -64,3 +64,27 @@ clear. FreeBSD recovered automatically with the request consumed. The retained
 regression replays the exact values and recovery bytes. Port engine state and
 outstanding commands remain unobserved; no SATA write or DMA proof is supplied.
 It advances the SATA portion of #330 and #291 without granting boot admission.
+
+## Bounded port 1 observer
+
+`boot/qotom-ahci-port.h` accepts the captured CAP/PI/VS/CAP2 profile, AHCI enabled,
+and global interrupts either enabled or disabled. It compares each complete
+fresh global snapshot with the supplied prior snapshot; an interrupt-enable
+change during observation therefore rejects. It requires prior collection
+success before any access and never treats a different implemented-port map
+as permission to read another port.
+
+The [Intel datasheet](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf),
+sections 13.8.31–.33, .35, .38 and .39, locates port 1 IE, CMD, TFD, SSTS, SACT and CI
+at ABAR offsets `194`, `198`, `1a0`, `1a8`, `1b4`, `1b8` (hexadecimal).
+The observer samples CMD, IE, TFD, SSTS, SACT, CI, then CMD again. Two complete
+15-read global/resource refreshes bracket these seven samples: 37 reads total.
+There are no writes, polling, reset or port 0 accesses. Failure zeroes every
+output field. Changed command or queue samples remain raw observations rather
+than an atomic snapshot, halt, transaction-drain or DMA-containment proof.
+
+Tests check exact access order, all 37 failures, all global-field bit changes
+before/after port access, each port payload bit, all-ones rejection, prior
+profile rejection, both permitted global-interrupt states, and address bounds.
+A dedicated port mapping window, native emission, protected decoder and physical
+capture remain necessary before these observations can guide device shutdown.
