@@ -384,3 +384,28 @@ independent SSH verified the image and consumed request. The retained replay
 checks this result together with all preceding EHCI and xHCI observations.
 Operational shutdown, BME disable, device/fabric drain and continuing firmware/AP
 exclusion remain outstanding. The terminal stays `qotom-platform-pending`.
+
+## Bounded operational-state observation
+
+`qotom_collect_xhci_operational` follows a successful SMI-disable observation.
+It refreshes the complete resources and capability list, requires BIOS-clear/
+OS-owned support and disabled legacy SMI enables, then samples USBSTS, USBCMD,
+and USBSTS again. A final complete resource/list/ownership refresh must pass
+before any output is published. Documented vendor live-status bits may vary;
+list identity and reserved fields remain bound as in the ownership helper.
+
+[J1900 datasheet sections 14.7.9–14.7.10, pages 392–393](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf#page=392)
+place USBCMD at BAR+`0x80` and USBSTS at BAR+`0x84`, matching the captured
+CAPLENGTH. The first status read precedes any command read; Controller Not Ready
+(bit 11) rejects at either status sample. No polling or operational write occurs.
+The datasheet notes controller-specific deviations for CNR and HCE; raw state
+must be reviewed before defining a shutdown policy.
+
+The helper permits at most 177 reads: two 87-read bounded refreshes and three
+operational samples. Failures publish zero fields. Successful samples retain
+raw command/status values, including state changes between reads; they are not
+an atomic snapshot or a halt, drain, firmware-exclusion or DMA-containment proof.
+Tests cover every read-failure position at the maximum list length, exact access
+order and addresses, CNR guards, missing-device samples, ownership/SMI/resource/
+list drift, live vendor status and zero failed output. Native read mapping,
+diagnostic integration and a protected physical capture remain to be added.
