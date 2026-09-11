@@ -254,7 +254,7 @@ reason from already collected values and adds no hardware reads or writes; the
 diagnostic kind, every final read-failure status, zero details on other results,
 and header-bit mutations, including the documented live-status exception below.
 The versioned native record below carries these fields for physical
-handoff experiment.
+handoff experiments.
 
 ## Versioned verification record
 
@@ -291,5 +291,18 @@ rejections remain retained and replayable with their original outcomes.
 
 Tests reproduce the physical bit-16 transition and exercise all 32 bits of the
 vendor header: documented status changes pass final comparison; all others
-reject. Wrong offsets and IDs never receive the status mask. A rebuilt image
-and another protected hardware test are required to validate the corrected path.
+reject. Wrong offsets and IDs never receive the status mask.
+
+## Corrected physical handoff result
+
+The [corrected protected capture](../hardware/lab/observations/qotom-native-xhci-handoff-20260911/README.md)
+passed final verification with status 0 after two polls. Support was
+`0x01000801`, control `0x2000`, and verification details were zero. FreeBSD
+recovered automatically with the request consumed; independent SSH verified
+the installed image and recovery state. The retained replay covers this result
+and the preceding EHCI observations.
+
+This completes the bounded xHCI ownership observation. Legacy SMI policy,
+operational shutdown, bus-master disable, outstanding-transaction drain and
+continuing firmware/AP exclusion remain necessary before DMA quarantine.
+The diagnostic terminal remains `qotom-platform-pending`.
