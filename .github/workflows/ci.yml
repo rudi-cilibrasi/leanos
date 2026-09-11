@@ -228,6 +228,9 @@ jobs:
             build/oracle-sanitized/
             build/boot-handoff-host-sanitized/
             build/boot-handoff-stream-sanitized/
+            build/qotom-madt-stream/
+            build/qotom-madt-stream-host-ordinary/
+            build/qotom-madt-stream-host-sanitized/
             build/hosted-sanitizer-evidence/
             build/hosted-sanitizer-negatives/
             scripts/hosted-generated-boundaries.tsv
