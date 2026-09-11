@@ -473,8 +473,8 @@ rollback. Tests exercise all read-failure positions at the maximum list bound,
 ignored and failed writes, before/after stopped-state changes, ownership/SMI/
 resource/list drift, BME reassertion and preservation of each PCI Status bit.
 Successful callback tests do not establish a physical clear or transaction drain.
-Capture integration and a protected boot remain to be added. Firmware/AP
-exclusion and system-wide DMA quarantine remain separate work.
+A protected boot remains to be added. Firmware/AP exclusion and system-wide
+DMA quarantine remain separate work.
 
 ## Consumed xHCI Command write window
 
@@ -490,4 +490,20 @@ capability words, SMI result (before `0x2000`, after 0) and stopped samples
 64-KiB resource aliases, and revokes all authority on failed rearming. Tests cover
 every alternative 16-bit value, request coordinates, mapping interference,
 all alias slots/resource pages and captured-state mutations. Arming performs no
-device access. Native collector/capture integration remains outstanding.
+device access. The native stage below connects the window to the collector.
+
+## Native BME diagnostic integration
+
+`--xhci-bme` requires `--xhci-operational` and selects a separate BME lab image.
+The out-of-line stage arms capability, extended-list and operational readers,
+then the consumed writer. It reuses the trusted 16-bit store, calls the bounded
+helper, and disarms all contexts before emitting `XHCI-BME` with status, attempted,
+before-Command and after-Command fields. Local arm failures are 9 through 12.
+
+The decoder requires a successful operational prefix, exact stopped samples and
+captured Command `0x0006` for helper results. It validates reachable attempt and
+readback combinations, scalar bounds and terminal consistency. Runner extraction
+precedes the operational prefix, fingerprints the decoder, retains `xhci-bme.json`
+and restores the actual terminal after replay. Synthetic mutation coverage
+includes ignored/failed writes, final verification failures and running samples
+that must reject write authority. Physical BME clear and recovery remain untested.
