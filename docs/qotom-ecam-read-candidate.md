@@ -140,3 +140,21 @@ read failure cleanup, changed root, aperture interference and restoration
 failure. The native primitive bindings and root/alias initializer are still
 missing, so this transaction has not executed against physical ECAM. Arming
 remains a caller obligation; an arbitrary supplied context is not authority.
+
+`hardware/lab/qotom-ecam-native.S` supplies the three x86-64 SysV primitives
+for that future binding: a single 32-bit load into private output, `invlpg`,
+and reads of PAT, CR0/CR3/CR4, EFER and entry RFLAGS. The control sampler
+preserves RBX and checks CPUID MSR/PAT support before reading MSRs. It writes
+neither control registers nor MSRs and performs no port I/O. Native exceptions
+remain terminal; these functions do not implement fault recovery.
+
+`scripts/check-qotom-ecam-native.py` checks the complete object instruction
+sequences, branch target, absence of unresolved dependencies and C callback
+ABI. Twelve mutations cover load width/count, MMIO stores, invalidation,
+feature gating, MSR identity, register writes and callee-save preservation.
+The hosted test executes the actual load at the end of a read-only page with
+an inaccessible following page and checks private output bounds. This tests
+ordinary memory access width and output behavior; it does not execute the
+privileged primitives or validate UC device access. Root/alias initialization,
+firmware-gated arming and image-builder integration are still required before
+the diagnostic can execute these primitives against physical ECAM.

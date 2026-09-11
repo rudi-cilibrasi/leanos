@@ -90,6 +90,7 @@ python3 ./scripts/test-release-artifact-consumers.py
 python3 ./scripts/test-build-manifest-consumers.py
 ./scripts/check-pci-enumeration.sh ordinary
 python3 scripts/check-pci-config-read.py
+python3 scripts/check-qotom-ecam-native.py
 python3 scripts/test-pci-config-read-qemu.py
 ./scripts/check-pci-enumeration.sh sanitizers
 ./scripts/check-qotom-ecam-read.sh ordinary
