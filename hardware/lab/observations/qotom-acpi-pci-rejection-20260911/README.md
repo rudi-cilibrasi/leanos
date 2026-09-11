@@ -26,3 +26,17 @@ recovery.json records `hang_recovery=false` for the completed-run recovery.
 
 Original serial bytes, timestamped events, raw handoff, replay inputs, and
 recovery records are retained. No partial PCI inventory is reconstructed.
+
+## Same-image retry
+
+One fresh protected retry reproduced capacity rejection at a different BDF,
+`33:04.6` (bus 51, device 4, function 6), with no partial inventory published
+and no ACPI transport. The ELF hash and the complete raw handoff hash were
+identical to the first attempt. The changing scan location does not establish
+a real additional PCI function or prove the cause of the unstable result.
+
+The retry serial SHA-256 is
+`e70a26ef7bb60bd34488a9057f48f86f81cfd10dff3a9dd2cbd26f35a07c308c`.
+Post-FINAL quiet was 34.314 seconds. FreeBSD SSH returned, the boot time
+changed from 1789102749 to 1789103232, and the request was consumed.
+The complete retry records are in retry/. No further blind retries were run.
