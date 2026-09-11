@@ -21,6 +21,7 @@ import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
 import LeanOS.BootTopology
 import LeanOS.QotomMadtStream
+import LeanOS.QotomMadtStreamRun
 import LeanOS.QotomBspTopology
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC

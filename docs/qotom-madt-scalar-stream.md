@@ -65,10 +65,19 @@ not construct the topology witness from the byte stream. None of these
 candidate results establishes AP dormancy, DMA quarantine, interrupt routing,
 no-SMAP isolation, or permission to enter CPL3.
 
+`LeanOS.QotomMadtStreamRun` is an allocating proof-side traversal of the actual
+scalar query. The replay starts it from the documented initial state; the
+traversal also accepts an explicit state for segment composition. It rejects
+nonzero error projections and carries all twelve state projections plus terminal
+status. Successful steps retain those exact values. Its `run_append` theorem
+composes byte segments through the actual intermediate result. This model is
+not a production export; its full equivalence proof remains unfinished.
+
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
 toolchain on PATH and the pinned CI container for sanitizer runs. Pass
 `ordinary` or `sanitized` to run one mode; the default runs both. It checks 47 native-derived table cases against the full
-MADT decoder and Qotom policy, 14 malformed scalar probes, 28 finish cases,
+MADT decoder and Qotom policy, with the carried-state model checked on the
+same cases, plus 14 malformed scalar probes, 28 finish cases,
 and 9 typed BSP-policy comparisons. The physical MADT and BSP observations
 are manifest-hash pinned; mutated tables have their outer length/checksum
 repaired only to compare the same entry bytes. The C harness carries actual

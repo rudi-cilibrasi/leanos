@@ -57,7 +57,8 @@ cases += [('reserved-flags', changed(cpu_indices[0], 7, 128), 0, 0),
           ('firmware-uid', changed(cpu_indices[0], 2, 255), 0, 0)]
 
 # The test driver allocates lists; byteStepQuery itself has only scalar inputs.
-source = (ROOT / 'LeanOS/QotomMadtStream.lean').read_text()
+subprocess.run(['lake', 'build', 'LeanOS.QotomMadtStreamRun'], cwd=ROOT, check=True)
+source = 'import LeanOS.QotomMadtStreamRun\n'
 source += '''
 def streamTest (bytes : List UInt64) (length executing : UInt64)
     (state : List UInt64 := [44,0,0,0,0,0,0,256,0,0,0,0]) : UInt64 × UInt64 :=
@@ -73,6 +74,11 @@ def streamTest (bytes : List UInt64) (length executing : UInt64)
     else streamTest rest length executing ((List.range 12).map fun i => q (UInt64.ofNat (i+3)))
 '''
 source += """
+def carriedStreamTest (bytes : List UInt8) (length executing : UInt64) : UInt64 × UInt64 :=
+  match LeanOS.QotomMadtStreamRun.run length executing LeanOS.QotomMadtStreamRun.initial bytes with
+  | .error error => (2, error)
+  | .ok state => (state.status, 0)
+
 def fullTableTest (bytes : List UInt8) (executing : UInt32) : Bool :=
   match LeanOS.BootTopology.decodeCompleteMadtSnapshot bytes executing executing with
   | .error _ => false
@@ -85,6 +91,7 @@ for label, recs, executing, error in cases:
     data = b''.join(recs)
     words = ','.join(map(str, data))
     source += f'#eval streamTest [{words}] {44+len(data)} {executing}\n'
+    source += f'#eval carriedStreamTest [{words}] {44+len(data)} {executing}\n'
     # Repair only the outer SDT envelope of each named entry mutation so that
     # the reference reaches the same entry bytes as the scalar stream.
     table = bytearray(raw[:44] + data)
@@ -117,14 +124,15 @@ with tempfile.TemporaryDirectory() as tmp:
         raise SystemExit(result.stdout + result.stderr)
     actual = result.stdout.splitlines()
     expected = [value for _, _, _, error in cases
-                for value in (f'({2 if error else 3}, {error})', 'false' if error else 'true')]
+                for value in (f'({2 if error else 3}, {error})', f'({2 if error else 3}, {error})',
+                              'false' if error else 'true')]
     expected += ['[1, 2, ' + str(error) + ', ' + ', '.join(['0']*15) + ']'
                  for _, _, error in probes]
     if actual != expected:
         for index, (want, got) in enumerate(zip(expected, actual)):
             if want != got: print(index, 'expected', want, 'got', got)
         raise SystemExit('scalar MADT replay mismatch: ' + result.stdout)
-print(f'PASS {len(cases)} native MADT scalar/full-table cases')
+print(f'PASS {len(cases)} native MADT scalar/carried-state/full-table cases')
 # The independent C runner consumes these same named cases and expectations.
 out = ROOT / 'build/qotom-madt-stream'
 out.mkdir(parents=True, exist_ok=True)

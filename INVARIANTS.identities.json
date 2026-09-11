@@ -14420,6 +14420,30 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.run_append",
+      "display": "run_append",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_advances_offset",
+      "display": "step_advances_offset",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_has_no_error",
+      "display": "step_has_no_error",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStreamRun.lean",
+      "qualified": "LeanOS.QotomMadtStreamRun.step_retains_projections",
+      "display": "step_retains_projections",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIInventory.lean",
       "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",
