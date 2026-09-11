@@ -60,12 +60,22 @@ def rows(out):
     cases, executing = inputs()
     if set(cases) != set(metadata['inputs']):
         raise ValueError('native firmware replay case set differs')
+    vocabulary = runpy.run_path(str(ROOT / 'scripts/firmware-corpus.py'))
     result = []
     for name, replay in cases.items():
         entry = metadata['inputs'][name]
         words = entry['words']
         if len(words) != 6 or any(type(word) is not int or not 0 <= word < 2**64 for word in words) or words[0] != 1 or words[5] != 0:
             raise ValueError('native firmware projection shape differs: ' + name)
+        if words[1] == 2:
+            if entry['result'] != roots.rejection_name(words[:5]):
+                raise ValueError('native firmware result disagrees with words: ' + name)
+        else:
+            try:
+                vocabulary['check_result'](
+                    name, entry['result'], words[:5], vocabulary['MADT_RESULT_TABLES'])
+            except vocabulary['CorpusError'] as error:
+                raise ValueError('native firmware result disagrees with words: ' + name) from error
         if replay.digest() != entry['normalized_sha256']:
             raise ValueError('native firmware normalized bytes differ: ' + name)
         path = replay.write(out / 'qotom-native-root' / name)
