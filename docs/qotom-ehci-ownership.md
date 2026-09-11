@@ -62,3 +62,25 @@ No native adapter or hardware capability-register capture exists yet. Tests
 exercise read failures at every position, identity/BAR drift, all CAPLENGTH
 bytes, and rejection of addresses outside the three selected offsets in both
 ordinary and sanitizer builds.
+
+## Separate mapping candidate
+
+`hardware/lab/qotom-ehci-arm.h` binds the immutable native EHCI header and the
+exact firmware fixture to the existing root/ancestor checks. It additionally
+rejects every present leaf mapping the EHCI page, regardless of permissions.
+Failed rearming clears window authority. Arming performs no device access.
+The caller must keep the header, firmware and page-table views stable and
+provide fresh resource checks through the collector before device reads.
+
+`qotom-ehci-window.h` uses a separate window type and admits only physical
+addresses `0xd0915000`, `0xd0915004` and `0xd0915008`. Its temporary leaf is
+supervisor-only, read-only, NX and UC under the checked PAT layout. The
+transaction restores the saved leaf and invalidates before publishing a read;
+root or leaf interference follows the terminal fault policy. Existing ECAM
+address checks are unchanged. Trusted native callbacks and firmware/AP
+exclusion remain explicit assumptions.
+
+Ordinary and sanitizer tests check every leaf slot for aliases, every offset
+within the page against the three-address limit, failed loads, control drift,
+leaf interference and restoration failure. Native image wiring and a physical
+EHCI capability capture are still required before using this candidate.

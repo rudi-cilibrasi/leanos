@@ -35,3 +35,12 @@ leanos_run_sanitized "$build/af-lab-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ehci-capabilities.c -o "$build/ehci-sanitized"
 leanos_run_sanitized "$build/ehci-sanitized"
+
+python3 scripts/generate-qotom-ecam-firmware.py "$build/qotom-ecam-firmware-inputs.h"
+for test in qotom-ehci-window qotom-ehci-arm; do
+  "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -Iboot -Ihardware/lab -I"$build" "tests/$test.c" -o "$build/$test"
+  "$build/$test"
+  "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+    -Iboot -Ihardware/lab -I"$build" "tests/$test.c" -o "$build/$test-sanitized"
+  leanos_run_sanitized "$build/$test-sanitized"
+done
