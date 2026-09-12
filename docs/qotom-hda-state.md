@@ -24,5 +24,19 @@ Tests cover every read-failure position, all prior/global/payload bits, narrow
 width bounds, all-ones values, PCI drift in all four configuration-check phases,
 all offsets and widths, malformed headers and missing inputs. Successful raw
 samples can describe running engines; no shutdown inference is made here.
-No write, polling or reset callback exists. Native mapping/emission and physical
-capture remain pending, followed by the actual shutdown/BME policy.
+No write, polling or reset callback exists. Native emission and physical capture remain pending, followed by the actual shutdown/BME policy.
+
+## Mapping authority
+
+The state window permits only the eleven address/width pairs and maps page
+`d0910000` as read-only/NX/supervisor UC. It keeps the sampled value private until
+the original leaf is restored, both invalidations complete and final controls
+match. Mapping/control interference terminates after cleanup; failed loads do
+not publish values. Other HDA registers remain outside this window.
+
+Arming requires a successful exact global profile, then privately reuses the
+firmware/root/resource checks of the global reader. It excludes all 4096
+low-memory aliases to all four pages of the 16 KiB HDA resource. Every rejected
+rearm clears prior authority without device access. Window and arm tests cover
+all accepted widths, invalid offsets/widths, aliases, missing callbacks, invalid
+apertures, mapping/control interference and every bit of the prior profile.
