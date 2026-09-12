@@ -376,9 +376,9 @@ writes and command observations, including ambiguous failure; it never restores
 BME as rollback. Unexpected state rejects. Tests cover all 51 read positions in
 the captured one-entry list, every prior operational bit mutation, command and
 status-halfword preservation, ignored writes, failed writes with effects, and
-post-write restart or BME reassertion. Native word-store authority, physical
-execution and continuing device/firmware assumptions remain outstanding. No
-system-wide DMA containment or platform admission follows from this candidate.
+post-write restart or BME reassertion. Native word-store authority and physical
+execution are described below. Continuing device/firmware assumptions remain
+outstanding; no system-wide DMA containment or platform admission follows.
 
 ## Consumed word-store mapping
 
@@ -395,8 +395,8 @@ successful SMI disable and captured stopped-state sample to the firmware and
 root/alias checks. Rejection clears old authority. Arming performs no hardware
 access; the helper still refreshes all device state before its write. Tests
 reject all other 16-bit values, BDF/offset changes, reuse, failed stores, stale
-samples, ECAM/EHCI aliases and root/leaf interference. Native store wiring is described below. Protected physical validation remains
-outstanding.
+samples, ECAM/EHCI aliases and root/leaf interference. Native store wiring and
+protected physical validation are described below.
 
 ## Native BME-clear experiment
 
