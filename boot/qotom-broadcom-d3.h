@@ -66,7 +66,7 @@ static inline int qotom_broadcom_root_prior_valid(
         bme->attempted==1 && bme->before_command==7 && bme->after_command==3 &&
         pending_status==QOTOM_PCIE_PENDING_OK && pending &&
         pending->polls>=2 && pending->polls<=QOTOM_PCIE_PENDING_POLL_LIMIT &&
-        pending->device_status==17;
+        (pending->device_status&~UINT32_C(1))==UINT32_C(0x10);
 }
 
 static inline int qotom_broadcom_same_list(
