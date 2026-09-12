@@ -6,9 +6,30 @@ from pathlib import Path
 
 D = runpy.run_path(str(Path(__file__).with_name('check-qotom-realtek-bme-capture.py')))
 PREFIX = b'LEANOS-LAB/1 PCIE-PENDING '
+PRIOR_PREFIX = b'LEANOS-LAB/1 PCIE-DEVICE '
 DEC = rb'(0|[1-9][0-9]{0,9})'
 INDICES = (6,7,8,9,13,15)
-BASE_STATUS = (17,17,17,16,25,25)
+
+
+def prior_device_statuses(lines, end):
+    pattern = re.compile(PRIOR_PREFIX +
+        rb'profile=qotom-pcie-device-v1 index=' + DEC + rb' status=' + DEC +
+        rb' offset=' + DEC + rb' capability=' + DEC + rb' control-status=' + DEC + rb'\n')
+    statuses = {}
+    for line in lines[:end]:
+        if not line.startswith(PRIOR_PREFIX):
+            continue
+        match = pattern.fullmatch(line)
+        if not match:
+            raise ValueError('PCIe pending prior framing')
+        index, status, _, _, control_status = map(int, match.groups())
+        if index in INDICES:
+            if index in statuses or status != 0 or control_status > 0xffffffff:
+                raise ValueError('PCIe pending prior observation')
+            statuses[index] = control_status >> 16
+    if set(statuses) != set(INDICES):
+        raise ValueError('PCIe pending missing prior observations')
+    return statuses
 
 
 def extract(raw, protocol):
@@ -26,6 +47,7 @@ def extract(raw, protocol):
         return raw,None
     if len(positions)>len(INDICES) or positions!=list(range(len(lines)-len(positions)-1,len(lines)-1)):
         raise ValueError('PCIe pending record order')
+    prior_statuses=prior_device_statuses(lines,positions[0])
     projection=b''.join(lines[:positions[0]])+pending
     _,previous=D['extract'](projection,protocol)
     if previous is None or len(previous['functions'])!=2 or any(f['status'] for f in previous['functions']):
@@ -36,7 +58,7 @@ def extract(raw, protocol):
             rb' status='+DEC+rb' polls='+DEC+rb' device-status='+DEC+rb'\n',lines[position])
         if not match:raise ValueError('PCIe pending framing')
         index,status,polls,device_status=map(int,match.groups())
-        base=BASE_STATUS[slot]
+        base=prior_statuses[index]&~0x20
         if index!=INDICES[slot] or status>9 or status==1 or polls>100 or device_status>65535:
             raise ValueError('PCIe pending scalar bounds')
         if polls==0:

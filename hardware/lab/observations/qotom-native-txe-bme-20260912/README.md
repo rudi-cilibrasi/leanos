@@ -37,6 +37,18 @@ Successful raw capture SHA256:
 `92be7c5330bc9b9285e4be55131f2c97f70d24dc8b62f1330fe5f31e8283e13a`.
 Rejected raw capture SHA256:
 `2aec611884e7dd5676744c292eec80e583b9c195f1c88a0a8e89762b082760a6`.
+
+A later reset retry also completed the full sequence and recovered FreeBSD.
+Its root-port Device Status values were `16,16,16,16`, while the first capture
+had `17,17,17,16`; the varying bit is the correctable-error-detected status
+bit. The image correctly bound each pending check to its earlier observation
+from the same boot, but the original host decoder assumed the first capture's
+values. The corrected decoder now makes the same per-boot binding. The retry is
+retained under `reset-retry`; its raw SHA256 is
+`cab1e2aa83566041607903424366e19c074b5e11cb6b605441143297e08f0bbb`,
+with 34.30736370803788 seconds of serial quiet and FreeBSD boot time
+1789249481 to 1789250621.
+
 Build and runner revision: `bd16603d8be2ca58de8eafde93f91cb18e79a4d3`;
 prepared dependency revision:
 `4f6fe9358eaf2a6274f152005578957335acd724`.

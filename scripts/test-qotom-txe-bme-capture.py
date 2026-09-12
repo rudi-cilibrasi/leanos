@@ -75,4 +75,18 @@ class Capture(unittest.TestCase):
             b'WATCHDOG-WINDOW expired-or-invalid=1 fallback=freebsd'),1)
         self.assertNotIn(b'TXE-BME profile=',raw)
 
+    def test_retained_reset_retry(self):
+        retry=PHYSICAL/'reset-retry/cycle-1'
+        raw=(retry/'serial.raw').read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+            'cab1e2aa83566041607903424366e19c074b5e11cb6b605441143297e08f0bbb')
+        result=json.loads((retry/'result.json').read_text())
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        self.assertEqual([f['device_status'] for f in result['pcie_pending']['functions']],
+            [16,16,16,16,25,25])
+        self.assertTrue(result['pcie_pending']['nonposted_quiet_observed'])
+        self.assertTrue(result['txe_bme']['host_visible_bme_cleared'])
+        self.assertTrue(result['request_consumed'])
+        self.assertEqual(result['recovery'],'freebsd-ssh-restored')
+
 if __name__=='__main__':unittest.main()
