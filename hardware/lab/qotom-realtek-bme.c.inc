@@ -1,4 +1,8 @@
 #include "qotom-realtek-bme-arm.h"
+#ifdef LEANOS_QOTOM_PCIE_PENDING
+static struct qotom_realtek_bme_result lab_retained_realtek_bme[2];
+#include "qotom-pcie-pending.c.inc"
+#endif
 static __attribute__((noreturn)) void lab_realtek_bme_fault(void *opaque);
 static struct lab_realtek_bme_window lab_realtek_bme_writer={
     .controls=lab_ecam_native_controls,.invalidate=lab_ecam_native_invalidate,
@@ -13,6 +17,10 @@ static __attribute__((noreturn)) void lab_realtek_bme_fault(void *opaque) {
 }
 static __attribute__((noinline)) void lab_capture_realtek_bme(
         const struct lab_ecam_root_view *view,const struct pci_enumeration_snapshot *snapshot) {
+#ifdef LEANOS_QOTOM_PCIE_PENDING
+    for(unsigned port=0;port<2;++port)
+        lab_retained_realtek_bme[port]=(struct qotom_realtek_bme_result){0};
+#endif
     for(unsigned port=0;port<2;++port) {
         const unsigned index=13+port*2,bus=1+port*2,bridge=6+port*2;
         struct qotom_realtek_bme_result result={0};
@@ -45,5 +53,11 @@ static __attribute__((noinline)) void lab_capture_realtek_bme(
         serial_puts(" before=");serial_u64(result.before_command);
         serial_puts(" after=");serial_u64(result.after_command);serial_putc('\n');
         if(status!=QOTOM_REALTEK_BME_OK)pre_admission_fail("qotom-realtek-bme");
+#ifdef LEANOS_QOTOM_PCIE_PENDING
+        lab_retained_realtek_bme[port]=result;
+#endif
     }
+#ifdef LEANOS_QOTOM_PCIE_PENDING
+    lab_capture_pcie_pending(view,snapshot);
+#endif
 }
