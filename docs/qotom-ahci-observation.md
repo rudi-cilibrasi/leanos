@@ -193,3 +193,18 @@ mutation, command and Status-halfword changes, ignored writes, failed writes
 with and without effects, resource drift, post-write restart and BME reassertion.
 The helper requires a separately guarded native word-store window and physical
 validation before it can contribute a SATA transition observation.
+
+The consumed BME writer permits only `00:13.0` offset 4, word `0003`. It maps
+ECAM page `e0098000` with a RW/NX/supervisor UC leaf, executes the trusted word
+store, restores and invalidates the original leaf, and checks control state.
+Every request consumes authority, including rejected requests. The arm gate
+binds all successful prior statuses, the original global and port observations,
+accepted interrupt-disable result, exact Command `0007`, PCI resource, firmware,
+roots and aliases. Failed rearming revokes all previous authority and performs
+no device access.
+
+Window tests cover every alternative 16-bit value, BDF/offset mutations, missing
+callbacks, rejected reuse, failed stores and mapping/control interference. Arm
+tests cover all 4096 AHCI-page aliases, bound header bits, every prior sample bit
+and rejected statuses. Native capture wiring and physical BME validation remain
+pending.
