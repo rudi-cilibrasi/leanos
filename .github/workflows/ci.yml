@@ -119,6 +119,12 @@ jobs:
           LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: '1'
         run: ./scripts/check.sh
 
+      - name: Build Qotom BSP production boundary
+        run: |
+          python3 scripts/build-qotom-recovery-lab.py \
+            --prepared-repo . --mode completion --pci-diagnostic --bsp-production
+          python3 scripts/test-qotom-bsp-production-image.py
+
       - name: Verify frame-budget negative evidence
         if: always()
         run: ./scripts/verify-negative-evidence.sh frame-budget

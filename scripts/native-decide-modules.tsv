@@ -57,6 +57,7 @@ LeanOS/Preemption.lean	bounded-model
 LeanOS/PrivilegeEntryControl.lean	bounded-model
 LeanOS/PrivilegeEntryStack.lean	bounded-model
 LeanOS/QotomBspTopology.lean	bounded-model
+LeanOS/QotomMadtStream.lean	bounded-model
 LeanOS/ResumablePreemption.lean	bounded-model
 LeanOS/Scheduler.lean	bounded-model
 LeanOS/SecurityClaims.lean	bounded-model
