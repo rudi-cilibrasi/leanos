@@ -1,0 +1,21 @@
+{
+  "schema": "leanos-ecam-memory-lab-v1",
+  "cpuid_edx": 3219913727,
+  "available": true,
+  "ia32_pat": 1974748653749254,
+  "cr0": 2147549215,
+  "cr3": 1486848,
+  "cr4": 104,
+  "pat_entries": [
+    6,
+    4,
+    7,
+    0,
+    6,
+    4,
+    7,
+    0
+  ],
+  "memory_type_admitted": false,
+  "platform_admitted": false
+}

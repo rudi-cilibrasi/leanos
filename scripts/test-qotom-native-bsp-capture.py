@@ -544,6 +544,34 @@ class Capture(unittest.TestCase):
             ('command_before','interrupt','task_file','sata_status','active','issued','command_after')),
             (6,0,0x50,0x123,0,0,6))
 
+    def test_retained_txe_status_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,hda_bme=True,txe_status=True)
+        self.assertEqual(result['txe_status'],expected['txe_status'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],expected['diagnostic']['terminal_reason'])
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
+        self.assertFalse(result['txe_status']['dma_quarantine_established'])
+
+        observed=result['txe_status']
+        self.assertEqual(observed['status'],0)
+        self.assertEqual(tuple(observed[k] for k in
+            ('firmware0','firmware1')), (0x1f0000d5,0x69000000))
+
     def test_retained_hda_bme_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-hda-bme-20260911'
         manifest = json.loads((capture / 'manifest.json').read_text())

@@ -45,4 +45,19 @@ The decoder requires the successful preceding HDA BME result, exact framing,
 raw DWORD bounds, zero failed payloads and a matching terminal. Helper outcomes
 other than initial-header rejection require the captured native TXE binding.
 The actual TXE terminal is restored after earlier diagnostic projections.
-Physical capture and build validation remain pending.
+The protected physical capture below and build validation passed.
+
+## Physical result
+
+The [retained native capture](../hardware/lab/observations/qotom-native-txe-status-20260911)
+reports status 0 and raw firmware status DWORDs `1f0000d5` and `69000000`
+(hexadecimal). Both identity/Command/class/layout refreshes passed. The 60-file
+evidence manifest retains serial bytes, decoded results and clean build
+provenance. FreeBSD recovered automatically; independent SSH verified BIOS
+boot, installed hashes and the consumed request. The retained replay passed.
+
+All 57 protected capture groups passed before building; all 125 build hashes,
+eight-site MSR audit and QEMU foreign-firmware rejection passed. These raw
+status observations do not supply TXE shutdown or DMA-drain semantics. The
+whole-platform contract remains unresolved and the terminal remains
+`qotom-platform-pending`.
