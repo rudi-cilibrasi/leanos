@@ -17,7 +17,7 @@ static void lab_check_bsp(uint32_t copied_count) {
         apic_base = (uint64_t)high << 32 | low;
     }
     const struct qotom_bsp_observation observation = {
-        executing, d, available, apic_base, b >> 24
+        executing, d, available, apic_base, b >> 24, 0
     };
     const struct qotom_bsp_result result = qotom_bind_validated_madt_entries(
         madt->bytes + 44u, madt->length - 44u, &observation);

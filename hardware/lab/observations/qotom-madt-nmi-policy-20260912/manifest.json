@@ -1,0 +1,26 @@
+{
+  "schema": "leanos-qotom-madt-nmi-policy-capture-v1",
+  "source_revision": "e66160a092091c89328b8f1f4b703a26e705af0f",
+  "elf_sha256": "e6b382464cd8f2e2c2803f2f3d25d70e3051ded352bc519c52b1466e3ef82462",
+  "raw_serial_sha256": "10183577418a5d7c1a884ffbab72bd6afa46b654c294317a8298b6f0912b2659",
+  "evidence_class": "lab-recovery-experiment",
+  "nmi_routing_quarantined": true,
+  "platform_admitted": false,
+  "files": {
+    "README.md": "02c8987edddd94231c75190cf5fa4ed4cd307cf105e26b5001e5f33260ce7fb8",
+    "ap-start-audit.json": "869fa67077b0d733c751ef04fbee3e094ca3e136d93fd0791fdef57d19c53bfc",
+    "build-manifest.json": "b25e0965216890eb394c0fee9d0c6bdef365c7051eab3ecc98415c5b514c9a43",
+    "capture.sh": "28028ff684d1297a5e07e78c4ad51c710ad5336f0fd1626f8b09741938fd1305",
+    "cycle-1/events.jsonl": "f9db583a43ec2ff0e418f1cb8d809d111d2129e80c7e5a3d99782697a20aaa06",
+    "cycle-1/reboot.txt": "f7dd9000dfcf6bffc1ea798bf376c861b91b42d999b73f9ece7042a76e38041e",
+    "cycle-1/recovery.json": "1d4359e4399f546a184b053f0a827ede09c8046d4a62f394fd668468e04b4e5d",
+    "cycle-1/result.json": "00c8ff4939a6e8372895366797528aba4e62f5d4dea51e1c653d2115ee2a5488",
+    "cycle-1/serial.raw": "10183577418a5d7c1a884ffbab72bd6afa46b654c294317a8298b6f0912b2659",
+    "cycle-1/verification.txt": "11c269043067b223623919083dcbdb0b5637a7814fb7485ee7aae4e163d99f6d",
+    "grub.cfg": "0d9e5db7764d2181cb60f2548b5d835ccd14a29f6069c4626905cb51a75fb89c",
+    "leanos.sha256": "ba289c50a41119bef30e73d8360bd3550b98e51afb0be553bbd5c7e7d570ac6a",
+    "msr-write-audit.json": "69850faffc5ce4a9c507972302760f9c0b7000e47b51dfa15dad1a4f8451514c",
+    "post-recovery-inspection.txt": "f1a66f378c7f3627bf4cabbd7859b5dfa04e266f496642c3e2dc42e47fbbdeac",
+    "request.env": "3e34f58b3211fdb04938d629fb8f3e5fd7107da8910cedd5e79d17b31778e18f"
+  }
+}
