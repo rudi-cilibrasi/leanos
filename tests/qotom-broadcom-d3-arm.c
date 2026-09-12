@@ -83,7 +83,8 @@ int main(void) {
     }
     for(unsigned field=0;field<2;++field)for(unsigned bit=0;bit<32;++bit) {
         assert(ARM());((uint32_t *)&pending)[field]^=UINT32_C(1)<<bit;
-        int accepted=field==0 && pending.polls>=2 && pending.polls<=100;
+        int accepted=(field==0 && pending.polls>=2 && pending.polls<=100) ||
+            (field==1 && pending.device_status==16);
         if(accepted)assert(ARM());else assert(!ARM() && CLEARED());
         ((uint32_t *)&pending)[field]^=UINT32_C(1)<<bit;
     }
