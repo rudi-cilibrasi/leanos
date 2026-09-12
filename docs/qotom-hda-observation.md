@@ -39,7 +39,22 @@ Tests check exact order/widths, all 18 failure positions, every identity/resourc
 bit at entry and final revalidation, every payload bit, narrow-read bounds,
 all-ones reads, initial/final reset, changed GCTL, invalid callbacks and all
 16 KiB offsets with widths zero through eight. The collector has no write or
-polling callback. Native mapping/arm integration and physical capture remain
-pending, followed by stream/ring state, shutdown and BME policy. This helper
+polling callback. Native emission and physical capture remain pending, followed by stream/ring
+state, shutdown and BME policy. This helper
 alone does not establish transaction drain, firmware/AP exclusion or DMA
 containment.
+
+## Read window and arming
+
+The read window maps only page `d0910000` using leaf `80000000d0910019`
+(supervisor, read-only, NX, UC). Each read passes its exact width to the trusted
+load primitive. It checks controls, saves the original aperture leaf, maps and
+invalidates, samples privately, restores the exact leaf, invalidates again and
+checks final controls. Mapping or control interference terminates after cleanup.
+A failed load publishes no value. No page-table root switch is performed.
+
+The arm gate binds copied firmware, the original roots, exact device/resource
+and MSE, and excludes all 4096 low-memory mappings to every page in the 16 KiB
+resource. Rejected rearms clear all authority. Arming performs no MMIO access
+or page-table mutation. Tests cover exact widths, all four pages of aliases,
+failed loads, missing callbacks, invalid apertures and mapping interference.
