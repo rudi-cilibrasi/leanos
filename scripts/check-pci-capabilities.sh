@@ -148,3 +148,9 @@ leanos_run_sanitized "$build/ahci-interrupts-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ahci-bme.c -o "$build/ahci-bme-sanitized"
 leanos_run_sanitized "$build/ahci-bme-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-hda-observation.c -o "$build/hda-observation"
+"$build/hda-observation"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-hda-observation.c -o "$build/hda-observation-sanitized"
+leanos_run_sanitized "$build/hda-observation-sanitized"
