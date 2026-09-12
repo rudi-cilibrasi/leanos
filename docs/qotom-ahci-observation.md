@@ -140,3 +140,19 @@ failed writes with and without effects. The helper still requires a separate
 consumed native write window and firmware/root/resource binding before hardware
 execution. Interrupt masking does not establish transaction drain, continuing
 firmware/AP exclusion or platform admission.
+
+The consumed interrupt window admits only address `d0916004`, value `80000000`
+(hexadecimal), through a single trusted DWORD store. Every request consumes its
+armed flag, including rejected requests. The mapping uses the AHCI page as RW,
+NX, supervisor UC, restores the original leaf exactly, invalidates before and
+after the store, and checks control state before returning. Mapping or control
+interference terminates; a failed store can still have changed the device.
+
+The arm gate checks both successful prior statuses, the exact globals and
+stopped/empty port samples, PCI identity/resource binding, copied firmware,
+compiled roots and every possible present AHCI-page alias. Failed rearms revoke
+all authority. Arming performs no store, invalidation or device access. Tests
+exercise address/value mutations, rejected reuse, every missing callback,
+failed stores, restoration interference, all 4096 aliases, bound header bits,
+all prior sample bits and failed prior statuses. Native emission and physical
+interrupt-disable validation remain pending.
