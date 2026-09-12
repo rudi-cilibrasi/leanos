@@ -1,0 +1,30 @@
+{
+  "schema": "leanos-qotom-apic-lvt-policy-capture-v1",
+  "source_revision": "99385529d8c7ab3d10f7bf0b41dfd1f11d7c5f5c",
+  "elf_sha256": "e828a7b4e244b8886ad754e7b8465c77029bce29b6c75bea0fa2f332889c10f8",
+  "raw_serial_sha256": "28f8feaffdfcd06b2948d12735cb3e5f357a864cb1a19d5bc37b5705d788e739",
+  "evidence_class": "lab-recovery-experiment",
+  "inherited_lvt_policy_enforced": true,
+  "lint0_raw": 65536,
+  "lint1_raw": 65536,
+  "policy": "masked-inherited",
+  "routing_authority": false,
+  "platform_admitted": false,
+  "files": {
+    "README.md": "8a177c3d91986146773ec3c706e09b72c97b1d8edcae029b32686fc23aa8f34f",
+    "ap-start-audit.json": "9dc5ec53e7f365b19208cf370f40b20bb1e8741abb7da6fca9970b2ccd9fb48f",
+    "build-manifest.json": "4a54782f2b35315c94fa278a0c3b9baa68c2f8c8ea9daec75e0825178b93ea91",
+    "capture.sh": "322c760e5f018c4f1b2b3d024aa07996b6754c5e6d46bdb1a257872f0ada3627",
+    "cycle-1/events.jsonl": "c3562701ca5db6ed674267f7ed8dc2fa37c3866f75566cf1f9175a9be2141050",
+    "cycle-1/reboot.txt": "bde43bce7ad89c667570f5db5fe056199ed4c188d4a6b40e0bbf7baa2990ba9b",
+    "cycle-1/recovery.json": "e181bdaff1c71ac6e1b8e0ba357fffa54d863626815995704bc27ba47396dbc9",
+    "cycle-1/result.json": "b42768fe835156bc2de7dd157bd2d8581492069e268dafcb73cb5a7e39533077",
+    "cycle-1/serial.raw": "28f8feaffdfcd06b2948d12735cb3e5f357a864cb1a19d5bc37b5705d788e739",
+    "cycle-1/verification.txt": "2671ccab927fa1b85fb3cfc5cba1bcb7131235aae3a3bfcfc18e3b2b922c5bfb",
+    "grub.cfg": "b7cd5433fedf72c8fc5014dd331c38ccdd232cd0932143e6248ed17e003dac42",
+    "leanos.sha256": "d17aa1d09da6e01350b0569a90aef5fcc18f04c55300a189171cab951eace809",
+    "msr-write-audit.json": "ad68856b7b3d06909baadc097c2bd796d6edeb65a617665e63db3c0a8d67fedf",
+    "post-recovery-inspection.txt": "43c796cb6502dd6b92a930c87a7c7341d522ec35fe7accec140937a256a93cd7",
+    "request.env": "f7d0905b7f8889db4246f9c6bdd075738c8c644298597c3cb0857f69fd1ac9d3"
+  }
+}
