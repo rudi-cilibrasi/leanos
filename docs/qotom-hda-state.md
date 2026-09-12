@@ -24,7 +24,7 @@ Tests cover every read-failure position, all prior/global/payload bits, narrow
 width bounds, all-ones values, PCI drift in all four configuration-check phases,
 all offsets and widths, malformed headers and missing inputs. Successful raw
 samples can describe running engines; no shutdown inference is made here.
-No write, polling or reset callback exists. Physical capture remains pending, followed by the actual shutdown/BME policy.
+No write, polling or reset callback exists. Physical capture is retained below; BME policy remains subsequent work.
 
 ## Mapping authority
 
@@ -56,3 +56,20 @@ successful preceding HDA observation, the bound global tuple for helper
 outcomes, exact order/fields, bounded raw values and matching terminal. Failures
 must publish zero. Running bits are accepted as observations, not translated
 into stopped-state claims.
+
+## Physical capture
+
+The retained [Win7 Legacy capture](../hardware/lab/observations/qotom-native-hda-state-20260911/README.md)
+reports status 0, CORBCTL `0`, RIRBCTL `0`, DPLBASE `0`, and all eight stream
+control/status DWORDs `00040000` (hexadecimal). Both complete global/resource
+refreshes passed. Ring/stream RUN bits were clear and position reporting was
+disabled. No HDA write, stop request, reset or BME clear occurred.
+
+The image passed all 119 build hashes, eight-site MSR audit, load-width
+disassembly and QEMU foreign-firmware rejection. All 53 protected groups passed
+before the build; the retained replay and its 58 file hashes passed afterward.
+FreeBSD recovered automatically after 34.312 seconds of serial quiet, with a
+changed boot time and consumed request. Independent SSH verified installed
+hashes and request=none. The terminal remains `qotom-platform-pending`;
+continuing firmware/AP exclusion, transaction drain and system-wide DMA
+containment remain unestablished.
