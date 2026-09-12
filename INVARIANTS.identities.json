@@ -14918,6 +14918,12 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomPCIFinalAdmission.lean",
+      "qualified": "LeanOS.QotomPCIFinalAdmission.exported_one_iff",
+      "display": "exported_one_iff",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIInventory.lean",
       "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",
