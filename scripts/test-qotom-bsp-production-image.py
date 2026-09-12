@@ -21,6 +21,10 @@ assert not result['x2apic_icr_msr_write']
 assert result['firmware_ap_dormancy_assumed'] and not result['ap_dormancy_established']
 assert all(not plan['local_apic_aliases'] for plan in result['plans'].values())
 
+lab_graph = (ROOT/'build/qotom-bsp-production-lab/objects.mk').read_text()
+assert str(ROOT/'build/boot') not in lab_graph
+assert str(ROOT/'build/qotom-bsp-production-lab/boot') in lab_graph
+
 runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
 protocol = runner['cpu_replay_module'](True).load_protocol(
     ROOT / 'build/boot/serial-protocol.tsv')
