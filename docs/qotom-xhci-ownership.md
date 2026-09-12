@@ -306,3 +306,81 @@ This completes the bounded xHCI ownership observation. Legacy SMI policy,
 operational shutdown, bus-master disable, outstanding-transaction drain and
 continuing firmware/AP exclusion remain necessary before DMA quarantine.
 The diagnostic terminal remains `qotom-platform-pending`.
+
+## Bounded legacy SMI disable helper
+
+After successful ownership handoff, `qotom_disable_xhci_smi` validates the prior
+result, refreshes the entire PCI/capability/extended-list observation, and requires
+BIOS-clear/OS-owned support. List identity remains bound to the captured list;
+only the previously documented command-manager status bits may vary. SMI enable
+bits must agree with the accepted handoff control sample. Reserved bits reject.
+
+[Intel's J1900 datasheet, section 14.7.189, page 527](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf#page=527)
+lists RW enable bits 15:13, 4 and 0; RO status bits 20 and 16; and RW/C status
+bits 31:29 at `USBLEGCTLSTS`, offset `0x8464`. Its descriptions label these fields
+reserved despite giving their names and access classes. The helper uses the
+register's listed access classes and zeroes only by writing an all-zero DWORD:
+it clears enable mask `0xe011` without acknowledging W1C status. This is a closed
+J1900 experiment; the EHCI masks do not apply. Linux's
+[xHCI handoff implementation](https://raw.githubusercontent.com/torvalds/linux/master/drivers/usb/host/pci-quirks.c)
+also disables legacy SMI sources after ownership handoff, but additionally
+acknowledges events; this helper leaves status acknowledgements untouched.
+
+The helper admits at most 174 reads and one zero DWORD write to `0xd0908464`.
+It repeats the complete collection after the write, verifies ownership and list
+identity, and accepts only status bits in the control readback. Failed writes
+retain an attempted-write diagnostic because they may have taken effect. No
+rollback or other control access occurs. Callback tests cover every read-failure
+position at the 48-header bound, all enable combinations, retained/new status,
+reasserted enables, ownership/resource/list drift, live vendor status and failed
+writes with and without effects.
+
+SMI disable alone does not establish continuing firmware exclusion, controller
+halt, transaction drain or quarantine. Native diagnostics and the physical
+result are described below.
+
+## Consumed SMI write window
+
+The separate `lab_xhci_smi_window` accepts only address `0xd0908464` and value
+zero, consuming its authority on every request. The trusted DWORD store uses
+an RW/NX/supervisor/UC aperture; exact mapping restoration, invalidations and
+control checks precede return. Interference is terminal. The semaphore register
+and every nonzero write value are excluded.
+
+Arming requires the exact captured six-header list and seven capability words,
+plus successful handoff with support `0x01000801`, control `0x2000`, bounded polls
+and zero verification details. It binds the PCI identity/BAR pair, firmware
+copies and boot root, rejects aliases across the complete 64-KiB resource, and
+revokes all authority on failed rearming. Arming itself reads or writes no device
+register. Tests exercise every resource byte address, all address/value bits,
+all nonzero 16-bit values, restoration failures, all page-table alias slots,
+captured-state mutations and handoff-result fields. The native stage below connects the window to the helper and retains its
+physical result.
+
+## Native SMI diagnostic integration
+
+The opt-in builder flag `--xhci-smi` requires `--xhci-handoff` and creates
+`build/qotom-xhci-smi-lab`. The out-of-line native stage arms capability and
+extended-list readers, then the separate SMI writer. It uses the bounded helper,
+disarms all contexts, and emits `XHCI-SMI profile=qotom-xhci-smi-v1` with status,
+write-attempt, before-control and after-control fields. Local arm failures are
+8 (capability), 9 (extended list) and 10 (writer). Failed results terminate with
+`qotom-xhci-smi`; success continues to the existing platform-pending boundary.
+
+The runner extracts this record before the handoff prefix and fingerprints its
+decoder. It retains `xhci-smi.json` and restores the actual terminal reason after
+prefix replay. The decoder requires successful prior handoff, exact control
+binding for helper results, reachable attempt/readback fields and consistent
+terminals. Mutation tests cover valid failure outcomes, impossible statuses,
+changed enables, forbidden readback bits, missing/duplicate records and bounds.
+Synthetic replay does not establish a physical SMI-disable result.
+
+## Physical SMI result
+
+The [protected SMI capture](../hardware/lab/observations/qotom-native-xhci-smi-20260911/README.md)
+observed control `0x2000` before the zero DWORD write and `0` afterward, with
+status 0 and complete refresh checks passing. FreeBSD recovered automatically;
+independent SSH verified the image and consumed request. The retained replay
+checks this result together with all preceding EHCI and xHCI observations.
+Operational shutdown, BME disable, device/fabric drain and continuing firmware/AP
+exclusion remain outstanding. The terminal stays `qotom-platform-pending`.

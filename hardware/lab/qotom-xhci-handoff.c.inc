@@ -11,6 +11,9 @@ static void lab_xhci_handoff_disarm(void) {
 static __attribute__((noreturn)) void lab_xhci_handoff_fault(void *opaque) {
     (void)opaque;lab_xhci_handoff_disarm();pre_admission_fail("qotom-xhci-handoff");
 }
+#ifdef LEANOS_QOTOM_XHCI_SMI
+#include "qotom-xhci-smi.c.inc"
+#endif
 static __attribute__((noinline)) void lab_handoff_xhci(const struct lab_ecam_root_view *view,
         const struct pci_enumeration_header *header,
         const struct qotom_xhci_capabilities *caps,const struct qotom_xhci_legacy *legacy) {
@@ -49,4 +52,7 @@ static __attribute__((noinline)) void lab_handoff_xhci(const struct lab_ecam_roo
     serial_puts(" expected=");serial_u64(result.verify_expected);
     serial_puts(" observed=");serial_u64(result.verify_observed);serial_putc('\n');
     if(status!=QOTOM_XHCI_HANDOFF_OBSERVED)pre_admission_fail("qotom-xhci-handoff");
+#ifdef LEANOS_QOTOM_XHCI_SMI
+    lab_disable_xhci_smi(view,header,caps,legacy,&result);
+#endif
 }
