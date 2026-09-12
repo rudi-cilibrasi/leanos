@@ -171,3 +171,54 @@ replay agrees; FreeBSD recovered automatically and independent SSH verified the
 consumed request and installed hashes. No SATA BME clear has occurred yet.
 Interrupt masking and stopped/empty samples do not establish transaction drain
 or continuing firmware/AP exclusion.
+
+## Bounded SATA bus-master disable
+
+`boot/qotom-ahci-bme.h` requires successful global, port and interrupt-disable
+observations with the exact captured stopped/empty profile and GHC transition.
+It constructs the expected interrupt-disabled globals, refreshes all 37 reads,
+checks PCI Command `0007`, writes one 16-bit `0003` at `00:13.0` offset 4,
+checks readback, repeats the 37-read collector and checks Command once more.
+The bound is 77 reads and one word write. I/O and MMIO decoding remain enabled;
+the adjacent PCI Status halfword is not written. Failed writes may have effects,
+and attempted/before/after evidence is retained without retry or rollback.
+
+Intel 329670-002 section 13.5.2 defines SATA Command.BME at bit2 and explicitly
+states that it does not affect split-transaction completions. This step therefore
+does not establish transaction drain, continuing firmware/AP exclusion or DMA
+containment. It performs no port write, engine stop, reset or polling.
+
+Tests cover all 77 read failures, every prior/global/port/interrupt-result bit
+mutation, command and Status-halfword changes, ignored writes, failed writes
+with and without effects, resource drift, post-write restart and BME reassertion.
+The helper requires a separately guarded native word-store window and physical
+validation before it can contribute a SATA transition observation.
+
+The consumed BME writer permits only `00:13.0` offset 4, word `0003`. It maps
+ECAM page `e0098000` with a RW/NX/supervisor UC leaf, executes the trusted word
+store, restores and invalidates the original leaf, and checks control state.
+Every request consumes authority, including rejected requests. The arm gate
+binds all successful prior statuses, the original global and port observations,
+accepted interrupt-disable result, exact Command `0007`, PCI resource, firmware,
+roots and aliases. Failed rearming revokes all previous authority and performs
+no device access.
+
+Window tests cover every alternative 16-bit value, BDF/offset mutations, missing
+callbacks, rejected reuse, failed stores and mapping/control interference. Arm
+tests cover all 4096 AHCI-page aliases, bound header bits, every prior sample bit
+and rejected statuses.
+
+The opt-in `--ahci-bme` build requires the interrupt-disable stage. Native code
+rearms global/port readers and the consumed word writer, invokes the helper,
+and disarms all contexts before `AHCI-BME`. Local arm failures are 9–11. The
+protected runner fingerprints the BME decoder and retains `ahci-bme.json` with
+the actual terminal. Decoding requires a successful interrupt-disable prefix,
+the captured Command for helper outcomes, bounded word values and consistent
+attempted/before/after fields. Final failures can retain a changed final Command;
+failed readback and failed writes remain diagnostic observations. The retained
+[physical capture](../hardware/lab/observations/qotom-native-ahci-bme-20260911/README.md)
+reports status 0, attempted 1 and Command `0007` to `0003`. Final resource,
+global and stopped/empty port checks passed. FreeBSD recovered automatically
+after 34.313 seconds of serial quiet; independent SSH confirmed the installed
+hashes and consumed request. The terminal remains `qotom-platform-pending`;
+transaction drain and system-wide DMA containment remain unestablished.
