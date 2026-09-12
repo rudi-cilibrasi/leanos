@@ -1,4 +1,7 @@
 #include "qotom-broadcom-d3-arm.h"
+#ifdef LEANOS_QOTOM_GRAPHICS_STATE
+#include "qotom-graphics-state.c.inc"
+#endif
 
 static __attribute__((noreturn)) void lab_broadcom_d3_fault(void *opaque);
 static struct lab_broadcom_d3_window lab_broadcom_d3_writer={
@@ -53,4 +56,7 @@ static __attribute__((noinline)) void lab_capture_broadcom_d3(
     serial_puts(" d3-attempted=");serial_u64(result.d3_attempted);
     serial_puts(" pmcsr-after=");serial_u64(result.after_pmcsr);serial_putc('\n');
     if(status!=QOTOM_BROADCOM_D3_OK)pre_admission_fail("qotom-broadcom-d3");
+#ifdef LEANOS_QOTOM_GRAPHICS_STATE
+    lab_capture_graphics_state(view,snapshot);
+#endif
 }
