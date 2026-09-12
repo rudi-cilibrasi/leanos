@@ -1,0 +1,25 @@
+{
+  "schema": "leanos-qotom-bsp-production-capture-v1",
+  "source_revision": "0888bf2b3860b0e27f29ae399fbaebf5c53f434d",
+  "elf_sha256": "59ce861d636080199b43e03d045070561a408af746355095bde0390db4e100c9",
+  "raw_serial_sha256": "f30a455cfa6e868074d2658cf8e509e9839537e8d9897641800529a2273e1643",
+  "evidence_class": "lab-recovery-experiment",
+  "platform_admitted": false,
+  "files": {
+    "README.md": "19a38b2c7eda88d9d191d6ebced4c4216504f4875df925a26f15cc75c4de43c2",
+    "ap-start-audit.json": "b0b270ab130cbbe0e805295ff0c384a341d1ac9deb158f3763273f68454d90d6",
+    "build-manifest.json": "b9a8beafc9c192e8ad05b7182d80369cc824d6370d88345e579233bb29ffc795",
+    "capture.sh": "87457bfa89be488291bddd83c8274c172f778ffaae6ce1b56449bf1c96542d71",
+    "cycle-1/events.jsonl": "ce68cb4805494a9f8933c45cc8dcf04f830b675c7d1d9334cfb314478d90017d",
+    "cycle-1/reboot.txt": "54843d215e5fad05cc359fbf943aba1a84f22451f9fa5d583f1ae57e12cd1695",
+    "cycle-1/recovery.json": "ce0bf36ec99a5d3519bffc42953d1976af42d277b7beddb8b5a94842222bc5e0",
+    "cycle-1/result.json": "34433c00ba0b3338cd84d561fd7f2d33c5b0067165f1c4ce5545588621c6361f",
+    "cycle-1/serial.raw": "f30a455cfa6e868074d2658cf8e509e9839537e8d9897641800529a2273e1643",
+    "cycle-1/verification.txt": "9ef82eba2f3d8fa9ce0b0d63ee3f5834b3f055138a359dd5bf38d5f1451b8410",
+    "grub.cfg": "f5d39abead0e5dcdd93307ebd72b3d4c8a5e5bbf4d63a7e9a95e33975670e8cc",
+    "leanos.sha256": "8047144ed1ad745ec80b31eb26f6df813cb98ba386ae249dec8c65185ea92d35",
+    "msr-write-audit.json": "f0a17220ac1523ed5175ea1eee2565da306e94c30dcfbba0332c940e0683e678",
+    "post-recovery-inspection.txt": "1ebc79deabf90381552f5a3e5e601fc83d69fc9d58d9b1492aaf982f11e8346a",
+    "request.env": "45c791c729048b597671628ca086ce0baa6b7213595e6141b4fc407ab9a7ec68"
+  }
+}

@@ -110,8 +110,8 @@ cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
 export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
-if [[ "$export_count" -ne 78 ]]; then
-  echo "error: expected 78 generated boundary exports, found $export_count" >&2
+if [[ "$export_count" -ne 79 ]]; then
+  echo "error: expected 79 generated boundary exports, found $export_count" >&2
   exit 1
 fi
 

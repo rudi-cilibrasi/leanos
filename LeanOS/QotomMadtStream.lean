@@ -813,4 +813,67 @@ def exportedFinishQuery
     count admitted seen0 seen1 seen2 seen3 tableLength executing
     cpuidEdx available apicBase sampleId word
 
+/-! ### Production root/copy/publication gate -/
+
+/-- Bind the successful Qotom consumer result to the authoritative root-copy
+pipeline before production publishes a topology identity.  The consumer uses
+zero for success, unlike the older singleton stream's status-one convention.
+Keeping that translation here prevents the C caller from replacing rejected
+consumer fields with an accepted singleton-shaped tuple.
+
+Result words are ABI/status/error/admitted APIC ID.  Errors 80 through 86 name
+root binding, incomplete copy sequence, non-unique MADT, rejected consumer,
+executing-CPU mismatch, inventory mismatch, and APIC-base mismatch. -/
+def machineTopologyAdmissionResultQuery
+    (selectedKind selectedAddress copiedRootAddress advertisedCount
+      completedCopies madtCount consumerStatus consumerDetail admittedApicId
+      processorCount apicBase executingApicId word : UInt64) : UInt64 :=
+  let error :=
+    if (selectedKind != 1 && selectedKind != 2) || selectedAddress == 0 ||
+        copiedRootAddress != selectedAddress then 80
+    else if advertisedCount == 0 ||
+        advertisedCount > UInt64.ofNat maxAcpiRootEntries ||
+        completedCopies != advertisedCount then 81
+    else if madtCount != 1 then 82
+    else if consumerStatus != 0 || consumerDetail != 0 then 83
+    else if admittedApicId > 255 || admittedApicId != executingApicId ||
+        admittedApicId != 0 then 84
+    else if processorCount != 4 then 85
+    else if apicBase != QotomBspTopology.expectedApicBase then 86
+    else 0
+  if word == 0 then 1
+  else if word == 1 then if error == 0 then 1 else 2
+  else if word == 2 then error
+  else if word == 3 && error == 0 then admittedApicId
+  else 0
+
+@[export leanos_qotom_machine_topology_admission_result_query]
+def exportedMachineTopologyAdmissionResultQuery
+    (selectedKind selectedAddress copiedRootAddress advertisedCount
+      completedCopies madtCount consumerStatus consumerDetail admittedApicId
+      processorCount apicBase executingApicId word : UInt64) : UInt64 :=
+  machineTopologyAdmissionResultQuery selectedKind selectedAddress
+    copiedRootAddress advertisedCount completedCopies madtCount consumerStatus
+    consumerDetail admittedApicId processorCount apicBase executingApicId word
+
+theorem machine_topology_admission_exact_state_accepted :
+    machineTopologyAdmissionResultQuery 2 0xb979f078 0xb979f078 10 10 1
+      0 0 0 4 QotomBspTopology.expectedApicBase 0 1 = 1 := by
+  native_decide
+
+theorem machine_topology_admission_rejected_consumer_rejected :
+    machineTopologyAdmissionResultQuery 2 0xb979f078 0xb979f078 10 10 1
+      4 22 0 4 QotomBspTopology.expectedApicBase 0 2 = 83 := by
+  native_decide
+
+theorem machine_topology_admission_substituted_count_rejected :
+    machineTopologyAdmissionResultQuery 2 0xb979f078 0xb979f078 10 10 1
+      0 0 0 1 QotomBspTopology.expectedApicBase 0 2 = 85 := by
+  native_decide
+
+theorem machine_topology_admission_wrong_base_rejected :
+    machineTopologyAdmissionResultQuery 2 0xb979f078 0xb979f078 10 10 1
+      0 0 0 4 0xfee00000 0 2 = 86 := by
+  native_decide
+
 end LeanOS.QotomMadtStream
