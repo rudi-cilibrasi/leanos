@@ -56,11 +56,11 @@ The address selector grants no authority. Native integration must bind the
 selected endpoint, upstream routing, serialized immutable/nonaliasing inputs,
 firmware/root controls and all aliases of both resource apertures before access.
 
-Tests use modeled engine values, not physical LeanOS observations. They check
-both endpoints, exact read order, every read failure, all compared config bits
-in both refreshes, ignored Status/cache fields, chip-revision masks, reset,
-width, absence and address/width selection. Native integration and protected decoding are described below. Physical
-validation remains outstanding.
+The unit tests use modeled engine values. They check both endpoints, exact read
+order, every read failure, all compared config bits in both refreshes, ignored
+Status/cache fields, chip-revision masks, reset, width, absence and address/width
+selection. Native integration and protected decoding are described below; the
+retained physical result validates this bounded observation separately.
 
 The later shutdown contract still needs bounded time and failure handling,
 interrupt/MSI/MSI-X treatment, BME control and outstanding traffic semantics.
@@ -126,7 +126,8 @@ and 12 for the last. Tests check both paths, exact 90-read order, every failed
 read, every bridge header bit at both refreshes, pending transactions, list
 mutation, invalid routing, prior-result mutations and missing inputs. These
 remain sequential observations, not proof of atomic routing or transaction
-drain. Native wiring is described below; protected physical validation remains outstanding.
+drain. Native wiring is described below, and the retained physical validation
+is described above.
 
 ## Native capture and decoding
 
