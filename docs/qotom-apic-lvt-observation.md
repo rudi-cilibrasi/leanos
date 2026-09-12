@@ -31,6 +31,20 @@ zero platform admission. The capture decoder retains the raw value and decodes
 the vector, delivery mode/status, polarity, remote-IRR, trigger and mask bits.
 It does not treat any observed value as an accepted interrupt policy.
 
+## Physical result
+
+The protected Qotom capture retained in
+`hardware/lab/observations/qotom-apic-lvt-20260912` read both LINT registers as
+`0x00010000` twice. Both were masked with fixed delivery mode, vector 0,
+active-high edge semantics, idle delivery status and remote-IRR clear. The
+observer restored the mapping, issued no APIC writes, granted no routing
+authority, and left platform admission false. The watchdog recovery returned
+to FreeBSD after 34.318 seconds of quiet serial time.
+
+That result permits a later Qotom policy to require the exact masked inherited
+state at its boundary. The observation image itself remains read-only and does
+not turn a single boot measurement into a general firmware guarantee.
+
 Firmware, SMM and the other processors remain outside this transaction's
 control. Repeated equal reads are a bounded observation, not proof that those
 actors cannot change the registers later. A native MMIO fault is terminal and

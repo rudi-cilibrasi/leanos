@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check the read-only Qotom local-APIC LINT observation image and decoder."""
 import importlib.util
+import hashlib
+import json
 import runpy
 import subprocess
 from pathlib import Path
@@ -90,4 +92,30 @@ except ValueError:
     pass
 else:
     raise AssertionError('unexpected LVT record was accepted by production-only decoder')
+
+capture = ROOT / 'hardware/lab/observations/qotom-apic-lvt-20260912'
+manifest = json.loads((capture/'manifest.json').read_text())
+for name,expected_digest in manifest['files'].items():
+    assert hashlib.sha256((capture/name).read_bytes()).hexdigest() == expected_digest,name
+physical_events = [json.loads(line) for line in
+                   (capture/'cycle-1/events.jsonl').read_text().splitlines()]
+assert b''.join(bytes.fromhex(event['hex']) for event in physical_events) == \
+       (capture/'cycle-1/serial.raw').read_bytes()
+saved = json.loads((capture/'cycle-1/result.json').read_text())
+physical = runner['classify_bsp_production'](
+    physical_events,manifest['elf_sha256'],lvt_observation=True)
+for key,value in physical.items():
+    assert saved[key] == value,key
+observed = saved['local_apic_lvt']
+assert saved['inherited_lvt_observed'] and observed['stable']
+assert observed['lint0_first'] == observed['lint0_second']
+assert observed['lint1_first'] == observed['lint1_second']
+for sample in (observed['lint0_first'],observed['lint1_first']):
+    assert sample == {'raw':65536,'vector':0,'delivery_mode':0,
+                      'delivery_status':0,'polarity':0,'remote_irr':0,
+                      'trigger_mode':0,'masked':True}
+assert not observed['routing_authority'] and observed['write_count'] == 0
+assert observed['mapping_restored'] and not observed['platform_admitted']
+assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
+assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
 print('PASS Qotom inherited APIC LVT read-only image and decoder negatives')
