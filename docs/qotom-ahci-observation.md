@@ -64,3 +64,56 @@ clear. FreeBSD recovered automatically with the request consumed. The retained
 regression replays the exact values and recovery bytes. Port engine state and
 outstanding commands remain unobserved; no SATA write or DMA proof is supplied.
 It advances the SATA portion of #330 and #291 without granting boot admission.
+
+## Bounded port 1 observer
+
+`boot/qotom-ahci-port.h` accepts the captured CAP/PI/VS/CAP2 profile, AHCI enabled,
+and global interrupts either enabled or disabled. It compares each complete
+fresh global snapshot with the supplied prior snapshot; an interrupt-enable
+change during observation therefore rejects. It requires prior collection
+success before any access and never treats a different implemented-port map
+as permission to read another port.
+
+The [Intel datasheet](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf),
+sections 13.8.31–.33, .35, .38 and .39, locates port 1 IE, CMD, TFD, SSTS, SACT and CI
+at ABAR offsets `194`, `198`, `1a0`, `1a8`, `1b4`, `1b8` (hexadecimal).
+The observer samples CMD, IE, TFD, SSTS, SACT, CI, then CMD again. Two complete
+15-read global/resource refreshes bracket these seven samples: 37 reads total.
+There are no writes, polling, reset or port 0 accesses. Failure zeroes every
+output field. Changed command or queue samples remain raw observations rather
+than an atomic snapshot, halt, transaction-drain or DMA-containment proof.
+
+Tests check exact access order, all 37 failures, all global-field bit changes
+before/after port access, each port payload bit, all-ones rejection, prior
+profile rejection, both permitted global-interrupt states, and address bounds.
+The dedicated port window admits exactly the six listed addresses through a
+read-only, NX, supervisor UC leaf. Its private arm gate validates prior collection
+success and the captured single-port profile, then reuses the AHCI firmware,
+root, PCI-resource and alias checks without exporting the global reader's
+authority. Every failed rearm clears prior authority; no device access occurs
+while arming. Read restoration and post-control checks remain mandatory.
+
+Window/arm tests cover every byte offset, all six permitted loads, failed loads,
+mapping/control interference, 4096 possible resource aliases, all bound header
+bits and prior-global bits, and failed prior statuses. Both accepted global
+interrupt states remain covered.
+
+The opt-in `--ahci-port` build requires the global AHCI capture and records all
+seven port samples after disarming its access contexts. Local arm failures use
+status 8 (global window) or 9 (port window); helper failures remain 3 through 7.
+The protected runner fingerprints the port decoder, retains `ahci-port.json`,
+and preserves the actual failure terminal while replaying preceding stages.
+Decoding rejects missing/duplicate records, malformed values, failed observations
+with nonzero payload, all-ones successful samples, mismatched terminals, and
+helper observations without the bound prior global profile. Port samples do not
+establish an atomic snapshot or DMA quarantine.
+
+The [physical port capture](../hardware/lab/observations/qotom-native-ahci-port-20260911/README.md)
+returned status 0 with CMD `6` before and after, IE `0`, TFD `50`, SSTS `123`,
+SACT `0` and CI `0` (hexadecimal). Both CMD samples had ST/FRE/CR/FR clear;
+command-list and FIS-receive engines reported stopped. No SATA write, stop or
+reset was needed for this observation. Global interrupts remained enabled.
+The retained protected replay agrees and FreeBSD recovered automatically with
+the request consumed. These samples guide a subsequent guarded interrupt/BME
+transition; transaction drain, continuing firmware/AP exclusion and whole-profile
+integration remain open.
