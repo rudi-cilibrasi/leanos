@@ -31,7 +31,7 @@ kernel = (
     + b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD sha256=' + digest.encode() + b'\n'
     b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n'
     + protocol['BOOT'].encode() + b' target=x86_64-qotom schedule=bsp-production\n'
-    b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked platform-admitted=0\n'
+    b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked nmi-routing=quarantined platform-admitted=0\n'
     + protocol['FINAL'].encode() + b' status=FAIL reason=qotom-platform-pending\n')
 recovery = b'LEANOS-LAB/1 DEFAULT request=none\nLEANOS-LAB/1 CHAIN freebsd disk=hd1\n'
 events = [{'elapsed':0,'hex':kernel.hex()},{'elapsed':35,'hex':recovery.hex()}]
@@ -60,9 +60,30 @@ physical_events = [json.loads(line) for line in
 assert b''.join(bytes.fromhex(event['hex']) for event in physical_events) == \
        (capture/'cycle-1/serial.raw').read_bytes()
 saved = json.loads((capture/'cycle-1/result.json').read_text())
+physical_data = b''.join(bytes.fromhex(event['hex']) for event in physical_events)
+legacy_marker = (b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 '
+                 b'memory=published topology=published interrupts=masked '
+                 b'platform-admitted=0\n')
+assert physical_data.count(legacy_marker) == 1
+assert b'nmi-routing=quarantined' not in physical_data
+assert saved['memory_published'] and saved['topology_published']
+assert saved['interrupts_masked'] and not saved['platform_admitted']
+assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
+assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
+
+capture = ROOT / 'hardware/lab/observations/qotom-madt-nmi-policy-20260912'
+manifest = json.loads((capture/'manifest.json').read_text())
+for name,expected_digest in manifest['files'].items():
+    assert hashlib.sha256((capture/name).read_bytes()).hexdigest() == expected_digest,name
+physical_events = [json.loads(line) for line in
+                   (capture/'cycle-1/events.jsonl').read_text().splitlines()]
+assert b''.join(bytes.fromhex(event['hex']) for event in physical_events) == \
+       (capture/'cycle-1/serial.raw').read_bytes()
+saved = json.loads((capture/'cycle-1/result.json').read_text())
 physical = runner['classify_bsp_production'](physical_events,manifest['elf_sha256'])
 for key,value in physical.items():
     assert saved[key] == value,key
+assert saved['nmi_routing_quarantined']
 assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
 assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
 

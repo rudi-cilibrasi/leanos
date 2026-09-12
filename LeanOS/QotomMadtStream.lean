@@ -7,8 +7,9 @@ This consumes an independently envelope-validated MADT, starting at byte 44.
 The caller must carry exactly the returned scalar state into the next call.
 Status 3 establishes only completed processor inventory, not runtime admission.
 Root/copy validation, BSP register binding, interrupt routing and AP dormancy
-remain separate obligations. In particular, type-4 routing bytes are consumed
-but not validated here.
+remain separate obligations. The byte stream consumes type-4 routing bytes
+without interpreting them; the composed consumer applies the quarantine gate
+defined below.
 
 The scalar layout mirrors the existing q35 stream; the q35 function is unchanged.
 Errors 69--74 retain its framing/record/online-capable/duplicate meanings;
@@ -18,6 +19,85 @@ and 77 rejects disabled, extra, or out-of-order processor records.
 namespace LeanOS.QotomMadtStream
 
 open BootTopology
+
+/-! ### Malformed native Local APIC NMI quarantine
+
+The physical MADT contains four type-4 records whose reserved flag bits and
+LINT values are invalid.  They are retained byte for byte, but they must never
+be interpreted as interrupt-routing authority.  This small scalar gate binds
+the exact observation to the production candidate's disabled-routing policy.
+-/
+
+/-- Six-byte MADT records packed little-endian, in physical table order. -/
+def nativeLocalApicNmi0 : UInt64 := 0x0000f751dc010604
+def nativeLocalApicNmi1 : UInt64 := 0x0000a67499020604
+def nativeLocalApicNmi2 : UInt64 := 0x0000ce213a030604
+def nativeLocalApicNmi3 : UInt64 := 0x0000279e9d040604
+
+def nativeLocalApicNmiRecords : List UInt64 :=
+  [nativeLocalApicNmi0, nativeLocalApicNmi1,
+   nativeLocalApicNmi2, nativeLocalApicNmi3]
+
+@[inline] def localApicNmiFlags (record : UInt64) : UInt64 :=
+  (record >>> 24) &&& 0xffff
+
+@[inline] def localApicNmiLint (record : UInt64) : UInt64 :=
+  (record >>> 40) &&& 0xff
+
+/-- ACPI MPS INTI flags have twelve zero reserved bits and no reserved
+polarity/trigger encoding; a Local APIC NMI may name only LINT0 or LINT1. -/
+def localApicNmiUsable (record : UInt64) : Bool :=
+  let flags := localApicNmiFlags record
+  flags &&& 0xfff0 == 0 && flags &&& 3 != 2 && (flags >>> 2) &&& 3 != 2 &&
+    localApicNmiLint record <= 1
+
+theorem native_local_apic_nmi_records_are_unusable :
+    nativeLocalApicNmiRecords.all (fun record => !localApicNmiUsable record) = true := by
+  native_decide
+
+/-- Result words are ABI/status/error/policy/count.  Policy 1 means the exact
+malformed records were recognized and quarantined while routing authority
+remained disabled.  Errors 87--89 cover count, byte drift, and attempted use. -/
+def nmiPolicyQuery
+    (count first second third fourth routingAuthority word : UInt64) : UInt64 :=
+  let error :=
+    if count != 4 then 87
+    else if first != nativeLocalApicNmi0 || second != nativeLocalApicNmi1 ||
+        third != nativeLocalApicNmi2 || fourth != nativeLocalApicNmi3 then 88
+    else if routingAuthority != 0 then 89
+    else 0
+  if word == 0 then 1
+  else if word == 1 then if error == 0 then 1 else 2
+  else if word == 2 then error
+  else if word == 3 && error == 0 then 1
+  else if word == 4 && error == 0 then count
+  else 0
+
+theorem nmi_policy_acceptance_iff
+    (count first second third fourth routingAuthority : UInt64) :
+    nmiPolicyQuery count first second third fourth routingAuthority 1 = 1 ↔
+      count = 4 ∧ first = nativeLocalApicNmi0 ∧
+      second = nativeLocalApicNmi1 ∧ third = nativeLocalApicNmi2 ∧
+      fourth = nativeLocalApicNmi3 ∧ routingAuthority = 0 := by
+  unfold nmiPolicyQuery
+  by_cases hc : count = 4 <;>
+  by_cases h0 : first = nativeLocalApicNmi0 <;>
+  by_cases h1 : second = nativeLocalApicNmi1 <;>
+  by_cases h2 : third = nativeLocalApicNmi2 <;>
+  by_cases h3 : fourth = nativeLocalApicNmi3 <;>
+  by_cases hr : routingAuthority = 0 <;> simp_all
+  repeat' (split <;> simp_all)
+
+theorem nmi_policy_never_authorizes_routing
+    (count first second third fourth routingAuthority : UInt64)
+    (accepted : nmiPolicyQuery count first second third fourth routingAuthority 1 = 1) :
+    routingAuthority = 0 :=
+  (nmi_policy_acceptance_iff count first second third fourth routingAuthority).mp accepted |>.2.2.2.2.2
+
+@[export leanos_qotom_madt_nmi_policy_query]
+def exportedNmiPolicyQuery
+    (count first second third fourth routingAuthority word : UInt64) : UInt64 :=
+  nmiPolicyQuery count first second third fourth routingAuthority word
 
 /-- One completed processor must be the next enabled baseline member. -/
 @[inline] def processorMatches (position apicId : UInt64) (enabled : Bool) : Bool :=
