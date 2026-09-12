@@ -363,9 +363,11 @@ def cpu_diagnostic_bytes(events, protocol, handoff=False):
     return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False, realtek_bme=False):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
              'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+    if realtek_bme:
+        result['realtek_bme_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-realtek-bme-capture.py').read_bytes()).hexdigest()
     if realtek_state:
         result['realtek_state_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-realtek-state-capture.py').read_bytes()).hexdigest()
     if rootport_bme:
@@ -455,7 +457,9 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acp
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False, realtek_bme=False):
+    if realtek_bme and not realtek_state:
+        raise ValueError('--realtek-bme requires --realtek-state')
     if realtek_state and not rootport_bme:
         raise ValueError('--realtek-state requires --rootport-bme')
     if rootport_bme and not txe_status:
@@ -543,6 +547,9 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bsp-capture.py')))
         raw, result['native_bsp'] = decoder['extract'](raw, protocol, result['acpi'], tables, Path(bsp_replay).resolve())
         bsp_rejected = result['native_bsp'] is not None and result['native_bsp']['observation']['status'] != 0
+    if realtek_bme:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-realtek-bme-capture.py')))
+        raw, result['realtek_bme'] = decoder['extract'](raw, protocol)
     if realtek_state:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-realtek-state-capture.py')))
         raw, result['realtek_state'] = decoder['extract'](raw, protocol)
@@ -642,7 +649,7 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     else:
         diagnostic = (module.classify(raw, protocol, *replay_paths, native_inventory=True, native_kernel=native_kernel)
                       if native_inventory else module.classify(raw, protocol, *replay_paths))
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay, pci_capabilities, af_observation, ehci_capabilities, ehci_legacy, ehci_handoff, ehci_smi, ehci_operational, ehci_bme, xhci_capabilities, xhci_legacy, xhci_handoff, xhci_smi, xhci_operational, xhci_bme, pcie_device_observation, ahci_capabilities, ahci_port, ahci_interrupts, ahci_bme, hda_observation, hda_state, hda_bme, txe_status, rootport_bme, realtek_state))
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay, pci_capabilities, af_observation, ehci_capabilities, ehci_legacy, ehci_handoff, ehci_smi, ehci_operational, ehci_bme, xhci_capabilities, xhci_legacy, xhci_handoff, xhci_smi, xhci_operational, xhci_bme, pcie_device_observation, ahci_capabilities, ahci_port, ahci_interrupts, ahci_bme, hda_observation, hda_state, hda_bme, txe_status, rootport_bme, realtek_state, realtek_bme))
     if pci_capabilities and result['pci_capabilities'] is not None:
         diagnostic['terminal_reason'] = result['pci_capabilities']['terminal_reason']
         diagnostic['replay_scope'] = 'cpu-msr-native-inventory-and-capability-links'
@@ -718,6 +725,9 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     if realtek_state and result['realtek_state'] is not None:
         diagnostic['terminal_reason'] = result['realtek_state']['terminal_reason']
         diagnostic['replay_scope'] = 'native-inventory-with-realtek-state-observation'
+    if realtek_bme and result['realtek_bme'] is not None:
+        diagnostic['terminal_reason'] = result['realtek_bme']['terminal_reason']
+        diagnostic['replay_scope'] = 'native-inventory-with-realtek-bme-observation'
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
                   diagnostic=diagnostic)
     return result
@@ -757,6 +767,7 @@ def main():
     parser.add_argument('--native-kernel', action='store_true')
     parser.add_argument('--pci-capabilities', action='store_true')
     parser.add_argument('--af-observation', action='store_true')
+    parser.add_argument('--realtek-bme', action='store_true')
     parser.add_argument('--realtek-state', action='store_true')
     parser.add_argument('--rootport-bme', action='store_true')
     parser.add_argument('--txe-status', action='store_true')
@@ -788,6 +799,8 @@ def main():
     parser.add_argument('--bsp-lvt-policy', action='store_true',
                         help='classify the inherited masked local-APIC LINT policy')
     args = parser.parse_args()
+    if args.realtek_bme and not args.realtek_state:
+        parser.error('--realtek-bme requires --realtek-state')
     if args.realtek_state and not args.rootport_bme:
         parser.error('--realtek-state requires --rootport-bme')
     if args.rootport_bme and not args.txe_status:
@@ -895,7 +908,7 @@ def main():
             identity = subprocess.run([str(args.bsp_replay.resolve()), '--identity'], capture_output=True, check=True, timeout=30)
             if identity.stdout != b'LeanOS native BSP replay v2\n':
                 parser.error('native BSP replay identity mismatch')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state)
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -1034,10 +1047,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     events, digest, lvt_observation=args.bsp_lvt_observation,
                     lvt_policy=args.bsp_lvt_policy)
             elif has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(events, protocol, args.handoff_capture)
                 if args.handoff_capture:
@@ -1059,6 +1072,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     raw, bsp_metadata = decoder['extract'](raw, protocol, metadata, tables, args.bsp_replay.resolve())
                     bsp_rejected = bsp_metadata is not None and bsp_metadata['observation']['status'] != 0
                     (directory / 'native-bsp.json').write_text(json.dumps(bsp_metadata, indent=2) + '\n')
+                if args.realtek_bme:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-realtek-bme-capture.py')))
+                    raw, realtek_bme_metadata = decoder['extract'](raw, protocol)
+                    (directory / 'realtek-bme.json').write_text(json.dumps(realtek_bme_metadata, indent=2) + '\n')
                 if args.realtek_state:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-realtek-state-capture.py')))
                     raw, realtek_state_metadata = decoder['extract'](raw, protocol)

@@ -21,26 +21,31 @@ static inline int qotom_realtek_state_address(uint8_t bus,uint32_t offset,uint8_
         (offset==0x3c && width==2) || ((offset==0x40 || offset==0x44) && width==4))) return 0;
     *out=bar+offset;return 1;
 }
-static inline int qotom_realtek_header_valid(const struct pci_enumeration_header *h) {
+static inline int qotom_realtek_header_valid_command(
+        const struct pci_enumeration_header *h,uint16_t command) {
     if (!h) return 0;
     uint64_t bar=qotom_realtek_bar(h->bus);
     return bar && !h->device && !h->function && h->words[0]==UINT32_C(0x816810ec) &&
         h->words[2]==UINT32_C(0x02000007) && !(h->words[3]&UINT32_C(0x00ff0000)) &&
-        (h->words[1]&UINT32_C(0xffff))==7 && h->words[6]==(bar|4) && !h->words[7] &&
+        (h->words[1]&UINT32_C(0xffff))==command && h->words[6]==(bar|4) && !h->words[7] &&
         h->words[8]==((bar-UINT64_C(0x4000))|12) && !h->words[9];
+}
+static inline int qotom_realtek_header_valid(const struct pci_enumeration_header *h) {
+    return qotom_realtek_header_valid_command(h,7);
 }
 /* Eight config reads bracket six typed MMIO reads: exactly 22 on success.
  * TXCFG identifies RTL8168E-VL before other MMIO and again last. No reset,
  * stop, interrupt acknowledgement, polling, DMA/drain or atomicity claim.
  * Caller supplies immutable nonaliasing inputs and bound UC/root/resource/
  * bridge-routing access authority. Every failed observation publishes zero. */
-static inline enum qotom_realtek_status qotom_collect_realtek_state(
+static inline enum qotom_realtek_status qotom_collect_realtek_state_command(
         pci_enumeration_read config,void *config_context,
         qotom_realtek_mmio_read mmio,void *mmio_context,
-        const struct pci_enumeration_header *initial,struct qotom_realtek_state *out) {
+        const struct pci_enumeration_header *initial,uint16_t command,
+        struct qotom_realtek_state *out) {
     if (out) *out=(struct qotom_realtek_state){0};
     if (!config || !mmio || !initial || !out) return QOTOM_REALTEK_ARGUMENT;
-    if (!qotom_realtek_header_valid(initial)) return QOTOM_REALTEK_HEADER;
+    if (!qotom_realtek_header_valid_command(initial,command)) return QOTOM_REALTEK_HEADER;
     const uint8_t offsets[8]={0,4,8,12,24,28,32,36};
     const uint32_t masks[8]={UINT32_MAX,65535,UINT32_MAX,UINT32_C(0x00ff0000),
         UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
@@ -66,5 +71,12 @@ static inline enum qotom_realtek_status qotom_collect_realtek_state(
     }
     *out=(struct qotom_realtek_state){values[0],values[1],values[2],values[3],values[4],values[5]};
     return QOTOM_REALTEK_OK;
+}
+static inline enum qotom_realtek_status qotom_collect_realtek_state(
+        pci_enumeration_read config,void *config_context,
+        qotom_realtek_mmio_read mmio,void *mmio_context,
+        const struct pci_enumeration_header *initial,struct qotom_realtek_state *out) {
+    return qotom_collect_realtek_state_command(config,config_context,mmio,mmio_context,
+        initial,7,out);
 }
 #endif
