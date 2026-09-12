@@ -59,8 +59,8 @@ firmware/root controls and all aliases of both resource apertures before access.
 Tests use modeled engine values, not physical LeanOS observations. They check
 both endpoints, exact read order, every read failure, all compared config bits
 in both refreshes, ignored Status/cache fields, chip-revision masks, reset,
-width, absence and address/width selection. Native emission, protected decoder and physical validation are not yet
-implemented. The mapping authority is described below.
+width, absence and address/width selection. Native integration and protected decoding are described below. Physical
+validation remains outstanding.
 
 The later shutdown contract still needs bounded time and failure handling,
 interrupt/MSI/MSI-X treatment, BME control and outstanding traffic semantics.
@@ -111,4 +111,25 @@ and 12 for the last. Tests check both paths, exact 90-read order, every failed
 read, every bridge header bit at both refreshes, pending transactions, list
 mutation, invalid routing, prior-result mutations and missing inputs. These
 remain sequential observations, not proof of atomic routing or transaction
-drain. Native wiring and protected physical validation remain outstanding.
+drain. Native wiring is described below; protected physical validation remains outstanding.
+
+## Native capture and decoding
+
+The opt-in `--realtek-state` build requires `--rootport-bme` and retains all four
+successful root-port results before running this stage. It clears the result
+array before every root-port pass, and only successful transitions populate it.
+The Realtek stage executes index 13/bus 1/root index 6, then index 15/bus 3/root
+index 8. Local count/index/arm rejection is status 13. Each observer is disarmed
+before output, and the first nonzero result halts without accessing the next
+endpoint. The native test uses the actual arm, route/helper and window with
+modeled device callbacks; all 180 read-failure positions, swapped endpoint
+indices, bad prior transitions and count rejection are covered.
+
+The runner fingerprints the decoder, stores `realtek-state.json` and restores
+the actual terminal reason after projecting earlier stages. Decoding requires
+the complete successful root-port prefix, ordered Realtek indices and either
+two successes or a prefix ending at the first failure. It checks initial
+endpoint/bridge bindings, field widths, revision/reset constraints, zero failed
+output and the matching terminal. Argument/header statuses 1 and 2 are impossible
+through this native path and reject. This records state without claiming device
+shutdown, DMA containment or whole-platform admission.
