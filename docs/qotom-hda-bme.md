@@ -2,7 +2,7 @@
 
 The native HDA state capture reports CORBCTL/RIRBCTL/DPLBASE zero and all eight
 stream control/status words `00040000` (hexadecimal), with successful global
-and resource checks. PCI Command still reports `0006`. This candidate clears
+and resource checks. PCI Command still reports `0006`. The bounded helper clears
 only BME while retaining MMIO decoding for final state verification.
 
 [Intel 329670-002](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf)
@@ -27,7 +27,7 @@ exclusion or system-wide DMA containment. Whole-platform admission remains open.
 
 Tests cover all 97 read failures, every prior/global/state/Command bit, raw PCI
 Status preservation, ignored writes, failed writes with and without effects,
-resource drift, post-write restart, BME reassertion and missing inputs. Physical capture remains pending.
+resource drift, post-write restart, BME reassertion and missing inputs. The retained physical capture below passed.
 
 ## Consumed write window
 
@@ -59,3 +59,16 @@ the preceding stopped-state tuple and captured Command `0006`. Exact framing,
 bounded word values, attempted/before/after consistency and matching terminal
 are checked; final failures may retain changed Command. Failed writes are not
 replayed or silently treated as having no effect.
+
+## Physical result
+
+The [protected native capture](../hardware/lab/observations/qotom-native-hda-bme-20260911)
+reports status 0, attempted 1 and Command `0006` to `0002`. Both full state
+refreshes and immediate/final Command checks passed. FreeBSD recovered
+automatically with the request consumed; independent SSH verified BIOS boot
+and installed hashes. The 59-file evidence manifest and retained replay passed.
+
+All 55 protected capture groups passed before the clean build. All 123 build
+hashes, eight-site MSR-write audit, single-word store disassembly and QEMU
+foreign-firmware rejection passed. This is one controller transition; the
+whole-platform quarantine and production admission requirements remain open.
