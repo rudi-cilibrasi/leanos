@@ -14379,6 +14379,48 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.machine_topology_admission_exact_state_accepted",
+      "display": "machine_topology_admission_exact_state_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.machine_topology_admission_rejected_consumer_rejected",
+      "display": "machine_topology_admission_rejected_consumer_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.machine_topology_admission_substituted_count_rejected",
+      "display": "machine_topology_admission_substituted_count_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.machine_topology_admission_wrong_base_rejected",
+      "display": "machine_topology_admission_wrong_base_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.native_local_apic_nmi_records_are_unusable",
+      "display": "native_local_apic_nmi_records_are_unusable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.nmi_policy_acceptance_iff",
+      "display": "nmi_policy_acceptance_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.nmi_policy_never_authorizes_routing",
+      "display": "nmi_policy_never_authorizes_routing",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.nonprocessor_preserves_inventory",
       "display": "nonprocessor_preserves_inventory",
       "kind": "theorem"
