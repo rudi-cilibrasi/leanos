@@ -17,6 +17,11 @@ mapping and unchanged control registers grants the second store at PMCSR.
 Every rejected request or reported store failure consumes the grant; mapping
 or control interference is terminal.
 
+The bridge prior accepts Device Status `0010` or `0011`. Bit zero is the sticky
+Correctable Error Detected report and varied across consecutive physical
+boots; it grants no authority. Every other bit must match `0010`, including a
+clear Transactions Pending bit.
+
 The transition refreshes the endpoint header, complete capability list, PCIe
 payload and PM state before the first write. It verifies Command readback,
 refreshes the same state with Command zero, and obtains two Transactions
