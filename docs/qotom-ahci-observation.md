@@ -215,5 +215,10 @@ protected runner fingerprints the BME decoder and retains `ahci-bme.json` with
 the actual terminal. Decoding requires a successful interrupt-disable prefix,
 the captured Command for helper outcomes, bounded word values and consistent
 attempted/before/after fields. Final failures can retain a changed final Command;
-failed readback and failed writes remain diagnostic observations. Physical BME
-validation remains pending.
+failed readback and failed writes remain diagnostic observations. The retained
+[physical capture](../hardware/lab/observations/qotom-native-ahci-bme-20260911/README.md)
+reports status 0, attempted 1 and Command `0007` to `0003`. Final resource,
+global and stopped/empty port checks passed. FreeBSD recovered automatically
+after 34.313 seconds of serial quiet; independent SSH confirmed the installed
+hashes and consumed request. The terminal remains `qotom-platform-pending`;
+transaction drain and system-wide DMA containment remain unestablished.
