@@ -55,3 +55,24 @@ alternative word value, missing callbacks, invalid apertures, failed stores,
 mapping/restore interference, both control observations, rejected rearm,
 identity/prior-state bit changes and all 4096 possible aliases of each target
 ECAM page. No physical root-port write has yet been performed.
+
+## Native capture path
+
+The opt-in `--rootport-bme` build requires `--txe-status`. Earlier PCIe capture
+retains each observation only with an exact sixteen-function count. After
+the TXE stage returns, the root-port stage uses headers/capability lists and
+prior PCIe observations at indices 6–9. Each port is armed, executed and
+disarmed before its record is emitted. A nonzero outcome halts immediately;
+no later port is accessed. Local count/arm rejection is status 8.
+
+The native test executes the actual arm, helper and window with modeled
+configuration and store callbacks. It covers every one of the 71 failed reads
+on each port, store failures, prior-state rejection and wrong count. It checks
+exact ordered output and that no later port is accessed after failure.
+
+The runner fingerprints the decoder and saves `rootport-bme.json`. The decoder
+requires a successful preceding TXE observation, contiguous indices 6–9 and
+all four successes or a prefix ending at the first failure. It rejects writes
+after failure, forged initial Command/PCIe state, invalid result combinations
+and terminal contradictions. Actual root-port termination is restored after
+earlier projections. Native build and physical validation remain pending.
