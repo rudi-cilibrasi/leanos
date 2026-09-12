@@ -5,8 +5,10 @@
 #include "boundary-abi.h"
 
 /* Candidate only. Caller owns an immutable, root-selected, envelope-validated
- * MADT copy and an authoritative observation from the executing CPU. Neither
- * AP dormancy nor interrupt routing nor platform admission follows from this.
+ * MADT copy and an authoritative observation from the executing CPU. The
+ * explicit production candidate supplies those inputs and separately binds
+ * this result to its root/copy/publication state. Neither AP dormancy nor
+ * interrupt routing nor platform admission follows from this consumer.
  * entries points after the 44-byte fixed header, with exactly length bytes. */
 struct qotom_bsp_observation {
     uint64_t executing, cpuid_edx, available, apic_base, sample_id;

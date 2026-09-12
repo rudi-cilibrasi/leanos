@@ -1,0 +1,12 @@
+qotom
+{ sec = 1789206552, usec = 919755 } Sat Sep 12 02:49:12 2026
+11758C40
+=>       63  122879937  da0  MBR  (59G)
+         63       1985       - free -  (993K)
+       2048     194560    1  fat32lba  [active]  (95M)
+     196608  122683392       - free -  (59G)
+
+59ce861d636080199b43e03d045070561a408af746355095bde0390db4e100c9
+f5d39abead0e5dcdd93307ebd72b3d4c8a5e5bbf4d63a7e9a95e33975670e8cc
+59ce861d636080199b43e03d045070561a408af746355095bde0390db4e100c9  /boot/leanos-qotom-lab.elf
+request=none

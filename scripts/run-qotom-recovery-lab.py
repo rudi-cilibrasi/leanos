@@ -188,6 +188,61 @@ def classify_protected(events, digest, expected=EXPECTED, boot_record=None):
     return result
 
 
+def classify_bsp_production(events, digest):
+    if any(type(event['elapsed']) not in (int,float) or
+           not math.isfinite(event['elapsed']) or event['elapsed'] < 0 for event in events):
+        raise ValueError('invalid capture timestamp')
+    if any(b['elapsed'] < a['elapsed'] for a,b in zip(events,events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    data = b''.join(bytes.fromhex(event['hex']) for event in events)
+    terminal = record(3, 'FINAL') + b' status=FAIL reason=qotom-platform-pending\n'
+    markers = [
+        b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1',
+        b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120',
+        b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD',
+        b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n',
+        b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked platform-admitted=0\n',
+        terminal,
+        b'LEANOS-LAB/1 DEFAULT request=none',
+        CHAIN,
+    ]
+    if any(data.count(marker) != 1 for marker in markers):
+        raise ValueError('missing, changed, or repeated Qotom BSP production trace')
+    positions = [data.find(marker) for marker in markers]
+    if positions != sorted(positions):
+        raise ValueError('Qotom BSP production trace is out of order')
+    if not re.fullmatch(r'[0-9a-f]{64}',digest):
+        raise ValueError('invalid protected image digest')
+    pattern = rb'[\r\n]*'.join(bytes([character]) for character in digest.encode())
+    load = re.search(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' +
+                     pattern + rb'(?=[\r\n])',data)
+    if load is None:
+        raise ValueError('Qotom BSP production digest was not loaded')
+    boot_records = re.findall(rb'LEANOS/[0-9]+ BOOT(?: [^\n]*)?\n',data)
+    if len(boot_records) != 1 or data.count(record(3, 'FINAL')) != 1:
+        raise ValueError('ambiguous Qotom BSP production kernel framing')
+    terminal_end = positions[5] + len(markers[5])
+    offset = 0
+    terminal_time = next_time = None
+    for event in events:
+        following = offset + len(bytes.fromhex(event['hex']))
+        if offset < terminal_end <= following:
+            if following != terminal_end:
+                raise ValueError('post-terminal bytes without a quiet interval')
+            terminal_time = event['elapsed']
+        elif offset >= terminal_end and next_time is None:
+            next_time = event['elapsed']
+        offset = following
+    if terminal_time is None or next_time is None or not 30 <= next_time-terminal_time <= 90:
+        raise ValueError('Qotom BSP production reset outside its observation interval')
+    return {'scenario':'qotom-bsp-production-boundary',
+            'memory_published':True,'topology_published':True,
+            'interrupts_masked':True,'platform_admitted':False,
+            'terminal_reason':'qotom-platform-pending',
+            'quiet_seconds':next_time-terminal_time,'watchdog_protected':True,
+            'raw_sha256':hashlib.sha256(data).hexdigest()}
+
+
 def cpu_replay_module(pci=False):
     spec = importlib.util.spec_from_file_location(
         'boot_diagnostic', Path(__file__).with_name(
@@ -670,6 +725,8 @@ def main():
     parser.add_argument('--ehci-capabilities', action='store_true')
     parser.add_argument('--ehci-legacy', action='store_true')
     parser.add_argument('--bsp-replay', type=Path, help='enable native BSP capture and provide its generated replay executable')
+    parser.add_argument('--bsp-production', action='store_true',
+                        help='classify the production memory/topology checkpoint')
     args = parser.parse_args()
     if args.broadcom_d3 and not args.pcie_pending:
         parser.error('--broadcom-d3 requires --pcie-pending')
@@ -685,6 +742,10 @@ def main():
         parser.error('--txe-status requires --hda-bme')
     if args.hda_bme and not args.hda_state:
         parser.error('--hda-bme requires --hda-state')
+    if args.bsp_production and (args.cpu_diagnostic or args.pci_diagnostic):
+        parser.error('--bsp-production excludes diagnostic replay modes')
+    if args.bsp_production and args.scenario != 'watchdog-leanos':
+        parser.error('--bsp-production requires --scenario watchdog-leanos')
     if args.hda_state and not args.hda_observation:
         parser.error('--hda-state requires --hda-observation')
     if args.hda_observation and not args.ahci_bme:
@@ -908,7 +969,9 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         if args.scenario == 'watchdog-kernel':
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
-            if has_diagnostic:
+            if args.bsp_production:
+                result = classify_bsp_production(events, digest)
+            elif has_diagnostic:
                 if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
@@ -1069,7 +1132,7 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             classifier = {'leanos': classify, 'rtc-probe': classify_rtc, 'watchdog-test': classify_watchdog}[args.scenario]
             result = classifier(events)
         result.update(recovery)
-        if args.scenario == 'watchdog-leanos':
+        if args.scenario == 'watchdog-leanos' and not args.bsp_production:
             result['hang_recovery'] = True
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         print('PASS cycle=' + str(cycle), json.dumps(result), flush=True)
