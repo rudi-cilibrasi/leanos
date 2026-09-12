@@ -19,7 +19,8 @@ assert not audit['x2apic_icr_msr_write']
 assert all(not plan['local_apic_aliases'] for plan in audit['plans'].values())
 
 symbols = subprocess.check_output(['nm','-n',str(ELF)], text=True)
-for name in ('lab_observe_qotom_apic_lvt','lab_qotom_lvt_native_load32',
+for name in ('lab_observe_qotom_apic_lvt','lab_sample_qotom_apic_lvt',
+             'lab_qotom_lvt_native_load32',
              'lab_qotom_lvt_native_invalidate'):
     assert name in symbols
 load_disassembly = subprocess.check_output([
@@ -31,12 +32,12 @@ invalidate_disassembly = subprocess.check_output([
     'objdump','-d','--no-show-raw-insn',
     '--disassemble=lab_qotom_lvt_native_invalidate',str(ELF)], text=True)
 assert invalidate_disassembly.count('invlpg (%rsi)') == 1
-observer_disassembly = subprocess.check_output([
+sample_disassembly = subprocess.check_output([
     'objdump','-d','--no-show-raw-insn',
-    '--disassemble=lab_observe_qotom_apic_lvt',str(ELF)], text=True)
-assert observer_disassembly.count('<lab_qotom_lvt_native_load32>') == 4
-assert observer_disassembly.count('<lab_qotom_lvt_native_invalidate>') == 2
-assert '$0xfee00000' in observer_disassembly and '$0xfee00900' in observer_disassembly
+    '--disassemble=lab_sample_qotom_apic_lvt',str(ELF)], text=True)
+assert sample_disassembly.count('<lab_qotom_lvt_native_load32>') == 4
+assert sample_disassembly.count('<lab_qotom_lvt_native_invalidate>') == 2
+assert '$0xfee00000' in sample_disassembly and '$0xfee00900' in sample_disassembly
 
 runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
 protocol = runner['cpu_replay_module'](True).load_protocol(

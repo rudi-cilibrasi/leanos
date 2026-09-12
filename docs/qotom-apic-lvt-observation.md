@@ -45,6 +45,31 @@ That result permits a later Qotom policy to require the exact masked inherited
 state at its boundary. The observation image itself remains read-only and does
 not turn a single boot measurement into a general firmware guarantee.
 
+## Inherited-masked policy image
+
+The separate `--bsp-lvt-policy` image repeats the same bounded read and passes
+all eleven observations to the generated
+`leanos_qotom_inherited_lvt_policy_query` gate. Lean proves that acceptance is
+equivalent to status zero, APIC base `0xfee00900`, executing APIC ID 0, four
+`0x00010000` LINT samples, stable reads, zero routing authority, zero writes and
+restored mapping state. Errors 90 through 97 identify which boundary failed.
+
+An accepted policy emits `policy=masked-inherited`; rejected or structurally
+inconsistent generated output stops before the production record. The policy
+does not write an LVT register. It establishes that the exact inherited state
+at this checkpoint keeps both firmware LINT inputs masked while IF remains
+clear. Firmware, SMM and independent hardware activity remain trusted outside
+the bounded transaction.
+
+Build and inspect that image with:
+
+```sh
+python3 scripts/build-qotom-recovery-lab.py \
+  --prepared-repo . --mode completion --pci-diagnostic --bsp-production \
+  --bsp-lvt-policy
+python3 scripts/test-qotom-apic-lvt-policy-image.py
+```
+
 Firmware, SMM and the other processors remain outside this transaction's
 control. Repeated equal reads are a bounded observation, not proof that those
 actors cannot change the registers later. A native MMIO fault is terminal and
