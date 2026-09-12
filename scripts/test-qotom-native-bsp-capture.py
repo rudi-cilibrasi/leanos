@@ -49,6 +49,64 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_ahci_interrupt_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-port-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(status=0,values=(1,0x80000002,0x80000000)):
+            return (f'LEANOS-LAB/1 AHCI-INTERRUPTS profile=qotom-ahci-interrupts-v1 index=2 status={status}'+
+                ''.join(f' {key}={value}' for key,value in zip(
+                    ('attempted','before','after'),values))+'\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True)
+        result=check(record())
+        self.assertEqual(result['ahci_interrupts']['after_control'],0x80000000)
+        self.assertFalse(result['ahci_interrupts']['dma_quarantine_established'])
+        self.assertIn('ahci_interrupt_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-ahci-interrupts')
+        valid={3:(0,0,0),4:(0,0,0),5:(1,0x80000002,0),6:(1,0x80000002,0),
+            7:(1,0x80000002,0x80000002),8:(1,0x80000002,0x80000000),
+            9:(0,0,0),10:(0,0,0),11:(0,0,0)}
+        for status,values in valid.items():
+            result=check(record(status,values),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ahci-interrupts')
+            with self.assertRaises(ValueError):check(record(status,values))
+            wrong=(1-values[0],values[1],values[2])
+            with self.assertRaises(ValueError):check(record(status,wrong),failure)
+        self.assertEqual(check(record(7,(1,0x80000002,0xffffffff)),failure)['ahci_interrupts']['after_control'],0xffffffff)
+        for status,values in ((3,(0,1,0)),(4,(0,0,1)),(5,(1,0x80000002,1)),
+                (6,(1,0x80000002,0xffffffff)),(7,(1,0x80000002,0x80000000)),
+                (8,(1,0x80000002,0)),(9,(0,1,0)),(10,(0,0,1)),(11,(0,1,0))):
+            with self.assertRaises(ValueError):check(record(status,values),failure)
+
+        for bad in (b'',record()+record(),record(1),record(2),record(12),
+                record().replace(b'index=2',b'index=3'),record().replace(b'status=0',b'status=00'),
+                record(values=(2,0x80000002,0x80000000)),record(values=(1,0x80000002,0)),
+                record(values=(1,0x80000000,0x80000000)),record(values=(1,0x80000002,0x100000000))):
+            with self.assertRaises(ValueError):check(bad)
+        with self.assertRaises(ValueError):check(record(),failure)
+        original=raw
+        raw=original.replace(b'command-before=6 interrupt=0',b'command-before=7 interrupt=0')
+        self.assertNotEqual(raw,original)
+        with self.assertRaises(ValueError):check(record())
+        self.assertEqual(check(record(11,(0,0,0)),failure)['ahci_interrupts']['status'],11)
+        raw=original.replace(b'control=2147483650 ports=2',b'control=2147483648 ports=2')
+        self.assertNotEqual(raw,original)
+        with self.assertRaises(ValueError):check(record())
+        self.assertEqual(check(record(11,(0,0,0)),failure)['ahci_interrupts']['status'],11)
+
     def test_ahci_port_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())

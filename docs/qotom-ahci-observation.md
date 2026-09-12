@@ -154,5 +154,14 @@ compiled roots and every possible present AHCI-page alias. Failed rearms revoke
 all authority. Arming performs no store, invalidation or device access. Tests
 exercise address/value mutations, rejected reuse, every missing callback,
 failed stores, restoration interference, all 4096 aliases, bound header bits,
-all prior sample bits and failed prior statuses. Native emission and physical
-interrupt-disable validation remain pending.
+all prior sample bits and failed prior statuses.
+
+The opt-in `--ahci-interrupts` image requires port capture. Native code uses the
+existing single-DWORD store primitive and disarms readers and writer before
+emitting attempted/before/after fields. Global, port and writer arm failures use
+statuses 9, 10 and 11. The protected runner fingerprints its decoder, retains
+`ahci-interrupts.json` and preserves the actual terminal after projecting earlier
+stages. Decoding requires the successful port prefix and exact stopped/IE-on
+profile for helper outcomes. It distinguishes unavailable readback from failed
+readback (including all ones) and final-refresh failure after accepted readback.
+Physical interrupt-disable validation remains pending.

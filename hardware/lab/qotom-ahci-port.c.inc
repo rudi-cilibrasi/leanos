@@ -6,6 +6,9 @@ static struct lab_ahci_port_window lab_ahci_port_window={
     .controls=lab_ecam_native_controls,.invalidate=lab_ecam_native_invalidate,
     .load32=lab_ecam_native_load32,.fault=lab_ahci_port_fault
 };
+#ifdef LEANOS_QOTOM_AHCI_INTERRUPTS
+#include "qotom-ahci-interrupt.c.inc"
+#endif
 static __attribute__((noinline)) void lab_capture_ahci_port(
         const struct lab_ecam_root_view *view,const struct pci_enumeration_header *header,
         const struct qotom_ahci_capabilities *prior) {
@@ -32,4 +35,7 @@ static __attribute__((noinline)) void lab_capture_ahci_port(
     serial_puts(" issued=");serial_u64(result.issued);
     serial_puts(" command-after=");serial_u64(result.command_after);serial_putc('\n');
     if(status!=QOTOM_AHCI_PORT_OK)pre_admission_fail("qotom-ahci-port");
+#ifdef LEANOS_QOTOM_AHCI_INTERRUPTS
+    lab_disable_ahci_interrupts(view,header,prior,&result);
+#endif
 }
