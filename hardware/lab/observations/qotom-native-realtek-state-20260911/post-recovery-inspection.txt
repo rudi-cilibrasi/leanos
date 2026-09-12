@@ -1,0 +1,7 @@
+kern.boottime: { sec = 1789189659, usec = 930129 } Fri Sep 11 22:07:39 2026
+machdep.bootmethod: BIOS
+request=none
+SHA256 (/mnt/leanos-verify/boot/leanos-qotom-lab.elf) = 0af703abc4160289e05c92020adc4271980955d3198e391751564dff3e1ef382
+SHA256 (/mnt/leanos-verify/boot/leanos.sha256) = 73a6c69bead6a48ee8bd601829d2e56670ddd8e6e1e89620e3f854d5b01a7ad9
+SHA256 (/mnt/leanos-verify/boot/grub/grub.cfg) = ce6ad15f9495f118f0173749758ed9559ba238b9689f568d41c4b9bf0f471c4c
+SHA256 (/mnt/leanos-verify/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66

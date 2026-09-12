@@ -1,0 +1,74 @@
+{
+  "status": 0,
+  "magic": 920085129,
+  "address": 2863376,
+  "length": 2680,
+  "apic": 0,
+  "schema": "leanos-raw-multiboot2-lab-v1",
+  "raw_sha256": "b6d75c103642746ddb353dfae4fd55ac0082ac4b798598d26bd30d1fdcf7996c",
+  "platform_admitted": false,
+  "display_authorized": false,
+  "tag_chain_valid": true,
+  "tags": [
+    {
+      "offset": 8,
+      "type": 21,
+      "size": 12
+    },
+    {
+      "offset": 24,
+      "type": 1,
+      "size": 9
+    },
+    {
+      "offset": 40,
+      "type": 2,
+      "size": 29
+    },
+    {
+      "offset": 72,
+      "type": 6,
+      "size": 472,
+      "memory_map_entry_size": 24,
+      "memory_map_entry_version": 0
+    },
+    {
+      "offset": 544,
+      "type": 9,
+      "size": 2004
+    },
+    {
+      "offset": 2552,
+      "type": 4,
+      "size": 16
+    },
+    {
+      "offset": 2568,
+      "type": 5,
+      "size": 20
+    },
+    {
+      "offset": 2592,
+      "type": 8,
+      "size": 32,
+      "framebuffer": {
+        "address": 753664,
+        "pitch": 160,
+        "width": 80,
+        "height": 25,
+        "bits": 16,
+        "kind": 2
+      }
+    },
+    {
+      "offset": 2624,
+      "type": 15,
+      "size": 44
+    },
+    {
+      "offset": 2672,
+      "type": 0,
+      "size": 8
+    }
+  ]
+}

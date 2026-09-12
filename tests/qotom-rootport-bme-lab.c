@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "qotom-rootport-bme-arm.h"
+#define LEANOS_QOTOM_REALTEK_STATE 1
 static uint64_t root[512],pdpt[512],pd[512],pt[4096];
 static struct lab_ecam_root_view view={root,pdpt,pd,pt,0x100000,0x101000,0x102000,0x103000};
 static const struct lab_ecam_firmware_table *lab_ecam_tables=lab_ecam_expected_tables;
@@ -56,6 +57,7 @@ static void setup(void){
     memset(&snapshot,0,sizeof snapshot);snapshot.count=16;memset(cfg,0,sizeof cfg);
     memset(reads,0,sizeof reads);memset(writes,0,sizeof writes);used=0;output[0]=0;
     failed_fn=4;failed_read=failed_write=0;lab_ecam_window.armed=0;
+    memset(lab_retained_rootport_bme,0xff,sizeof lab_retained_rootport_bme);
     root[0]=view.pdpt_address|7;pdpt[0]=view.pd_address|7;
     for(unsigned i=0;i<8;++i)pd[i]=(view.pt_address+i*4096)|7;
     for(unsigned i=0;i<4096;++i)pt[i]=((uint64_t)i*4096)|UINT64_C(0x8000000000000003);
@@ -78,6 +80,11 @@ static void expect(unsigned last,unsigned status,unsigned attempted,unsigned bef
     assert(!strcmp(output,expected));
     assert(!lab_ecam_window.armed && !lab_rootport_bme_writer.armed);
     for(unsigned fn=last+1;fn<4;++fn)assert(!reads[fn] && !writes[fn]);
+    for(unsigned fn=0;fn<4;++fn) {
+        struct qotom_rootport_bme_result r=lab_retained_rootport_bme[fn];
+        if(fn<last || (fn==last && !status))assert(r.attempted==1 && r.before_command==7 && r.after_command==3);
+        else assert(!r.attempted && !r.before_command && !r.after_command);
+    }
 }
 int main(void){
     assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);

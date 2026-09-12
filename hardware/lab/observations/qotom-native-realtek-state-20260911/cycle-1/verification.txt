@@ -1,0 +1,2 @@
+request=none
+SHA256 (/mnt/leanos-lab/boot/grub/grub.cfg) = ce6ad15f9495f118f0173749758ed9559ba238b9689f568d41c4b9bf0f471c4c
