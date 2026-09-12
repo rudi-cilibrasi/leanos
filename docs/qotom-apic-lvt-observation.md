@@ -70,6 +70,13 @@ python3 scripts/build-qotom-recovery-lab.py \
 python3 scripts/test-qotom-apic-lvt-policy-image.py
 ```
 
+The retained protected run in
+`hardware/lab/observations/qotom-apic-lvt-policy-20260912` passed this gate on
+the Qotom. Its exact ELF SHA-256 is `e828a7b4e244b8886ad754e7b8465c77029bce29b6c75bea0fa2f332889c10f8`.
+All four samples were again `0x00010000`, the gate reported
+`policy=masked-inherited`, and FreeBSD recovered after 34.319 seconds of quiet
+serial time.
+
 Firmware, SMM and the other processors remain outside this transaction's
 control. Repeated equal reads are a bounded observation, not proof that those
 actors cannot change the registers later. A native MMIO fault is terminal and
