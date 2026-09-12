@@ -11,6 +11,9 @@ static void lab_ahci_interrupt_disarm(void) {
 static __attribute__((noreturn)) void lab_ahci_interrupt_fault(void *opaque) {
     (void)opaque;lab_ahci_interrupt_disarm();pre_admission_fail("qotom-ahci-interrupts");
 }
+#ifdef LEANOS_QOTOM_AHCI_BME
+#include "qotom-ahci-bme.c.inc"
+#endif
 static __attribute__((noinline)) void lab_disable_ahci_interrupts(
         const struct lab_ecam_root_view *view,const struct pci_enumeration_header *header,
         const struct qotom_ahci_capabilities *caps,const struct qotom_ahci_port *prior) {
@@ -40,4 +43,7 @@ static __attribute__((noinline)) void lab_disable_ahci_interrupts(
     serial_puts(" before=");serial_u64(result.before_control);
     serial_puts(" after=");serial_u64(result.after_control);serial_putc('\n');
     if(status!=QOTOM_AHCI_INTERRUPTS_OK)pre_admission_fail("qotom-ahci-interrupts");
+#ifdef LEANOS_QOTOM_AHCI_BME
+    lab_clear_ahci_bme(view,header,caps,prior,&result);
+#endif
 }

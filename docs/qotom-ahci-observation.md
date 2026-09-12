@@ -206,5 +206,14 @@ no device access.
 Window tests cover every alternative 16-bit value, BDF/offset mutations, missing
 callbacks, rejected reuse, failed stores and mapping/control interference. Arm
 tests cover all 4096 AHCI-page aliases, bound header bits, every prior sample bit
-and rejected statuses. Native capture wiring and physical BME validation remain
-pending.
+and rejected statuses.
+
+The opt-in `--ahci-bme` build requires the interrupt-disable stage. Native code
+rearms global/port readers and the consumed word writer, invokes the helper,
+and disarms all contexts before `AHCI-BME`. Local arm failures are 9–11. The
+protected runner fingerprints the BME decoder and retains `ahci-bme.json` with
+the actual terminal. Decoding requires a successful interrupt-disable prefix,
+the captured Command for helper outcomes, bounded word values and consistent
+attempted/before/after fields. Final failures can retain a changed final Command;
+failed readback and failed writes remain diagnostic observations. Physical BME
+validation remains pending.

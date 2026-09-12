@@ -49,6 +49,59 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_ahci_bme_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-interrupt-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(status=0,values=(1,7,3)):
+            return (f'LEANOS-LAB/1 AHCI-BME profile=qotom-ahci-bme-v1 index=2 status={status}'+
+                ''.join(f' {key}={value}' for key,value in zip(
+                    ('attempted','before','after'),values))+'\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True)
+        result=check(record())
+        self.assertEqual(result['ahci_bme']['after_command'],3)
+        self.assertFalse(result['ahci_bme']['dma_quarantine_established'])
+        self.assertIn('ahci_bme_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-ahci-bme')
+        valid={3:(0,0,0),4:(0,0,0),5:(0,0,0),6:(1,7,0),7:(1,7,7),
+            8:(1,7,3),9:(0,0,0),10:(0,0,0),11:(0,0,0)}
+        for status,values in valid.items():
+            result=check(record(status,values),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ahci-bme')
+            with self.assertRaises(ValueError):check(record(status,values))
+            with self.assertRaises(ValueError):check(record(status,(1-values[0],values[1],values[2])),failure)
+        for status,after in ((7,0),(7,65535),(8,0),(8,7),(8,65535)):
+            self.assertEqual(check(record(status,(1,7,after)),failure)['ahci_bme']['after_command'],after)
+        for status,values in ((3,(0,1,0)),(4,(0,0,1)),(5,(1,7,0)),(6,(1,7,1)),
+                (7,(1,7,3)),(8,(1,3,3)),(9,(0,1,0)),(10,(0,0,1)),(11,(0,1,0))):
+            with self.assertRaises(ValueError):check(record(status,values),failure)
+        for bad in (b'',record()+record(),record(1),record(2),record(12),
+                record().replace(b'index=2',b'index=3'),record().replace(b'status=0',b'status=00'),
+                record(values=(2,7,3)),record(values=(1,7,7)),record(values=(1,3,3)),
+                record(values=(1,7,65536))):
+            with self.assertRaises(ValueError):check(bad)
+        with self.assertRaises(ValueError):check(record(),failure)
+        prefix=P['PCI-HEADER'].encode()+b' codec=1 index=2 width=19 words='
+        header=next(line for line in raw.splitlines(keepends=True) if line.startswith(prefix))
+        words=header[len(prefix):].strip().split(b',')
+        self.assertEqual(int(words[4])&0xffff,7)
+        words[4]=str(int(words[4])&~4).encode()
+        raw=raw.replace(header,prefix+b','.join(words)+b'\n')
+        with self.assertRaises(ValueError):check(record())
+
     def test_ahci_interrupt_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-port-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
