@@ -54,7 +54,7 @@ Tests cover the four mapped function pages, other-function rejection, every
 alternative word value, missing callbacks, invalid apertures, failed stores,
 mapping/restore interference, both control observations, rejected rearm,
 identity/prior-state bit changes and all 4096 possible aliases of each target
-ECAM page. No physical root-port write has yet been performed.
+ECAM page. The protected physical result is retained below.
 
 ## Native capture path
 
@@ -75,4 +75,14 @@ requires a successful preceding TXE observation, contiguous indices 6–9 and
 all four successes or a prefix ending at the first failure. It rejects writes
 after failure, forged initial Command/PCIe state, invalid result combinations
 and terminal contradictions. Actual root-port termination is restored after
-earlier projections. Native build and physical validation remain pending.
+earlier projections. Native build and physical validation passed.
+
+## Physical result
+
+The [retained capture](../hardware/lab/observations/qotom-native-rootport-bme-20260911/README.md)
+contains all four successful writes, indices 6–9, Command 0007 to 0003.
+The expected terminal remains `qotom-platform-pending`. FreeBSD recovered
+with a changed boot time and consumed request; independent SSH verified BIOS
+boot and installed hashes. The retained replay checks complete timed serial
+classification, exact records, terminal, quiet interval and recovery metadata.
+These results establish the bounded transitions, not whole-platform admission.
