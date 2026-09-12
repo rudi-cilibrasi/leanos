@@ -24,7 +24,7 @@ Tests cover every read-failure position, all prior/global/payload bits, narrow
 width bounds, all-ones values, PCI drift in all four configuration-check phases,
 all offsets and widths, malformed headers and missing inputs. Successful raw
 samples can describe running engines; no shutdown inference is made here.
-No write, polling or reset callback exists. Native emission and physical capture remain pending, followed by the actual shutdown/BME policy.
+No write, polling or reset callback exists. Physical capture remains pending, followed by the actual shutdown/BME policy.
 
 ## Mapping authority
 
@@ -40,3 +40,19 @@ low-memory aliases to all four pages of the 16 KiB HDA resource. Every rejected
 rearm clears prior authority without device access. Window and arm tests cover
 all accepted widths, invalid offsets/widths, aliases, missing callbacks, invalid
 apertures, mapping/control interference and every bit of the prior profile.
+
+## Native capture
+
+The opt-in `--hda-state` image requires the global-observation stage. It arms
+the global and state readers, invokes the collector and disarms all contexts
+before `HDA-STATE`. Local arm failures are 9 (global) and 10 (state). Nonzero
+results terminate with `qotom-hda-state`; there is no fallback to guessed
+stream counts or continued shutdown. The trusted width-specific load primitive
+is reused from the global observer.
+
+The runner fingerprints the state decoder, retains `hda-state.json` and restores
+the actual terminal after earlier-stage projections. Decoding requires a
+successful preceding HDA observation, the bound global tuple for helper
+outcomes, exact order/fields, bounded raw values and matching terminal. Failures
+must publish zero. Running bits are accepted as observations, not translated
+into stopped-state claims.

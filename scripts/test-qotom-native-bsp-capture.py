@@ -49,6 +49,60 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_hda_state_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-hda-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(status=0,values=(0,0,0,0x40000,0x40000,0x40000,0x40000,0x40000,0x40000,0x40000,0x40000)):
+            return (f'LEANOS-LAB/1 HDA-STATE profile=qotom-hda-state-v1 index=5 status={status}'+
+                ''.join(f' {key}={value}' for key,value in zip(
+                    ('corb','rirb','position','stream0','stream1','stream2','stream3','stream4','stream5','stream6','stream7'),values))+'\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True)
+        result=check(record())
+        self.assertEqual(result['hda_state']['streams'],[0x40000]*8)
+        self.assertFalse(result['hda_state']['dma_quarantine_established'])
+        self.assertFalse(result['hda_state']['atomic_snapshot'])
+        self.assertIn('hda_state_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        self.assertEqual(result['diagnostic']['replay_scope'],'native-inventory-with-hda-state-observation')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-hda-state')
+        for status in range(3,11):
+            result=check(record(status,(0,)*11),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-hda-state')
+            with self.assertRaises(ValueError):check(record(status,(0,)*11))
+            for index in range(11):
+                values=[0]*11;values[index]=1
+                with self.assertRaises(ValueError):check(record(status,values),failure)
+        with self.assertRaises(ValueError):check(record(),failure)
+        for index in range(11):
+            for value in ((255,256,0x100000000) if index<2 else (0xffffffff,0x100000000)):
+                values=[0]*11;values[index]=value
+                with self.assertRaises(ValueError):check(record(values=values))
+        # Running bits and raw status are retained; success is not a halted-state claim.
+        values=(254,254,0xfffffffe)+((0xfffffffe,)*8)
+        self.assertEqual(check(record(values=values))['hda_state']['streams'],list(values[3:]))
+        for bad in (b'',record()+record(),record(1),record(2),record(11),
+                record().replace(b'index=5',b'index=2'),record().replace(b'status=0',b'status=00'),
+                record().replace(b'corb=0',b'corb=-1'),record().replace(b'stream7=',b'stream8=')):
+            with self.assertRaises(ValueError):check(bad)
+        old=next(line for line in raw.splitlines(keepends=True) if line.startswith(b'LEANOS-LAB/1 HDA '))
+        raw=raw.replace(old,old.replace(b'capability=17409',b'capability=13057'))
+        with self.assertRaises(ValueError):check(record())
+        # Failed state arm can follow a valid global observation outside the state profile.
+        self.assertEqual(check(record(10,(0,)*11),failure)['hda_state']['status'],10)
+
     def test_hda_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-bme-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
