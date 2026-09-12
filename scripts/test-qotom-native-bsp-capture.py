@@ -349,6 +349,44 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['ehci_legacy']['ownership_established'])
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_retained_xhci_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,xhci_capabilities=True)
+        self.assertEqual(result['xhci_capabilities'],expected['xhci_capabilities'])
+        self.assertEqual(result['xhci_capabilities']['status'],0)
+        self.assertEqual(result['xhci_capabilities']['words'],[0x1000080,0x7000820,0x84000054,0x200000a,0x200077c1,0x3000,0x2000])
+        self.assertEqual(result['ehci_bme'],expected['ehci_bme'])
+        self.assertEqual(result['ehci_bme']['status'],0)
+        self.assertEqual(result['ehci_bme']['write_attempted'],1)
+        self.assertEqual(result['ehci_bme']['before_command'],0x406)
+        self.assertEqual(result['ehci_bme']['after_command'],0x402)
+        self.assertEqual(result['ehci_operational'],expected['ehci_operational'])
+        self.assertEqual(result['ehci_operational']['status'],0)
+        self.assertEqual(result['ehci_operational']['command'],0x80000)
+        self.assertEqual(result['ehci_operational']['status_register'],0x1000)
+        self.assertEqual(result['ehci_operational']['interrupt_enable'],0)
+        self.assertEqual(result['ehci_operational']['configured'],0)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
     def test_legacy_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
@@ -533,6 +571,45 @@ class Capture(unittest.TestCase):
         running=raw.replace(b'command=524288 status_register=4096',b'command=524289 status_register=4096')
         with self.assertRaises(ValueError):check(success,source=running)
         self.assertEqual(check(record(11,0,0,0),failure,source=running)['ehci_bme']['status'],11)
+
+    def test_xhci_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-bme-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,xhci_capabilities=True)
+        values=[0x1000080,0x07000820,0x84000054,0x40001,0x200071e1,0x3000,0x2000]
+        def record(status=0,words=None):
+            if words is None:words=values
+            return f'LEANOS-LAB/1 XHCI-CAPS profile=qotom-xhci-v1 index=3 status={status} words={",".join(map(str,words))}\n'.encode()
+        success=record()
+        result=check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('xhci_capabilities_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['xhci_capabilities']['words'],values)
+        self.assertFalse(result['xhci_capabilities']['ownership_established'])
+        failure=P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-capabilities\n'
+        for status in range(3,9):
+            self.assertEqual(check(record(status,[0]*7),failure)['diagnostic']['terminal_reason'],'qotom-xhci-capabilities')
+            with self.assertRaises(ValueError):check(record(status,[0]*7))
+            with self.assertRaises(ValueError):check(record(status),failure)
+        for bad in [b'',success+success,success.replace(b'status=0',b'status=00'),record(1),record(2),record(9),
+                record(words=[0]*7),record(words=values[:-1]),record(words=values+[0]),
+                success.replace(b'index=3',b'index=4'),success.replace(b'profile=qotom-xhci-v1',b'profile=unknown')]:
+            with self.assertRaises(ValueError):check(bad)
+        for i in range(7):
+            changed=values.copy();changed[i]=0xffffffff
+            with self.assertRaises(ValueError):check(record(words=changed))
+        with self.assertRaises(ValueError):check(success,failure)
 
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
