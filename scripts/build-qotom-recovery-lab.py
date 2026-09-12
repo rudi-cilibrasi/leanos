@@ -146,7 +146,7 @@ out = root / 'build' / ('qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qot
                        'qotom-pci-lab' if a.pci_diagnostic else
                        'qotom-lab' if a.mode == 'completion' else 'qotom-kernel-hang')
 out.mkdir(parents=True, exist_ok=True)
-build = root / 'build' / 'boot'
+build = out / 'boot'
 build.mkdir(parents=True, exist_ok=True)
 source = root / 'boot' / 'kernel.c'
 if source.read_bytes() != (prepared / 'boot/kernel.c').read_bytes():
@@ -154,7 +154,8 @@ if source.read_bytes() != (prepared / 'boot/kernel.c').read_bytes():
 prepared_graph = (prepared / 'build/boot/generated-image-objects.mk').read_text()
 if str(prepared / 'boot/kernel.c') not in prepared_graph:
     raise SystemExit('prepared graph names a different checkout; regenerate it in the prepared repository')
-for item in (prepared / 'build/boot').iterdir():
+prepared_build = prepared / 'build/boot'
+for item in prepared_build.iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         destination = build / item.name
         if item.resolve() != destination.resolve():
@@ -357,7 +358,8 @@ if a.bsp_lvt_observation or a.bsp_lvt_policy:
         '    serial_puts("LEANOS-LAB/1 QOTOM-BSP-PRODUCTION')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
-graph = prepared_graph.replace(str(prepared), str(root))
+graph = prepared_graph.replace(str(prepared_build), str(build))
+graph = graph.replace(str(prepared), str(root))
 graph = '\n'.join('IMAGE_CC := gcc -I' + shlex.quote(str(root / 'boot'))
                   if s.startswith('IMAGE_CC :=') else s for s in graph.splitlines()) + '\n'
 graph = graph.replace(str(source), str(overlay))
