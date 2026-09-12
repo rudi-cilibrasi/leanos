@@ -158,6 +158,19 @@ class Capture(unittest.TestCase):
         self.assertEqual(result['af_observation']['functions'][10],
                          {'index':10,'status':0,'offset':152,'raw':0})
         self.assertEqual(result['diagnostic']['inventory_result'],1)
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        start = raw.index(b'LEANOS-LAB/1 PCI-AF profile=af-observation-v1 index=10 ')
+        end = raw.index(FINAL) + len(FINAL)
+        bad = (raw[:start] +
+            b'LEANOS-LAB/1 PCI-AF profile=af-observation-v1 index=10 status=6 offset=0 raw=0\n' +
+            P['FINAL'].encode()+b' status=FAIL reason=qotom-pci-af\n')
+        synthetic = [{'elapsed':0,'hex':bad.hex()},{'elapsed':35,'hex':raw[end:].hex()}]
+        with self.assertRaises(ValueError):
+            R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True)
 
     def test_ehci_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-af-20260911'
