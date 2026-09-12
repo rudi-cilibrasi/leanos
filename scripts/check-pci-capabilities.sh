@@ -166,3 +166,15 @@ leanos_run_sanitized "$build/hda-state-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-hda-bme.c -o "$build/hda-bme-sanitized"
 leanos_run_sanitized "$build/hda-bme-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-txe-status.c -o "$build/txe-status"
+"$build/txe-status"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-txe-status.c -o "$build/txe-status-sanitized"
+leanos_run_sanitized "$build/txe-status-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -Iboot tests/qotom-txe-status-lab.c -o "$build/txe-status-lab"
+"$build/txe-status-lab"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror -Iboot \
+  tests/qotom-txe-status-lab.c -o "$build/txe-status-lab-sanitized"
+leanos_run_sanitized "$build/txe-status-lab-sanitized"
