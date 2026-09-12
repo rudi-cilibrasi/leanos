@@ -71,3 +71,11 @@ applicable, and stops at the next `qotom-nosmap-pending` checkpoint. Decoder
 metadata continues to mark posted-write drain, TXE-private quiescence, and
 firmware/SMM noninterference as assumptions rather than observations. The
 ordinary final-observation mode and its retained mask-3 rejection are unchanged.
+
+The protected physical capture in
+[`qotom-native-pci-trust-20260912`](../hardware/lab/observations/qotom-native-pci-trust-20260912/README.md)
+accepted the exact final vector with mask 31 under that named contract and
+reached `qotom-nosmap-pending`. The watchdog then recovered FreeBSD, changed
+the boot timestamp, and left the one-shot request consumed. This satisfies the
+conditional PCI boundary for the initial profile; it does not convert any of
+the three trusted premises into measurements.

@@ -75,4 +75,21 @@ if evidence.exists():
         (evidence/'cycle-1/serial.raw').read_bytes()).hexdigest()
     for name,digest in manifest['files'].items():
         assert hashlib.sha256((evidence/name).read_bytes()).hexdigest()==digest,name
-print('PASS Qotom PCI final decoder: exact rescan, commands and unmet assumptions')
+trust_evidence=ROOT/'hardware/lab/observations/qotom-native-pci-trust-20260912'
+if trust_evidence.exists():
+    physical_protocol=R['cpu_replay_module'](True).load_protocol(
+        trust_evidence/'diagnostic-protocol.tsv')
+    serial=(trust_evidence/'cycle-1/serial.raw').read_bytes()
+    start=serial.index(physical_protocol['BOOT'].encode()+b' target=qotom-j1900-candidate')
+    physical_terminal=(physical_protocol['FINAL'].encode()+
+        b' status=FAIL reason=qotom-nosmap-pending\n')
+    end=serial.index(physical_terminal,start)+len(physical_terminal)
+    _,retained=D['extract'](serial[start:end],physical_protocol,trust_contract=True)
+    assert retained==json.loads((trust_evidence/'cycle-1/pci-final.json').read_text())
+    manifest=json.loads((trust_evidence/'manifest.json').read_text())
+    assert manifest['trust_contract']=='qotom-j1900-pci-trust-v1'
+    assert manifest['raw_serial_sha256']==hashlib.sha256(
+        (trust_evidence/'cycle-1/serial.raw').read_bytes()).hexdigest()
+    for name,digest in manifest['files'].items():
+        assert hashlib.sha256((trust_evidence/name).read_bytes()).hexdigest()==digest,name
+print('PASS Qotom PCI final decoder: exact rescan, rejection and named trust contract')
