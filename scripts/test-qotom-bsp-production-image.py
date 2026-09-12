@@ -27,6 +27,9 @@ assert all(not plan['local_apic_aliases'] for plan in result['plans'].values())
 # authority boundary.
 production_symbols = subprocess.check_output(['nm', '-n', str(ELF)], text=True)
 assert ' T leanos_j1900_cpu_control_policy_query\n' in production_symbols
+lab_graph = (ROOT/'build/qotom-bsp-production-lab/objects.mk').read_text()
+assert str(ROOT/'build/boot') not in lab_graph
+assert str(ROOT/'build/qotom-bsp-production-lab/boot') in lab_graph
 report = subprocess.check_output(
     ['objdump', '-dr', '--disassemble=report_j1900_cpu_candidate', str(ELF)],
     text=True)
