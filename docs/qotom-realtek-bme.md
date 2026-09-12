@@ -50,8 +50,12 @@ TX/RX engines while gating new endpoint memory/I/O requests through BME. The
 queue-empty and Transactions Pending samples are sequential. They do not prove
 that all earlier transactions completed, exclude later firmware/AP/device
 activity, establish system-wide DMA containment or admit the Qotom platform.
-Physical validation remains outstanding. The consumed word-store authority is
-described below.
+The protected Qotom boot reported status 0 for indices 13 and 15, with one
+Command transition from 0007 to 0003 at each endpoint. Both refreshed engine
+states matched the retained stopped-state samples. The request was consumed and
+FreeBSD recovered automatically after 34.308 seconds of serial quiet. The
+retained evidence and its independent replay preserve the limitations above.
+The consumed word-store authority is described below.
 
 ## Consumed word-store authority
 
