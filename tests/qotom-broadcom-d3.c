@@ -66,6 +66,8 @@ int main(void) {
         out.before_command==6 && out.after_command==0 && out.pending_polls==2 &&
         out.device_status==0x19 && out.before_pmcsr==0x4008 &&
         out.d3_attempted==1 && out.after_pmcsr==0x400b);
+    setup();root_pending.device_status=16;
+    assert(run(&out)==QOTOM_BROADCOM_D3_OK);
     for(unsigned n=1;n<=206;++n) {
         setup();fail_read=n;enum qotom_broadcom_d3_status s=run(&out);
         assert(s!=QOTOM_BROADCOM_D3_OK && reads==n && writes<=2);
@@ -78,8 +80,10 @@ int main(void) {
     setup();pending_polls=100;assert(run(&out)==QOTOM_BROADCOM_D3_PENDING);
     assert(out.pending_polls==100 && !out.d3_attempted && writes==1 && delays==99);
     setup();cfg[0x44/4]^=1;assert(run(&out)==QOTOM_BROADCOM_D3_REFRESH && !writes);
-    setup();root_pending.device_status|=0x20;
-    assert(run(&out)==QOTOM_BROADCOM_D3_PRIOR && !reads && !writes);
+    for(unsigned status=0;status<64;++status)if(status!=16 && status!=17) {
+        setup();root_pending.device_status=status;
+        assert(run(&out)==QOTOM_BROADCOM_D3_PRIOR && !reads && !writes);
+    }
     setup();root_bme.after_command=7;
     assert(run(&out)==QOTOM_BROADCOM_D3_PRIOR && !reads && !writes);
     setup();memset(&out,0xff,sizeof out);
