@@ -11,6 +11,9 @@ static void lab_xhci_legacy_disarm(void) {
 static __attribute__((noreturn)) void lab_xhci_legacy_fault(void *opaque) {
     (void)opaque;lab_xhci_legacy_disarm();pre_admission_fail("qotom-xhci-legacy");
 }
+#ifdef LEANOS_QOTOM_XHCI_HANDOFF
+#include "qotom-xhci-handoff.c.inc"
+#endif
 /* Keep this bounded stage separate from the already large EHCI capture path. */
 static __attribute__((noinline)) void lab_capture_xhci_legacy(const struct lab_ecam_root_view *view,
         const struct pci_enumeration_header *header,
@@ -40,4 +43,7 @@ static __attribute__((noinline)) void lab_capture_xhci_legacy(const struct lab_e
         serial_puts(" raw=");serial_u64(result.headers[i].raw);serial_putc('\n');
     }
     if(status!=QOTOM_XHCI_LEGACY_OK)pre_admission_fail("qotom-xhci-legacy");
+#ifdef LEANOS_QOTOM_XHCI_HANDOFF
+    lab_handoff_xhci(view,header,caps,&result);
+#endif
 }

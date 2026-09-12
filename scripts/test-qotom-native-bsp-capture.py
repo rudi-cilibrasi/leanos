@@ -434,6 +434,178 @@ class Capture(unittest.TestCase):
                 (0x8040,0x00010cc1),(0x8070,0x0000fcc0),(0x8460,0x00010801),(0x8480,0x0005000a)]])
         self.assertFalse(result['xhci_legacy']['ownership_established'])
 
+    def test_retained_xhci_handoff_rejection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-handoff-rejection-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True)
+        self.assertEqual(result['xhci_capabilities'],expected['xhci_capabilities'])
+        self.assertEqual(result['xhci_capabilities']['status'],0)
+        self.assertEqual(result['xhci_capabilities']['words'],[0x1000080,0x7000820,0x84000054,0x200000a,0x200077c1,0x3000,0x2000])
+        self.assertEqual(result['ehci_bme'],expected['ehci_bme'])
+        self.assertEqual(result['ehci_bme']['status'],0)
+        self.assertEqual(result['ehci_bme']['write_attempted'],1)
+        self.assertEqual(result['ehci_bme']['before_command'],0x406)
+        self.assertEqual(result['ehci_bme']['after_command'],0x402)
+        self.assertEqual(result['ehci_operational'],expected['ehci_operational'])
+        self.assertEqual(result['ehci_operational']['status'],0)
+        self.assertEqual(result['ehci_operational']['command'],0x80000)
+        self.assertEqual(result['ehci_operational']['status_register'],0x1000)
+        self.assertEqual(result['ehci_operational']['interrupt_enable'],0)
+        self.assertEqual(result['ehci_operational']['configured'],0)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
+        self.assertEqual(result['xhci_legacy'],expected['xhci_legacy'])
+        self.assertEqual(result['xhci_legacy']['status'],0)
+        self.assertEqual(result['xhci_legacy']['legacy_offset'],0x8460)
+        self.assertEqual(result['xhci_legacy']['control_status'],0x2001)
+        self.assertEqual(result['xhci_legacy']['headers'],[
+            {'offset':a,'raw':v} for a,v in [(0x8000,0x02000802),(0x8020,0x03000802),
+                (0x8040,0x00010cc1),(0x8070,0x0000fcc0),(0x8460,0x00010801),(0x8480,0x0005000a)]])
+        self.assertFalse(result['xhci_legacy']['ownership_established'])
+
+        self.assertEqual(result['xhci_handoff'],expected['xhci_handoff'])
+        self.assertEqual(result['xhci_handoff']['status'],10)
+        self.assertEqual(result['xhci_handoff']['write_attempted'],1)
+        self.assertEqual(result['xhci_handoff']['polls'],2)
+        self.assertEqual(result['xhci_handoff']['last_support'],0x01000801)
+        self.assertEqual(result['xhci_handoff']['final_control'],0)
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-xhci-handoff')
+        self.assertFalse(result['xhci_handoff']['firmware_exclusion_established'])
+
+    def test_retained_xhci_handoff_detail(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-handoff-detail-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True)
+        self.assertEqual(result['xhci_capabilities'],expected['xhci_capabilities'])
+        self.assertEqual(result['xhci_capabilities']['status'],0)
+        self.assertEqual(result['xhci_capabilities']['words'],[0x1000080,0x7000820,0x84000054,0x200000a,0x200077c1,0x3000,0x2000])
+        self.assertEqual(result['ehci_bme'],expected['ehci_bme'])
+        self.assertEqual(result['ehci_bme']['status'],0)
+        self.assertEqual(result['ehci_bme']['write_attempted'],1)
+        self.assertEqual(result['ehci_bme']['before_command'],0x406)
+        self.assertEqual(result['ehci_bme']['after_command'],0x402)
+        self.assertEqual(result['ehci_operational'],expected['ehci_operational'])
+        self.assertEqual(result['ehci_operational']['status'],0)
+        self.assertEqual(result['ehci_operational']['command'],0x80000)
+        self.assertEqual(result['ehci_operational']['status_register'],0x1000)
+        self.assertEqual(result['ehci_operational']['interrupt_enable'],0)
+        self.assertEqual(result['ehci_operational']['configured'],0)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
+        self.assertEqual(result['xhci_legacy'],expected['xhci_legacy'])
+        self.assertEqual(result['xhci_legacy']['status'],0)
+        self.assertEqual(result['xhci_legacy']['legacy_offset'],0x8460)
+        self.assertEqual(result['xhci_legacy']['control_status'],0x2001)
+        self.assertEqual(result['xhci_legacy']['headers'],[
+            {'offset':a,'raw':v} for a,v in [(0x8000,0x02000802),(0x8020,0x03000802),
+                (0x8040,0x00010cc1),(0x8070,0x0000fcc0),(0x8460,0x00010801),(0x8480,0x0005000a)]])
+        self.assertFalse(result['xhci_legacy']['ownership_established'])
+
+        self.assertEqual(result['xhci_handoff'],expected['xhci_handoff'])
+        self.assertEqual(result['xhci_handoff']['status'],10)
+        self.assertEqual(result['xhci_handoff']['write_attempted'],1)
+        self.assertEqual(result['xhci_handoff']['polls'],1)
+        self.assertEqual(result['xhci_handoff']['last_support'],0x01000801)
+        self.assertEqual(result['xhci_handoff']['final_control'],0)
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-xhci-handoff')
+        self.assertFalse(result['xhci_handoff']['firmware_exclusion_established'])
+
+        self.assertEqual(result['xhci_handoff']['verification'],{'kind':5,'index':2,'expected':0x10cc1,'observed':0xcc1})
+
+    def test_retained_xhci_handoff_success(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-handoff-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True)
+        self.assertEqual(result['xhci_capabilities'],expected['xhci_capabilities'])
+        self.assertEqual(result['xhci_capabilities']['status'],0)
+        self.assertEqual(result['xhci_capabilities']['words'],[0x1000080,0x7000820,0x84000054,0x200000a,0x200077c1,0x3000,0x2000])
+        self.assertEqual(result['ehci_bme'],expected['ehci_bme'])
+        self.assertEqual(result['ehci_bme']['status'],0)
+        self.assertEqual(result['ehci_bme']['write_attempted'],1)
+        self.assertEqual(result['ehci_bme']['before_command'],0x406)
+        self.assertEqual(result['ehci_bme']['after_command'],0x402)
+        self.assertEqual(result['ehci_operational'],expected['ehci_operational'])
+        self.assertEqual(result['ehci_operational']['status'],0)
+        self.assertEqual(result['ehci_operational']['command'],0x80000)
+        self.assertEqual(result['ehci_operational']['status_register'],0x1000)
+        self.assertEqual(result['ehci_operational']['interrupt_enable'],0)
+        self.assertEqual(result['ehci_operational']['configured'],0)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
+        self.assertEqual(result['xhci_legacy'],expected['xhci_legacy'])
+        self.assertEqual(result['xhci_legacy']['status'],0)
+        self.assertEqual(result['xhci_legacy']['legacy_offset'],0x8460)
+        self.assertEqual(result['xhci_legacy']['control_status'],0x2001)
+        self.assertEqual(result['xhci_legacy']['headers'],[
+            {'offset':a,'raw':v} for a,v in [(0x8000,0x02000802),(0x8020,0x03000802),
+                (0x8040,0x00010cc1),(0x8070,0x0000fcc0),(0x8460,0x00010801),(0x8480,0x0005000a)]])
+        self.assertFalse(result['xhci_legacy']['ownership_established'])
+
+        self.assertEqual(result['xhci_handoff'],expected['xhci_handoff'])
+        self.assertEqual(result['xhci_handoff']['status'],0)
+        self.assertEqual(result['xhci_handoff']['write_attempted'],1)
+        self.assertEqual(result['xhci_handoff']['polls'],2)
+        self.assertEqual(result['xhci_handoff']['last_support'],0x01000801)
+        self.assertEqual(result['xhci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        self.assertFalse(result['xhci_handoff']['firmware_exclusion_established'])
+
+        self.assertEqual(result['xhci_handoff']['verification'],{'kind':0,'index':0,'expected':0,'observed':0})
+
     def test_legacy_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
@@ -505,6 +677,103 @@ class Capture(unittest.TestCase):
                 success.replace(b'status=0',b'status=00'),record(0,1,1,0x1010001,0),
                 record(0,1,1,0x1000001,0xffffffff),record(1,0,0,0,0),record(4,0,0,0,0)]:
             with self.assertRaises(ValueError): check(changed)
+
+    def test_xhci_handoff_verification_details(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-legacy-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL, source=None):
+            changed = (raw[:end] if source is None else source).replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,
+                ehci_bme=True,xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True)
+        failure=P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-handoff\n'
+        def detailed(kind=1,index=0,before=0,after=2,status=10,support=0x01000801):
+            return (f'LEANOS-LAB/1 XHCI-HANDOFF profile=qotom-xhci-handoff-v2 index=3 status={status}'
+                f' attempted=1 polls=2 support={support} control=0 verify={kind} verify-index={index}'
+                f' expected={before} observed={after}\n').encode()
+        for fields in [(1,0,0,2),(1,0,0,6),(1,0,0,10),(2,0,6,5),(3,0,0x8460,0),
+                (4,1,0x8020,0x8024),(5,0,0x02000802,0x02010802)]:
+            result=check(detailed(*fields),failure)
+            self.assertEqual(result['xhci_handoff']['verification'],dict(zip(
+                ('kind','index','expected','observed'),fields)))
+            self.assertEqual(result['xhci_handoff']['schema'],'leanos-qotom-xhci-handoff-observation-v2')
+            with self.assertRaises(ValueError):check(detailed(*fields))
+        for support in (0x801,0x10801,0x1010801):
+            result=check(detailed(6,4,0x01000801,support,support=support),failure)
+            self.assertEqual(result['xhci_handoff']['verification']['kind'],6)
+        success=detailed(0,0,0,0,status=0)
+        self.assertEqual(check(success)['xhci_handoff']['status'],0)
+        for fields in [(0,0,0,0),(1,0,0,1),(1,1,0,2),(1,0,1,2),(1,0,0,11),
+                (2,0,6,6),(2,0,5,4),(2,0,6,49),(3,0,0x8460,0x8460),
+                (3,0,0x8460,0x8001),(4,6,0x8020,0x8024),(4,1,0x8020,0x8020),
+                (5,0,0x02000802,0x02000802),(5,4,0x10801,0x01010801),
+                (5,0,0x02000802,0xffffffff),(6,4,0x01000801,0x01000801),(7,0,0,2),
+                (1,0,0,0x100000000)]:
+            with self.assertRaises(ValueError):check(detailed(*fields),failure)
+        with self.assertRaises(ValueError):check(detailed(status=0))
+        with self.assertRaises(ValueError):check(detailed(support=0x10801),failure)
+        for bad in [success.replace(b'v2',b'v1'),success.replace(b'v2',b'v3'),
+                success[:success.index(b' verify=')]+b'\n',
+                success.replace(b'verify=0',b'verify=00'),success.replace(b' observed=0',b'')]:
+            with self.assertRaises(ValueError):check(bad)
+
+    def test_xhci_handoff_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-xhci-legacy-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL, source=None):
+            changed = (raw[:end] if source is None else source).replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,
+                ehci_bme=True,xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True)
+        def record(status,attempted,polls,support,control):
+            return f'LEANOS-LAB/1 XHCI-HANDOFF profile=qotom-xhci-handoff-v1 index=3 status={status} attempted={attempted} polls={polls} support={support} control={control}\n'.encode()
+        success = record(0,1,1,0x1000801,0)
+        result = check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('xhci_handoff_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['xhci_handoff']['firmware_exclusion_established'])
+        failures = [(2,0,0,0,0),(3,0,0,0,0),(5,1,0,0x10801,0),
+            (6,1,0,0x10801,0),(6,1,99,0x1010801,0),
+            (7,1,1,0x10801,0),(7,1,100,0x1010801,0),
+            (8,1,1,0x10801,0),(9,1,100,0x1010801,0),
+            (10,1,1,0x1000801,0),(10,1,1,0x1010801,0),
+            (11,0,0,0,0),(12,0,0,0,0),(13,0,0,0,0),(14,0,0,0,0)]
+        for values in failures:
+            result = check(record(*values),P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-handoff\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-xhci-handoff')
+            with self.assertRaises(ValueError): check(record(*values))
+        for changed in [b'',success+success,success.replace(b'attempted=1',b'attempted=0'),
+                success.replace(b'polls=1',b'polls=0'),success.replace(b'polls=1',b'polls=101'),
+                success.replace(b'status=0',b'status=00'),record(0,1,1,0x1010801,0),
+                record(0,1,1,0x1000801,0xffffffff),record(1,0,0,0,0),record(4,0,0,0,0)]:
+            with self.assertRaises(ValueError): check(changed)
+
+        failure=P['FINAL'].encode()+b' status=FAIL reason=qotom-xhci-handoff\n'
+        with self.assertRaises(ValueError):check(success,failure)
+        changed=raw[:end].replace(b'count=6 offset=33888 control=8193',b'count=6 offset=33888 control=8192')
+        self.assertNotEqual(changed,raw[:end])
+        with self.assertRaises(ValueError):check(success,source=changed)
+        self.assertEqual(check(record(14,0,0,0,0),failure,changed)['xhci_handoff']['status'],14)
+        for values in [(5,1,1,0x10801,0),(6,1,100,0x1010801,0),
+                (7,1,0,0x10801,0),(8,1,1,0x1000801,0),(9,1,99,0x1010801,0),
+                (10,1,1,0x1000802,0),(11,1,0,0,0),(15,0,0,0,0)]:
+            with self.assertRaises(ValueError):check(record(*values),failure)
 
     def test_smi_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-handoff-20260911'

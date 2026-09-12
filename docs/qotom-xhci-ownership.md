@@ -149,3 +149,160 @@ header is `0x00010801` (BIOS-owned set, OS-owned clear); control/status is
 request consumed. The retained-capture test revalidates all six relative links
 and the selected control sample through the protected decoder. Cooperative
 ownership handoff and subsequent xHCI shutdown remain outstanding.
+
+## Bounded cooperative handoff helper
+
+`boot/qotom-xhci-handoff.h` refreshes the complete capability/list observation
+and requires exact agreement with the prior list and control sample. It accepts
+an initial legacy support word only with BIOS-owned set, OS-owned clear and
+reserved semaphore bits zero. One aligned DWORD MMIO request writes the sampled
+support word with OS-owned set. This is the access width used by the
+[Linux xHCI handoff implementation](https://github.com/torvalds/linux/blob/master/drivers/usb/host/pci-quirks.c)
+when requesting ownership; Linux also gives BIOS one second to release it.
+
+The helper waits at most 100 times for 10 ms and samples support after each
+successful delay. Every sample must retain OS-owned and the original nonsemaphore
+bits. Once BIOS-owned clears, a complete final list and PCI/capability refresh
+must agree except for the semaphore and documented command-manager status bits,
+and the final support sample must
+still show BIOS-clear/OS-owned. The final control sample is retained separately;
+it may change while firmware processes the request. No SMI-disable or continuing
+firmware-exclusion claim follows from this helper.
+
+The bound is 274 reads, one DWORD write and 100 delay callbacks. Timeout, drift,
+read failure, delay failure and write failure reject. The helper never clears
+BIOS-owned itself, writes control/status, resets a controller or rolls back.
+A failed write may have taken effect, so output reports the attempted write
+and last sample on failure. These fields are diagnostics, not authority.
+Physical handoff validation remains outstanding.
+
+Tests use the retained six-header list and a maximum 48-header list. They cover
+every successful release delay, all 274 read-failure positions, every delay
+failure, a timeout, an ignored write, write failure with a hardware side effect,
+all non-BIOS support-bit changes, all prior header-bit mutations, final support
+and list drift, absent legacy support, and malformed initial semaphore state.
+
+## Ownership-request mapping gate
+
+`hardware/lab/qotom-xhci-semaphore-window.h` admits one DWORD MMIO request:
+address `0xd0908460`, value `0x01010801`. This sets OS-owned while retaining the
+captured BIOS-owned bit and the other support fields. Every request consumes
+its authority, including a rejected address or value. It maps physical page
+`0xd0908000` supervisor-only, RW, NX and UC, performs one store, restores the
+exact saved leaf, invalidates and checks controls before returning. Only hardware
+Accessed/Dirty changes are allowed during the store. Interference is terminal;
+a store failure can still have affected the device and does not trigger rollback.
+
+Arming requires the successful captured six-header list, legacy offset `0x8460`,
+control `0x2001`, all seven physical capability DWORDs, the xHCI PCI identity and
+BAR pair, exact firmware tables, the validated active root, and exclusion of all
+present aliases into the 64-KiB resource. Failed rearm clears all authority and
+arming performs no device access. The handoff helper must refresh the complete
+observation before invoking this window. Firmware/AP exclusion is still an
+external assumption; the mapping checks do not establish it.
+
+Tests exercise all byte offsets through the resource boundary, every address
+and value bit mutation, all other low-word values, missing callbacks, repeated
+requests, failed stores, restoration and terminal interference. Arming tests
+cover every captured capability/header/offset/control bit, invalid list counts
+and prior statuses, BAR drift, all 4096 leaf slots and all resource pages for
+aliases, and failed rearm. Physical handoff remains outstanding.
+
+## Native handoff integration
+
+The builder and protected runner accept `--xhci-handoff` only with the complete
+`--xhci-legacy` path. The native stage separately arms capability reads, extended
+reads, the bounded ACPI PM timer and the consumed DWORD writer. Local statuses
+11 through 14 identify those respective arm failures. It uses the existing
+volatile 32-bit store primitive through the restricted MMIO window and disarms
+all contexts before emitting `XHCI-HANDOFF`. Timeout or any rejected observation
+terminates with `qotom-xhci-handoff`; success still ends at platform-pending.
+
+The decoder requires the exact writer binding for helper results, validates
+attempt/poll/support/control combinations for every reachable status, rejects
+impossible native statuses, and preserves the actual final reason after prefix
+replay. The runner fingerprints the decoder and retains `xhci-handoff.json`.
+Protected mutations cover valid failure outcomes, contradictory success and
+failure terminals, altered prior control, impossible poll counts and stale
+support values. No physical handoff outcome is established by those synthetic
+records; a protected boot is required after build verification.
+
+## First physical handoff result
+
+The [protected handoff capture](../hardware/lab/observations/qotom-native-xhci-handoff-rejection-20260911/README.md)
+observed BIOS-clear/OS-owned support `0x01000801` at poll two, then rejected final
+verification with status 10. It recovered FreeBSD with the request consumed.
+The final control field is zero because no accepted final sample was published.
+This is a rejected experiment, not a completed handoff. Additional diagnostics
+must distinguish final collection, list comparison and semaphore checks before
+further xHCI changes. The strict acceptance checks remain required.
+
+## Final-verification diagnostics
+
+The callback helper now retains four diagnostic fields: verification kind,
+header index, expected value and observed value. Kind 1 identifies a failed
+final collector and records its status without publishing partial collector
+output. Kinds 2 through 5 identify the first count, selected legacy offset,
+header offset or header-word difference between complete collected lists.
+Kind 6 identifies a final semaphore mismatch. Other handoff outcomes leave all
+four fields zero. The final control field retains its existing publication rule.
+
+The final comparison permits legacy semaphore and documented command-manager
+status changes; list identity and reserved fields remain checked. It reports the
+reason from already collected values and adds no hardware reads or writes; the
+274-read bound is unchanged. Tests cover each
+diagnostic kind, every final read-failure status, zero details on other results,
+and header-bit mutations, including the documented live-status exception below.
+The versioned native record below carries these fields for physical
+handoff experiments.
+
+## Versioned verification record
+
+The native handoff record now uses `qotom-xhci-handoff-v2` and always emits
+`verify`, `verify-index`, `expected` and `observed`. The decoder retains explicit
+v1 support for the earlier physical rejection, which has no detail fields. It
+rejects a v1 record with details or a v2 record without all four fields. V2
+metadata carries a `verification` object; v1 metadata stays unchanged.
+
+Details must be zero outside final-verification failure. For that failure the
+decoder validates collector-status bounds, the expected captured count or offset,
+indexed prior header values, actual differences, and semaphore value consistency.
+The defensive header-offset diagnostic remains a rejection. It does not grant
+ownership or certify a reconstructed final list. Mutation tests cover both
+versions, missing or contradictory details, scalar bounds and the retained v1
+failure. The v2 physical capture identified the cause described below.
+
+## Root cause: live vendor status in an extended header
+
+The [v2 physical capture](../hardware/lab/observations/qotom-native-xhci-handoff-detail-20260911/README.md)
+identified index 2, offset `0x8040`, changing from `0x00010cc1` to `0x00000cc1`.
+Intel's [J1900 datasheet, section 14.7.138, pages 473–474](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf#page=473)
+defines bits 31:20 and 18:16 as live read-only command-manager status. Bit 16 is
+CMD_RING_RUNNING. Bit 19 is reserved; bits 15:8 and 7:0 are the next capability
+pointer and vendor ID. The observed difference is a running-to-stopped status
+transition, not changed capability identity.
+
+The final comparison now allows status mask `0xfff70000` only at `0x8040` with
+identified low word `0x0cc1`. It still checks the reserved bit, ID, link, offsets,
+count, all other headers, complete resource refreshes and final semaphores.
+The pre-request comparison remains exact. This permits live status sampling;
+it does not prove controller quiescence or DMA drain. The historical v1/v2
+rejections remain retained and replayable with their original outcomes.
+
+Tests reproduce the physical bit-16 transition and exercise all 32 bits of the
+vendor header: documented status changes pass final comparison; all others
+reject. Wrong offsets and IDs never receive the status mask.
+
+## Corrected physical handoff result
+
+The [corrected protected capture](../hardware/lab/observations/qotom-native-xhci-handoff-20260911/README.md)
+passed final verification with status 0 after two polls. Support was
+`0x01000801`, control `0x2000`, and verification details were zero. FreeBSD
+recovered automatically with the request consumed; independent SSH verified
+the installed image and recovery state. The retained replay covers this result
+and the preceding EHCI observations.
+
+This completes the bounded xHCI ownership observation. Legacy SMI policy,
+operational shutdown, bus-master disable, outstanding-transaction drain and
+continuing firmware/AP exclusion remain necessary before DMA quarantine.
+The diagnostic terminal remains `qotom-platform-pending`.
