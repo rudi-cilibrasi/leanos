@@ -88,9 +88,11 @@ record says `nmi-routing=quarantined`, so a physical capture cannot silently
 attribute topology success to repaired or interpreted firmware bytes.
 
 Quarantine means this checkpoint does not program a local-APIC LVT from the
-malformed records and keeps IF clear. It does not measure inherited LVT state,
-mask an independently configured NMI source, or authorize later interrupt
-delivery. Those remain requirements for the CPL3 profile.
+malformed records and keeps IF clear. The opt-in inherited-LVT policy described
+in `docs/qotom-apic-lvt-observation.md` additionally requires both BSP LINT
+inputs to remain at the physically measured masked value `0x00010000`, with
+stable repeated reads and no APIC write. It grants no later interrupt-delivery
+authority; that remains a requirement for the CPL3 profile.
 
 ## AP-start exclusion and assumptions
 
@@ -114,9 +116,9 @@ artifact cannot be presented as a measurement of the other cores.
 
 ## Remaining work
 
-The boundary now rejects any attempt to interpret the malformed NMI records,
-but it does not establish inherited local-APIC LVT state or a later interrupt
-controller policy. It also does not establish PCI/DMA quarantine, SMM
-exclusion, no-SMAP isolation, full platform admission or CPL3 execution. Those
-conditions must be composed under issue #291 before a successful platform
-record can replace `qotom-platform-pending`.
+The opt-in boundary now rejects attempts to interpret the malformed NMI records
+and rejects inherited BSP LINT state other than the exact measured masked
+value. It does not authorize later interrupt delivery. It also does not
+establish PCI/DMA quarantine, SMM exclusion, no-SMAP isolation, full platform
+admission or CPL3 execution. Those conditions must be composed under issue 291
+before a successful platform record can replace `qotom-platform-pending`.

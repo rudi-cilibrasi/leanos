@@ -23,6 +23,10 @@ static uint64_t nmi_policy(const uint64_t a[6], uint64_t word) {
     return leanos_qotom_madt_nmi_policy_query(
         a[0],a[1],a[2],a[3],a[4],a[5],word);
 }
+static uint64_t lvt_policy(const uint64_t a[11], uint64_t word) {
+    return leanos_qotom_inherited_lvt_policy_query(
+        a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],word);
+}
 extern void leanos_register_boundary_target(const char *, void *);
 int main(void) {
     leanos_register_boundary_target("leanos_qotom_madt_stream_byte_step_query",
@@ -31,6 +35,8 @@ int main(void) {
         (void *)(uintptr_t)&leanos_qotom_madt_stream_finish_query);
     leanos_register_boundary_target("leanos_qotom_madt_nmi_policy_query",
         (void *)(uintptr_t)&leanos_qotom_madt_nmi_policy_query);
+    leanos_register_boundary_target("leanos_qotom_inherited_lvt_policy_query",
+        (void *)(uintptr_t)&leanos_qotom_inherited_lvt_policy_query);
     leanos_register_boundary_target("leanos_qotom_machine_topology_admission_result_query",
         (void *)(uintptr_t)&leanos_qotom_machine_topology_admission_result_query);
     const struct qotom_bsp_observation empty_observation = {0};
@@ -56,6 +62,22 @@ int main(void) {
         const uint64_t rejected[6] = {1,2,error,0,0,0};
         for (uint64_t word = 0; word < 6; ++word)
             if (nmi_policy(changed,word) != rejected[word]) return 20;
+    }
+    const uint64_t native_lvt[11] = {
+        0,UINT64_C(0xfee00900),0,UINT64_C(0x10000),UINT64_C(0x10000),
+        UINT64_C(0x10000),UINT64_C(0x10000),1,0,0,1
+    };
+    const uint64_t accepted_lvt[6] = {1,1,0,1,UINT64_C(0x10000),UINT64_C(0x10000)};
+    for (uint64_t word = 0; word < 6; ++word)
+        if (lvt_policy(native_lvt,word) != accepted_lvt[word]) return 26;
+    if (lvt_policy(native_lvt,UINT64_MAX) != 0) return 27;
+    const uint64_t lvt_errors[11] = {90,91,92,93,93,93,93,94,95,96,97};
+    for (size_t field = 0; field < 11; ++field) {
+        uint64_t changed[11]; memcpy(changed,native_lvt,sizeof(changed));
+        changed[field] ^= 1;
+        const uint64_t rejected[6] = {1,2,lvt_errors[field],0,0,0};
+        for (uint64_t word = 0; word < 6; ++word)
+            if (lvt_policy(changed,word) != rejected[word]) return 28;
     }
     size_t composed_cases = 0;
     for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
