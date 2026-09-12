@@ -72,7 +72,7 @@ def audit(path):
         raise ValueError('not a linked Qotom BSP production image')
     marker = (b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 '
               b'memory=published topology=published interrupts=masked '
-              b'platform-admitted=0')
+              b'nmi-routing=quarantined platform-admitted=0')
     if raw.count(marker) != 1 or raw.count(b'qotom-platform-pending') != 1:
         raise ValueError('Qotom BSP terminal contract is absent or ambiguous')
     plans = {}

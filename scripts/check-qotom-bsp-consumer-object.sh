@@ -19,6 +19,7 @@ rows = [line.split() for line in Path(sys.argv[1]).read_text().splitlines()]
 expected = {'qotom_bsp_consumer_probe',
             'leanos_qotom_madt_stream_byte_step_query',
             'leanos_qotom_madt_stream_finish_query',
+            'leanos_qotom_madt_nmi_policy_query',
             'leanos_qotom_machine_topology_admission_result_query',
             '__bss_start', '_edata', '_end'}
 actual = {r[-1] for r in rows}
@@ -26,6 +27,7 @@ actual = {r[-1] for r in rows}
 optional = {'qotom_bind_validated_madt_entries',
             'l_LeanOS_QotomMadtStream_byteStepQuery',
             'l_LeanOS_QotomMadtStream_finishQuery',
+            'l_LeanOS_QotomMadtStream_nmiPolicyQuery',
             'l_LeanOS_QotomMadtStream_machineTopologyAdmissionResultQuery'}
 if not expected <= actual or actual - expected - optional:
     raise SystemExit(f'unexpected consumer symbols: {actual ^ expected}')

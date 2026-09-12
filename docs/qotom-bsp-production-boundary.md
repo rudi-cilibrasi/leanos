@@ -34,9 +34,11 @@ sequence through these operations:
 5. sample CPUID and IA32_APIC_BASE again on the executing CPU;
 6. consume the actual MADT entry bytes with the allocation-free generated
    Qotom stream;
-7. pass the consumer's status, detail, APIC ID, processor count and APIC base
+7. recognize all four exact malformed Local APIC NMI records and require that
+   the candidate grants them no interrupt-routing authority;
+8. pass the consumer's status, detail, APIC ID, processor count and APIC base
    through the generated root/copy/publication gate; and
-8. scrub rejected frames and publish the generated memory and topology result.
+9. scrub rejected frames and publish the generated memory and topology result.
 
 The final gate accepts the native profile only with BSP ID 0, four enabled
 processors, IA32_APIC_BASE `0xfee00900`, a matching executing ID, one MADT, and
@@ -47,7 +49,7 @@ runs cover mutations of every gate class and execute the exported function.
 Successful passage emits:
 
 ```text
-LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked platform-admitted=0
+LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked nmi-routing=quarantined platform-admitted=0
 LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
 ```
 
@@ -68,6 +70,27 @@ The classifier requires the digest-bound watchdog load, one boot record, the
 exact production and terminal records, at least 30 seconds of serial quiet,
 the consumed default request, the FreeBSD chain marker, a changed FreeBSD boot
 time and restored SSH.
+
+## Malformed NMI-record policy
+
+[ACPI 6.6 section 5.2.12.7](https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#local-apic-nmi-structure)
+limits a Local APIC NMI record to LINT0 or LINT1 and uses the MPS INTI flag
+format, whose upper twelve bits must be zero and whose polarity/trigger value
+2 is reserved. The native records have LINT values 247, 166, 206 and 39 and
+nonzero reserved flag bits. Lean proves that all four are unusable as routes.
+
+The consumer packs the actual six bytes of every type-4 record, preserving
+table order, and passes all four values to a generated scalar gate. Acceptance
+requires the exact retained sequence and zero routing authority. A missing,
+additional, reordered or byte-mutated record fails before topology
+publication; a caller that asks to use the records also fails. The production
+record says `nmi-routing=quarantined`, so a physical capture cannot silently
+attribute topology success to repaired or interpreted firmware bytes.
+
+Quarantine means this checkpoint does not program a local-APIC LVT from the
+malformed records and keeps IF clear. It does not measure inherited LVT state,
+mask an independently configured NMI source, or authorize later interrupt
+delivery. Those remain requirements for the CPL3 profile.
 
 ## AP-start exclusion and assumptions
 
@@ -91,8 +114,9 @@ artifact cannot be presented as a measurement of the other cores.
 
 ## Remaining work
 
-The native MADT's four local-APIC NMI records retain malformed LINT values.
-This boundary does not interpret or enable them. It also does not establish
-PCI/DMA quarantine, interrupt routing, SMM exclusion, no-SMAP isolation, full
-platform admission or CPL3 execution. Those conditions must be composed under
-issue #291 before a successful platform record can replace `qotom-platform-pending`.
+The boundary now rejects any attempt to interpret the malformed NMI records,
+but it does not establish inherited local-APIC LVT state or a later interrupt
+controller policy. It also does not establish PCI/DMA quarantine, SMM
+exclusion, no-SMAP isolation, full platform admission or CPL3 execution. Those
+conditions must be composed under issue #291 before a successful platform
+record can replace `qotom-platform-pending`.

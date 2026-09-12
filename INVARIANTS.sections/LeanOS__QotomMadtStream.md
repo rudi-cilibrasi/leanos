@@ -2,6 +2,10 @@
 
 These checks describe the values accepted by the scalar topology stream and its BSP bridge. They do not prove where supplied state came from, establish application-processor dormancy, or authorize platform execution.
 
+- `native_local_apic_nmi_records_are_unusable` — Every Local APIC NMI record in the captured Qotom MADT has reserved flag bits or an invalid LINT input, so none qualifies as a usable ACPI routing record.
+- `nmi_policy_acceptance_iff` — The NMI quarantine gate accepts exactly four byte-identical captured records in their recorded order and only when no routing authority is requested.
+- `nmi_policy_never_authorizes_routing` — Any accepted NMI quarantine result proves that routing authority remained disabled.
+
 - `processor_matches_iff` — A processor matches exactly when its position is below four, its APIC ID is twice that position, and it is enabled.
 - `processor_matches_rejects_disabled` — A disabled processor never matches, regardless of position or APIC ID.
 - `byte_step_out_of_range` — Every projection index above fifteen returns zero for arbitrary stream inputs.
