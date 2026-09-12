@@ -20,6 +20,9 @@ static struct lab_ahci_window lab_ahci_window = {
 #ifdef LEANOS_QOTOM_ROOTPORT_BME
 #include "qotom-rootport-bme.c.inc"
 #endif
+#ifdef LEANOS_QOTOM_REALTEK_STATE
+#include "qotom-realtek-state.c.inc"
+#endif
 /* Prior device stages have returned with their contexts disarmed. The private
  * ECAM and AHCI reads serialize through the same restored identity aperture. */
 static __attribute__((noinline)) void lab_capture_ahci(
@@ -58,6 +61,9 @@ static __attribute__((noinline)) void lab_capture_ahci(
 #endif
 #ifdef LEANOS_QOTOM_ROOTPORT_BME
     lab_capture_rootport_bme(&view,snapshot);
+#endif
+#ifdef LEANOS_QOTOM_REALTEK_STATE
+    lab_capture_realtek_state(&view,snapshot);
 #endif
 }
 #endif
