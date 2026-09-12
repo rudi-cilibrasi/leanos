@@ -260,6 +260,30 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['ehci_legacy']['ownership_established'])
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_retained_smi_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-smi-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
     def test_legacy_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
@@ -330,6 +354,41 @@ class Capture(unittest.TestCase):
                 success.replace(b'polls=1',b'polls=0'),success.replace(b'polls=1',b'polls=101'),
                 success.replace(b'status=0',b'status=00'),record(0,1,1,0x1010001,0),
                 record(0,1,1,0x1000001,0xffffffff),record(1,0,0,0,0),record(4,0,0,0,0)]:
+            with self.assertRaises(ValueError): check(changed)
+
+    def test_smi_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-handoff-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True)
+        def record(status,attempted,before,after):
+            return f'LEANOS-LAB/1 EHCI-SMI profile=qotom-smi-v1 index=10 status={status} attempted={attempted} before={before} after={after}\n'.encode()
+        success = record(0,1,0x2000,0)
+        result = check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('ehci_smi_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['ehci_smi']['firmware_exclusion_established'])
+        result = check(record(0,1,0xe03f2000,0xe03f0000))
+        self.assertEqual(result['ehci_smi']['after_control'],0xe03f0000)
+        for values in [(3,0,0,0),(4,0,0,0),(5,1,0x2000,0),(6,1,0x2000,0),
+                       (7,1,0x2000,0x2000),(7,1,0x2000,0x40),(8,0,0,0),(9,0,0,0)]:
+            result = check(record(*values),P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-smi\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-smi')
+            with self.assertRaises(ValueError): check(record(*values))
+        for changed in [b'',success+success,success.replace(b'attempted=1',b'attempted=0'),
+                success.replace(b'status=0',b'status=00'),record(0,1,0x2001,0),
+                record(0,1,0x2000,1),record(0,1,0x2000,0x40),record(0,1,0x2000,0xffffffff),
+                record(1,0,0,0),record(2,0,0,0),record(0,1,0x100002000,0)]:
             with self.assertRaises(ValueError): check(changed)
 
     def test_selected_capture_provenance(self):

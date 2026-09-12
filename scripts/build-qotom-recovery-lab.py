@@ -26,9 +26,12 @@ p.add_argument('--bsp-topology', action='store_true', help='bind root-selected M
 p.add_argument('--pci-capabilities', action='store_true', help='capture bounded conventional capability lists after native inventory acceptance')
 p.add_argument('--af-observation', action='store_true', help='observe AF control/status after native capability capture')
 p.add_argument('--ehci-capabilities', action='store_true', help='read native EHCI capability registers through a separate window')
+p.add_argument('--ehci-smi', action='store_true', help='disable EHCI legacy SMI enables after observed handoff')
 p.add_argument('--ehci-handoff', action='store_true', help='request bounded cooperative EHCI firmware handoff')
 p.add_argument('--ehci-legacy', action='store_true', help='observe bounded EHCI extended list and legacy control/status')
 a = p.parse_args()
+if a.ehci_smi and not a.ehci_handoff:
+    p.error('--ehci-smi requires --ehci-handoff')
 if a.ehci_handoff and not a.ehci_legacy:
     p.error('--ehci-handoff requires --ehci-legacy')
 if a.ehci_legacy and not a.ehci_capabilities:
@@ -61,7 +64,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -81,6 +84,8 @@ for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
+if a.ehci_smi:
+    text = '#define LEANOS_QOTOM_EHCI_SMI 1\n' + text
 if a.ehci_handoff:
     text = '#define LEANOS_QOTOM_EHCI_HANDOFF 1\n' + text
 if a.ehci_legacy:
@@ -316,7 +321,9 @@ if a.ehci_legacy:
     files.append(root / 'boot/qotom-ehci-legacy.h')
 if a.ehci_handoff:
     files += [root / name for name in ('boot/qotom-ehci-handoff.h', 'hardware/lab/qotom-ehci-semaphore.h', 'hardware/lab/qotom-ehci-semaphore-arm.h', 'hardware/lab/qotom-pm-delay.h', 'hardware/lab/qotom-ehci-handoff.c.inc')]
-manifest = {'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.ehci_smi:
+    files += [root / name for name in ('boot/qotom-ehci-smi.h', 'hardware/lab/qotom-ehci-smi-window.h', 'hardware/lab/qotom-ehci-smi-arm.h', 'hardware/lab/qotom-ehci-smi.c.inc')]
+manifest = {'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
