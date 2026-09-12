@@ -117,3 +117,26 @@ The retained protected replay agrees and FreeBSD recovered automatically with
 the request consumed. These samples guide a subsequent guarded interrupt/BME
 transition; transaction drain, continuing firmware/AP exclusion and whole-profile
 integration remain open.
+
+## Bounded global interrupt disable
+
+`boot/qotom-ahci-interrupts.h` requires successful global and port observations
+matching the captured stopped/empty port profile, with GHC `80000002`. It
+refreshes all 37 global/resource/port reads before writing one DWORD `80000000`
+to ABAR+4, immediately reads GHC back, and repeats the complete 37-read collector
+against the expected interrupt-disabled globals. Both port snapshots must retain
+CMD6/IE0/TFD50/SSTS123/SACT0/CI0/CMD6 (hexadecimal). A changed state rejects.
+
+Intel 329670-002 section 13.8.2 defines GHC.AE at bit31, IE at bit1 and HR at bit0.
+The write retains AHCI mode, clears global interrupt enable and leaves reset
+unrequested. The helper performs at most 75 reads and one write, with no polling,
+port writes, engine stop, reset or BME change. It records whether a write was
+attempted and the available before/after control samples, including ambiguous
+failed writes; it never retries or restores interrupts as rollback.
+
+Tests cover every read failure, every prior/global/port bit mutation, initial and
+final state changes, all immediate readback bit changes, ignored writes and
+failed writes with and without effects. The helper still requires a separate
+consumed native write window and firmware/root/resource binding before hardware
+execution. Interrupt masking does not establish transaction drain, continuing
+firmware/AP exclusion or platform admission.

@@ -136,3 +136,9 @@ leanos_run_sanitized "$build/ahci-capabilities-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-ahci-port.c -o "$build/ahci-port-sanitized"
 leanos_run_sanitized "$build/ahci-port-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ahci-interrupts.c -o "$build/ahci-interrupts"
+"$build/ahci-interrupts"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-ahci-interrupts.c -o "$build/ahci-interrupts-sanitized"
+leanos_run_sanitized "$build/ahci-interrupts-sanitized"
