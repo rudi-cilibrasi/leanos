@@ -13,6 +13,13 @@ static inline int qotom_rootport_sample_valid(const struct pci_express_observati
         p->device_capabilities==UINT32_C(0x8000) &&
         !(p->device_control_status&~UINT32_C(0x001f0000));
 }
+static inline int qotom_rootport_header_valid(const struct pci_enumeration_header *header) {
+    return header && !(header->bus || header->device!=28 || header->function>3 ||
+       header->words[0]!=(UINT32_C(0x0f488086)+(uint32_t)header->function*UINT32_C(0x20000)) ||
+       header->words[2]!=UINT32_C(0x0604000e) ||
+       (header->words[3]&UINT32_C(0x00ff0000))!=UINT32_C(0x00810000) ||
+       (header->words[1]&0xffff)!=7);
+}
 /* The raw bridge routing header must remain stable. Exclude only primary and
  * secondary Status bits, retaining the primary capability-list indicator. */
 static inline int qotom_rootport_refresh(pci_enumeration_read read,void *ctx,
@@ -38,11 +45,7 @@ static inline enum qotom_rootport_bme_status qotom_clear_rootport_bme(
         const struct pci_express_observation *prior,struct qotom_rootport_bme_result *out) {
     if(out)*out=(struct qotom_rootport_bme_result){0};
     if(!read || !write || !header || !caps || !prior || !out)return QOTOM_ROOTPORT_ARGUMENT;
-    if(header->bus || header->device!=28 || header->function>3 ||
-       header->words[0]!=(UINT32_C(0x0f488086)+(uint32_t)header->function*UINT32_C(0x20000)) ||
-       header->words[2]!=UINT32_C(0x0604000e) ||
-       (header->words[3]&UINT32_C(0x00ff0000))!=UINT32_C(0x00810000) ||
-       (header->words[1]&0xffff)!=7 || !qotom_rootport_sample_valid(prior))return QOTOM_ROOTPORT_PRIOR;
+    if(!qotom_rootport_header_valid(header) || !qotom_rootport_sample_valid(prior))return QOTOM_ROOTPORT_PRIOR;
     if(!qotom_rootport_refresh(read,ctx,header,caps))return QOTOM_ROOTPORT_REFRESH;
     uint32_t command;
     if(!read(ctx,0,28,header->function,4,&command) || (command&0xffff)!=7)return QOTOM_ROOTPORT_COMMAND;

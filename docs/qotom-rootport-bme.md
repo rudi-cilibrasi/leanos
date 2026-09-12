@@ -34,3 +34,24 @@ initial/final routing/control/payload bits, asynchronous Status fields, ignored
 and ambiguous writes, pending transactions and BME reassertion. Consumed native
 write authority, decoder/runner integration and physical validation remain
 pending. This helper has not been installed or run on the Qotom.
+
+## Consumed native write window
+
+The writer is armed for exactly one function in 00:1c.0–3. It accepts only
+that BDF, offset 4 and word 0003. Every request consumes authority, including
+wrong-function and invalid-value requests. The temporary leaf is
+`80000000e00e001b + function * 1000` (hexadecimal): RW/NX/supervisor UC.
+The trusted primitive stores one word at aperture+4, then the exact prior leaf
+is restored with invalidations and control checks. Interference is terminal.
+
+Arming binds the native header, prior PCIe state, copied firmware, compiled
+root views and ECAM alias exclusion. It publishes the selected function only
+after checks pass. A rejected rearm clears all authority, including the old
+function. Arming neither maps a device nor reads/writes its registers. The
+helper still refreshes all routing and capability state before its write.
+
+Tests cover the four mapped function pages, other-function rejection, every
+alternative word value, missing callbacks, invalid apertures, failed stores,
+mapping/restore interference, both control observations, rejected rearm,
+identity/prior-state bit changes and all 4096 possible aliases of each target
+ECAM page. No physical root-port write has yet been performed.
