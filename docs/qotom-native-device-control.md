@@ -51,8 +51,8 @@ The physical path remains at `qotom-platform-pending` for #330 and #291.
 ## Verified transitions and remaining contracts
 
 The table above and generated JSON deliberately preserve the initial inventory.
-The later [TXE-status boot capture](../hardware/lab/observations/qotom-native-txe-status-20260911)
-contains all four successful BME transitions in one serial stream. Its 60-file
+The later [root-port boot capture](../hardware/lab/observations/qotom-native-rootport-bme-20260911)
+contains all eight successful BME transitions in one serial stream. Its 61-file
 manifest and protected replay were verified; the transition starting values
 match the initial headers from that same boot. These are sequential transition
 observations, not an atomic final inventory or proof of continuing state.
@@ -63,17 +63,20 @@ observations, not an atomic final inventory or proof of continuing state.
 | xHCI | 00:14.0 | 0006 | 0002 | Ownership, SMI, stopped-state and BME |
 | SATA | 00:13.0 | 0007 | 0003 | Stopped/empty port, interrupt disable and BME |
 | HDA | 00:1b.0 | 0006 | 0002 | Ring/stream state and BME |
+| Four root ports | 00:1c.0–3 | 0007 | 0003 | Routing/PCIe refresh and upstream request gating |
 
-Nine initially BME-set functions, in addition to the two fixed-Command
+Five initially BME-set functions, in addition to the two fixed-Command
 functions, have no successful BME-clear transition in this capture:
 
 | Functions | Missing device contract |
 | --- | --- |
 | Graphics 00:02.0 | Display/engine ownership, stopping, DMA gating and drain |
 | TXE 00:1a.0 | Internal DMA control, firmware behavior and drain |
-| Root ports 00:1c.0–3 | Upstream request gating, outstanding traffic and routing |
 | Realtek 01:00.0 and 03:00.0 | Endpoint ownership, engine shutdown and drain |
 | Broadcom 02:00.0 | Endpoint ownership, engine shutdown and drain |
+
+Root-port BME readbacks establish the bounded upstream request-gating changes;
+outstanding traffic and continuing routing/state still require their contracts.
 
 TXE firmware status `1f0000d5`/`69000000` was read successfully in that boot;
 it is not a shutdown witness. The seven PCIe functions do not advertise FLR
@@ -83,7 +86,7 @@ not establish device/fabric drain. The fixed host router and LPC still require
 the distinct contracts above; SMBus's initially clear BME also needs its
 capability/continuing-state contract.
 
-The four successful transitions do not discharge transaction drain or continuing
+The eight successful transitions do not discharge transaction drain or continuing
 firmware/AP exclusion. All sixteen functions must be covered by the final
 profile, including fixed-register and non-DMA cases with explicit justification.
 No subset of these observations is a production admission witness; the native
