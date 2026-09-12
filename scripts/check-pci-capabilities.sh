@@ -178,3 +178,9 @@ leanos_run_sanitized "$build/txe-status-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror -Iboot \
   tests/qotom-txe-status-lab.c -o "$build/txe-status-lab-sanitized"
 leanos_run_sanitized "$build/txe-status-lab-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-rootport-bme.c -o "$build/rootport-bme"
+"$build/rootport-bme"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-rootport-bme.c -o "$build/rootport-bme-sanitized"
+leanos_run_sanitized "$build/rootport-bme-sanitized"
