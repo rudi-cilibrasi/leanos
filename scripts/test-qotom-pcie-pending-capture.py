@@ -2,8 +2,10 @@
 import runpy
 from pathlib import Path
 
+ROOT=Path(__file__).resolve().parents[1]
 D=runpy.run_path(str(Path(__file__).with_name('check-qotom-pcie-pending-capture.py')))
-P={'FINAL':'LEANOS/3 FINAL'}
+PCI=runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-diagnostic.py')))
+P=PCI['load_protocol'](ROOT/'hardware/lab/observations/qotom-native-pcie-pending-20260912/diagnostic-protocol.tsv')
 BASE=b'prefix\n'
 RB=(b'LEANOS-LAB/1 REALTEK-BME profile=qotom-realtek-bme-v1 index=13 status=0 attempted=1 before=7 after=3\n'
     b'LEANOS-LAB/1 REALTEK-BME profile=qotom-realtek-bme-v1 index=15 status=0 attempted=1 before=7 after=3\n')
