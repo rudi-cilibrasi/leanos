@@ -190,3 +190,9 @@ leanos_run_sanitized "$build/rootport-bme-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-realtek-state.c -o "$build/realtek-state-sanitized"
 leanos_run_sanitized "$build/realtek-state-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-realtek-route.c -o "$build/realtek-route"
+"$build/realtek-route"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-realtek-route.c -o "$build/realtek-route-sanitized"
+leanos_run_sanitized "$build/realtek-route-sanitized"

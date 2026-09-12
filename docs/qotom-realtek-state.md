@@ -88,3 +88,27 @@ each page, callbacks, invalid apertures, wrong buses, failed loads, exact restor
 and terminal interference. Arming tests cover all 4096 alias positions for all
 five resource pages of both endpoints, header bits, firmware/root changes,
 rejected rearm, missing callbacks and both failed/mismatched control samples.
+
+## Live bridge refresh
+
+`boot/qotom-realtek-route.h` wraps the endpoint collector with complete live
+bridge header and PCIe capability refreshes. Bus 1 binds root function 0 and
+bus 3 binds root function 2. The initial bridge must describe exactly that
+secondary/subordinate bus, the captured memory window covering both endpoint
+BARs and the disabled prefetchable window. It also requires the preceding
+successful root-port result: attempted 1, Command 0007 to 0003.
+
+The initial bridge header is preserved. A private copy sets expected Command
+to 0003 for each live refresh. The existing root-port refresh verifies routing,
+identity, current Command, complete capability list and Device registers; it
+rejects nonzero Device Control or sampled Transactions Pending. Two 34-read
+native bridge refreshes bracket the 22-read endpoint observation (90 reads;
+conservative maximum 266). The first failure stops, and a final bridge failure
+publishes a zero result even after successful endpoint samples.
+
+Wrapper statuses add 10 for route/prior binding, 11 for the first bridge refresh
+and 12 for the last. Tests check both paths, exact 90-read order, every failed
+read, every bridge header bit at both refreshes, pending transactions, list
+mutation, invalid routing, prior-result mutations and missing inputs. These
+remain sequential observations, not proof of atomic routing or transaction
+drain. Native wiring and protected physical validation remain outstanding.
