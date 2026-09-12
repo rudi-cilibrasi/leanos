@@ -59,10 +59,32 @@ firmware/root controls and all aliases of both resource apertures before access.
 Tests use modeled engine values, not physical LeanOS observations. They check
 both endpoints, exact read order, every read failure, all compared config bits
 in both refreshes, ignored Status/cache fields, chip-revision masks, reset,
-width, absence and address/width selection. Mapping authority, native emission,
-protected decoder and physical validation are not yet implemented.
+width, absence and address/width selection. Native emission, protected decoder and physical validation are not yet
+implemented. The mapping authority is described below.
 
 The later shutdown contract still needs bounded time and failure handling,
 interrupt/MSI/MSI-X treatment, BME control and outstanding traffic semantics.
 Root-port BME gating and these samples alone do not establish endpoint drain,
 continuing firmware exclusion or admission for issues #330 and #291.
+
+## Bound register window
+
+The read window binds bus 1 or 3 and permits only the four documented register
+addresses at their exact widths. It maps the selected BAR2 page as supervisor,
+read-only, NX, UC (leaf 80000000d0804019 or 80000000d0604019), performs one typed
+load, restores the exact previous leaf, invalidates it and rechecks controls
+before publishing the sampled value. Mapping or restoration interference is
+terminal. Requests for the other endpoint are rejected before mapping.
+
+Arming clears the prior bus and all mapping authority first. It validates the
+endpoint header, copied firmware, active root and both control samples, then
+rejects every present alias to all five pages covered by BAR2 and BAR4. Only
+after all checks does it publish the selected bus and armed state. It performs
+no device access. Upstream bridge routing must additionally be refreshed in the
+native collector before MMIO; this arming helper does not observe live routing.
+
+Window tests cover both endpoints and every address/width combination within
+each page, callbacks, invalid apertures, wrong buses, failed loads, exact restore
+and terminal interference. Arming tests cover all 4096 alias positions for all
+five resource pages of both endpoints, header bits, firmware/root changes,
+rejected rearm, missing callbacks and both failed/mismatched control samples.
