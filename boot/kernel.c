@@ -1760,7 +1760,7 @@ static struct qotom_bsp_result validate_generated_qotom_bsp_entries(
         apic_base = (uint64_t)high << 32 | low;
     }
     const struct qotom_bsp_observation observation = {
-        sampled_apic_id, d, available, apic_base, sampled_apic_id
+        sampled_apic_id, d, available, apic_base, sampled_apic_id, 0
     };
     const struct qotom_bsp_result result =
         qotom_bind_validated_madt_entries(
@@ -5379,7 +5379,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     boot_allocate(multiboot_magic, multiboot_info);
     serial_puts("LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 "
                 "memory=published topology=published interrupts=masked "
-                "platform-admitted=0\n");
+                "nmi-routing=quarantined platform-admitted=0\n");
     pre_admission_fail("qotom-platform-pending");
 #endif
 #ifdef LEANOS_NMI_PROBE

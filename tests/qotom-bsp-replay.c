@@ -16,13 +16,14 @@ static int scalar(const char *s, uint64_t *value) {
 }
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1],"--identity")) {
-        puts("LeanOS native BSP replay v1"); return 0;
+        puts("LeanOS native BSP replay v2"); return 0;
     }
-    if (argc != 7) return 2;
+    if (argc != 8) return 2;
     struct qotom_bsp_observation obs;
     if (!scalar(argv[2],&obs.executing) || !scalar(argv[3],&obs.cpuid_edx) ||
         !scalar(argv[4],&obs.available) || !scalar(argv[5],&obs.apic_base) ||
-        !scalar(argv[6],&obs.sample_id)) return 2;
+        !scalar(argv[6],&obs.sample_id) ||
+        !scalar(argv[7],&obs.interrupt_routing_authority)) return 2;
     uint8_t bytes[65537];
     FILE *file = fopen(argv[1],"rb");
     if (!file) return 3;
