@@ -31,8 +31,12 @@ report = subprocess.check_output(
     ['objdump', '-dr', '--disassemble=report_j1900_cpu_candidate', str(ELF)],
     text=True)
 assert report.count('<j1900_cpu_control_policy_query>') == 8
+q35 = ROOT / 'build/boot/leanos.elf'
+if not q35.exists():
+    subprocess.run(['make', '-f', str(ROOT / 'build/boot/generated-image-objects.mk'),
+                    '-j4', str(q35.resolve())], cwd=ROOT, check=True)
 q35_symbols = subprocess.check_output(
-    ['nm', '-n', str(ROOT / 'build/boot/leanos.elf')], text=True)
+    ['nm', '-n', str(q35)], text=True)
 assert 'j1900_cpu_control_policy' not in q35_symbols
 
 runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
