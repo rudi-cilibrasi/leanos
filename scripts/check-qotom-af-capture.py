@@ -59,8 +59,13 @@ def extract(raw, protocol):
                 if (af['raw'] >> 16 != 0x0306 or af['offset'] > 248 or
                         any(e['offset'] == af['offset'] + 4 for e in function['headers'])):
                     raise ValueError('AF payload failure before valid structure')
-            if status == 6 and not entries:
-                raise ValueError('AF shape failure without AF')
+            if status == 6:
+                malformed = len(entries) > 1 or any(
+                    af['raw'] >> 16 != 0x0306 or af['offset'] > 248 or
+                    any(e['offset'] == af['offset'] + 4 for e in function['headers'])
+                    for af in entries)
+                if not malformed:
+                    raise ValueError('AF shape failure without malformed advertised structure')
             rejected = status != 1
         observations.append({'index': i, 'status': status, 'offset': offset, 'raw': value})
         cursor += 1
