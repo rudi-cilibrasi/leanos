@@ -39,8 +39,8 @@ Tests check exact order/widths, all 18 failure positions, every identity/resourc
 bit at entry and final revalidation, every payload bit, narrow-read bounds,
 all-ones reads, initial/final reset, changed GCTL, invalid callbacks and all
 16 KiB offsets with widths zero through eight. The collector has no write or
-polling callback. Native emission and physical capture remain pending, followed by stream/ring
-state, shutdown and BME policy. This helper
+polling callback. Physical capture remains pending, followed by stream/ring state, shutdown and
+BME policy. This helper
 alone does not establish transaction drain, firmware/AP exclusion or DMA
 containment.
 
@@ -58,3 +58,20 @@ and MSE, and excludes all 4096 low-memory mappings to every page in the 16 KiB
 resource. Rejected rearms clear all authority. Arming performs no MMIO access
 or page-table mutation. Tests cover exact widths, all four pages of aliases,
 failed loads, missing callbacks, invalid apertures and mapping interference.
+
+## Native capture
+
+The opt-in `--hda-observation` build requires `--ahci-bme` and runs only after
+the preceding SATA stage returns successfully. It arms the HDA reader for native
+header index 5, serializes ECAM and MMIO reads through the restored aperture,
+and disarms both contexts before emitting `HDA`. Local arm rejection is status
+9. A noinline native primitive performs only the selected byte, word or DWORD
+load. All nonzero outcomes terminate with `qotom-hda`.
+
+The protected runner fingerprints the HDA decoder and retains `hda.json`. It
+requires the successful prior SATA record, exact framing/order, bounded raw
+values, CRST set on success, zero payload on failure, and the corresponding
+terminal. Earlier-stage projections do not replace the actual HDA terminal.
+Tests exercise valid samples, every reachable failure, contradictory payloads,
+width bounds, missing/duplicate records, failed preceding SATA and changed
+GCTL. They do not replay device operations.
