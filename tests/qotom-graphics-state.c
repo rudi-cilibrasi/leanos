@@ -6,7 +6,7 @@
 struct model { struct pci_enumeration_header header;unsigned reads,fail,mutate;uint32_t xor_value; };
 static struct model model(void) {
     struct model m={0};m.header.device=2;
-    const uint32_t words[16]={0x0f318086,0x00100407,0x0300000e,0,
+    const uint32_t words[16]={0x0f318086,0x00100007,0x0300000e,0,
         0xd0000000,0,0xc0000008,0,0x0000f081,0,0,0x0f318086,0,0xd0,0,0x110};
     memcpy(m.header.words,words,sizeof(words));return m;
 }
@@ -61,6 +61,7 @@ int main(void) {
     assert(!qotom_graphics_state_address(0,5,&unchanged) && unchanged==42);
     assert(!qotom_graphics_state_address(0,0,NULL));
     m=model();m.header.words[4]^=4096;check(&m,QOTOM_GRAPHICS_HEADER,0);
+    m=model();m.header.words[1]^=UINT32_C(0x400);check(&m,QOTOM_GRAPHICS_HEADER,0);
     m=model();m.header.device=3;check(&m,QOTOM_GRAPHICS_HEADER,0);
     m=model();struct qotom_graphics_state out;
     assert(qotom_collect_graphics_state(NULL,&m,mmio,&m,&m.header,&out)==QOTOM_GRAPHICS_ARGUMENT);

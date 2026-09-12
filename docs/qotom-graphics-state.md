@@ -1,8 +1,10 @@
 # Qotom Valleyview graphics-ring observation
 
 This opt-in Qotom lab stage observes the integrated graphics function at
-`00:02.0` after the existing Broadcom D3hot stage. It preserves PCI Command
-`0407`, BAR0 memory decode, BAR2 framebuffer decode and graphics bus mastering.
+`00:02.0` after the existing Broadcom D3hot stage. It preserves the boot-time
+PCI Command `0007`, BAR0 memory decode, BAR2 framebuffer decode and graphics bus
+mastering. FreeBSD later reports `0407` because it also sets Interrupt Disable;
+the protected LeanOS boot captures `0007` before FreeBSD changes that bit.
 That choice keeps the firmware-established display path available while #335
 is being tested and grants no device-control write.
 

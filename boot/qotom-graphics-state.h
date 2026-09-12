@@ -21,7 +21,7 @@ enum qotom_graphics_status {
 static inline int qotom_graphics_header_valid(const struct pci_enumeration_header *h) {
     return h && !h->bus && h->device==2 && !h->function &&
         h->words[0]==UINT32_C(0x0f318086) &&
-        (h->words[1]&UINT32_C(0xffff))==UINT32_C(0x0407) &&
+        (h->words[1]&UINT32_C(0xffff))==UINT32_C(0x0007) &&
         h->words[2]==UINT32_C(0x0300000e) &&
         !(h->words[3]&UINT32_C(0x00ff0000)) &&
         h->words[4]==UINT32_C(0xd0000000) && !h->words[5] &&

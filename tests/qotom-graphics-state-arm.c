@@ -12,7 +12,7 @@ static int load32(void *opaque,uint64_t address,uint32_t *value){(void)opaque;(v
 static void fault(void *opaque){(void)opaque;assert(0);}
 static struct pci_enumeration_header header(void) {
     struct pci_enumeration_header h={.device=2};
-    const uint32_t words[16]={0x0f318086,0x00100407,0x0300000e,0,
+    const uint32_t words[16]={0x0f318086,0x00100007,0x0300000e,0,
         0xd0000000,0,0xc0000008,0,0x0000f081,0,0,0x0f318086,0,0xd0,0,0x110};
     memcpy(h.words,words,sizeof(words));return h;
 }
