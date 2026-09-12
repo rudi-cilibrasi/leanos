@@ -1,8 +1,8 @@
 # Native Qotom device-control audit
 
-The physical native-inventory capture has BME set on fifteen functions. The
-host router and LPC account for two; thirteen other functions still have BME
-set. SMBus is the only function with that bit clear. This is register-state
+The initial physical native-inventory capture has BME set on fifteen functions. The
+host router and LPC account for two; thirteen other functions have BME set in
+that initial snapshot. SMBus is the only function with that bit clear. This is register-state
 evidence, not evidence of active DMA or quiescence. The
 [machine-readable audit](../hardware/lab/qotom-native-device-control.json) retains
 all Command/Status values and raw BAR dwords, using only two BAR slots for type-1
@@ -41,9 +41,50 @@ requests, but does not gate completions or other request classes.
 The inspected PDF hash is
 `048182ec5a9faece8c78c0f087420065ff1a17ba1107785164e1f467608c6b39`.
 
-Consequently, the next policy must account for the internal TXE engine and
+Consequently, the production policy must account for the internal TXE engine and
 outstanding downstream transactions explicitly. A host Command write/readback
-trace alone does not supply those missing contracts. The thirteen other BME-set
-functions also need controller-specific ownership, stopping and drain evidence;
+trace alone does not supply those missing contracts. The thirteen initially BME-set
+functions need controller-specific ownership, stopping and drain evidence;
 this audit authorizes no write and creates no free-form device exemption.
 The physical path remains at `qotom-platform-pending` for #330 and #291.
+
+## Verified transitions and remaining contracts
+
+The table above and generated JSON deliberately preserve the initial inventory.
+The later [TXE-status boot capture](../hardware/lab/observations/qotom-native-txe-status-20260911)
+contains all four successful BME transitions in one serial stream. Its 60-file
+manifest and protected replay were verified; the transition starting values
+match the initial headers from that same boot. These are sequential transition
+observations, not an atomic final inventory or proof of continuing state.
+
+| Function | BDF | Initial Command | Verified BME readback | Evidence stage |
+| --- | --- | --- | --- | --- |
+| EHCI | 00:1d.0 | 0406 | 0402 | Ownership, SMI, stopped-state and BME |
+| xHCI | 00:14.0 | 0006 | 0002 | Ownership, SMI, stopped-state and BME |
+| SATA | 00:13.0 | 0007 | 0003 | Stopped/empty port, interrupt disable and BME |
+| HDA | 00:1b.0 | 0006 | 0002 | Ring/stream state and BME |
+
+Nine initially BME-set functions, in addition to the two fixed-Command
+functions, have no successful BME-clear transition in this capture:
+
+| Functions | Missing device contract |
+| --- | --- |
+| Graphics 00:02.0 | Display/engine ownership, stopping, DMA gating and drain |
+| TXE 00:1a.0 | Internal DMA control, firmware behavior and drain |
+| Root ports 00:1c.0–3 | Upstream request gating, outstanding traffic and routing |
+| Realtek 01:00.0 and 03:00.0 | Endpoint ownership, engine shutdown and drain |
+| Broadcom 02:00.0 | Endpoint ownership, engine shutdown and drain |
+
+TXE firmware status `1f0000d5`/`69000000` was read successfully in that boot;
+it is not a shutdown witness. The seven PCIe functions do not advertise FLR
+in the retained capability observation, so a generic FLR sequence is not an
+available advertised mechanism. Clear Transactions Pending samples alone do
+not establish device/fabric drain. The fixed host router and LPC still require
+the distinct contracts above; SMBus's initially clear BME also needs its
+capability/continuing-state contract.
+
+The four successful transitions do not discharge transaction drain or continuing
+firmware/AP exclusion. All sixteen functions must be covered by the final
+profile, including fixed-register and non-DMA cases with explicit justification.
+No subset of these observations is a production admission witness; the native
+terminal remains `qotom-platform-pending`.
