@@ -27,7 +27,7 @@ exclusion or system-wide DMA containment. Whole-platform admission remains open.
 
 Tests cover all 97 read failures, every prior/global/state/Command bit, raw PCI
 Status preservation, ignored writes, failed writes with and without effects,
-resource drift, post-write restart, BME reassertion and missing inputs. Native emission and physical capture remain pending.
+resource drift, post-write restart, BME reassertion and missing inputs. Physical capture remains pending.
 
 ## Consumed write window
 
@@ -44,3 +44,18 @@ low-memory alias across the 16 KiB HDA resource. All rejected rearms clear old
 authority; arming performs no device access. Tests cover all alternative word
 values, BDF/offset changes, callback omissions, invalid apertures, failed stores,
 restoration interference, every bound input bit and all four pages of aliases.
+
+## Native capture
+
+The opt-in `--hda-bme` build requires `--hda-state`. Native code arms the global
+reader, state reader and consumed writer (local failures 9, 10 and 11), invokes
+the helper and disarms all contexts before `HDA-BME`. The trusted word-store
+primitive is reused from the earlier BME stages. Nonzero outcomes terminate
+with `qotom-hda-bme`.
+
+The protected runner fingerprints the BME decoder, retains `hda-bme.json` and
+restores the actual terminal after earlier projections. Helper outcomes require
+the preceding stopped-state tuple and captured Command `0006`. Exact framing,
+bounded word values, attempted/before/after consistency and matching terminal
+are checked; final failures may retain changed Command. Failed writes are not
+replayed or silently treated as having no effect.
