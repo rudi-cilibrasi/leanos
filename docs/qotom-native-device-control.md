@@ -74,7 +74,7 @@ still has no successful disable transition in this sequence:
 
 | Functions | Missing device contract |
 | --- | --- |
-| TXE 00:1a.0 | Internal DMA control, firmware behavior and drain |
+| TXE 00:1a.0 | Host-visible BME transition remains to be captured; private DMA control, firmware behavior and drain remain assumptions |
 
 The [graphics-ring observation stage](qotom-graphics-state.md) supplies a
 bounded read-only snapshot of the RCS, VCS and BCS ring registers while keeping
@@ -103,6 +103,11 @@ available advertised mechanism. Clear Transactions Pending samples alone do
 not establish device/fabric drain. The fixed host router and LPC still require
 the distinct contracts above; SMBus's initially clear BME also needs its
 capability/continuing-state contract.
+
+The proposed [TXE host-visible BME stage](qotom-txe-bme.md) is deliberately
+separate from the private DMA engine described by Intel. Even if the Command
+readback succeeds, production admission must state the bounded TXE/firmware
+noninterference assumption rather than call that readback a private-engine stop.
 
 The eleven successful transitions do not discharge transaction drain or continuing
 firmware/AP exclusion. All sixteen functions must be covered by the final
