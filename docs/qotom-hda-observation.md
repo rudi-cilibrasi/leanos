@@ -39,8 +39,8 @@ Tests check exact order/widths, all 18 failure positions, every identity/resourc
 bit at entry and final revalidation, every payload bit, narrow-read bounds,
 all-ones reads, initial/final reset, changed GCTL, invalid callbacks and all
 16 KiB offsets with widths zero through eight. The collector has no write or
-polling callback. Physical capture remains pending, followed by stream/ring state, shutdown and
-BME policy. This helper
+polling callback. Physical capture is retained below; stream/ring state, shutdown and BME policy
+remain pending. This helper
 alone does not establish transaction drain, firmware/AP exclusion or DMA
 containment.
 
@@ -75,3 +75,18 @@ terminal. Earlier-stage projections do not replace the actual HDA terminal.
 Tests exercise valid samples, every reachable failure, contradictory payloads,
 width bounds, missing/duplicate records, failed preceding SATA and changed
 GCTL. They do not replay device operations.
+
+## Physical capture
+
+The retained [Win7 Legacy observation](../hardware/lab/observations/qotom-native-hda-20260911/README.md)
+reports status 0, GCTL `1` before and after, GCAP `4401`, VMIN `0`, VMAJ `1`,
+and INTCTL `0` (hexadecimal). GCAP advertises four input and four output streams,
+zero bidirectional streams and 64-bit addressing. Both resource revalidations
+passed. No stream/ring read or HDA write was performed.
+
+FreeBSD recovered automatically after 34.300 seconds of serial quiet with a
+changed boot time and consumed request. Independent SSH verified installed
+hashes and request=none. The build passed 115 manifest hashes, the eight-site
+MSR audit, load-width disassembly and QEMU foreign-firmware rejection; all 51
+protected groups passed before building, and the retained physical replay
+passed afterward. The terminal remains `qotom-platform-pending`.
