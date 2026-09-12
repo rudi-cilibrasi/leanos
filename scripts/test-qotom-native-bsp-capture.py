@@ -212,17 +212,10 @@ class Capture(unittest.TestCase):
                 capture / 'diagnostic-protocol.tsv',CPU,PCI,pcie_pending=True)
 
     def test_broadcom_d3_protected_projection(self):
-        capture=ROOT / 'hardware/lab/observations/qotom-native-pcie-pending-20260912'
+        capture=ROOT / 'hardware/lab/observations/qotom-native-broadcom-d3-20260912'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
         events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
-        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
-        end=raw.index(FINAL)+len(FINAL)
-        record=(b'LEANOS-LAB/1 BROADCOM-D3 profile=qotom-broadcom-d3-v1 index=14 status=0 '
-            b'command-attempted=1 command-before=6 command-after=0 polls=2 device-status=25 '
-            b'pmcsr-before=16392 d3-attempted=1 pmcsr-after=16395\n')
-        changed=raw[:end].replace(FINAL,record+FINAL)
-        synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
-        result=R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+        result=R['classify_cpu_protected'](events,expected['elf_sha256'],
             capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
             bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
             native_inventory=True,native_kernel=True,bsp_replay=BSP,

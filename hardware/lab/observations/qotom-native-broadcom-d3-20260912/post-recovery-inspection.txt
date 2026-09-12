@@ -1,0 +1,15 @@
+boot={ sec = 1789201482, usec = 909816 } Sat Sep 12 01:24:42 2026
+serial=11758C40
+backup=07e97d1925a5251c0923186fdbec6ab16bd116f3cbfbbeab7dfa08814522b04a
+driver=bwn_pci0@pci0:2:0:0 Broadcom BCM43224 14e4:4353 subsystem 14e4:04d8
+command=0006
+pmcsr=4008
+elf=255546caf21a680b1114817f1874e3d08c5d3e8e524155ddfae38b64bab94110
+cfg=95b585839f63f75963f76bbfe71bac49871feb9292bdc0766b4773b1eb5d0980
+sum=4f039142623cc5b1ab88e92681923e03a3124f4413a93f763a0318ec44b59d75
+env=14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+request=none
+mounts=none
+devices:
+<Hoodisk SSD SBFM21.0>             at scbus0 target 0 lun 0 (pass0,ada0)
+<Generic Flash Disk 8.07>          at scbus1 target 0 lun 0 (da0,pass1)

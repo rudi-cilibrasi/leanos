@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
-CAP=ROOT/'hardware/lab/observations/qotom-native-pcie-pending-20260912'
+CAP=ROOT/'hardware/lab/observations/qotom-native-broadcom-d3-20260912'
 D=runpy.run_path(str(ROOT/'scripts/check-qotom-broadcom-d3-capture.py'))
 R=runpy.run_path(str(ROOT/'scripts/run-qotom-recovery-lab.py'))
 P=R['cpu_replay_module'](True).load_protocol(CAP/'diagnostic-protocol.tsv')
@@ -13,7 +13,7 @@ events=[json.loads(s) for s in (CAP/'cycle-1/events.jsonl').read_text().splitlin
 RAW=b''.join(bytes.fromhex(e['hex']) for e in events)
 FINAL=P['FINAL'].encode()+b' status=FAIL reason=qotom-platform-pending\n'
 END=RAW.index(FINAL)+len(FINAL)
-BASE=RAW[:END]
+BASE,PHYSICAL=D['extract'](RAW[:END],P)
 
 def record(status=0,values=(1,6,0,2,25,0x4008,1,0x400b)):
     names=('command-attempted','command-before','command-after','polls','device-status',
@@ -23,6 +23,8 @@ def record(status=0,values=(1,6,0,2,25,0x4008,1,0x400b)):
 
 class Capture(unittest.TestCase):
     def test_success(self):
+        self.assertEqual(PHYSICAL['status'],0)
+        self.assertTrue(PHYSICAL['command_disabled_observed'] and PHYSICAL['d3hot_observed'])
         raw=BASE.replace(FINAL,record()+FINAL)
         projection,result=D['extract'](raw,P)
         self.assertEqual(projection,BASE)
