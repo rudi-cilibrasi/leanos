@@ -129,6 +129,8 @@ python3 scripts/test-qotom-broadcom-d3-capture.py
 python3 scripts/test-qotom-graphics-state-capture.py
 python3 scripts/test-qotom-graphics-bme-capture.py
 python3 scripts/test-qotom-txe-bme-capture.py
+python3 scripts/test-qotom-pci-final-capture.py
+scripts/check-qotom-pci-final-admission.sh
 
 "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ahci-capabilities.c -o "$build/ahci-capabilities"
 "$build/ahci-capabilities"

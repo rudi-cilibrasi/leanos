@@ -58,9 +58,9 @@ def extract(raw, protocol):
             rb' status='+DEC+rb' polls='+DEC+rb' device-status='+DEC+rb'\n',lines[position])
         if not match:raise ValueError('PCIe pending framing')
         index,status,polls,device_status=map(int,match.groups())
-        base=prior_statuses[index]&~0x20
         if index!=INDICES[slot] or status>9 or status==1 or polls>100 or device_status>65535:
             raise ValueError('PCIe pending scalar bounds')
+        base=prior_statuses[index]&~0x20
         if polls==0:
             valid=device_status==0
         else:

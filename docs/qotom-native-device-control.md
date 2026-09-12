@@ -69,12 +69,10 @@ state.
 | Broadcom endpoint | 02:00.0 | 0006 | 0000, then PMCSR D3hot | Routed Command disable, delayed non-posted quiet and D3hot readback |
 | Graphics | 00:02.0 | 0007 | 0003 | Stable idle/empty RCS, VCS and BCS samples around BME |
 
-One initially BME-set function, in addition to the two fixed-Command functions,
-still has no successful disable transition in this sequence:
-
-| Functions | Missing device contract |
-| --- | --- |
-| TXE 00:1a.0 | Host-visible BME transition remains to be captured; private DMA control, firmware behavior and drain remain assumptions |
+The later [TXE host-visible BME capture](qotom-txe-bme.md) completes the eleven
+ordinary PCI Command transitions: TXE changed from `0106` to `0102` while its
+firmware-status words remained stable. Its private DMA control, firmware
+behavior and drain remain assumptions.
 
 The [graphics-ring observation stage](qotom-graphics-state.md) supplies a
 bounded read-only snapshot of the RCS, VCS and BCS ring registers while keeping
@@ -104,13 +102,15 @@ not establish device/fabric drain. The fixed host router and LPC still require
 the distinct contracts above; SMBus's initially clear BME also needs its
 capability/continuing-state contract.
 
-The proposed [TXE host-visible BME stage](qotom-txe-bme.md) is deliberately
+The [TXE host-visible BME stage](qotom-txe-bme.md) is deliberately
 separate from the private DMA engine described by Intel. Even if the Command
 readback succeeds, production admission must state the bounded TXE/firmware
 noninterference assumption rather than call that readback a private-engine stop.
 
-The eleven successful transitions do not discharge transaction drain or continuing
-firmware/AP exclusion. All sixteen functions must be covered by the final
-profile, including fixed-register and non-DMA cases with explicit justification.
-No subset of these observations is a production admission witness; the native
-terminal remains `qotom-platform-pending`.
+The [final PCI boundary](qotom-pci-final-admission.md) now performs a fresh
+sixteen-function rescan after those transitions and binds the exact final
+Command vector. It reports separately which trust assumptions have support.
+Only the fixed-infrastructure and LPC inputs are currently asserted; posted
+write drain, TXE-private DMA quiescence and continuing firmware/SMM exclusion
+remain false. The boundary must therefore reject with
+`qotom-pci-assumptions`. This is not a production admission witness.

@@ -16,6 +16,12 @@ def commandsAccepted
   c8 == 0x0003 && c9 == 0x0003 && c10 == 0x0402 && c11 == 0x0007 &&
   c12 == 0x0003 && c13 == 0x0003 && c14 == 0x0000 && c15 == 0x0003
 
+@[export leanos_qotom_pci_final_commands]
+def exportedCommands
+    (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 : UInt64) : UInt64 :=
+  if commandsAccepted c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15
+  then 1 else 0
+
 /-- Admission is conditional on five named, mandatory trust assumptions for
 this non-VT-d profile. Callers cannot omit or substitute one assumption. -/
 def accepted
@@ -53,5 +59,6 @@ theorem exported_one_iff
 
 example : exported 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 1 1 1 1 1 = 1 := by decide
 example : exported 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 1 1 1 0 1 = 0 := by decide
+example : exportedCommands 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 = 1 := by decide
 
 end LeanOS.QotomPCIFinalAdmission
