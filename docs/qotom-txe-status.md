@@ -29,5 +29,20 @@ Tests enforce exact BDF/offset/order and the ten-read bound, every read failure,
 every bound identity/Command/layout bit before and after sampling, unbound
 Status/cache bits, all status payload bits, zero and all-ones samples, and
 missing inputs. The caller still must establish native ECAM/root/firmware
-binding and serialize immutable inputs. Native emission, protected decoding and
-physical capture remain to be implemented. This helper authorizes no write.
+binding and serialize immutable inputs. This helper authorizes no write.
+
+## Native capture integration
+
+The opt-in `--txe-status` build requires `--hda-bme`. After the preceding
+HDA sequence returns successfully with its windows disarmed, the native stage
+uses header index 4 and the existing firmware/root-bound ECAM reader. It clears
+read authority before emitting `TXE-STATUS`; helper failures and local count
+rejection (status 7) terminate with `qotom-txe-status`. Native tests check exact
+output, all ten failed reads, wrong header and count, and disarm on every exit.
+
+The protected runner fingerprints the decoder and retains `txe-status.json`.
+The decoder requires the successful preceding HDA BME result, exact framing,
+raw DWORD bounds, zero failed payloads and a matching terminal. Helper outcomes
+other than initial-header rejection require the captured native TXE binding.
+The actual TXE terminal is restored after earlier diagnostic projections.
+Physical capture and build validation remain pending.

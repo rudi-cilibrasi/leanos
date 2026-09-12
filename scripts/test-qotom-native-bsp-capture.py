@@ -49,6 +49,63 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_txe_status_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-hda-bme-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(status=0,values=(17,29)):
+            return (f'LEANOS-LAB/1 TXE-STATUS profile=qotom-txe-status-v1 index=4 status={status}' +
+                f' firmware0={values[0]} firmware1={values[1]}\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,hda_bme=True,txe_status=True)
+        result=check(record())
+        self.assertEqual(result['txe_status']['firmware0'],17)
+        self.assertEqual(result['txe_status']['firmware1'],29)
+        self.assertFalse(result['txe_status']['dma_quarantine_established'])
+        self.assertIn('txe_status_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        self.assertEqual(result['diagnostic']['replay_scope'],'native-inventory-with-txe-status-observation')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-txe-status')
+        for status in range(2,8):
+            result=check(record(status,(0,0)),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-txe-status')
+            with self.assertRaises(ValueError):check(record(status,(0,0)))
+            for values in ((1,0),(0,1)):
+                with self.assertRaises(ValueError):check(record(status,values),failure)
+        with self.assertRaises(ValueError):check(record(),failure)
+        for index in range(2):
+            for value in (0xffffffff,0x100000000,-1):
+                values=[0,0];values[index]=value
+                with self.assertRaises(ValueError):check(record(values=values))
+        self.assertEqual(check(record(values=(0xfffffffe,0)))['txe_status']['firmware0'],0xfffffffe)
+        for bad in (b'',record()+record(),record(1),record(8),
+                record().replace(b'index=4',b'index=5'),record().replace(b'status=0',b'status=00'),
+                record().replace(b'firmware0=',b'unknown=')):
+            with self.assertRaises(ValueError):check(bad)
+        original=raw
+        header=next(line for line in raw.splitlines(keepends=True) if b'PCI-HEADER codec=1 index=4 ' in line)
+        prefix,payload=header.split(b'words=')
+        words=payload.strip().split(b',')
+        for index in (3,4,5,6):
+            changed=words.copy();changed[index]=str(int(changed[index]) ^ (0x10000 if index==6 else 1)).encode()
+            raw=original.replace(header,prefix+b'words='+b','.join(changed)+b'\n')
+            with self.assertRaises(ValueError):check(record())
+        raw=original
+        previous=next(line for line in raw.splitlines(keepends=True) if line.startswith(b'LEANOS-LAB/1 HDA-BME '))
+        raw=raw.replace(previous,b'')
+        with self.assertRaises(ValueError):check(record())
+
     def test_hda_state_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-hda-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
