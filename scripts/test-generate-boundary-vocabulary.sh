@@ -110,8 +110,8 @@ cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
 export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
-if [[ "$export_count" -ne 80 ]]; then
-  echo "error: expected 80 generated boundary exports, found $export_count" >&2
+if [[ "$export_count" -ne 81 ]]; then
+  echo "error: expected 81 generated boundary exports, found $export_count" >&2
   exit 1
 fi
 
@@ -125,6 +125,7 @@ grep -Fxq $'object-export\tleanos_qotom_bootstrap_query\tu64,u64,ByteArray,ByteA
 grep -Fxq $'export\tleanos_qotom_madt_stream_byte_step_query\t17\tLeanOS.QotomMadtStream.exportedByteStepQuery\tLeanOS.QotomMadtStream' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_madt_stream_finish_query\t21\tLeanOS.QotomMadtStream.exportedFinishQuery\tLeanOS.QotomMadtStream' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_madt_nmi_policy_query\t7\tLeanOS.QotomMadtStream.exportedNmiPolicyQuery\tLeanOS.QotomMadtStream' "$tmp/out/boundary-abi.tsv"
+grep -Fxq $'export\tleanos_qotom_inherited_lvt_policy_query\t12\tLeanOS.QotomMadtStream.exportedInheritedLvtPolicyQuery\tLeanOS.QotomMadtStream' "$tmp/out/boundary-abi.tsv"
 
 grep -Fxq $'export\tleanos_qotom_native_pci_header_check\t20\tLeanOS.QotomNativePCIFields.exportedCheckHeader\tLeanOS.QotomNativePCIFields' "$tmp/out/boundary-abi.tsv"
 

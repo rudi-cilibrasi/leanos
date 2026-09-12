@@ -99,6 +99,60 @@ def exportedNmiPolicyQuery
     (count first second third fourth routingAuthority word : UInt64) : UInt64 :=
   nmiPolicyQuery count first second third fourth routingAuthority word
 
+/-! ### Inherited BSP LINT policy
+
+The protected physical observation found both LVT LINT registers stably masked
+at `0x00010000`.  This gate accepts only that exact state, from the bound BSP,
+after a read-only transaction that restored its temporary mapping.
+-/
+
+def nativeInheritedLint : UInt64 := 0x00010000
+
+/-- Result words are ABI/result/error/policy/LINT0/LINT1.  Policy 1 is the
+exact inherited-masked policy.  Errors 90--97 identify the failed boundary. -/
+def inheritedLvtPolicyQuery
+    (status apicBase executing lint0First lint1First lint0Second lint1Second
+     stable routingAuthority writes mapRestored word : UInt64) : UInt64 :=
+  let error :=
+    if status != 0 then 90
+    else if apicBase != 0xfee00900 then 91
+    else if executing != 0 then 92
+    else if lint0First != nativeInheritedLint then 93
+    else if lint1First != nativeInheritedLint then 93
+    else if lint0Second != nativeInheritedLint then 93
+    else if lint1Second != nativeInheritedLint then 93
+    else if stable != 1 then 94
+    else if routingAuthority != 0 then 95
+    else if writes != 0 then 96
+    else if mapRestored != 1 then 97
+    else 0
+  if word == 0 then 1
+  else if word == 1 then if error == 0 then 1 else 2
+  else if word == 2 then error
+  else if word == 3 && error == 0 then 1
+  else if word == 4 && error == 0 then lint0First
+  else if word == 5 && error == 0 then lint1First
+  else 0
+
+theorem inherited_lvt_policy_acceptance_iff
+    (status apicBase executing lint0First lint1First lint0Second lint1Second
+     stable routingAuthority writes mapRestored : UInt64) :
+    inheritedLvtPolicyQuery status apicBase executing lint0First lint1First
+        lint0Second lint1Second stable routingAuthority writes mapRestored 1 = 1 ↔
+      status = 0 ∧ apicBase = 0xfee00900 ∧ executing = 0 ∧
+      lint0First = nativeInheritedLint ∧ lint1First = nativeInheritedLint ∧
+      lint0Second = nativeInheritedLint ∧ lint1Second = nativeInheritedLint ∧
+      stable = 1 ∧ routingAuthority = 0 ∧ writes = 0 ∧ mapRestored = 1 := by
+  simp [inheritedLvtPolicyQuery]
+  repeat' (split <;> simp_all)
+
+@[export leanos_qotom_inherited_lvt_policy_query]
+def exportedInheritedLvtPolicyQuery
+    (status apicBase executing lint0First lint1First lint0Second lint1Second
+     stable routingAuthority writes mapRestored word : UInt64) : UInt64 :=
+  inheritedLvtPolicyQuery status apicBase executing lint0First lint1First
+    lint0Second lint1Second stable routingAuthority writes mapRestored word
+
 /-- One completed processor must be the next enabled baseline member. -/
 @[inline] def processorMatches (position apicId : UInt64) (enabled : Bool) : Bool :=
   position < 4 && apicId == position * 2 && enabled
