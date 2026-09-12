@@ -195,13 +195,14 @@ def classify_bsp_production(events, digest):
     if any(b['elapsed'] < a['elapsed'] for a,b in zip(events,events[1:])):
         raise ValueError('nonmonotonic capture timestamps')
     data = b''.join(bytes.fromhex(event['hex']) for event in events)
+    terminal = record(3, 'FINAL') + b' status=FAIL reason=qotom-platform-pending\n'
     markers = [
         b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1',
         b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120',
         b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD',
         b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n',
         b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked platform-admitted=0\n',
-        b'LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending\n',
+        terminal,
         b'LEANOS-LAB/1 DEFAULT request=none',
         CHAIN,
     ]
@@ -218,7 +219,7 @@ def classify_bsp_production(events, digest):
     if load is None:
         raise ValueError('Qotom BSP production digest was not loaded')
     boot_records = re.findall(rb'LEANOS/[0-9]+ BOOT(?: [^\n]*)?\n',data)
-    if len(boot_records) != 1 or data.count(b'LEANOS/3 FINAL') != 1:
+    if len(boot_records) != 1 or data.count(record(3, 'FINAL')) != 1:
         raise ValueError('ambiguous Qotom BSP production kernel framing')
     terminal_end = positions[5] + len(markers[5])
     offset = 0
