@@ -73,3 +73,79 @@ in register order. In particular, HCSPARAMS3 and HCCPARAMS differ from defaults
 used in synthetic fixtures; future binding must use the retained hardware values.
 Both resource refreshes and protected replay passed, and FreeBSD recovered with
 the request consumed. No xHCI writes or pointer-following occurred.
+
+## Bounded extended-capability reader
+
+`boot/qotom-xhci-legacy.h` refreshes all seven captured capability words and PCI
+binding before following xECP. The [Linux xHCI extended-capability definitions](https://github.com/torvalds/linux/blob/master/drivers/usb/host/xhci-ext-caps.h)
+confirm that xECP uses DWORD units from BAR, while each next field is a forward
+DWORD displacement from the current header. The observed HCCPARAMS `0x200077c1`
+therefore starts the walk at offset `0x8000`.
+
+The closed reader accepts only aligned offsets `0x8000..0xfffc` inside the
+captured 64-KiB resource and at most 48 headers. Nonzero next fields strictly
+advance; bounds checks prevent wraparound or escape. IDs 0 and 255 reject.
+Other IDs are retained without interpreting payloads. Duplicate legacy structures,
+legacy control outside the resource, and a next header overlapping that control
+reject. The reader samples legacy control/status at legacy offset+4 only after
+the list terminates, then refreshes PCI and capability binding again.
+
+At most 87 reads occur. All output, including staged headers, stays zero on
+failure. Zero legacy offset means no legacy structure was found, not ownership.
+The tests cover a 48-header list, all 87 read-failure positions, relative offsets,
+resource boundaries, missing/duplicate/overlapping legacy structures, capability
+drift and failed-publication rules. List and control samples remain sequential;
+no ownership write or continuing firmware-exclusion claim is added. The retained physical list observation below exercises the complete path.
+
+## Extended-read mapping gate
+
+`hardware/lab/qotom-xhci-ext-window.h` gives the bounded reader a separate
+read-only aperture for aligned physical addresses `d0908000..d090fffc`. Each
+transaction derives the physical page from the accepted address and maps it
+supervisor-only, NX and UC. It restores the exact saved leaf and invalidates
+before publishing the private sample. Mapping or control interference terminates
+instead of returning a sample; a rejected address performs no mapping or load.
+The existing seven-register capability window is unchanged.
+
+The extended arming gate binds all seven retained physical capability DWORDs
+and reuses the xHCI PCI identity, firmware, root and 64-KiB alias checks through
+private staging. Failed rearm clears authority. Arming does not access hardware;
+the collector still refreshes the resource before following links. Tests exercise
+every byte offset through the resource boundary, every admitted DWORD read across
+all eight pages, restoration and interference, every single-bit capability
+mutation, and the existing resource/ECAM alias and failed-rearm cases. These
+checks do not establish continuing firmware or AP exclusion.
+
+## Native extended-list capture
+
+`--xhci-legacy` requires `--xhci-capabilities` in both builder and protected
+runner. The native stage arms the capability and extended readers separately,
+refreshes binding, collects the bounded list, and disarms all contexts before
+emitting `XHCI-LEGACY` and ordered `XHCI-EXT` records. Local statuses 11 and 12
+identify capability-arm and extended-arm rejection. Collector status 1 is
+unreachable from the native call site; every reported rejection has zero data.
+
+The decoder validates relative DWORD links, exact captured capability binding
+for collector results, structure selection, bounds, termination and the final
+reason against the preceding complete capability observation. The protected
+runner fingerprints the decoder and retains `xhci-legacy.json`. Synthetic
+records exercise the 48-header limit, failed results, malformed links, duplicate
+and overlapping structures, framing, terminal contradictions and changed prior
+capabilities. These are protocol checks, not replay of hardware operations.
+The experiment does not write xHCI registers or claim ownership or DMA isolation.
+
+The native list stage is kept out of line. In the initially inlined image, an
+address displacement in the enlarged capture path contained an additional raw
+`0f 30` pair. The unchanged MSR-site audit rejected that image, including the
+possible unaligned WRMSR entry. Separating the stage keeps its implementation
+reviewable; the resulting linked image must still pass that exact byte audit.
+
+## Physical extended-list result
+
+The [protected extended-list capture](../hardware/lab/observations/qotom-native-xhci-legacy-20260911/README.md)
+returned six headers and selected the legacy structure at `0x8460`. Its support
+header is `0x00010801` (BIOS-owned set, OS-owned clear); control/status is
+`0x00002001`. Both resource refreshes passed and FreeBSD recovered with the
+request consumed. The retained-capture test revalidates all six relative links
+and the selected control sample through the protected decoder. Cooperative
+ownership handoff and subsequent xHCI shutdown remain outstanding.

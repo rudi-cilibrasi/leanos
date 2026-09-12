@@ -219,9 +219,11 @@ def cpu_diagnostic_bytes(events, protocol, handoff=False):
     return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
              'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
+    if xhci_legacy:
+        result['xhci_legacy_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-xhci-legacy-capture.py').read_bytes()).hexdigest()
     if xhci_capabilities:
         result['xhci_capabilities_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-xhci-capture.py').read_bytes()).hexdigest()
     if ehci_bme:
@@ -279,7 +281,9 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acp
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False):
+    if xhci_legacy and not xhci_capabilities:
+        raise ValueError('xHCI legacy requires capability observations')
     if xhci_capabilities and not ehci_bme:
         raise ValueError('xHCI observation requires EHCI BME capture')
     if ehci_bme and not ehci_operational:
@@ -335,6 +339,9 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bsp-capture.py')))
         raw, result['native_bsp'] = decoder['extract'](raw, protocol, result['acpi'], tables, Path(bsp_replay).resolve())
         bsp_rejected = result['native_bsp'] is not None and result['native_bsp']['observation']['status'] != 0
+    if xhci_legacy:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-xhci-legacy-capture.py')))
+        raw, result['xhci_legacy'] = decoder['extract'](raw, protocol)
     if xhci_capabilities:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-xhci-capture.py')))
         raw, result['xhci_capabilities'] = decoder['extract'](raw, protocol)
@@ -386,7 +393,7 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     else:
         diagnostic = (module.classify(raw, protocol, *replay_paths, native_inventory=True, native_kernel=native_kernel)
                       if native_inventory else module.classify(raw, protocol, *replay_paths))
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay, pci_capabilities, af_observation, ehci_capabilities, ehci_legacy, ehci_handoff, ehci_smi, ehci_operational, ehci_bme, xhci_capabilities))
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay, pci_capabilities, af_observation, ehci_capabilities, ehci_legacy, ehci_handoff, ehci_smi, ehci_operational, ehci_bme, xhci_capabilities, xhci_legacy))
     if pci_capabilities and result['pci_capabilities'] is not None:
         diagnostic['terminal_reason'] = result['pci_capabilities']['terminal_reason']
         diagnostic['replay_scope'] = 'cpu-msr-native-inventory-and-capability-links'
@@ -414,6 +421,9 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     if xhci_capabilities and result['xhci_capabilities'] is not None:
         diagnostic['terminal_reason'] = result['xhci_capabilities']['terminal_reason']
         diagnostic['replay_scope'] = 'native-inventory-with-xhci-capability-observations'
+    if xhci_legacy and result['xhci_legacy'] is not None:
+        diagnostic['terminal_reason'] = result['xhci_legacy']['terminal_reason']
+        diagnostic['replay_scope'] = 'native-inventory-with-xhci-legacy-observations'
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
                   diagnostic=diagnostic)
     return result
@@ -453,6 +463,7 @@ def main():
     parser.add_argument('--native-kernel', action='store_true')
     parser.add_argument('--pci-capabilities', action='store_true')
     parser.add_argument('--af-observation', action='store_true')
+    parser.add_argument('--xhci-legacy', action='store_true')
     parser.add_argument('--xhci-capabilities', action='store_true')
     parser.add_argument('--ehci-bme', action='store_true')
     parser.add_argument('--ehci-operational', action='store_true')
@@ -462,6 +473,8 @@ def main():
     parser.add_argument('--ehci-legacy', action='store_true')
     parser.add_argument('--bsp-replay', type=Path, help='enable native BSP capture and provide its generated replay executable')
     args = parser.parse_args()
+    if args.xhci_legacy and not args.xhci_capabilities:
+        parser.error('--xhci-legacy requires --xhci-capabilities')
     if args.xhci_capabilities and not args.ehci_bme:
         parser.error('--xhci-capabilities requires --ehci-bme')
     if args.ehci_bme and not args.ehci_operational:
@@ -527,7 +540,7 @@ def main():
             identity = subprocess.run([str(args.bsp_replay.resolve()), '--identity'], capture_output=True, check=True, timeout=30)
             if identity.stdout != b'LeanOS native BSP replay v1\n':
                 parser.error('native BSP replay identity mismatch')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities)
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -662,10 +675,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(events, protocol, args.handoff_capture)
                 if args.handoff_capture:
@@ -687,6 +700,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     raw, bsp_metadata = decoder['extract'](raw, protocol, metadata, tables, args.bsp_replay.resolve())
                     bsp_rejected = bsp_metadata is not None and bsp_metadata['observation']['status'] != 0
                     (directory / 'native-bsp.json').write_text(json.dumps(bsp_metadata, indent=2) + '\n')
+                if args.xhci_legacy:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-xhci-legacy-capture.py')))
+                    raw, xhci_legacy_metadata = decoder['extract'](raw, protocol)
+                    (directory / 'xhci-legacy.json').write_text(json.dumps(xhci_legacy_metadata, indent=2) + '\n')
                 if args.xhci_capabilities:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-xhci-capture.py')))
                     raw, xhci_metadata = decoder['extract'](raw, protocol)

@@ -8,6 +8,9 @@ static __attribute__((noreturn)) void lab_xhci_fault(void *opaque) {
     (void)opaque;lab_xhci_reader.armed=0;lab_bme_disarm();
     pre_admission_fail("qotom-xhci-capabilities");
 }
+#ifdef LEANOS_QOTOM_XHCI_LEGACY
+#include "qotom-xhci-legacy.c.inc"
+#endif
 static void lab_capture_xhci(const struct lab_ecam_root_view *view,
         const struct pci_enumeration_header *header) {
     struct qotom_xhci_capabilities result={0};
@@ -25,4 +28,7 @@ static void lab_capture_xhci(const struct lab_ecam_root_view *view,
     for(unsigned i=0;i<7;++i){if(i)serial_putc(',');serial_u64(result.words[i]);}
     serial_putc('\n');
     if(status!=QOTOM_XHCI_OK)pre_admission_fail("qotom-xhci-capabilities");
+#ifdef LEANOS_QOTOM_XHCI_LEGACY
+    lab_capture_xhci_legacy(view,header,&result);
+#endif
 }
