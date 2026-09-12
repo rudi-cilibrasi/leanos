@@ -30,10 +30,10 @@ code. A separate freestanding link probe retains the real consumer and both
 exports, rejecting unresolved dependencies, unexpected symbols and writable
 state. GCC may outline the private consumer; that one named helper is allowed.
 
-This component is not yet selected by `boot_allocate`. Runtime integration
-must retain root/copy/envelope validation, take same-CPU observations, use an
-explicit Qotom profile, and validate the actual linked image. It also needs
-AP-start exclusion and firmware/AP-dormancy assumptions. Malformed native NMI
-routing, DMA containment, no-SMAP isolation and whole-platform publication
-remain separate prerequisites under #331 and #291. Successful candidate
-binding grants none of those authorities and does not close either issue.
+The explicit production candidate now selects this component from
+`boot_allocate` while retaining root/copy/envelope validation and fresh
+same-CPU observations. The [production-boundary contract](qotom-bsp-production-boundary.md)
+defines its final gate, linked-image audit and firmware/AP assumptions. The
+ordinary q35 build remains on its existing singleton consumer. Malformed native
+NMI routing, DMA containment, no-SMAP isolation and whole-platform admission
+remain separate prerequisites under #331 and #291.
