@@ -45,13 +45,13 @@ def extract(raw, protocol, metadata, tables, replay):
             len(data) != table['length'] or hashlib.sha256(data).hexdigest() != table['sha256']):
         raise ValueError('BSP record disagrees with selected MADT')
     identity = subprocess.run([str(replay), '--identity'], capture_output=True, check=True, timeout=30)
-    if identity.stdout != b'LeanOS native BSP replay v1\n':
+    if identity.stdout != b'LeanOS native BSP replay v2\n':
         raise ValueError('BSP replay identity')
     with tempfile.TemporaryDirectory(prefix='qotom-bsp-replay-') as temp:
         source = Path(temp) / 'madt.bin'
         source.write_bytes(data)
         checked = subprocess.run([str(replay), str(source)] + [str(values[n]) for n in
-            ('executing','cpuid-edx','available','apic-base','sample-id')],
+            ('executing','cpuid-edx','available','apic-base','sample-id')] + ['0'],
             capture_output=True, check=True, timeout=30)
     expected = (' '.join(str(values[n]) for n in
         ('status','detail','offset','admitted-id','count','bound-base')) + '\n').encode()

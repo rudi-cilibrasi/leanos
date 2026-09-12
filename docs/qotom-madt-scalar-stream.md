@@ -1,8 +1,9 @@
 # Qotom MADT scalar stream
 
 `LeanOS.QotomMadtStream` provides an allocation-free candidate path for the
-captured four-processor Qotom topology. The production kernel does not yet
-consume it. The q35 stream and its single-processor policy remain unchanged.
+captured four-processor Qotom topology. The Qotom production checkpoint
+consumes it through the bounded C caller. The q35 stream and its
+single-processor policy remain unchanged.
 
 The caller must first validate the complete MADT envelope, including its
 signature, length and checksum, through the existing authoritative ACPI path.
@@ -24,6 +25,14 @@ The executing processor must be ID 0. IOAPIC, interrupt-source override and
 local-NMI records have checked record lengths. Their interrupt routing fields
 are not validated by this stream. In particular, the captured malformed NMI
 routing fields are not made acceptable by processor-inventory success.
+
+The separate `leanos_qotom_madt_nmi_policy_query` binds the four exact
+six-byte native Local APIC NMI records to policy 1, quarantine. It rejects a
+different count, any byte drift, or nonzero routing authority with errors
+87, 88 and 89. Lean checks the ACPI flag/LINT fields and proves every retained
+record unusable as a route. The C consumer extracts the records only after the
+generated entry stream has accepted all framing, then requires quarantine
+before it calls the BSP finish gate.
 
 `leanos_qotom_madt_stream_finish_query` receives terminal status/error, the
 12 terminal state words, table length, executing ID, CPUID EDX, MSR-read
@@ -63,7 +72,8 @@ composes the actual kind and length steps from a cleared boundary, establishing
 supported framing and unchanged inventory after both bytes.
 `run_nonprocessor_record` composes a complete correctly sized non-processor
 record, proving boundary restoration and inventory preservation for arbitrary
-payload bytes. It does not validate the ignored routing fields.
+payload bytes. The stream leaves routing interpretation to the separate
+quarantine gate.
 `run_processor_record` composes all eight actual bytes of a local-APIC record,
 binds the guard to their ID and flags, advances the original count once and
 restores a clean boundary. `run_processor_record_typed` identifies the exact
@@ -102,10 +112,10 @@ requires no caller-supplied topology witness or replacement terminal fields.
 
 The decoder result remains a soundness theorem for successful traversal, not
 a proof that every reference-admitted table succeeds in the scalar parser.
-The allocating model is not a production export. Kernel consumption still
-needs machine-boundary integration and review of AP dormancy, interrupt routing
-and the other hardware admission obligations. The proof does not establish
-those physical properties.
+The allocating model is not a production export. Kernel consumption now binds
+the exact malformed NMI bytes to disabled routing authority, but still needs a
+reviewed inherited-LVT and later interrupt-controller policy. AP dormancy and
+the other hardware admission obligations also remain physical assumptions.
 
 Run `bash scripts/check-qotom-madt-stream-host.sh` with the repository Lean
 toolchain on PATH and the pinned CI container for sanitizer runs. Pass
@@ -120,7 +130,7 @@ each with every observation whose standalone terminal shape is valid, including
 the captured BSP observation and malformed/unavailable observation probes.
 
 Ordinary and ASan/UBSan generated C must agree. Both modes check runtime
-function-entry coverage of both exports from the hosted-boundary manifest.
+function-entry coverage of all scalar exports from the hosted-boundary manifest.
 Sanitized mode uses the shared pinned compiler, flags and runtime settings,
 and verifies sanitizer switches on the generated object. A separate retained-symbol
 link probe requires both scalar exports to link without undefined symbols or
