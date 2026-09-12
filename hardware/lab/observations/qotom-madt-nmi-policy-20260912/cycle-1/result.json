@@ -1,0 +1,19 @@
+{
+  "scenario": "qotom-bsp-production-boundary",
+  "memory_published": true,
+  "topology_published": true,
+  "interrupts_masked": true,
+  "nmi_routing_quarantined": true,
+  "platform_admitted": false,
+  "terminal_reason": "qotom-platform-pending",
+  "quiet_seconds": 34.309692419017665,
+  "watchdog_protected": true,
+  "raw_sha256": "10183577418a5d7c1a884ffbab72bd6afa46b654c294317a8298b6f0912b2659",
+  "freebsd_boot_before": 1789208673,
+  "freebsd_boot_after": 1789212011,
+  "elf_sha256": "e6b382464cd8f2e2c2803f2f3d25d70e3051ded352bc519c52b1466e3ef82462",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": false,
+  "request_consumed": true,
+  "recovery": "freebsd-ssh-restored"
+}
