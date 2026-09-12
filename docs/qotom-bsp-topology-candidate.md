@@ -106,7 +106,8 @@ profile or proof that the other processors are dormant. The explicit
 [production boundary](qotom-bsp-production-boundary.md) now consumes it through
 the actual handoff, table-copy, allocation and publication path and audits the
 linked image's AP-start mechanisms. That checkpoint still assumes firmware/AP
-dormancy and stops before platform admission. The captured unusual MADT
-local-APIC NMI routing bytes remain unchecked. Interrupt routing, PCI/DMA
-containment and the rest of #291 must be resolved before granting runtime
-authority.
+dormancy and stops before platform admission. Its composed consumer now binds
+the captured malformed Local APIC NMI records byte for byte to a quarantine
+policy that grants them no routing authority. Inherited local-APIC state,
+later interrupt routing, PCI/DMA containment and the rest of #291 must still
+be resolved before granting runtime authority.

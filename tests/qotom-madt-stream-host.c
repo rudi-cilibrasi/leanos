@@ -19,12 +19,18 @@ static uint64_t admission(const uint64_t a[12], uint64_t word) {
     return leanos_qotom_machine_topology_admission_result_query(
         a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],word);
 }
+static uint64_t nmi_policy(const uint64_t a[6], uint64_t word) {
+    return leanos_qotom_madt_nmi_policy_query(
+        a[0],a[1],a[2],a[3],a[4],a[5],word);
+}
 extern void leanos_register_boundary_target(const char *, void *);
 int main(void) {
     leanos_register_boundary_target("leanos_qotom_madt_stream_byte_step_query",
         (void *)(uintptr_t)&leanos_qotom_madt_stream_byte_step_query);
     leanos_register_boundary_target("leanos_qotom_madt_stream_finish_query",
         (void *)(uintptr_t)&leanos_qotom_madt_stream_finish_query);
+    leanos_register_boundary_target("leanos_qotom_madt_nmi_policy_query",
+        (void *)(uintptr_t)&leanos_qotom_madt_nmi_policy_query);
     leanos_register_boundary_target("leanos_qotom_machine_topology_admission_result_query",
         (void *)(uintptr_t)&leanos_qotom_machine_topology_admission_result_query);
     const struct qotom_bsp_observation empty_observation = {0};
@@ -35,6 +41,22 @@ int main(void) {
         qotom_bind_validated_madt_entries(&one_byte,65536-43,&empty_observation).status != 1 ||
         qotom_bind_validated_madt_entries(&one_byte,SIZE_MAX,&empty_observation).status != 1)
         return 14;
+    const uint64_t native_nmi[6] = {
+        4,UINT64_C(0x0000f751dc010604),UINT64_C(0x0000a67499020604),
+        UINT64_C(0x0000ce213a030604),UINT64_C(0x0000279e9d040604),0
+    };
+    const uint64_t accepted_nmi[6] = {1,1,0,1,4,0};
+    for (uint64_t word = 0; word < 6; ++word)
+        if (nmi_policy(native_nmi,word) != accepted_nmi[word]) return 18;
+    if (nmi_policy(native_nmi,UINT64_MAX) != 0) return 19;
+    for (size_t field = 0; field < 6; ++field) {
+        uint64_t changed[6]; memcpy(changed,native_nmi,sizeof(changed));
+        changed[field] ^= 1;
+        const uint64_t error = field == 0 ? 87 : field == 5 ? 89 : 88;
+        const uint64_t rejected[6] = {1,2,error,0,0,0};
+        for (uint64_t word = 0; word < 6; ++word)
+            if (nmi_policy(changed,word) != rejected[word]) return 20;
+    }
     size_t composed_cases = 0;
     for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); ++c) {
         uint64_t state[12] = {44,0,0,0,0,0,0,256,0,0,0,0};
@@ -92,7 +114,7 @@ int main(void) {
                 }
             }
             struct qotom_bsp_observation obs = {cases[c].executing,
-                bound[16],bound[17],bound[18],bound[19]};
+                bound[16],bound[17],bound[18],bound[19],0};
             struct qotom_bsp_result candidate = qotom_bind_validated_madt_entries(
                 cases[c].bytes,cases[c].length,&obs);
             uint64_t want_status = status != 3 ? 2 :
@@ -113,6 +135,47 @@ int main(void) {
         }
         printf("%s %"PRIu64" %"PRIu64"\n",cases[c].name,result[1],result[2]);
     }
+    /* The scalar entry stream deliberately retains opaque type-4 bytes.  The
+       composed consumer must reject drift in each routing field, a missing
+       record, and any caller request to use the malformed records. */
+    if (cases[0].length > 256u) return 21;
+    size_t nmi_offsets[4], nmi_count = 0;
+    for (size_t offset = 0; offset < cases[0].length;) {
+        size_t length = cases[0].bytes[offset+1u];
+        if (cases[0].bytes[offset] == 4u && nmi_count < 4u)
+            nmi_offsets[nmi_count++] = offset;
+        offset += length;
+    }
+    if (nmi_count != 4) return 22;
+    const struct qotom_bsp_observation native_observation = {
+        0,0x220,1,0xfee00900,0,0
+    };
+    for (size_t record = 0; record < 4; ++record) {
+        for (size_t byte = 2; byte < 6; ++byte) {
+            uint8_t changed[256];
+            memcpy(changed,cases[0].bytes,cases[0].length);
+            changed[nmi_offsets[record]+byte] ^= 1;
+            struct qotom_bsp_result result = qotom_bind_validated_madt_entries(
+                changed,cases[0].length,&native_observation);
+            if (result.status != 5 || result.detail != 88 ||
+                result.offset != 44u+cases[0].length) return 23;
+        }
+    }
+    uint8_t missing[256];
+    const size_t removed = nmi_offsets[3];
+    memcpy(missing,cases[0].bytes,removed);
+    memcpy(missing+removed,cases[0].bytes+removed+6,
+           cases[0].length-removed-6);
+    struct qotom_bsp_result result = qotom_bind_validated_madt_entries(
+        missing,cases[0].length-6,&native_observation);
+    if (result.status != 5 || result.detail != 87 ||
+        result.offset != 44u+cases[0].length-6u) return 24;
+    struct qotom_bsp_observation routing_observation = native_observation;
+    routing_observation.interrupt_routing_authority = 1;
+    result = qotom_bind_validated_madt_entries(
+        cases[0].bytes,cases[0].length,&routing_observation);
+    if (result.status != 5 || result.detail != 89 ||
+        result.offset != 44u+cases[0].length) return 25;
     for (size_t p = 0; p < sizeof(probes)/sizeof(probes[0]); ++p) {
         const uint64_t *a = probes[p].args;
         for (uint64_t word = 0; word < 18; ++word) {

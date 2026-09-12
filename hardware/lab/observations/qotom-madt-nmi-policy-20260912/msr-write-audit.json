@@ -1,0 +1,45 @@
+{
+  "schema": "leanos-qotom-msr-write-sites-v1",
+  "elf_sha256": "e6b382464cd8f2e2c2803f2f3d25d70e3051ded352bc519c52b1466e3ef82462",
+  "normalization_address": 1057808,
+  "normalization_length": 70,
+  "executable_sections": 4,
+  "sites": [
+    {
+      "address": 1057823,
+      "selector_on_normal_entry": 3221225600
+    },
+    {
+      "address": 1057834,
+      "selector_on_normal_entry": 3221225601
+    },
+    {
+      "address": 1057841,
+      "selector_on_normal_entry": 3221225602
+    },
+    {
+      "address": 1057848,
+      "selector_on_normal_entry": 3221225603
+    },
+    {
+      "address": 1057855,
+      "selector_on_normal_entry": 3221225604
+    },
+    {
+      "address": 1057862,
+      "selector_on_normal_entry": 372
+    },
+    {
+      "address": 1057869,
+      "selector_on_normal_entry": 373
+    },
+    {
+      "address": 1057876,
+      "selector_on_normal_entry": 374
+    }
+  ],
+  "control_flow_integrity_established": false,
+  "mmio_write_exclusion_established": false,
+  "ap_dormancy_established": false,
+  "platform_admitted": false
+}
