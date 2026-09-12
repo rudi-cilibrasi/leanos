@@ -1,0 +1,68 @@
+# Qotom Realtek engine-state observation
+
+The native PCI capture identifies two revision-07 10ec:8168 endpoints at
+01:00.0 and 03:00.0. FreeBSD after the root-port experiment reports chip revision
+`0x2c800000` for both. This OS observation selects a candidate; LeanOS must read
+and validate the revision itself before using any revision-specific operation.
+
+The FreeBSD 15.0 driver identifies this as RTL8168E-VL, selects memory BAR2 for
+8168 controllers, and sets CMDSTOP plus CMDSTOP_WAIT_TXQ for this revision.
+Its stop path disables receive acceptance, requests stop with TX/RX enable,
+waits for TXCFG queue-empty, delays, then masks and acknowledges interrupts.
+A timeout is logged rather than returned as a hard failure, so that routine
+cannot be copied as a fail-closed quarantine proof.
+
+Primary implementation references:
+
+- [FreeBSD releng/15.0 if_re.c](https://github.com/freebsd/freebsd-src/blob/releng/15.0/sys/dev/re/if_re.c): BAR selection, revision dispatch and `re_stop`.
+- [FreeBSD releng/15.0 if_rlreg.h](https://github.com/freebsd/freebsd-src/blob/releng/15.0/sys/dev/rl/if_rlreg.h): register widths/offsets and revision mask.
+- [Linux v6.12 r8169_main.c](https://github.com/torvalds/linux/blob/v6.12/drivers/net/ethernet/realtek/r8169_main.c): independent version-34 identification; later-chip FIFO routines must not be applied to version 34.
+
+Inspected source SHA256 values, in that order:
+
+```text
+ac3049b455f9d21925fc60399fb703957ba2401fc604e503dcf73aca170e5286
+c55abe699b73ac241a99c6224adad8ca46c8c5de1e253b6af1f39ca171d08f8e
+c7d8ba27d0266db93d5177388b95a688d825ec7244e674a5fd2f2f10d74a0417
+```
+
+## Bounded helper
+
+`boot/qotom-realtek-state.h` binds bus 1 or 3, device/function zero, exact
+identity/class/revision, type-0 layout, Command 0007 and both 64-bit memory BARs.
+BAR2 is d0804000/d0604000 (4 KiB); BAR4 is d0800000/d0600000 (16 KiB).
+Eight configuration reads bracket six typed MMIO reads, totaling 22:
+
+| Order | Register | Offset | Width |
+| --- | --- | --- | --- |
+| 1 | TXCFG, including hardware revision | 40h | 32 bits |
+| 2 | Command | 37h | 8 bits |
+| 3 | Interrupt mask | 3ch | 16 bits |
+| 4 | Receive configuration | 44h | 32 bits |
+| 5 | Command | 37h | 8 bits |
+| 6 | TXCFG, including hardware revision | 40h | 32 bits |
+
+Both TXCFG samples must satisfy mask 7cc00000 = 2c800000. Both Command samples
+must have Reset clear; other engine state is retained without claiming stopped.
+All-ones or improperly extended narrow values reject. Configuration refreshes
+bind Command, identity, class/revision, header type and all four memory BAR
+DWORDs; asynchronous PCI Status and cache/latency fields are not compared.
+Every failure publishes a zero observation. No writes, interrupt status reads,
+acknowledgements, polling, reset or shutdown occur.
+
+Statuses are 0 success, 1 argument, 2 initial header, 3 config read, 4 drift,
+5 MMIO read, 6 all-ones absence, 7 width, 8 chip revision, 9 reset active.
+The address selector grants no authority. Native integration must bind the
+selected endpoint, upstream routing, serialized immutable/nonaliasing inputs,
+firmware/root controls and all aliases of both resource apertures before access.
+
+Tests use modeled engine values, not physical LeanOS observations. They check
+both endpoints, exact read order, every read failure, all compared config bits
+in both refreshes, ignored Status/cache fields, chip-revision masks, reset,
+width, absence and address/width selection. Mapping authority, native emission,
+protected decoder and physical validation are not yet implemented.
+
+The later shutdown contract still needs bounded time and failure handling,
+interrupt/MSI/MSI-X treatment, BME control and outstanding traffic semantics.
+Root-port BME gating and these samples alone do not establish endpoint drain,
+continuing firmware exclusion or admission for issues #330 and #291.
