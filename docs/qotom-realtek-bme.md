@@ -40,5 +40,27 @@ TX/RX engines while gating new endpoint memory/I/O requests through BME. The
 queue-empty and Transactions Pending samples are sequential. They do not prove
 that all earlier transactions completed, exclude later firmware/AP/device
 activity, establish system-wide DMA containment or admit the Qotom platform.
-Native consumed word-store authority, emission, decoder tests and physical
-validation remain outstanding.
+Native emission, decoder tests and physical validation remain outstanding. The
+consumed word-store authority is described below.
+
+## Consumed word-store authority
+
+The writer admits only bus 1 or 3, device/function zero, Command offset 4 and
+value 0003. Every request consumes the armed flag, including a rejected request.
+It maps only that endpoint's ECAM page as supervisor, writable, NX and UC,
+performs one 16-bit store, restores the exact saved leaf, invalidates and checks
+controls before returning. Mapping, restoration or control interference is
+terminal. Failed stores may still have effects.
+
+Arming first revokes all prior authority and bus selection. It binds the exact
+endpoint, corresponding bridge route, successful root-port transition, prior
+stopped state, copied firmware and active root/control state. The existing root
+checker rejects every present ECAM alias. The gate publishes the endpoint bus
+only after all checks and performs no hardware access.
+
+Window tests cover both buses, reuse, every invalid field and word value,
+missing callbacks, invalid apertures, failed stores, exact restoration and all
+terminal interference paths. Arming tests cover both endpoints, every one of
+4096 page-table positions aliasing either target ECAM page, endpoint header
+bits, route results, prior statuses, firmware/root/control changes, missing
+callbacks and rejected rearm. No store or invalidation occurs during arming.
