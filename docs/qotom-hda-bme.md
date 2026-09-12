@@ -27,5 +27,20 @@ exclusion or system-wide DMA containment. Whole-platform admission remains open.
 
 Tests cover all 97 read failures, every prior/global/state/Command bit, raw PCI
 Status preservation, ignored writes, failed writes with and without effects,
-resource drift, post-write restart, BME reassertion and missing inputs. Native
-mapping, emission and physical capture remain pending.
+resource drift, post-write restart, BME reassertion and missing inputs. Native emission and physical capture remain pending.
+
+## Consumed write window
+
+The separate writer accepts only 00:1b.0 offset 4 and word value `0002`. Every
+request consumes its armed flag, including rejected requests. It maps ECAM
+page `e00d8000` with leaf `80000000e00d801b` (RW/NX/supervisor UC), invokes the
+trusted single-word store, restores the exact original leaf, invalidates on
+both transitions and checks final controls. Interference terminates after
+cleanup. Reuse and every other word value are rejected without a store.
+
+Arming binds successful global and state observations, exact stopped samples,
+Command `0006`, identity/resource, copied firmware and roots. It rejects every
+low-memory alias across the 16 KiB HDA resource. All rejected rearms clear old
+authority; arming performs no device access. Tests cover all alternative word
+values, BDF/offset changes, callback omissions, invalid apertures, failed stores,
+restoration interference, every bound input bit and all four pages of aliases.
