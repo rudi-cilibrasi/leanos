@@ -384,3 +384,74 @@ independent SSH verified the image and consumed request. The retained replay
 checks this result together with all preceding EHCI and xHCI observations.
 Operational shutdown, BME disable, device/fabric drain and continuing firmware/AP
 exclusion remain outstanding. The terminal stays `qotom-platform-pending`.
+
+## Bounded operational-state observation
+
+`qotom_collect_xhci_operational` follows a successful SMI-disable observation.
+It refreshes the complete resources and capability list, requires BIOS-clear/
+OS-owned support and disabled legacy SMI enables, then samples USBSTS, USBCMD,
+and USBSTS again. A final complete resource/list/ownership refresh must pass
+before any output is published. Documented vendor live-status bits may vary;
+list identity and reserved fields remain bound as in the ownership helper.
+
+[J1900 datasheet sections 14.7.9–14.7.10, pages 392–393](https://cdn.centralpoint.be/objects/pdf/9/96e/1597181_1_processoren-intel-celeron-processor-g1620t-2m-cache-240-ghz-cm8063701448300.pdf#page=392)
+place USBCMD at BAR+`0x80` and USBSTS at BAR+`0x84`, matching the captured
+CAPLENGTH. The first status read precedes any command read; Controller Not Ready
+(bit 11) rejects at either status sample. No polling or operational write occurs.
+The datasheet notes controller-specific deviations for CNR and HCE; raw state
+must be reviewed before defining a shutdown policy.
+
+The helper permits at most 177 reads: two 87-read bounded refreshes and three
+operational samples. Failures publish zero fields. Successful samples retain
+raw command/status values, including state changes between reads; they are not
+an atomic snapshot or a halt, drain, firmware-exclusion or DMA-containment proof.
+Tests cover every read-failure position at the maximum list length, exact access
+order and addresses, CNR guards, missing-device samples, ownership/SMI/resource/
+list drift, live vendor status and zero failed output. The physical capture
+below exercises the native path.
+
+## Restricted operational read mapping
+
+The separate operational window admits only `0xd0900080` and `0xd0900084`,
+using a read-only, supervisor, NX, UC leaf. It restores the exact prior mapping
+and checks controls before publishing a private sample; interference terminates.
+The capability and extended-list readers retain their existing address limits.
+
+Arming binds the seven captured capability words and the successful physical SMI
+result (attempted 1, before `0x2000`, after 0). Private staging reuses the existing
+firmware/root/PCI checks and excludes aliases across the entire 64-KiB resource.
+Failed rearming clears all authority, and arming performs no device access.
+Tests cover all resource-byte offsets and boundaries, mapping/control failures,
+all page-table alias slots, capability and SMI-result mutations, and failed
+rearming. The native stage below connects this mapping to the collector.
+
+## Native operational diagnostic integration
+
+`--xhci-operational` requires `--xhci-smi` and selects the separate operational
+lab output. The out-of-line native stage arms the capability, extended-list and
+operational readers, samples through the bounded collector, and disarms all
+contexts before emitting `XHCI-OPERATIONAL`. The record carries status, first
+status sample (`sampled`), command and second status sample (`final`). Native
+arm failures are 9, 10 and 11 respectively; helper failure fields remain zero.
+
+The runner extracts this record before the SMI prefix, fingerprints the decoder,
+retains `xhci-operational.json` and restores the actual terminal after replay.
+The decoder requires a successful SMI prefix and exact SMI binding for helper
+results. It rejects impossible statuses, nonzero failed output, CNR/missing-device
+success samples and contradictory terminals. It retains changes between the two
+status reads without inferring an atomic snapshot or controller halt. Physical
+state and automatic recovery are retained in the protected capture below.
+
+## Physical operational result
+
+The [protected operational capture](../hardware/lab/observations/qotom-native-xhci-operational-20260911/README.md)
+reported USBSTS `0x1`, USBCMD `0`, USBSTS `0x1`, with successful before/after
+resource/list/ownership verification. Both status samples report halted and the
+command has Run/Stop and interrupt enables clear. No stop or reset was needed
+for this observation. FreeBSD recovered automatically with the request consumed;
+independent SSH verified the installed image and configuration.
+
+The next BME step must refresh this exact stopped state before its write and
+verify it afterward. These samples do not establish outstanding-transaction
+drain or continuing firmware/AP exclusion. DMA quarantine and whole-platform
+integration remain incomplete; the terminal is still `qotom-platform-pending`.
