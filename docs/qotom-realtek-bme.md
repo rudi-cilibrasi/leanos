@@ -35,13 +35,23 @@ ignored and failed writes with and without effect, early Command drift, immediat
 readback failure and final BME reassertion. The existing routed-state tests cover
 the complete bridge header/PCIe mutations and invalid route/prior bindings.
 
+The native path retains both successful stopped-state observations, then arms a
+separate consumed word-store authority for each endpoint. It emits index 13
+before index 15 and stops on the first failure. Native statuses 9 and 10 report
+state-window and writer-arm rejection before device access. The native test runs
+the actual route, state, BME and window code for both endpoints, covers every
+one of the 366 BME-stage read failures and both store failures, and checks exact
+serial output and disarm. The strict decoder requires both preceding successful
+state records and retains attempted/before/after values without replaying the
+hardware operation.
+
 This establishes only a bounded candidate for retaining the observed disabled
 TX/RX engines while gating new endpoint memory/I/O requests through BME. The
 queue-empty and Transactions Pending samples are sequential. They do not prove
 that all earlier transactions completed, exclude later firmware/AP/device
 activity, establish system-wide DMA containment or admit the Qotom platform.
-Native emission, decoder tests and physical validation remain outstanding. The
-consumed word-store authority is described below.
+Physical validation remains outstanding. The consumed word-store authority is
+described below.
 
 ## Consumed word-store authority
 

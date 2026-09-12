@@ -99,6 +99,61 @@ class Capture(unittest.TestCase):
             self.assertNotEqual(altered,raw[:end])
             with self.assertRaises(ValueError):check(success,prefix=altered)
 
+    def test_realtek_bme_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-realtek-state-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(index=13,status=0,values=(1,7,3)):
+            return (f'LEANOS-LAB/1 REALTEK-BME profile=qotom-realtek-bme-v1 index={index} status={status}' +
+                f' attempted={values[0]} before={values[1]} after={values[2]}\n').encode()
+        def check(records,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,records+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+                ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+                hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True)
+        success=record()+record(15)
+        result=check(success)
+        self.assertEqual([f['index'] for f in result['realtek_bme']['functions']],[13,15])
+        self.assertEqual(result['diagnostic']['replay_scope'],'native-inventory-with-realtek-bme-observation')
+        self.assertIn('realtek_bme_decoder_sha256',result['diagnostic'])
+        self.assertFalse(result['realtek_bme']['dma_quarantine_established'])
+        self.assertFalse(result['realtek_bme']['transaction_drain_established'])
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-realtek-bme')
+        failures=((3,(0,0,0)),(4,(0,0,0)),(5,(0,0,0)),(6,(1,7,0)),
+            (7,(1,7,0)),(8,(1,7,3)),(9,(0,0,0)),(10,(0,0,0)))
+        for index in (13,15):
+            prefix=record() if index==15 else b''
+            for status,values in failures:
+                payload=prefix+record(index,status,values)
+                result=check(payload,failure)
+                self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-realtek-bme')
+                self.assertEqual(result['realtek_bme']['functions'][-1]['status'],status)
+                with self.assertRaises(ValueError):check(payload)
+                with self.assertRaises(ValueError):check(payload+record(index+2),failure)
+        invalid=(b'',record(),record(15)+record(),success+record(15),
+            success.replace(b'index=13',b'index=14'),success.replace(b'index=13',b'index=013'),
+            success.replace(b'status=0',b'status=1',1),success.replace(b'status=0',b'status=2',1),
+            success.replace(b'status=0',b'status=11',1),success.replace(b'attempted=1',b'attempted=2',1),
+            success.replace(b'before=7',b'before=6',1),success.replace(b'after=3',b'after=7',1),
+            record(13,3,(1,7,0)),record(13,6,(0,0,0)),record(13,7,(1,7,3)),
+            record(13,9,(1,7,0)))
+        for payload in invalid:
+            with self.assertRaises(ValueError):check(payload)
+        with self.assertRaises(ValueError):check(success,failure)
+        with self.assertRaises(ValueError):
+            R['classify_cpu_protected'](events,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,realtek_bme=True)
+
     def test_rootport_bme_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
