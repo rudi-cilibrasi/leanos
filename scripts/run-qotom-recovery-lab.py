@@ -195,13 +195,14 @@ def classify_bsp_production(events, digest):
     if any(b['elapsed'] < a['elapsed'] for a,b in zip(events,events[1:])):
         raise ValueError('nonmonotonic capture timestamps')
     data = b''.join(bytes.fromhex(event['hex']) for event in events)
+    terminal = record(3, 'FINAL') + b' status=FAIL reason=qotom-platform-pending\n'
     markers = [
         b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1',
         b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120',
         b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD',
         b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n',
-        b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked platform-admitted=0\n',
-        b'LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending\n',
+        b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked nmi-routing=quarantined platform-admitted=0\n',
+        terminal,
         b'LEANOS-LAB/1 DEFAULT request=none',
         CHAIN,
     ]
@@ -218,7 +219,7 @@ def classify_bsp_production(events, digest):
     if load is None:
         raise ValueError('Qotom BSP production digest was not loaded')
     boot_records = re.findall(rb'LEANOS/[0-9]+ BOOT(?: [^\n]*)?\n',data)
-    if len(boot_records) != 1 or data.count(b'LEANOS/3 FINAL') != 1:
+    if len(boot_records) != 1 or data.count(record(3, 'FINAL')) != 1:
         raise ValueError('ambiguous Qotom BSP production kernel framing')
     terminal_end = positions[5] + len(markers[5])
     offset = 0
@@ -236,7 +237,8 @@ def classify_bsp_production(events, digest):
         raise ValueError('Qotom BSP production reset outside its observation interval')
     return {'scenario':'qotom-bsp-production-boundary',
             'memory_published':True,'topology_published':True,
-            'interrupts_masked':True,'platform_admitted':False,
+            'interrupts_masked':True,'nmi_routing_quarantined':True,
+            'platform_admitted':False,
             'terminal_reason':'qotom-platform-pending',
             'quiet_seconds':next_time-terminal_time,'watchdog_protected':True,
             'raw_sha256':hashlib.sha256(data).hexdigest()}
@@ -715,7 +717,7 @@ def main():
                 parser.error('PCI replay lacks the bounded inventory interface')
         if args.bsp_replay is not None:
             identity = subprocess.run([str(args.bsp_replay.resolve()), '--identity'], capture_output=True, check=True, timeout=30)
-            if identity.stdout != b'LeanOS native BSP replay v1\n':
+            if identity.stdout != b'LeanOS native BSP replay v2\n':
                 parser.error('native BSP replay identity mismatch')
         diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()

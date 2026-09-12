@@ -12,6 +12,7 @@ lake env lean -c "$build/QotomMadtStream.c" LeanOS/QotomMadtStream.lean
   -c "$build/QotomMadtStream.c" -o "$build/stream.o"
 ld --gc-sections -e leanos_qotom_madt_stream_byte_step_query \
   -u leanos_qotom_madt_stream_finish_query \
+  -u leanos_qotom_madt_nmi_policy_query \
   "$build/stream.o" -o "$build/retained.elf"
 test -z "$(nm -u "$build/retained.elf")"
 nm --defined-only "$build/retained.elf" > "$build/retained-symbols.txt"
@@ -21,10 +22,12 @@ from pathlib import Path
 rows = [line.split() for line in Path(sys.argv[1]).read_text().splitlines()]
 symbols = {row[-1] for row in rows}
 required = {'leanos_qotom_madt_stream_byte_step_query',
-            'leanos_qotom_madt_stream_finish_query', '__bss_start', '_edata', '_end'}
+            'leanos_qotom_madt_stream_finish_query',
+            'leanos_qotom_madt_nmi_policy_query', '__bss_start', '_edata', '_end'}
 # Clang may inline the generated internal functions into the exported wrappers.
 optional = {'l_LeanOS_QotomMadtStream_byteStepQuery',
-            'l_LeanOS_QotomMadtStream_finishQuery'}
+            'l_LeanOS_QotomMadtStream_finishQuery',
+            'l_LeanOS_QotomMadtStream_nmiPolicyQuery'}
 if not required <= symbols or symbols - required - optional:
     raise SystemExit(f'unexpected retained symbols: {symbols ^ required}')
 for _, kind, name in rows:

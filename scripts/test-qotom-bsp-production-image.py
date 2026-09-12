@@ -22,23 +22,25 @@ assert result['firmware_ap_dormancy_assumed'] and not result['ap_dormancy_establ
 assert all(not plan['local_apic_aliases'] for plan in result['plans'].values())
 
 runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
+protocol = runner['cpu_replay_module'](True).load_protocol(
+    ROOT / 'build/boot/serial-protocol.tsv')
 digest = result['elf_sha256']
 kernel = (
     b'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1\n'
     b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n'
     + b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD sha256=' + digest.encode() + b'\n'
     b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n'
-    b'LEANOS/25 BOOT target=x86_64-qotom schedule=bsp-production\n'
-    b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked platform-admitted=0\n'
-    b'LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending\n')
+    + protocol['BOOT'].encode() + b' target=x86_64-qotom schedule=bsp-production\n'
+    b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked nmi-routing=quarantined platform-admitted=0\n'
+    + protocol['FINAL'].encode() + b' status=FAIL reason=qotom-platform-pending\n')
 recovery = b'LEANOS-LAB/1 DEFAULT request=none\nLEANOS-LAB/1 CHAIN freebsd disk=hd1\n'
 events = [{'elapsed':0,'hex':kernel.hex()},{'elapsed':35,'hex':recovery.hex()}]
 classified = runner['classify_bsp_production'](events,digest)
 assert classified['memory_published'] and classified['topology_published']
 assert not classified['platform_admitted'] and classified['quiet_seconds'] == 35
 for changed in (
-        kernel.replace(b'processor',b'processor',1) +
-            b'LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending\n',
+        kernel.replace(b'processor',b'processor',1) + protocol['FINAL'].encode() +
+            b' status=FAIL reason=qotom-platform-pending\n',
         kernel.replace(b'topology=published',b'topology=rejected'),
         kernel.replace(digest.encode(),b'0'*64)):
     try:
@@ -58,9 +60,14 @@ physical_events = [json.loads(line) for line in
 assert b''.join(bytes.fromhex(event['hex']) for event in physical_events) == \
        (capture/'cycle-1/serial.raw').read_bytes()
 saved = json.loads((capture/'cycle-1/result.json').read_text())
-physical = runner['classify_bsp_production'](physical_events,manifest['elf_sha256'])
-for key,value in physical.items():
-    assert saved[key] == value,key
+physical_data = b''.join(bytes.fromhex(event['hex']) for event in physical_events)
+legacy_marker = (b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 '
+                 b'memory=published topology=published interrupts=masked '
+                 b'platform-admitted=0\n')
+assert physical_data.count(legacy_marker) == 1
+assert b'nmi-routing=quarantined' not in physical_data
+assert saved['memory_published'] and saved['topology_published']
+assert saved['interrupts_masked'] and not saved['platform_admitted']
 assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
 assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
 
