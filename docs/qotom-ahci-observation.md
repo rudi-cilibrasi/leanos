@@ -171,3 +171,25 @@ replay agrees; FreeBSD recovered automatically and independent SSH verified the
 consumed request and installed hashes. No SATA BME clear has occurred yet.
 Interrupt masking and stopped/empty samples do not establish transaction drain
 or continuing firmware/AP exclusion.
+
+## Bounded SATA bus-master disable
+
+`boot/qotom-ahci-bme.h` requires successful global, port and interrupt-disable
+observations with the exact captured stopped/empty profile and GHC transition.
+It constructs the expected interrupt-disabled globals, refreshes all 37 reads,
+checks PCI Command `0007`, writes one 16-bit `0003` at `00:13.0` offset 4,
+checks readback, repeats the 37-read collector and checks Command once more.
+The bound is 77 reads and one word write. I/O and MMIO decoding remain enabled;
+the adjacent PCI Status halfword is not written. Failed writes may have effects,
+and attempted/before/after evidence is retained without retry or rollback.
+
+Intel 329670-002 section 13.5.2 defines SATA Command.BME at bit2 and explicitly
+states that it does not affect split-transaction completions. This step therefore
+does not establish transaction drain, continuing firmware/AP exclusion or DMA
+containment. It performs no port write, engine stop, reset or polling.
+
+Tests cover all 77 read failures, every prior/global/port/interrupt-result bit
+mutation, command and Status-halfword changes, ignored writes, failed writes
+with and without effects, resource drift, post-write restart and BME reassertion.
+The helper requires a separately guarded native word-store window and physical
+validation before it can contribute a SATA transition observation.
