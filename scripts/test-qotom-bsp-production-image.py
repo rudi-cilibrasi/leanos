@@ -114,11 +114,12 @@ physical_events = [json.loads(line) for line in
 physical_data = b''.join(bytes.fromhex(event['hex']) for event in physical_events)
 assert physical_data == (capture/'cycle-1/serial.raw').read_bytes()
 assert hashlib.sha256(physical_data).hexdigest() == manifest['raw_serial_sha256']
-cpu = (b'LEANOS/25 CPU profile=j1900-cpu-v1 codec=1 width=22 '
+cpu = (protocol['CPU'].encode() + b' profile=j1900-cpu-v1 codec=1 width=22 '
        b'words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,'
        b'1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,'
        b'672139264 selection=65536\n')
-control = (b'LEANOS/25 CONTROL profile=j1900-cpu-v1 codec=1 width=8 '
+control = (protocol['CONTROL'].encode() +
+           b' profile=j1900-cpu-v1 codec=1 width=8 '
            b'words=3328,0,0,0,0,0,0,0 readback=1\n')
 assert physical_data.count(cpu) == 1 and physical_data.count(control) == 1
 saved = json.loads((capture/'cycle-1/result.json').read_text())
