@@ -20,6 +20,23 @@ assert projection==STATE
 assert result['fresh_complete_rescan_observed'] and not result['platform_admitted']
 assert result['fixed_infrastructure_noninitiating_assumed']
 assert not result['posted_writes_drained'] and not result['txe_private_dma_quiescent']
+trust_record=(b'LEANOS-LAB/1 PCI-FINAL profile=qotom-pci-final-v1 status=0 index=16 count=16 '
+    b'commands-accepted=1 assumption-mask=31 admitted=1 '
+    b'contract=qotom-j1900-pci-trust-v1 contract-accepted=1 commands='+COMMANDS+
+    b' vtd=not-applicable platform-admitted=1\n')
+trust_terminal=FINAL.replace(b'qotom-platform-pending',b'qotom-nosmap-pending')
+trust_raw=STATE.replace(FINAL,trust_record+trust_terminal)
+trust_projection,trust=D['extract'](trust_raw,P,trust_contract=True)
+assert trust_projection==STATE
+assert trust['platform_admitted'] and trust['trust_contract_accepted']
+assert trust['dma_quarantine_admitted_under_contract']
+assert trust['posted_writes_drained_assumed'] and not trust['posted_writes_drained']
+assert trust['txe_private_dma_quiescent_assumed'] and not trust['txe_private_dma_quiescent']
+assert trust['firmware_and_smm_noninterference_assumed']
+for bad,mode in ((trust_raw,False),(raw,True)):
+    try:D['extract'](bad,P,trust_contract=mode)
+    except ValueError:pass
+    else:raise AssertionError('accepted PCI final capture under wrong policy mode')
 def changed(old,new):return raw.replace(record,record.replace(old,new,1),1)
 mutations=(changed(b'status=6',b'status=0'),
     changed(b'index=16',b'index=15'),changed(b'count=16',b'count=15'),
@@ -34,6 +51,14 @@ for number,bad in enumerate(mutations):
     try:D['extract'](bad,P)
     except ValueError:pass
     else:raise AssertionError(f'accepted mutated PCI final capture {number}')
+trust_mutations=(trust_raw.replace(b'contract-accepted=1',b'contract-accepted=0',1),
+    trust_raw.replace(b'assumption-mask=31',b'assumption-mask=3',1),
+    trust_raw.replace(b'qotom-j1900-pci-trust-v1',b'qotom-j1900-pci-trust-v2',1),
+    trust_raw.replace(b'qotom-nosmap-pending',b'qotom-pci-assumptions',1))
+for number,bad in enumerate(trust_mutations):
+    try:D['extract'](bad,P,trust_contract=True)
+    except ValueError:pass
+    else:raise AssertionError(f'accepted mutated PCI trust-contract capture {number}')
 evidence=ROOT/'hardware/lab/observations/qotom-native-pci-final-20260912'
 if evidence.exists():
     physical_protocol=R['cpu_replay_module'](True).load_protocol(
