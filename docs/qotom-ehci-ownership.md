@@ -354,3 +354,71 @@ write. Final ownership/SMI refresh and protected replay passed, and FreeBSD
 recovered automatically. This changes the next shutdown review: the observed
 controller was already halted. Continuing exclusion and system-wide DMA
 containment still require separate evidence.
+
+## Bus-master disable candidate after a stopped sample
+
+The physical sample justifies examining a BME-only transition without a redundant
+operational stop. EHCI 1.0 section 2.3.1 ties HCHalted to completion of current and
+pipelined USB transactions. This is controller state, not independent evidence
+of all fabric posted writes completing or continuing firmware exclusion.
+
+`boot/qotom-ehci-bme.h` requires the exact captured stopped operational result
+and PCI Command `0x0406`, then refreshes ownership, disabled SMIs and the operational
+sample. A separate fresh Command read must still be `0x0406`. It requests one
+16-bit write of `0x0402` at `00:1d.0` offset 4, verifies readback, repeats the
+complete operational collector, and checks Command again. This clears only BME,
+retains MMIO decoding and INTx disable, and avoids writing adjacent PCI Status.
+Linux's [PCI bus-master helper](https://github.com/torvalds/linux/blob/master/drivers/pci/pci.c)
+also uses a word-sized Command update to clear the master bit.
+
+The operation allows at most 239 reads and one write. It records attempted
+writes and command observations, including ambiguous failure; it never restores
+BME as rollback. Unexpected state rejects. Tests cover all 51 read positions in
+the captured one-entry list, every prior operational bit mutation, command and
+status-halfword preservation, ignored writes, failed writes with effects, and
+post-write restart or BME reassertion. Native word-store authority and physical
+execution are described below. Continuing device/firmware assumptions remain
+outstanding; no system-wide DMA containment or platform admission follows.
+
+## Consumed word-store mapping
+
+`hardware/lab/qotom-ehci-bme-window.h` permits only the BME-clear request at
+`00:1d.0` offset 4, value `0x0402`, through a trusted 16-bit store callback.
+It consumes its armed flag before validation, temporarily maps the ECAM page
+UC, writable, supervisor-only and NX, then restores and invalidates the original
+leaf before reporting the store result. Hardware Accessed/Dirty updates are
+allowed; other mapping or control interference terminates after restoration.
+Failed stores can have taken effect and do not authorize retry or rollback.
+
+`qotom-ehci-bme-arm.h` binds the exact controller, capabilities, PCI Command,
+successful SMI disable and captured stopped-state sample to the firmware and
+root/alias checks. Rejection clears old authority. Arming performs no hardware
+access; the helper still refreshes all device state before its write. Tests
+reject all other 16-bit values, BDF/offset changes, reuse, failed stores, stale
+samples, ECAM/EHCI aliases and root/leaf interference. Native store wiring and
+protected physical validation are described below.
+
+## Native BME-clear experiment
+
+The builder's `--ehci-bme` requires `--ehci-operational` and produces a separate
+`build/qotom-bme-lab` image. Native code rearms the capability and operational
+readers plus the consumed word writer, invokes the bounded helper, and revokes
+all contexts before `EHCI-BME`. Local arming failures use statuses 9–11.
+The compiled primitive uses one `mov WORD PTR [rsi],dx`; it does not store the
+adjacent PCI Status halfword. Success still terminates at qotom-platform-pending.
+
+The protected runner fingerprints the decoder and retains `ehci-bme.json`.
+Validation requires the complete operational prefix, exact stopped sample and
+captured Command before a helper outcome, consistent attempted/before/after
+fields, and the matching terminal. Failed writes and readback remain diagnostic
+observations, including a write that took effect despite reported failure.
+The actual BME terminal replaces the preceding replay projection's terminal.
+Synthetic protected tests cover those outcomes and reject missing, duplicate,
+malformed, out-of-range and contradictory records. The physical result is retained below.
+
+The [physical BME capture](../hardware/lab/observations/qotom-native-ehci-bme-20260911/README.md)
+reported Command `0x0406` to `0x0402` with status 0. Final ownership, disabled
+SMIs, stopped-state refresh and Command readback passed. The full protected
+replay agrees, and FreeBSD recovered automatically with the request consumed.
+This verifies the bounded transition on EHCI; other devices and continuing
+firmware/AP exclusion remain outside this observation.
