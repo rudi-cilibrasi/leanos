@@ -10,6 +10,9 @@ static void lab_hda_state_disarm(void) {
 static __attribute__((noreturn)) void lab_hda_state_fault(void *opaque) {
     (void)opaque;lab_hda_state_disarm();pre_admission_fail("qotom-hda-state");
 }
+#ifdef LEANOS_QOTOM_HDA_BME
+#include "qotom-hda-bme.c.inc"
+#endif
 static __attribute__((noinline)) void lab_capture_hda_state(
         const struct lab_ecam_root_view *view,const struct pci_enumeration_header *header,
         const struct qotom_hda_observation *prior) {
@@ -37,4 +40,7 @@ static __attribute__((noinline)) void lab_capture_hda_state(
     }
     serial_putc('\n');
     if(status!=QOTOM_HDA_STATE_OK)pre_admission_fail("qotom-hda-state");
+#ifdef LEANOS_QOTOM_HDA_BME
+    lab_clear_hda_bme(view,header,prior,&result);
+#endif
 }
