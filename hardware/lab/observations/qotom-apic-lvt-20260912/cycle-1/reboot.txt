@@ -1,0 +1,5 @@
+Shutdown NOW!
+Shutdown NOW!
+
+System shutdown time has arrived
+shutdown: [pid 2495]

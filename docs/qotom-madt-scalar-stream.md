@@ -34,6 +34,14 @@ record unusable as a route. The C consumer extracts the records only after the
 generated entry stream has accepted all framing, then requires quarantine
 before it calls the BSP finish gate.
 
+The `leanos_qotom_inherited_lvt_policy_query` export separately binds the
+physical BSP LINT observation. Acceptance requires the expected APIC base and
+executing ID, two identical samples of `0x00010000` from each LINT register,
+stable sampling, disabled routing authority, zero writes and exact mapping
+restoration. The export returns the accepted policy and both raw values; errors
+90 through 97 preserve the failed boundary. It does not enable interrupts or
+program the local APIC.
+
 `leanos_qotom_madt_stream_finish_query` receives terminal status/error, the
 12 terminal state words, table length, executing ID, CPUID EDX, MSR-read
 availability, IA32_APIC_BASE, sampled executing ID and projection index.
