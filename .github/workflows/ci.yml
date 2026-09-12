@@ -124,6 +124,10 @@ jobs:
           python3 scripts/build-qotom-recovery-lab.py \
             --prepared-repo . --mode completion --pci-diagnostic --bsp-production
           python3 scripts/test-qotom-bsp-production-image.py
+          python3 scripts/build-qotom-recovery-lab.py \
+            --prepared-repo . --mode completion --pci-diagnostic --bsp-production \
+            --bsp-lvt-observation
+          python3 scripts/test-qotom-apic-lvt-image.py
 
       - name: Verify frame-budget negative evidence
         if: always()
