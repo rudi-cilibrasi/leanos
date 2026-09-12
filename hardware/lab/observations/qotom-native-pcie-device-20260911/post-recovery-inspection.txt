@@ -1,0 +1,21 @@
+kern.boottime: { sec = 1789168301, usec = 941783 } Fri Sep 11 16:11:41 2026
+machdep.bootmethod: BIOS
+SHA256 (/mnt/leanos-verify/boot/leanos-qotom-lab.elf) = f26096ec00ab2a04b6d8fc5f204c15d78bc06ef52eed8bbfd4816dcdfb4f7c92
+SHA256 (/mnt/leanos-verify/boot/leanos.sha256) = 4c8f5e884d5b665f5f14e88758523433376b0b701b2455120e860694ac8df3a4
+SHA256 (/mnt/leanos-verify/boot/grub/grub.cfg) = f3fe72b79a8c094bad0e9b3edf0c290160c6fb52a03081e9e20ecda5f2de4711
+SHA256 (/mnt/leanos-verify/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+request=none
+zroot/ROOT/default on / (zfs, local, noatime, nfsv4acls)
+devfs on /dev (devfs)
+/dev/gpt/efiboot0 on /boot/efi (msdosfs, local)
+zroot/tmp on /tmp (zfs, local, noatime, nosuid, nfsv4acls)
+zroot/home on /home (zfs, local, noatime, nfsv4acls)
+zroot on /zroot (zfs, local, noatime, nfsv4acls)
+zroot/var/log on /var/log (zfs, local, noatime, noexec, nosuid, nfsv4acls)
+zroot/var/audit on /var/audit (zfs, local, noatime, noexec, nosuid, nfsv4acls)
+zroot/usr/src on /usr/src (zfs, local, noatime, nfsv4acls)
+zroot/var/crash on /var/crash (zfs, local, noatime, noexec, nosuid, nfsv4acls)
+zroot/var/tmp on /var/tmp (zfs, local, noatime, nosuid, nfsv4acls)
+zroot/usr/ports on /usr/ports (zfs, local, noatime, nosuid, nfsv4acls)
+zroot/var/mail on /var/mail (zfs, local, nfsv4acls)
+zroot/home/freebsd on /home/freebsd (zfs, local, noatime, nfsv4acls)
