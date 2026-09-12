@@ -154,3 +154,9 @@ leanos_run_sanitized "$build/ahci-bme-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-hda-observation.c -o "$build/hda-observation-sanitized"
 leanos_run_sanitized "$build/hda-observation-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-hda-state.c -o "$build/hda-state"
+"$build/hda-state"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-hda-state.c -o "$build/hda-state-sanitized"
+leanos_run_sanitized "$build/hda-state-sanitized"
