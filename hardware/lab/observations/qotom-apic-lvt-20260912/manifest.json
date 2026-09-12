@@ -1,0 +1,29 @@
+{
+  "schema": "leanos-qotom-apic-lvt-capture-v1",
+  "source_revision": "4ae1cc614d1a490fc37c1b2ab853ed36a0c33b8f",
+  "elf_sha256": "f4c9742b38535870727a28c3bb2aff89ac6428493510873f6d9005732020b024",
+  "raw_serial_sha256": "9ac5af2ead4e75b7ea4294ccd8bfc6e40ec68de5b5a4a46fddf6ed84f38d3383",
+  "evidence_class": "lab-recovery-experiment",
+  "inherited_lvt_observed": true,
+  "lint0_raw": 65536,
+  "lint1_raw": 65536,
+  "routing_authority": false,
+  "platform_admitted": false,
+  "files": {
+    "README.md": "8fe733da1f2506d855f074efcd05c6b69d713dedb57af15b3cc8a40f406e9a27",
+    "ap-start-audit.json": "a5d6b17998ee62fb3a2615f3864ba7453ce879b81392e69b194abc84a7eb01c5",
+    "build-manifest.json": "9a8b7c7ee3b6b27991334ebe0f6e6e55dabd260927fac9d960640cb5c03ef725",
+    "capture.sh": "eeb792c05e96eb3582d541048e73986d24da6164d12eadd355712af3ca2fa1c8",
+    "cycle-1/events.jsonl": "f210a2a882395eea4e4a400aa6ea6fa158ae08c558122de6f7bdbd5ad4a70eb7",
+    "cycle-1/reboot.txt": "8329c6f7fd0432bda08abb10955572831436d9778c3c2f667601edb6137ba27f",
+    "cycle-1/recovery.json": "fbfddfb07ac619cb7339a0612f8ff51a81371eb2b2a5228072a7484b8a63409b",
+    "cycle-1/result.json": "cd50d629d46658fc6cdf1373e11968d0e2f370035975ae744d0fd82249254ab4",
+    "cycle-1/serial.raw": "9ac5af2ead4e75b7ea4294ccd8bfc6e40ec68de5b5a4a46fddf6ed84f38d3383",
+    "cycle-1/verification.txt": "ef180e6760b3cc4fc90867ce2cf15bbb58316c97fff207aff569e42920b98213",
+    "grub.cfg": "34c4572b80a42b500daee9f074d36f6ffec19349ae43636a34faf689f94b26c4",
+    "leanos.sha256": "feebc98041a0e850252c09f63029a1348b3f70f63b531e5272205b2fd21737f2",
+    "msr-write-audit.json": "bbaa45a29528a49d29ff4225432a7bd48ad6470b296a8e302c025d4abcf40498",
+    "post-recovery-inspection.txt": "498f7dc11895355c3f1dd2c4803115c434d67ecaa6dd82fe6a759bd62e382743",
+    "request.env": "eb29a53b9e99fc6920d0bf9948e3e7477d9a4c6ba53ab584120b9a42bf662cec"
+  }
+}

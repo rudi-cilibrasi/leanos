@@ -14379,6 +14379,12 @@
     },
     {
       "source": "LeanOS/QotomMadtStream.lean",
+      "qualified": "LeanOS.QotomMadtStream.inherited_lvt_policy_acceptance_iff",
+      "display": "inherited_lvt_policy_acceptance_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.machine_topology_admission_exact_state_accepted",
       "display": "machine_topology_admission_exact_state_accepted",
       "kind": "theorem"

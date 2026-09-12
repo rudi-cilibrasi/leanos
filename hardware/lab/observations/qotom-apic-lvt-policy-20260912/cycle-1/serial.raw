@@ -1,0 +1,25 @@
+ak≤_è¨1,ˇ[H[J[1;1HLEANOS-LAB/1 WATCHDOG-WINDOW accepted=1
+LEANOS-LAB/1 WATCHDOG-STATE pmc=10 smi=20073 count=800 timer=4
+LEANOS-LAB/1 WATCHDOG-ARMED ticks=120
+LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD
+sha256=e828a7b4e244b8886ad754e7b84
+65c77029bce29b6c75bea0fa2f332889c10f8
+/boot/leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/25 BOOT target=qotom-j1900-candidate phase=pci-inventory-diagnostic platform-admitted=0 cpl3=0
+LEANOS/25 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/25 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS/7 HANDOFF magic=valid info-bytes=2680 mmap-entries=19 result=PASS
+LEANOS/7 MAP boot-pages=4096 reported-top-mib=9216 precedence=reserved result=PASS
+LEANOS/7 ALLOC frame=661 firmware-usable=1 boot-accessible=1 reserved=0 projection=scalar-checked result=PASS
+LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS
+LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS
+LEANOS/7 BOOTALLOC status=PASS
+LEANOS-LAB/1 APIC-LVT profile=qotom-lvt-v1 status=0 apic-base=4276095232 executing=0 lint0-first=65536 lint1-first=65536 lint0-second=65536 lint1-second=65536 stable=1 routing-authority=0 writes=0 map-restored=1 platform-admitted=0
+LEANOS-LAB/1 APIC-LVT-POLICY profile=qotom-lvt-v1 status=0 detail=0 lint0=65536 lint1=65536 policy=masked-inherited routing-authority=0 writes=0 map-restored=1 platform-admitted=0
+LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked nmi-routing=quarantined platform-admitted=0
+LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
+Ák k2ÛÒc¯[H[J[1;1HLEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+
