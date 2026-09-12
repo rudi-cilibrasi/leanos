@@ -1,4 +1,7 @@
 #include "qotom-graphics-state-arm.h"
+#ifdef LEANOS_QOTOM_GRAPHICS_BME
+static struct qotom_graphics_state lab_retained_graphics_state;
+#endif
 static __attribute__((noreturn)) void lab_graphics_state_fault(void *opaque);
 static struct lab_graphics_state_window lab_graphics_state_reader={
     .controls=lab_ecam_native_controls,.invalidate=lab_ecam_native_invalidate,
@@ -10,9 +13,15 @@ static void lab_graphics_state_disarm(void) {
 static __attribute__((noreturn)) void lab_graphics_state_fault(void *opaque) {
     (void)opaque;lab_graphics_state_disarm();pre_admission_fail("qotom-graphics-state");
 }
+#ifdef LEANOS_QOTOM_GRAPHICS_BME
+#include "qotom-graphics-bme.c.inc"
+#endif
 static __attribute__((noinline)) void lab_capture_graphics_state(
         const struct lab_ecam_root_view *view,const struct pci_enumeration_snapshot *snapshot) {
     struct qotom_graphics_state result={0};uint32_t status=7;
+#ifdef LEANOS_QOTOM_GRAPHICS_BME
+    lab_retained_graphics_state=(struct qotom_graphics_state){0};
+#endif
     lab_graphics_state_disarm();
     if(snapshot->count==16 && lab_graphics_state_arm(&lab_graphics_state_reader,view,
             lab_ecam_tables,lab_ecam_table_count,(uintptr_t)lab_ecam_aperture,
@@ -31,4 +40,8 @@ static __attribute__((noinline)) void lab_capture_graphics_state(
     }
     serial_putc('\n');
     if(status!=QOTOM_GRAPHICS_OK)pre_admission_fail("qotom-graphics-state");
+#ifdef LEANOS_QOTOM_GRAPHICS_BME
+    lab_retained_graphics_state=result;
+    lab_capture_graphics_bme(view,snapshot);
+#endif
 }

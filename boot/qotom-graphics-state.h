@@ -18,10 +18,11 @@ enum qotom_graphics_status {
     QOTOM_GRAPHICS_MMIO_READ,QOTOM_GRAPHICS_ABSENT
 };
 
-static inline int qotom_graphics_header_valid(const struct pci_enumeration_header *h) {
+static inline int qotom_graphics_header_valid_command(
+        const struct pci_enumeration_header *h,uint16_t command) {
     return h && !h->bus && h->device==2 && !h->function &&
         h->words[0]==UINT32_C(0x0f318086) &&
-        (h->words[1]&UINT32_C(0xffff))==UINT32_C(0x0007) &&
+        (h->words[1]&UINT32_C(0xffff))==command &&
         h->words[2]==UINT32_C(0x0300000e) &&
         !(h->words[3]&UINT32_C(0x00ff0000)) &&
         h->words[4]==UINT32_C(0xd0000000) && !h->words[5] &&
@@ -30,6 +31,9 @@ static inline int qotom_graphics_header_valid(const struct pci_enumeration_heade
         h->words[11]==UINT32_C(0x0f318086) && !h->words[12] &&
         h->words[13]==UINT32_C(0x000000d0) && !h->words[14] &&
         (h->words[15]&UINT32_C(0xffffff00))==UINT32_C(0x00000100);
+}
+static inline int qotom_graphics_header_valid(const struct pci_enumeration_header *h) {
+    return qotom_graphics_header_valid_command(h,7);
 }
 
 /* Valleyview exposes RCS, VCS and BCS at BAR0+2000, +12000 and +22000.
@@ -49,14 +53,14 @@ static inline int qotom_graphics_state_address(unsigned engine,unsigned reg,
  * interrupts, change PCI command bits, drain DMA or establish firmware/AP
  * exclusion. The caller supplies immutable nonaliasing inputs and bound,
  * supervisor-only UC read authority. Every failed observation publishes zero. */
-static inline enum qotom_graphics_status qotom_collect_graphics_state(
+static inline enum qotom_graphics_status qotom_collect_graphics_state_command(
         pci_enumeration_read config,void *config_context,
         qotom_graphics_mmio_read mmio,void *mmio_context,
-        const struct pci_enumeration_header *initial,
+        const struct pci_enumeration_header *initial,uint16_t command,
         struct qotom_graphics_state *out) {
     if(out)*out=(struct qotom_graphics_state){0};
     if(!config || !mmio || !initial || !out)return QOTOM_GRAPHICS_ARGUMENT;
-    if(!qotom_graphics_header_valid(initial))return QOTOM_GRAPHICS_HEADER;
+    if(!qotom_graphics_header_valid_command(initial,command))return QOTOM_GRAPHICS_HEADER;
     uint32_t values[QOTOM_GRAPHICS_SAMPLE_WORDS];
     for(unsigned phase=0;phase<2;++phase) {
         if(phase) {
@@ -81,5 +85,13 @@ static inline enum qotom_graphics_status qotom_collect_graphics_state(
     }
     for(unsigned i=0;i<QOTOM_GRAPHICS_SAMPLE_WORDS;++i)out->words[i]=values[i];
     return QOTOM_GRAPHICS_OK;
+}
+static inline enum qotom_graphics_status qotom_collect_graphics_state(
+        pci_enumeration_read config,void *config_context,
+        qotom_graphics_mmio_read mmio,void *mmio_context,
+        const struct pci_enumeration_header *initial,
+        struct qotom_graphics_state *out) {
+    return qotom_collect_graphics_state_command(config,config_context,mmio,
+        mmio_context,initial,7,out);
 }
 #endif

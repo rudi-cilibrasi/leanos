@@ -79,8 +79,12 @@ functions, still have no successful disable transition in this sequence:
 The [graphics-ring observation stage](qotom-graphics-state.md) now supplies a
 bounded read-only snapshot of the RCS, VCS and BCS ring registers while keeping
 the firmware display decode and graphics BME intact. It is evidence for choosing
-a later device-control sequence; it does not yet supply the missing graphics
-ownership, stopping, DMA gating or drain contract.
+the [bounded graphics BME candidate](qotom-graphics-bme.md), which refreshes the
+same quiet state and clears only BME while preserving memory and I/O decode.
+Until that candidate is physically validated, the table above remains the
+authoritative successful-transition list. Even a successful Command readback
+would not supply graphics ownership, posted-write drain or continuing firmware
+exclusion.
 
 Root-port BME readbacks establish the bounded upstream request-gating changes;
 outstanding traffic and continuing routing/state still require their contracts.
