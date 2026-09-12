@@ -26,6 +26,7 @@ p.add_argument('--bsp-topology', action='store_true', help='bind root-selected M
 p.add_argument('--pci-capabilities', action='store_true', help='capture bounded conventional capability lists after native inventory acceptance')
 p.add_argument('--af-observation', action='store_true', help='observe AF control/status after native capability capture')
 p.add_argument('--ehci-capabilities', action='store_true', help='read native EHCI capability registers through a separate window')
+p.add_argument('--xhci-bme', action='store_true', help='clear xHCI bus mastering after stopped-state refresh')
 p.add_argument('--xhci-operational', action='store_true', help='observe xHCI operational state after SMI disable')
 p.add_argument('--xhci-smi', action='store_true', help='disable xHCI legacy SMI enables after handoff')
 p.add_argument('--xhci-handoff', action='store_true', help='request bounded cooperative xHCI firmware handoff')
@@ -37,6 +38,8 @@ p.add_argument('--ehci-smi', action='store_true', help='disable EHCI legacy SMI 
 p.add_argument('--ehci-handoff', action='store_true', help='request bounded cooperative EHCI firmware handoff')
 p.add_argument('--ehci-legacy', action='store_true', help='observe bounded EHCI extended list and legacy control/status')
 a = p.parse_args()
+if a.xhci_bme and not a.xhci_operational:
+    p.error('--xhci-bme requires --xhci-operational')
 if a.xhci_operational and not a.xhci_smi:
     p.error('--xhci-operational requires --xhci-smi')
 if a.xhci_smi and not a.xhci_handoff:
@@ -85,7 +88,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -105,6 +108,8 @@ for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
         shutil.copy2(item, build / item.name)
 text = source.read_text()
+if a.xhci_bme:
+    text = '#define LEANOS_QOTOM_XHCI_BME 1\n' + text
 if a.xhci_operational:
     text = '#define LEANOS_QOTOM_XHCI_OPERATIONAL 1\n' + text
 if a.xhci_smi:
@@ -372,7 +377,9 @@ if a.xhci_smi:
     files += [root / name for name in ('boot/qotom-xhci-smi.h', 'hardware/lab/qotom-xhci-smi-window.h', 'hardware/lab/qotom-xhci-smi-arm.h', 'hardware/lab/qotom-xhci-smi.c.inc')]
 if a.xhci_operational:
     files += [root / name for name in ('boot/qotom-xhci-operational.h', 'hardware/lab/qotom-xhci-operational-window.h', 'hardware/lab/qotom-xhci-operational-arm.h', 'hardware/lab/qotom-xhci-operational.c.inc')]
-manifest = {'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.xhci_bme:
+    files += [root / name for name in ('boot/qotom-xhci-bme.h', 'hardware/lab/qotom-xhci-bme-window.h', 'hardware/lab/qotom-xhci-bme-arm.h', 'hardware/lab/qotom-xhci-bme.c.inc')]
+manifest = {'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
