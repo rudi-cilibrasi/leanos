@@ -44,5 +44,12 @@ the device-control suite.
 Build with `--graphics-bme` after the complete `--graphics-state` dependency
 chain. The protected runner's matching option decodes `GRAPHICS-BME`, preserves
 raw before/after Command values, and continues to classify success as
-`qotom-platform-pending`. Physical validation is required before treating this
-candidate as Qotom evidence.
+`qotom-platform-pending`.
+
+The [retained Win7 Legacy capture](../hardware/lab/observations/qotom-native-graphics-bme-20260912)
+completed the full stage on Qotom hardware. Both ring samples remained zeroed,
+idle and empty around the single Command transition from `0007` to `0003`.
+The capture also records the digest-bound image, raw serial stream, independent
+decoder output, consumed request and automatic FreeBSD recovery. This is
+physical evidence for the bounded transition; the ownership, exclusion, drain
+and quarantine limits above remain open.

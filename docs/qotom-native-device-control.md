@@ -67,24 +67,22 @@ state.
 | Four root ports | 00:1c.0–3 | 0007 | 0003 | Routing/PCIe refresh and upstream request gating |
 | Two Realtek endpoints | 01:00.0, 03:00.0 | 0007 | 0003 | Routed stopped engine state and BME |
 | Broadcom endpoint | 02:00.0 | 0006 | 0000, then PMCSR D3hot | Routed Command disable, delayed non-posted quiet and D3hot readback |
+| Graphics | 00:02.0 | 0007 | 0003 | Stable idle/empty RCS, VCS and BCS samples around BME |
 
-Two initially BME-set functions, in addition to the two fixed-Command
-functions, still have no successful disable transition in this sequence:
+One initially BME-set function, in addition to the two fixed-Command functions,
+still has no successful disable transition in this sequence:
 
 | Functions | Missing device contract |
 | --- | --- |
-| Graphics 00:02.0 | Display/engine ownership, stopping, DMA gating and drain |
 | TXE 00:1a.0 | Internal DMA control, firmware behavior and drain |
 
-The [graphics-ring observation stage](qotom-graphics-state.md) now supplies a
+The [graphics-ring observation stage](qotom-graphics-state.md) supplies a
 bounded read-only snapshot of the RCS, VCS and BCS ring registers while keeping
-the firmware display decode and graphics BME intact. It is evidence for choosing
-the [bounded graphics BME candidate](qotom-graphics-bme.md), which refreshes the
-same quiet state and clears only BME while preserving memory and I/O decode.
-Until that candidate is physically validated, the table above remains the
-authoritative successful-transition list. Even a successful Command readback
-would not supply graphics ownership, posted-write drain or continuing firmware
-exclusion.
+the firmware display decode and graphics BME intact. The later
+[graphics BME capture](../hardware/lab/observations/qotom-native-graphics-bme-20260912)
+refreshes the same quiet state, clears only BME and preserves memory and I/O
+decode. The successful Command readback does not supply graphics ownership,
+posted-write drain or continuing firmware exclusion.
 
 Root-port BME readbacks establish the bounded upstream request-gating changes;
 outstanding traffic and continuing routing/state still require their contracts.
@@ -106,7 +104,7 @@ not establish device/fabric drain. The fixed host router and LPC still require
 the distinct contracts above; SMBus's initially clear BME also needs its
 capability/continuing-state contract.
 
-The ten successful transitions do not discharge transaction drain or continuing
+The eleven successful transitions do not discharge transaction drain or continuing
 firmware/AP exclusion. All sixteen functions must be covered by the final
 profile, including fixed-register and non-DMA cases with explicit justification.
 No subset of these observations is a production admission witness; the native
