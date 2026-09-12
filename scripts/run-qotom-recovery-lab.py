@@ -1024,6 +1024,9 @@ sudo -n mkdir -p /mnt/leanos-lab
 sudo -n mount -t msdosfs /dev/da0s1 /mnt/leanos-lab
 trap 'sudo -n umount /mnt/leanos-lab' EXIT
 test "$(sha256 -q /mnt/leanos-lab/boot/leanos-qotom-lab.elf)" = DIGEST
+grep -Fq 'if [ "$selected" = "leanos-DIGEST" ]; then' /mnt/leanos-lab/boot/grub/grub.cfg
+grep -Fq 'set wd_prefix=watchdog-leanos-DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
+grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
 sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
 '''.replace('SERIAL', shlex.quote(args.usb_serial)).replace('DIGEST', shlex.quote(digest))
         if args.scenario == 'watchdog-kernel':
