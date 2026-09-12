@@ -48,3 +48,13 @@ Build the opt-in image with `--pcie-pending` in addition to the complete
 `--realtek-bme` dependency chain. The builder selects
 `build/qotom-pcie-pending-lab`; the runner fingerprints the decoder and writes
 `pcie-pending.json`.
+
+## Physical result
+
+The [protected Qotom capture](../hardware/lab/observations/qotom-native-pcie-pending-20260912/README.md)
+reported status 0 and two samples for all six functions. Device Status was 17,
+17, 17, 16, 25 and 25 for indices 6, 7, 8, 9, 13 and 15 respectively, with
+Transactions Pending clear. The expected terminal remained
+`qotom-platform-pending`. FreeBSD recovered with a changed boot time, and the
+request was consumed. Independent replay and post-recovery USB verification
+passed. These results retain the scope limitations above.

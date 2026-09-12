@@ -82,9 +82,9 @@ outstanding traffic and continuing routing/state still require their contracts.
 The subsequent [PCIe non-posted quiet stage](qotom-pcie-pending.md) samples
 Transactions Pending twice, 10 ms apart, on the four root ports and two Realtek
 endpoints after those BME transitions. All six reached clear status in the
-modeled native path; physical validation remains pending. The Broadcom endpoint
-is excluded until its device contract exists. Clear Transactions Pending does
-not establish posted-write completion or continuing firmware/AP exclusion.
+protected physical path and in independent replay. The Broadcom endpoint is
+excluded until its device contract exists. Clear Transactions Pending does not
+establish posted-write completion or continuing firmware/AP exclusion.
 
 TXE firmware status `1f0000d5`/`69000000` was read successfully in that boot;
 it is not a shutdown witness. The seven PCIe functions do not advertise FLR

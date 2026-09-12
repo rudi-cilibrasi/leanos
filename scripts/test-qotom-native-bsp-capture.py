@@ -831,6 +831,40 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['realtek_bme']['transaction_drain_established'])
         self.assertFalse(result['realtek_bme']['firmware_exclusion_established'])
 
+    def test_retained_pcie_pending_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-pcie-pending-20260912'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+            pcie_pending=True)
+        self.assertEqual(result['pcie_pending'],expected['pcie_pending'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        self.assertEqual(result['diagnostic']['replay_scope'],
+            'native-inventory-with-pcie-nonposted-quiet-observation')
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+        self.assertEqual(result['pcie_pending']['functions'],[
+            dict(index=index,status=0,polls=2,device_status=status,transactions_pending=False)
+            for index,status in zip((6,7,8,9,13,15),(17,17,17,16,25,25))])
+        self.assertTrue(result['pcie_pending']['nonposted_quiet_observed'])
+        self.assertFalse(result['pcie_pending']['posted_write_drain_established'])
+        self.assertFalse(result['pcie_pending']['transaction_drain_established'])
+        self.assertFalse(result['pcie_pending']['dma_quarantine_established'])
+        self.assertFalse(result['pcie_pending']['firmware_exclusion_established'])
+
     def test_retained_rootport_bme_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-rootport-bme-20260911'
         manifest = json.loads((capture / 'manifest.json').read_text())
