@@ -101,6 +101,37 @@ assert saved['nmi_routing_quarantined']
 assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
 assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
 
+capture = ROOT / 'hardware/lab/observations/qotom-j1900-cpu-control-production-20260912'
+manifest = json.loads((capture/'manifest.json').read_text())
+assert manifest['source_revision'] == '14bc87624a05058100b2c9679c0aec86557980b4'
+assert manifest['elf_sha256'] == \
+       '9e7119f09cc133b72aa1cc0d3cd2ca033fd9ea847493f6b18435075cec852976'
+for name,expected_digest in manifest['files'].items():
+    assert hashlib.sha256((capture/name).read_bytes()).hexdigest() == \
+           expected_digest,name
+physical_events = [json.loads(line) for line in
+                   (capture/'cycle-1/events.jsonl').read_text().splitlines()]
+physical_data = b''.join(bytes.fromhex(event['hex']) for event in physical_events)
+assert physical_data == (capture/'cycle-1/serial.raw').read_bytes()
+assert hashlib.sha256(physical_data).hexdigest() == manifest['raw_serial_sha256']
+cpu = (b'LEANOS/25 CPU profile=j1900-cpu-v1 codec=1 width=22 '
+       b'words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,'
+       b'1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,'
+       b'672139264 selection=65536\n')
+control = (b'LEANOS/25 CONTROL profile=j1900-cpu-v1 codec=1 width=8 '
+           b'words=3328,0,0,0,0,0,0,0 readback=1\n')
+assert physical_data.count(cpu) == 1 and physical_data.count(control) == 1
+saved = json.loads((capture/'cycle-1/result.json').read_text())
+physical = runner['classify_bsp_production'](physical_events,manifest['elf_sha256'])
+for key,value in physical.items():
+    assert saved[key] == value,key
+assert saved['memory_published'] and saved['topology_published']
+assert saved['interrupts_masked'] and saved['nmi_routing_quarantined']
+assert not saved['platform_admitted']
+assert saved['terminal_reason'] == 'qotom-platform-pending'
+assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
+assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
+
 with tempfile.TemporaryDirectory(prefix='qotom-bsp-production-negative-') as directory:
     mapped = Path(directory) / 'mapped-apic.elf'
     shutil.copy2(ELF,mapped)
