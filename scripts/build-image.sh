@@ -422,7 +422,9 @@ run_return_corruption_policy_check() {
 }
 export -f run_return_corruption_policy_check
 
-build="$repo_root/build/boot"
+build="${LEANOS_IMAGE_BUILD_DIR:-$repo_root/build/boot}"
+mkdir -p "$build"
+build="$(cd "$build" && pwd)"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
