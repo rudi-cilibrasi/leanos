@@ -3,6 +3,9 @@
 #include "serial-protocol.h"
 #include "boundary-abi.h"
 #include "boot_text_console.h"
+#ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+#include "qotom_bsp_consumer.h"
+#endif
 #ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
 #include "pci-enumeration.h"
 #include "pci-config-read.h"
@@ -1640,7 +1643,7 @@ static void validate_generated_madt_envelope(
    allocation-free state machine.  C carries the exact returned record state,
    enabled count, admitted APIC ID, and full 256-bit duplicate set; it does not
    classify record kinds, collapse duplicates, or assert singleton admission. */
-static uint32_t validate_generated_madt_entries(
+static __attribute__((unused)) uint32_t validate_generated_madt_entries(
         const struct copied_acpi_sdt *madt, uint32_t executing_apic_id) {
     if (madt->length <= 44u || executing_apic_id > 255u)
         handoff_fail("topology-madt-generated-entries");
@@ -1724,6 +1727,71 @@ static __attribute__((unused)) uint32_t require_machine_topology_admission(
         handoff_fail("topology-admission-result");
     return (uint32_t)admitted;
 }
+
+#ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+/* The Qotom profile samples the executing CPU again at the point where its
+   root-selected MADT is consumed.  Boot remains on one interrupt-disabled CPU;
+   no scheduler or AP-start path exists before this call.  CPUID supplies both
+   the sample identity and the feature predicate which guards IA32_APIC_BASE. */
+static struct qotom_bsp_result validate_generated_qotom_bsp_entries(
+        const struct copied_acpi_sdt *madt, uint32_t handoff_apic_id) {
+    if (madt->length <= 44u)
+        handoff_fail("topology-qotom-madt-length");
+    uint64_t flags;
+    __asm__ volatile ("pushfq; pop %0" : "=r"(flags) : : "memory");
+    if ((flags & (UINT64_C(1) << 9)) != 0)
+        handoff_fail("topology-qotom-interrupt-window");
+    uint32_t a, b, c, d;
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+                      : "a"(0u), "c"(0u) : "memory");
+    if (a < 1u) handoff_fail("topology-qotom-cpuid-leaf");
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+                      : "a"(1u), "c"(0u) : "memory");
+    const uint32_t sampled_apic_id = b >> 24;
+    if (sampled_apic_id != handoff_apic_id)
+        handoff_fail("topology-qotom-same-cpu");
+    const uint64_t available =
+        (d & UINT32_C(0x220)) == UINT32_C(0x220);
+    uint64_t apic_base = 0;
+    if (available) {
+        uint32_t low, high;
+        __asm__ volatile ("rdmsr" : "=a"(low), "=d"(high)
+                          : "c"(UINT32_C(0x1b)) : "memory");
+        apic_base = (uint64_t)high << 32 | low;
+    }
+    const struct qotom_bsp_observation observation = {
+        sampled_apic_id, d, available, apic_base, sampled_apic_id
+    };
+    const struct qotom_bsp_result result =
+        qotom_bind_validated_madt_entries(
+            madt->bytes + 44u, madt->length - 44u, &observation);
+    if (result.status != 0)
+        handoff_fail("topology-qotom-bsp-consumer");
+    return result;
+}
+
+/* Bind the consumer's actual zero-success result and all of its publication
+   fields to the root/copy terminal state.  The generated gate rejects any C
+   substitution of a singleton count, APIC base, or executing identity. */
+static uint32_t require_qotom_machine_topology_admission(
+        uint64_t selected_kind, uint64_t selected_address,
+        uint64_t copied_root_address, uint64_t advertised_count,
+        uint64_t completed_copies, uint64_t madt_count,
+        const struct qotom_bsp_result *result, uint64_t executing_apic_id) {
+    uint64_t word[4];
+    for (uint64_t query = 0; query < 4; ++query)
+        word[query] = leanos_qotom_machine_topology_admission_result_query(
+            selected_kind, selected_address, copied_root_address,
+            advertised_count, completed_copies, madt_count, result->status,
+            result->detail, result->apic_id, result->processor_count,
+            result->apic_base, executing_apic_id, query);
+    if (word[0] != 1 || word[1] != 1 || word[2] != 0 ||
+        word[3] > UINT32_MAX || word[3] != result->apic_id ||
+        word[3] != executing_apic_id)
+        handoff_fail("topology-qotom-admission-result");
+    return (uint32_t)word[3];
+}
+#endif
 
 /* Bind the copied root payload shape to the generated RSDT/XSDT selection
    before any advertised physical address is translated.  The 256-entry cap
@@ -2150,12 +2218,24 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (!acpi_signature_matches(selected_madt, "APIC"))
         handoff_fail("topology-madt-selection");
     validate_generated_madt_envelope(selected_madt);
-    const uint32_t admitted_apic_id = validate_generated_madt_entries(
-        selected_madt, handoff.executing_apic_id);
+#ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+    const struct qotom_bsp_result qotom_bsp =
+        validate_generated_qotom_bsp_entries(
+            selected_madt, handoff.executing_apic_id);
+    const uint32_t published_apic_id =
+        require_qotom_machine_topology_admission(
+            decoded.word[39], decoded.word[40], selected_root.physical_address,
+            root_entries.count, copied_table_count, 1, &qotom_bsp,
+            handoff.executing_apic_id);
+#else
+    const uint32_t admitted_apic_id =
+        validate_generated_madt_entries(
+            selected_madt, handoff.executing_apic_id);
     const uint32_t published_apic_id = require_machine_topology_admission(
         decoded.word[39], decoded.word[40], selected_root.physical_address,
         root_entries.count, copied_table_count, 1, 1, 0,
         admitted_apic_id, handoff.executing_apic_id);
+#endif
     if (published_apic_id != handoff.executing_apic_id)
         handoff_fail("topology-admission-publication");
     uint64_t free_words[64];
@@ -5242,6 +5322,9 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
     }
     serial_puts(" readback="); serial_u64(result); serial_putc('\n');
     if (result != 1) pre_admission_fail("j1900-msr-readback");
+#ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+    return;
+#endif
 #ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
     /* Observation only; no device configuration data writes or admission.
      * Sole BSP and exclusion of other CF8/CFC users are caller assumptions.
@@ -5292,6 +5375,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
     initialize_early_text(multiboot_magic, multiboot_info);
     report_j1900_cpu_candidate();
+#ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+    boot_allocate(multiboot_magic, multiboot_info);
+    serial_puts("LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 "
+                "memory=published topology=published interrupts=masked "
+                "platform-admitted=0\n");
+    pre_admission_fail("qotom-platform-pending");
+#endif
 #ifdef LEANOS_NMI_PROBE
     int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
     serial_puts(LEANOS_SERIAL_17_BOOT " target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");

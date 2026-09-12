@@ -23,6 +23,7 @@ p.add_argument('--dsdt-capture', action='store_true')
 p.add_argument('--ecam-read', action='store_true', help='use firmware-gated ECAM for the lab PCI scan')
 p.add_argument('--native-inventory', action='store_true', help='check the complete native PCI snapshot in the ECAM lab image')
 p.add_argument('--bsp-topology', action='store_true', help='bind root-selected MADT entries to a fresh BSP observation')
+p.add_argument('--bsp-production', action='store_true', help='publish memory and Qotom BSP topology through the production boot path')
 p.add_argument('--pci-capabilities', action='store_true', help='capture bounded conventional capability lists after native inventory acceptance')
 p.add_argument('--af-observation', action='store_true', help='observe AF control/status after native capability capture')
 p.add_argument('--ehci-capabilities', action='store_true', help='read native EHCI capability registers through a separate window')
@@ -95,6 +96,14 @@ if a.pci_capabilities and not a.native_inventory:
     p.error('--pci-capabilities requires --native-inventory')
 if a.bsp_topology and not a.native_inventory:
     p.error('--bsp-topology requires --native-inventory')
+if a.bsp_production and not a.pci_diagnostic:
+    p.error('--bsp-production requires --pci-diagnostic')
+if a.bsp_production and any((a.handoff_capture, a.acpi_capture,
+                             a.pci_read_trace, a.bootstrap_capture,
+                             a.ecam_memory_capture, a.dsdt_capture,
+                             a.ecam_read, a.native_inventory,
+                             a.bsp_topology, a.pci_capabilities)):
+    p.error('--bsp-production is a standalone production-boundary image')
 if a.native_inventory and not a.ecam_read:
     p.error('--native-inventory requires --ecam-read')
 if a.ecam_read and (not a.dsdt_capture or not a.ecam_memory_capture or a.pci_read_trace):
@@ -115,7 +124,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('qotom-bsp-production-lab' if a.bsp_production else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -133,12 +142,16 @@ if str(prepared / 'boot/kernel.c') not in prepared_graph:
     raise SystemExit('prepared graph names a different checkout; regenerate it in the prepared repository')
 for item in (prepared / 'build/boot').iterdir():
     if item.is_file() and item.suffix in {'.h', '.c', '.mk', '.tsv'}:
-        shutil.copy2(item, build / item.name)
+        destination = build / item.name
+        if item.resolve() != destination.resolve():
+            shutil.copy2(item, destination)
 text = source.read_text()
 if a.txe_status:
     text = '#define LEANOS_QOTOM_TXE_STATUS 1\n' + text
 if a.hda_bme:
     text = '#define LEANOS_QOTOM_HDA_BME 1\n' + text
+if a.bsp_production:
+    text = '#define LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE 1\n' + text
 if a.hda_state:
     text = '#define LEANOS_QOTOM_HDA_STATE 1\n' + text
 if a.hda_observation:
@@ -302,6 +315,11 @@ if a.bsp_topology:
     subprocess.run(['scripts/build-qotom-bsp-object.sh', str(bsp_dir)], cwd=root, check=True)
     bsp_object = bsp_dir / 'bsp.o'
     shutil.copy2(root / 'build/boundary-abi/boundary-abi.h', build / 'boundary-abi.h')
+if a.bsp_production:
+    bsp_dir = out / 'bsp'
+    subprocess.run(['scripts/build-qotom-bsp-object.sh', str(bsp_dir)], cwd=root, check=True)
+    bsp_object = bsp_dir / 'bsp.o'
+    shutil.copy2(root / 'build/boundary-abi/boundary-abi.h', build / 'boundary-abi.h')
 overlay = out / 'kernel.c'
 overlay.write_text(text)
 graph = prepared_graph.replace(str(prepared), str(root))
@@ -331,7 +349,7 @@ if a.native_inventory:
     if inserted < 2:
         raise SystemExit('native inventory object missing prelink/final graph anchors')
     graph = '\n'.join(lines) + '\n'
-if a.bsp_topology:
+if a.bsp_topology or a.bsp_production:
     anchor = str(build / 'pci-config-read.o')
     lines = graph.splitlines()
     inserted = 0
@@ -346,13 +364,13 @@ if a.bsp_topology:
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
-if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
+if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production:
     plan = build / 'boot-page-plan-qotom-pci-diagnostic.h'
     prelink = build / 'leanos-qotom-pci-diagnostic-prelink.elf'
     subprocess.run(['make', '-f', str(makefile), '-j4', str(prelink)], cwd=root, check=True)
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(prelink), str(plan)], cwd=root, check=True)
 subprocess.run(['make', '-f', str(makefile), '-j4', str(target)], cwd=root, check=True)
-if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
+if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production:
     final_plan = out / 'final-page-plan.h'
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(target), str(final_plan)], cwd=root, check=True)
     if final_plan.read_bytes() != plan.read_bytes():
@@ -360,11 +378,16 @@ if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
 elf = out / ('leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
 shutil.copy2(target, elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
-if a.bsp_topology:
+if a.bsp_topology or a.bsp_production:
     msr_audit = out / 'msr-write-audit.json'
     checked = subprocess.run(['python3', 'scripts/audit-qotom-msr-writes.py', str(elf)],
                              cwd=root, check=True, capture_output=True)
     msr_audit.write_bytes(checked.stdout)
+if a.bsp_production:
+    ap_start_audit = out / 'ap-start-audit.json'
+    checked = subprocess.run(['python3', 'scripts/audit-qotom-ap-start.py', str(elf)],
+                             cwd=root, check=True, capture_output=True)
+    ap_start_audit.write_bytes(checked.stdout)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
 if a.ecam_read:
     files.extend([root / 'hardware/lab' / name for name in (
@@ -380,7 +403,7 @@ if a.acpi_capture:
     files.append(root / 'hardware/lab/qotom-acpi.c.inc')
 if a.pci_read_trace:
     files.append(root / 'hardware/lab/qotom-pci-read-trace.c.inc')
-if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture:
+if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production:
     files.extend([plan, final_plan])
 if a.bootstrap_capture:
     files.append(root / 'hardware/lab/qotom-bootstrap.c.inc')
@@ -397,13 +420,16 @@ if a.native_inventory:
                   root / '.lake/build/ir/LeanOS/PCIHeaderObservation.c',
                   root / '.lake/build/ir/LeanOS/QotomNativePCIFields.c',
                   build / 'boundary-abi.h', native_pci, native_pci_dir / 'symbols.txt'])
-if a.bsp_topology:
+if a.bsp_topology or a.bsp_production:
     files.extend([root / 'scripts/audit-qotom-msr-writes.py', msr_audit,
-                  root / 'hardware/lab/qotom-bsp.c.inc',
                   root / 'include/qotom_bsp_consumer.h',
                   root / 'scripts/build-qotom-bsp-object.sh',
                   root / 'LeanOS/QotomMadtStream.lean', bsp_dir / 'QotomMadtStream.c',
                   bsp_object, bsp_dir / 'symbols.txt'])
+    if a.bsp_topology:
+        files.append(root / 'hardware/lab/qotom-bsp.c.inc')
+    if a.bsp_production:
+        files.extend([root / 'scripts/audit-qotom-ap-start.py', ap_start_audit])
 if a.pci_capabilities:
     files.extend([root / 'hardware/lab/qotom-pci-capabilities.c.inc',
                   root / 'boot/pci-capabilities.h'])
@@ -454,7 +480,7 @@ if a.hda_bme:
     files += [root / name for name in ('boot/qotom-hda-bme.h', 'hardware/lab/qotom-hda-bme-window.h', 'hardware/lab/qotom-hda-bme-arm.h', 'hardware/lab/qotom-hda-bme.c.inc')]
 if a.txe_status:
     files += [root / name for name in ('boot/qotom-txe-status.h', 'hardware/lab/qotom-txe-status.c.inc')]
-manifest = {'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+manifest = {'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_production': a.bsp_production, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
