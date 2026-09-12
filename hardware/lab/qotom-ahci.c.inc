@@ -14,6 +14,9 @@ static struct lab_ahci_window lab_ahci_window = {
 #ifdef LEANOS_QOTOM_HDA
 #include "qotom-hda.c.inc"
 #endif
+#ifdef LEANOS_QOTOM_TXE_STATUS
+#include "qotom-txe-status.c.inc"
+#endif
 /* Prior device stages have returned with their contexts disarmed. The private
  * ECAM and AHCI reads serialize through the same restored identity aperture. */
 static __attribute__((noinline)) void lab_capture_ahci(
@@ -46,6 +49,9 @@ static __attribute__((noinline)) void lab_capture_ahci(
 #endif
 #ifdef LEANOS_QOTOM_HDA
     lab_capture_hda(&view,&snapshot->headers[5]);
+#endif
+#ifdef LEANOS_QOTOM_TXE_STATUS
+    lab_capture_txe_status(snapshot);
 #endif
 }
 #endif
