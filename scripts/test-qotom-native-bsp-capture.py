@@ -284,6 +284,36 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['ehci_legacy']['ownership_established'])
         self.assertEqual(result['diagnostic']['inventory_result'],1)
 
+    def test_retained_operational_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-operational-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True)
+        self.assertEqual(result['ehci_operational'],expected['ehci_operational'])
+        self.assertEqual(result['ehci_operational']['status'],0)
+        self.assertEqual(result['ehci_operational']['command'],0x80000)
+        self.assertEqual(result['ehci_operational']['status_register'],0x1000)
+        self.assertEqual(result['ehci_operational']['interrupt_enable'],0)
+        self.assertEqual(result['ehci_operational']['configured'],0)
+        self.assertEqual(result['ehci_smi'],expected['ehci_smi'])
+        self.assertEqual(result['ehci_smi']['status'],0)
+        self.assertEqual(result['ehci_smi']['before_control'],0x2000)
+        self.assertEqual(result['ehci_smi']['after_control'],0)
+        self.assertEqual(result['ehci_handoff']['status'],0)
+        self.assertEqual(result['ehci_handoff']['last_support'],0x1000001)
+        self.assertEqual(result['ehci_handoff']['final_control'],0x2000)
+        self.assertEqual(result['ehci_legacy']['headers'],[{'offset':104,'raw':65537}])
+        self.assertEqual(result['ehci_legacy']['control_status'],0x82005)
+        self.assertFalse(result['ehci_legacy']['ownership_established'])
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+
     def test_legacy_protected_projection(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-20260911'
         expected = json.loads((capture / 'cycle-1/result.json').read_text())
@@ -390,6 +420,44 @@ class Capture(unittest.TestCase):
                 record(0,1,0x2000,1),record(0,1,0x2000,0x40),record(0,1,0x2000,0xffffffff),
                 record(1,0,0,0),record(2,0,0,0),record(0,1,0x100002000,0)]:
             with self.assertRaises(ValueError): check(changed)
+
+    def test_operational_protected_projection(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-ehci-smi-20260911'
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw = b''.join(bytes.fromhex(e['hex']) for e in events)
+        end = raw.index(FINAL) + len(FINAL)
+        def check(record, terminal=FINAL):
+            changed = raw[:end].replace(FINAL, record + terminal)
+            synthetic = [{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True)
+        def record(status=0,command=0x80001,sampled=0x8000,interrupts=0x3f,configured=1):
+            return f'LEANOS-LAB/1 EHCI-OPERATIONAL profile=qotom-operational-v1 index=10 status={status} command={command} status_register={sampled} interrupt_enable={interrupts} configured={configured}\n'.encode()
+        success = record()
+        result = check(success)
+        self.assertEqual(result['diagnostic']['inventory_result'],1)
+        self.assertIn('ehci_operational_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['ehci_operational']['command'],0x80001)
+        self.assertFalse(result['ehci_operational']['atomic_snapshot'])
+        self.assertFalse(result['ehci_operational']['dma_quarantine_established'])
+        for status in range(3,10):
+            failed = record(status,0,0,0,0)
+            result = check(failed,P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-operational\n')
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-ehci-operational')
+            with self.assertRaises(ValueError): check(failed)
+        for changed in [b'',success+success,success.replace(b'status=0',b'status=00'),
+                record(1,0,0,0,0),record(2,0,0,0,0),record(10,0,0,0,0),
+                record(command=0xffffffff),record(sampled=0xffffffff),
+                record(interrupts=0x100000000),record(configured=-1),
+                success.replace(b'index=10',b'index=9'),success.replace(b'profile=qotom-operational-v1',b'profile=unknown')]:
+            with self.assertRaises(ValueError): check(changed)
+        with self.assertRaises(ValueError):
+            check(success,P['FINAL'].encode()+b' status=FAIL reason=qotom-ehci-operational\n')
 
     def test_selected_capture_provenance(self):
         manifest = json.loads((C / 'manifest.json').read_text())
