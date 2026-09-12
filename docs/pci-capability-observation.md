@@ -67,5 +67,9 @@ The emission test invokes the actual lab function and checks window ownership,
 backward links, exact output, and failure disarm with ordinary and sanitizer
 builds. Decoder mutation tests and synthetic capability records inserted into a
 retained protected BSP capture exercise both success and rejection paths.
-These synthetic capability values are not hardware observations. A fresh
-protected physical capture remains necessary.
+These synthetic capability values are not hardware observations. The separate
+[protected physical capture](../hardware/lab/observations/qotom-native-capabilities-20260911/README.md)
+retains 47 capability headers across 16 native functions and the recovered
+FreeBSD boot. `test_retained_physical_capabilities` validates that retained
+capture. Controller ownership, reset and DMA containment require further work;
+this capture only observes the conventional capability lists.
