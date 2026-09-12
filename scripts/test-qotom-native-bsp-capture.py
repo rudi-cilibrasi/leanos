@@ -49,6 +49,67 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_rootport_bme_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(index=6,status=0,values=(1,7,3)):
+            return (f'LEANOS-LAB/1 ROOTPORT-BME profile=qotom-rootport-bme-v1 index={index} status={status}' +
+                f' attempted={values[0]} before={values[1]} after={values[2]}\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,hda_bme=True,txe_status=True,rootport_bme=True)
+        success=b''.join(record(i) for i in range(6,10))
+        result=check(success)
+        self.assertEqual([p['index'] for p in result['rootport_bme']['functions']],list(range(6,10)))
+        self.assertFalse(result['rootport_bme']['dma_quarantine_established'])
+        self.assertFalse(result['rootport_bme']['transaction_drain_established'])
+        self.assertIn('rootport_bme_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['replay_scope'],'native-inventory-with-rootport-bme-observation')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-rootport-bme')
+        for index in range(6,10):
+            prefix=b''.join(record(i) for i in range(6,index))
+            for status,values in ((3,(0,0,0)),(4,(0,0,0)),(5,(1,7,0)),(6,(1,7,7)),(7,(1,7,3)),(8,(0,0,0))):
+                line=prefix+record(index,status,values)
+                result=check(line,failure)
+                self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-rootport-bme')
+                self.assertEqual(len(result['rootport_bme']['functions']),index-5)
+                with self.assertRaises(ValueError):check(line)
+                with self.assertRaises(ValueError):check(line+record(index+1),failure)
+        for bad in (b'',record(),success+record(10),success.replace(record(7),b''),
+                record(7)+record(6)+record(8)+record(9),success.replace(b'index=6',b'index=06'),
+                success.replace(b'index=6',b'index=5'),success.replace(b'status=0',b'status=1',1),
+                success.replace(b'status=0',b'status=2',1),success.replace(b'status=0',b'status=9',1),
+                success.replace(b'after=3',b'after=65536',1),success.replace(b'attempted=1',b'attempted=0',1),
+                success.replace(b'before=7',b'before=6',1),success.replace(b'after=3',b'after=7',1)):
+            with self.assertRaises(ValueError):check(bad)
+        with self.assertRaises(ValueError):check(success,failure)
+        original=raw
+        sample=next(line for line in raw.splitlines(keepends=True) if line.startswith(b'LEANOS-LAB/1 PCIE-DEVICE profile=qotom-pcie-device-v1 index=6 '))
+        raw=original.replace(sample,sample.replace(b'control-status=1048576',b'control-status=3145728'))
+        with self.assertRaises(ValueError):check(success)
+        self.assertEqual(check(record(6,8,(0,0,0)),failure)['rootport_bme']['functions'][0]['status'],8)
+        raw=original
+        header=next(line for line in raw.splitlines(keepends=True) if b'PCI-HEADER codec=1 index=6 ' in line)
+        prefix,payload=header.split(b'words=');words=payload.strip().split(b',')
+        words[4]=str(int(words[4])^4).encode()
+        raw=original.replace(header,prefix+b'words='+b','.join(words)+b'\n')
+        with self.assertRaises(ValueError):check(success)
+        raw=original
+        previous=next(line for line in raw.splitlines(keepends=True) if line.startswith(b'LEANOS-LAB/1 TXE-STATUS '))
+        raw=original.replace(previous,b'')
+        with self.assertRaises(ValueError):check(success)
+
     def test_txe_status_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-hda-bme-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
@@ -543,6 +604,35 @@ class Capture(unittest.TestCase):
         self.assertEqual(tuple(observed[k] for k in
             ('command_before','interrupt','task_file','sata_status','active','issued','command_after')),
             (6,0,0x50,0x123,0,0,6))
+
+    def test_retained_rootport_bme_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-rootport-bme-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,hda_bme=True,txe_status=True,rootport_bme=True)
+        self.assertEqual(result['rootport_bme'],expected['rootport_bme'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],expected['diagnostic']['terminal_reason'])
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
+        self.assertFalse(result['rootport_bme']['dma_quarantine_established'])
+
+        self.assertEqual(result['rootport_bme']['functions'], [
+            dict(index=i,status=0,write_attempted=1,before_command=7,after_command=3)
+            for i in range(6,10)])
+        self.assertFalse(result['rootport_bme']['transaction_drain_established'])
+        self.assertFalse(result['rootport_bme']['firmware_exclusion_established'])
 
     def test_retained_txe_status_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
