@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keep only the four proved scalar exports in the lab image.
+# Keep only the five proved scalar exports in the lab image.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 build="${1:?usage: build-qotom-bsp-object.sh output-directory}"
@@ -13,6 +13,7 @@ lake env lean -c "$build/QotomMadtStream.c" LeanOS/QotomMadtStream.lean
 ld -r --gc-sections -u leanos_qotom_madt_stream_byte_step_query \
   -u leanos_qotom_madt_stream_finish_query \
   -u leanos_qotom_madt_nmi_policy_query \
+  -u leanos_qotom_inherited_lvt_policy_query \
   -u leanos_qotom_machine_topology_admission_result_query \
   "$build/stream.o" -o "$build/bsp.o"
 objcopy --strip-unneeded "$build/bsp.o"
@@ -25,10 +26,12 @@ rows = [s.split() for s in Path(sys.argv[1]).read_text().splitlines()]
 required = {'leanos_qotom_madt_stream_byte_step_query',
             'leanos_qotom_madt_stream_finish_query',
             'leanos_qotom_madt_nmi_policy_query',
+            'leanos_qotom_inherited_lvt_policy_query',
             'leanos_qotom_machine_topology_admission_result_query'}
 allowed = required | {'l_LeanOS_QotomMadtStream_byteStepQuery',
                       'l_LeanOS_QotomMadtStream_finishQuery',
                       'l_LeanOS_QotomMadtStream_nmiPolicyQuery',
+                      'l_LeanOS_QotomMadtStream_inheritedLvtPolicyQuery',
                       'l_LeanOS_QotomMadtStream_machineTopologyAdmissionResultQuery'}
 actual = {s[2] for s in rows if len(s) == 3 and s[1] == 'T'}
 if not required <= actual <= allowed or any(len(s) != 3 or s[1] not in {'T','r','R'} for s in rows):

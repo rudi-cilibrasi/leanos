@@ -188,7 +188,72 @@ def classify_protected(events, digest, expected=EXPECTED, boot_record=None):
     return result
 
 
-def classify_bsp_production(events, digest):
+def decode_qotom_lvt_observation(data):
+    prefix = b'LEANOS-LAB/1 APIC-LVT '
+    pattern = re.compile(
+        rb'LEANOS-LAB/1 APIC-LVT profile=qotom-lvt-v1 status=([0-9]+) '
+        rb'apic-base=([0-9]+) executing=([0-9]+) lint0-first=([0-9]+) '
+        rb'lint1-first=([0-9]+) lint0-second=([0-9]+) lint1-second=([0-9]+) '
+        rb'stable=([0-9]+) routing-authority=([0-9]+) writes=([0-9]+) '
+        rb'map-restored=([0-9]+) platform-admitted=([0-9]+)\n')
+    matches = list(pattern.finditer(data))
+    if len(matches) != 1 or data.count(prefix) != 1:
+        raise ValueError('missing, malformed, or repeated Qotom LVT observation')
+    values = [int(value) for value in matches[0].groups()]
+    if any(str(value).encode() != raw for value,raw in zip(values,matches[0].groups())):
+        raise ValueError('noncanonical Qotom LVT value')
+    (status, apic_base, executing, lint0_first, lint1_first,
+     lint0_second, lint1_second, stable, authority, writes,
+     restored, admitted) = values
+    if (status != 0 or apic_base != 0xfee00900 or executing != 0 or
+            any(value > 0xffffffff for value in
+                (lint0_first, lint1_first, lint0_second, lint1_second)) or
+            stable not in (0,1) or stable != int(
+                lint0_first == lint0_second and lint1_first == lint1_second) or
+            authority != 0 or writes != 0 or restored != 1 or admitted != 0):
+        raise ValueError('rejected Qotom LVT observation')
+    def decode(value):
+        return {'raw':value, 'vector':value & 0xff,
+                'delivery_mode':(value >> 8) & 7,
+                'delivery_status':(value >> 12) & 1,
+                'polarity':(value >> 13) & 1,
+                'remote_irr':(value >> 14) & 1,
+                'trigger_mode':(value >> 15) & 1,
+                'masked':bool((value >> 16) & 1)}
+    return matches[0].group(0), {
+        'profile':'qotom-lvt-v1', 'status':status, 'apic_base':apic_base,
+        'executing_apic_id':executing, 'lint0_first':decode(lint0_first),
+        'lint1_first':decode(lint1_first), 'lint0_second':decode(lint0_second),
+        'lint1_second':decode(lint1_second), 'stable':bool(stable),
+        'routing_authority':False, 'write_count':0, 'mapping_restored':True,
+        'platform_admitted':False}
+
+
+def decode_qotom_lvt_policy(data):
+    prefix = b'LEANOS-LAB/1 APIC-LVT-POLICY '
+    pattern = re.compile(
+        rb'LEANOS-LAB/1 APIC-LVT-POLICY profile=qotom-lvt-v1 status=([0-9]+) '
+        rb'detail=([0-9]+) lint0=([0-9]+) lint1=([0-9]+) '
+        rb'policy=masked-inherited routing-authority=([0-9]+) writes=([0-9]+) '
+        rb'map-restored=([0-9]+) platform-admitted=([0-9]+)\n')
+    matches = list(pattern.finditer(data))
+    if len(matches) != 1 or data.count(prefix) != 1:
+        raise ValueError('missing, malformed, or repeated Qotom LVT policy')
+    values = [int(value) for value in matches[0].groups()]
+    if any(str(value).encode() != raw for value,raw in zip(values,matches[0].groups())):
+        raise ValueError('noncanonical Qotom LVT policy value')
+    status,detail,lint0,lint1,authority,writes,restored,admitted = values
+    if (status != 0 or detail != 0 or lint0 != 0x10000 or lint1 != 0x10000 or
+            authority != 0 or writes != 0 or restored != 1 or admitted != 0):
+        raise ValueError('rejected Qotom LVT policy')
+    return matches[0].group(0), {
+        'profile':'qotom-lvt-v1','status':status,'detail':detail,
+        'lint0_raw':lint0,'lint1_raw':lint1,'policy':'masked-inherited',
+        'routing_authority':False,'write_count':0,'mapping_restored':True,
+        'platform_admitted':False}
+
+
+def classify_bsp_production(events, digest, lvt_observation=False, lvt_policy=False):
     if any(type(event['elapsed']) not in (int,float) or
            not math.isfinite(event['elapsed']) or event['elapsed'] < 0 for event in events):
         raise ValueError('invalid capture timestamp')
@@ -201,11 +266,25 @@ def classify_bsp_production(events, digest):
         b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120',
         b'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD',
         b'LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\n',
+    ]
+    lvt = None
+    policy = None
+    if lvt_observation or lvt_policy:
+        lvt_marker, lvt = decode_qotom_lvt_observation(data)
+        markers.append(lvt_marker)
+    elif data.count(b'LEANOS-LAB/1 APIC-LVT '):
+        raise ValueError('unexpected Qotom LVT observation')
+    if lvt_policy:
+        policy_marker, policy = decode_qotom_lvt_policy(data)
+        markers.append(policy_marker)
+    elif data.count(b'LEANOS-LAB/1 APIC-LVT-POLICY '):
+        raise ValueError('unexpected Qotom LVT policy')
+    markers.extend([
         b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 memory=published topology=published interrupts=masked nmi-routing=quarantined platform-admitted=0\n',
         terminal,
         b'LEANOS-LAB/1 DEFAULT request=none',
         CHAIN,
-    ]
+    ])
     if any(data.count(marker) != 1 for marker in markers):
         raise ValueError('missing, changed, or repeated Qotom BSP production trace')
     positions = [data.find(marker) for marker in markers]
@@ -221,7 +300,8 @@ def classify_bsp_production(events, digest):
     boot_records = re.findall(rb'LEANOS/[0-9]+ BOOT(?: [^\n]*)?\n',data)
     if len(boot_records) != 1 or data.count(record(3, 'FINAL')) != 1:
         raise ValueError('ambiguous Qotom BSP production kernel framing')
-    terminal_end = positions[5] + len(markers[5])
+    terminal_index = markers.index(terminal)
+    terminal_end = positions[terminal_index] + len(terminal)
     offset = 0
     terminal_time = next_time = None
     for event in events:
@@ -235,13 +315,21 @@ def classify_bsp_production(events, digest):
         offset = following
     if terminal_time is None or next_time is None or not 30 <= next_time-terminal_time <= 90:
         raise ValueError('Qotom BSP production reset outside its observation interval')
-    return {'scenario':'qotom-bsp-production-boundary',
+    result = {'scenario':'qotom-bsp-lvt-policy' if policy else
+            'qotom-bsp-lvt-observation' if lvt else 'qotom-bsp-production-boundary',
             'memory_published':True,'topology_published':True,
             'interrupts_masked':True,'nmi_routing_quarantined':True,
             'platform_admitted':False,
             'terminal_reason':'qotom-platform-pending',
             'quiet_seconds':next_time-terminal_time,'watchdog_protected':True,
             'raw_sha256':hashlib.sha256(data).hexdigest()}
+    if lvt:
+        result['inherited_lvt_observed'] = True
+        result['local_apic_lvt'] = lvt
+    if policy:
+        result['inherited_lvt_policy_enforced'] = True
+        result['local_apic_lvt_policy'] = policy
+    return result
 
 
 def cpu_replay_module(pci=False):
@@ -717,6 +805,10 @@ def main():
     parser.add_argument('--bsp-replay', type=Path, help='enable native BSP capture and provide its generated replay executable')
     parser.add_argument('--bsp-production', action='store_true',
                         help='classify the production memory/topology checkpoint')
+    parser.add_argument('--bsp-lvt-observation', action='store_true',
+                        help='classify the inherited local-APIC LINT observation')
+    parser.add_argument('--bsp-lvt-policy', action='store_true',
+                        help='classify the inherited masked local-APIC LINT policy')
     args = parser.parse_args()
     if args.pcie_pending and not args.realtek_bme:
         parser.error('--pcie-pending requires --realtek-bme')
@@ -734,6 +826,12 @@ def main():
         parser.error('--bsp-production excludes diagnostic replay modes')
     if args.bsp_production and args.scenario != 'watchdog-leanos':
         parser.error('--bsp-production requires --scenario watchdog-leanos')
+    if args.bsp_lvt_observation and not args.bsp_production:
+        parser.error('--bsp-lvt-observation requires --bsp-production')
+    if args.bsp_lvt_policy and not args.bsp_production:
+        parser.error('--bsp-lvt-policy requires --bsp-production')
+    if args.bsp_lvt_policy and args.bsp_lvt_observation:
+        parser.error('--bsp-lvt-policy and --bsp-lvt-observation are separate modes')
     if args.hda_state and not args.hda_observation:
         parser.error('--hda-state requires --hda-observation')
     if args.hda_observation and not args.ahci_bme:
@@ -958,7 +1056,9 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if args.bsp_production:
-                result = classify_bsp_production(events, digest)
+                result = classify_bsp_production(
+                    events, digest, lvt_observation=args.bsp_lvt_observation,
+                    lvt_policy=args.bsp_lvt_policy)
             elif has_diagnostic:
                 if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
