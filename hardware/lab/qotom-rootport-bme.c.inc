@@ -16,7 +16,8 @@ static __attribute__((noinline)) void lab_capture_rootport_bme(
         struct qotom_rootport_bme_result result={0};
         uint32_t status=8; /* Local count/arm rejection. */
         lab_rootport_bme_disarm();
-        if(snapshot->count==16 && lab_rootport_bme_arm(&lab_rootport_bme_writer,view,
+        if(snapshot->count==16 && snapshot->headers[6+fn].function==fn &&
+                lab_rootport_bme_arm(&lab_rootport_bme_writer,view,
                 lab_ecam_tables,lab_ecam_table_count,(uintptr_t)lab_ecam_aperture,
                 &snapshot->headers[6+fn],&lab_retained_pcie_device[6+fn])) {
             lab_ecam_window.armed=1;

@@ -97,6 +97,12 @@ int main(void){
         if(!setjmp(terminal)){lab_capture_rootport_bme(&view,&snapshot);assert(0);}
         expect(fn,8,0,0,0);assert(!reads[fn] && !writes[fn]);
     }
+    for(volatile unsigned fn=0;fn<4;++fn){
+        setup();unsigned other=(fn+1)%4;
+        snapshot.headers[6+fn]=snapshot.headers[6+other];
+        if(!setjmp(terminal)){lab_capture_rootport_bme(&view,&snapshot);assert(0);}
+        expect(fn,8,0,0,0);assert(!reads[fn] && !writes[fn]);
+    }
     setup();snapshot.count=15;
     if(!setjmp(terminal)){lab_capture_rootport_bme(&view,&snapshot);assert(0);}
     expect(0,8,0,0,0);assert(!reads[0]);
