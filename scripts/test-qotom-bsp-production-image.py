@@ -2,6 +2,8 @@
 """Exercise the final Qotom BSP production image and AP-start audit."""
 import importlib.util
 from pathlib import Path
+import hashlib
+import json
 import shutil
 import struct
 import tempfile
@@ -46,6 +48,21 @@ for changed in (
         pass
     else:
         raise AssertionError('changed production capture was accepted')
+
+capture = ROOT / 'hardware/lab/observations/qotom-bsp-production-20260912'
+manifest = json.loads((capture/'manifest.json').read_text())
+for name,digest in manifest['files'].items():
+    assert hashlib.sha256((capture/name).read_bytes()).hexdigest() == digest,name
+physical_events = [json.loads(line) for line in
+                   (capture/'cycle-1/events.jsonl').read_text().splitlines()]
+assert b''.join(bytes.fromhex(event['hex']) for event in physical_events) == \
+       (capture/'cycle-1/serial.raw').read_bytes()
+saved = json.loads((capture/'cycle-1/result.json').read_text())
+physical = runner['classify_bsp_production'](physical_events,manifest['elf_sha256'])
+for key,value in physical.items():
+    assert saved[key] == value,key
+assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
+assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
 
 with tempfile.TemporaryDirectory(prefix='qotom-bsp-production-negative-') as directory:
     mapped = Path(directory) / 'mapped-apic.elf'
