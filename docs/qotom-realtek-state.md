@@ -67,6 +67,21 @@ interrupt/MSI/MSI-X treatment, BME control and outstanding traffic semantics.
 Root-port BME gating and these samples alone do not establish endpoint drain,
 continuing firmware exclusion or admission for issues #330 and #291.
 
+## Physical result
+
+The [retained capture](../hardware/lab/observations/qotom-native-realtek-state-20260911/README.md)
+contains successful observations for both endpoints. Each returned stable TXCFG
+`2f900d00`, Command `00`, interrupt mask `0000`, receive configuration
+`0002ff0e`, Command `00` and TXCFG `2f900d00` (hexadecimal). Both complete live
+bridge refreshes passed around each endpoint observation.
+
+The expected terminal remains `qotom-platform-pending`. FreeBSD recovered with
+a changed boot time and consumed request; independent SSH verified BIOS boot,
+the installed hashes and removal of the read-only mount. The retained replay
+checks the complete timed serial classification, exact records, terminal, quiet
+interval and recovery metadata. This validates the bounded observations and
+does not establish engine shutdown or platform admission.
+
 ## Bound register window
 
 The read window binds bus 1 or 3 and permits only the four documented register

@@ -655,6 +655,39 @@ class Capture(unittest.TestCase):
             ('command_before','interrupt','task_file','sata_status','active','issued','command_after')),
             (6,0,0x50,0x123,0,0,6))
 
+    def test_retained_realtek_state_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-realtek-state-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True)
+        self.assertEqual(result['realtek_state'],expected['realtek_state'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],expected['diagnostic']['terminal_reason'])
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
+        actual = [
+            dict(index=index,status=0,transmit_before=0x2f900d00,
+                command_before=0,interrupt_mask=0,receive=0x0002ff0e,
+                command_after=0,transmit_after=0x2f900d00)
+            for index in (13,15)]
+        self.assertEqual(result['realtek_state']['functions'],actual)
+        self.assertFalse(result['realtek_state']['dma_quarantine_established'])
+        self.assertFalse(result['realtek_state']['transaction_drain_established'])
+        self.assertFalse(result['realtek_state']['firmware_exclusion_established'])
+
     def test_retained_rootport_bme_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-rootport-bme-20260911'
         manifest = json.loads((capture / 'manifest.json').read_text())
