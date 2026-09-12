@@ -31,9 +31,9 @@ The caller must bind the exact native inventory, ECAM mappings, firmware and
 roots and provide immutable nonaliasing observations and serialized bounded
 callbacks. Tests cover all four identities, exact read order, every read failure,
 initial/final routing/control/payload bits, asynchronous Status fields, ignored
-and ambiguous writes, pending transactions and BME reassertion. Consumed native
-write authority, decoder/runner integration and physical validation remain
-pending. This helper has not been installed or run on the Qotom.
+and ambiguous writes, pending transactions and BME reassertion. The consumed
+native write authority and decoder/runner path below bind those helper-level
+guarantees to the retained physical run.
 
 ## Consumed native write window
 
