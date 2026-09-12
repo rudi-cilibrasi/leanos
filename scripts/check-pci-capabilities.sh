@@ -37,7 +37,7 @@ leanos_run_sanitized "$build/af-lab-sanitized"
 leanos_run_sanitized "$build/ehci-sanitized"
 
 python3 scripts/generate-qotom-ecam-firmware.py "$build/qotom-ecam-firmware-inputs.h"
-for test in qotom-pcie-pending-lab qotom-realtek-bme-lab qotom-realtek-bme-window qotom-realtek-bme-arm qotom-realtek-state-lab qotom-realtek-state-window qotom-realtek-state-arm qotom-rootport-bme-lab qotom-rootport-bme-window qotom-rootport-bme-arm qotom-hda-bme-window qotom-hda-bme-arm qotom-hda-state-window qotom-hda-state-arm qotom-hda-window qotom-hda-arm qotom-ahci-bme-window qotom-ahci-bme-arm qotom-ahci-interrupt-window qotom-ahci-interrupt-arm qotom-ahci-port-window qotom-ahci-port-arm qotom-ahci-window qotom-ahci-arm qotom-ehci-window qotom-ehci-arm qotom-ehci-semaphore qotom-ehci-semaphore-arm qotom-pm-delay qotom-ehci-smi-window qotom-ehci-smi-arm qotom-ehci-operational-window qotom-ehci-operational-arm qotom-ehci-bme-window qotom-ehci-bme-arm qotom-xhci-window qotom-xhci-arm qotom-xhci-ext-window qotom-xhci-ext-arm qotom-xhci-semaphore-window qotom-xhci-semaphore-arm qotom-xhci-smi-window qotom-xhci-smi-arm qotom-xhci-operational-window qotom-xhci-operational-arm qotom-xhci-bme-window qotom-xhci-bme-arm; do
+for test in qotom-broadcom-d3-window qotom-broadcom-d3-arm qotom-pcie-pending-lab qotom-realtek-bme-lab qotom-realtek-bme-window qotom-realtek-bme-arm qotom-realtek-state-lab qotom-realtek-state-window qotom-realtek-state-arm qotom-rootport-bme-lab qotom-rootport-bme-window qotom-rootport-bme-arm qotom-hda-bme-window qotom-hda-bme-arm qotom-hda-state-window qotom-hda-state-arm qotom-hda-window qotom-hda-arm qotom-ahci-bme-window qotom-ahci-bme-arm qotom-ahci-interrupt-window qotom-ahci-interrupt-arm qotom-ahci-port-window qotom-ahci-port-arm qotom-ahci-window qotom-ahci-arm qotom-ehci-window qotom-ehci-arm qotom-ehci-semaphore qotom-ehci-semaphore-arm qotom-pm-delay qotom-ehci-smi-window qotom-ehci-smi-arm qotom-ehci-operational-window qotom-ehci-operational-arm qotom-ehci-bme-window qotom-ehci-bme-arm qotom-xhci-window qotom-xhci-arm qotom-xhci-ext-window qotom-xhci-ext-arm qotom-xhci-semaphore-window qotom-xhci-semaphore-arm qotom-xhci-smi-window qotom-xhci-smi-arm qotom-xhci-operational-window qotom-xhci-operational-arm qotom-xhci-bme-window qotom-xhci-bme-arm; do
   "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -Iboot -Ihardware/lab -I"$build" "tests/$test.c" -o "$build/$test"
   "$build/$test"
   "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
@@ -125,6 +125,7 @@ leanos_run_sanitized "$build/pcie-device-lab-sanitized"
 
 python3 scripts/test-qotom-pcie-device-capture.py
 python3 scripts/test-qotom-pcie-pending-capture.py
+python3 scripts/test-qotom-broadcom-d3-capture.py
 
 "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-ahci-capabilities.c -o "$build/ahci-capabilities"
 "$build/ahci-capabilities"
@@ -209,3 +210,15 @@ leanos_run_sanitized "$build/realtek-bme-sanitized"
 "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
   tests/qotom-pcie-pending.c -o "$build/pcie-pending-sanitized"
 leanos_run_sanitized "$build/pcie-pending-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/pci-power-observation.c -o "$build/pci-power"
+"$build/pci-power"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/pci-power-observation.c -o "$build/pci-power-sanitized"
+leanos_run_sanitized "$build/pci-power-sanitized"
+
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror tests/qotom-broadcom-d3.c -o "$build/broadcom-d3"
+"$build/broadcom-d3"
+"$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" -Wall -Wextra -Werror \
+  tests/qotom-broadcom-d3.c -o "$build/broadcom-d3-sanitized"
+leanos_run_sanitized "$build/broadcom-d3-sanitized"
