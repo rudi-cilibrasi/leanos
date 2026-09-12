@@ -42,8 +42,20 @@ root interference is terminal.
 The stage does not establish display ownership, ring shutdown, interrupt
 quiescence, DMA drain, posted-write completion, or continuing firmware/AP
 exclusion. It leaves graphics BME set and the native terminal at
-`qotom-platform-pending`. Physical LeanOS evidence will be retained after the
-first protected run.
+`qotom-platform-pending`.
+
+## Physical result
+
+The [retained Win7 Legacy capture](../hardware/lab/observations/qotom-native-graphics-state-20260912)
+records two physical attempts. The first rejected status 7 because the initial
+gate used FreeBSD's later Command `0407`; the boot header is `0007`. The fixed
+gate then returned status 0. RCS, VCS and BCS each reported tail, head, start
+and control zero and mode `0200` in both samples. The request was consumed and
+FreeBSD recovered automatically after 34.325 seconds of serial quiet.
+
+That capture establishes the bounded read-only state described above. It does
+not convert an idle sample into continuing engine ownership or DMA quarantine.
+The manifest retains exact source, ELF, install, serial and recovery hashes.
 
 Build the complete opt-in image by adding `--graphics-state` after the existing
 `--broadcom-d3` dependency chain. The builder writes
