@@ -117,3 +117,57 @@ The retained protected replay agrees and FreeBSD recovered automatically with
 the request consumed. These samples guide a subsequent guarded interrupt/BME
 transition; transaction drain, continuing firmware/AP exclusion and whole-profile
 integration remain open.
+
+## Bounded global interrupt disable
+
+`boot/qotom-ahci-interrupts.h` requires successful global and port observations
+matching the captured stopped/empty port profile, with GHC `80000002`. It
+refreshes all 37 global/resource/port reads before writing one DWORD `80000000`
+to ABAR+4, immediately reads GHC back, and repeats the complete 37-read collector
+against the expected interrupt-disabled globals. Both port snapshots must retain
+CMD6/IE0/TFD50/SSTS123/SACT0/CI0/CMD6 (hexadecimal). A changed state rejects.
+
+Intel 329670-002 section 13.8.2 defines GHC.AE at bit31, IE at bit1 and HR at bit0.
+The write retains AHCI mode, clears global interrupt enable and leaves reset
+unrequested. The helper performs at most 75 reads and one write, with no polling,
+port writes, engine stop, reset or BME change. It records whether a write was
+attempted and the available before/after control samples, including ambiguous
+failed writes; it never retries or restores interrupts as rollback.
+
+Tests cover every read failure, every prior/global/port bit mutation, initial and
+final state changes, all immediate readback bit changes, ignored writes and
+failed writes with and without effects. The helper still requires a separate
+consumed native write window and firmware/root/resource binding before hardware
+execution. Interrupt masking does not establish transaction drain, continuing
+firmware/AP exclusion or platform admission.
+
+The consumed interrupt window admits only address `d0916004`, value `80000000`
+(hexadecimal), through a single trusted DWORD store. Every request consumes its
+armed flag, including rejected requests. The mapping uses the AHCI page as RW,
+NX, supervisor UC, restores the original leaf exactly, invalidates before and
+after the store, and checks control state before returning. Mapping or control
+interference terminates; a failed store can still have changed the device.
+
+The arm gate checks both successful prior statuses, the exact globals and
+stopped/empty port samples, PCI identity/resource binding, copied firmware,
+compiled roots and every possible present AHCI-page alias. Failed rearms revoke
+all authority. Arming performs no store, invalidation or device access. Tests
+exercise address/value mutations, rejected reuse, every missing callback,
+failed stores, restoration interference, all 4096 aliases, bound header bits,
+all prior sample bits and failed prior statuses.
+
+The opt-in `--ahci-interrupts` image requires port capture. Native code uses the
+existing single-DWORD store primitive and disarms readers and writer before
+emitting attempted/before/after fields. Global, port and writer arm failures use
+statuses 9, 10 and 11. The protected runner fingerprints its decoder, retains
+`ahci-interrupts.json` and preserves the actual terminal after projecting earlier
+stages. Decoding requires the successful port prefix and exact stopped/IE-on
+profile for helper outcomes. It distinguishes unavailable readback from failed
+readback (including all ones) and final-refresh failure after accepted readback.
+The [physical interrupt-disable capture](../hardware/lab/observations/qotom-native-ahci-interrupt-20260911/README.md)
+reported status 0, attempted 1, GHC `80000002` to `80000000` (hexadecimal), with
+both complete refreshes and immediate readback accepted. The retained protected
+replay agrees; FreeBSD recovered automatically and independent SSH verified the
+consumed request and installed hashes. No SATA BME clear has occurred yet.
+Interrupt masking and stopped/empty samples do not establish transaction drain
+or continuing firmware/AP exclusion.
