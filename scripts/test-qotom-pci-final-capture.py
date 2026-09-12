@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
+import hashlib
+import json
 import runpy
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 T=runpy.run_path(str(Path(__file__).with_name('test-qotom-txe-bme-capture.py')))
 D=runpy.run_path(str(Path(__file__).with_name('check-qotom-pci-final-capture.py')))
+R=runpy.run_path(str(Path(__file__).with_name('run-qotom-recovery-lab.py')))
 P=T['P'];FINAL=T['FINAL'];STATE=T['STATE'].replace(FINAL,T['record']()+FINAL)
 COMMANDS=','.join(map(str,D['COMMANDS'])).encode()
 record=(b'LEANOS-LAB/1 PCI-FINAL profile=qotom-pci-final-v1 status=6 index=16 count=16 '
@@ -31,4 +34,20 @@ for number,bad in enumerate(mutations):
     try:D['extract'](bad,P)
     except ValueError:pass
     else:raise AssertionError(f'accepted mutated PCI final capture {number}')
+evidence=ROOT/'hardware/lab/observations/qotom-native-pci-final-20260912'
+if evidence.exists():
+    physical_protocol=R['cpu_replay_module'](True).load_protocol(
+        evidence/'diagnostic-protocol.tsv')
+    serial=(evidence/'cycle-1/serial.raw').read_bytes()
+    start=serial.index(physical_protocol['BOOT'].encode()+b' target=qotom-j1900-candidate')
+    physical_terminal=(physical_protocol['FINAL'].encode()+
+        b' status=FAIL reason=qotom-pci-assumptions\n')
+    end=serial.index(physical_terminal,start)+len(physical_terminal)
+    _,retained=D['extract'](serial[start:end],physical_protocol)
+    assert retained==json.loads((evidence/'cycle-1/pci-final.json').read_text())
+    manifest=json.loads((evidence/'manifest.json').read_text())
+    assert manifest['raw_serial_sha256']==hashlib.sha256(
+        (evidence/'cycle-1/serial.raw').read_bytes()).hexdigest()
+    for name,digest in manifest['files'].items():
+        assert hashlib.sha256((evidence/name).read_bytes()).hexdigest()==digest,name
 print('PASS Qotom PCI final decoder: exact rescan, commands and unmet assumptions')

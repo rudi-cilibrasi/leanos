@@ -37,6 +37,10 @@ LEANOS-LAB/1 PCI-FINAL profile=qotom-pci-final-v1 status=6 index=16 count=16 com
 LEANOS/3 FINAL status=FAIL reason=qotom-pci-assumptions
 ```
 
+The [retained physical capture](../hardware/lab/observations/qotom-native-pci-final-20260912)
+matches that record. The protected boot recovered FreeBSD automatically and
+consumed its one-shot request.
+
 The J1900 profile marks VT-d unavailable because the retained ACPI tables have
 no DMAR table and this Bay Trail-D platform does not expose a reviewed remapping
 unit. The Qotom path never probes q35 VT-d addresses. `not-applicable` is not a
