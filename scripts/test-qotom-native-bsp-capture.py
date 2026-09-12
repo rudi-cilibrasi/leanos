@@ -49,6 +49,61 @@ def protected(line=None, rejected=False, enabled=True):
 
 
 class Capture(unittest.TestCase):
+    def test_hda_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-bme-20260911'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        def record(status=0,values=(1,0x4401,0,1,0,1)):
+            return (f'LEANOS-LAB/1 HDA profile=qotom-hda-v1 index=5 status={status}'+
+                ''.join(f' {key}={value}' for key,value in zip(
+                    ('before','capability','minor','major','interrupt','after'),values))+'\n').encode()
+        def check(line,terminal=FINAL):
+            changed=raw[:end].replace(FINAL,line+terminal)
+            synthetic=[{'elapsed':0,'hex':changed.hex()},{'elapsed':37,'hex':raw[end:].hex()}]
+            return R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+                bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+                native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True)
+        result=check(record())
+        self.assertEqual(result['hda']['capability'],0x4401)
+        self.assertFalse(result['hda']['dma_quarantine_established'])
+        self.assertFalse(result['hda']['atomic_snapshot'])
+        self.assertIn('hda_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-platform-pending')
+        self.assertEqual(result['diagnostic']['replay_scope'],'native-inventory-with-hda-observation')
+        failure=FINAL.replace(b'qotom-platform-pending',b'qotom-hda')
+        for status in range(3,10):
+            result=check(record(status,(0,0,0,0,0,0)),failure)
+            self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-hda')
+            with self.assertRaises(ValueError):check(record(status,(0,0,0,0,0,0)))
+            for index in range(6):
+                values=[0]*6;values[index]=1
+                with self.assertRaises(ValueError):check(record(status,values),failure)
+        with self.assertRaises(ValueError):check(record(),failure)
+        for values in ((0,0x4401,0,1,0,1),(1,0x4401,0,1,0,0),
+                (0xffffffff,0x4401,0,1,0,1),(1,0x4401,0,1,0,0xffffffff),
+                (1,65535,0,1,0,1),(1,65536,0,1,0,1),(1,0x4401,255,1,0,1),
+                (1,0x4401,0,256,0,1),(1,0x4401,0,1,0xffffffff,1),
+                (1,0x4401,0,1,0x100000000,1)):
+            with self.assertRaises(ValueError):check(record(values=values))
+        # Raw unsupported capability/version/interrupt bits remain observations.
+        result=check(record(values=(1,0x3301,254,254,0xfffffffe,0x101)))
+        self.assertEqual(result['hda']['control_after'],0x101)
+        for bad in (b'',record()+record(),record(1),record(2),record(10),
+                record().replace(b'index=5',b'index=2'),record().replace(b'status=0',b'status=00'),
+                record().replace(b'before=1',b'before=-1'),record().replace(b'qotom-hda-v1',b'qotom-hda-v2')):
+            with self.assertRaises(ValueError):check(bad)
+        # No HDA record may follow a rejected prior SATA transition.
+        old=next(line for line in raw.splitlines(keepends=True) if line.startswith(b'LEANOS-LAB/1 AHCI-BME '))
+        raw=raw.replace(old,b'LEANOS-LAB/1 AHCI-BME profile=qotom-ahci-bme-v1 index=2 status=7 attempted=1 before=7 after=7\n')
+        with self.assertRaises(ValueError):check(record())
+
     def test_ahci_bme_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-ahci-interrupt-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
@@ -317,6 +372,35 @@ class Capture(unittest.TestCase):
         self.assertEqual(tuple(observed[k] for k in
             ('command_before','interrupt','task_file','sata_status','active','issued','command_after')),
             (6,0,0x50,0x123,0,0,6))
+
+    def test_retained_hda_capture(self):
+        capture = ROOT / 'hardware/lab/observations/qotom-native-hda-20260911'
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected = json.loads((capture / 'cycle-1/result.json').read_text())
+        events = [json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result = R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True)
+        self.assertEqual(result['hda'],expected['hda'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],expected['diagnostic']['terminal_reason'])
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+
+        self.assertFalse(result['hda']['dma_quarantine_established'])
+
+        observed=result['hda']
+        self.assertEqual(observed['status'],0)
+        self.assertEqual(tuple(observed[k] for k in
+            ('control_before','capability','version_minor','version_major','interrupt','control_after')),
+            (1,0x4401,0,1,0,1))
 
     def test_retained_ahci_bme_capture(self):
         capture = ROOT / 'hardware/lab/observations/qotom-native-ahci-bme-20260911'
