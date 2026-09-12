@@ -59,6 +59,7 @@ def records : List (Nat × String) :=
 platform-admission boundary. Runtime fail-stop reasons are intentionally absent. -/
 def preAdmissionRejectionReasons : List String := [
   "j1900-cpu-profile",
+  "j1900-cpu-control-policy",
   "j1900-msr-readback",
   "qotom-platform-pending",
   "qotom-pci-enumeration",

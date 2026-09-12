@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import struct
+import subprocess
 import tempfile
 import runpy
 
@@ -20,6 +21,19 @@ assert result['leanos_ap_start_path_excluded']
 assert not result['x2apic_icr_msr_write']
 assert result['firmware_ap_dormancy_assumed'] and not result['ap_dormancy_established']
 assert all(not plan['local_apic_aliases'] for plan in result['plans'].values())
+
+# The production image must consume every word of the composed CPU/control
+# checkpoint.  The ordinary q35 image must continue to discard this Qotom-only
+# authority boundary.
+production_symbols = subprocess.check_output(['nm', '-n', str(ELF)], text=True)
+assert ' T leanos_j1900_cpu_control_policy_query\n' in production_symbols
+report = subprocess.check_output(
+    ['objdump', '-dr', '--disassemble=report_j1900_cpu_candidate', str(ELF)],
+    text=True)
+assert report.count('<j1900_cpu_control_policy_query>') == 8
+q35_symbols = subprocess.check_output(
+    ['nm', '-n', str(ROOT / 'build/boot/leanos.elf')], text=True)
+assert 'j1900_cpu_control_policy' not in q35_symbols
 
 runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
 protocol = runner['cpu_replay_module'](True).load_protocol(
@@ -123,4 +137,4 @@ with tempfile.TemporaryDirectory(prefix='qotom-bsp-production-negative-') as dir
     else:
         raise AssertionError('extra WRMSR mutation was accepted')
 
-print('PASS Qotom BSP production ELF, local-APIC mapping and x2APIC-WRMSR negatives')
+print('PASS Qotom BSP production ELF, CPU/control checkpoint, local-APIC mapping and x2APIC-WRMSR negatives')
