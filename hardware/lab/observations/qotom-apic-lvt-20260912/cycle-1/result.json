@@ -1,0 +1,71 @@
+{
+  "scenario": "qotom-bsp-lvt-observation",
+  "memory_published": true,
+  "topology_published": true,
+  "interrupts_masked": true,
+  "nmi_routing_quarantined": true,
+  "platform_admitted": false,
+  "terminal_reason": "qotom-platform-pending",
+  "quiet_seconds": 34.31762092898134,
+  "watchdog_protected": true,
+  "raw_sha256": "9ac5af2ead4e75b7ea4294ccd8bfc6e40ec68de5b5a4a46fddf6ed84f38d3383",
+  "inherited_lvt_observed": true,
+  "local_apic_lvt": {
+    "profile": "qotom-lvt-v1",
+    "status": 0,
+    "apic_base": 4276095232,
+    "executing_apic_id": 0,
+    "lint0_first": {
+      "raw": 65536,
+      "vector": 0,
+      "delivery_mode": 0,
+      "delivery_status": 0,
+      "polarity": 0,
+      "remote_irr": 0,
+      "trigger_mode": 0,
+      "masked": true
+    },
+    "lint1_first": {
+      "raw": 65536,
+      "vector": 0,
+      "delivery_mode": 0,
+      "delivery_status": 0,
+      "polarity": 0,
+      "remote_irr": 0,
+      "trigger_mode": 0,
+      "masked": true
+    },
+    "lint0_second": {
+      "raw": 65536,
+      "vector": 0,
+      "delivery_mode": 0,
+      "delivery_status": 0,
+      "polarity": 0,
+      "remote_irr": 0,
+      "trigger_mode": 0,
+      "masked": true
+    },
+    "lint1_second": {
+      "raw": 65536,
+      "vector": 0,
+      "delivery_mode": 0,
+      "delivery_status": 0,
+      "polarity": 0,
+      "remote_irr": 0,
+      "trigger_mode": 0,
+      "masked": true
+    },
+    "stable": true,
+    "routing_authority": false,
+    "write_count": 0,
+    "mapping_restored": true,
+    "platform_admitted": false
+  },
+  "freebsd_boot_before": 1789215873,
+  "freebsd_boot_after": 1789216034,
+  "elf_sha256": "f4c9742b38535870727a28c3bb2aff89ac6428493510873f6d9005732020b024",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": false,
+  "request_consumed": true,
+  "recovery": "freebsd-ssh-restored"
+}
