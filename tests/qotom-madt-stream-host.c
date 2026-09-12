@@ -15,12 +15,18 @@ static uint64_t finish(const uint64_t a[20], uint64_t word) {
         a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15],a[16],a[17],
         a[18],a[19],word);
 }
+static uint64_t admission(const uint64_t a[12], uint64_t word) {
+    return leanos_qotom_machine_topology_admission_result_query(
+        a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],word);
+}
 extern void leanos_register_boundary_target(const char *, void *);
 int main(void) {
     leanos_register_boundary_target("leanos_qotom_madt_stream_byte_step_query",
         (void *)(uintptr_t)&leanos_qotom_madt_stream_byte_step_query);
     leanos_register_boundary_target("leanos_qotom_madt_stream_finish_query",
         (void *)(uintptr_t)&leanos_qotom_madt_stream_finish_query);
+    leanos_register_boundary_target("leanos_qotom_machine_topology_admission_result_query",
+        (void *)(uintptr_t)&leanos_qotom_machine_topology_admission_result_query);
     const struct qotom_bsp_observation empty_observation = {0};
     const uint8_t one_byte = 0;
     if (qotom_bind_validated_madt_entries(NULL,1,&empty_observation).status != 1 ||
@@ -127,6 +133,37 @@ int main(void) {
             }
         if (finish(finish_cases[c].args,UINT64_MAX) != 0) return 9;
         printf("finish %s OK\n",finish_cases[c].name);
+    }
+    const uint64_t accepted_admission[12] = {
+        2,0xb979f078,0xb979f078,10,10,1,0,0,0,4,0xfee00900,0
+    };
+    static const struct {
+        const char *name;
+        size_t field;
+        uint64_t value, error;
+    } admission_cases[] = {
+        {"root-kind",0,0,80}, {"root-address",1,0,80},
+        {"root-copy",2,0xb979f028,80}, {"advertised-zero",3,0,81},
+        {"advertised-overflow",3,257,81}, {"copy-incomplete",4,9,81},
+        {"madt-missing",5,0,82}, {"madt-duplicate",5,2,82},
+        {"consumer-rejected",6,4,83}, {"consumer-detail",7,22,83},
+        {"admitted-width",8,256,84}, {"admitted-nonzero",8,2,84},
+        {"executing-mismatch",11,2,84}, {"processor-count",9,1,85},
+        {"apic-base",10,0xfee00000,86},
+    };
+    const uint64_t accepted_words[4] = {1,1,0,0};
+    for (uint64_t word = 0; word < 4; ++word)
+        if (admission(accepted_admission,word) != accepted_words[word]) return 15;
+    if (admission(accepted_admission,UINT64_MAX) != 0) return 16;
+    for (size_t c = 0; c < sizeof(admission_cases)/sizeof(admission_cases[0]); ++c) {
+        uint64_t input[12];
+        memcpy(input,accepted_admission,sizeof(input));
+        input[admission_cases[c].field] = admission_cases[c].value;
+        const uint64_t rejected_words[4] = {1,2,admission_cases[c].error,0};
+        for (uint64_t word = 0; word < 4; ++word)
+            if (admission(input,word) != rejected_words[word]) return 17;
+        printf("admission %s rejected=%"PRIu64"\n",
+               admission_cases[c].name,admission_cases[c].error);
     }
     printf("composed parser/BSP cases %zu\n",composed_cases);
     return 0;

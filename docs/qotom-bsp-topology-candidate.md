@@ -101,12 +101,12 @@ full sanitizer module closure, export-entry coverage and output comparison.
 
 ## Remaining admission requirements
 
-This witness grants no runtime authority. It is not a complete platform profile,
-a memory-allocation witness, or a proof that the other processors are dormant.
-The kernel does not call this candidate policy. Before physical admission,
-issues #291 and #331 still require explicit firmware/reset/SMM/hotplug assumptions,
-runtime integration of the bound executing-CPU observation, modeled AP-start rejection,
-final-object AP-start exclusion, full platform composition and a physical
-capture. The captured unusual MADT local-APIC NMI routing bytes are retained
-and remain unchecked by the topology decoder. Interrupt routing safety must
-be resolved separately before granting runtime authority.
+This witness alone grants no runtime authority and is not a complete platform
+profile or proof that the other processors are dormant. The explicit
+[production boundary](qotom-bsp-production-boundary.md) now consumes it through
+the actual handoff, table-copy, allocation and publication path and audits the
+linked image's AP-start mechanisms. That checkpoint still assumes firmware/AP
+dormancy and stops before platform admission. The captured unusual MADT
+local-APIC NMI routing bytes remain unchecked. Interrupt routing, PCI/DMA
+containment and the rest of #291 must be resolved before granting runtime
+authority.

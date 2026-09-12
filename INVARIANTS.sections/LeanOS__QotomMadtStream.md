@@ -45,3 +45,8 @@ These checks describe the values accepted by the scalar topology stream and its 
 
 - `completed_processor_seen_bits` — A completed guarded processor sets exactly its next baseline ID bit in the first duplicate-detection limb and preserves the other limbs.
 - `terminal_byte_bsp` — Terminal success binds the executing CPU and returned admitted ID to BSP zero through the actual final error checks.
+
+- `machine_topology_admission_exact_state_accepted` — The production gate accepts the exact captured root, complete copy sequence, unique processor table, successful four-processor consumer result, expected APIC base and executing BSP identity.
+- `machine_topology_admission_rejected_consumer_rejected` — A rejected topology consumer result remains rejected at the production gate instead of being replaced by plausible output fields.
+- `machine_topology_admission_substituted_count_rejected` — The production gate rejects a successful-looking consumer result whose processor count was substituted after parsing.
+- `machine_topology_admission_wrong_base_rejected` — The production gate rejects an otherwise exact topology result when the observed APIC base differs from the Qotom profile.
