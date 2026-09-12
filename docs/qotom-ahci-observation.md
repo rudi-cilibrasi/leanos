@@ -164,4 +164,10 @@ statuses 9, 10 and 11. The protected runner fingerprints its decoder, retains
 stages. Decoding requires the successful port prefix and exact stopped/IE-on
 profile for helper outcomes. It distinguishes unavailable readback from failed
 readback (including all ones) and final-refresh failure after accepted readback.
-Physical interrupt-disable validation remains pending.
+The [physical interrupt-disable capture](../hardware/lab/observations/qotom-native-ahci-interrupt-20260911/README.md)
+reported status 0, attempted 1, GHC `80000002` to `80000000` (hexadecimal), with
+both complete refreshes and immediate readback accepted. The retained protected
+replay agrees; FreeBSD recovered automatically and independent SSH verified the
+consumed request and installed hashes. No SATA BME clear has occurred yet.
+Interrupt masking and stopped/empty samples do not establish transaction drain
+or continuing firmware/AP exclusion.
