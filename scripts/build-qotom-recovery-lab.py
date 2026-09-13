@@ -50,9 +50,12 @@ p.add_argument('--hda-observation', action='store_true', help='observe HDA globa
 p.add_argument('--ahci-bme', action='store_true', help='clear SATA bus mastering after interrupt disable')
 p.add_argument('--txe-status', action='store_true', help='observe TXE firmware status after HDA BME clear')
 p.add_argument('--realtek-bme', action='store_true', help='clear Realtek bus mastering after refreshed stopped-state observations')
+p.add_argument('--pcie-pending', action='store_true', help='confirm two delayed PCIe TP-clear samples after root-port and Realtek BME clears')
 p.add_argument('--realtek-state', action='store_true', help='observe routed Realtek engine state after root-port BME gating')
 p.add_argument('--rootport-bme', action='store_true', help='gate root-port upstream Memory/IO requests after TXE status')
 a = p.parse_args()
+if a.pcie_pending and not a.realtek_bme:
+    p.error('--pcie-pending requires --realtek-bme')
 if a.realtek_bme and not a.realtek_state:
     p.error('--realtek-bme requires --realtek-state')
 if a.realtek_state and not a.rootport_bme:
@@ -141,7 +144,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -168,6 +171,8 @@ for item in prepared_build.iterdir():
         if item.resolve() != destination.resolve():
             shutil.copy2(item, destination)
 text = source.read_text()
+if a.pcie_pending:
+    text = '#define LEANOS_QOTOM_PCIE_PENDING 1\n' + text
 if a.realtek_bme:
     text = '#define LEANOS_QOTOM_REALTEK_BME 1\n' + text
 if a.realtek_state:
@@ -538,7 +543,9 @@ if a.realtek_state:
     files += [root / name for name in ('boot/qotom-realtek-state.h', 'boot/qotom-realtek-route.h', 'hardware/lab/qotom-realtek-state-window.h', 'hardware/lab/qotom-realtek-state-arm.h', 'hardware/lab/qotom-realtek-state.c.inc')]
 if a.realtek_bme:
     files += [root / name for name in ('boot/qotom-realtek-bme.h', 'hardware/lab/qotom-realtek-bme-window.h', 'hardware/lab/qotom-realtek-bme-arm.h', 'hardware/lab/qotom-realtek-bme.c.inc')]
-manifest = {'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.pcie_pending:
+    files += [root / name for name in ('boot/qotom-pcie-pending.h', 'hardware/lab/qotom-pcie-pending.c.inc', 'hardware/lab/qotom-pm-delay.h')]
+manifest = {'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

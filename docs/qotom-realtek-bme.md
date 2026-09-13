@@ -55,7 +55,9 @@ Command transition from 0007 to 0003 at each endpoint. Both refreshed engine
 states matched the retained stopped-state samples. The request was consumed and
 FreeBSD recovered automatically after 34.308 seconds of serial quiet. The
 retained evidence and its independent replay preserve the limitations above.
-The consumed word-store authority is described below.
+The follow-on [PCIe non-posted quiet observation](qotom-pcie-pending.md) checks
+Transactions Pending after both endpoint transitions while retaining these
+limitations. The consumed word-store authority is described below.
 
 ## Consumed word-store authority
 
