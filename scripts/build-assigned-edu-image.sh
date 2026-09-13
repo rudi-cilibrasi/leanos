@@ -64,7 +64,7 @@ assigned_current_signature="$(compute_check_signature assigned-edu \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/BootTextConsole.o" "$build/FaultDispatch.o")"
+  "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/J1900CpuControlPolicy.o" "$build/BootTextConsole.o" "$build/FaultDispatch.o")"
 if [[ -f "$assigned_cache_signature" && \
       -f "$assigned_cache_manifest" && \
       "$(<"$assigned_cache_signature")" == "$assigned_current_signature" ]] && \
@@ -86,7 +86,7 @@ link_assigned_edu() {
     "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
     "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-    "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/BootTextConsole.o" "$build/FaultDispatch.o"
+    "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/J1900CpuControlPolicy.o" "$build/BootTextConsole.o" "$build/FaultDispatch.o"
 }
 
 assigned_plan_converged=false
