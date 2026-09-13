@@ -52,6 +52,18 @@ int main(void) {
        result.commands_accepted!=1 || result.admitted!=1 ||
        memcmp(result.commands,commands,sizeof commands) ||
        memcmp(&input,&final,sizeof input))return 2;
+    result=qotom_check_pci_final_initial_trust(PCI_ENUMERATION_OK,&input,
+        leanos_qotom_native_pci_header_check,leanos_qotom_pci_final_commands,
+        leanos_qotom_pci_final_admission,leanos_qotom_pci_initial_trust_contract);
+    expect(result.status,QOTOM_PCI_FINAL_MATCH);
+    if(result.assumption_mask!=0x1f || result.admitted!=1)return 5;
+    expect(qotom_check_pci_final_initial_trust(PCI_ENUMERATION_OK,&input,
+        leanos_qotom_native_pci_header_check,leanos_qotom_pci_final_commands,
+        leanos_qotom_pci_final_admission,NULL).status,QOTOM_PCI_FINAL_ARGUMENT);
+    expect(qotom_check_pci_final_initial_trust(PCI_ENUMERATION_OK,&input,
+        leanos_qotom_native_pci_header_check,leanos_qotom_pci_final_commands,
+        leanos_qotom_pci_final_admission,reject_commands).status,
+        QOTOM_PCI_FINAL_GENERATED);
     expect(check(&input,&none).status,QOTOM_PCI_FINAL_ASSUMPTIONS);
     expect(qotom_check_pci_final(PCI_ENUMERATION_OK,NULL,
         leanos_qotom_native_pci_header_check,leanos_qotom_pci_final_commands,

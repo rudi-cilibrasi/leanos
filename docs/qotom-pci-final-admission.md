@@ -61,3 +61,21 @@ quiescence, and continuing firmware/SMM noninterference. Until all three have a
 reviewed witness or an explicitly accepted trust contract, this path must stay
 before CPL3 and before production whole-profile dispatch. It does not establish
 DMA quarantine and does not close issue #330.
+
+The initial physical profile now has an explicit conditional route in
+[ADR 0018](adr/0018-qotom-pci-initial-trust-contract.md). An opt-in
+`--pci-trust-contract` build selects all five premises as the single generated
+`qotom-j1900-pci-trust-v1` policy and requires `--pci-final-admission`. A match
+reports mask 31, contract acceptance, `platform-admitted=1`, VT-d not
+applicable, and stops at the next `qotom-nosmap-pending` checkpoint. Decoder
+metadata continues to mark posted-write drain, TXE-private quiescence, and
+firmware/SMM noninterference as assumptions rather than observations. The
+ordinary final-observation mode and its retained mask-3 rejection are unchanged.
+
+The protected physical capture in
+[`qotom-native-pci-trust-20260912`](../hardware/lab/observations/qotom-native-pci-trust-20260912/README.md)
+accepted the exact final vector with mask 31 under that named contract and
+reached `qotom-nosmap-pending`. The watchdog then recovered FreeBSD, changed
+the boot timestamp, and left the one-shot request consumed. This satisfies the
+conditional PCI boundary for the initial profile; it does not convert any of
+the three trusted premises into measurements.
