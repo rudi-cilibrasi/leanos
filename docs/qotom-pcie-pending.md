@@ -3,9 +3,9 @@
 The retained PCIe Device observations expose Device Status.Transactions
 Pending on the four root ports at indices 6–9 and the two Realtek endpoints at
 indices 13 and 15. This stage checks that bit after the successful root-port
-and endpoint BME transitions. The Broadcom endpoint at index 14 is outside the
-stage because its device ownership, stopped-state and BME contracts remain
-unresolved.
+and endpoint BME transitions. The Broadcom endpoint at index 14 is handled by
+the subsequent [bounded Command-off and D3hot stage](qotom-broadcom-d3.md),
+whose remaining ownership and shutdown limits are explicit.
 
 The helper accepts the exact prior PCIe observation and a successful typed BME
 result. Realtek inputs also require the retained stopped engine state. Every
@@ -32,8 +32,8 @@ terminal reason. It records that no hardware operation was replayed.
 PCIe Transactions Pending describes outstanding non-posted requests from one
 Function. Two clear samples establish a bounded non-posted quiet observation
 for these six functions. They do not show that posted writes reached memory,
-exclude later firmware, AP or device activity, cover the Broadcom endpoint, or
-establish transaction drain or whole-machine DMA quarantine. The native
+exclude later firmware, AP or device activity, cover the Broadcom endpoint in
+this stage, or establish transaction drain or whole-machine DMA quarantine. The native
 terminal therefore remains `qotom-platform-pending`.
 
 `tests/qotom-pcie-pending.c` covers pending-to-clear, the 100-poll timeout,

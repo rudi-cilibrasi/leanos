@@ -37,30 +37,31 @@ static inline int qotom_pcie_pending_same_sample(
  * have reached memory, exclude firmware/AP activity, or establish whole-system
  * DMA containment. Callback serialization, timer continuity and device
  * obedience remain caller/profile obligations. */
-static inline enum qotom_pcie_pending_status qotom_confirm_pcie_nonposted_quiet(
+static inline enum qotom_pcie_pending_status qotom_confirm_pcie_nonposted_quiet_command(
         pci_enumeration_read read,void *context,
         qotom_pcie_pending_delay delay,void *delay_context,
         const struct pci_enumeration_header *initial,
         const struct pci_capability_snapshot *caps,
         const struct pci_express_observation *prior,
+        uint16_t expected_command,
         struct qotom_pcie_pending_result *out) {
     if(out)*out=(struct qotom_pcie_pending_result){0};
     if(!read || !delay || !initial || !caps || !prior || !out ||
        prior->status!=PCI_EXPRESS_OK)return QOTOM_PCIE_PENDING_ARGUMENT;
     struct pci_enumeration_header current=*initial;
-    current.words[1]=(current.words[1]&UINT32_C(0xffff0000))|3;
+    current.words[1]=(current.words[1]&UINT32_C(0xffff0000))|expected_command;
     unsigned clear=0;
     for(unsigned poll=0;poll<QOTOM_PCIE_PENDING_POLL_LIMIT;++poll) {
         uint32_t command;
         if(!read(context,current.bus,current.device,current.function,4,&command) ||
-           (command&UINT32_C(0xffff))!=3)return QOTOM_PCIE_PENDING_COMMAND;
+           (command&UINT32_C(0xffff))!=expected_command)return QOTOM_PCIE_PENDING_COMMAND;
         struct pci_express_observation sample=
             pci_observe_express(read,context,&current,caps);
         if(sample.status!=PCI_EXPRESS_OK)return QOTOM_PCIE_PENDING_OBSERVATION;
         if(!qotom_pcie_pending_same_sample(prior,&sample))
             return QOTOM_PCIE_PENDING_CHANGED;
         if(!read(context,current.bus,current.device,current.function,4,&command) ||
-           (command&UINT32_C(0xffff))!=3)return QOTOM_PCIE_PENDING_COMMAND;
+           (command&UINT32_C(0xffff))!=expected_command)return QOTOM_PCIE_PENDING_COMMAND;
         out->polls=poll+1;
         out->device_status=sample.device_control_status>>16;
         if(sample.device_control_status&QOTOM_PCIE_PENDING_BIT)clear=0;
@@ -71,6 +72,17 @@ static inline enum qotom_pcie_pending_status qotom_confirm_pcie_nonposted_quiet(
             return QOTOM_PCIE_PENDING_DELAY;
     }
     return QOTOM_PCIE_PENDING_TIMEOUT;
+}
+
+static inline enum qotom_pcie_pending_status qotom_confirm_pcie_nonposted_quiet(
+        pci_enumeration_read read,void *context,
+        qotom_pcie_pending_delay delay,void *delay_context,
+        const struct pci_enumeration_header *initial,
+        const struct pci_capability_snapshot *caps,
+        const struct pci_express_observation *prior,
+        struct qotom_pcie_pending_result *out) {
+    return qotom_confirm_pcie_nonposted_quiet_command(read,context,delay,delay_context,
+        initial,caps,prior,3,out);
 }
 
 static inline int qotom_rootport_pending_prior_valid(

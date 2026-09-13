@@ -1,0 +1,105 @@
+{
+  "schema": "leanos-pci-af-observation-v1",
+  "functions": [
+    {
+      "index": 0,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 1,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 2,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 3,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 4,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 5,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 6,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 7,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 8,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 9,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 10,
+      "status": 0,
+      "offset": 152,
+      "raw": 256
+    },
+    {
+      "index": 11,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 12,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 13,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 14,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    },
+    {
+      "index": 15,
+      "status": 1,
+      "offset": 0,
+      "raw": 0
+    }
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "failed_reads_replayed": false,
+  "reset_performed": false,
+  "dma_quarantine_established": false
+}
