@@ -1,0 +1,7 @@
+{
+  "schema": "leanos-ecam-capture-v1",
+  "armed": true,
+  "firmware_matches": true,
+  "transaction_fault": false,
+  "platform_admitted": false
+}

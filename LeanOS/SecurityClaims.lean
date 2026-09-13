@@ -19,6 +19,7 @@ import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
+import LeanOS.QotomEntryIntegration
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -66,6 +67,21 @@ theorem qotom_copy_root_publication_withholds_cpl3_and_gates_roots
   exact ⟨QotomCopyRootPublication.query_never_authorizes_cpl3 _ _ _ _ _ _ _ _ _ _ _ _,
     QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _,
     QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _⟩
+
+/-- SC-QOTOM-ENTRY-CHECKPOINT-NONAUTH: the first physical entry/return
+checkpoint is gated by its complete scalar result and grants no general CPL3
+authority. -/
+theorem qotom_entry_checkpoint_withholds_cpl3_and_gates_result
+    (entries returns incomingRoot closedRoot activeRoot frame userIf gprs closeReadback
+      returnReload : UInt64) :
+    QotomEntryIntegration.query entries returns incomingRoot closedRoot activeRoot
+        frame userIf gprs closeReadback returnReload 6 = 0 ∧
+      (QotomEntryIntegration.query entries returns incomingRoot closedRoot activeRoot
+          frame userIf gprs closeReadback returnReload 3 = 1 →
+        QotomEntryIntegration.accepted entries returns incomingRoot closedRoot
+          activeRoot frame userIf gprs closeReadback returnReload = true) := by
+  exact ⟨QotomEntryIntegration.query_never_authorizes_cpl3 _ _ _ _ _ _ _ _ _ _,
+    QotomEntryIntegration.checkpoint_claim_requires_acceptance _ _ _ _ _ _ _ _ _ _⟩
 
 /-- SC-QOTOM-PCI-CONDITIONAL: the named initial J1900 trust profile accepts
 exactly the final Command vector. The hardware meaning of its five fixed

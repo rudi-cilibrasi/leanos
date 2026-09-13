@@ -4,6 +4,9 @@ struct qotom_copy_operand { uint64_t source, destination; };
 extern uint64_t leanos_copy_root_transfer(
     uint64_t closed_root, uint64_t copy_root,
     const struct qotom_copy_operand *operands, uint64_t count);
+#ifdef LEANOS_QOTOM_ENTRY_INTEGRATION
+static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(void);
+#endif
 
 static struct qotom_root_pages qotom_closed_root;
 static struct qotom_root_pages qotom_copy_root;
@@ -68,7 +71,9 @@ static int qotom_copy_root_exact(size_t protected_count) {
         if(alias>=0) {
             uint64_t expected=(qotom_aliases[alias].frame<<12)|
                 QOTOM_ROOT_PRESENT|QOTOM_ROOT_NX;
-            if(leaf!=expected)return 0;
+            /* A completed transfer may set hardware-maintained Accessed/Dirty
+             * metadata without changing the alias identity or permissions. */
+            if((leaf&~(QOTOM_ROOT_ACCESSED|QOTOM_ROOT_DIRTY))!=expected)return 0;
         } else if((leaf&QOTOM_ROOT_PRESENT) && qotom_root_protected_frame(
                 (leaf&QOTOM_ROOT_ADDRESS_MASK)>>12,
                 qotom_protected_frames,protected_count))return 0;
@@ -171,5 +176,8 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         closed_scan,copy_scan,transferred,bytes_match,active_root,4));
     serial_puts(" cpl3-authority=0\n");
     if(accepted!=1 || errors!=0)pre_admission_fail("qotom-copy-root-publication");
+#ifdef LEANOS_QOTOM_ENTRY_INTEGRATION
+    lab_run_qotom_entry_integration();
+#endif
     pre_admission_fail("qotom-entry-integration-pending");
 }
