@@ -16,7 +16,7 @@
     },
     "memory_map": {
       "profile_word": 6402,
-      "multiboot2_sha256": "c540ca8e9c6d4294d61503ffe33c9f26da3249086ec7d760981e8a7f8f5c6049",
+      "multiboot2_sha256": "fdc17621f7f66a46699e7b71b065d4d55ac1f918d0d3cde75d5a0495f4e45801",
       "tag_sha256": "a102ad5b365d12dcadff1a38cbd2f871016e70255537f71897c456d39901e4f7",
       "tag_offset": 72,
       "tag_size": 472,
@@ -125,11 +125,11 @@
   ],
   "baseline_evidence": {
     "manifest": "hardware/lab/observations/qotom-platform-admission-20260913/manifest.json",
-    "manifest_sha256": "e1cd84ac290d2c410bc3a332cb02058f1d4c816b8ac6ccf6445c8ba67ebba203",
-    "source_revision": "133b441f45a64253d63413c791c69da01cc26892",
-    "prepared_revision": "133b441f45a64253d63413c791c69da01cc26892",
-    "elf_sha256": "49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f",
-    "serial_sha256": "f215f86c6a894b2d7b14948cae628485914911657594a8a27bd962a9912ff585",
+    "manifest_sha256": "e3c0a09a1d60dd484fef53b7071e97f121cb4f565f18485150c67238c3300e9a",
+    "source_revision": "bb25d71de2105110763192cf8a1e7c6ab4220fea",
+    "prepared_revision": "bb25d71de2105110763192cf8a1e7c6ab4220fea",
+    "elf_sha256": "4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619",
+    "serial_sha256": "7556c9039a5eaf7165377110f0583fa516dfc7f393654eeebeb12adc996980b0",
     "terminal": "LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1"
   }
 }

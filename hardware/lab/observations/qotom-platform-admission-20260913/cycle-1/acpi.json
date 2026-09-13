@@ -89,7 +89,7 @@
     }
   ],
   "platform_admitted": false,
-  "handoff_sha256": "c540ca8e9c6d4294d61503ffe33c9f26da3249086ec7d760981e8a7f8f5c6049",
+  "handoff_sha256": "fdc17621f7f66a46699e7b71b065d4d55ac1f918d0d3cde75d5a0495f4e45801",
   "dsdt_fadt_address": 3111807440,
   "dsdt_address": 3111776640,
   "aml_executed": false

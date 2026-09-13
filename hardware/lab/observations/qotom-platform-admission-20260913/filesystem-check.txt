@@ -2,4 +2,4 @@
 ** Phase 1 - Read FAT and checking connectivity
 ** Phase 2 - Checking Directories
 ** Phase 3 - Checking for Lost Files
-316 files, 56 MiB free (114918 clusters)
+316 files, 56 MiB free (114916 clusters)

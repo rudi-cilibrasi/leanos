@@ -20,7 +20,8 @@ LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1
 
 The admitted manifest binds the physical XSDT and 12-table ACPI set, the
 19-entry Multiboot2 E820 map, the exact 16-function PCI final vector and trust
-contract, COM1 at 38400 8N1, the executing BSP APIC ID 0 within a four-processor
+contract, COM1 at 38400 8N1 with live LCR, MCR, and divisor readback, the
+executing BSP APIC ID 0 within a four-processor
 MADT, the no-SMAP copy-root controls, and the fixed two-subject scenario. No AP
 startup path was published. `ap-start-audit.json` additionally audits this
 exact retained ELF: neither boot plan maps the Local APIC page, no AP-start
@@ -28,21 +29,21 @@ symbol is linked, and no x2APIC ICR write exists. VT-d and assigned EDU support
 are explicitly not applicable for this profile.
 
 The final ELF SHA256 is
-`49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f`.
+`4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619`.
 The complete serial stream SHA256 is
-`f215f86c6a894b2d7b14948cae628485914911657594a8a27bd962a9912ff585`.
+`7556c9039a5eaf7165377110f0583fa516dfc7f393654eeebeb12adc996980b0`.
 The captured Multiboot2 handoff SHA256 is
-`c540ca8e9c6d4294d61503ffe33c9f26da3249086ec7d760981e8a7f8f5c6049`.
+`fdc17621f7f66a46699e7b71b065d4d55ac1f918d0d3cde75d5a0495f4e45801`.
 Within it, the byte-exact E820 tag SHA256 is
 `a102ad5b365d12dcadff1a38cbd2f871016e70255537f71897c456d39901e4f7`.
 `build-manifest.json` binds every build input and final object audit.
 Clean source and prepared revision
-`133b441f45a64253d63413c791c69da01cc26892` reproduced that exact ELF.
+`bb25d71de2105110763192cf8a1e7c6ab4220fea` reproduced that exact ELF.
 
 After the semantic terminal the kernel remained in its absorbing `cli; hlt`
-loop. The runner measured 91.73439465794945 seconds of serial quiet, the
+loop. The runner measured 91.74538068298716 seconds of serial quiet, the
 external watchdog reset the machine, and FreeBSD boot time changed from
-1789324617 to 1789325138. SSH returned and the one-shot request was consumed.
+1789325138 to 1789326999. SSH returned and the one-shot request was consumed.
 Post-recovery inspection found the expected ELF and GRUB hashes, `request=none`,
 and a clean FAT filesystem with 56 MiB free.
 

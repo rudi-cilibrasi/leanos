@@ -1,8 +1,8 @@
 {
   "scenario": "qotom-pci-diagnostic",
   "recovery": "freebsd-ssh-restored",
-  "quiet_seconds": 91.73439465794945,
-  "raw_sha256": "f215f86c6a894b2d7b14948cae628485914911657594a8a27bd962a9912ff585",
+  "quiet_seconds": 91.74538068298716,
+  "raw_sha256": "7556c9039a5eaf7165377110f0583fa516dfc7f393654eeebeb12adc996980b0",
   "watchdog_protected": true,
   "handoff": {
     "status": 0,
@@ -11,7 +11,7 @@
     "length": 2680,
     "apic": 0,
     "schema": "leanos-raw-multiboot2-lab-v1",
-    "raw_sha256": "c540ca8e9c6d4294d61503ffe33c9f26da3249086ec7d760981e8a7f8f5c6049",
+    "raw_sha256": "fdc17621f7f66a46699e7b71b065d4d55ac1f918d0d3cde75d5a0495f4e45801",
     "platform_admitted": false,
     "display_authorized": false,
     "tag_chain_valid": true,
@@ -169,7 +169,7 @@
       }
     ],
     "platform_admitted": false,
-    "handoff_sha256": "c540ca8e9c6d4294d61503ffe33c9f26da3249086ec7d760981e8a7f8f5c6049",
+    "handoff_sha256": "fdc17621f7f66a46699e7b71b065d4d55ac1f918d0d3cde75d5a0495f4e45801",
     "dsdt_fadt_address": 3111807440,
     "dsdt_address": 3111776640,
     "aml_executed": false
@@ -861,7 +861,7 @@
     "schema": "leanos-qotom-xhci-handoff-observation-v2",
     "status": 0,
     "write_attempted": 1,
-    "polls": 2,
+    "polls": 1,
     "last_support": 16779265,
     "final_control": 8192,
     "terminal_reason": "qotom-platform-pending",
@@ -1930,7 +1930,7 @@
       "index": 0,
       "count": 16
     },
-    "protocol_sha256": "cc07ee47e2f1348c87f132470f973dd9f48a383524e2698412405604240b0771",
+    "protocol_sha256": "a630821ac044d14be1e194f4ed6f3dd4d0d723305ff23ac9ba88c10fc6c7629b",
     "replay_executable_sha256": "9413a49b9d16edc65e49aea96de1f9522e9a1e53514561711c4f18eb9a112e4f",
     "pci_final_decoder_sha256": "4b6212116f235f380f5ab8c36edf4904bdd23eb6c636627ae0064b4bd32129da",
     "pci_trust_contract": "qotom-j1900-pci-trust-v1",
@@ -1991,9 +1991,9 @@
     "ecam_memory_decoder_sha256": "a4c38100eee2dccb9ce532173e8a8a967d9b09f4ec67961e9be3526323cb02ed",
     "replay_scope": "qotom-blocking-ipc-complete"
   },
-  "freebsd_boot_before": 1789324617,
-  "freebsd_boot_after": 1789325138,
-  "elf_sha256": "49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f",
+  "freebsd_boot_before": 1789325138,
+  "freebsd_boot_after": 1789326999,
+  "elf_sha256": "4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619",
   "evidence_class": "lab-recovery-experiment",
   "hang_recovery": true,
   "request_consumed": true

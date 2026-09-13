@@ -4,7 +4,7 @@
   "context_switches": 2,
   "copy_transfers": 2,
   "cpl3_syscalls_including_failure_sentinels": 10,
-  "elf_sha256": "49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f",
+  "elf_sha256": "4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619",
   "entry_audit_passed": true,
   "pic_masks": [
     255,

@@ -1,14 +1,14 @@
 FreeBSD qotom 15.0-RELEASE-p13 FreeBSD 15.0-RELEASE-p13 releng/15.0-n281114-af58d0db156a GENERIC amd64
-{ sec = 1789325138, usec = 915709 } Sun Sep 13 11:45:38 2026
+{ sec = 1789326999, usec = 897953 } Sun Sep 13 12:16:39 2026
 11758C40
 =>       63  122879937  da0  MBR  (59G)
          63       1985       - free -  (993K)
        2048     194560    1  fat32lba  [active]  (95M)
      196608  122683392       - free -  (59G)
 
-ELF=49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f
-GRUB=08c31fadda0b098d19ce4f453537d43c0c2ce7b841fd2d361646cf37d5d2b8b1
-SUM=49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f /boot/leanos-qotom-lab.elf
+ELF=4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619
+GRUB=bc47b09d9adc8ef3eb97524887ed995a2717bf22981850eb0a7a4af659994f21
+SUM=4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619  /boot/leanos-qotom-lab.elf
 ENV=request=none
 Filesystem    Size    Used   Avail Capacity  Mounted on
 /dev/da0s1     94M     37M     56M    40%    /mnt/leanos-evidence
