@@ -253,11 +253,11 @@
         }
       ]
     ],
-    "stable": true,
+    "stable": false,
     "rings_invalid_and_idle": false,
-    "rings_empty": true,
-    "display_decode_preserved": true,
-    "graphics_bme_preserved": true,
+    "rings_empty": false,
+    "display_decode_preserved": false,
+    "graphics_bme_preserved": false,
     "hardware_operations_replayed": false,
     "dma_quarantine_established": false,
     "firmware_exclusion_established": false,
