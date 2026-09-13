@@ -1,0 +1,24 @@
+{
+  "schema": "leanos-qotom-realtek-bme-observation-v1",
+  "functions": [
+    {
+      "index": 13,
+      "status": 0,
+      "write_attempted": 1,
+      "before_command": 7,
+      "after_command": 3
+    },
+    {
+      "index": 15,
+      "status": 0,
+      "write_attempted": 1,
+      "before_command": 7,
+      "after_command": 3
+    }
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false,
+  "transaction_drain_established": false
+}

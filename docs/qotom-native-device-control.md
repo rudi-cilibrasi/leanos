@@ -76,6 +76,12 @@ functions, still have no successful disable transition in this sequence:
 | Graphics 00:02.0 | Display/engine ownership, stopping, DMA gating and drain |
 | TXE 00:1a.0 | Internal DMA control, firmware behavior and drain |
 
+The [graphics-ring observation stage](qotom-graphics-state.md) now supplies a
+bounded read-only snapshot of the RCS, VCS and BCS ring registers while keeping
+the firmware display decode and graphics BME intact. It is evidence for choosing
+a later device-control sequence; it does not yet supply the missing graphics
+ownership, stopping, DMA gating or drain contract.
+
 Root-port BME readbacks establish the bounded upstream request-gating changes;
 outstanding traffic and continuing routing/state still require their contracts.
 

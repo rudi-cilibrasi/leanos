@@ -1,0 +1,1820 @@
+{
+  "scenario": "qotom-pci-diagnostic",
+  "recovery": "freebsd-ssh-restored",
+  "quiet_seconds": 34.32451898296131,
+  "raw_sha256": "6a31fa01a7aa319acd7b531afa13be612f67404bb844164b201d986bf3d1fe2c",
+  "watchdog_protected": true,
+  "handoff": {
+    "status": 0,
+    "magic": 920085129,
+    "address": 1048992,
+    "length": 2680,
+    "apic": 0,
+    "schema": "leanos-raw-multiboot2-lab-v1",
+    "raw_sha256": "b2b503cb77e654bc1802c0d17a3eae7fb26dd8d8f0427f79a1a1ca05f473c599",
+    "platform_admitted": false,
+    "display_authorized": false,
+    "tag_chain_valid": true,
+    "tags": [
+      {
+        "offset": 8,
+        "type": 21,
+        "size": 12
+      },
+      {
+        "offset": 24,
+        "type": 1,
+        "size": 9
+      },
+      {
+        "offset": 40,
+        "type": 2,
+        "size": 29
+      },
+      {
+        "offset": 72,
+        "type": 6,
+        "size": 472,
+        "memory_map_entry_size": 24,
+        "memory_map_entry_version": 0
+      },
+      {
+        "offset": 544,
+        "type": 9,
+        "size": 2004
+      },
+      {
+        "offset": 2552,
+        "type": 4,
+        "size": 16
+      },
+      {
+        "offset": 2568,
+        "type": 5,
+        "size": 20
+      },
+      {
+        "offset": 2592,
+        "type": 8,
+        "size": 32,
+        "framebuffer": {
+          "address": 753664,
+          "pitch": 160,
+          "width": 80,
+          "height": 25,
+          "bits": 16,
+          "kind": 2
+        }
+      },
+      {
+        "offset": 2624,
+        "type": 15,
+        "size": 44
+      },
+      {
+        "offset": 2672,
+        "type": 0,
+        "size": 8
+      }
+    ]
+  },
+  "acpi": {
+    "schema": "leanos-native-acpi-dsdt-lab-v1",
+    "root_kind": 2,
+    "root_address": 3111776376,
+    "tables": [
+      {
+        "index": 0,
+        "address": 3111776376,
+        "length": 116,
+        "signature_hex": "58534454",
+        "sha256": "86a1ebf20c4aa4218cc360de3da582e06a484c3523b13c94637ae8535515143d"
+      },
+      {
+        "index": 1,
+        "address": 3111807440,
+        "length": 268,
+        "signature_hex": "46414350",
+        "sha256": "37b2378ed85d8e509ba75fd56ae44d9ed68c3c883d88c657023d4615ca9550de"
+      },
+      {
+        "index": 2,
+        "address": 3111807712,
+        "length": 132,
+        "signature_hex": "41504943",
+        "sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434"
+      },
+      {
+        "index": 3,
+        "address": 3111807848,
+        "length": 68,
+        "signature_hex": "46504454",
+        "sha256": "517b56f1ac7c73b7a33a6f2fc6139407f565daebf213aa9978884d677d5d6afc"
+      },
+      {
+        "index": 4,
+        "address": 3111807920,
+        "length": 60,
+        "signature_hex": "4d434647",
+        "sha256": "ea68ade449e37cbd39a4fb891b464229e7739dda4604880dc0606e2129d55538"
+      },
+      {
+        "index": 5,
+        "address": 3111807984,
+        "length": 260,
+        "signature_hex": "4c504954",
+        "sha256": "46fb70714057e99f36d3421704da665900d717cfaf676bc07b91304ebfd76483"
+      },
+      {
+        "index": 6,
+        "address": 3111808248,
+        "length": 56,
+        "signature_hex": "48504554",
+        "sha256": "0a72c80475ddddf1727db67087aa249bdae6999451e9e7b8d7e9278b3d60c9a1"
+      },
+      {
+        "index": 7,
+        "address": 3111808304,
+        "length": 1891,
+        "signature_hex": "53534454",
+        "sha256": "684e8e6829f37c6e0af256cbddd894b0659176aa3e517c2ff78c77c30dbfbcde"
+      },
+      {
+        "index": 8,
+        "address": 3111810200,
+        "length": 656,
+        "signature_hex": "53534454",
+        "sha256": "3079581dcbd1b6ef7ba4fcabb7bd37a970a7387a8a5bb0d0fa61724d41f753d8"
+      },
+      {
+        "index": 9,
+        "address": 3111810856,
+        "length": 378,
+        "signature_hex": "53534454",
+        "sha256": "b40f4d7b2cb7b6f4120294365fd0cb4b9878a50352f2478d7d0df18d342b10a1"
+      },
+      {
+        "index": 10,
+        "address": 3111811240,
+        "length": 66,
+        "signature_hex": "55454649",
+        "sha256": "336d587c8c9a430977d581dad5a7f3e7c0c7e841c4724271c93c6e2c23b924ce"
+      },
+      {
+        "index": 11,
+        "address": 3111776640,
+        "length": 30800,
+        "signature_hex": "44534454",
+        "sha256": "e02b949e57c1e9eae6714dd67bce15dc25df349167235612f19e8cd2df14543f"
+      }
+    ],
+    "platform_admitted": false,
+    "handoff_sha256": "b2b503cb77e654bc1802c0d17a3eae7fb26dd8d8f0427f79a1a1ca05f473c599",
+    "dsdt_fadt_address": 3111807440,
+    "dsdt_address": 3111776640,
+    "aml_executed": false
+  },
+  "native_bsp": {
+    "schema": "leanos-native-bsp-capture-v1",
+    "observation": {
+      "madt": 3111807712,
+      "length": 132,
+      "executing": 0,
+      "cpuid-edx": 3219913727,
+      "available": 1,
+      "apic-base": 4276095232,
+      "sample-id": 0,
+      "status": 0,
+      "detail": 0,
+      "offset": 132,
+      "admitted-id": 0,
+      "count": 4,
+      "bound-base": 4276095232
+    },
+    "madt_sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434",
+    "platform_admitted": false,
+    "ap_dormancy_established": false
+  },
+  "graphics_state": {
+    "schema": "leanos-qotom-graphics-state-observation-v1",
+    "index": 1,
+    "status": 7,
+    "samples": [
+      [
+        {
+          "engine": "rcs",
+          "tail": 0,
+          "head": 0,
+          "start": 0,
+          "control": 0,
+          "mode": 0
+        },
+        {
+          "engine": "vcs",
+          "tail": 0,
+          "head": 0,
+          "start": 0,
+          "control": 0,
+          "mode": 0
+        },
+        {
+          "engine": "bcs",
+          "tail": 0,
+          "head": 0,
+          "start": 0,
+          "control": 0,
+          "mode": 0
+        }
+      ],
+      [
+        {
+          "engine": "rcs",
+          "tail": 0,
+          "head": 0,
+          "start": 0,
+          "control": 0,
+          "mode": 0
+        },
+        {
+          "engine": "vcs",
+          "tail": 0,
+          "head": 0,
+          "start": 0,
+          "control": 0,
+          "mode": 0
+        },
+        {
+          "engine": "bcs",
+          "tail": 0,
+          "head": 0,
+          "start": 0,
+          "control": 0,
+          "mode": 0
+        }
+      ]
+    ],
+    "stable": false,
+    "rings_invalid_and_idle": false,
+    "rings_empty": false,
+    "display_decode_preserved": false,
+    "graphics_bme_preserved": false,
+    "hardware_operations_replayed": false,
+    "dma_quarantine_established": false,
+    "firmware_exclusion_established": false,
+    "terminal_reason": "qotom-graphics-state"
+  },
+  "broadcom_d3": {
+    "schema": "leanos-qotom-broadcom-d3-observation-v1",
+    "index": 14,
+    "status": 0,
+    "command_write_attempted": true,
+    "before_command": 6,
+    "after_command": 0,
+    "pending_polls": 2,
+    "device_status": 25,
+    "transactions_pending": false,
+    "before_pmcsr": 16392,
+    "d3_write_attempted": true,
+    "after_pmcsr": 16395,
+    "command_disabled_observed": true,
+    "d3hot_observed": true,
+    "pme_disabled_observed": true,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "posted_write_drain_established": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "pcie_pending": {
+    "schema": "leanos-qotom-pcie-pending-observation-v1",
+    "functions": [
+      {
+        "index": 6,
+        "status": 0,
+        "polls": 2,
+        "device_status": 17,
+        "transactions_pending": false
+      },
+      {
+        "index": 7,
+        "status": 0,
+        "polls": 2,
+        "device_status": 17,
+        "transactions_pending": false
+      },
+      {
+        "index": 8,
+        "status": 0,
+        "polls": 2,
+        "device_status": 17,
+        "transactions_pending": false
+      },
+      {
+        "index": 9,
+        "status": 0,
+        "polls": 2,
+        "device_status": 16,
+        "transactions_pending": false
+      },
+      {
+        "index": 13,
+        "status": 0,
+        "polls": 2,
+        "device_status": 25,
+        "transactions_pending": false
+      },
+      {
+        "index": 15,
+        "status": 0,
+        "polls": 2,
+        "device_status": 25,
+        "transactions_pending": false
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false,
+    "nonposted_quiet_observed": true,
+    "posted_write_drain_established": false,
+    "transaction_drain_established": false
+  },
+  "realtek_bme": {
+    "schema": "leanos-qotom-realtek-bme-observation-v1",
+    "functions": [
+      {
+        "index": 13,
+        "status": 0,
+        "write_attempted": 1,
+        "before_command": 7,
+        "after_command": 3
+      },
+      {
+        "index": 15,
+        "status": 0,
+        "write_attempted": 1,
+        "before_command": 7,
+        "after_command": 3
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false,
+    "transaction_drain_established": false
+  },
+  "realtek_state": {
+    "schema": "leanos-qotom-realtek-state-observation-v1",
+    "functions": [
+      {
+        "index": 13,
+        "status": 0,
+        "transmit_before": 797969664,
+        "command_before": 0,
+        "interrupt_mask": 0,
+        "receive": 196366,
+        "command_after": 0,
+        "transmit_after": 797969664
+      },
+      {
+        "index": 15,
+        "status": 0,
+        "transmit_before": 797969664,
+        "command_before": 0,
+        "interrupt_mask": 0,
+        "receive": 196366,
+        "command_after": 0,
+        "transmit_after": 797969664
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false,
+    "transaction_drain_established": false
+  },
+  "rootport_bme": {
+    "schema": "leanos-qotom-rootport-bme-observation-v1",
+    "functions": [
+      {
+        "index": 6,
+        "status": 0,
+        "write_attempted": 1,
+        "before_command": 7,
+        "after_command": 3
+      },
+      {
+        "index": 7,
+        "status": 0,
+        "write_attempted": 1,
+        "before_command": 7,
+        "after_command": 3
+      },
+      {
+        "index": 8,
+        "status": 0,
+        "write_attempted": 1,
+        "before_command": 7,
+        "after_command": 3
+      },
+      {
+        "index": 9,
+        "status": 0,
+        "write_attempted": 1,
+        "before_command": 7,
+        "after_command": 3
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false,
+    "transaction_drain_established": false
+  },
+  "txe_status": {
+    "schema": "leanos-qotom-txe-status-observation-v1",
+    "status": 0,
+    "firmware0": 520093909,
+    "firmware1": 1761607680,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false,
+    "atomic_snapshot": false
+  },
+  "hda_bme": {
+    "schema": "leanos-qotom-hda-bme-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_command": 6,
+    "after_command": 2,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "hda_state": {
+    "schema": "leanos-qotom-hda-state-observation-v1",
+    "status": 0,
+    "corb": 0,
+    "rirb": 0,
+    "position": 0,
+    "streams": [
+      262144,
+      262144,
+      262144,
+      262144,
+      262144,
+      262144,
+      262144,
+      262144
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "atomic_snapshot": false,
+    "dma_quarantine_established": false
+  },
+  "hda": {
+    "schema": "leanos-qotom-hda-observation-v1",
+    "status": 0,
+    "control_before": 1,
+    "capability": 17409,
+    "version_minor": 0,
+    "version_major": 1,
+    "interrupt": 0,
+    "control_after": 1,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "atomic_snapshot": false,
+    "dma_quarantine_established": false
+  },
+  "ahci_bme": {
+    "schema": "leanos-qotom-ahci-bme-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_command": 7,
+    "after_command": 3,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "ahci_interrupts": {
+    "schema": "leanos-qotom-ahci-interrupt-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_control": 2147483650,
+    "after_control": 2147483648,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "ahci_port": {
+    "schema": "leanos-qotom-ahci-port-observation-v1",
+    "status": 0,
+    "command_before": 6,
+    "interrupt": 0,
+    "task_file": 80,
+    "sata_status": 291,
+    "active": 0,
+    "issued": 0,
+    "command_after": 6,
+    "terminal_reason": "qotom-platform-pending",
+    "atomic_snapshot": false,
+    "hardware_operations_replayed": false,
+    "dma_quarantine_established": false
+  },
+  "ahci_capabilities": {
+    "schema": "leanos-qotom-ahci-capability-observation-v1",
+    "status": 0,
+    "capability": 3340828417,
+    "control": 2147483650,
+    "ports": 2,
+    "version": 66304,
+    "extended": 56,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "dma_quarantine_established": false
+  },
+  "pcie_device": {
+    "schema": "leanos-qotom-pcie-device-observation-v1",
+    "functions": [
+      {
+        "index": 0,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 1,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 2,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 3,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 4,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 5,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 6,
+        "status": 0,
+        "offset": 64,
+        "device_capabilities": 32768,
+        "device_control_status": 1114112
+      },
+      {
+        "index": 7,
+        "status": 0,
+        "offset": 64,
+        "device_capabilities": 32768,
+        "device_control_status": 1114112
+      },
+      {
+        "index": 8,
+        "status": 0,
+        "offset": 64,
+        "device_capabilities": 32768,
+        "device_control_status": 1114112
+      },
+      {
+        "index": 9,
+        "status": 0,
+        "offset": 64,
+        "device_capabilities": 32768,
+        "device_control_status": 1048576
+      },
+      {
+        "index": 10,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 11,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 12,
+        "status": 1,
+        "offset": 0,
+        "device_capabilities": 0,
+        "device_control_status": 0
+      },
+      {
+        "index": 13,
+        "status": 0,
+        "offset": 112,
+        "device_capabilities": 93359296,
+        "device_control_status": 1646592
+      },
+      {
+        "index": 14,
+        "status": 0,
+        "offset": 208,
+        "device_capabilities": 93360032,
+        "device_control_status": 1638400
+      },
+      {
+        "index": 15,
+        "status": 0,
+        "offset": 112,
+        "device_capabilities": 93359296,
+        "device_control_status": 1646592
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "reset_performed": false,
+    "dma_quarantine_established": false
+  },
+  "xhci_bme": {
+    "schema": "leanos-qotom-xhci-bme-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_command": 6,
+    "after_command": 2,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "xhci_operational": {
+    "schema": "leanos-qotom-xhci-operational-observation-v1",
+    "status": 0,
+    "status_before": 1,
+    "command": 0,
+    "status_after": 1,
+    "terminal_reason": "qotom-platform-pending",
+    "atomic_snapshot": false,
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "xhci_smi": {
+    "schema": "leanos-qotom-xhci-smi-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_control": 8192,
+    "after_control": 0,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "xhci_handoff": {
+    "schema": "leanos-qotom-xhci-handoff-observation-v2",
+    "status": 0,
+    "write_attempted": 1,
+    "polls": 2,
+    "last_support": 16779265,
+    "final_control": 8192,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false,
+    "verification": {
+      "kind": 0,
+      "index": 0,
+      "expected": 0,
+      "observed": 0
+    }
+  },
+  "xhci_legacy": {
+    "schema": "leanos-qotom-xhci-legacy-observation-v1",
+    "status": 0,
+    "headers": [
+      {
+        "offset": 32768,
+        "raw": 33556482
+      },
+      {
+        "offset": 32800,
+        "raw": 50333698
+      },
+      {
+        "offset": 32832,
+        "raw": 68801
+      },
+      {
+        "offset": 32880,
+        "raw": 64704
+      },
+      {
+        "offset": 33888,
+        "raw": 67585
+      },
+      {
+        "offset": 33920,
+        "raw": 327690
+      }
+    ],
+    "legacy_offset": 33888,
+    "control_status": 8193,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "ownership_established": false,
+    "dma_quarantine_established": false
+  },
+  "xhci_capabilities": {
+    "schema": "leanos-qotom-xhci-capability-observation-v1",
+    "status": 0,
+    "words": [
+      16777344,
+      117442592,
+      2214592596,
+      33554442,
+      536901569,
+      12288,
+      8192
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "ownership_established": false,
+    "dma_quarantine_established": false
+  },
+  "ehci_bme": {
+    "schema": "leanos-qotom-ehci-bme-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_command": 1030,
+    "after_command": 1026,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "ehci_operational": {
+    "schema": "leanos-qotom-ehci-operational-observation-v1",
+    "status": 0,
+    "command": 524288,
+    "status_register": 4096,
+    "interrupt_enable": 0,
+    "configured": 0,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "atomic_snapshot": false,
+    "dma_quarantine_established": false,
+    "firmware_exclusion_established": false
+  },
+  "ehci_smi": {
+    "schema": "leanos-qotom-ehci-smi-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "before_control": 8192,
+    "after_control": 0,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "ehci_handoff": {
+    "schema": "leanos-qotom-ehci-handoff-observation-v1",
+    "status": 0,
+    "write_attempted": 1,
+    "polls": 1,
+    "last_support": 16777217,
+    "final_control": 8192,
+    "terminal_reason": "qotom-platform-pending",
+    "hardware_operations_replayed": false,
+    "firmware_exclusion_established": false,
+    "dma_quarantine_established": false
+  },
+  "ehci_legacy": {
+    "schema": "leanos-qotom-ehci-legacy-observation-v1",
+    "status": 0,
+    "headers": [
+      {
+        "offset": 104,
+        "raw": 65537
+      }
+    ],
+    "legacy_offset": 104,
+    "control_status": 532485,
+    "terminal_reason": "qotom-platform-pending",
+    "failed_reads_replayed": false,
+    "ownership_established": false,
+    "dma_quarantine_established": false
+  },
+  "ehci_capabilities": {
+    "schema": "leanos-qotom-ehci-capability-observation-v1",
+    "status": 0,
+    "capbase": 16777248,
+    "structural": 2097160,
+    "capability": 223361,
+    "terminal_reason": "qotom-platform-pending",
+    "failed_reads_replayed": false,
+    "ownership_established": false,
+    "dma_quarantine_established": false
+  },
+  "af_observation": {
+    "schema": "leanos-pci-af-observation-v1",
+    "functions": [
+      {
+        "index": 0,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 1,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 2,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 3,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 4,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 5,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 6,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 7,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 8,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 9,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 10,
+        "status": 0,
+        "offset": 152,
+        "raw": 0
+      },
+      {
+        "index": 11,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 12,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 13,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 14,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      },
+      {
+        "index": 15,
+        "status": 1,
+        "offset": 0,
+        "raw": 0
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "failed_reads_replayed": false,
+    "reset_performed": false,
+    "dma_quarantine_established": false
+  },
+  "pci_capabilities": {
+    "schema": "leanos-pci-capability-capture-v1",
+    "capture_sha256": "0a72e2f9ed0a43710b3fcca55bf10c6391dc8d4487a96043340678c4b0cee883",
+    "functions": [
+      {
+        "index": 0,
+        "address": [
+          0,
+          0,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": []
+      },
+      {
+        "index": 1,
+        "address": [
+          0,
+          2,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 208,
+            "raw": 2265089
+          },
+          {
+            "offset": 144,
+            "raw": 45061
+          },
+          {
+            "offset": 176,
+            "raw": 17235977
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "address": [
+          0,
+          19,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 128,
+            "raw": 28677
+          },
+          {
+            "offset": 112,
+            "raw": 1073981441
+          },
+          {
+            "offset": 168,
+            "raw": 1048594
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "address": [
+          0,
+          20,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 112,
+            "raw": 3250749441
+          },
+          {
+            "offset": 128,
+            "raw": 8781829
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "address": [
+          0,
+          26,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 128,
+            "raw": 1208197121
+          },
+          {
+            "offset": 160,
+            "raw": 5
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "address": [
+          0,
+          27,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 80,
+            "raw": 3359793153
+          },
+          {
+            "offset": 96,
+            "raw": 8388613
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "address": [
+          0,
+          28,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 21135376
+          },
+          {
+            "offset": 128,
+            "raw": 36869
+          },
+          {
+            "offset": 144,
+            "raw": 40973
+          },
+          {
+            "offset": 160,
+            "raw": 3355639809
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "address": [
+          0,
+          28,
+          1
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 21135376
+          },
+          {
+            "offset": 128,
+            "raw": 36869
+          },
+          {
+            "offset": 144,
+            "raw": 40973
+          },
+          {
+            "offset": 160,
+            "raw": 3355639809
+          }
+        ]
+      },
+      {
+        "index": 8,
+        "address": [
+          0,
+          28,
+          2
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 21135376
+          },
+          {
+            "offset": 128,
+            "raw": 36869
+          },
+          {
+            "offset": 144,
+            "raw": 40973
+          },
+          {
+            "offset": 160,
+            "raw": 3355639809
+          }
+        ]
+      },
+      {
+        "index": 9,
+        "address": [
+          0,
+          28,
+          3
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 21135376
+          },
+          {
+            "offset": 128,
+            "raw": 36869
+          },
+          {
+            "offset": 144,
+            "raw": 40973
+          },
+          {
+            "offset": 160,
+            "raw": 3355639809
+          }
+        ]
+      },
+      {
+        "index": 10,
+        "address": [
+          0,
+          29,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 80,
+            "raw": 3385022465
+          },
+          {
+            "offset": 88,
+            "raw": 547395594
+          },
+          {
+            "offset": 152,
+            "raw": 50724883
+          }
+        ]
+      },
+      {
+        "index": 11,
+        "address": [
+          0,
+          31,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 224,
+            "raw": 269221897
+          }
+        ]
+      },
+      {
+        "index": 12,
+        "address": [
+          0,
+          31,
+          3
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 80,
+            "raw": 196609
+          }
+        ]
+      },
+      {
+        "index": 13,
+        "address": [
+          1,
+          0,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 4290990081
+          },
+          {
+            "offset": 80,
+            "raw": 8417285
+          },
+          {
+            "offset": 112,
+            "raw": 33730576
+          },
+          {
+            "offset": 176,
+            "raw": 249873
+          },
+          {
+            "offset": 208,
+            "raw": 3
+          }
+        ]
+      },
+      {
+        "index": 14,
+        "address": [
+          2,
+          0,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 3456325633
+          },
+          {
+            "offset": 88,
+            "raw": 7882761
+          },
+          {
+            "offset": 72,
+            "raw": 8441861
+          },
+          {
+            "offset": 208,
+            "raw": 65552
+          }
+        ]
+      },
+      {
+        "index": 15,
+        "address": [
+          3,
+          0,
+          0
+        ],
+        "status": 0,
+        "offset": 0,
+        "headers": [
+          {
+            "offset": 64,
+            "raw": 4290990081
+          },
+          {
+            "offset": 80,
+            "raw": 8417285
+          },
+          {
+            "offset": 112,
+            "raw": 33730576
+          },
+          {
+            "offset": 176,
+            "raw": 249873
+          },
+          {
+            "offset": 208,
+            "raw": 3
+          }
+        ]
+      }
+    ],
+    "terminal_reason": "qotom-platform-pending",
+    "failed_reads_replayed": false,
+    "platform_admitted": false,
+    "dma_quarantine_established": false
+  },
+  "ecam": {
+    "schema": "leanos-ecam-capture-v1",
+    "armed": true,
+    "firmware_matches": true,
+    "transaction_fault": false,
+    "platform_admitted": false
+  },
+  "ecam_memory": {
+    "schema": "leanos-ecam-memory-lab-v1",
+    "cpuid_edx": 3219913727,
+    "available": true,
+    "ia32_pat": 1974748653749254,
+    "cr0": 2147549215,
+    "cr3": 1511424,
+    "cr4": 104,
+    "pat_entries": [
+      6,
+      4,
+      7,
+      0,
+      6,
+      4,
+      7,
+      0
+    ],
+    "memory_type_admitted": false,
+    "platform_admitted": false
+  },
+  "bootstrap": {
+    "schema": "leanos-bootstrap-lab-v1",
+    "cpuid_edx": 3219913727,
+    "available": true,
+    "ia32_apic_base": 4276095232,
+    "bsp": true,
+    "apic_enabled": true,
+    "x2apic_enabled": false,
+    "platform_admitted": false,
+    "ap_dormancy_established": false
+  },
+  "diagnostic": {
+    "schema": "leanos-qotom-pci-diagnostic-replay-v1",
+    "capture_sha256": "a373766acc00774c16e65af24f6a73a855e6ca10a43a9a9cc1f41f411c8032e9",
+    "cpu_words": [
+      1,
+      31,
+      11,
+      1970169159,
+      1818588270,
+      1231384169,
+      198264,
+      1050624,
+      1104733119,
+      3219913727,
+      0,
+      8834,
+      0,
+      0,
+      2147483656,
+      0,
+      0,
+      0,
+      0,
+      0,
+      257,
+      672139264
+    ],
+    "cpu_selection": 65536,
+    "msr_words": [
+      3328,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "msr_readback": 1,
+    "terminal_reason": "qotom-graphics-state",
+    "platform_admitted": false,
+    "cpl3_authorized": false,
+    "pci_scan": {
+      "status": 0,
+      "count": 16,
+      "bus": 0,
+      "device": 0,
+      "function": 0,
+      "offset": 0
+    },
+    "pci_headers": [
+      [
+        0,
+        0,
+        0,
+        251691142,
+        7,
+        100663310,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        254902406,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        254902406,
+        1048583,
+        50331662,
+        0,
+        3489660928,
+        0,
+        3221225480,
+        0,
+        61569,
+        0,
+        0,
+        254902406,
+        0,
+        208,
+        0,
+        261
+      ],
+      [
+        0,
+        19,
+        0,
+        253984902,
+        45088775,
+        17170702,
+        0,
+        61553,
+        61537,
+        61521,
+        61505,
+        61473,
+        3499188224,
+        0,
+        253984902,
+        0,
+        128,
+        0,
+        261
+      ],
+      [
+        0,
+        20,
+        0,
+        255164550,
+        42991622,
+        201535502,
+        0,
+        3499098116,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255164550,
+        0,
+        112,
+        0,
+        261
+      ],
+      [
+        0,
+        26,
+        0,
+        253264006,
+        1048838,
+        276824078,
+        16,
+        3494903808,
+        3493855232,
+        0,
+        0,
+        0,
+        0,
+        0,
+        253264006,
+        0,
+        128,
+        0,
+        511
+      ],
+      [
+        0,
+        27,
+        0,
+        251953286,
+        1048582,
+        67305486,
+        16,
+        3499163652,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        251953286,
+        0,
+        80,
+        0,
+        261
+      ],
+      [
+        0,
+        28,
+        0,
+        256409734,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        65792,
+        536928480,
+        3498102912,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1048837
+      ],
+      [
+        0,
+        28,
+        1,
+        256540806,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        131584,
+        536871152,
+        3497054320,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049093
+      ],
+      [
+        0,
+        28,
+        2,
+        256671878,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        197376,
+        536924368,
+        3496005728,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049349
+      ],
+      [
+        0,
+        28,
+        3,
+        256802950,
+        1048583,
+        100925454,
+        8454160,
+        0,
+        0,
+        263168,
+        536871152,
+        65520,
+        131057,
+        0,
+        0,
+        0,
+        64,
+        0,
+        1049605
+      ],
+      [
+        0,
+        29,
+        0,
+        255099014,
+        42992646,
+        201531406,
+        0,
+        3499184128,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255099014,
+        0,
+        80,
+        0,
+        261
+      ],
+      [
+        0,
+        31,
+        0,
+        253526150,
+        34603015,
+        100728846,
+        8388608,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        253526150,
+        0,
+        224,
+        0,
+        0
+      ],
+      [
+        0,
+        31,
+        3,
+        252870790,
+        42991619,
+        201654286,
+        0,
+        3499180032,
+        0,
+        0,
+        0,
+        61441,
+        0,
+        0,
+        252870790,
+        0,
+        80,
+        0,
+        517
+      ],
+      [
+        1,
+        0,
+        0,
+        2171080940,
+        1048583,
+        33554439,
+        16,
+        57345,
+        0,
+        3498065924,
+        0,
+        3498049548,
+        0,
+        0,
+        19075308,
+        0,
+        64,
+        0,
+        261
+      ],
+      [
+        2,
+        0,
+        0,
+        1129518308,
+        1048582,
+        41943041,
+        16,
+        3497000964,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        81269988,
+        0,
+        64,
+        0,
+        261
+      ],
+      [
+        3,
+        0,
+        0,
+        2171080940,
+        1048583,
+        33554439,
+        16,
+        53249,
+        0,
+        3495968772,
+        0,
+        3495952396,
+        0,
+        0,
+        19075308,
+        0,
+        64,
+        0,
+        261
+      ]
+    ],
+    "inventory_result": 1,
+    "inventory_profile": "qotom-native-ecam-v1",
+    "native_kernel_inventory": {
+      "status": 0,
+      "index": 0,
+      "count": 16
+    },
+    "protocol_sha256": "1faa10b07f16b1191cb4123e5760fb4fcb45ed5bedc0685627d46fec3868437b",
+    "replay_executable_sha256": "9241693e5fee8cc47321846e3020efeec800c9cb37cc05ecf80cbbb8a9233416",
+    "graphics_state_decoder_sha256": "1bd8f1526885afb3cdc40a09d5b2ccb365d0b3bb26652d6dcec6f85793b3e08c",
+    "broadcom_d3_decoder_sha256": "c4626d7854e214f17271899c2ec209ba2a040b835c2ec652848fa15ba5c46944",
+    "pcie_pending_decoder_sha256": "de8745e9d338e0f672f20d17f4f9bfbef9751514bac0e43dc5340781e6e9f88e",
+    "realtek_bme_decoder_sha256": "7ae6bf38d9b3805878659528e90e1c7a9b6f76f749c96a1639eae6a3f3a060b4",
+    "realtek_state_decoder_sha256": "4dbbef8c98274ed8d9b3044e43780e0a969a82323358fa3a810380eedc4e2509",
+    "rootport_bme_decoder_sha256": "431d5ac5a371dbc0ad99f25349e8311a437eb3bb2fe50ae7a455280c34a12b9a",
+    "txe_status_decoder_sha256": "c2995cf183da33d257fc3624f2fa2f7b2a0e3de6af557717024217730c41e1f4",
+    "hda_bme_decoder_sha256": "b38bf8467e1b58cf31a81d25ecc20e04c1197ebb64b12efcf3b9f5acc1a3f483",
+    "hda_state_decoder_sha256": "7b4132d1dfe3c1474bf72dca900a8f4163124aeda6185293729e7ec2f541219e",
+    "hda_decoder_sha256": "991415960ae9d3f454e08f5e382d01461a4dc7380aec601ff50168850c36c530",
+    "ahci_bme_decoder_sha256": "0a9acf3f0b987a35ed1ae82fb5dbc096ce0865328be412025cfc3cf6d75684d1",
+    "ahci_interrupt_decoder_sha256": "50556ba0b0299e3f8437daf170820c072b6b8f61297944569d4ad40ece7c611a",
+    "ahci_port_decoder_sha256": "216938eced0c10468a3de204bee4f3174ea85977062c719c2b3c7b38f5f502ae",
+    "ahci_decoder_sha256": "37e6b42f66700ff0a1e77fe35d9417f4ab3c548b443dd3c277dab6f85f33f19d",
+    "pcie_device_decoder_sha256": "f18c55e1860fb270c745fec650b3fb799bb051eb79fc893dcdfaf928934fcb03",
+    "xhci_bme_decoder_sha256": "a83fdc3753fd4a37b94fd56ba9f6aacf8ca17f9a673fbdaaf433e6b891f90f81",
+    "xhci_operational_decoder_sha256": "fb0519aae88a668690134e5fff95289ab22470ae4dd1ae93f4d785d15c43bc9d",
+    "xhci_smi_decoder_sha256": "0c3479b6c1e2073a6662c9aa4dbaf5a5fd015404a84d64db958decc61569a9ec",
+    "xhci_handoff_decoder_sha256": "579e87a64d7a7905fbe8d2848ad42d16fe127e713be51858bb06b678382b2351",
+    "xhci_legacy_decoder_sha256": "3e636a23a1268b620295ba5496b270adef0e65aba558f0005996ca250d8794be",
+    "xhci_capabilities_decoder_sha256": "da351f799e205d88a06323887b0998e35fb0ff44f65a245cc47ad64d49c50b77",
+    "ehci_bme_decoder_sha256": "6f9f34d74aecf03617c28452fce92ad17bc055962e71b01dbe18a0724bb4f3a3",
+    "ehci_operational_decoder_sha256": "4747661365f6d3fd5d28a4a7d42527fef689b8b635dd37f2d15c6e54c8dcedfc",
+    "ehci_smi_decoder_sha256": "e0d1403ecaa02f28b75bdf8255933034e62409aac26255514a383736dd853c18",
+    "ehci_handoff_decoder_sha256": "579d6aaf919a689ee4f82f31b972ac3168b32003ddc1612c582dde163b7df691",
+    "ehci_legacy_decoder_sha256": "12368dd175bda21b121db815fe77b7e8ea34102851bd47584534d2effa393d58",
+    "ehci_decoder_sha256": "138e40bdf895d15dbe77786b22c7632e58f080b75e263654c7c6311125ef6de7",
+    "af_decoder_sha256": "aafea403ca872799f0df56b6b92180e504b9f2ab69d8827b87b91f2d65fcdb0b",
+    "pci_capabilities_decoder_sha256": "f5dc20d32290dcaeb96117751b25234daabb5507239b5310de8196017bd2f8bc",
+    "bsp_replay_executable_sha256": "8c82b3c9411d6eff480ec51651aa65d55818052a87c19ecadd4cef070fb3c9ad",
+    "bsp_decoder_sha256": "54ae3fcb2f89de790b9cdf0fa35ca3a29236e231a76c85b2a3827987f5305ee3",
+    "native_kernel_inventory_enabled": true,
+    "inventory_profile_decoder_sha256": "9c366ff792dcd1e24eb631f4963bcf886f02b8c15b0cbe61021593410e096c8b",
+    "dsdt_capture": true,
+    "ecam_decoder_sha256": "da7ab1fe4cd4b2dafc4e1b6a50d87d0ec17643bd3fd628fb4204739715867b88",
+    "ecam_cpu_decoder_sha256": "87698c6cba1d180136d60604e1395118002384d8636f57c1f85f6da78b161d93",
+    "ecam_firmware_manifest_sha256": "1d94eced3c24f72f86cf04c4d2c42a21851d3d17fed9556f571a05fb6297a5c9",
+    "pci_replay_executable_sha256": "6233d026a997e91f52960bde28f2849b7e3e1ae54655d1ce31b1adef8a079022",
+    "handoff_decoder_sha256": "974caff652a8b120018feb5404df2ed1e64f820688b6d5656d613904d5c05101",
+    "acpi_decoder_sha256": "905d18cbf64ed809f10dc1547c587d409d556399ce2379d7d6f5e610800dce92",
+    "bootstrap_decoder_sha256": "2d72f2278616bd09bbc5b4222e87710e62e0f4be2e5cb98c658196eafa25182c",
+    "ecam_memory_decoder_sha256": "a4c38100eee2dccb9ce532173e8a8a967d9b09f4ec67961e9be3526323cb02ed",
+    "replay_scope": "native-inventory-with-graphics-state-observation"
+  },
+  "freebsd_boot_before": 1789232782,
+  "freebsd_boot_after": 1789239099,
+  "elf_sha256": "e747bc72ecfacdc757ea1dfdab741f25057b5b241ca7fcf0494bc43ef60d0108",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": true,
+  "request_consumed": true
+}
