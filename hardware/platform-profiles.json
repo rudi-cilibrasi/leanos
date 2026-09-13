@@ -15,7 +15,7 @@
       "version": 2,
       "manifest": "profiles/qotom-j1900-clbtm210-v2.json",
       "release_asset": "PLATFORM_PROFILE_qotom-j1900-clbtm210-v2.json",
-      "sha256": "e7583bd200288b667ee2596a2e82cba3a90ffa1a050fcf3f954f3ca878eaed9d"
+      "sha256": "bdc77b3001a004b0c0e152d4e275fe6576bc2d7c529395b5eb4335521ec71fb8"
     }
   ]
 }

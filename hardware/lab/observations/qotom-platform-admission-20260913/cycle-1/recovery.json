@@ -1,7 +1,7 @@
 {
-  "freebsd_boot_before": 1789303670,
-  "freebsd_boot_after": 1789304216,
-  "elf_sha256": "2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5",
+  "freebsd_boot_before": 1789324617,
+  "freebsd_boot_after": 1789325138,
+  "elf_sha256": "49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f",
   "evidence_class": "lab-recovery-experiment",
   "hang_recovery": false,
   "request_consumed": true,

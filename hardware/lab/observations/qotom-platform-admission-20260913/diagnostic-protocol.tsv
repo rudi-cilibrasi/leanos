@@ -1,5 +1,5 @@
 leanos-serial-protocol	1
-source-revision	65a5d1e2908c382290de4cdc7eb4c788e8acb509
+source-revision	133b441f45a64253d63413c791c69da01cc26892
 family	3	LEANOS_SERIAL_FAMILY_3	LEANOS/3
 family	4	LEANOS_SERIAL_FAMILY_4	LEANOS/4
 family	5	LEANOS_SERIAL_FAMILY_5	LEANOS/5

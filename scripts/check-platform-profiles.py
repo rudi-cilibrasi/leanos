@@ -182,7 +182,10 @@ def validate(registry_path=REGISTRY):
             memory_tags = [tag for tag in handoff.get('tags', [])
                            if tag.get('type') == 6]
             memory = components['memory_map']
+            memory_tag = (evidence_root / 'cycle-1/multiboot2.bin').read_bytes()[
+                memory['tag_offset']:memory['tag_offset'] + memory['tag_size']]
             require(handoff.get('raw_sha256') == memory['multiboot2_sha256'] and
+                    hashlib.sha256(memory_tag).hexdigest() == memory['tag_sha256'] and
                     len(memory_tags) == 1 and
                     (memory_tags[0].get('offset'), memory_tags[0].get('size'),
                      memory_tags[0].get('memory_map_entry_size'),

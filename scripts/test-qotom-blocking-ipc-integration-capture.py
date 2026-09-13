@@ -107,9 +107,9 @@ class Capture(unittest.TestCase):
                 hashlib.sha256((capture / name).read_bytes()).hexdigest(), digest)
         self.assertFalse(manifest['source_dirty'])
         self.assertEqual(manifest['source_revision'],
-                         'c01cdc0a8831ccdbfb53049bbb695a040fd4c5de')
+                         '133b441f45a64253d63413c791c69da01cc26892')
         self.assertEqual(manifest['elf_sha256'],
-                         '2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5')
+                         '49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f')
         raw = (capture / 'cycle-1/serial.raw').read_bytes()
         terminal = (P['10/FINAL'].encode() +
                     b' status=PASS blocks=1 wakes=1 deliveries=1\n')

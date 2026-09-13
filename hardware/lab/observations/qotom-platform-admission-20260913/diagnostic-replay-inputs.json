@@ -1,5 +1,5 @@
 {
-  "protocol_sha256": "354d0f5bb9352490d9527b32a2619637d46ae6e3ab119b3a5c89772e4010d7ac",
+  "protocol_sha256": "cc07ee47e2f1348c87f132470f973dd9f48a383524e2698412405604240b0771",
   "replay_executable_sha256": "9413a49b9d16edc65e49aea96de1f9522e9a1e53514561711c4f18eb9a112e4f",
   "pci_final_decoder_sha256": "4b6212116f235f380f5ab8c36edf4904bdd23eb6c636627ae0064b4bd32129da",
   "pci_trust_contract": "qotom-j1900-pci-trust-v1",
@@ -13,8 +13,8 @@
   "blocking_ipc_integration_decoder_sha256": "83ad1db158a6a42b9b2531a9c448b94118a2e125693ec93650a1b08cef55c943",
   "blocking_ipc_expectation_sha256": "ed7c58dab474c41117a37dae8ea1cc2283a5a32e820bd899a4601fdbe1ff0e3d",
   "nosmap_control_profile": "qotom-copy-roots-v1",
-  "nosmap_control_decoder_sha256": "3deec3a480b5d073ee89fe2a4648d257fefa45d0690057dbb763f3e3bb902512",
-  "txe_bme_decoder_sha256": "d3bcac9d837005649845990f0b73dacd7b3ddb15afa673c6e06f85a772528764",
+  "nosmap_control_decoder_sha256": "2f1cd4ba794ae8847327e92292d59bb7b36c04821efa7379d4978e7411fe8c29",
+  "txe_bme_decoder_sha256": "67a8e644f190f0431fc35ad3acaa3e5c90c765319cd8aea65cfa05bd41be9713",
   "graphics_bme_decoder_sha256": "9adbd6bae018a909c7925f1e7bd88f3146094e81e11e72fb151f0f9064d2cc22",
   "graphics_state_decoder_sha256": "349d53745ccada651731c39f80a5c53af8c8c826d67d6d2402e451f7304c144c",
   "broadcom_d3_decoder_sha256": "c4626d7854e214f17271899c2ec209ba2a040b835c2ec652848fa15ba5c46944",

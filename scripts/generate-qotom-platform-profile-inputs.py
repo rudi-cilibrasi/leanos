@@ -8,6 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = ROOT / 'hardware/lab/observations/qotom-platform-admission-20260913'
+PROFILE = ROOT / 'hardware/profiles/qotom-j1900-clbtm210-v2.json'
 
 
 def checked(relative):
@@ -60,5 +61,10 @@ def render(tag):
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         raise SystemExit('usage: generate-qotom-platform-profile-inputs.py OUTPUT')
-    Path(sys.argv[1]).write_text(render(memory_map_tag(
-        checked('cycle-1/multiboot2.bin'))))
+    raw = checked('cycle-1/multiboot2.bin')
+    tag = memory_map_tag(raw)
+    memory = json.loads(PROFILE.read_text())['components']['memory_map']
+    if hashlib.sha256(raw).hexdigest() != memory['multiboot2_sha256'] or \
+       hashlib.sha256(tag).hexdigest() != memory['tag_sha256']:
+        raise ValueError('retained Qotom memory-map profile binding differs')
+    Path(sys.argv[1]).write_text(render(tag))

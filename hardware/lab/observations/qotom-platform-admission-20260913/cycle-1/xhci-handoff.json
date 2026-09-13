@@ -2,7 +2,7 @@
   "schema": "leanos-qotom-xhci-handoff-observation-v2",
   "status": 0,
   "write_attempted": 1,
-  "polls": 1,
+  "polls": 2,
   "last_support": 16779265,
   "final_control": 8192,
   "terminal_reason": "qotom-platform-pending",

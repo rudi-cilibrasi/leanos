@@ -5,7 +5,7 @@ python3 scripts/run-qotom-recovery-lab.py \
   --usb-serial 11758C40 \
   --serial-device /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG03A20M-if00-port0 \
   --elf build/qotom-blocking-ipc-integration-lab/leanos-qotom-lab.elf \
-  --output build/qotom-blocking-ipc-integration-lab/physical-platform-admission-retry3-20260913 \
+  --output build/qotom-blocking-ipc-integration-lab/physical-platform-admission-retry5-20260913 \
   --cycles 1 --scenario watchdog-leanos --pci-diagnostic \
   --diagnostic-protocol build/qotom-blocking-ipc-integration-lab/boot/serial-protocol.tsv \
   --diagnostic-replay build/j1900-cpu-host/host \

@@ -28,19 +28,21 @@ symbol is linked, and no x2APIC ICR write exists. VT-d and assigned EDU support
 are explicitly not applicable for this profile.
 
 The final ELF SHA256 is
-`2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5`.
+`49e0e67d52a914904d1615d3f4ee2da8d11d08b83b1ab7ef2bdadf03ea69d18f`.
 The complete serial stream SHA256 is
-`45acf984db238993b6e6b085312f70b21e78a7a7c80b44dc2d8a2727d1a2c4c4`.
+`f215f86c6a894b2d7b14948cae628485914911657594a8a27bd962a9912ff585`.
 The captured Multiboot2 handoff SHA256 is
-`6a69e75497f2a414f745a23a977a76b2e1885b63ec35e45abe2532b0e8f1a02f`.
+`c540ca8e9c6d4294d61503ffe33c9f26da3249086ec7d760981e8a7f8f5c6049`.
+Within it, the byte-exact E820 tag SHA256 is
+`a102ad5b365d12dcadff1a38cbd2f871016e70255537f71897c456d39901e4f7`.
 `build-manifest.json` binds every build input and final object audit.
 Clean source and prepared revision
-`c01cdc0a8831ccdbfb53049bbb695a040fd4c5de` reproduced that exact ELF.
+`133b441f45a64253d63413c791c69da01cc26892` reproduced that exact ELF.
 
 After the semantic terminal the kernel remained in its absorbing `cli; hlt`
-loop. The runner measured 90.83545916998992 seconds of serial quiet, the
+loop. The runner measured 91.73439465794945 seconds of serial quiet, the
 external watchdog reset the machine, and FreeBSD boot time changed from
-1789303670 to 1789304216. SSH returned and the one-shot request was consumed.
+1789324617 to 1789325138. SSH returned and the one-shot request was consumed.
 Post-recovery inspection found the expected ELF and GRUB hashes, `request=none`,
 and a clean FAT filesystem with 56 MiB free.
 
