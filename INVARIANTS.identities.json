@@ -14930,6 +14930,24 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomNoSmapControl.lean",
+      "qualified": "LeanOS.QotomNoSmapControl.query_never_authorizes_cpl3",
+      "display": "query_never_authorizes_cpl3",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNoSmapControl.lean",
+      "qualified": "LeanOS.QotomNoSmapControl.query_never_claims_root_publication",
+      "display": "query_never_claims_root_publication",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomNoSmapControl.lean",
+      "qualified": "LeanOS.QotomNoSmapControl.transition_one_iff",
+      "display": "transition_one_iff",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIFinalAdmission.lean",
       "qualified": "LeanOS.QotomPCIFinalAdmission.exported_one_iff",
       "display": "exported_one_iff",
@@ -16121,6 +16139,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.privilege_entry_stack_budget_sound",
       "display": "privilege_entry_stack_budget_sound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.qotom_nosmap_checkpoint_withholds_authority",
+      "display": "qotom_nosmap_checkpoint_withholds_authority",
       "kind": "theorem"
     },
     {

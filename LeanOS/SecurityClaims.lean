@@ -17,6 +17,7 @@ import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
+import LeanOS.QotomNoSmapControl
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -31,6 +32,15 @@ implementation theorem's assumptions or conclusion therefore require an
 explicit change here and in `docs/security-claims.md`.
 -/
 namespace LeanOS.SecurityClaims
+
+/-- SC-QOTOM-NOSMAP-NONAUTH: the live-control checkpoint cannot claim either
+root has been published and cannot grant CPL3 authority. -/
+theorem qotom_nosmap_checkpoint_withholds_authority
+    (cr0 cr4Before cr4After efer rflags : UInt64) :
+    QotomNoSmapControl.query cr0 cr4Before cr4After efer rflags 8 = 0 ∧
+    QotomNoSmapControl.query cr0 cr4Before cr4After efer rflags 9 = 0 ∧
+    QotomNoSmapControl.query cr0 cr4Before cr4After efer rflags 10 = 0 := by
+  simp [QotomNoSmapControl.query]
 
 /-- SC-QOTOM-PCI-CONDITIONAL: the named initial J1900 trust profile accepts
 exactly the final Command vector. The hardware meaning of its five fixed

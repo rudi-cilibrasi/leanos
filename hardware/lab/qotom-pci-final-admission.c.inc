@@ -1,4 +1,7 @@
 #include "qotom-pci-final-admission.h"
+#ifdef LEANOS_QOTOM_NOSMAP_CONTROL
+#include "qotom-nosmap-control.c.inc"
+#endif
 
 static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
         const struct lab_ecam_root_view *view) {
@@ -53,5 +56,9 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
         pre_admission_fail("qotom-pci-assumptions");
     if(result.status!=QOTOM_PCI_FINAL_MATCH)
         pre_admission_fail("qotom-pci-final");
+#ifdef LEANOS_QOTOM_NOSMAP_CONTROL
+    lab_capture_nosmap_control();
+#else
     pre_admission_fail("qotom-nosmap-pending");
+#endif
 }
