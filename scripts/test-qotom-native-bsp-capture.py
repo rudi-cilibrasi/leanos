@@ -408,6 +408,24 @@ class Capture(unittest.TestCase):
                 hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
                 pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True,
                 pci_final_admission=True,pci_trust_contract=True,nosmap_control=True)
+        already_smep=control_changed.replace(
+            b'cr4-before=32 cr4-after=1048608',
+            b'cr4-before=1048608 cr4-after=1048608')
+        with self.assertRaisesRegex(ValueError,'no-SMAP control result'):
+            R['classify_cpu_protected'](
+                [{'elapsed':0,'hex':already_smep.hex()},
+                 {'elapsed':37,'hex':raw[end:].hex()}],
+                expected['elf_sha256'],capture / 'diagnostic-protocol.tsv',CPU,PCI,
+                handoff=True,acpi=True,bootstrap=True,ecam_memory=True,dsdt=True,
+                ecam_read=True,native_inventory=True,native_kernel=True,bsp_replay=BSP,
+                pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+                ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+                xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+                xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+                ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+                hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+                pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True,
+                pci_final_admission=True,pci_trust_contract=True,nosmap_control=True)
 
     def test_retained_nosmap_control_capture(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-nosmap-control-20260912'
