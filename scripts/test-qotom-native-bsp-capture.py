@@ -288,6 +288,36 @@ class Capture(unittest.TestCase):
             R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
                 capture / 'diagnostic-protocol.tsv',CPU,PCI,graphics_state=True)
 
+    def test_txe_bme_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-graphics-bme-20260912'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in
+            (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        raw=b''.join(bytes.fromhex(e['hex']) for e in events)
+        end=raw.index(FINAL)+len(FINAL)
+        record=(b'LEANOS-LAB/1 TXE-BME profile=qotom-txe-host-bme-v1 index=4 '
+            b'status=0 attempted=1 before=262 after=258\n')
+        changed=raw[:end].replace(FINAL,record+FINAL)
+        synthetic=[{'elapsed':0,'hex':changed.hex()},
+                   {'elapsed':37,'hex':raw[end:].hex()}]
+        result=R['classify_cpu_protected'](synthetic,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+            pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True)
+        self.assertEqual(result['txe_bme']['after_command'],258)
+        self.assertTrue(result['txe_bme']['host_visible_bme_cleared'])
+        self.assertFalse(result['txe_bme']['txe_private_dma_stopped'])
+        self.assertIn('txe_bme_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['replay_scope'],
+            'native-inventory-with-txe-host-bme-transition')
+
     def test_rootport_bme_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())

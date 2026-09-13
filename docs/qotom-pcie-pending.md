@@ -27,7 +27,10 @@ revoked before serial output or terminal failure. The native path emits indices
 6, 7, 8, 9, 13 and 15 in that order and stops after the first failure. The
 strict decoder requires a successful preceding two-endpoint Realtek BME prefix,
 the exact successful six-function sequence or a failure prefix, and the matching
-terminal reason. It records that no hardware operation was replayed.
+terminal reason. Device Status is checked against the earlier `PCIE-DEVICE`
+record from the same boot with only Transactions Pending cleared; it is not
+compared with one retained boot's correctable-error status bits. It records
+that no hardware operation was replayed.
 
 PCIe Transactions Pending describes outstanding non-posted requests from one
 Function. Two clear samples establish a bounded non-posted quiet observation
@@ -58,3 +61,9 @@ Transactions Pending clear. The expected terminal remained
 `qotom-platform-pending`. FreeBSD recovered with a changed boot time, and the
 request was consumed. Independent replay and post-recovery USB verification
 passed. These results retain the scope limitations above.
+
+A reset retry on the same hardware later reported Device Status 16 for all
+four root ports. The in-image checks accepted those values because they matched
+the prior observations from that boot and Transactions Pending remained clear.
+That retry exposed and corrected a host-decoder assumption that the
+correctable-error-detected status bit would persist across resets.

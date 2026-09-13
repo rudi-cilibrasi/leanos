@@ -1,4 +1,7 @@
 #include "qotom-graphics-bme-arm.h"
+#ifdef LEANOS_QOTOM_TXE_BME
+#include "qotom-txe-bme.c.inc"
+#endif
 static __attribute__((noreturn)) void lab_graphics_bme_fault(void *opaque);
 static struct lab_graphics_bme_window lab_graphics_bme_writer={
     .controls=lab_ecam_native_controls,.invalidate=lab_ecam_native_invalidate,
@@ -37,5 +40,10 @@ static __attribute__((noinline)) void lab_capture_graphics_bme(
     serial_puts(" before=");serial_u64(result.before_command);
     serial_puts(" after=");serial_u64(result.after_command);serial_putc('\n');
     if(status!=QOTOM_GRAPHICS_BME_OK)pre_admission_fail("qotom-graphics-bme");
+#ifdef LEANOS_QOTOM_TXE_BME
+    lab_capture_txe_bme(view,snapshot);
+#endif
+#ifndef LEANOS_QOTOM_TXE_BME
     pre_admission_fail("qotom-platform-pending");
+#endif
 }

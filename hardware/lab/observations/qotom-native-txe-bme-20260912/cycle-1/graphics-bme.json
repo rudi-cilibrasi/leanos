@@ -1,0 +1,14 @@
+{
+  "schema": "leanos-qotom-graphics-bme-observation-v1",
+  "index": 1,
+  "status": 0,
+  "write_attempted": 1,
+  "before_command": 7,
+  "after_command": 3,
+  "display_decode_preserved": true,
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false,
+  "transaction_drain_established": false,
+  "terminal_reason": "qotom-platform-pending"
+}

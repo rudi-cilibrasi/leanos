@@ -1,0 +1,54 @@
+{
+  "schema": "leanos-qotom-pcie-pending-observation-v1",
+  "functions": [
+    {
+      "index": 6,
+      "status": 0,
+      "polls": 2,
+      "device_status": 16,
+      "transactions_pending": false
+    },
+    {
+      "index": 7,
+      "status": 0,
+      "polls": 2,
+      "device_status": 16,
+      "transactions_pending": false
+    },
+    {
+      "index": 8,
+      "status": 0,
+      "polls": 2,
+      "device_status": 16,
+      "transactions_pending": false
+    },
+    {
+      "index": 9,
+      "status": 0,
+      "polls": 2,
+      "device_status": 16,
+      "transactions_pending": false
+    },
+    {
+      "index": 13,
+      "status": 0,
+      "polls": 2,
+      "device_status": 25,
+      "transactions_pending": false
+    },
+    {
+      "index": 15,
+      "status": 0,
+      "polls": 2,
+      "device_status": 25,
+      "transactions_pending": false
+    }
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false,
+  "nonposted_quiet_observed": true,
+  "posted_write_drain_established": false,
+  "transaction_drain_established": false
+}

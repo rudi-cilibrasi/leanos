@@ -96,7 +96,8 @@ jobs:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
-    timeout-minutes: 40
+    # The full proof lane crossed 40 minutes after the closed-root checks joined it.
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -186,8 +187,8 @@ jobs:
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
     # Native firmware and bootstrap replays include full sanitizer module closure.
-    # The expanded corpus exceeded 40 minutes on a cold hosted runner.
-    timeout-minutes: 60
+    # The expanded corpus and closed-root checks crossed 60 minutes on a cold runner.
+    timeout-minutes: 90
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7

@@ -1,0 +1,26 @@
+Guarded image install:
+** /dev/da0s1
+** Phase 1 - Read FAT and checking connectivity
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Lost Files
+307 files, 74 MiB free (151492 clusters)
+SHA256 (/mnt/leanos-verify/boot/leanos-qotom-lab.elf) = c2cbec01015efb0057c2c844e354e5ba40531c0642bdbe09ffe5b15a0b6f7931
+SHA256 (/mnt/leanos-verify/boot/leanos.sha256) = ca3627483a6dd200b5c932bbb967b29be70e63576bd29f1cbf9a924ff4c910b8
+SHA256 (/mnt/leanos-verify/boot/grub/grub.cfg) = 978a05c733085a85a58afa0a6d78ef0d547c116389f9b749bc162a788c3f75b8
+SHA256 (/mnt/leanos-verify/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+kern.boottime: { sec = 1789246000, usec = 920027 } Sat Sep 12 13:46:40 2026
+
+The first request was safely rejected because the installed GRUB request prefix
+still named the preceding graphics image digest. FreeBSD recovered at boot time
+1789249245. The retained stale-grub-rejection directory is the raw evidence.
+
+Guarded GRUB digest-binding update:
+** /dev/da0s1
+** Phase 1 - Read FAT and checking connectivity
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Lost Files
+307 files, 74 MiB free (151492 clusters)
+SHA256 (/mnt/leanos-verify/boot/leanos-qotom-lab.elf) = c2cbec01015efb0057c2c844e354e5ba40531c0642bdbe09ffe5b15a0b6f7931
+SHA256 (/mnt/leanos-verify/boot/leanos.sha256) = ca3627483a6dd200b5c932bbb967b29be70e63576bd29f1cbf9a924ff4c910b8
+SHA256 (/mnt/leanos-verify/boot/grub/grub.cfg) = e35b6ee3bd07484ace4422eace29c37c8f1220f5848beb32d2882870ef623c8c
+SHA256 (/mnt/leanos-verify/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66

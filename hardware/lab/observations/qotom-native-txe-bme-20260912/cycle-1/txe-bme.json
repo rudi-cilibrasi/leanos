@@ -1,0 +1,17 @@
+{
+  "schema": "leanos-qotom-txe-host-bme-observation-v1",
+  "index": 4,
+  "status": 0,
+  "write_attempted": 1,
+  "before_command": 262,
+  "after_command": 258,
+  "memory_decode_preserved": true,
+  "serr_enable_preserved": true,
+  "hardware_operations_replayed": false,
+  "host_visible_bme_cleared": true,
+  "txe_private_dma_stopped": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false,
+  "transaction_drain_established": false,
+  "terminal_reason": "qotom-platform-pending"
+}
