@@ -48,16 +48,40 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
         ?(uint64_t)qotom_entry_user_after_first
         :(uint64_t)qotom_entry_user_after_second;
     uint64_t expected_call=qotom_entry_completed_returns==0?UINT64_C(0x51):UINT64_C(0x52);
-    if(!saved || active_root!=qotom_entry_closed_root ||
-       (qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK)!=qotom_entry_subject_root ||
-       qotom_entry_subject_root!=(uint64_t)page_map_level_4_a ||
-       qotom_entry_closed_root!=(uint64_t)qotom_closed_root.pml4 ||
-       (flags&((UINT64_C(1)<<9)|(UINT64_C(1)<<10)|(UINT64_C(1)<<18)))!=0 ||
-       !qotom_entry_registers_exact(saved) || saved[14]!=expected_call ||
-       saved[15]!=expected_rip || saved[16]!=UINT64_C(0x23) ||
-       saved[17]!=UINT64_C(0x2) ||
-       saved[18]!=user_rsp || saved[19]!=UINT64_C(0x1b))
+    if(!saved)
         pre_admission_fail("qotom-entry-frame");
+    uint64_t frame_errors=
+        (active_root!=qotom_entry_closed_root?UINT64_C(1):0) |
+        ((qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK)!=qotom_entry_subject_root?UINT64_C(2):0) |
+        (qotom_entry_subject_root!=(uint64_t)page_map_level_4_a?UINT64_C(4):0) |
+        (qotom_entry_closed_root!=(uint64_t)qotom_closed_root.pml4?UINT64_C(8):0) |
+        ((flags&((UINT64_C(1)<<9)|(UINT64_C(1)<<10)|(UINT64_C(1)<<18)))!=0?UINT64_C(16):0) |
+        (!qotom_entry_registers_exact(saved)?UINT64_C(32):0) |
+        (saved[14]!=expected_call?UINT64_C(64):0) |
+        (saved[15]!=expected_rip?UINT64_C(128):0) |
+        (saved[16]!=UINT64_C(0x23)?UINT64_C(256):0) |
+        (saved[17]!=UINT64_C(0x2)?UINT64_C(512):0) |
+        (saved[18]!=user_rsp?UINT64_C(1024):0) |
+        (saved[19]!=UINT64_C(0x1b)?UINT64_C(2048):0);
+    if(frame_errors!=0) {
+        serial_puts("LEANOS-LAB/1 QOTOM-ENTRY-FRAME profile=qotom-copy-roots-v1 errors=");
+        serial_u64(frame_errors);
+        serial_puts(" active-root=");serial_u64(active_root);
+        serial_puts(" closed-root=");serial_u64(qotom_entry_closed_root);
+        serial_puts(" observed-root=");serial_u64(qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK);
+        serial_puts(" subject-root=");serial_u64(qotom_entry_subject_root);
+        serial_puts(" kernel-rflags=");serial_u64(flags);
+        serial_puts(" saved-rax=");serial_u64(saved[14]);
+        serial_puts(" rip=");serial_u64(saved[15]);
+        serial_puts(" cs=");serial_u64(saved[16]);
+        serial_puts(" rflags=");serial_u64(saved[17]);
+        serial_puts(" rsp=");serial_u64(saved[18]);
+        serial_puts(" ss=");serial_u64(saved[19]);
+        serial_puts(" gprs=");serial_u64(qotom_entry_registers_exact(saved));
+        serial_puts(" completed=");serial_u64(qotom_entry_completed_returns);
+        serial_puts(" cpl3-authority=0\n");
+        pre_admission_fail("qotom-entry-frame");
+    }
     if(qotom_entry_completed_returns==0) {
         qotom_entry_completed_returns=1;
         saved[14]=UINT64_C(0x51525354);
@@ -66,7 +90,7 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
     uint64_t accepted=leanos_qotom_entry_integration_query(
         2,1,qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK,
         qotom_entry_closed_root,active_root,1,0,15,1,1,1);
-    uint64_t errors=leanos_qotom_entry_integration_query(
+    uint64_t contract_errors=leanos_qotom_entry_integration_query(
         2,1,qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK,
         qotom_entry_closed_root,active_root,1,0,15,1,1,2);
     serial_puts("LEANOS-LAB/1 QOTOM-ENTRY profile=qotom-copy-roots-v1 status=");
@@ -76,10 +100,10 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
     serial_puts(" closed-root=");serial_u64(qotom_entry_closed_root);
     serial_puts(" active-root=");serial_u64(active_root);
     serial_puts(" frame=1 user-if=0 gprs=15 close-readback=1 return-reload=1 error-mask=");
-    serial_u64(errors);
+    serial_u64(contract_errors);
     serial_puts(" entry-contract=");serial_u64(accepted);
     serial_puts(" cpl3-authority=0\n");
-    if(accepted!=1 || errors!=0)pre_admission_fail("qotom-entry-contract");
+    if(accepted!=1 || contract_errors!=0)pre_admission_fail("qotom-entry-contract");
     pre_admission_fail("qotom-exception-integration-pending");
 }
 
