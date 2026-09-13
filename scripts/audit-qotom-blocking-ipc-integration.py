@@ -163,6 +163,7 @@ def facts(elf):
         'firmware': calls(platform_admission, 'lab_ecam_firmware_matches'),
         'memory_map': calls(platform_admission,
                             'qotom_platform_memory_map_matches'),
+        'uart': calls(platform_admission, 'qotom_platform_uart_matches'),
         'closed_root': calls(platform_admission, 'qotom_closed_root_exact'),
         'copy_root': calls(platform_admission, 'qotom_copy_root_exact'),
         'copy_out_root': calls(platform_admission, 'qotom_alias_root_exact'),
@@ -202,6 +203,7 @@ EXPECTED = {
     'platform_live_gate_calls': {
         'firmware': 1,
         'memory_map': 1,
+        'uart': 1,
         'closed_root': 1,
         'copy_root': 1,
         'copy_out_root': 1,
@@ -265,7 +267,7 @@ def self_test():
         'missing-admission-query': ('admission_query_calls', 2),
         'missing-platform-query': ('platform_admission_wrapper_query_calls', 0),
         'missing-live-platform-gate': ('platform_live_gate_calls', {
-            'firmware': 1, 'memory_map': 0, 'closed_root': 1,
+            'firmware': 1, 'memory_map': 0, 'uart': 1, 'closed_root': 1,
             'copy_root': 1, 'copy_out_root': 1}),
         'missing-gate-check': ('gate_check_calls', 1),
         'timer-port': ('direct_ports', [0x21, 0x43, 0xa1]),

@@ -294,6 +294,19 @@ static int qotom_blocking_gate_exact(unsigned vector, const void *handler,
         idt[vector].attributes==attributes && idt[vector].zero==0;
 }
 
+/* Read back the programmed COM1 mode and divisor while interrupts are masked.
+ * DLAB is restored before the caller can emit another byte. */
+static __attribute__((noinline,noipa)) int qotom_platform_uart_matches(void) {
+    uint8_t line = in8(COM1 + 3u);
+    if (line != 0x03u || in8(COM1 + 4u) != 0x0bu) return 0;
+    out8(COM1 + 3u, line | 0x80u);
+    uint8_t divisor_low = in8(COM1);
+    uint8_t divisor_high = in8(COM1 + 1u);
+    out8(COM1 + 3u, line);
+    __asm__ volatile (".rept 9\n\tnop\n\t.endr");
+    return divisor_low == 3u && divisor_high == 0u;
+}
+
 static __attribute__((noinline,noipa)) uint64_t qotom_platform_admission(
         uint64_t scenario_accepted,
         uint64_t word) {
@@ -309,7 +322,8 @@ static __attribute__((noinline,noipa)) uint64_t qotom_platform_admission(
             qotom_root_result.protected_count);
     return leanos_platform_admission_query(
         2,2,0x1901,firmware_accepted,0x1902,memory_map_accepted,
-        0x1903,qotom_platform_live.pci_accepted,0x3f8,38400,1,
+        0x1903,qotom_platform_live.pci_accepted,0x3f8,38400,
+        qotom_platform_uart_matches(),
         0x1904,qotom_platform_live.bsp_accepted,
         qotom_platform_live.executing_bsp,
         qotom_platform_live.advertised_processors,0,
