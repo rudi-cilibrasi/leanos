@@ -16,7 +16,7 @@
     },
     "memory_map": {
       "profile_word": 6402,
-      "multiboot2_sha256": "dd2b2a1495d11e897e5674a73a2d66b3338be64ac5e00fdeacc3b78adba13c28",
+      "multiboot2_sha256": "6a69e75497f2a414f745a23a977a76b2e1885b63ec35e45abe2532b0e8f1a02f",
       "tag_offset": 72,
       "tag_size": 472,
       "entry_size": 24,
