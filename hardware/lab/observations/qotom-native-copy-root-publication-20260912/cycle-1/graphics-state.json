@@ -1,0 +1,68 @@
+{
+  "schema": "leanos-qotom-graphics-state-observation-v1",
+  "index": 1,
+  "status": 0,
+  "samples": [
+    [
+      {
+        "engine": "rcs",
+        "tail": 0,
+        "head": 0,
+        "start": 0,
+        "control": 0,
+        "mode": 512
+      },
+      {
+        "engine": "vcs",
+        "tail": 0,
+        "head": 0,
+        "start": 0,
+        "control": 0,
+        "mode": 512
+      },
+      {
+        "engine": "bcs",
+        "tail": 0,
+        "head": 0,
+        "start": 0,
+        "control": 0,
+        "mode": 512
+      }
+    ],
+    [
+      {
+        "engine": "rcs",
+        "tail": 0,
+        "head": 0,
+        "start": 0,
+        "control": 0,
+        "mode": 512
+      },
+      {
+        "engine": "vcs",
+        "tail": 0,
+        "head": 0,
+        "start": 0,
+        "control": 0,
+        "mode": 512
+      },
+      {
+        "engine": "bcs",
+        "tail": 0,
+        "head": 0,
+        "start": 0,
+        "control": 0,
+        "mode": 512
+      }
+    ]
+  ],
+  "stable": true,
+  "rings_invalid_and_idle": true,
+  "rings_empty": true,
+  "display_decode_preserved": true,
+  "graphics_bme_preserved": true,
+  "hardware_operations_replayed": false,
+  "dma_quarantine_established": false,
+  "firmware_exclusion_established": false,
+  "terminal_reason": "qotom-platform-pending"
+}
