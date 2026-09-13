@@ -43,14 +43,15 @@ def extract(raw,protocol):
             engines.append({'engine':name,'tail':values[0],'head':values[1],
                 'start':values[2],'control':values[3],'mode':values[4]})
         samples.append(engines)
-    stable=all(samples[0][i]==samples[1][i] for i in range(3))
-    idle=all(not (engine['control']&1) and (engine['mode']&0x200)
+    accepted=status==0
+    stable=accepted and all(samples[0][i]==samples[1][i] for i in range(3))
+    idle=accepted and all(not (engine['control']&1) and (engine['mode']&0x200)
              for sample in samples for engine in sample)
-    empty=all(engine['head']==engine['tail'] for sample in samples for engine in sample)
+    empty=accepted and all(engine['head']==engine['tail'] for sample in samples for engine in sample)
     return projection,{'schema':'leanos-qotom-graphics-state-observation-v1',
         'index':index,'status':status,'samples':samples,'stable':stable,
         'rings_invalid_and_idle':idle,'rings_empty':empty,
-        'display_decode_preserved':True,'graphics_bme_preserved':True,
+        'display_decode_preserved':accepted,'graphics_bme_preserved':accepted,
         'hardware_operations_replayed':False,'dma_quarantine_established':False,
         'firmware_exclusion_established':False,
         'terminal_reason':'qotom-platform-pending' if status==0 else 'qotom-graphics-state'}

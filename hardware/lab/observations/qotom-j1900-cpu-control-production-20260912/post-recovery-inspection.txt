@@ -1,0 +1,11 @@
+qotom
+kern.boottime: { sec = 1789232782, usec = 929211 } Sat Sep 12 10:06:22 2026
+11758C40
+SHA256 (/mnt/leanos-post/boot/leanos-qotom-lab.elf) = 9e7119f09cc133b72aa1cc0d3cd2ca033fd9ea847493f6b18435075cec852976
+SHA256 (/mnt/leanos-post/boot/leanos.sha256) = 70b2e8f3f4985c074f51c58a2f6ae26839ebb6b937271d4f11064473635223ae
+SHA256 (/mnt/leanos-post/boot/grub/grub.cfg) = 7629b4cc973566c28d967f6b8f19d60c90d954409bb824d7012ae577e97bc7a2
+SHA256 (/mnt/leanos-post/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+SHA256 (/mnt/leanos-post/boot/grub/watchdog-window.cfg) = 09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce
+SHA256 (/mnt/leanos-post/boot/grub/watchdog.cfg) = 62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86
+request=none
+/dev/da0s1 on /mnt/leanos-post (msdosfs, local, read-only)

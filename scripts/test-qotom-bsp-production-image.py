@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import struct
+import subprocess
 import tempfile
 import runpy
 
@@ -21,9 +22,25 @@ assert not result['x2apic_icr_msr_write']
 assert result['firmware_ap_dormancy_assumed'] and not result['ap_dormancy_established']
 assert all(not plan['local_apic_aliases'] for plan in result['plans'].values())
 
+# The production image must consume every word of the composed CPU/control
+# checkpoint.  The ordinary q35 image must continue to discard this Qotom-only
+# authority boundary.
+production_symbols = subprocess.check_output(['nm', '-n', str(ELF)], text=True)
+assert ' T leanos_j1900_cpu_control_policy_query\n' in production_symbols
 lab_graph = (ROOT/'build/qotom-bsp-production-lab/objects.mk').read_text()
 assert str(ROOT/'build/boot') not in lab_graph
 assert str(ROOT/'build/qotom-bsp-production-lab/boot') in lab_graph
+report = subprocess.check_output(
+    ['objdump', '-dr', '--disassemble=report_j1900_cpu_candidate', str(ELF)],
+    text=True)
+assert report.count('<j1900_cpu_control_policy_query>') == 8
+q35 = ROOT / 'build/boot/leanos.elf'
+if not q35.exists():
+    subprocess.run(['make', '-f', str(ROOT / 'build/boot/generated-image-objects.mk'),
+                    '-j4', str(q35.resolve())], cwd=ROOT, check=True)
+q35_symbols = subprocess.check_output(
+    ['nm', '-n', str(q35)], text=True)
+assert 'j1900_cpu_control_policy' not in q35_symbols
 
 runner = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
 protocol = runner['cpu_replay_module'](True).load_protocol(
@@ -91,6 +108,38 @@ assert saved['nmi_routing_quarantined']
 assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
 assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
 
+capture = ROOT / 'hardware/lab/observations/qotom-j1900-cpu-control-production-20260912'
+manifest = json.loads((capture/'manifest.json').read_text())
+assert manifest['source_revision'] == '14bc87624a05058100b2c9679c0aec86557980b4'
+assert manifest['elf_sha256'] == \
+       '9e7119f09cc133b72aa1cc0d3cd2ca033fd9ea847493f6b18435075cec852976'
+for name,expected_digest in manifest['files'].items():
+    assert hashlib.sha256((capture/name).read_bytes()).hexdigest() == \
+           expected_digest,name
+physical_events = [json.loads(line) for line in
+                   (capture/'cycle-1/events.jsonl').read_text().splitlines()]
+physical_data = b''.join(bytes.fromhex(event['hex']) for event in physical_events)
+assert physical_data == (capture/'cycle-1/serial.raw').read_bytes()
+assert hashlib.sha256(physical_data).hexdigest() == manifest['raw_serial_sha256']
+cpu = (protocol['CPU'].encode() + b' profile=j1900-cpu-v1 codec=1 width=22 '
+       b'words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,'
+       b'1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,'
+       b'672139264 selection=65536\n')
+control = (protocol['CONTROL'].encode() +
+           b' profile=j1900-cpu-v1 codec=1 width=8 '
+           b'words=3328,0,0,0,0,0,0,0 readback=1\n')
+assert physical_data.count(cpu) == 1 and physical_data.count(control) == 1
+saved = json.loads((capture/'cycle-1/result.json').read_text())
+physical = runner['classify_bsp_production'](physical_events,manifest['elf_sha256'])
+for key,value in physical.items():
+    assert saved[key] == value,key
+assert saved['memory_published'] and saved['topology_published']
+assert saved['interrupts_masked'] and saved['nmi_routing_quarantined']
+assert not saved['platform_admitted']
+assert saved['terminal_reason'] == 'qotom-platform-pending'
+assert saved['request_consumed'] and saved['recovery'] == 'freebsd-ssh-restored'
+assert saved['freebsd_boot_after'] > saved['freebsd_boot_before']
+
 with tempfile.TemporaryDirectory(prefix='qotom-bsp-production-negative-') as directory:
     mapped = Path(directory) / 'mapped-apic.elf'
     shutil.copy2(ELF,mapped)
@@ -127,4 +176,4 @@ with tempfile.TemporaryDirectory(prefix='qotom-bsp-production-negative-') as dir
     else:
         raise AssertionError('extra WRMSR mutation was accepted')
 
-print('PASS Qotom BSP production ELF, local-APIC mapping and x2APIC-WRMSR negatives')
+print('PASS Qotom BSP production ELF, CPU/control checkpoint, local-APIC mapping and x2APIC-WRMSR negatives')

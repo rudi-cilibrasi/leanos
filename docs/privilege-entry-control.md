@@ -126,3 +126,23 @@ hang. Each successful probe also preserves a three-record CPU/CPUID/MSR/control
 snapshot beside the exact serial log. The final global-invariant composition
 remains assigned to follow-on #104. Its machine results must be labeled
 checked/tested evidence, not Lean proof.
+
+## J1900 CPU/control checkpoint
+
+`LeanOS.J1900CpuControlPolicy` composes the separately reviewed version-one
+J1900 CPUID selector and exact Intel MSR readback into one allocation-free
+production checkpoint. Its accepted projection identifies the named J1900
+profile, the `0xd00` EFER value, seven zero fast-entry target/mask registers,
+and normalized fast-entry denial. CPU selection errors retain words 1--12;
+error 13 identifies an MSR mismatch. The acceptance theorem is an equivalence
+with both complete scalar validators, so neither half can be mixed with a
+rejected or incomplete observation.
+
+The Qotom BSP production image consumes all eight result words after emitting
+the existing profile-bound CPU and CONTROL observations. Word seven is always
+zero and is checked as such: this checkpoint grants no CPL3 authority. The
+no-SMAP isolation strategy, complete platform admission, live return-path
+integration, and physical CPL3 execution remain separate gates. Ordinary and
+sanitized hosted replay exercise every existing CPU case and every bit of the
+full-width MSR tuple, while the freestanding closure check retains only the
+two scalar dependencies and requires no Lean runtime symbol.
