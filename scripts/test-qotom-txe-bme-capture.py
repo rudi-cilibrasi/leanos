@@ -24,6 +24,8 @@ class Capture(unittest.TestCase):
         self.assertEqual((result['status'],result['write_attempted'],
             result['before_command'],result['after_command']),(0,1,0x106,0x102))
         self.assertTrue(result['host_visible_bme_cleared'])
+        self.assertTrue(result['memory_decode_preserved'] and
+            result['serr_enable_preserved'])
         self.assertFalse(result['txe_private_dma_stopped'] or
             result['dma_quarantine_established'])
     def test_failures(self):
@@ -51,6 +53,8 @@ class Capture(unittest.TestCase):
         self.assertEqual((result['status'],result['write_attempted'],
             result['before_command'],result['after_command']),(0,1,0x106,0x102))
         self.assertTrue(result['host_visible_bme_cleared'])
+        self.assertTrue(result['memory_decode_preserved'] and
+            result['serr_enable_preserved'])
         self.assertFalse(result['txe_private_dma_stopped'] or
             result['firmware_exclusion_established'] or
             result['dma_quarantine_established'] or
