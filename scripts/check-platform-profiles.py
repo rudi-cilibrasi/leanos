@@ -131,6 +131,8 @@ def validate(registry_path=REGISTRY):
                 'build-manifest.json': None,
                 'cycle-1/acpi/00000000b979f078.bin':
                     components['firmware_root']['xsdt_sha256'],
+                'cycle-1/acpi.json': None,
+                'cycle-1/handoff.json': None,
                 'cycle-1/multiboot2.bin': observation.get('multiboot2_sha256'),
                 'cycle-1/pci-final.json':
                     components['pci']['final_observation_sha256'],
@@ -139,6 +141,8 @@ def validate(registry_path=REGISTRY):
                 'cycle-1/nosmap-control.json':
                     components['isolation']['observation_sha256'],
                 'cycle-1/diagnostic.raw': observation.get('diagnostic_raw_sha256'),
+                'cycle-1/blocking-ipc-integration.json': None,
+                'cycle-1/recovery.json': None,
                 'cycle-1/serial.raw': observation.get('raw_serial_sha256'),
             }
             require(isinstance(files, dict) and
@@ -166,6 +170,78 @@ def validate(registry_path=REGISTRY):
                     'build/qotom-blocking-ipc-integration-lab/'
                     'leanos-qotom-lab.elf') == evidence.get('elf_sha256'),
                     'Qotom evidence built ELF binding')
+            handoff = json.loads((evidence_root / 'cycle-1/handoff.json').read_text())
+            memory_tags = [tag for tag in handoff.get('tags', [])
+                           if tag.get('type') == 6]
+            memory = components['memory_map']
+            require(handoff.get('raw_sha256') == memory['multiboot2_sha256'] and
+                    len(memory_tags) == 1 and
+                    (memory_tags[0].get('offset'), memory_tags[0].get('size'),
+                     memory_tags[0].get('memory_map_entry_size'),
+                     memory_tags[0].get('memory_map_entry_version')) ==
+                    (memory['tag_offset'], memory['tag_size'],
+                     memory['entry_size'], memory['entry_version']) and
+                    (memory['tag_size'] - 16) // memory['entry_size'] ==
+                    memory['entry_count'], 'Qotom memory-map evidence binding')
+            acpi = json.loads((evidence_root / 'cycle-1/acpi.json').read_text())
+            tables = acpi.get('tables', [])
+            require(acpi.get('root_kind') == 2 and
+                    len(tables) == components['firmware_root']['table_count'] and
+                    tables[0].get('sha256') ==
+                    components['firmware_root']['xsdt_sha256'] and
+                    any(table.get('signature_hex') == '41504943' and
+                        table.get('sha256') ==
+                        components['firmware_root']['madt_sha256']
+                        for table in tables) and
+                    acpi.get('aml_executed') is
+                    components['firmware_root']['aml_executed'],
+                    'Qotom firmware-root evidence binding')
+            pci = json.loads((evidence_root / 'cycle-1/pci-final.json').read_text())
+            require(pci.get('count') == components['pci']['function_count'] and
+                    pci.get('commands') == components['pci']['final_commands'] and
+                    pci.get('trust_contract') ==
+                    components['pci']['trust_contract'] and
+                    pci.get('dma_quarantine_admitted_under_contract') is True,
+                    'Qotom PCI evidence binding')
+            bsp_observation = json.loads(
+                (evidence_root / 'cycle-1/native-bsp.json').read_text())
+            bsp_fields = bsp_observation.get('observation', {})
+            require((bsp_fields.get('executing'), bsp_fields.get('count')) ==
+                    (components['bsp']['executing_apic_id'],
+                     components['bsp']['advertised_processors']) and
+                    bsp_observation.get('madt_sha256') ==
+                    components['firmware_root']['madt_sha256'],
+                    'Qotom BSP evidence binding')
+            isolation = json.loads(
+                (evidence_root / 'cycle-1/nosmap-control.json').read_text())
+            require((isolation.get('profile'), isolation.get('wp'),
+                     isolation.get('nxe'), isolation.get('smep'),
+                     isolation.get('smap'), isolation.get('pcid'),
+                     isolation.get('pge'), isolation.get('interrupts_enabled'),
+                     isolation.get('max_bytes'), isolation.get('max_aliases')) ==
+                    (components['isolation']['contract'], True, True, True,
+                     False, False, False, False,
+                     components['isolation']['maximum_copy_bytes'],
+                     components['isolation']['maximum_temporary_aliases']),
+                    'Qotom isolation evidence binding')
+            result = json.loads((evidence_root /
+                                 'cycle-1/blocking-ipc-integration.json').read_text())
+            require((result.get('platform_profile'),
+                     result.get('platform_profile_version'), result.get('status'),
+                     result.get('semantic_syscalls'),
+                     result.get('recoverable_page_faults'),
+                     result.get('context_switches'), result.get('copy_transfers')) ==
+                    (row['id'], row['version'], 'PASS',
+                     scenario['semantic_syscalls'],
+                     scenario['recoverable_page_faults'],
+                     scenario['context_switches'], scenario['copy_transfers']),
+                    'Qotom scenario evidence binding')
+            recovery = json.loads(
+                (evidence_root / 'cycle-1/recovery.json').read_text())
+            require(recovery.get('elf_sha256') == evidence.get('elf_sha256') and
+                    recovery.get('request_consumed') is True and
+                    recovery.get('recovery') == 'freebsd-ssh-restored',
+                    'Qotom recovery evidence binding')
     return registry
 
 
