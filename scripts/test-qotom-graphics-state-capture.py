@@ -62,7 +62,12 @@ class Capture(unittest.TestCase):
         expected=record()+R['cpu_replay_module'](True).load_protocol(
             PHYSICAL/'diagnostic-protocol.tsv')['FINAL'].encode()+b' status=FAIL reason=qotom-platform-pending\n'
         self.assertEqual(raw.count(expected),1)
-        result=json.loads((PHYSICAL/'cycle-1/graphics-state.json').read_text())
+        protocol=R['cpu_replay_module'](True).load_protocol(
+            PHYSICAL/'diagnostic-protocol.tsv')
+        events=[json.loads(line) for line in
+            (PHYSICAL/'cycle-1/events.jsonl').read_text().splitlines()]
+        _,bounded=R['cpu_diagnostic_bytes'](events,protocol,True)
+        _,result=D['extract'](bounded,protocol)
         self.assertEqual(result,json.loads((PHYSICAL/'cycle-1/graphics-state.json').read_text()))
         self.assertEqual(result['status'],0)
         self.assertEqual(result['samples'],[[
@@ -76,5 +81,18 @@ class Capture(unittest.TestCase):
         self.assertEqual(recovery['elf_sha256'],'50826885480d163d5eadb7f9614d95fe969859fb5e848c22659de4cbb7845827')
         self.assertTrue(recovery['request_consumed'])
         self.assertEqual(recovery['recovery'],'freebsd-ssh-restored')
+        rejection=PHYSICAL/'header-rejection'
+        protocol=R['cpu_replay_module'](True).load_protocol(
+            rejection/'diagnostic-protocol.tsv')
+        events=[json.loads(line) for line in
+            (rejection/'cycle-1/events.jsonl').read_text().splitlines()]
+        _,bounded=R['cpu_diagnostic_bytes'](events,protocol,True)
+        _,result=D['extract'](bounded,protocol)
+        self.assertEqual(result,json.loads(
+            (rejection/'cycle-1/graphics-state.json').read_text()))
+        self.assertEqual(result['status'],7)
+        self.assertFalse(result['stable'] or result['rings_invalid_and_idle'] or
+            result['rings_empty'] or result['display_decode_preserved'] or
+            result['graphics_bme_preserved'])
 
 if __name__=='__main__':unittest.main()

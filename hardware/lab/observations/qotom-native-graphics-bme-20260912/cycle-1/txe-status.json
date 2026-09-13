@@ -1,0 +1,11 @@
+{
+  "schema": "leanos-qotom-txe-status-observation-v1",
+  "status": 0,
+  "firmware0": 520093909,
+  "firmware1": 1761607680,
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false,
+  "atomic_snapshot": false
+}
