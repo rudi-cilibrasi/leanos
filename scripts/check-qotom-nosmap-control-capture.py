@@ -28,7 +28,7 @@ def extract(raw,protocol):
     if any(word>0xffffffffffffffff for word in (cr0,before,after,efer,rflags)):
         raise ValueError('no-SMAP control word width')
     if (status!=0 or errors!=0 or cr0&0x10000==0 or efer&0x800==0 or
-        before&(0x200000|0x20000|0x80)!=0 or rflags&0x200!=0 or
+        before&(0x100000|0x200000|0x20000|0x80)!=0 or rflags&0x200!=0 or
         after!=before|0x100000 or after&0x100000==0 or
         after&(0x200000|0x20000|0x80)!=0 or
         (max_bytes,max_aliases,cpl3,closed,copy)!=(16,2,0,0,0)):
@@ -42,4 +42,3 @@ def extract(raw,protocol):
         'closed_root_published':False,'copy_root_published':False,
         'terminal_reason':'qotom-copy-roots-pending'}
     return b''.join(lines[:-2])+prior,metadata
-
