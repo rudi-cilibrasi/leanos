@@ -604,6 +604,7 @@ if a.blocking_ipc_integration:
     ap_start_audit = out / 'ap-start-audit.json'
     checked = subprocess.run([
         'python3', 'scripts/audit-qotom-ap-start.py', '--platform-admission',
+        '--protocol', str(build / 'serial-protocol.tsv'),
         str(elf)], cwd=root, check=True, capture_output=True)
     ap_start_audit.write_bytes(checked.stdout)
     subprocess.run(['python3', 'scripts/test-qotom-blocking-ipc-integration-capture.py'],

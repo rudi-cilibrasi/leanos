@@ -954,6 +954,66 @@ validate_selected_final_plan() {
   }
 }
 
+converge_manually_linked_plan() {
+  local elf_path="$1"
+  local expected_plan="$2"
+  local final_plan="$3"
+  local description="$4"
+  local kernel_object="$5"
+  local link_function="$6"
+  local converged=false
+  local pass
+
+  for pass in 1 2 3 4; do
+    "$link_function"
+    ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
+    if cmp -s "$expected_plan" "$final_plan"; then
+      converged=true
+      break
+    fi
+    [[ "$pass" -lt 4 ]] || break
+    cp "$final_plan" "$expected_plan"
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" "$kernel_object"
+  done
+  [[ "$converged" == true ]] || {
+    echo "error: $description page-table plan drifted after final link" >&2
+    exit 1
+  }
+}
+
+link_double_fault() {
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
+    -o build/boot/leanos-double-fault.elf build/boot/boot.o \
+    build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
+    build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
+    build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/J1900CpuControlPolicy.o build/boot/BootTextConsole.o build/boot/PlatformAdmission.o build/boot/FaultDispatch.o
+}
+
+link_entry_stack_overflow() {
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow.map" \
+    -o "$build/leanos-entry-stack-overflow.elf" \
+    "$build/boot-entry-stack-overflow.o" "$build/kernel-entry-stack-overflow.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/J1900CpuControlPolicy.o" "$build/BootTextConsole.o" "$build/PlatformAdmission.o" "$build/FaultDispatch.o"
+}
+
+link_double_fault_guard_mapped() {
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
+    -o build/boot/leanos-double-fault-guard-mapped.elf \
+    build/boot/boot-df-guard-mapped.o \
+    build/boot/kernel-double-fault-guard-mapped.o \
+    build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
+    build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/J1900CpuControlPolicy.o build/boot/BootTextConsole.o build/boot/PlatformAdmission.o build/boot/FaultDispatch.o
+}
+
 
 # Final-ELF page-plan checks come from the scenario manifest in build order:
 # a validate compares the linker-resolved plan with the expected header; a
@@ -974,53 +1034,22 @@ while IFS=$'\t' read -r plan_image plan_check plan_expected plan_final plan_desc
   fi
 done < "$build/final-plan-checks.tsv"
 if selected_final_enabled "$build/leanos-double-fault.elf"; then
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
-    -o build/boot/leanos-double-fault.elf build/boot/boot.o \
-    build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
-    build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
-    build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/J1900CpuControlPolicy.o build/boot/BootTextConsole.o build/boot/PlatformAdmission.o build/boot/FaultDispatch.o
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
-    "$build/boot-page-plan-double-fault.final.h"
-  cmp "$build/boot-page-plan-double-fault.h" \
-    "$build/boot-page-plan-double-fault.final.h" || {
-    echo "error: double-fault boot page-table plan drifted after final link" >&2
-    exit 1
-  }
+  converge_manually_linked_plan "$build/leanos-double-fault.elf" \
+    "$build/boot-page-plan-double-fault.h" \
+    "$build/boot-page-plan-double-fault.final.h" "double-fault" \
+    "$build/kernel-double-fault.o" link_double_fault
 fi
 if selected_final_enabled "$build/leanos-entry-stack-overflow.elf"; then
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow.map" \
-    -o "$build/leanos-entry-stack-overflow.elf" \
-    "$build/boot-entry-stack-overflow.o" "$build/kernel-entry-stack-overflow.o" \
-    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/J1900CpuProfile.o" "$build/J1900MsrReadback.o" "$build/J1900CpuControlPolicy.o" "$build/BootTextConsole.o" "$build/PlatformAdmission.o" "$build/FaultDispatch.o"
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow.elf" \
-    "$build/boot-page-plan-entry-overflow.final.h"
-  cmp "$build/boot-page-plan-entry-overflow.h" \
-    "$build/boot-page-plan-entry-overflow.final.h" || {
-    echo "error: entry-stack overflow page-table plan drifted after final link" >&2
-    exit 1
-  }
+  converge_manually_linked_plan "$build/leanos-entry-stack-overflow.elf" \
+    "$build/boot-page-plan-entry-overflow.h" \
+    "$build/boot-page-plan-entry-overflow.final.h" "entry-stack overflow" \
+    "$build/kernel-entry-stack-overflow.o" link_entry_stack_overflow
 fi
 if selected_final_enabled "$build/leanos-double-fault-guard-mapped.elf"; then
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
-    -o build/boot/leanos-double-fault-guard-mapped.elf \
-    build/boot/boot-df-guard-mapped.o \
-    build/boot/kernel-double-fault-guard-mapped.o \
-    build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-    build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/J1900CpuProfile.o build/boot/J1900MsrReadback.o build/boot/J1900CpuControlPolicy.o build/boot/BootTextConsole.o build/boot/PlatformAdmission.o build/boot/FaultDispatch.o
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
-    "$build/boot-page-plan-guard.final.h"
-  cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
-    echo "error: guard-mapped boot page-table plan drifted after final link" >&2
-    exit 1
-  }
+  converge_manually_linked_plan "$build/leanos-double-fault-guard-mapped.elf" \
+    "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" \
+    "guard-mapped" "$build/kernel-double-fault-guard-mapped.o" \
+    link_double_fault_guard_mapped
 fi
 
 if selected_final_enabled "$build/leanos.elf"; then
