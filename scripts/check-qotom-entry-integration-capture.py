@@ -5,11 +5,11 @@ import re
 READY = b'LEANOS-LAB/1 QOTOM-ENTRY-READY '
 PREFIX = b'LEANOS-LAB/1 QOTOM-ENTRY '
 DEC = rb'(0|[1-9][0-9]{0,19})'
-MANIFEST = (b'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 '
-            b'auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack '
-            b'ist2=nmi-stack result=PASS\n')
-PORT_CONTROL = (b'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 '
-                b'bitmap=absent iopl=0 stage=pre-cpl3 result=PASS\n')
+MANIFEST_SUFFIX = (b' ordinary=8 extended=6,7 contained=0,3 auxiliary=1 '
+                   b'terminal=2 extra=0 rsp0=entry-stack ist1=df-stack '
+                   b'ist2=nmi-stack result=PASS\n')
+PORT_CONTROL_SUFFIX = (b' tr=40 limit=103 iomap=104 bitmap=absent iopl=0 '
+                       b'stage=pre-cpl3 result=PASS\n')
 
 
 def extract(raw, protocol):
@@ -22,13 +22,17 @@ def extract(raw, protocol):
              b' status=FAIL reason=qotom-entry-integration-pending\n')
     ready = (READY + b'profile=qotom-copy-roots-v1 subject=1 address-space=1 '
              b'gates=2,6,8,13,14,128 root=closed cpl3-authority=0\n')
-    if (len(lines) < 5 or lines[-5] != MANIFEST or
-            lines[-4] != PORT_CONTROL or lines[-3] != ready or
+    manifest_prefix = protocol['ENTRY-MANIFEST'].encode() + b' '
+    port_control_prefix = protocol['DIRECT-PORT-CONTROL'].encode() + b' '
+    manifest = protocol['ENTRY-MANIFEST'].encode() + MANIFEST_SUFFIX
+    port_control = protocol['DIRECT-PORT-CONTROL'].encode() + PORT_CONTROL_SUFFIX
+    if (len(lines) < 5 or lines[-5] != manifest or
+            lines[-4] != port_control or lines[-3] != ready or
             lines[-1] != final):
         raise ValueError('Qotom entry record order or terminal')
-    if [i for i, line in enumerate(lines) if line.startswith(b'LEANOS/17 ENTRY-MANIFEST ')] != [len(lines)-5]:
+    if [i for i, line in enumerate(lines) if line.startswith(manifest_prefix)] != [len(lines)-5]:
         raise ValueError('Qotom entry manifest multiplicity')
-    if [i for i, line in enumerate(lines) if line.startswith(b'LEANOS/16 DIRECT-PORT-CONTROL ')] != [len(lines)-4]:
+    if [i for i, line in enumerate(lines) if line.startswith(port_control_prefix)] != [len(lines)-4]:
         raise ValueError('Qotom direct-port control multiplicity')
     if [i for i, line in enumerate(lines) if line.startswith(READY)] != [len(lines)-3]:
         raise ValueError('Qotom entry readiness multiplicity')
