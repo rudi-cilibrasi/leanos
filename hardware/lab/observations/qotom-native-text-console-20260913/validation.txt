@@ -1,0 +1,9 @@
+PASS exact captured diagnostic replay
+PASS source, prepared tree, ELF, protocol, replay, serial and diagnostic digest bindings
+PASS expected CPU/control acceptance and typed qotom-platform-pending rejection
+PASS watchdog-protected one-shot consumption and FreeBSD SSH recovery
+PASS installed active MBR FAT32 filesystem clean, hashes exact and request disarmed
+PASS retained GRUB EGA text handoff kind=2 address=0xb8000 pitch=160 width=80 height=25 bits=16
+PASS operator reported BOOT, CPU, CONTROL and FINAL visible during exact capture
+PASS emulator intel-text, intel-headless and q35-lifetime screen-cell regression cases
+PASS markdown lint and git diff whitespace check

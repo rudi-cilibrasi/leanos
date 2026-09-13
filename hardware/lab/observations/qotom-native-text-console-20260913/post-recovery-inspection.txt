@@ -1,0 +1,16 @@
+FreeBSD: FreeBSD qotom 15.0-RELEASE-p13 FreeBSD 15.0-RELEASE-p13 releng/15.0-n281114-af58d0db156a GENERIC amd64
+boot: { sec = 1789332852, usec = 886803 } Sun Sep 13 13:54:12 2026
+disk-ident: 11758C40
+** /dev/da0s1
+** Phase 1 - Read FAT and checking connectivity
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Lost Files
+316 files, 57 MiB free (116161 clusters)
+elf-sha256: 747e1a96d123ec7e429a33cf8fa3f9daa1e9aedb0f653d7c21fe627ed78c41d8
+grub-sha256: f4f0f67af0ca7e33e3e49984f74b3db69d731e1594b450917530c1edf470cc6f
+checksum-file: 747e1a96d123ec7e429a33cf8fa3f9daa1e9aedb0f653d7c21fe627ed78c41d8  /boot/leanos-qotom-lab.elf
+grubenv: request=none
+=>       63  122879937  da0  MBR  (59G)
+         63       1985       - free -  (993K)
+       2048     194560    1  fat32lba  [active]  (95M)
+     196608  122683392       - free -  (59G)
