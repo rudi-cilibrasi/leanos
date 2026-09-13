@@ -393,6 +393,34 @@ class Capture(unittest.TestCase):
         self.assertFalse(result['nosmap_control']['cpl3_authority'])
         self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-copy-roots-pending')
         self.assertEqual(result['diagnostic']['replay_scope'],'qotom-nosmap-control-transition')
+        publication_record=(b'LEANOS-LAB/1 COPY-ROOTS profile=qotom-copy-roots-v1 '
+            b'status=0 protected=5 removed-aliases=3 retained-present=4088 aliases=2 '
+            b'closed-root=1712128 copy-root=1667072 closed-scan=1 copy-scan=1 '
+            b'transferred=16 bytes-match=1 active-root=1712128 error-mask=0 '
+            b'closed-root-published=1 copy-root-published=1 cpl3-authority=0\n')
+        entry_terminal=FINAL.replace(b'qotom-platform-pending',b'qotom-entry-integration-pending')
+        publication_changed=changed.replace(
+            FINAL,trust_record+control_record+publication_record+entry_terminal)
+        publication_events=[{'elapsed':0,'hex':publication_changed.hex()},
+                            {'elapsed':37,'hex':raw[end:].hex()}]
+        result=R['classify_cpu_protected'](publication_events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+            pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True,
+            pci_final_admission=True,pci_trust_contract=True,nosmap_control=True,
+            copy_root_publication=True)
+        self.assertEqual(result['copy_root_publication']['transferred'],16)
+        self.assertTrue(result['copy_root_publication']['bytes_match'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-entry-integration-pending')
+        self.assertEqual(result['diagnostic']['replay_scope'],
+                         'qotom-closed-and-copy-root-publication')
         bad=control_changed.replace(b'cpl3-authority=0',b'cpl3-authority=1')
         with self.assertRaisesRegex(ValueError,'no-SMAP control result'):
             R['classify_cpu_protected'](

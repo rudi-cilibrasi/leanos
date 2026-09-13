@@ -18,6 +18,7 @@ import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
+import LeanOS.QotomCopyRootPublication
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -41,6 +42,30 @@ theorem qotom_nosmap_checkpoint_withholds_authority
     QotomNoSmapControl.query cr0 cr4Before cr4After efer rflags 9 = 0 ∧
     QotomNoSmapControl.query cr0 cr4Before cr4After efer rflags 10 = 0 := by
   simp [QotomNoSmapControl.query]
+
+/-- SC-QOTOM-COPY-ROOT-NONAUTH: root-publication fields require the complete
+checkpoint predicate, while the checkpoint itself cannot grant CPL3 authority. -/
+theorem qotom_copy_root_publication_withholds_cpl3_and_gates_roots
+    (builderStatus protectedCount removed retained aliases closedRoot copyRoot
+      closedScan copyScan transferred bytesMatch activeRoot : UInt64) :
+    QotomCopyRootPublication.query builderStatus protectedCount removed retained
+        aliases closedRoot copyRoot closedScan copyScan transferred bytesMatch
+        activeRoot 6 = 0 ∧
+      (QotomCopyRootPublication.query builderStatus protectedCount removed retained
+          aliases closedRoot copyRoot closedScan copyScan transferred bytesMatch
+          activeRoot 3 = 1 →
+        QotomCopyRootPublication.accepted builderStatus protectedCount removed
+          retained aliases closedRoot copyRoot closedScan copyScan transferred
+          bytesMatch activeRoot = true) ∧
+      (QotomCopyRootPublication.query builderStatus protectedCount removed retained
+          aliases closedRoot copyRoot closedScan copyScan transferred bytesMatch
+          activeRoot 4 = 1 →
+        QotomCopyRootPublication.accepted builderStatus protectedCount removed
+          retained aliases closedRoot copyRoot closedScan copyScan transferred
+          bytesMatch activeRoot = true) := by
+  exact ⟨QotomCopyRootPublication.query_never_authorizes_cpl3 _ _ _ _ _ _ _ _ _ _ _ _,
+    QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _,
+    QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _⟩
 
 /-- SC-QOTOM-PCI-CONDITIONAL: the named initial J1900 trust profile accepts
 exactly the final Command vector. The hardware meaning of its five fixed
