@@ -1,0 +1,11 @@
+{
+  "schema": "leanos-qotom-ehci-bme-observation-v1",
+  "status": 0,
+  "write_attempted": 1,
+  "before_command": 1030,
+  "after_command": 1026,
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false
+}

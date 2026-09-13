@@ -1,0 +1,121 @@
+{
+  "schema": "leanos-qotom-pcie-device-observation-v1",
+  "functions": [
+    {
+      "index": 0,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 1,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 2,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 3,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 4,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 5,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 6,
+      "status": 0,
+      "offset": 64,
+      "device_capabilities": 32768,
+      "device_control_status": 1048576
+    },
+    {
+      "index": 7,
+      "status": 0,
+      "offset": 64,
+      "device_capabilities": 32768,
+      "device_control_status": 1048576
+    },
+    {
+      "index": 8,
+      "status": 0,
+      "offset": 64,
+      "device_capabilities": 32768,
+      "device_control_status": 1048576
+    },
+    {
+      "index": 9,
+      "status": 0,
+      "offset": 64,
+      "device_capabilities": 32768,
+      "device_control_status": 1048576
+    },
+    {
+      "index": 10,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 11,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 12,
+      "status": 1,
+      "offset": 0,
+      "device_capabilities": 0,
+      "device_control_status": 0
+    },
+    {
+      "index": 13,
+      "status": 0,
+      "offset": 112,
+      "device_capabilities": 93359296,
+      "device_control_status": 1646592
+    },
+    {
+      "index": 14,
+      "status": 0,
+      "offset": 208,
+      "device_capabilities": 93360032,
+      "device_control_status": 1638400
+    },
+    {
+      "index": 15,
+      "status": 0,
+      "offset": 112,
+      "device_capabilities": 93359296,
+      "device_control_status": 1646592
+    }
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "reset_performed": false,
+  "dma_quarantine_established": false
+}

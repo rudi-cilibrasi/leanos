@@ -1,0 +1,1 @@
+{"boundary_calls": 4, "closed_root": 1712128, "copy_root": 1667072, "cr3_reads": 1, "cr3_writes": 0, "instruction_count": 655, "root_bytes": 45056, "schema": "leanos-qotom-copy-root-publication-audit-v1", "stac_clac": 0, "symbol": "lab_publish_qotom_copy_roots", "transfer_calls": 1}

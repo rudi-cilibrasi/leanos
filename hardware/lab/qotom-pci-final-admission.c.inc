@@ -1,5 +1,8 @@
 #include "qotom-pci-final-admission.h"
 #ifdef LEANOS_QOTOM_NOSMAP_CONTROL
+#ifdef LEANOS_QOTOM_COPY_ROOT_PUBLICATION
+#include "qotom-copy-root-publication.c.inc"
+#endif
 #include "qotom-nosmap-control.c.inc"
 #endif
 
