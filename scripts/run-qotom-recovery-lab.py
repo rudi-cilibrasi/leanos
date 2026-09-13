@@ -135,7 +135,7 @@ def classify(events, expected=EXPECTED, boot_record=None, structured_terminal=Tr
         raise ValueError('nonmonotonic capture timestamps')
     data = b''.join(bytes.fromhex(e['hex']) for e in events)
     start = data.find(expected)
-    final_count = data.count(record(3, 'FINAL'))
+    final_count = len(re.findall(rb'LEANOS/[0-9]+ FINAL', data))
     if (start < 0 or data.count(boot_record) != 1 or
             final_count != (1 if structured_terminal else 0)):
         raise ValueError('missing, changed, or duplicated lab rejection trace')
@@ -367,7 +367,7 @@ def cpu_diagnostic_bytes(events, protocol, handoff=False, terminal=None):
     return mode + prelude + raw, raw
 
 
-def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False, realtek_bme=False, pcie_pending=False, broadcom_d3=False, graphics_state=False, graphics_bme=False, txe_bme=False, pci_final_admission=False, pci_trust_contract=False, nosmap_control=False, copy_root_publication=False, entry_integration=False, exception_integration=False):
+def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False, realtek_bme=False, pcie_pending=False, broadcom_d3=False, graphics_state=False, graphics_bme=False, txe_bme=False, pci_final_admission=False, pci_trust_contract=False, nosmap_control=False, copy_root_publication=False, entry_integration=False, exception_integration=False, blocking_ipc_integration=False):
     result = {'protocol_sha256': hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
              'replay_executable_sha256': hashlib.sha256(Path(replay).read_bytes()).hexdigest()}
     if pci_final_admission:
@@ -383,6 +383,12 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acp
     if exception_integration:
         result['exception_integration_profile'] = 'qotom-copy-roots-v1'
         result['exception_integration_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-exception-integration-capture.py').read_bytes()).hexdigest()
+    if blocking_ipc_integration:
+        result['blocking_ipc_integration_profile'] = 'qotom-blocking-ipc-v1'
+        result['blocking_ipc_integration_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-blocking-ipc-integration-capture.py').read_bytes()).hexdigest()
+        result['blocking_ipc_expectation_sha256'] = hashlib.sha256(
+            (Path(__file__).resolve().parents[1] /
+             'scripts/expectations/blocking-ipc.transcript').read_bytes()).hexdigest()
     if nosmap_control:
         result['nosmap_control_profile'] = 'qotom-copy-roots-v1'
         result['nosmap_control_decoder_sha256'] = hashlib.sha256(Path(__file__).with_name('check-qotom-nosmap-control-capture.py').read_bytes()).hexdigest()
@@ -487,7 +493,7 @@ def cpu_replay_inputs(protocol_path, replay, pci_replay=None, handoff=False, acp
     return result
 
 
-def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False, realtek_bme=False, pcie_pending=False, broadcom_d3=False, graphics_state=False, graphics_bme=False, txe_bme=False, pci_final_admission=False, pci_trust_contract=False, nosmap_control=False, copy_root_publication=False, entry_integration=False, exception_integration=False):
+def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=None, handoff=False, acpi=False, pci_read_trace=False, bootstrap=False, ecam_memory=False, dsdt=False, ecam_read=False, native_inventory=False, native_kernel=False, bsp_replay=None, pci_capabilities=False, af_observation=False, ehci_capabilities=False, ehci_legacy=False, ehci_handoff=False, ehci_smi=False, ehci_operational=False, ehci_bme=False, xhci_capabilities=False, xhci_legacy=False, xhci_handoff=False, xhci_smi=False, xhci_operational=False, xhci_bme=False, pcie_device_observation=False, ahci_capabilities=False, ahci_port=False, ahci_interrupts=False, ahci_bme=False, hda_observation=False, hda_state=False, hda_bme=False, txe_status=False, rootport_bme=False, realtek_state=False, realtek_bme=False, pcie_pending=False, broadcom_d3=False, graphics_state=False, graphics_bme=False, txe_bme=False, pci_final_admission=False, pci_trust_contract=False, nosmap_control=False, copy_root_publication=False, entry_integration=False, exception_integration=False, blocking_ipc_integration=False):
     if pci_trust_contract and not pci_final_admission:
         raise ValueError('--pci-trust-contract requires --pci-final-admission')
     if copy_root_publication and not nosmap_control:
@@ -496,6 +502,8 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         raise ValueError('--entry-integration requires --copy-root-publication')
     if exception_integration and not entry_integration:
         raise ValueError('--exception-integration requires --entry-integration')
+    if blocking_ipc_integration and not exception_integration:
+        raise ValueError('--blocking-ipc-integration requires --exception-integration')
     if nosmap_control and not pci_trust_contract:
         raise ValueError('--nosmap-control requires --pci-trust-contract')
     if txe_bme and not graphics_bme:
@@ -580,11 +588,16 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         raise ValueError('ACPI capture requires raw handoff')
     module = cpu_replay_module(pci_replay is not None)
     protocol = module.load_protocol(protocol_path)
+    blocking_terminal = (protocol['10/FINAL'].encode() +
+                         b' status=PASS blocks=1 wakes=1 deliveries=1\n'
+                         if blocking_ipc_integration else None)
     expected, raw = cpu_diagnostic_bytes(
-        events, protocol, handoff, b'!C6\n' if exception_integration else None)
+        events, protocol, handoff, blocking_terminal or
+        (b'!C6\n' if exception_integration else None))
     result = classify_protected(events, digest, expected,
                                 protocol['BOOT'].encode('ascii'),
-                                structured_terminal=not exception_integration,
+                                structured_terminal=(not exception_integration or
+                                                     blocking_ipc_integration),
                                 quiet_range=(30, 100) if exception_integration else (30, 90))
     replay_paths = [Path(replay).resolve()]
     if pci_replay is not None:
@@ -601,7 +614,10 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-bsp-capture.py')))
         raw, result['native_bsp'] = decoder['extract'](raw, protocol, result['acpi'], tables, Path(bsp_replay).resolve())
         bsp_rejected = result['native_bsp'] is not None and result['native_bsp']['observation']['status'] != 0
-    if exception_integration:
+    if blocking_ipc_integration:
+        decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-blocking-ipc-integration-capture.py')))
+        raw, result['blocking_ipc_integration'], result['entry_integration'] = decoder['extract'](raw, protocol)
+    elif exception_integration:
         decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-exception-integration-capture.py')))
         raw, result['exception_integration'], result['entry_integration'] = decoder['extract'](raw, protocol)
     elif entry_integration:
@@ -736,7 +752,7 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     else:
         diagnostic = (module.classify(raw, protocol, *replay_paths, native_inventory=True, native_kernel=native_kernel)
                       if native_inventory else module.classify(raw, protocol, *replay_paths))
-    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay, pci_capabilities, af_observation, ehci_capabilities, ehci_legacy, ehci_handoff, ehci_smi, ehci_operational, ehci_bme, xhci_capabilities, xhci_legacy, xhci_handoff, xhci_smi, xhci_operational, xhci_bme, pcie_device_observation, ahci_capabilities, ahci_port, ahci_interrupts, ahci_bme, hda_observation, hda_state, hda_bme, txe_status, rootport_bme, realtek_state, realtek_bme, pcie_pending, broadcom_d3, graphics_state, graphics_bme, txe_bme, pci_final_admission, pci_trust_contract, nosmap_control, copy_root_publication, entry_integration, exception_integration))
+    diagnostic.update(cpu_replay_inputs(protocol_path, replay, pci_replay, handoff, acpi, pci_read_trace, bootstrap, ecam_memory, dsdt, ecam_read, native_inventory, native_kernel, bsp_replay, pci_capabilities, af_observation, ehci_capabilities, ehci_legacy, ehci_handoff, ehci_smi, ehci_operational, ehci_bme, xhci_capabilities, xhci_legacy, xhci_handoff, xhci_smi, xhci_operational, xhci_bme, pcie_device_observation, ahci_capabilities, ahci_port, ahci_interrupts, ahci_bme, hda_observation, hda_state, hda_bme, txe_status, rootport_bme, realtek_state, realtek_bme, pcie_pending, broadcom_d3, graphics_state, graphics_bme, txe_bme, pci_final_admission, pci_trust_contract, nosmap_control, copy_root_publication, entry_integration, exception_integration, blocking_ipc_integration))
     if pci_capabilities and result['pci_capabilities'] is not None:
         diagnostic['terminal_reason'] = result['pci_capabilities']['terminal_reason']
         diagnostic['replay_scope'] = 'cpu-msr-native-inventory-and-capability-links'
@@ -843,7 +859,10 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     if entry_integration and result['entry_integration'] is not None:
         diagnostic['terminal_reason'] = result['entry_integration']['terminal_reason']
         diagnostic['replay_scope'] = 'qotom-closed-root-cpl3-entry-and-return'
-    if exception_integration and result['exception_integration'] is not None:
+    if blocking_ipc_integration and result['blocking_ipc_integration'] is not None:
+        diagnostic['terminal_reason'] = 'qotom-blocking-ipc-final-pass'
+        diagnostic['replay_scope'] = 'qotom-blocking-ipc-complete'
+    elif exception_integration and result['exception_integration'] is not None:
         diagnostic['terminal_reason'] = 'qotom-terminal-ud-closed'
         diagnostic['replay_scope'] = 'qotom-cpl3-ud-terminal-closed-root'
     result.update(scenario='qotom-pci-diagnostic' if pci_replay is not None else 'j1900-cpu-diagnostic',
@@ -897,6 +916,7 @@ def main():
     parser.add_argument('--copy-root-publication', action='store_true')
     parser.add_argument('--entry-integration', action='store_true')
     parser.add_argument('--exception-integration', action='store_true')
+    parser.add_argument('--blocking-ipc-integration', action='store_true')
     parser.add_argument('--realtek-state', action='store_true')
     parser.add_argument('--rootport-bme', action='store_true')
     parser.add_argument('--txe-status', action='store_true')
@@ -940,6 +960,8 @@ def main():
         parser.error('--entry-integration requires --copy-root-publication')
     if args.exception_integration and not args.entry_integration:
         parser.error('--exception-integration requires --entry-integration')
+    if args.blocking_ipc_integration and not args.exception_integration:
+        parser.error('--blocking-ipc-integration requires --exception-integration')
     if args.txe_bme and not args.graphics_bme:
         parser.error('--txe-bme requires --graphics-bme')
     if args.graphics_bme and not args.graphics_state:
@@ -1059,7 +1081,7 @@ def main():
             identity = subprocess.run([str(args.bsp_replay.resolve()), '--identity'], capture_output=True, check=True, timeout=30)
             if identity.stdout != b'LeanOS native BSP replay v2\n':
                 parser.error('native BSP replay identity mismatch')
-        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3, args.graphics_state, args.graphics_bme, args.txe_bme, args.pci_final_admission, args.pci_trust_contract, args.nosmap_control, args.copy_root_publication, args.entry_integration, args.exception_integration)
+        diagnostic_inputs = cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3, args.graphics_state, args.graphics_bme, args.txe_bme, args.pci_final_admission, args.pci_trust_contract, args.nosmap_control, args.copy_root_publication, args.entry_integration, args.exception_integration, args.blocking_ipc_integration)
     digest = hashlib.sha256(args.elf.read_bytes()).hexdigest()
     if args.scenario == 'watchdog-kernel' and args.kernel_hang_elf is None:
         parser.error('--scenario watchdog-kernel requires --kernel-hang-elf')
@@ -1201,14 +1223,17 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     events, digest, lvt_observation=args.bsp_lvt_observation,
                     lvt_policy=args.bsp_lvt_policy)
             elif has_diagnostic:
-                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3, args.graphics_state, args.graphics_bme, args.txe_bme, args.pci_final_admission, args.pci_trust_contract, args.nosmap_control, args.copy_root_publication, args.entry_integration, args.exception_integration) != diagnostic_inputs:
+                if cpu_replay_inputs(args.diagnostic_protocol, args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3, args.graphics_state, args.graphics_bme, args.txe_bme, args.pci_final_admission, args.pci_trust_contract, args.nosmap_control, args.copy_root_publication, args.entry_integration, args.exception_integration, args.blocking_ipc_integration) != diagnostic_inputs:
                     raise ValueError('diagnostic replay inputs changed during capture')
                 result = classify_cpu_protected(events, digest, args.diagnostic_protocol,
-                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3, args.graphics_state, args.graphics_bme, args.txe_bme, args.pci_final_admission, args.pci_trust_contract, args.nosmap_control, args.copy_root_publication, args.entry_integration, args.exception_integration)
+                                                args.diagnostic_replay, pci_replay, args.handoff_capture, args.acpi_capture, args.pci_read_trace, args.bootstrap_capture, args.ecam_memory_capture, args.dsdt_capture, args.ecam_read, args.native_inventory, args.native_kernel, args.bsp_replay, args.pci_capabilities, args.af_observation, args.ehci_capabilities, args.ehci_legacy, args.ehci_handoff, args.ehci_smi, args.ehci_operational, args.ehci_bme, args.xhci_capabilities, args.xhci_legacy, args.xhci_handoff, args.xhci_smi, args.xhci_operational, args.xhci_bme, args.pcie_device_observation, args.ahci_capabilities, args.ahci_port, args.ahci_interrupts, args.ahci_bme, args.hda_observation, args.hda_state, args.hda_bme, args.txe_status, args.rootport_bme, args.realtek_state, args.realtek_bme, args.pcie_pending, args.broadcom_d3, args.graphics_state, args.graphics_bme, args.txe_bme, args.pci_final_admission, args.pci_trust_contract, args.nosmap_control, args.copy_root_publication, args.entry_integration, args.exception_integration, args.blocking_ipc_integration)
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(
                     events, protocol, args.handoff_capture,
-                    b'!C6\n' if args.exception_integration else None)
+                    (protocol['10/FINAL'].encode() +
+                     b' status=PASS blocks=1 wakes=1 deliveries=1\n'
+                     if args.blocking_ipc_integration else
+                     b'!C6\n' if args.exception_integration else None))
                 if args.handoff_capture:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-handoff-capture.py')))
                     mode = EXPECTED[:-len(EXPECTED_KERNEL)]
@@ -1228,7 +1253,14 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                     raw, bsp_metadata = decoder['extract'](raw, protocol, metadata, tables, args.bsp_replay.resolve())
                     bsp_rejected = bsp_metadata is not None and bsp_metadata['observation']['status'] != 0
                     (directory / 'native-bsp.json').write_text(json.dumps(bsp_metadata, indent=2) + '\n')
-                if args.exception_integration:
+                if args.blocking_ipc_integration:
+                    decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-blocking-ipc-integration-capture.py')))
+                    raw, blocking_ipc_metadata, entry_metadata = decoder['extract'](raw, protocol)
+                    (directory / 'blocking-ipc-integration.json').write_text(
+                        json.dumps(blocking_ipc_metadata, indent=2) + '\n')
+                    (directory / 'entry-integration.json').write_text(
+                        json.dumps(entry_metadata, indent=2) + '\n')
+                elif args.exception_integration:
                     decoder = runpy.run_path(str(Path(__file__).with_name('check-qotom-exception-integration-capture.py')))
                     raw, exception_metadata, entry_metadata = decoder['extract'](raw, protocol)
                     (directory / 'exception-integration.json').write_text(json.dumps(exception_metadata, indent=2) + '\n')

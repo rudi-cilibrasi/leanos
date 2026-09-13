@@ -11,6 +11,11 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(v
 static struct qotom_root_pages qotom_closed_root;
 static struct qotom_root_pages qotom_copy_root;
 static struct qotom_root_build_result qotom_root_result;
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+static struct qotom_root_pages qotom_copy_out_root;
+static struct qotom_root_build_result qotom_copy_out_result;
+static struct qotom_copy_alias qotom_copy_out_aliases[QOTOM_ROOT_MAX_ALIASES];
+#endif
 static uint64_t qotom_protected_frames[QOTOM_ROOT_MAX_PROTECTED];
 static struct qotom_copy_alias qotom_aliases[QOTOM_ROOT_MAX_ALIASES];
 static struct qotom_copy_operand qotom_operands[16];
@@ -61,16 +66,18 @@ static int qotom_closed_root_exact(size_t protected_count) {
     return 1;
 }
 
-static int qotom_copy_root_exact(size_t protected_count) {
-    if(!qotom_root_source_ancestors(&qotom_copy_root))return 0;
+static int qotom_alias_root_exact(const struct qotom_root_pages *root,
+        const struct qotom_copy_alias *aliases,size_t protected_count) {
+    if(!qotom_root_source_ancestors(root))return 0;
     for(size_t page=0;page<QOTOM_ROOT_LEAVES;++page) {
-        uint64_t leaf=qotom_copy_root.pt[page];
+        uint64_t leaf=root->pt[page];
         int alias=-1;
         for(size_t i=0;i<QOTOM_ROOT_MAX_ALIASES;++i)
-            if(qotom_aliases[i].page==page)alias=(int)i;
+            if(aliases[i].page==page)alias=(int)i;
         if(alias>=0) {
-            uint64_t expected=(qotom_aliases[alias].frame<<12)|
-                QOTOM_ROOT_PRESENT|QOTOM_ROOT_NX;
+            uint64_t expected=(aliases[alias].frame<<12)|
+                QOTOM_ROOT_PRESENT|QOTOM_ROOT_NX|
+                (aliases[alias].writable?QOTOM_ROOT_WRITABLE:0);
             /* A completed transfer may set hardware-maintained Accessed/Dirty
              * metadata without changing the alias identity or permissions. */
             if((leaf&~(QOTOM_ROOT_ACCESSED|QOTOM_ROOT_DIRTY))!=expected)return 0;
@@ -79,6 +86,11 @@ static int qotom_copy_root_exact(size_t protected_count) {
                 qotom_protected_frames,protected_count))return 0;
     }
     return 1;
+}
+
+static int qotom_copy_root_exact(size_t protected_count) {
+    return qotom_alias_root_exact(&qotom_copy_root,qotom_aliases,
+        protected_count);
 }
 
 static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void) {
@@ -102,7 +114,11 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
        (uintptr_t)__user_a_stack_end-(uintptr_t)__user_a_stack_start!=8192u)
         pre_admission_fail("qotom-root-inventory-count");
     if(!qotom_root_storage_mapped(source,&qotom_closed_root) ||
-       !qotom_root_storage_mapped(source,&qotom_copy_root))
+       !qotom_root_storage_mapped(source,&qotom_copy_root)
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+       || !qotom_root_storage_mapped(source,&qotom_copy_out_root)
+#endif
+       )
         pre_admission_fail("qotom-root-storage");
 
     qotom_aliases[0]=(struct qotom_copy_alias){
@@ -115,6 +131,26 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         &qotom_closed_root,&qotom_copy_root,qotom_protected_frames,
         protected_count,qotom_aliases,QOTOM_ROOT_MAX_ALIASES,
         &qotom_root_result);
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    qotom_copy_out_aliases[0]=qotom_aliases[0];
+    qotom_copy_out_aliases[1]=qotom_aliases[1];
+    qotom_copy_out_aliases[0].writable=1;
+    qotom_copy_out_aliases[1].writable=1;
+    enum qotom_root_build_status copy_out_build=qotom_build_copy_roots(source,
+        &qotom_closed_root,&qotom_copy_out_root,qotom_protected_frames,
+        protected_count,qotom_copy_out_aliases,QOTOM_ROOT_MAX_ALIASES,
+        &qotom_copy_out_result);
+    /* The second construction rewrites the same closed root from the same
+     * decoded source. It must reproduce the first construction exactly. */
+    if(copy_out_build!=QOTOM_ROOT_BUILD_OK ||
+       qotom_copy_out_result.protected_count!=qotom_root_result.protected_count ||
+       qotom_copy_out_result.removed_aliases!=qotom_root_result.removed_aliases ||
+       qotom_copy_out_result.retained_present!=qotom_root_result.retained_present ||
+       qotom_copy_out_result.alias_count!=qotom_root_result.alias_count ||
+       !qotom_alias_root_exact(&qotom_copy_out_root,qotom_copy_out_aliases,
+           protected_count))
+        pre_admission_fail("qotom-copy-out-root");
+#endif
     int closed_scan=qotom_closed_root_exact(protected_count);
     int copy_scan=qotom_copy_root_exact(protected_count);
 

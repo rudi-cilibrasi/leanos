@@ -27,14 +27,24 @@ def load_protocol(path):
     wanted = {('25', name) for name in ('BOOT', 'CPU', 'CONTROL', 'PCI-SCAN', 'PCI-HEADER')}
     wanted.add(('3', 'FINAL'))
     wanted.update((('16', 'DIRECT-PORT-CONTROL'), ('17', 'ENTRY-MANIFEST')))
+    qualified = {
+        ('6', 'COPY'),
+        ('8', 'PAGING'),
+        ('9', 'CAPREUSE'),
+        ('10', 'IPC'),
+        ('10', 'FINAL'),
+        ('11', 'USER-FAULT'),
+    }
     found = {}
     for line in Path(path).read_text().splitlines():
         fields = line.split('\t')
-        if len(fields) == 5 and fields[0] == 'record' and tuple(fields[1:3]) in wanted:
-            if fields[2] in found:
+        identity = tuple(fields[1:3])
+        if len(fields) == 5 and fields[0] == 'record' and identity in wanted | qualified:
+            key = '/'.join(identity) if identity in qualified else fields[2]
+            if key in found:
                 raise DiagnosticError('duplicate protocol identity')
-            found[fields[2]] = fields[4]
-    if len(found) != len(wanted):
+            found[key] = fields[4]
+    if len(found) != len(wanted) + len(qualified):
         raise DiagnosticError('missing protocol identity')
     return found
 
