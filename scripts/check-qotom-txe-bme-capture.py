@@ -41,7 +41,7 @@ def extract(raw,protocol):
     return projection,{'schema':'leanos-qotom-txe-host-bme-observation-v1',
         'index':index,'status':status,'write_attempted':attempted,
         'before_command':before,'after_command':after,
-        'memory_decode_preserved':True,'interrupt_disable_preserved':True,
+        'memory_decode_preserved':True,'serr_enable_preserved':True,
         'hardware_operations_replayed':False,'host_visible_bme_cleared':status==0,
         'txe_private_dma_stopped':False,'firmware_exclusion_established':False,
         'dma_quarantine_established':False,'transaction_drain_established':False,
