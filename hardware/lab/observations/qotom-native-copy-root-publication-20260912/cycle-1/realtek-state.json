@@ -1,0 +1,30 @@
+{
+  "schema": "leanos-qotom-realtek-state-observation-v1",
+  "functions": [
+    {
+      "index": 13,
+      "status": 0,
+      "transmit_before": 797969664,
+      "command_before": 0,
+      "interrupt_mask": 0,
+      "receive": 196366,
+      "command_after": 0,
+      "transmit_after": 797969664
+    },
+    {
+      "index": 15,
+      "status": 0,
+      "transmit_before": 797969664,
+      "command_before": 0,
+      "interrupt_mask": 0,
+      "receive": 196366,
+      "command_after": 0,
+      "transmit_after": 797969664
+    }
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false,
+  "transaction_drain_established": false
+}

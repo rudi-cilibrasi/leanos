@@ -4,6 +4,7 @@ This file is the kernel's master security contract: each theorem here independen
 
 - `qotom_pci_initial_trust_contract_confined` — The initial Qotom trust profile accepts exactly the reviewed final Command vector; the theorem confines the policy selection and leaves all five hardware premises explicit and unproved.
 - `qotom_nosmap_checkpoint_withholds_authority` — The Qotom live-control checkpoint always leaves CPL3 authority and both root-publication claims zero, regardless of the supplied machine words.
+- `qotom_copy_root_publication_withholds_cpl3_and_gates_roots` — The Qotom construction checkpoint never grants CPL3 authority, and either root-publication claim requires the complete accepted construction, scan, transfer, and closed-root readback result.
 - `single_core_boot_admission_confined` — When the kernel accepts the machine description at boot, that description shows exactly one enabled processor, which is the very processor running the boot code, and nothing the admitted kernel can do afterwards can ever announce the start of a second processor.
 - `direct_port_user_denial_preserves_devices` — Words a user program supplies for a hardware-port access can never select a kernel purpose or change any device; the kernel answers with the modeled protection fault instead.
 - `direct_port_kernel_operation_confined` — The kernel itself may perform a port operation only with live kernel privilege, an exact pre-reviewed manifest entry naming the purpose, port, direction, and width, and fresh control settings.

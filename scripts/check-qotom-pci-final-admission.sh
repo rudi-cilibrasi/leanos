@@ -28,3 +28,10 @@ PY
   -Ibuild/boundary-abi tests/qotom-nosmap-control.c \
   "$build/native-pci/native-pci.o" -o "$build/nosmap-control-test"
 "$build/nosmap-control-test"
+"${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
+  -Ibuild/boundary-abi tests/qotom-copy-root-publication.c \
+  "$build/native-pci/native-pci.o" -o "$build/copy-root-publication-test"
+"$build/copy-root-publication-test"
+"${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
+  -Iinclude tests/qotom-copy-root-builder.c -o "$build/copy-root-builder-test"
+"$build/copy-root-builder-test"

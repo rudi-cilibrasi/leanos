@@ -14306,6 +14306,18 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.publication_requires_acceptance",
+      "display": "publication_requires_acceptance",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.query_never_authorizes_cpl3",
+      "display": "query_never_authorizes_cpl3",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.byte_step_out_of_range",
       "display": "byte_step_out_of_range",
@@ -16139,6 +16151,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.privilege_entry_stack_budget_sound",
       "display": "privilege_entry_stack_budget_sound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.qotom_copy_root_publication_withholds_cpl3_and_gates_roots",
+      "display": "qotom_copy_root_publication_withholds_cpl3_and_gates_roots",
       "kind": "theorem"
     },
     {

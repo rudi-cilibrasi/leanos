@@ -3,15 +3,16 @@
 ## Status
 
 Proposed for review under [#329](https://github.com/rudi-cilibrasi/leanos/issues/329).
-This is a design gate for #291 and #332. The page-table projection has initial
-Lean proofs; the complete transition model and runtime mechanism are not yet
-implemented. This record does not authorize CPL3 on Qotom.
+This is a design gate for #291 and #332. The page-table projection, transition
+model, and first production-bound root builder now exist. Entry and return
+integration remain unfinished. This record does not authorize CPL3 on Qotom.
 
 The `qotom-copy-roots-v1` control checkpoint now validates CR0.WP, EFER.NXE,
 disabled interrupts, and disabled CR4.SMEP/SMAP/PCID/PGE before making the exact
 CR4.SMEP transition. It reads back the result through a generated Lean boundary
-and reports both roots and CPL3 authority as zero. This is a physical precursor
-to root construction; passing it does not establish closed-root isolation.
+and reports both roots and CPL3 authority as zero. The following opt-in
+checkpoint constructs the roots and exercises a bounded transfer, while still
+withholding CPL3 authority.
 
 ## Required protection and alternatives
 
@@ -121,6 +122,38 @@ The intermediate serial record `NO-SMAP-CONTROL profile=qotom-copy-roots-v1`
 reports the live controls and fixed bounds of sixteen bytes and two aliases. A
 successful record terminates at `qotom-copy-roots-pending`; it cannot be read as
 root publication or CPL3 acceptance.
+
+### Production-bound root construction checkpoint
+
+The opt-in `COPY-ROOTS profile=qotom-copy-roots-v1` step derives five protected
+frames from the linked user A/B text and stack ranges. It accepts only the exact
+4 KiB-leaf source hierarchy for the initial 16 MiB arena, rejects overlapping
+root storage and malformed ancestors, removes every present protected-frame
+alias from both output roots, and adds exactly two supervisor/NX aliases to the
+copy root at source-absent slots. Validation completes before either output root
+or its result record is written.
+
+The Qotom wrapper separately checks that both eleven-page output structures are
+page aligned, below 16 MiB, and mapped as supervisor writable NX storage. It
+scans every output leaf, writes a known value across the two user A stack pages,
+and invokes the existing audited transfer helper through immutable byte operands.
+Success requires all sixteen bytes to match and CR3 to read back as the closed
+root after the helper reloads closed, copy, then closed roots.
+
+The generated boundary requires the exact observed counts (five protected
+frames, three removed aliases, 4,088 retained present leaves and two temporary
+aliases), distinct aligned roots, both complete scans, the sixteen-byte result,
+and final closed-root readback. Only then may the serial record mark both roots
+published. Word six of the boundary always returns zero, so this checkpoint
+cannot authorize CPL3. A successful record terminates at
+`qotom-entry-integration-pending`.
+
+This checkpoint does not establish that the linked ranges are a complete future
+subject-frame inventory, that every entry path switches to the closed root, or
+that subject return selects an admitted subject root. Those remain the next
+machine-integration obligations. The generated boundary also consumes trusted
+scalar observations; its proof does not establish the C builder, scans, assembly,
+compiler, CR3 invalidation semantics, or physical execution.
 
 ### Sequential interruption model
 
