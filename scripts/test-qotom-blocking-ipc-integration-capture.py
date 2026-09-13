@@ -24,6 +24,7 @@ class Capture(unittest.TestCase):
         self.assertEqual(value['blocking_model_transitions'], 4)
         self.assertEqual(value['capability_model_transitions'], 4)
         self.assertTrue(value['cpl3_authority'])
+        self.assertEqual(value['platform_profile'], 'qotom-j1900-clbtm210-v2')
         self.assertEqual(entry['completed_returns'], 1)
 
     def test_template_is_authoritative(self):
@@ -43,6 +44,9 @@ class Capture(unittest.TestCase):
             good + suffix,
             good[:-1],
             good.replace(D['READY'], b''),
+            good.replace(D['PLATFORM'], b''),
+            good.replace(b'qotom-j1900-clbtm210-v2', b'qotom-j1900-clbtm210-v1'),
+            good.replace(b'vtd=not-applicable', b'vtd=PASS'),
             good.replace(b'cpl3-authority=1', b'cpl3-authority=0'),
             good.replace(b'event=block subject=2', b'event=block subject=1'),
             good.replace(b'event=wake subject=2', b'event=wake subject=1'),

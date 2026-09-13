@@ -5,6 +5,10 @@ import re
 import runpy
 
 ROOT = Path(__file__).resolve().parent.parent
+PLATFORM = (b'LEANOS-LAB/1 PLATFORM-ADMISSION '
+            b'profile=qotom-j1900-clbtm210-v2 version=2 status=PASS '
+            b'cpl3-authority=1 vtd=not-applicable assigned-edu=not-applicable '
+            b'terminal=serial-final-halt\n')
 READY = (b'LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 '
          b'subjects=2 interrupts=masked timer-gate=absent pic=masked '
          b'copy-in=readonly-root copy-out=writable-root cpl3-authority=1\n')
@@ -30,7 +34,7 @@ def semantic_expectation(protocol, template=TEMPLATE):
     final_prefix = protocol['10/FINAL'].encode()
     if not rendered or not rendered[-1].startswith(final_prefix + b' '):
         raise ValueError('blocking-IPC expectation template lacks its terminal')
-    return READY + b''.join(rendered)
+    return PLATFORM + READY + b''.join(rendered)
 
 
 def extract(raw, protocol, template=TEMPLATE):
@@ -38,7 +42,9 @@ def extract(raw, protocol, template=TEMPLATE):
     if len(raw) > 131072 or not raw.endswith(expected):
         raise ValueError('Qotom blocking-IPC bounds, order, or terminal')
     start = len(raw) - len(expected)
-    if raw.count(READY) != 1 or raw.find(READY) != start:
+    if raw.count(PLATFORM) != 1 or raw.find(PLATFORM) != start:
+        raise ValueError('Qotom platform admission multiplicity')
+    if raw.count(READY) != 1 or raw.find(READY) != start + len(PLATFORM):
         raise ValueError('Qotom blocking-IPC readiness multiplicity')
     if raw.count(protocol['10/FINAL'].encode() + b' ') != 1:
         raise ValueError('Qotom blocking-IPC terminal multiplicity')
@@ -54,7 +60,9 @@ def extract(raw, protocol, template=TEMPLATE):
     projected, entry_metadata = entry['extract'](
         raw[:start] + synthetic_terminal, protocol)
     metadata = {
-        'schema': 'leanos-qotom-blocking-ipc-integration-v1',
+        'schema': 'leanos-qotom-blocking-ipc-integration-v2',
+        'platform_profile': 'qotom-j1900-clbtm210-v2',
+        'platform_profile_version': 2,
         'profile': 'qotom-blocking-ipc-v1',
         'status': 'PASS',
         'subjects': 2,
@@ -74,6 +82,8 @@ def extract(raw, protocol, template=TEMPLATE):
         'copy_out_root': 'writable',
         'cpl3_authority': True,
         'terminal_policy': 'halt-until-watchdog-reset',
+        'vtd': 'not-applicable',
+        'assigned_edu': 'not-applicable',
         'expectation_template': str(TEMPLATE.relative_to(ROOT)),
     }
     return projected, metadata, entry_metadata

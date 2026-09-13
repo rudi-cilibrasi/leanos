@@ -21,6 +21,7 @@ import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
 import LeanOS.QotomEntryIntegration
 import LeanOS.QotomBlockingIPCIntegration
+import LeanOS.PlatformAdmission
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -35,6 +36,20 @@ implementation theorem's assumptions or conclusion therefore require an
 explicit change here and in `docs/security-claims.md`.
 -/
 namespace LeanOS.SecurityClaims
+
+/-- SC-PLATFORM-PROFILE-ADMISSION: a successful admission identifies one
+complete closed profile, and the bounded runtime preserves that identity while
+never publishing an AP start. -/
+theorem platform_profile_admission_confined raw profile operations
+    (hadmitted : PlatformAdmission.admit raw = .accepted profile) :
+    PlatformAdmission.completeMatch (PlatformAdmission.manifest profile) raw = true ∧
+      (PlatformAdmission.runRuntime
+        (PlatformAdmission.initialRuntime profile) operations).admitted = profile ∧
+      (PlatformAdmission.runRuntime
+        (PlatformAdmission.initialRuntime profile) operations).apStartIssued = false := by
+  exact ⟨PlatformAdmission.accepted_identifies_complete_profile raw profile hadmitted,
+    PlatformAdmission.run_preserves_profile _ operations,
+    PlatformAdmission.run_never_publishes_ap_start _ operations rfl⟩
 
 /-- SC-QOTOM-NOSMAP-NONAUTH: the live-control checkpoint cannot claim either
 root has been published and cannot grant CPL3 authority. -/

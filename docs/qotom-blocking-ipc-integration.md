@@ -1,7 +1,8 @@
 # Qotom blocking IPC integration
 
 The opt-in `qotom-blocking-ipc-v1` image completes the fixed two-subject
-blocking-IPC scenario on the Qotom J1900 profile. It runs only after the exact
+blocking-IPC scenario under the whole-machine
+`qotom-j1900-clbtm210-v2` profile. It runs only after the exact
 PCI trust contract, no-SMAP controls, closed/copy-root publication, and two
 validated CPL3 entry returns have succeeded. The profile uses synchronous
 `INT 0x80` entries and one recoverable CPL3 page fault. It does not enable a
@@ -41,7 +42,13 @@ bank before advancing saved RIP to the one linked recovery label. A sends the
 fixed payload and wakes B. B resumes with its canaries intact and validates the
 exact delivery.
 
-The success path emits:
+Before CPL3 the whole-profile gate emits:
+
+```text
+LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=PASS cpl3-authority=1 vtd=not-applicable assigned-edu=not-applicable terminal=serial-final-halt
+```
+
+The success path later emits:
 
 ```text
 LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1
@@ -108,3 +115,5 @@ It observed the exact semantic suffix and final record, 92.4421041070018
 seconds of post-terminal silence, watchdog reset, a changed FreeBSD boot epoch,
 restored SSH, and a consumed one-shot request. The complete serial stream has
 SHA256 `05523b6791a4cabfd9fae346454cf5ede3bf81c303c4f62dae68db389027e437`.
+That capture predates the whole-platform record and seeds the version-two
+manifest. A fresh profile-bound capture is required for #291 acceptance.

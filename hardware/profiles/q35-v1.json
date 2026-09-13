@@ -1,0 +1,60 @@
+{
+  "schema": "leanos-platform-profile-v1",
+  "profile_id": "q35-v1",
+  "profile_code": 1,
+  "profile_version": 1,
+  "machine_scope": "repository-pinned QEMU q35 construction",
+  "components": {
+    "firmware_root": {
+      "profile_word": 849,
+      "contract": "generated canonical multiboot2 and ACPI fixtures",
+      "accepted_required": true
+    },
+    "memory_map": {
+      "profile_word": 850,
+      "contract": "LeanOS.BootMemoryMap exact q35 projection",
+      "accepted_required": true
+    },
+    "pci": {
+      "profile_word": 851,
+      "contract": "LeanOS.DMAQuarantine.q35Manifest",
+      "accepted_required": true
+    },
+    "uart": {
+      "base": 1016,
+      "baud": 38400,
+      "mode": "8N1"
+    },
+    "bsp": {
+      "profile_word": 852,
+      "executing_apic_id": 0,
+      "advertised_processors": 1,
+      "ap_start_published": false,
+      "accepted_required": true
+    },
+    "isolation": {
+      "profile_word": 853,
+      "contract": "wp-smep-smap-vtd-v1",
+      "accepted_required": true
+    }
+  },
+  "facilities": {
+    "vtd": "required",
+    "assigned_edu": "supported"
+  },
+  "scenario": {
+    "profile_word": 10,
+    "id": "blocking-ipc",
+    "accepted_required": true
+  },
+  "terminal": {
+    "profile_word": 1,
+    "semantic": "versioned-serial-final-then-absorbing-halt",
+    "debug_exit": "qemu-transport-convenience"
+  },
+  "authoritative_sources": [
+    "LeanOS/DMAQuarantine.lean",
+    "LeanOS/BootTopology.lean",
+    "scripts/scenario-manifest.json"
+  ]
+}

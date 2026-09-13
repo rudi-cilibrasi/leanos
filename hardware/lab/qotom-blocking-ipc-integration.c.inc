@@ -294,6 +294,13 @@ static int qotom_blocking_gate_exact(unsigned vector, const void *handler,
         idt[vector].attributes==attributes && idt[vector].zero==0;
 }
 
+static uint64_t qotom_platform_admission(uint64_t scenario_accepted,
+        uint64_t word) {
+    return leanos_platform_admission_query(
+        2,2,0x1901,1,0x1902,1,0x1903,1,0x3f8,38400,1,
+        0x1904,1,0,4,0,0x1905,1,0,0,10,scenario_accepted,1,word);
+}
+
 static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         uint64_t entry_checkpoint) {
     uint64_t active_root,flags;
@@ -335,6 +342,19 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         1,1,1,syscall_gate,page_fault_gate,timer_gate_absent,pic_masked,2,1,3);
     if(admitted!=1 || errors!=0 || authority!=1)
         qotom_blocking_fail("qotom-blocking-profile");
+    uint64_t platform_reason=qotom_platform_admission(admitted,2);
+    if(qotom_platform_admission(admitted,0)!=1 ||
+       qotom_platform_admission(admitted,1)!=1 || platform_reason!=0 ||
+       qotom_platform_admission(admitted,3)!=2 ||
+       qotom_platform_admission(admitted,4)!=1 ||
+       qotom_platform_admission(admitted,5)!=1 ||
+       qotom_platform_admission(admitted,6)!=0 ||
+       qotom_platform_admission(admitted,7)!=0) {
+        serial_puts("LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=FAIL reason=");
+        serial_u64(platform_reason);serial_putc('\n');
+        pre_admission_fail("qotom-platform-profile");
+    }
+    serial_puts("LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=PASS cpl3-authority=1 vtd=not-applicable assigned-edu=not-applicable terminal=serial-final-halt\n");
     serial_puts("LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 subjects=2 interrupts=masked timer-gate=absent pic=masked copy-in=readonly-root copy-out=writable-root cpl3-authority=1\n");
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     qotom_entry_start((uint64_t)page_map_level_4_b,qotom_entry_closed_root,

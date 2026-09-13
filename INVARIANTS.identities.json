@@ -13892,6 +13892,66 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.accepted_identifies_complete_profile",
+      "display": "accepted_identifies_complete_profile",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.accepted_profile_unique",
+      "display": "accepted_profile_unique",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.cross_profile_firmware_splice_rejected",
+      "display": "cross_profile_firmware_splice_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.forbidden_ap_start_fail_stops",
+      "display": "forbidden_ap_start_fail_stops",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.halted_absorbing",
+      "display": "halted_absorbing",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.profile_ids_distinct",
+      "display": "profile_ids_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.run_never_publishes_ap_start",
+      "display": "run_never_publishes_ap_start",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.run_preserves_profile",
+      "display": "run_preserves_profile",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.runtime_never_publishes_ap_start",
+      "display": "runtime_never_publishes_ap_start",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PlatformAdmission.lean",
+      "qualified": "LeanOS.PlatformAdmission.runtime_preserves_profile",
+      "display": "runtime_preserves_profile",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/Preemption.lean",
       "qualified": "LeanOS.Preemption.accepted_context_comes_from_scheduler",
       "display": "accepted_context_comes_from_scheduler",
@@ -16157,6 +16217,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.page_table_separation_witness",
       "display": "page_table_separation_witness",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.platform_profile_admission_confined",
+      "display": "platform_profile_admission_confined",
       "kind": "theorem"
     },
     {

@@ -82,6 +82,7 @@ import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
 import LeanOS.QotomEntryIntegration
 import LeanOS.QotomBlockingIPCIntegration
+import LeanOS.PlatformAdmission
 import LeanOS.QotomNativePCISnapshot
 import LeanOS.QotomPCIQuarantineObservation
 import LeanOS.QotomPCIQuarantineTransition

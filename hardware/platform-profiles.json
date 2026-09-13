@@ -1,0 +1,21 @@
+{
+  "schema": "leanos-platform-profile-registry-v1",
+  "profiles": [
+    {
+      "id": "q35-v1",
+      "code": 1,
+      "version": 1,
+      "manifest": "profiles/q35-v1.json",
+      "release_asset": "PLATFORM_PROFILE_q35-v1.json",
+      "sha256": "8a5c0e9db71e7d267a636dcf41c2e5a228174410074e40270d30418fe9684ba9"
+    },
+    {
+      "id": "qotom-j1900-clbtm210-v2",
+      "code": 2,
+      "version": 2,
+      "manifest": "profiles/qotom-j1900-clbtm210-v2.json",
+      "release_asset": "PLATFORM_PROFILE_qotom-j1900-clbtm210-v2.json",
+      "sha256": "b5c09a95136b4db1d181727e12c13086597550644b04c54bddf53afa9bc489b7"
+    }
+  ]
+}
