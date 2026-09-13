@@ -1,0 +1,11 @@
+!k2ÿ!k2ã1¬ÿ[H[J[1;1HLEANOS-LAB/1 WATCHDOG-WINDOW accepted=1
+LEANOS-LAB/1 WATCHDOG-STATE pmc=10 smi=20073 count=800 timer=4
+LEANOS-LAB/1 WATCHDOG-ARMED ticks=120
+LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD
+sha256=d7ae6577052a6558040064161d7
+fafd2388e03a9697df1e31dde99640287a0dc
+error: invalid file name `leanos-qotom-lab.elf'.
+LEANOS-LAB/1 WATCHDOG-LOAD-FAILED fallback=freebsd
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+

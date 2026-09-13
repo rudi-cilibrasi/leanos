@@ -317,6 +317,30 @@ class Capture(unittest.TestCase):
         self.assertIn('txe_bme_decoder_sha256',result['diagnostic'])
         self.assertEqual(result['diagnostic']['replay_scope'],
             'native-inventory-with-txe-host-bme-transition')
+        pci_final=(b'LEANOS-LAB/1 PCI-FINAL profile=qotom-pci-final-v1 status=6 '
+            b'index=16 count=16 commands-accepted=1 assumption-mask=3 admitted=0 '
+            b'commands=7,3,3,2,258,2,3,3,3,3,1026,7,3,3,0,3 '
+            b'vtd=not-applicable platform-admitted=0\n')
+        assumption_terminal=FINAL.replace(b'qotom-platform-pending',b'qotom-pci-assumptions')
+        final_changed=changed.replace(FINAL,pci_final+assumption_terminal)
+        final_events=[{'elapsed':0,'hex':final_changed.hex()},
+                      {'elapsed':37,'hex':raw[end:].hex()}]
+        result=R['classify_cpu_protected'](final_events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+            pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True,
+            pci_final_admission=True)
+        self.assertTrue(result['pci_final']['fresh_complete_rescan_observed'])
+        self.assertFalse(result['pci_final']['platform_admitted'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-pci-assumptions')
+        self.assertIn('pci_final_decoder_sha256',result['diagnostic'])
 
     def test_rootport_bme_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'

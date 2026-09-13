@@ -1,4 +1,7 @@
 #include "qotom-txe-bme-arm.h"
+#ifdef LEANOS_QOTOM_PCI_FINAL_ADMISSION
+#include "qotom-pci-final-admission.c.inc"
+#endif
 static __attribute__((noreturn)) void lab_txe_bme_fault(void *opaque);
 static struct lab_txe_bme_window lab_txe_bme_writer={
     .controls=lab_ecam_native_controls,.invalidate=lab_ecam_native_invalidate,
@@ -29,5 +32,10 @@ static __attribute__((noinline)) void lab_capture_txe_bme(
     serial_puts(" before=");serial_u64(result.before_command);
     serial_puts(" after=");serial_u64(result.after_command);serial_putc('\n');
     if(status!=QOTOM_TXE_BME_OK)pre_admission_fail("qotom-txe-bme");
+#ifdef LEANOS_QOTOM_PCI_FINAL_ADMISSION
+    lab_capture_pci_final_admission(view);
+#endif
+#ifndef LEANOS_QOTOM_PCI_FINAL_ADMISSION
     pre_admission_fail("qotom-platform-pending");
+#endif
 }
