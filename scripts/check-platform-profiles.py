@@ -126,8 +126,30 @@ def validate(registry_path=REGISTRY):
                     evidence.get('serial_sha256') and
                     observation.get('terminal') == evidence.get('terminal'),
                     'Qotom evidence result binding')
+            files = observation.get('files')
+            required_files = {
+                'build-manifest.json': None,
+                'cycle-1/acpi/00000000b979f078.bin':
+                    components['firmware_root']['xsdt_sha256'],
+                'cycle-1/multiboot2.bin': observation.get('multiboot2_sha256'),
+                'cycle-1/pci-final.json':
+                    components['pci']['final_observation_sha256'],
+                'cycle-1/native-bsp.json':
+                    components['bsp']['observation_sha256'],
+                'cycle-1/nosmap-control.json':
+                    components['isolation']['observation_sha256'],
+                'cycle-1/diagnostic.raw': observation.get('diagnostic_raw_sha256'),
+                'cycle-1/serial.raw': observation.get('raw_serial_sha256'),
+            }
+            require(isinstance(files, dict) and
+                    set(required_files) <= set(files),
+                    'Qotom evidence required files')
+            for relative, digest in required_files.items():
+                if digest is not None:
+                    require(files[relative] == digest,
+                            f'Qotom profile artifact binding: {relative}')
             evidence_root = evidence_path.parent
-            for relative, digest in observation.get('files', {}).items():
+            for relative, digest in files.items():
                 item = Path(relative)
                 require(not item.is_absolute() and '..' not in item.parts,
                         'Qotom evidence file path')
@@ -135,6 +157,15 @@ def validate(registry_path=REGISTRY):
                 require(artifact.is_file() and
                         hashlib.sha256(artifact.read_bytes()).hexdigest() == digest,
                         f'Qotom evidence file digest: {relative}')
+            build = json.loads((evidence_root / 'build-manifest.json').read_text())
+            require(build.get('source_dirty') is False and
+                    build.get('source_revision') == evidence.get('source_revision') and
+                    build.get('prepared_revision') == evidence.get('prepared_revision'),
+                    'Qotom evidence clean build binding')
+            require(build.get('files', {}).get(
+                    'build/qotom-blocking-ipc-integration-lab/'
+                    'leanos-qotom-lab.elf') == evidence.get('elf_sha256'),
+                    'Qotom evidence built ELF binding')
     return registry
 
 
