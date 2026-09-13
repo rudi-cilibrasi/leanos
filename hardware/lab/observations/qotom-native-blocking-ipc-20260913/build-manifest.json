@@ -55,8 +55,8 @@
   "pci_diagnostic": true,
   "recovery_seconds": 30,
   "hang_recovery": false,
-  "source_revision": "4b0a428174cb868cb792f0c3f08387a9597e00d2",
-  "source_dirty": true,
+  "source_revision": "9734ed860141f45721d37c565ad8de84054735bc",
+  "source_dirty": false,
   "prepared_revision": "4b0a428174cb868cb792f0c3f08387a9597e00d2",
   "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
   "files": {

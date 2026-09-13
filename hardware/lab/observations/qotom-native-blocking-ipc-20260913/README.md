@@ -30,6 +30,10 @@ four capability-reuse transitions. Vector 32 was absent, both PIC masks were
 
 The protected ELF SHA256 is
 `61e5a57715f48fe2e80888381a2178ad49d2ea088d3effa1ce0202bd7c0b6638`.
+Clean source revision `9734ed860141f45721d37c565ad8de84054735bc`
+reproduced that exact ELF from prepared revision
+`4b0a428174cb868cb792f0c3f08387a9597e00d2`; `build-manifest.json` records
+the complete hashed input set.
 The complete `serial.raw`, including recovery output, has SHA256
 `05523b6791a4cabfd9fae346454cf5ede3bf81c303c4f62dae68db389027e437`.
 The same canonical q35 blocking-IPC transcript passed QEMU 8.2.2 under both

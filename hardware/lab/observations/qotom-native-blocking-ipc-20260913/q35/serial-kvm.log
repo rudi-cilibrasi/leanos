@@ -1,0 +1,485 @@
+LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap
+LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:0.0 present=1 vendor=32902 device=10688 class=393216 command-before=259 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted
+LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:1.0 present=1 vendor=4660 device=4369 class=196608 command-before=259 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted
+LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:3.0 present=0 vendor=0 device=0 class=0 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted
+LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:31.0 present=1 vendor=32902 device=10520 class=393472 command-before=259 command-after=0 assigned=0 bridge=1 multifunction=1 policy=accepted
+LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:31.2 present=1 vendor=32902 device=10530 class=67073 command-before=263 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted
+LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:31.3 present=1 vendor=32902 device=10544 class=787712 command-before=259 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted
+LEANOS/15 DMA snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS
+LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS
+LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS
+LEANOS/8 PAGING fixture=flip-present root=B level=pt page=0 expected=9223372036854775811 actual=9223372036854775810 result=REJECTED
+LEANOS/8 PAGING fixture=flip-user root=B level=pt page=669 expected=2740229 actual=2740225 result=REJECTED
+LEANOS/8 PAGING fixture=flip-writable root=B level=pt page=256 expected=1048577 actual=1048579 result=REJECTED
+LEANOS/8 PAGING fixture=flip-nx root=B level=pt page=670 expected=9223372036857520135 actual=2744327 result=REJECTED
+LEANOS/8 PAGING fixture=wrong-frame root=B level=pt page=0 expected=9223372036854775811 actual=9223372036854779907 result=REJECTED
+LEANOS/8 PAGING fixture=ancestor-pointer root=B level=pml4 page=0 expected=1421319 actual=1417223 result=REJECTED
+LEANOS/8 PAGING fixture=ancestor-flags root=B level=pdpt page=0 expected=1425415 actual=1425411 result=REJECTED
+LEANOS/8 PAGING fixture=swapped-user-leaves root=B level=pt page=669 expected=2740229 actual=0 result=REJECTED
+LEANOS/8 PAGING fixture=extra-mapping root=B level=pt page=318 expected=0 actual=9223372036856078339 result=REJECTED
+LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=323 expected=0 actual=9223372036856098819 result=REJECTED
+LEANOS/8 PAGING fixture=entry-guard-mapping root=B level=pt page=328 expected=0 actual=9223372036856119299 result=REJECTED
+LEANOS/8 PAGING fixture=omitted-mapping root=B level=pt page=669 expected=2740229 actual=0 result=REJECTED
+LEANOS/8 PAGING fixture=mmio-wrong-frame root=B level=pt page=333 expected=9223372041130409987 actual=9223372036856139779 result=REJECTED
+LEANOS/8 PAGING fixture=mmio-flip-user root=B level=pt page=333 expected=9223372041130409987 actual=9223372041130409991 result=REJECTED
+LEANOS/8 PAGING fixture=mutable-wrong-frame root=B level=pt page=7 expected=9223372036857425927 actual=9223372036857421831 result=REJECTED
+LEANOS/8 PAGING fixture=mutable-publish-before-invalidation root=B level=pt page=7 expected=0 actual=9223372036857425927 result=REJECTED
+LEANOS/8 PAGING fixture=mutable-unknown-state root=B level=pt page=7 expected=9223372036854804483 actual=9223372036854804483 result=REJECTED
+LEANOS/8 PAGING fixture=wrong-cr3 root=A level=cr3 page=0 expected=1372160 actual=1417216 result=REJECTED
+LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS
+LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS
+LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS
+LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS
+LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS
+LEANOS/21 VTD-PLAN root-frame=357 context-frame=358 root-words=512 context-words=512 present-root-entries=1 present-context-entries=0 translation=disabled deny-all=1 result=PASS
+LEANOS/21 VTD-TABLES root-frame=357 context-frame=358 scrub=verified construct=verified root-words=512 context-words=512 result=PASS
+LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 gsts=3221225472 fsts=0 rtaddr=1462272 generated-result=0 stage=pre-cpl3 result=PASS
+LEANOS/7 HANDOFF magic=valid info-bytes=2456 mmap-entries=9 result=PASS
+LEANOS/7 MAP boot-pages=4096 reported-top-mib=127 precedence=reserved result=PASS
+LEANOS/7 ALLOC frame=671 firmware-usable=1 boot-accessible=1 reserved=0 projection=scalar-checked result=PASS
+LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS
+LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS
+LEANOS/7 BOOTALLOC status=PASS
+LEANOS/3 ORACLE id=boot.accept result=PASS
+LEANOS/3 ORACLE id=boot.ready-reject result=PASS
+LEANOS/3 ORACLE id=boot.bad-state result=PASS
+LEANOS/3 ORACLE id=boot.bad-command result=PASS
+LEANOS/3 ORACLE id=syscall.accept result=PASS
+LEANOS/3 ORACLE id=syscall.unknown result=PASS
+LEANOS/3 ORACLE id=syscall.bad-permission result=PASS
+LEANOS/3 ORACLE id=syscall.boundary result=PASS
+LEANOS/3 ORACLE id=ipc.sender-receive-denied result=PASS
+LEANOS/3 ORACLE id=ipc.sender-send result=PASS
+LEANOS/3 ORACLE id=ipc.receiver-send-denied result=PASS
+LEANOS/3 ORACLE id=ipc.receiver-receive result=PASS
+LEANOS/3 ORACLE id=ipc.malformed-boundary result=PASS
+LEANOS/3 ORACLE id=preemption.accept result=PASS
+LEANOS/3 ORACLE id=preemption.masked result=PASS
+LEANOS/3 ORACLE id=preemption.wrong-vector result=PASS
+LEANOS/3 ORACLE id=preemption.resume result=PASS
+LEANOS/3 ORACLE id=preemption.forged-current result=PASS
+LEANOS/3 ORACLE id=resumable.a-to-b result=PASS
+LEANOS/3 ORACLE id=resumable.b-to-a result=PASS
+LEANOS/3 ORACLE id=resumable.cross-restored result=PASS
+LEANOS/3 ORACLE id=boot-allocation.accept result=PASS
+LEANOS/3 ORACLE id=boot-allocation.parser-rejected result=PASS
+LEANOS/3 ORACLE id=boot-allocation.parser-incomplete result=PASS
+LEANOS/3 ORACLE id=boot-allocation.no-usable-coverage result=PASS
+LEANOS/3 ORACLE id=boot-allocation.nonusable-overlap result=PASS
+LEANOS/3 ORACLE id=boot-allocation.no-eligible-frame result=PASS
+LEANOS/3 ORACLE id=boot-allocation.manifest-rejected result=PASS
+LEANOS/3 ORACLE id=boot-allocation.first-selection-stable result=PASS
+LEANOS/3 ORACLE id=user-return.initial result=PASS
+LEANOS/3 ORACLE id=user-return.syscall-resume result=PASS
+LEANOS/3 ORACLE id=user-return.scheduler-restore result=PASS
+LEANOS/3 ORACLE id=user-return.empty-stack-cursor result=PASS
+LEANOS/3 ORACLE id=user-return.zero-purpose result=PASS
+LEANOS/3 ORACLE id=user-return.unsupported-contained-fault result=PASS
+LEANOS/3 ORACLE id=user-return.max-purpose result=PASS
+LEANOS/3 ORACLE id=user-return.noncanonical-rip result=PASS
+LEANOS/3 ORACLE id=user-return.noncanonical-rsp result=PASS
+LEANOS/3 ORACLE id=user-return.wrong-cs result=PASS
+LEANOS/3 ORACLE id=user-return.wrong-ss result=PASS
+LEANOS/3 ORACLE id=user-return.kernel-origin result=PASS
+LEANOS/3 ORACLE id=user-return.iopl result=PASS
+LEANOS/3 ORACLE id=user-return.nt result=PASS
+LEANOS/3 ORACLE id=user-return.vm result=PASS
+LEANOS/3 ORACLE id=user-return.ac result=PASS
+LEANOS/3 ORACLE id=user-return.df result=PASS
+LEANOS/3 ORACLE id=user-return.if-cleared result=PASS
+LEANOS/3 ORACLE id=user-return.stale-subject result=PASS
+LEANOS/3 ORACLE id=user-return.stale-address-space result=PASS
+LEANOS/3 ORACLE id=user-return.wrong-cr3 result=PASS
+LEANOS/3 ORACLE id=user-return.wrong-frame-subject result=PASS
+LEANOS/3 ORACLE id=user-return.wrong-frame-address-space result=PASS
+LEANOS/3 ORACLE id=user-return.fatal-mode result=PASS
+LEANOS/3 ORACLE id=user-return.code-outside-subject result=PASS
+LEANOS/3 ORACLE id=user-return.stack-outside-subject result=PASS
+LEANOS/3 ORACLE id=user-return.diagnostic-recovery result=PASS
+LEANOS/3 ORACLE id=user-return.validate-then-mutate result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.block-b result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.send-wake-b result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.dispatch-b result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.deliver-b result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.wrong-caller result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.wrong-phase result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.forged-payload result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.empty-wrong-subject result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.missing-receive result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.missing-send result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.stale-endpoint result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.full-wait-queue result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.full-ready-queue result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.duplicate-block result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.duplicate-wake result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.wrong-endpoint result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.forged-sender result=PASS
+LEANOS/3 ORACLE id=blocking-ipc.cancel-before-send result=PASS
+LEANOS/3 ORACLE id=capability-reuse.initial result=PASS
+LEANOS/3 ORACLE id=capability-reuse.cleared-slot result=PASS
+LEANOS/3 ORACLE id=capability-reuse.stale-generation result=PASS
+LEANOS/3 ORACLE id=capability-reuse.fresh-generation result=PASS
+LEANOS/3 ORACLE id=capability-reuse.wrong-subject result=PASS
+LEANOS/3 ORACLE id=capability-reuse.malformed-generation result=PASS
+LEANOS/3 ORACLE id=capability-reuse.high-generation-alias result=PASS
+LEANOS/3 ORACLE id=capability-reuse.wrong-kind result=PASS
+LEANOS/3 ORACLE id=capability-reuse.invalid-state-five result=PASS
+LEANOS/3 ORACLE id=capability-reuse.generation-exhausted result=PASS
+LEANOS/3 ORACLE id=capability-reuse.boundary-payload result=PASS
+LEANOS/3 ORACLE id=entry.syscall result=PASS
+LEANOS/3 ORACLE id=entry.user-invalid-opcode result=PASS
+LEANOS/3 ORACLE id=entry.user-device-not-available result=PASS
+LEANOS/3 ORACLE id=entry.user-page-fault result=PASS
+LEANOS/3 ORACLE id=entry.timer result=PASS
+LEANOS/3 ORACLE id=entry.kernel-diagnostic result=PASS
+LEANOS/3 ORACLE id=entry.wrong-stub result=PASS
+LEANOS/3 ORACLE id=entry.wrong-dpl-vector result=PASS
+LEANOS/3 ORACLE id=entry.missing-error result=PASS
+LEANOS/3 ORACLE id=entry.spurious-error result=PASS
+LEANOS/3 ORACLE id=entry.truncated result=PASS
+LEANOS/3 ORACLE id=entry.misaligned result=PASS
+LEANOS/3 ORACLE id=entry.forged-user-words-kernel-shape result=PASS
+LEANOS/3 ORACLE id=entry.unexpected-user-shape result=PASS
+LEANOS/3 ORACLE id=entry.stack-low result=PASS
+LEANOS/3 ORACLE id=entry.stack-high result=PASS
+LEANOS/3 ORACLE id=entry.nested result=PASS
+LEANOS/3 ORACLE id=entry.ac-uncleared result=PASS
+LEANOS/3 ORACLE id=entry.df-uncleared result=PASS
+LEANOS/3 ORACLE id=extended-state.dispatch-peer result=PASS
+LEANOS/3 ORACLE id=extended-state.policy-mismatch result=PASS
+LEANOS/3 ORACLE id=extended-state.kernel-origin result=PASS
+LEANOS/3 ORACLE id=extended-state.dispatch-invariant result=PASS
+LEANOS/3 ORACLE id=extended-state.idle result=PASS
+LEANOS/3 ORACLE id=extended-state.stale-binding result=PASS
+LEANOS/3 ORACLE id=extended-state.dispatch-peer-ud result=PASS
+LEANOS/3 ORACLE id=entry-control.accepted result=PASS
+LEANOS/3 ORACLE id=entry-control.cpu-intel result=PASS
+LEANOS/3 ORACLE id=entry-control.cpu-unsupported result=PASS
+LEANOS/3 ORACLE id=entry-control.mode-protected32 result=PASS
+LEANOS/3 ORACLE id=entry-control.mode-compatibility result=PASS
+LEANOS/3 ORACLE id=entry-control.syscall-unexposed result=PASS
+LEANOS/3 ORACLE id=entry-control.sysenter-unexposed result=PASS
+LEANOS/3 ORACLE id=entry-control.efer-sce-set result=PASS
+LEANOS/3 ORACLE id=entry-control.star-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.lstar-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.cstar-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.sfmask-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.sysenter-cs-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.sysenter-esp-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.sysenter-eip-mutated result=PASS
+LEANOS/3 ORACLE id=entry-control.writes-incomplete result=PASS
+LEANOS/3 ORACLE id=entry-control.readback-mismatch result=PASS
+LEANOS/3 ORACLE id=entry-control.manifest-missing result=PASS
+LEANOS/3 ORACLE id=entry-control.extended-policy-relaxed result=PASS
+LEANOS/3 ORACLE id=entry-control.return-accepted result=PASS
+LEANOS/3 ORACLE id=entry-control.user-syscall-ud result=PASS
+LEANOS/3 ORACLE id=entry-control.user-sysenter-ud result=PASS
+LEANOS/3 ORACLE id=entry-control.user-syscall-gp result=PASS
+LEANOS/3 ORACLE id=entry-control.kernel-syscall-ud result=PASS
+LEANOS/3 ORACLE id=entry-control.stale-subject result=PASS
+LEANOS/3 ORACLE id=entry-control.stale-cr3 result=PASS
+LEANOS/3 ORACLE id=entry-control.live-policy-relaxed result=PASS
+LEANOS/3 ORACLE id=entry-control.alternate-target result=PASS
+LEANOS/3 ORACLE id=entry-control.user-stack result=PASS
+LEANOS/3 ORACLE id=entry-control.error-shape result=PASS
+LEANOS/3 ORACLE id=entry-control.int80-as-denial result=PASS
+LEANOS/3 ORACLE id=entry-control.post-fatal result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.accept-a-to-b result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.kernel-origin result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.malformed-frame result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.wrong-vector result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.stale-current result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.wrong-address-space result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.empty-ready result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.already-terminated result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.stale-context result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.peer-context-resource-witness result=PASS
+LEANOS/3 ORACLE id=direct-port.user-denied result=PASS
+LEANOS/3 ORACLE id=direct-port.nonzero-iopl result=PASS
+LEANOS/3 ORACLE id=direct-port.short-tss-limit result=PASS
+LEANOS/3 ORACLE id=direct-port.extended-tss-limit result=PASS
+LEANOS/3 ORACLE id=direct-port.in-range-map-base result=PASS
+LEANOS/3 ORACLE id=direct-port.exposed-bitmap result=PASS
+LEANOS/3 ORACLE id=direct-port.not-kernel-configured result=PASS
+LEANOS/3 ORACLE id=direct-port.readback-missing result=PASS
+LEANOS/3 ORACLE id=direct-port.stale-readback result=PASS
+LEANOS/3 ORACLE id=direct-port.kernel-serial-output result=PASS
+LEANOS/3 ORACLE id=direct-port.kernel-serial-input result=PASS
+LEANOS/3 ORACLE id=direct-port.kernel-pic-output result=PASS
+LEANOS/3 ORACLE id=direct-port.kernel-pit-output result=PASS
+LEANOS/3 ORACLE id=direct-port.kernel-debug-exit result=PASS
+LEANOS/3 ORACLE id=direct-port.wrong-purpose result=PASS
+LEANOS/3 ORACLE id=direct-port.wrong-port result=PASS
+LEANOS/3 ORACLE id=direct-port.wrong-direction result=PASS
+LEANOS/3 ORACLE id=direct-port.wrong-word-width result=PASS
+LEANOS/3 ORACLE id=direct-port.wrong-dword-width result=PASS
+LEANOS/3 ORACLE id=direct-port.byte-normalization result=PASS
+LEANOS/3 ORACLE id=direct-port.user-input-word result=PASS
+LEANOS/3 ORACLE id=direct-port.user-input-dword result=PASS
+LEANOS/3 ORACLE id=direct-port.invalid-origin result=PASS
+LEANOS/3 ORACLE id=direct-port.invalid-direction-width result=PASS
+LEANOS/3 ORACLE id=direct-port.invalid-stored-control result=PASS
+LEANOS/3 ORACLE id=direct-port.invalid-live-control result=PASS
+LEANOS/3 ORACLE id=direct-port.invalid-port result=PASS
+LEANOS/3 ORACLE id=direct-port.post-validation-relaxation result=PASS
+LEANOS/3 ORACLE id=entry.user-general-protection result=PASS
+LEANOS/3 ORACLE id=nmi.user-running result=PASS
+LEANOS/3 ORACLE id=nmi.kernel-handling result=PASS
+LEANOS/3 ORACLE id=nmi.kernel-halted-normalized result=PASS
+LEANOS/3 ORACLE id=nmi.wrong-descriptor result=PASS
+LEANOS/3 ORACLE id=nmi.wrong-target result=PASS
+LEANOS/3 ORACLE id=nmi.spurious-error result=PASS
+LEANOS/3 ORACLE id=nmi.wrong-frame-bytes result=PASS
+LEANOS/3 ORACLE id=nmi.misaligned result=PASS
+LEANOS/3 ORACLE id=nmi.wrong-stack-identity result=PASS
+LEANOS/3 ORACLE id=nmi.frame-not-at-stack-top result=PASS
+LEANOS/3 ORACLE id=nmi.wrong-origin result=PASS
+LEANOS/3 ORACLE id=nmi.wrong-selectors result=PASS
+LEANOS/3 ORACLE id=nmi.noncanonical result=PASS
+LEANOS/3 ORACLE id=nmi.privileged-state result=PASS
+LEANOS/3 ORACLE id=nmi.stale-context result=PASS
+LEANOS/3 ORACLE id=nmi.invalid-bounds-code result=PASS
+LEANOS/3 ORACLE id=nmi.invalid-mode-code result=PASS
+LEANOS/3 ORACLE id=entry.user-divide-error result=PASS
+LEANOS/3 ORACLE id=entry.user-breakpoint result=PASS
+LEANOS/3 ORACLE id=entry.kernel-divide-error result=PASS
+LEANOS/3 ORACLE id=entry.kernel-breakpoint result=PASS
+LEANOS/3 ORACLE id=entry.spurious-error-divide-error result=PASS
+LEANOS/3 ORACLE id=entry.spurious-error-breakpoint result=PASS
+LEANOS/3 ORACLE id=entry.wrong-restart-breakpoint result=PASS
+LEANOS/3 ORACLE id=entry.wrong-restart-page-fault result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.accept-divide-error result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.accept-breakpoint result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.divide-error-idle result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.breakpoint-multi-survivor result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.page-fault-multi-survivor result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.kernel-origin-divide-error result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.kernel-origin-breakpoint result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.malformed-divide-error result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.wrong-restart-breakpoint result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.wrong-restart-page-fault result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.swapped-reason-divide-error result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.swapped-reason-page-fault result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.stale-current-divide-error result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.stale-address-space-breakpoint result=PASS
+LEANOS/3 ORACLE id=fault-dispatch.stale-context-breakpoint result=PASS
+LEANOS/3 ORACLE id=bootphase.publish-bootstrap32 result=PASS
+LEANOS/3 ORACLE id=bootphase.publish-bootstrap64 result=PASS
+LEANOS/3 ORACLE id=bootphase.publish-runtime result=PASS
+LEANOS/3 ORACLE id=bootphase.runtime-missing-tss result=PASS
+LEANOS/3 ORACLE id=bootphase.skip-bootstrap32 result=PASS
+LEANOS/3 ORACLE id=bootphase.backward-bootstrap32 result=PASS
+LEANOS/3 ORACLE id=bootphase.premature-runtime result=PASS
+LEANOS/3 ORACLE id=bootphase.nmi-bootstrap32 result=PASS
+LEANOS/3 ORACLE id=bootphase.nmi-bootstrap64 result=PASS
+LEANOS/3 ORACLE id=bootphase.error-fault-bootstrap64 result=PASS
+LEANOS/3 ORACLE id=bootphase.noerror-fault-bootstrap32 result=PASS
+LEANOS/3 ORACLE id=bootphase.double-fault-bootstrap64 result=PASS
+LEANOS/3 ORACLE id=bootphase.user-claim-early result=PASS
+LEANOS/3 ORACLE id=bootphase.inherited-window result=PASS
+LEANOS/3 ORACLE id=bootphase.runtime-delegated result=PASS
+LEANOS/3 ORACLE id=bootphase.repeated-after-latch result=PASS
+LEANOS/3 ORACLE id=bootphase.publish-after-latch result=PASS
+LEANOS/3 ORACLE id=bootphase.invalid-phase-code result=PASS
+LEANOS/3 ORACLE id=stale-translation.unmap-accept result=PASS
+LEANOS/3 ORACLE id=stale-translation.protect-downgrade result=PASS
+LEANOS/3 ORACLE id=stale-translation.unmap-wrong-owner result=PASS
+LEANOS/3 ORACLE id=stale-translation.protect-wrong-owner result=PASS
+LEANOS/3 ORACLE id=stale-translation.release-flush result=PASS
+LEANOS/3 ORACLE id=stale-translation.destroy-space result=PASS
+LEANOS/3 ORACLE id=stale-translation.switch-away result=PASS
+LEANOS/3 ORACLE id=stale-translation.switch-back result=PASS
+LEANOS/3 ORACLE id=stale-translation.unmap-unmapped result=PASS
+LEANOS/3 ORACLE id=stale-translation.reuse-old-page-absent result=PASS
+LEANOS/3 ORACLE id=stale-translation.protect-write-amplify result=PASS
+LEANOS/3 ORACLE id=stale-translation.destroy-wrong-subject result=PASS
+LEANOS/3 ORACLE id=stale-translation.release-wrong-slot result=PASS
+LEANOS/3 ORACLE id=stale-translation.switch-unknown-space result=PASS
+LEANOS/3 ORACLE id=stale-translation.malformed-kind result=PASS
+LEANOS/3 ORACLE id=page-fault.user-read-not-present result=PASS
+LEANOS/3 ORACLE id=page-fault.user-write-not-present result=PASS
+LEANOS/3 ORACLE id=page-fault.user-execute-not-present result=PASS
+LEANOS/3 ORACLE id=page-fault.user-read-protection result=PASS
+LEANOS/3 ORACLE id=page-fault.user-write-protection result=PASS
+LEANOS/3 ORACLE id=page-fault.user-execute-protection result=PASS
+LEANOS/3 ORACLE id=page-fault.kernel-read result=PASS
+LEANOS/3 ORACLE id=page-fault.reserved-bit result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-5-pk result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-6-shadow-stack result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-7 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-8 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-9 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-10 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-11 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-12 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-13 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-14 result=PASS
+LEANOS/3 ORACLE id=page-fault.unsupported-bit-15-sgx result=PASS
+LEANOS/3 ORACLE id=page-fault.wrong-cr2 result=PASS
+LEANOS/3 ORACLE id=page-fault.wrong-vector result=PASS
+LEANOS/3 ORACLE id=page-fault.wrong-stub result=PASS
+LEANOS/3 ORACLE id=page-fault.missing-error result=PASS
+LEANOS/3 ORACLE id=page-fault.malformed-frame result=PASS
+LEANOS/3 ORACLE id=page-fault.privilege-mismatch result=PASS
+LEANOS/3 ORACLE id=page-fault.nested result=PASS
+LEANOS/3 ORACLE id=page-fault.low-canonical-boundary result=PASS
+LEANOS/3 ORACLE id=page-fault.upper-canonical-boundary result=PASS
+LEANOS/3 ORACLE id=page-fault.noncanonical-boundary result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-subject-mutated result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-space-mutated result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-cr3-mutated result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-wp-mutated result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-nxe-mutated result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-smep-mutated result=PASS
+LEANOS/3 ORACLE id=page-fault.authority-smap-mutated result=PASS
+LEANOS/3 ORACLE id=composite.create-subject result=PASS
+LEANOS/3 ORACLE id=composite.reject-unknown-syscall result=PASS
+LEANOS/3 ORACLE id=composite.reject-malformed-map result=PASS
+LEANOS/3 ORACLE id=composite.observe-scheduler result=PASS
+LEANOS/3 ORACLE id=composite.terminate-subject result=PASS
+LEANOS/3 ORACLE id=composite.enter-fatal-kernel-fault result=PASS
+LEANOS/3 ORACLE id=composite.reject-post-fatal-schedule result=PASS
+LEANOS/3 ORACLE id=composite.reject-stale-map-handle result=PASS
+LEANOS/3 ORACLE id=composite.reject-nonblocking-receive-handle result=PASS
+LEANOS/3 ORACLE id=composite.reject-capability-copy result=PASS
+LEANOS/3 ORACLE id=composite.reject-blocking-cancel result=PASS
+LEANOS/3 ORACLE id=composite.reject-deferred-drain result=PASS
+LEANOS/3 ORACLE id=composite.stale-state-replay result=PASS
+LEANOS/3 ORACLE id=composite.cross-trace-splice result=PASS
+LEANOS/3 ORACLE id=composite.noncanonical-argument result=PASS
+LEANOS/3 ORACLE id=composite.wrong-state-version result=PASS
+LEANOS/3 ORACLE id=composite.reserved-state-bits result=PASS
+LEANOS/3 ORACLE id=composite.wrong-command-version result=PASS
+LEANOS/3 ORACLE id=composite.reserved-command-bits result=PASS
+LEANOS/3 ORACLE id=composite.forged-context-argument result=PASS
+LEANOS/3 ORACLE id=composite.maximum-words result=PASS
+LEANOS/3 ORACLE id=composite.unknown-command result=PASS
+LEANOS/3 ORACLE id=composite.mixed-transfer-offer result=PASS
+LEANOS/3 ORACLE id=composite.mixed-transfer-pre-receipt-denial result=PASS
+LEANOS/3 ORACLE id=composite.mixed-transfer-accept result=PASS
+LEANOS/3 ORACLE id=composite.mixed-transfer-delegated-send result=PASS
+LEANOS/3 ORACLE id=composite.mixed-transfer-excess-receive-denial result=PASS
+LEANOS/3 ORACLE id=composite.mixed-capability-revoke result=PASS
+LEANOS/3 ORACLE id=composite.mixed-stale-handle-reject result=PASS
+LEANOS/3 ORACLE id=composite.mixed-capability-copy result=PASS
+LEANOS/3 ORACLE id=composite.mixed-syscall-map result=PASS
+LEANOS/3 ORACLE id=composite.mixed-direct-map result=PASS
+LEANOS/3 ORACLE id=composite.mixed-unknown-syscall-reject result=PASS
+LEANOS/3 ORACLE id=composite.mixed-nonblocking-send result=PASS
+LEANOS/3 ORACLE id=composite.mixed-nonblocking-receive result=PASS
+LEANOS/3 ORACLE id=composite.mixed-blocking-receive result=PASS
+LEANOS/3 ORACLE id=composite.mixed-blocking-send result=PASS
+LEANOS/3 ORACLE id=composite.mixed-timer-switch result=PASS
+LEANOS/3 ORACLE id=composite.mixed-user-fault-cleanup result=PASS
+LEANOS/3 ORACLE id=composite.mixed-fatal-entry result=PASS
+LEANOS/3 ORACLE id=composite.mixed-post-fatal-reject result=PASS
+LEANOS/3 ORACLE id=composite.mixed-page-unmapped result=PASS
+LEANOS/3 ORACLE id=composite.mixed-unmapped-page-reject result=PASS
+LEANOS/3 ORACLE id=composite.mixed-page-protected result=PASS
+LEANOS/3 ORACLE id=composite.mixed-protect-amplification-reject result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-wrong-owner-reject result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-protect-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-protect-effect-mismatch result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-protect-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-release-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-release-effect-mismatch result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-release-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-stale-release-reject result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-destroy-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-destroy-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-switch-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-switch-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-reuse-published result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-unmap-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-unmap-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-switch-away-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-switch-away-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-switch-back-pending result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-switch-back-ack result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-malformed-effect result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-mismatched-state result=PASS
+LEANOS/3 ORACLE id=composite.invalidation-stale-ticket-replay result=PASS
+LEANOS/3 ORACLE id=frame-budget.a-allocate result=PASS
+LEANOS/3 ORACLE id=frame-budget.a-at-limit result=PASS
+LEANOS/3 ORACLE id=frame-budget.select-b result=PASS
+LEANOS/3 ORACLE id=frame-budget.b-peer-allocate result=PASS
+LEANOS/3 ORACLE id=frame-budget.terminate-a result=PASS
+LEANOS/3 ORACLE id=frame-budget.b-fresh-publication result=PASS
+LEANOS/3 ORACLE id=frame-budget.stale-a-handle-denied result=PASS
+LEANOS/3 ORACLE id=frame-budget.complete result=PASS
+LEANOS/3 ORACLE id=frame-budget.release-a result=PASS
+LEANOS/3 ORACLE id=frame-budget.repeated-release result=PASS
+LEANOS/3 ORACLE id=frame-budget.release-complete result=PASS
+LEANOS/3 ORACLE id=frame-budget.repeated-a-retry result=PASS
+LEANOS/3 ORACLE id=frame-budget.occupied-slot result=PASS
+LEANOS/3 ORACLE id=frame-budget.repeated-termination result=PASS
+LEANOS/3 ORACLE id=frame-budget.aggregate-global-inconsistency result=PASS
+LEANOS/3 ORACLE id=frame-budget.malformed-budget-state result=PASS
+LEANOS/3 ORACLE id=frame-budget.caller-context-forgery result=PASS
+LEANOS/3 ORACLE id=frame-budget.user-selects-charge-owner result=PASS
+LEANOS/3 ORACLE id=frame-budget.stale-generation result=PASS
+LEANOS/3 ORACLE id=frame-budget.output-state-replay result=PASS
+LEANOS/3 ORACLE id=frame-budget.cross-trace-splice result=PASS
+LEANOS/3 ORACLE id=frame-budget.unknown-operation result=PASS
+LEANOS/3 ORACLE id=frame-budget.reserved-command result=PASS
+LEANOS/3 ORACLE id=frame-budget.maximum-words result=PASS
+LEANOS/3 ORACLE id=iotlb.observe-filled result=PASS
+LEANOS/3 ORACLE id=iotlb.prepare-retains-live result=PASS
+LEANOS/3 ORACLE id=iotlb.reject-stale-ticket result=PASS
+LEANOS/3 ORACLE id=iotlb.reject-wrong-source result=PASS
+LEANOS/3 ORACLE id=iotlb.reject-wrong-domain result=PASS
+LEANOS/3 ORACLE id=iotlb.reject-wrong-mapping result=PASS
+LEANOS/3 ORACLE id=iotlb.reject-wrong-iova result=PASS
+LEANOS/3 ORACLE id=iotlb.ack-exact result=PASS
+LEANOS/3 ORACLE id=iotlb.reject-completion-replay result=PASS
+LEANOS/3 ORACLE id=composite.boot-transfer-subject-one-offer result=PASS
+LEANOS/3 ORACLE id=composite.boot-transfer-switch-subject-two result=PASS
+LEANOS/3 ORACLE id=composite.boot-transfer-sealed-denial result=PASS
+LEANOS/3 ORACLE id=composite.boot-transfer-subject-two-accept result=PASS
+LEANOS/3 ORACLE id=composite.boot-transfer-delegated-send result=PASS
+LEANOS/3 ORACLE id=composite.boot-transfer-receive-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-offer result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-missing-authority-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-wrong-root-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-revoke result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-repeat-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-stale-offer-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-switch-subject-two result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-canceled-receipt-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-replace-slot result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-canceled-handle-denial result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-fresh-send result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-stale-state-replay result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-cross-trace-splice result=PASS
+LEANOS/3 ORACLE id=composite.inflight-revocation-receipt-before-switch result=PASS
+LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS
+LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS
+LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready
+LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS
+LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS
+LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS
+LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS
+LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS
+LEANOS/8 PAGING root=B selected=1 result=PASS
+LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10
+LEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1
+LEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS
+LEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS
+LEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1
+LEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS
+LEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1
+LEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1
+LEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS
+LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
+LEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1
+LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS
+LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS
+LEANOS/11 ENTRY-HIGH-WATER path=user-page-fault observed-bytes=904 usable-bytes=16384 margin-bytes=15480 authority=diagnostic result=PASS
+LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS
+LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1
+LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS
+LEANOS/8 PAGING root=B selected=1 result=PASS
+LEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1
+LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved
+LEANOS/11 ENTRY-HIGH-WATER path=syscall observed-bytes=904 usable-bytes=16384 margin-bytes=15480 authority=diagnostic result=PASS
+LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1
