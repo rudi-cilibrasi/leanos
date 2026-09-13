@@ -1042,10 +1042,13 @@
       },
       {
         "image": "leanos-malformed-handoff",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-malformed-handoff.h",
         "final": "boot-page-plan-malformed-handoff.final.h",
-        "description": "malformed-handoff"
+        "description": "malformed-handoff",
+        "targets": [
+          "leanos-malformed-handoff"
+        ]
       },
       {
         "image": "leanos-projection-authority-mutation",
