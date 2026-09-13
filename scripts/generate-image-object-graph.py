@@ -27,6 +27,7 @@ GENERATED_MODULES = (
     "PrivilegeEntryControl",
     "J1900CpuProfile",
     "J1900MsrReadback",
+    "J1900CpuControlPolicy",
     "BootTextConsole",
     "FaultDispatch",
     "DirectPortIO",
@@ -167,6 +168,7 @@ COMMON_LINK_OBJECTS = (
     "PrivilegeEntryControl",
     "J1900CpuProfile",
     "J1900MsrReadback",
+    "J1900CpuControlPolicy",
     "BootTextConsole",
     "FaultDispatch",
 )

@@ -46,6 +46,7 @@
     "LeanOS/Interrupt.lean",
     "LeanOS/InterruptEntry.lean",
     "LeanOS/InvalidationPublication.lean",
+    "LeanOS/J1900CpuControlPolicy.lean",
     "LeanOS/J1900CpuProfile.lean",
     "LeanOS/J1900EntryControl.lean",
     "LeanOS/J1900MsrReadback.lean",

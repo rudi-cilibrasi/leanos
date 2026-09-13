@@ -160,7 +160,11 @@ build.mkdir(parents=True, exist_ok=True)
 source = root / 'boot' / 'kernel.c'
 if source.read_bytes() != (prepared / 'boot/kernel.c').read_bytes():
     raise SystemExit('prepared kernel source differs; rebuild canonical inputs first')
-prepared_graph = (prepared / 'build/boot/generated-image-objects.mk').read_text()
+prepared_graph_path = prepared / 'build/boot/generated-image-objects.mk'
+if not prepared_graph_path.is_file():
+    subprocess.run([str(prepared / 'scripts/build-image.sh')], cwd=prepared,
+                   check=True)
+prepared_graph = prepared_graph_path.read_text()
 if str(prepared / 'boot/kernel.c') not in prepared_graph:
     raise SystemExit('prepared graph names a different checkout; regenerate it in the prepared repository')
 prepared_build = prepared / 'build/boot'

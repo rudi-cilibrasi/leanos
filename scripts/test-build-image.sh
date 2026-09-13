@@ -5,9 +5,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
+fixture_build="$(mktemp -d "$repo_root/build/image-failure-fixture.XXXXXX")"
+trap 'rm -f "$log"; rm -rf "$fixture_build"' EXIT
 set +e
-LEANOS_CC="$repo_root/tests/failing-cc-fixture.sh" \
+LEANOS_IMAGE_BUILD_DIR="$fixture_build" \
+  LEANOS_CC="$repo_root/tests/failing-cc-fixture.sh" \
   ./scripts/build-image.sh >"$log" 2>&1
 status=$?
 set -e
