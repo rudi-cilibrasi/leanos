@@ -1,0 +1,1 @@
+{"cr4_writes": 1, "instruction_count": 150, "schema": "leanos-qotom-nosmap-control-audit-v1", "smap_set_instructions": 0, "smep_masks": 1, "stac_clac": 0, "symbol": "lab_capture_nosmap_control"}
