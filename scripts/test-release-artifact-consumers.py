@@ -21,10 +21,20 @@ def require(condition, message):
 def main():
     with tempfile.TemporaryDirectory(prefix='leanos-artifact-consumers-') as directory:
         root = Path(directory)
-        for path in ('scripts', 'docs', 'build/evidence', 'build/boot'):
+        for path in ('scripts', 'docs', 'build/evidence', 'build/boot',
+                     'hardware/profiles'):
             (root / path).mkdir(parents=True)
         for name in ('package-release.sh', 'write-reproducibility-manifest.sh'):
             shutil.copy2(ROOT / 'scripts' / name, root / 'scripts' / name)
+        shutil.copy2(ROOT / 'scripts/check-platform-profiles.py',
+                     root / 'scripts/check-platform-profiles.py')
+        shutil.copy2(ROOT / 'hardware/platform-profiles.json',
+                     root / 'hardware/platform-profiles.json')
+        for name in ('q35-v1.json', 'qotom-j1900-clbtm210-v2.json'):
+            shutil.copy2(ROOT / 'hardware/profiles' / name,
+                         root / 'hardware/profiles' / name)
+        evidence = 'hardware/lab/observations/qotom-platform-admission-20260913'
+        shutil.copytree(ROOT / evidence, root / evidence)
         service = root / 'scripts/run-emulator-evidence.py'
         service.write_text('''#!/usr/bin/env python3
 import os, sys
@@ -76,7 +86,10 @@ for index, name in enumerate(names):
         require(result.returncode == 0, result)
         release = root / 'build/release'
         expected = {'a.elf', 'file with space.map', 'EMULATOR_EVIDENCE.json',
-                    'EMULATOR_EVIDENCE_MATRIX.tsv', 'TOOLCHAIN.txt', 'RELEASE_NOTES.md', 'SHA256SUMS'}
+                    'EMULATOR_EVIDENCE_MATRIX.tsv', 'PLATFORM_PROFILES.json',
+                    'PLATFORM_PROFILE_q35-v1.json',
+                    'PLATFORM_PROFILE_qotom-j1900-clbtm210-v2.json',
+                    'TOOLCHAIN.txt', 'RELEASE_NOTES.md', 'SHA256SUMS'}
         require({p.name for p in release.iterdir()} == expected, 'release inventory differs')
         for name in ('a.elf', 'file with space.map'):
             require((release / name).read_bytes() == (root / 'build/boot' / name).read_bytes(), name)

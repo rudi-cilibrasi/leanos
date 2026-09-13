@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import hashlib
+import json
 import runpy
 import tempfile
 import unittest
@@ -24,6 +26,7 @@ class Capture(unittest.TestCase):
         self.assertEqual(value['blocking_model_transitions'], 4)
         self.assertEqual(value['capability_model_transitions'], 4)
         self.assertTrue(value['cpl3_authority'])
+        self.assertEqual(value['platform_profile'], 'qotom-j1900-clbtm210-v2')
         self.assertEqual(entry['completed_returns'], 1)
 
     def test_template_is_authoritative(self):
@@ -43,6 +46,9 @@ class Capture(unittest.TestCase):
             good + suffix,
             good[:-1],
             good.replace(D['READY'], b''),
+            good.replace(D['PLATFORM'], b''),
+            good.replace(b'qotom-j1900-clbtm210-v2', b'qotom-j1900-clbtm210-v1'),
+            good.replace(b'vtd=not-applicable', b'vtd=PASS'),
             good.replace(b'cpl3-authority=1', b'cpl3-authority=0'),
             good.replace(b'event=block subject=2', b'event=block subject=1'),
             good.replace(b'event=wake subject=2', b'event=wake subject=1'),
@@ -91,6 +97,32 @@ class Capture(unittest.TestCase):
             structured_terminal=True, quiet_range=(30, 100))
         self.assertTrue(result['watchdog_protected'])
         self.assertEqual(result['quiet_seconds'], 35)
+
+    def test_retained_platform_admission_capture(self):
+        capture = (ROOT / 'hardware/lab/observations/'
+                   'qotom-platform-admission-20260913')
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(
+                hashlib.sha256((capture / name).read_bytes()).hexdigest(), digest)
+        self.assertFalse(manifest['source_dirty'])
+        self.assertEqual(manifest['source_revision'],
+                         'bb25d71de2105110763192cf8a1e7c6ab4220fea')
+        self.assertEqual(manifest['elf_sha256'],
+                         '4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619')
+        raw = (capture / 'cycle-1/serial.raw').read_bytes()
+        terminal = (P['10/FINAL'].encode() +
+                    b' status=PASS blocks=1 wakes=1 deliveries=1\n')
+        self.assertEqual(raw.count(terminal), 1)
+        end = raw.index(terminal) + len(terminal)
+        _, value, entry = D['extract'](raw[:end], P)
+        self.assertEqual(value['platform_profile'],
+                         'qotom-j1900-clbtm210-v2')
+        self.assertEqual(value['status'], 'PASS')
+        self.assertEqual(entry['completed_returns'], 1)
+        recovery = json.loads((capture / 'cycle-1/recovery.json').read_text())
+        self.assertTrue(recovery['request_consumed'])
+        self.assertEqual(recovery['recovery'], 'freebsd-ssh-restored')
 
 
 if __name__ == '__main__':

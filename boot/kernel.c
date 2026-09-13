@@ -3,6 +3,9 @@
 #include "serial-protocol.h"
 #include "boundary-abi.h"
 #include "boot_text_console.h"
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+#include "qotom-platform-admission-state.h"
+#endif
 #ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
 #include "qotom_bsp_consumer.h"
 #endif
@@ -5382,6 +5385,18 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
     pre_admission_fail("qotom-platform-pending");
 }
 
+#ifndef LEANOS_QOTOM_PCI_DIAGNOSTIC
+static void admit_q35_platform(void) {
+    static const uint64_t expected[8]={1,1,0,1,1,1,1,0};
+    for(uint64_t word=0;word<8;++word) {
+        uint64_t actual=leanos_platform_admission_query(
+            1,1,0x351,1,0x352,1,0x353,1,0x3f8,38400,1,
+            0x354,1,0,1,0,0x355,1,1,1,10,1,1,word);
+        if(actual!=expected[word])fail("platform-profile-q35");
+    }
+}
+#endif
+
 /* Optional bootloader-advertised text aperture, valid only under the initial
  * identity map and before device quarantine. No display-address probe occurs. */
 static void initialize_early_text(uint32_t magic, uint32_t address) {
@@ -5516,6 +5531,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_6_CLEANUP " omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
+#ifndef LEANOS_QOTOM_PCI_DIAGNOSTIC
+    admit_q35_platform();
+#endif
 #ifdef LEANOS_NMI_PROBE
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);

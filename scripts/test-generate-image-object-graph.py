@@ -216,7 +216,7 @@ generate_lean_c {source!s} {output!s}
         )
         self.assertEqual(
             wrapper.count('"${kernel_source_make_args[@]}"'),
-            6,
+            7,
         )
         self.assertIn(
             '"$current_kernel_source_signature" > "$kernel_source_signature"',

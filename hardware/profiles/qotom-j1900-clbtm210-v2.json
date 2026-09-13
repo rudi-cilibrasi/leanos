@@ -1,0 +1,135 @@
+{
+  "schema": "leanos-platform-profile-v1",
+  "profile_id": "qotom-j1900-clbtm210-v2",
+  "profile_code": 2,
+  "profile_version": 2,
+  "machine_scope": "Qotom J1900 CLBTM210 reference machine used by the retained 2026-09-13 capture",
+  "components": {
+    "firmware_root": {
+      "profile_word": 6401,
+      "kind": "XSDT",
+      "table_count": 12,
+      "xsdt_sha256": "86a1ebf20c4aa4218cc360de3da582e06a484c3523b13c94637ae8535515143d",
+      "madt_sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434",
+      "aml_executed": false,
+      "accepted_required": true
+    },
+    "memory_map": {
+      "profile_word": 6402,
+      "multiboot2_sha256": "fdc17621f7f66a46699e7b71b065d4d55ac1f918d0d3cde75d5a0495f4e45801",
+      "tag_sha256": "a102ad5b365d12dcadff1a38cbd2f871016e70255537f71897c456d39901e4f7",
+      "tag_offset": 72,
+      "tag_size": 472,
+      "entry_size": 24,
+      "entry_version": 0,
+      "entry_count": 19,
+      "accepted_required": true
+    },
+    "pci": {
+      "profile_word": 6403,
+      "function_count": 16,
+      "final_commands": [
+        7,
+        3,
+        3,
+        2,
+        258,
+        2,
+        3,
+        3,
+        3,
+        3,
+        1026,
+        7,
+        3,
+        3,
+        0,
+        3
+      ],
+      "trust_contract": "qotom-j1900-pci-trust-v1",
+      "final_observation_sha256": "51879632eeab8369e2a8dcba006aa0e4072f0b818e8fa8ff155fb4fb5a509b1c",
+      "accepted_required": true
+    },
+    "uart": {
+      "base": 1016,
+      "baud": 38400,
+      "mode": "8N1",
+      "transport": "COM1 null modem to FTDI FT232R BG03A20M"
+    },
+    "bsp": {
+      "profile_word": 6404,
+      "executing_apic_id": 0,
+      "advertised_processors": 4,
+      "apic_ids": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "ap_start_published": false,
+      "observation_sha256": "6c4d59425e791d7f1edf6efe90a03b1d79a32f2afc64736c8000ed52ddfcad4f",
+      "accepted_required": true
+    },
+    "isolation": {
+      "profile_word": 6405,
+      "contract": "qotom-copy-roots-v1",
+      "wp": true,
+      "nxe": true,
+      "smep": true,
+      "smap": false,
+      "pcid": false,
+      "pge": false,
+      "interrupts_enabled": false,
+      "maximum_copy_bytes": 16,
+      "maximum_temporary_aliases": 2,
+      "observation_sha256": "eef3a4c999e37dfe8e63c52364be932fe128a4d5a74a75e4eeb1c6ff54c4df2f",
+      "accepted_required": true
+    }
+  },
+  "facilities": {
+    "vtd": {
+      "policy_word": 0,
+      "status": "not-applicable",
+      "reason": "the reviewed ACPI baseline has no DMAR table and no remapping unit is admitted"
+    },
+    "assigned_edu": {
+      "policy_word": 0,
+      "status": "not-applicable",
+      "reason": "the bounded physical profile admits no assigned-device scenario"
+    }
+  },
+  "scenario": {
+    "profile_word": 10,
+    "id": "blocking-ipc",
+    "subjects": 2,
+    "semantic_syscalls": 8,
+    "recoverable_page_faults": 1,
+    "context_switches": 2,
+    "copy_transfers": 2,
+    "accepted_required": true
+  },
+  "terminal": {
+    "profile_word": 1,
+    "semantic": "versioned-serial-final-then-absorbing-halt-cli-hlt",
+    "debug_exit": "not-applicable",
+    "recovery_transport": "external watchdog reset then FreeBSD chain"
+  },
+  "residual_trust": [
+    "firmware MADT and reset-time AP state",
+    "all application processors remain dormant because LeanOS publishes and invokes no INIT, SIPI, or trampoline path",
+    "executing APIC ID sampling",
+    "SMM and SMI behavior",
+    "firmware does not restore device authority or modify protected frames",
+    "hotplug and mechanisms outside the closed operation vocabulary are absent during the bounded run",
+    "compiler, linker, CPU, chipset, watchdog, and serial transport"
+  ],
+  "baseline_evidence": {
+    "manifest": "hardware/lab/observations/qotom-platform-admission-20260913/manifest.json",
+    "manifest_sha256": "e3c0a09a1d60dd484fef53b7071e97f121cb4f565f18485150c67238c3300e9a",
+    "source_revision": "bb25d71de2105110763192cf8a1e7c6ab4220fea",
+    "prepared_revision": "bb25d71de2105110763192cf8a1e7c6ab4220fea",
+    "elf_sha256": "4eb39eaa138a2b1b71396fa5e64f9811bcc6781ab8bf23de3f6ac72e77e10619",
+    "serial_sha256": "7556c9039a5eaf7165377110f0583fa516dfc7f393654eeebeb12adc996980b0",
+    "terminal": "LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1"
+  }
+}

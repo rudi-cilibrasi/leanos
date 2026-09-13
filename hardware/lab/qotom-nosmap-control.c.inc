@@ -41,6 +41,9 @@ static __attribute__((noreturn,noinline)) void lab_capture_nosmap_control(void) 
     serial_u64(leanos_qotom_nosmap_control_query(cr0,cr4_before,cr4_after,efer,rflags,10));
     serial_putc('\n');
     if(status!=1 || errors!=0)pre_admission_fail("qotom-nosmap-controls");
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    qotom_platform_live.isolation_control_accepted = 1;
+#endif
 #ifdef LEANOS_QOTOM_COPY_ROOT_PUBLICATION
     lab_publish_qotom_copy_roots();
 #else

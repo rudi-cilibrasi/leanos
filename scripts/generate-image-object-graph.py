@@ -29,6 +29,7 @@ GENERATED_MODULES = (
     "J1900MsrReadback",
     "J1900CpuControlPolicy",
     "BootTextConsole",
+    "PlatformAdmission",
     "FaultDispatch",
     "DirectPortIO",
     "StaleTranslation",
@@ -170,6 +171,7 @@ COMMON_LINK_OBJECTS = (
     "J1900MsrReadback",
     "J1900CpuControlPolicy",
     "BootTextConsole",
+    "PlatformAdmission",
     "FaultDispatch",
 )
 

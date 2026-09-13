@@ -1,0 +1,11 @@
+{
+  "schema": "leanos-bootstrap-lab-v1",
+  "cpuid_edx": 3219913727,
+  "available": true,
+  "ia32_apic_base": 4276095232,
+  "bsp": true,
+  "apic_enabled": true,
+  "x2apic_enabled": false,
+  "platform_admitted": false,
+  "ap_dormancy_established": false
+}

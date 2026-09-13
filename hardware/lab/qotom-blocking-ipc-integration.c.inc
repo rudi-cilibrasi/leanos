@@ -294,6 +294,42 @@ static int qotom_blocking_gate_exact(unsigned vector, const void *handler,
         idt[vector].attributes==attributes && idt[vector].zero==0;
 }
 
+/* Read back the programmed COM1 mode and divisor while interrupts are masked.
+ * DLAB is restored before the caller can emit another byte. */
+static __attribute__((noinline,noipa)) int qotom_platform_uart_matches(void) {
+    uint8_t line = in8(COM1 + 3u);
+    if (line != 0x03u || in8(COM1 + 4u) != 0x0bu) return 0;
+    out8(COM1 + 3u, line | 0x80u);
+    uint8_t divisor_low = in8(COM1);
+    uint8_t divisor_high = in8(COM1 + 1u);
+    out8(COM1 + 3u, line);
+    __asm__ volatile (".rept 9\n\tnop\n\t.endr");
+    return divisor_low == 3u && divisor_high == 0u;
+}
+
+static __attribute__((noinline,noipa)) uint64_t qotom_platform_admission(
+        uint64_t scenario_accepted,
+        uint64_t word) {
+    uint64_t firmware_accepted = lab_ecam_firmware_matches(
+        lab_ecam_tables, lab_ecam_table_count);
+    uint64_t memory_map_accepted = qotom_platform_memory_map_matches(
+        boot_handoff_copy, qotom_platform_live.handoff_length);
+    uint64_t isolation_accepted =
+        qotom_platform_live.isolation_control_accepted &&
+        qotom_closed_root_exact(qotom_root_result.protected_count) &&
+        qotom_copy_root_exact(qotom_root_result.protected_count) &&
+        qotom_alias_root_exact(&qotom_copy_out_root, qotom_copy_out_aliases,
+            qotom_root_result.protected_count);
+    return leanos_platform_admission_query(
+        2,2,0x1901,firmware_accepted,0x1902,memory_map_accepted,
+        0x1903,qotom_platform_live.pci_accepted,0x3f8,38400,
+        qotom_platform_uart_matches(),
+        0x1904,qotom_platform_live.bsp_accepted,
+        qotom_platform_live.executing_bsp,
+        qotom_platform_live.advertised_processors,0,
+        0x1905,isolation_accepted,0,0,10,scenario_accepted,1,word);
+}
+
 static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         uint64_t entry_checkpoint) {
     uint64_t active_root,flags;
@@ -335,6 +371,19 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         1,1,1,syscall_gate,page_fault_gate,timer_gate_absent,pic_masked,2,1,3);
     if(admitted!=1 || errors!=0 || authority!=1)
         qotom_blocking_fail("qotom-blocking-profile");
+    uint64_t platform_reason=qotom_platform_admission(admitted,2);
+    if(qotom_platform_admission(admitted,0)!=1 ||
+       qotom_platform_admission(admitted,1)!=1 || platform_reason!=0 ||
+       qotom_platform_admission(admitted,3)!=2 ||
+       qotom_platform_admission(admitted,4)!=1 ||
+       qotom_platform_admission(admitted,5)!=1 ||
+       qotom_platform_admission(admitted,6)!=0 ||
+       qotom_platform_admission(admitted,7)!=0) {
+        serial_puts("LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=FAIL reason=");
+        serial_u64(platform_reason);serial_putc('\n');
+        pre_admission_fail("qotom-platform-profile");
+    }
+    serial_puts("LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=PASS cpl3-authority=1 vtd=not-applicable assigned-edu=not-applicable terminal=serial-final-halt\n");
     serial_puts("LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 subjects=2 interrupts=masked timer-gate=absent pic=masked copy-in=readonly-root copy-out=writable-root cpl3-authority=1\n");
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     qotom_entry_start((uint64_t)page_map_level_4_b,qotom_entry_closed_root,

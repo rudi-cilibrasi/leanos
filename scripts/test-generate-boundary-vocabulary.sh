@@ -110,8 +110,8 @@ cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
 export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
-if [[ "$export_count" -ne 89 ]]; then
-  echo "error: expected 89 generated boundary exports, found $export_count" >&2
+if [[ "$export_count" -ne 90 ]]; then
+  echo "error: expected 90 generated boundary exports, found $export_count" >&2
   exit 1
 fi
 
@@ -136,6 +136,7 @@ grep -Fxq $'export\tleanos_qotom_nosmap_control_query\t6\tLeanOS.QotomNoSmapCont
 grep -Fxq $'export\tleanos_qotom_copy_root_publication_query\t13\tLeanOS.QotomCopyRootPublication.exportedQuery\tLeanOS.QotomCopyRootPublication' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_entry_integration_query\t11\tLeanOS.QotomEntryIntegration.exportedQuery\tLeanOS.QotomEntryIntegration' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_blocking_ipc_integration_query\t16\tLeanOS.QotomBlockingIPCIntegration.exportedQuery\tLeanOS.QotomBlockingIPCIntegration' "$tmp/out/boundary-abi.tsv"
+grep -Fxq $'export\tleanos_platform_admission_query\t24\tLeanOS.PlatformAdmission.exportedQuery\tLeanOS.PlatformAdmission' "$tmp/out/boundary-abi.tsv"
 
 # No hand-maintained copy of a boundary token or an exported prototype may
 # remain in the C sources; the checked-in dispatcher header carries prose

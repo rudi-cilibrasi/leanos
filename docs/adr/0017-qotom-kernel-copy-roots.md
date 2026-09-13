@@ -2,10 +2,12 @@
 
 ## Status
 
-Proposed for review under [#329](https://github.com/rudi-cilibrasi/leanos/issues/329).
-This is a design gate for #291 and #332. The page-table projection, transition
-model, and first production-bound root builder now exist. Entry and return
-integration remain unfinished. This record does not authorize CPL3 on Qotom.
+Accepted for the bounded Qotom blocking-IPC profile under
+[#329](https://github.com/rudi-cilibrasi/leanos/issues/329).
+The page-table projection, transition model, production-bound root builder,
+entry/return path, terminal exception check, and physical blocking-IPC
+integration now exist. Whole-platform authority is granted only by the closed
+profile gate in [ADR 0019](0019-typed-platform-admission.md).
 
 The `qotom-copy-roots-v1` control checkpoint now validates CR0.WP, EFER.NXE,
 disabled interrupts, and disabled CR4.SMEP/SMAP/PCID/PGE before making the exact

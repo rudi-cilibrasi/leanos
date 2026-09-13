@@ -62,6 +62,9 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
         pre_admission_fail("qotom-pci-assumptions");
     if(result.status!=QOTOM_PCI_FINAL_MATCH)
         pre_admission_fail("qotom-pci-final");
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    qotom_platform_live.pci_accepted = 1;
+#endif
 #ifdef LEANOS_QOTOM_NOSMAP_CONTROL
     lab_capture_nosmap_control();
 #else

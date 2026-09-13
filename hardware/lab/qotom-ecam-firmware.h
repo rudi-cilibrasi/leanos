@@ -15,7 +15,7 @@ struct lab_ecam_firmware_table {
  * Callers supply complete immutable validated copies in root/children/DSDT
  * order, with readable storage for every claimed length. Equality binds the
  * reviewed static PDRC declaration and MCFG to these particular bytes. */
-static inline int lab_ecam_firmware_matches(
+static __attribute__((noinline,noipa)) int lab_ecam_firmware_matches(
         const struct lab_ecam_firmware_table *tables, uint32_t count) {
     if (!tables || count != LAB_ECAM_FIRMWARE_TABLE_COUNT) return 0;
     for (uint32_t i = 0; i < count; ++i) {
