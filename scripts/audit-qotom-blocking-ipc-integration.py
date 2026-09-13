@@ -159,6 +159,14 @@ def facts(elf):
     platform_wrapper_calls = calls(setup, 'qotom_platform_admission')
     platform_query_sites = calls(
         platform_admission, 'leanos_platform_admission_query')
+    platform_live_gate_calls = {
+        'firmware': calls(platform_admission, 'lab_ecam_firmware_matches'),
+        'memory_map': calls(platform_admission,
+                            'qotom_platform_memory_map_matches'),
+        'closed_root': calls(platform_admission, 'qotom_closed_root_exact'),
+        'copy_root': calls(platform_admission, 'qotom_copy_root_exact'),
+        'copy_out_root': calls(platform_admission, 'qotom_alias_root_exact'),
+    }
     return {
         'a_syscalls': a_syscalls,
         'b_syscalls': b_syscalls,
@@ -169,6 +177,7 @@ def facts(elf):
         'platform_admission_query_calls': (
             platform_wrapper_calls * platform_query_sites),
         'platform_admission_wrapper_query_calls': platform_query_sites,
+        'platform_live_gate_calls': platform_live_gate_calls,
         'entry_start_calls': calls(setup, 'qotom_entry_start'),
         'gate_check_calls': calls(setup, 'qotom_blocking_gate_exact'),
         'port_read_calls': calls(setup, 'in8'),
@@ -190,6 +199,13 @@ EXPECTED = {
     'admission_query_calls': 3,
     'platform_admission_query_calls': 8,
     'platform_admission_wrapper_query_calls': 1,
+    'platform_live_gate_calls': {
+        'firmware': 1,
+        'memory_map': 1,
+        'closed_root': 1,
+        'copy_root': 1,
+        'copy_out_root': 1,
+    },
     'entry_start_calls': 1,
     'gate_check_calls': 2,
     'port_read_calls': 2,
@@ -248,6 +264,9 @@ def self_test():
         'altered-capability-order': ('b_syscalls', [10, 12, 11, 7, 9, 3]),
         'missing-admission-query': ('admission_query_calls', 2),
         'missing-platform-query': ('platform_admission_wrapper_query_calls', 0),
+        'missing-live-platform-gate': ('platform_live_gate_calls', {
+            'firmware': 1, 'memory_map': 0, 'closed_root': 1,
+            'copy_root': 1, 'copy_out_root': 1}),
         'missing-gate-check': ('gate_check_calls', 1),
         'timer-port': ('direct_ports', [0x21, 0x43, 0xa1]),
         'unmasked-pic': ('pic_mask_pairs', [('$0xfe,%esi', '$0x21,%edi'),

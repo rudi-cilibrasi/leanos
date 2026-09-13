@@ -129,6 +129,7 @@ def validate(registry_path=REGISTRY):
             files = observation.get('files')
             required_files = {
                 'build-manifest.json': None,
+                'ap-start-audit.json': None,
                 'cycle-1/acpi/00000000b979f078.bin':
                     components['firmware_root']['xsdt_sha256'],
                 'cycle-1/acpi.json': None,
@@ -170,6 +171,13 @@ def validate(registry_path=REGISTRY):
                     'build/qotom-blocking-ipc-integration-lab/'
                     'leanos-qotom-lab.elf') == evidence.get('elf_sha256'),
                     'Qotom evidence built ELF binding')
+            ap_start = json.loads((evidence_root / 'ap-start-audit.json').read_text())
+            require(ap_start.get('elf_sha256') == evidence.get('elf_sha256') and
+                    ap_start.get('leanos_ap_start_path_excluded') is True and
+                    ap_start.get('ap_start_symbol') is False and
+                    ap_start.get('x2apic_icr_msr_write') is False and
+                    ap_start.get('platform_admitted') is True,
+                    'Qotom final-ELF AP-start exclusion binding')
             handoff = json.loads((evidence_root / 'cycle-1/handoff.json').read_text())
             memory_tags = [tag for tag in handoff.get('tags', [])
                            if tag.get('type') == 6]

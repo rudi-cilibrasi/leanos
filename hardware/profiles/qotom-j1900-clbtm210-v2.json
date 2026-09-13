@@ -124,7 +124,7 @@
   ],
   "baseline_evidence": {
     "manifest": "hardware/lab/observations/qotom-platform-admission-20260913/manifest.json",
-    "manifest_sha256": "c1bec83394238a567075aa34734cbdc955d1f3d2681f8c63cc4a6529d6001aa6",
+    "manifest_sha256": "c2e10f86c8884beacf8511feb1e8e7bb8195a8950ab84c281e78e380c7de3f41",
     "source_revision": "c01cdc0a8831ccdbfb53049bbb695a040fd4c5de",
     "prepared_revision": "c01cdc0a8831ccdbfb53049bbb695a040fd4c5de",
     "elf_sha256": "2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5",

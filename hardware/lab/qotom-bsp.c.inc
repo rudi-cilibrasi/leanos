@@ -39,4 +39,9 @@ static void lab_check_bsp(uint32_t copied_count) {
     serial_puts(" bound-base="); serial_u64(result.apic_base);
     serial_puts(" platform-admitted=0\n");
     if (result.status) pre_admission_fail("qotom-native-bsp");
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    qotom_platform_live.bsp_accepted = 1;
+    qotom_platform_live.executing_bsp = (uint8_t)observation.executing;
+    qotom_platform_live.advertised_processors = (uint8_t)result.processor_count;
+#endif
 }

@@ -18,7 +18,7 @@
   "watchdog_protected": true,
   "recovery": "freebsd-ssh-restored",
   "files": {
-    "README.md": "3fca54b9532e6631b02df20bdd2365d2c240c5823dbcc10c8f1e5b3b370d5a12",
+    "README.md": "04e1a493422312515249da1658c7fe89084f7709f31131a5071dcd7de6edea6c",
     "blocking-ipc-integration-audit.json": "23f32263a46c56d0e60164bba979c1c21d2b83a3ff3301d6d3dfeb05b973898a",
     "build-manifest.json": "ba5806b7f027d98166e0626276d2ccff66cc79051b78243173f7f2b7c1cc094c",
     "capture.sh": "dacba78441f9bac023285e28281385884e068d2edf37e08cd70e3b1ecae13b1d",
@@ -96,6 +96,7 @@
     "msr-write-audit.json": "0e98786c3e4ba68f23f4c339e00d2495774e90f06174f3620b8d79173b0cf90e",
     "nosmap-control-audit.json": "da341ebbef23353bdc54f4014cee84d4c3834daa250fb9b8decc4f4717dee0fe",
     "post-recovery-inspection.txt": "cd0dd92f9f1a5ee04ae254c3f4b6c9a8da2ab07295d7960b2b5d39973aa2849f",
-    "request.env": "c85ce4f712aa1ed995990bc766e67d160292ba3d5442aa4b90273b6eb2c5cf45"
+    "request.env": "c85ce4f712aa1ed995990bc766e67d160292ba3d5442aa4b90273b6eb2c5cf45",
+    "ap-start-audit.json": "a688fb4bd548a4b2019d018b82ab2d2f58b433bea43b0cb408f305c4b2984248"
   }
 }

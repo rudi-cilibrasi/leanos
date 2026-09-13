@@ -294,11 +294,26 @@ static int qotom_blocking_gate_exact(unsigned vector, const void *handler,
         idt[vector].attributes==attributes && idt[vector].zero==0;
 }
 
-static uint64_t qotom_platform_admission(uint64_t scenario_accepted,
+static __attribute__((noinline,noipa)) uint64_t qotom_platform_admission(
+        uint64_t scenario_accepted,
         uint64_t word) {
+    uint64_t firmware_accepted = lab_ecam_firmware_matches(
+        lab_ecam_tables, lab_ecam_table_count);
+    uint64_t memory_map_accepted = qotom_platform_memory_map_matches(
+        boot_handoff_copy, qotom_platform_live.handoff_length);
+    uint64_t isolation_accepted =
+        qotom_platform_live.isolation_control_accepted &&
+        qotom_closed_root_exact(qotom_root_result.protected_count) &&
+        qotom_copy_root_exact(qotom_root_result.protected_count) &&
+        qotom_alias_root_exact(&qotom_copy_out_root, qotom_copy_out_aliases,
+            qotom_root_result.protected_count);
     return leanos_platform_admission_query(
-        2,2,0x1901,1,0x1902,1,0x1903,1,0x3f8,38400,1,
-        0x1904,1,0,4,0,0x1905,1,0,0,10,scenario_accepted,1,word);
+        2,2,0x1901,firmware_accepted,0x1902,memory_map_accepted,
+        0x1903,qotom_platform_live.pci_accepted,0x3f8,38400,1,
+        0x1904,qotom_platform_live.bsp_accepted,
+        qotom_platform_live.executing_bsp,
+        qotom_platform_live.advertised_processors,0,
+        0x1905,isolation_accepted,0,0,10,scenario_accepted,1,word);
 }
 
 static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(

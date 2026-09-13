@@ -352,6 +352,10 @@ if a.ecam_read:
     text = text.replace(call, 'pci_enumerate_segment(qotom_ecam_read, &lab_ecam_reader, &snapshot);\n    lab_ecam_window.armed = 0;')
     subprocess.run(['python3', 'scripts/generate-qotom-ecam-firmware.py',
                     str(build / 'qotom-ecam-firmware-inputs.h')], cwd=root, check=True)
+if a.blocking_ipc_integration:
+    subprocess.run(['python3', 'scripts/generate-qotom-platform-profile-inputs.py',
+                    str(build / 'qotom-platform-profile-inputs.h')],
+                   cwd=root, check=True)
 blocking_profile_object = None
 if a.native_inventory:
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
@@ -597,6 +601,11 @@ if a.blocking_ipc_integration:
         'python3', 'scripts/audit-qotom-blocking-ipc-integration.py', str(elf)],
         cwd=root, check=True, capture_output=True)
     blocking_ipc_audit.write_bytes(checked.stdout)
+    ap_start_audit = out / 'ap-start-audit.json'
+    checked = subprocess.run([
+        'python3', 'scripts/audit-qotom-ap-start.py', '--platform-admission',
+        str(elf)], cwd=root, check=True, capture_output=True)
+    ap_start_audit.write_bytes(checked.stdout)
     subprocess.run(['python3', 'scripts/test-qotom-blocking-ipc-integration-capture.py'],
                    cwd=root, check=True, capture_output=True)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
@@ -747,8 +756,12 @@ if a.blocking_ipc_integration:
               root / 'scripts/audit-qotom-blocking-ipc-integration.py',
               root / 'scripts/check-qotom-blocking-ipc-integration-capture.py',
               root / 'scripts/test-qotom-blocking-ipc-integration-capture.py',
+              root / 'scripts/generate-qotom-platform-profile-inputs.py',
+              root / 'scripts/audit-qotom-ap-start.py',
+              root / 'hardware/lab/qotom-platform-admission-state.h',
+              build / 'qotom-platform-profile-inputs.h',
               root / 'scripts/expectations/blocking-ipc.transcript',
-              blocking_profile_object, blocking_ipc_audit]
+              blocking_profile_object, blocking_ipc_audit, ap_start_audit]
 manifest = {'blocking_ipc_integration': a.blocking_ipc_integration, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,

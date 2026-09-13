@@ -63,18 +63,29 @@ def symbol_location(path, name, expected_size):
     return matches[0]
 
 
-def audit(path):
+def audit(path, platform_admission=False):
     path = Path(path)
     raw = path.read_bytes()
     table = symbols(path)
-    required = {'kernel_main','leanos_qotom_machine_topology_admission_result_query'}
+    required = {'kernel_main'}
+    required.add('leanos_platform_admission_query' if platform_admission else
+                 'leanos_qotom_machine_topology_admission_result_query')
     if not required <= table.keys():
         raise ValueError('not a linked Qotom BSP production image')
-    marker = (b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 '
-              b'memory=published topology=published interrupts=masked '
-              b'nmi-routing=quarantined platform-admitted=0')
-    if raw.count(marker) != 1 or raw.count(b'qotom-platform-pending') != 1:
-        raise ValueError('Qotom BSP terminal contract is absent or ambiguous')
+    if platform_admission:
+        marker = (b'LEANOS-LAB/1 PLATFORM-ADMISSION '
+                  b'profile=qotom-j1900-clbtm210-v2 version=2 status=PASS '
+                  b'cpl3-authority=1 vtd=not-applicable '
+                  b'assigned-edu=not-applicable terminal=serial-final-halt')
+        if raw.count(marker) != 1 or raw.count(
+                b'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1') != 1:
+            raise ValueError('Qotom platform terminal contract is absent or ambiguous')
+    else:
+        marker = (b'LEANOS-LAB/1 QOTOM-BSP-PRODUCTION profile=qotom-bsp-v1 '
+                  b'memory=published topology=published interrupts=masked '
+                  b'nmi-routing=quarantined platform-admitted=0')
+        if raw.count(marker) != 1 or raw.count(b'qotom-platform-pending') != 1:
+            raise ValueError('Qotom BSP terminal contract is absent or ambiguous')
     plans = {}
     aliases = []
     for name in ('leanos_boot_plan_a','leanos_boot_plan_b'):
@@ -108,12 +119,13 @@ def audit(path):
         'leanos_ap_start_path_excluded':True,
         'firmware_ap_dormancy_assumed':True,
         'ap_dormancy_established':False,
-        'platform_admitted':False,
+        'platform_admitted':platform_admission,
     }
 
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--platform-admission', action='store_true')
     parser.add_argument('elf',type=Path)
     args=parser.parse_args()
-    print(json.dumps(audit(args.elf),indent=2))
+    print(json.dumps(audit(args.elf, args.platform_admission),indent=2))

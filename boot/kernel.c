@@ -3,6 +3,9 @@
 #include "serial-protocol.h"
 #include "boundary-abi.h"
 #include "boot_text_console.h"
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+#include "qotom-platform-admission-state.h"
+#endif
 #ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
 #include "qotom_bsp_consumer.h"
 #endif

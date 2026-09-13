@@ -27,6 +27,9 @@ static void lab_capture_acpi(void) {
         handoff_fail("lab-acpi-handoff-budget");
     const struct copied_boot_handoff handoff = copy_boot_handoff(
         lab_mb2_magic, lab_mb2_address, length, observe_executing_apic_id());
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    qotom_platform_live.handoff_length = handoff.length;
+#endif
     const struct boot_decode_state decoded = decode_boot_projection(
         lab_mb2_magic, lab_mb2_address, length, handoff.bytes);
     if (decoded.word[1] != 1 || decoded.word[2] != 0 ||

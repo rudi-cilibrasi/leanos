@@ -22,8 +22,10 @@ The admitted manifest binds the physical XSDT and 12-table ACPI set, the
 19-entry Multiboot2 E820 map, the exact 16-function PCI final vector and trust
 contract, COM1 at 38400 8N1, the executing BSP APIC ID 0 within a four-processor
 MADT, the no-SMAP copy-root controls, and the fixed two-subject scenario. No AP
-startup path was published. VT-d and assigned EDU support are explicitly not
-applicable for this profile.
+startup path was published. `ap-start-audit.json` additionally audits this
+exact retained ELF: neither boot plan maps the Local APIC page, no AP-start
+symbol is linked, and no x2APIC ICR write exists. VT-d and assigned EDU support
+are explicitly not applicable for this profile.
 
 The final ELF SHA256 is
 `2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5`.

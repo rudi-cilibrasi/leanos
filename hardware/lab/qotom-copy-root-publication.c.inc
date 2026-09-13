@@ -55,7 +55,8 @@ static int qotom_root_storage_mapped(
     return 1;
 }
 
-static int qotom_closed_root_exact(size_t protected_count) {
+static __attribute__((noinline,noipa)) int qotom_closed_root_exact(
+        size_t protected_count) {
     if(!qotom_root_source_ancestors(&qotom_closed_root))return 0;
     for(size_t page=0;page<QOTOM_ROOT_LEAVES;++page) {
         uint64_t leaf=qotom_closed_root.pt[page];
@@ -66,7 +67,8 @@ static int qotom_closed_root_exact(size_t protected_count) {
     return 1;
 }
 
-static int qotom_alias_root_exact(const struct qotom_root_pages *root,
+static __attribute__((noinline,noipa)) int qotom_alias_root_exact(
+        const struct qotom_root_pages *root,
         const struct qotom_copy_alias *aliases,size_t protected_count) {
     if(!qotom_root_source_ancestors(root))return 0;
     for(size_t page=0;page<QOTOM_ROOT_LEAVES;++page) {
@@ -88,7 +90,8 @@ static int qotom_alias_root_exact(const struct qotom_root_pages *root,
     return 1;
 }
 
-static int qotom_copy_root_exact(size_t protected_count) {
+static __attribute__((noinline,noipa)) int qotom_copy_root_exact(
+        size_t protected_count) {
     return qotom_alias_root_exact(&qotom_copy_root,qotom_aliases,
         protected_count);
 }
