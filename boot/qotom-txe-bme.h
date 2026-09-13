@@ -16,8 +16,8 @@ static inline int qotom_txe_same_status(const struct qotom_txe_status_observatio
 
 /* Refresh the retained firmware-status observation, clear only host-visible
  * PCI Command.BME (0106 to 0102), and refresh status again. This performs 23
- * configuration reads and one exact 16-bit write. It preserves MSE and INTx
- * disable. The readback controls the PCI function's ordinary bus-master
+ * configuration reads and one exact 16-bit write. It preserves MSE and SERR#
+ * Enable. The readback controls the PCI function's ordinary bus-master
  * permission; it is not evidence that the TXE-private DMA engine is stopped,
  * drained, or host-controlled. Firmware noninterference remains an explicit
  * platform assumption. A failed write may have effects; there is no rollback. */
