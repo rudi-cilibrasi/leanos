@@ -10,7 +10,7 @@
   "files": {
     "README.md": "3e7245cae22438f3cfac950dce111f7bc4710d5425cb305df5318d123194385c",
     "build-manifest.json": "43fcee53d8921ae18a1e98b00763cfd99582950fed2d445449b522a40678a810",
-    "capture.sh": "530d29b627d5de3e615c45f1915cc58226e312bbdbd7df37f28e147ebf5fb342",
+    "capture.sh": "d807976c4808921db1a77efcbf2549104be82f3b59ff6d966495d69d911cb0a3",
     "copy-root-instruction-audit.txt": "5bcb5e8e1f68f6ba36b62bceae415557b04b35cd270ae117cbadbe3ef5614da3",
     "copy-root-publication-audit.json": "d56218a87d0eee18d2f1434661ca02112bf30205ef6539de32d1a600527430cd",
     "cycle-1/acpi/00000000b979f078.bin": "86a1ebf20c4aa4218cc360de3da582e06a484c3523b13c94637ae8535515143d",
