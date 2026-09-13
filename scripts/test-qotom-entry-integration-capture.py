@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
+import hashlib
+import json
 import runpy
 from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 D = runpy.run_path(str(ROOT / 'scripts/check-qotom-entry-integration-capture.py'))
+R = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
 C = ROOT / 'hardware/lab/observations/qotom-native-copy-root-publication-20260912'
+E = ROOT / 'hardware/lab/observations/qotom-native-entry-integration-20260912'
 P = runpy.run_path(str(ROOT / 'scripts/check-qotom-pci-diagnostic.py'))['load_protocol'](
     C / 'diagnostic-protocol.tsv')
 BASE = (C / 'cycle-1/serial.raw').read_bytes()
@@ -38,6 +42,18 @@ class Capture(unittest.TestCase):
         self.assertEqual(value['completed_returns'], 1)
         self.assertTrue(value['frame_validated'] and value['close_readback'] and value['return_reload'])
         self.assertFalse(value['cpl3_authority'])
+
+    def test_retained_physical_capture(self):
+        events = [json.loads(line) for line in
+                  (E / 'cycle-1/events.jsonl').read_text().splitlines()]
+        _, raw = R['cpu_diagnostic_bytes'](events, P, True)
+        _, value = D['extract'](raw, P)
+        self.assertEqual(value, json.loads((E / 'cycle-1/entry-integration.json').read_text()))
+        manifest = json.loads((E / 'manifest.json').read_text())
+        self.assertEqual(manifest['raw_serial_sha256'], hashlib.sha256(
+            (E / 'cycle-1/serial.raw').read_bytes()).hexdigest())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((E / name).read_bytes()).hexdigest(), digest, name)
 
     def test_mutations(self):
         good = MANIFEST + PORT_CONTROL + READY + record() + FINAL
