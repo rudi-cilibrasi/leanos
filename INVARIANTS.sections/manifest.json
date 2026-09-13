@@ -69,6 +69,7 @@
     "LeanOS/QotomNativePCIFields.lean",
     "LeanOS/QotomNativePCIInventory.lean",
     "LeanOS/QotomNativePCISnapshot.lean",
+    "LeanOS/QotomNoSmapControl.lean",
     "LeanOS/QotomPCIFinalAdmission.lean",
     "LeanOS/QotomPCIInventory.lean",
     "LeanOS/QotomPCIQuarantineObservation.lean",

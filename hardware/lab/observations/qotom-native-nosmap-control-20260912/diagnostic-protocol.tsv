@@ -1,0 +1,262 @@
+leanos-serial-protocol	1
+source-revision	be278115466f5cd26aac6b0001085c6be7914dcf
+family	3	LEANOS_SERIAL_FAMILY_3	LEANOS/3
+family	4	LEANOS_SERIAL_FAMILY_4	LEANOS/4
+family	5	LEANOS_SERIAL_FAMILY_5	LEANOS/5
+family	6	LEANOS_SERIAL_FAMILY_6	LEANOS/6
+family	7	LEANOS_SERIAL_FAMILY_7	LEANOS/7
+family	8	LEANOS_SERIAL_FAMILY_8	LEANOS/8
+family	9	LEANOS_SERIAL_FAMILY_9	LEANOS/9
+family	10	LEANOS_SERIAL_FAMILY_10	LEANOS/10
+family	11	LEANOS_SERIAL_FAMILY_11	LEANOS/11
+family	13	LEANOS_SERIAL_FAMILY_13	LEANOS/13
+family	14	LEANOS_SERIAL_FAMILY_14	LEANOS/14
+family	15	LEANOS_SERIAL_FAMILY_15	LEANOS/15
+family	16	LEANOS_SERIAL_FAMILY_16	LEANOS/16
+family	17	LEANOS_SERIAL_FAMILY_17	LEANOS/17
+family	18	LEANOS_SERIAL_FAMILY_18	LEANOS/18
+family	19	LEANOS_SERIAL_FAMILY_19	LEANOS/19
+family	20	LEANOS_SERIAL_FAMILY_20	LEANOS/20
+family	21	LEANOS_SERIAL_FAMILY_21	LEANOS/21
+family	22	LEANOS_SERIAL_FAMILY_22	LEANOS/22
+family	23	LEANOS_SERIAL_FAMILY_23	LEANOS/23
+family	24	LEANOS_SERIAL_FAMILY_24	LEANOS/24
+family	25	LEANOS_SERIAL_FAMILY_25	LEANOS/25
+record	3	FINAL	LEANOS_SERIAL_3_FINAL	LEANOS/3 FINAL
+record	3	ORACLE	LEANOS_SERIAL_3_ORACLE	LEANOS/3 ORACLE
+record	4	PROBE	LEANOS_SERIAL_4_PROBE	LEANOS/4 PROBE
+record	5	CONTEXT	LEANOS_SERIAL_5_CONTEXT	LEANOS/5 CONTEXT
+record	5	ENTRY	LEANOS_SERIAL_5_ENTRY	LEANOS/5 ENTRY
+record	5	FINAL	LEANOS_SERIAL_5_FINAL	LEANOS/5 FINAL
+record	5	RESUME	LEANOS_SERIAL_5_RESUME	LEANOS/5 RESUME
+record	5	SWITCH	LEANOS_SERIAL_5_SWITCH	LEANOS/5 SWITCH
+record	5	SYSCALL	LEANOS_SERIAL_5_SYSCALL	LEANOS/5 SYSCALL
+record	5	TIMER	LEANOS_SERIAL_5_TIMER	LEANOS/5 TIMER
+record	6	BOOT	LEANOS_SERIAL_6_BOOT	LEANOS/6 BOOT
+record	6	CLEANUP	LEANOS_SERIAL_6_CLEANUP	LEANOS/6 CLEANUP
+record	6	CONTROL	LEANOS_SERIAL_6_CONTROL	LEANOS/6 CONTROL
+record	6	COPY	LEANOS_SERIAL_6_COPY	LEANOS/6 COPY
+record	6	POLICY	LEANOS_SERIAL_6_POLICY	LEANOS/6 POLICY
+record	6	PROBE	LEANOS_SERIAL_6_PROBE	LEANOS/6 PROBE
+record	7	ALLOC	LEANOS_SERIAL_7_ALLOC	LEANOS/7 ALLOC
+record	7	BOOTALLOC	LEANOS_SERIAL_7_BOOTALLOC	LEANOS/7 BOOTALLOC
+record	7	HANDOFF	LEANOS_SERIAL_7_HANDOFF	LEANOS/7 HANDOFF
+record	7	MAP	LEANOS_SERIAL_7_MAP	LEANOS/7 MAP
+record	7	PUBLISH	LEANOS_SERIAL_7_PUBLISH	LEANOS/7 PUBLISH
+record	7	SCRUB	LEANOS_SERIAL_7_SCRUB	LEANOS/7 SCRUB
+record	8	NEGATIVE	LEANOS_SERIAL_8_NEGATIVE	LEANOS/8 NEGATIVE
+record	8	PAGING	LEANOS_SERIAL_8_PAGING	LEANOS/8 PAGING
+record	8	TERMINAL	LEANOS_SERIAL_8_TERMINAL	LEANOS/8 TERMINAL
+record	9	CAPREUSE	LEANOS_SERIAL_9_CAPREUSE	LEANOS/9 CAPREUSE
+record	9	RETURN	LEANOS_SERIAL_9_RETURN	LEANOS/9 RETURN
+record	10	BOOT	LEANOS_SERIAL_10_BOOT	LEANOS/10 BOOT
+record	10	FINAL	LEANOS_SERIAL_10_FINAL	LEANOS/10 FINAL
+record	10	IPC	LEANOS_SERIAL_10_IPC	LEANOS/10 IPC
+record	11	ENTRY-ADVERSARIAL	LEANOS_SERIAL_11_ENTRY_ADVERSARIAL	LEANOS/11 ENTRY-ADVERSARIAL
+record	11	ENTRY-HIGH-WATER	LEANOS_SERIAL_11_ENTRY_HIGH_WATER	LEANOS/11 ENTRY-HIGH-WATER
+record	11	ENTRY-STACK-OVERFLOW	LEANOS_SERIAL_11_ENTRY_STACK_OVERFLOW	LEANOS/11 ENTRY-STACK-OVERFLOW
+record	11	USER-FAULT	LEANOS_SERIAL_11_USER_FAULT	LEANOS/11 USER-FAULT
+record	13	BOOT	LEANOS_SERIAL_13_BOOT	LEANOS/13 BOOT
+record	13	EXTENDED-STATE	LEANOS_SERIAL_13_EXTENDED_STATE	LEANOS/13 EXTENDED-STATE
+record	13	FINAL	LEANOS_SERIAL_13_FINAL	LEANOS/13 FINAL
+record	14	BOOT	LEANOS_SERIAL_14_BOOT	LEANOS/14 BOOT
+record	14	DISPATCH	LEANOS_SERIAL_14_DISPATCH	LEANOS/14 DISPATCH
+record	14	ENTER	LEANOS_SERIAL_14_ENTER	LEANOS/14 ENTER
+record	14	FAST-ENTRY	LEANOS_SERIAL_14_FAST_ENTRY	LEANOS/14 FAST-ENTRY
+record	14	FAULT-ENTRY	LEANOS_SERIAL_14_FAULT_ENTRY	LEANOS/14 FAULT-ENTRY
+record	14	FINAL	LEANOS_SERIAL_14_FINAL	LEANOS/14 FINAL
+record	14	PEER	LEANOS_SERIAL_14_PEER	LEANOS/14 PEER
+record	14	PF-SNAPSHOT	LEANOS_SERIAL_14_PF_SNAPSHOT	LEANOS/14 PF-SNAPSHOT
+record	14	PF-TERMINAL	LEANOS_SERIAL_14_PF_TERMINAL	LEANOS/14 PF-TERMINAL
+record	14	PF-WALK	LEANOS_SERIAL_14_PF_WALK	LEANOS/14 PF-WALK
+record	14	TERMINATE	LEANOS_SERIAL_14_TERMINATE	LEANOS/14 TERMINATE
+record	15	DMA	LEANOS_SERIAL_15_DMA	LEANOS/15 DMA
+record	15	DMA-FUNCTION	LEANOS_SERIAL_15_DMA_FUNCTION	LEANOS/15 DMA-FUNCTION
+record	16	BOOT	LEANOS_SERIAL_16_BOOT	LEANOS/16 BOOT
+record	16	DIRECT-PORT-CANARY	LEANOS_SERIAL_16_DIRECT_PORT_CANARY	LEANOS/16 DIRECT-PORT-CANARY
+record	16	DIRECT-PORT-CONTROL	LEANOS_SERIAL_16_DIRECT_PORT_CONTROL	LEANOS/16 DIRECT-PORT-CONTROL
+record	16	DIRECT-PORT-DENIAL	LEANOS_SERIAL_16_DIRECT_PORT_DENIAL	LEANOS/16 DIRECT-PORT-DENIAL
+record	16	DIRECT-PORT-DISPATCH	LEANOS_SERIAL_16_DIRECT_PORT_DISPATCH	LEANOS/16 DIRECT-PORT-DISPATCH
+record	16	DIRECT-PORT-PEER	LEANOS_SERIAL_16_DIRECT_PORT_PEER	LEANOS/16 DIRECT-PORT-PEER
+record	16	DIRECT-PORT-TERMINATE	LEANOS_SERIAL_16_DIRECT_PORT_TERMINATE	LEANOS/16 DIRECT-PORT-TERMINATE
+record	16	ENTER	LEANOS_SERIAL_16_ENTER	LEANOS/16 ENTER
+record	16	FINAL	LEANOS_SERIAL_16_FINAL	LEANOS/16 FINAL
+record	17	BOOT	LEANOS_SERIAL_17_BOOT	LEANOS/17 BOOT
+record	17	ENTRY-MANIFEST	LEANOS_SERIAL_17_ENTRY_MANIFEST	LEANOS/17 ENTRY-MANIFEST
+record	17	NMI	LEANOS_SERIAL_17_NMI	LEANOS/17 NMI
+record	17	NMI-READY	LEANOS_SERIAL_17_NMI_READY	LEANOS/17 NMI-READY
+record	18	BOOT	LEANOS_SERIAL_18_BOOT	LEANOS/18 BOOT
+record	18	BREAKPOINT-DISPATCH	LEANOS_SERIAL_18_BREAKPOINT_DISPATCH	LEANOS/18 BREAKPOINT-DISPATCH
+record	18	BREAKPOINT-ENTRY	LEANOS_SERIAL_18_BREAKPOINT_ENTRY	LEANOS/18 BREAKPOINT-ENTRY
+record	18	BREAKPOINT-PEER	LEANOS_SERIAL_18_BREAKPOINT_PEER	LEANOS/18 BREAKPOINT-PEER
+record	18	BREAKPOINT-TERMINATE	LEANOS_SERIAL_18_BREAKPOINT_TERMINATE	LEANOS/18 BREAKPOINT-TERMINATE
+record	18	DIVIDE-ERROR-DISPATCH	LEANOS_SERIAL_18_DIVIDE_ERROR_DISPATCH	LEANOS/18 DIVIDE-ERROR-DISPATCH
+record	18	DIVIDE-ERROR-ENTRY	LEANOS_SERIAL_18_DIVIDE_ERROR_ENTRY	LEANOS/18 DIVIDE-ERROR-ENTRY
+record	18	DIVIDE-ERROR-PEER	LEANOS_SERIAL_18_DIVIDE_ERROR_PEER	LEANOS/18 DIVIDE-ERROR-PEER
+record	18	DIVIDE-ERROR-TERMINATE	LEANOS_SERIAL_18_DIVIDE_ERROR_TERMINATE	LEANOS/18 DIVIDE-ERROR-TERMINATE
+record	18	EARLY-TERMINAL	LEANOS_SERIAL_18_EARLY_TERMINAL	LEANOS/18 EARLY-TERMINAL
+record	18	EARLY64-READY	LEANOS_SERIAL_18_EARLY64_READY	LEANOS/18 EARLY64-READY
+record	18	ENTER	LEANOS_SERIAL_18_ENTER	LEANOS/18 ENTER
+record	18	FINAL	LEANOS_SERIAL_18_FINAL	LEANOS/18 FINAL
+record	19	BOOT	LEANOS_SERIAL_19_BOOT	LEANOS/19 BOOT
+record	19	ENTER	LEANOS_SERIAL_19_ENTER	LEANOS/19 ENTER
+record	19	FINAL	LEANOS_SERIAL_19_FINAL	LEANOS/19 FINAL
+record	19	TLB	LEANOS_SERIAL_19_TLB	LEANOS/19 TLB
+record	19	TLB-CPL3	LEANOS_SERIAL_19_TLB_CPL3	LEANOS/19 TLB-CPL3
+record	20	A-ALLOC	LEANOS_SERIAL_20_A_ALLOC	LEANOS/20 A-ALLOC
+record	20	A-REJECT	LEANOS_SERIAL_20_A_REJECT	LEANOS/20 A-REJECT
+record	20	B-ALLOC	LEANOS_SERIAL_20_B_ALLOC	LEANOS/20 B-ALLOC
+record	20	B-CONTEXT	LEANOS_SERIAL_20_B_CONTEXT	LEANOS/20 B-CONTEXT
+record	20	B-PUBLISH	LEANOS_SERIAL_20_B_PUBLISH	LEANOS/20 B-PUBLISH
+record	20	BOOT	LEANOS_SERIAL_20_BOOT	LEANOS/20 BOOT
+record	20	CANARY	LEANOS_SERIAL_20_CANARY	LEANOS/20 CANARY
+record	20	CLEANUP	LEANOS_SERIAL_20_CLEANUP	LEANOS/20 CLEANUP
+record	20	DISPATCH	LEANOS_SERIAL_20_DISPATCH	LEANOS/20 DISPATCH
+record	20	ENTER	LEANOS_SERIAL_20_ENTER	LEANOS/20 ENTER
+record	20	FINAL	LEANOS_SERIAL_20_FINAL	LEANOS/20 FINAL
+record	20	FRAME	LEANOS_SERIAL_20_FRAME	LEANOS/20 FRAME
+record	20	SCRUB	LEANOS_SERIAL_20_SCRUB	LEANOS/20 SCRUB
+record	20	STALE	LEANOS_SERIAL_20_STALE	LEANOS/20 STALE
+record	21	VTD	LEANOS_SERIAL_21_VTD	LEANOS/21 VTD
+record	21	VTD-ACTIVATE	LEANOS_SERIAL_21_VTD_ACTIVATE	LEANOS/21 VTD-ACTIVATE
+record	21	VTD-ASSIGN	LEANOS_SERIAL_21_VTD_ASSIGN	LEANOS/21 VTD-ASSIGN
+record	21	VTD-FAULT	LEANOS_SERIAL_21_VTD_FAULT	LEANOS/21 VTD-FAULT
+record	21	VTD-PLAN	LEANOS_SERIAL_21_VTD_PLAN	LEANOS/21 VTD-PLAN
+record	21	VTD-REUSE	LEANOS_SERIAL_21_VTD_REUSE	LEANOS/21 VTD-REUSE
+record	21	VTD-TABLES	LEANOS_SERIAL_21_VTD_TABLES	LEANOS/21 VTD-TABLES
+record	21	VTD-TRANSFER	LEANOS_SERIAL_21_VTD_TRANSFER	LEANOS/21 VTD-TRANSFER
+record	21	VTD-UNMAPPED-FAULT	LEANOS_SERIAL_21_VTD_UNMAPPED_FAULT	LEANOS/21 VTD-UNMAPPED-FAULT
+record	21	VTD-WRITE-FAULT	LEANOS_SERIAL_21_VTD_WRITE_FAULT	LEANOS/21 VTD-WRITE-FAULT
+record	22	ACCEPT	LEANOS_SERIAL_22_ACCEPT	LEANOS/22 ACCEPT
+record	22	BOOT	LEANOS_SERIAL_22_BOOT	LEANOS/22 BOOT
+record	22	DELEGATED-SEND	LEANOS_SERIAL_22_DELEGATED_SEND	LEANOS/22 DELEGATED-SEND
+record	22	DISPATCH	LEANOS_SERIAL_22_DISPATCH	LEANOS/22 DISPATCH
+record	22	ENTER	LEANOS_SERIAL_22_ENTER	LEANOS/22 ENTER
+record	22	EXCESS-RIGHT-DENIAL	LEANOS_SERIAL_22_EXCESS_RIGHT_DENIAL	LEANOS/22 EXCESS-RIGHT-DENIAL
+record	22	FINAL	LEANOS_SERIAL_22_FINAL	LEANOS/22 FINAL
+record	22	OFFER	LEANOS_SERIAL_22_OFFER	LEANOS/22 OFFER
+record	22	SEALED-DENIAL	LEANOS_SERIAL_22_SEALED_DENIAL	LEANOS/22 SEALED-DENIAL
+record	22	UNRELATED	LEANOS_SERIAL_22_UNRELATED	LEANOS/22 UNRELATED
+record	23	BOOT	LEANOS_SERIAL_23_BOOT	LEANOS/23 BOOT
+record	23	CANCELED-HANDLE-DENIAL	LEANOS_SERIAL_23_CANCELED_HANDLE_DENIAL	LEANOS/23 CANCELED-HANDLE-DENIAL
+record	23	CANCELED-RECEIPT	LEANOS_SERIAL_23_CANCELED_RECEIPT	LEANOS/23 CANCELED-RECEIPT
+record	23	DISPATCH	LEANOS_SERIAL_23_DISPATCH	LEANOS/23 DISPATCH
+record	23	ENTER	LEANOS_SERIAL_23_ENTER	LEANOS/23 ENTER
+record	23	FINAL	LEANOS_SERIAL_23_FINAL	LEANOS/23 FINAL
+record	23	FRESH-SEND	LEANOS_SERIAL_23_FRESH_SEND	LEANOS/23 FRESH-SEND
+record	23	OFFER	LEANOS_SERIAL_23_OFFER	LEANOS/23 OFFER
+record	23	OFFER-DENIAL	LEANOS_SERIAL_23_OFFER_DENIAL	LEANOS/23 OFFER-DENIAL
+record	23	REPLACE	LEANOS_SERIAL_23_REPLACE	LEANOS/23 REPLACE
+record	23	REVOKE	LEANOS_SERIAL_23_REVOKE	LEANOS/23 REVOKE
+record	23	REVOKE-DENIAL	LEANOS_SERIAL_23_REVOKE_DENIAL	LEANOS/23 REVOKE-DENIAL
+record	23	UNRELATED	LEANOS_SERIAL_23_UNRELATED	LEANOS/23 UNRELATED
+record	24	BOOT	LEANOS_SERIAL_24_BOOT	LEANOS/24 BOOT
+record	24	CPU	LEANOS_SERIAL_24_CPU	LEANOS/24 CPU
+record	24	CONTROL	LEANOS_SERIAL_24_CONTROL	LEANOS/24 CONTROL
+record	25	BOOT	LEANOS_SERIAL_25_BOOT	LEANOS/25 BOOT
+record	25	CPU	LEANOS_SERIAL_25_CPU	LEANOS/25 CPU
+record	25	CONTROL	LEANOS_SERIAL_25_CONTROL	LEANOS/25 CONTROL
+record	25	PCI-SCAN	LEANOS_SERIAL_25_PCI_SCAN	LEANOS/25 PCI-SCAN
+record	25	PCI-HEADER	LEANOS_SERIAL_25_PCI_HEADER	LEANOS/25 PCI-HEADER
+pre-admission-boot-record	17	BOOT
+pre-admission-boot-record	22	BOOT
+pre-admission-boot-record	23	BOOT
+pre-admission-boot-record	20	BOOT
+pre-admission-boot-record	14	BOOT
+pre-admission-boot-record	13	BOOT
+pre-admission-boot-record	19	BOOT
+pre-admission-boot-record	16	BOOT
+pre-admission-boot-record	18	BOOT
+pre-admission-boot-record	6	BOOT
+pre-admission-boot-record	10	BOOT
+pre-admission-record	15	DMA-FUNCTION
+pre-admission-record	15	DMA
+pre-admission-record	8	PAGING
+pre-admission-record	19	TLB
+pre-admission-record	21	VTD
+pre-admission-record	21	VTD-PLAN
+pre-admission-record	21	VTD-TABLES
+pre-admission-record	21	VTD-ASSIGN
+pre-admission-record	21	VTD-ACTIVATE
+pre-admission-reason	j1900-cpu-profile
+pre-admission-reason	j1900-cpu-control-policy
+pre-admission-reason	j1900-msr-readback
+pre-admission-reason	qotom-platform-pending
+pre-admission-reason	qotom-pci-enumeration
+pre-admission-reason	dma-command-model
+pre-admission-reason	dma-command-readback
+pre-admission-reason	dma-empty-inventory
+pre-admission-reason	dma-global-policy
+pre-admission-reason	dma-identity
+pre-admission-reason	dma-inventory
+pre-admission-reason	dma-q35-nic-none
+pre-admission-reason	dma-required-missing
+pre-admission-bootalloc-reason	authority-init
+pre-admission-bootalloc-reason	authority-rejected
+pre-admission-bootalloc-reason	bounds
+pre-admission-bootalloc-reason	decode-incomplete
+pre-admission-bootalloc-reason	decode-init
+pre-admission-bootalloc-reason	decode-rejected
+pre-admission-bootalloc-reason	frame-budget-projection-authority
+pre-admission-bootalloc-reason	frame-budget-unpublished-frame
+pre-admission-bootalloc-reason	magic
+pre-admission-bootalloc-reason	pointer
+pre-admission-bootalloc-reason	projection-authority
+pre-admission-bootalloc-reason	projection-entry
+pre-admission-bootalloc-reason	projection-entry-count
+pre-admission-bootalloc-reason	projection-mutation-raw-selection
+pre-admission-bootalloc-reason	projection-terminal
+pre-admission-bootalloc-reason	publication
+pre-admission-bootalloc-reason	raw-selection-authority
+pre-admission-bootalloc-reason	scrub
+pre-admission-bootalloc-reason	stream-incomplete
+pre-admission-bootalloc-reason	stream-init
+pre-admission-bootalloc-reason	stream-step
+pre-admission-bootalloc-reason	topology-admission-publication
+pre-admission-bootalloc-reason	topology-admission-result
+pre-admission-bootalloc-reason	topology-cpuid-apic
+pre-admission-bootalloc-reason	topology-cpuid-leaf
+pre-admission-bootalloc-reason	topology-handoff-length
+pre-admission-bootalloc-reason	topology-madt-duplicate
+pre-admission-bootalloc-reason	topology-madt-generated-entries
+pre-admission-bootalloc-reason	topology-madt-generated-envelope
+pre-admission-bootalloc-reason	topology-madt-missing
+pre-admission-bootalloc-reason	topology-madt-selection
+pre-admission-bootalloc-reason	topology-qotom-admission-result
+pre-admission-bootalloc-reason	topology-qotom-bsp-consumer
+pre-admission-bootalloc-reason	topology-qotom-cpuid-leaf
+pre-admission-bootalloc-reason	topology-qotom-interrupt-window
+pre-admission-bootalloc-reason	topology-qotom-madt-length
+pre-admission-bootalloc-reason	topology-qotom-same-cpu
+pre-admission-bootalloc-reason	topology-root-copy
+pre-admission-bootalloc-reason	topology-root-entries
+pre-admission-bootalloc-reason	topology-root-entry-address
+pre-admission-bootalloc-reason	topology-root-entry-duplicate
+pre-admission-bootalloc-reason	topology-root-entry-index
+pre-admission-bootalloc-reason	topology-root-header
+pre-admission-bootalloc-reason	topology-root-kind
+pre-admission-bootalloc-reason	topology-root-selection
+pre-admission-bootalloc-reason	topology-root-vector
+pre-admission-bootalloc-reason	topology-root-width
+pre-admission-bootalloc-reason	topology-sdt-address
+pre-admission-bootalloc-reason	topology-sdt-address-space
+pre-admission-bootalloc-reason	topology-sdt-address-width
+pre-admission-bootalloc-reason	topology-sdt-checksum
+pre-admission-bootalloc-reason	topology-sdt-envelope
+pre-admission-bootalloc-reason	topology-sdt-length
+pre-admission-bootalloc-reason	topology-sdt-window
+pre-admission-bootalloc-reason	topology-table-copy-address
+pre-admission-bootalloc-reason	topology-table-copy-binding
+pre-admission-bootalloc-reason	topology-table-copy-budget
+pre-admission-bootalloc-reason	topology-table-copy-error
+pre-admission-bootalloc-reason	topology-table-copy-exposed
+pre-admission-bootalloc-reason	topology-table-copy-final-cursor
+pre-admission-bootalloc-reason	topology-table-copy-incomplete
+pre-admission-bootalloc-reason	topology-table-copy-length
+pre-admission-bootalloc-reason	topology-table-copy-next-byte
+pre-admission-bootalloc-reason	topology-table-copy-offset
+pre-admission-bootalloc-reason	topology-table-copy-partial-cursor
+pre-admission-bootalloc-reason	topology-table-copy-sequence
+pre-admission-bootalloc-reason	topology-table-copy-status
+pre-admission-bootalloc-reason	topology-table-copy-stream
+pre-admission-bootalloc-reason	topology-table-copy-terminal
