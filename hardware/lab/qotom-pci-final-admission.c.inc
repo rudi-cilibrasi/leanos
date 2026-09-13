@@ -2,6 +2,9 @@
 #ifdef LEANOS_QOTOM_NOSMAP_CONTROL
 #ifdef LEANOS_QOTOM_COPY_ROOT_PUBLICATION
 #include "qotom-copy-root-publication.c.inc"
+#ifdef LEANOS_QOTOM_ENTRY_INTEGRATION
+#include "qotom-entry-integration.c.inc"
+#endif
 #endif
 #include "qotom-nosmap-control.c.inc"
 #endif

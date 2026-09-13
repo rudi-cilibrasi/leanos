@@ -4,6 +4,9 @@ struct qotom_copy_operand { uint64_t source, destination; };
 extern uint64_t leanos_copy_root_transfer(
     uint64_t closed_root, uint64_t copy_root,
     const struct qotom_copy_operand *operands, uint64_t count);
+#ifdef LEANOS_QOTOM_ENTRY_INTEGRATION
+static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(void);
+#endif
 
 static struct qotom_root_pages qotom_closed_root;
 static struct qotom_root_pages qotom_copy_root;
@@ -171,5 +174,8 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         closed_scan,copy_scan,transferred,bytes_match,active_root,4));
     serial_puts(" cpl3-authority=0\n");
     if(accepted!=1 || errors!=0)pre_admission_fail("qotom-copy-root-publication");
+#ifdef LEANOS_QOTOM_ENTRY_INTEGRATION
+    lab_run_qotom_entry_integration();
+#endif
     pre_admission_fail("qotom-entry-integration-pending");
 }

@@ -387,3 +387,28 @@ to exercise selection and sequencing; they do not establish executable user
 mappings. Production return integration must validate under the closed root,
 then perform the final switch without intervening C callbacks. The current q35
 return path still runs C under the subject root and retains its existing checks.
+
+### First Qotom entry/return checkpoint
+
+The next lab-only checkpoint installs one DPL3 `INT 0x80` gate plus terminal
+NMI, invalid-opcode, double-fault, general-protection and page-fault gates. The
+ordinary entry assembly saves all fifteen general-purpose registers before
+using scratch state, records the incoming subject root, reloads and reads back
+the published closed root, and only then calls the C dispatcher. The existing
+audited return primitive performs the final subject-root reload, restores the
+complete saved bank and executes `IRETQ` without another C call.
+
+A CPL3 probe enters twice. The first call returns a fixed result; user code
+checks that result and every other saved register before the second call. The
+second dispatcher validates both hardware frames, both incoming-root reports,
+the active closed root and the full register bank before publishing the bounded
+checkpoint. Terminal exception gates reload and read back the closed root and
+halt without resuming. The linked-object audit checks those instruction shapes,
+the existing return primitive and nine unsafe mutations. No path contains
+STAC/CLAC, and the scalar Lean boundary continues to publish zero general CPL3
+authority.
+
+This exercises one synchronous entry and one completed return on the Qotom. It
+does not yet implement blocking IPC, authorize arbitrary system calls, prove
+interrupt timing, test the terminal exception gates physically, or establish a
+production entry dispatcher. Those remain separate checkpoints.

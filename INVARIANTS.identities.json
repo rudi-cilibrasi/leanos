@@ -14318,6 +14318,18 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomEntryIntegration.lean",
+      "qualified": "LeanOS.QotomEntryIntegration.checkpoint_claim_requires_acceptance",
+      "display": "checkpoint_claim_requires_acceptance",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomEntryIntegration.lean",
+      "qualified": "LeanOS.QotomEntryIntegration.query_never_authorizes_cpl3",
+      "display": "query_never_authorizes_cpl3",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomMadtStream.lean",
       "qualified": "LeanOS.QotomMadtStream.byte_step_out_of_range",
       "display": "byte_step_out_of_range",
@@ -16157,6 +16169,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.qotom_copy_root_publication_withholds_cpl3_and_gates_roots",
       "display": "qotom_copy_root_publication_withholds_cpl3_and_gates_roots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.qotom_entry_checkpoint_withholds_cpl3_and_gates_result",
+      "display": "qotom_entry_checkpoint_withholds_cpl3_and_gates_result",
       "kind": "theorem"
     },
     {

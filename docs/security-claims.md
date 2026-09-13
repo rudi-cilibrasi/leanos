@@ -173,5 +173,13 @@ complete roots for the 16 MiB boot domain, scans their protected-frame aliases,
 executes one sixteen-byte cross-page transfer through the existing audited reload
 stub, and requires closed-root readback. Its stable claim gates the two publication
 fields on that complete scalar predicate and always leaves CPL3 authority zero.
-Inventory completeness, runtime scan fidelity, entry/return integration, and
-physical execution remain outside the proof.
+Inventory completeness and runtime scan fidelity remain outside the proof.
+
+`SC-QOTOM-ENTRY-CHECKPOINT-NONAUTH` covers the next lab-only machine checkpoint.
+Its scalar boundary accepts only two CPL3 entries, one completed return, distinct
+aligned incoming and closed roots, active closed-root agreement, a validated
+hardware frame and complete fifteen-register bank, entry readback, and final
+return reload. The linked audit and physical capture connect those supplied
+words to the assembly path; the theorem itself does not prove compiler or CPU
+behavior. The checkpoint always leaves general CPL3 authority zero and does not
+authorize blocking IPC or production dispatch.
