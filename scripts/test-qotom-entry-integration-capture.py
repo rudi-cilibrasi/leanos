@@ -13,6 +13,8 @@ OLD = P['FINAL'].encode() + b' status=FAIL reason=qotom-entry-integration-pendin
 BASE = BASE[BASE.index(P['BOOT'].encode()):BASE.index(OLD) + len(OLD)]
 READY = (b'LEANOS-LAB/1 QOTOM-ENTRY-READY profile=qotom-copy-roots-v1 '
          b'subject=1 address-space=1 gates=2,6,8,13,14,128 root=closed cpl3-authority=0\n')
+MANIFEST = D['MANIFEST']
+PORT_CONTROL = D['PORT_CONTROL']
 FINAL = P['FINAL'].encode() + b' status=FAIL reason=qotom-exception-integration-pending\n'
 
 
@@ -29,7 +31,8 @@ def record(**changes):
 
 class Capture(unittest.TestCase):
     def test_success(self):
-        projected, value = D['extract'](BASE.replace(OLD, READY + record() + FINAL), P)
+        added = MANIFEST + PORT_CONTROL + READY + record() + FINAL
+        projected, value = D['extract'](BASE.replace(OLD, added), P)
         self.assertEqual(projected, BASE)
         self.assertEqual(value['entries'], 2)
         self.assertEqual(value['completed_returns'], 1)
@@ -37,7 +40,7 @@ class Capture(unittest.TestCase):
         self.assertFalse(value['cpl3_authority'])
 
     def test_mutations(self):
-        good = READY + record() + FINAL
+        good = MANIFEST + PORT_CONTROL + READY + record() + FINAL
         mutations = [
             good + record(), good.replace(b'status=0', b'status=00'),
             good.replace(b'entries=2', b'entries=1'),
@@ -55,6 +58,8 @@ class Capture(unittest.TestCase):
             good.replace(b'entry-contract=1', b'entry-contract=0'),
             good.replace(b'cpl3-authority=0', b'cpl3-authority=1'),
             good.replace(b'gates=2,6,8,13,14,128', b'gates=128'),
+            good.replace(b'ENTRY-MANIFEST', b'ENTRY-MANIFESX'),
+            good.replace(b'DIRECT-PORT-CONTROL', b'DIRECT-PORT-CONTROX'),
             good.replace(b'qotom-exception-integration-pending', b'qotom-entry-integration-pending'),
         ]
         for value in mutations:

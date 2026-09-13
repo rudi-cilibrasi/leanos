@@ -5,6 +5,11 @@ import re
 READY = b'LEANOS-LAB/1 QOTOM-ENTRY-READY '
 PREFIX = b'LEANOS-LAB/1 QOTOM-ENTRY '
 DEC = rb'(0|[1-9][0-9]{0,19})'
+MANIFEST = (b'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 '
+            b'auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack '
+            b'ist2=nmi-stack result=PASS\n')
+PORT_CONTROL = (b'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 '
+                b'bitmap=absent iopl=0 stage=pre-cpl3 result=PASS\n')
 
 
 def extract(raw, protocol):
@@ -17,8 +22,14 @@ def extract(raw, protocol):
              b' status=FAIL reason=qotom-entry-integration-pending\n')
     ready = (READY + b'profile=qotom-copy-roots-v1 subject=1 address-space=1 '
              b'gates=2,6,8,13,14,128 root=closed cpl3-authority=0\n')
-    if len(lines) < 3 or lines[-3] != ready or lines[-1] != final:
+    if (len(lines) < 5 or lines[-5] != MANIFEST or
+            lines[-4] != PORT_CONTROL or lines[-3] != ready or
+            lines[-1] != final):
         raise ValueError('Qotom entry record order or terminal')
+    if [i for i, line in enumerate(lines) if line.startswith(b'LEANOS/17 ENTRY-MANIFEST ')] != [len(lines)-5]:
+        raise ValueError('Qotom entry manifest multiplicity')
+    if [i for i, line in enumerate(lines) if line.startswith(b'LEANOS/16 DIRECT-PORT-CONTROL ')] != [len(lines)-4]:
+        raise ValueError('Qotom direct-port control multiplicity')
     if [i for i, line in enumerate(lines) if line.startswith(READY)] != [len(lines)-3]:
         raise ValueError('Qotom entry readiness multiplicity')
     if [i for i, line in enumerate(lines) if line.startswith(PREFIX)] != [len(lines)-2]:
@@ -58,4 +69,4 @@ def extract(raw, protocol):
         'cpl3_authority': False,
         'terminal_reason': 'qotom-exception-integration-pending',
     }
-    return b''.join(lines[:-3]) + prior, metadata
+    return b''.join(lines[:-5]) + prior, metadata
