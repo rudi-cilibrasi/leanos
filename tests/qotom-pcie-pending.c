@@ -109,6 +109,10 @@ int main(void) {
     assert(qotom_confirm_rootport_nonposted_quiet(config_read,NULL,wait10,(void *)0x1234,
         &header,&caps,&prior,QOTOM_ROOTPORT_OK,&pbme,&result)==QOTOM_PCIE_PENDING_PRIOR);
     clear_result(result);
+    setup_realtek();cfg[1]=(cfg[1]&UINT32_C(0xffff0000));
+    assert(qotom_confirm_pcie_nonposted_quiet_command(config_read,NULL,wait10,(void *)0x1234,
+        &header,&caps,&prior,0,&result)==QOTOM_PCIE_PENDING_OK);
+    assert(result.polls==2 && result.device_status==0x19 && delays==1);
     setup_realtek();state.command_after=1;
     assert(qotom_confirm_realtek_nonposted_quiet(config_read,NULL,wait10,(void *)0x1234,
         &header,&caps,&prior,QOTOM_REALTEK_OK,&state,QOTOM_REALTEK_BME_OK,&rbme,&result)==QOTOM_PCIE_PENDING_PRIOR);

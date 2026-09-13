@@ -211,6 +211,30 @@ class Capture(unittest.TestCase):
             R['classify_cpu_protected'](events,expected['elf_sha256'],
                 capture / 'diagnostic-protocol.tsv',CPU,PCI,pcie_pending=True)
 
+    def test_broadcom_d3_protected_projection(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-broadcom-d3-20260912'
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result=R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+            pcie_pending=True,broadcom_d3=True)
+        self.assertTrue(result['broadcom_d3']['command_disabled_observed'])
+        self.assertTrue(result['broadcom_d3']['d3hot_observed'])
+        self.assertIn('broadcom_d3_decoder_sha256',result['diagnostic'])
+        self.assertEqual(result['diagnostic']['replay_scope'],
+            'native-inventory-with-broadcom-d3hot-observation')
+        with self.assertRaises(ValueError):
+            R['classify_cpu_protected'](events,expected['elf_sha256'],
+                capture / 'diagnostic-protocol.tsv',CPU,PCI,broadcom_d3=True)
+
     def test_rootport_bme_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())

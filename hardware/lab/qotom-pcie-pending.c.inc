@@ -1,6 +1,10 @@
 #include "qotom-ecam-arm.h"
 #include "qotom-pm-delay.h"
 #include "qotom-pcie-pending.h"
+#ifdef LEANOS_QOTOM_BROADCOM_D3
+static struct qotom_pcie_pending_result lab_retained_pcie_pending[6];
+#include "qotom-broadcom-d3.c.inc"
+#endif
 
 static int lab_pcie_pending_timer_read(void *opaque,uint16_t port,uint32_t *value) {
     (void)opaque;
@@ -32,6 +36,9 @@ static void lab_pcie_pending_emit(unsigned index,uint32_t status,
 static __attribute__((noinline)) void lab_capture_pcie_pending(
         const struct lab_ecam_root_view *view,const struct pci_enumeration_snapshot *snapshot) {
     if(snapshot->count!=16)pre_admission_fail("qotom-pcie-pending");
+#ifdef LEANOS_QOTOM_BROADCOM_D3
+    for(unsigned i=0;i<6;++i)lab_retained_pcie_pending[i]=(struct qotom_pcie_pending_result){0};
+#endif
     for(unsigned fn=0;fn<4;++fn) {
         struct qotom_pcie_pending_result result={0};
         uint32_t status=8;
@@ -47,6 +54,9 @@ static __attribute__((noinline)) void lab_capture_pcie_pending(
         }
         lab_pcie_pending_disarm();lab_pcie_pending_emit(6+fn,status,&result);
         if(status!=QOTOM_PCIE_PENDING_OK)pre_admission_fail("qotom-pcie-pending");
+#ifdef LEANOS_QOTOM_BROADCOM_D3
+        lab_retained_pcie_pending[fn]=result;
+#endif
     }
     for(unsigned port=0;port<2;++port) {
         const unsigned index=13+2*port;
@@ -66,5 +76,11 @@ static __attribute__((noinline)) void lab_capture_pcie_pending(
         }
         lab_pcie_pending_disarm();lab_pcie_pending_emit(index,status,&result);
         if(status!=QOTOM_PCIE_PENDING_OK)pre_admission_fail("qotom-pcie-pending");
+#ifdef LEANOS_QOTOM_BROADCOM_D3
+        lab_retained_pcie_pending[4+port]=result;
+#endif
     }
+#ifdef LEANOS_QOTOM_BROADCOM_D3
+    lab_capture_broadcom_d3(view,snapshot);
+#endif
 }

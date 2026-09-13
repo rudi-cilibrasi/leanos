@@ -66,15 +66,15 @@ state.
 | HDA | 00:1b.0 | 0006 | 0002 | Ring/stream state and BME |
 | Four root ports | 00:1c.0–3 | 0007 | 0003 | Routing/PCIe refresh and upstream request gating |
 | Two Realtek endpoints | 01:00.0, 03:00.0 | 0007 | 0003 | Routed stopped engine state and BME |
+| Broadcom endpoint | 02:00.0 | 0006 | 0000, then PMCSR D3hot | Routed Command disable, delayed non-posted quiet and D3hot readback |
 
-Three initially BME-set functions, in addition to the two fixed-Command
-functions, have no successful BME-clear transition in this capture:
+Two initially BME-set functions, in addition to the two fixed-Command
+functions, still have no successful disable transition in this sequence:
 
 | Functions | Missing device contract |
 | --- | --- |
 | Graphics 00:02.0 | Display/engine ownership, stopping, DMA gating and drain |
 | TXE 00:1a.0 | Internal DMA control, firmware behavior and drain |
-| Broadcom 02:00.0 | Endpoint ownership, engine shutdown and drain |
 
 Root-port BME readbacks establish the bounded upstream request-gating changes;
 outstanding traffic and continuing routing/state still require their contracts.
@@ -82,9 +82,11 @@ outstanding traffic and continuing routing/state still require their contracts.
 The subsequent [PCIe non-posted quiet stage](qotom-pcie-pending.md) samples
 Transactions Pending twice, 10 ms apart, on the four root ports and two Realtek
 endpoints after those BME transitions. All six reached clear status in the
-protected physical path and in independent replay. The Broadcom endpoint is
-excluded until its device contract exists. Clear Transactions Pending does not
-establish posted-write completion or continuing firmware/AP exclusion.
+protected physical path and in independent replay. The
+[Broadcom D3hot stage](qotom-broadcom-d3.md) separately disables all three
+Command decode bits, obtains two delayed clear samples on `02:00.0`, and enters
+D3hot. It does not establish internal engine shutdown, posted-write completion
+or continuing firmware/AP exclusion.
 
 TXE firmware status `1f0000d5`/`69000000` was read successfully in that boot;
 it is not a shutdown witness. The seven PCIe functions do not advertise FLR
