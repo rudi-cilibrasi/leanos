@@ -53,6 +53,7 @@ def check(elf):
         'qotom_entry_user', 'qotom_entry_user_after_first',
         'qotom_entry_user_after_second', 'leanos_closed_root_return',
         'qotom_entry_dispatch', 'qotom_entry_closed_root',
+        'qotom_entry_gp_dispatch',
         'qotom_entry_subject_root', 'qotom_entry_observed_root',
     }
     if not required <= symbols.keys():
@@ -107,7 +108,7 @@ def check(elf):
     exception_shape = ['mov', 'cli', 'cld', 'mov', 'test', 'je', 'test', 'jne',
                        'mov', 'mov', 'cmp', 'jne', 'jmp']
     for name in ('qotom_entry_isr2', 'qotom_entry_isr6', 'qotom_entry_isr8',
-                 'qotom_entry_isr13', 'qotom_entry_isr14'):
+                 'qotom_entry_isr14'):
         rows_for_stub = body(name)
         if [row[1] for row in rows_for_stub] != exception_shape:
             raise ValueError(f'terminal exception shape differs: {name}')
@@ -116,6 +117,15 @@ def check(elf):
         target(rows_for_stub[-1], 'qotom_entry_exception_closed')
         if any(row[1] in forbidden or row[1] == 'call' for row in rows_for_stub):
             raise ValueError(f'exception can call or return: {name}')
+    gp = body('qotom_entry_isr13')
+    if [row[1] for row in gp] != ['cli', 'cld', 'mov', 'test', 'je', 'test',
+            'jne', 'mov', 'mov', 'cmp', 'jne', 'mov', 'call', 'ud2']:
+        raise ValueError('general-protection diagnostic shape differs')
+    if gp[7][2] != '%r10,%cr3' or gp[8][2] != '%cr3,%r11' or gp[11][2] != '%rsp,%rdi':
+        raise ValueError('general-protection diagnostic does not close root first')
+    target(gp[12], 'qotom_entry_gp_dispatch')
+    if any(row[1] in forbidden for row in gp) or sum(row[1] == 'call' for row in gp) != 1:
+        raise ValueError('general-protection diagnostic can return')
 
     for name, shape in (('qotom_entry_exception_closed', ['mov', 'jmp']),
                         ('qotom_entry_exception_unclosed', ['mov', 'jmp']),
@@ -192,6 +202,10 @@ qotom_entry_observed_root: .quad 0
 .type qotom_entry_dispatch,@function
 qotom_entry_dispatch: xor %eax,%eax; ret
 .size qotom_entry_dispatch,.-qotom_entry_dispatch
+.globl qotom_entry_gp_dispatch
+.type qotom_entry_gp_dispatch,@function
+qotom_entry_gp_dispatch: ud2
+.size qotom_entry_gp_dispatch,.-qotom_entry_gp_dispatch
 .section .note.GNU-stack,"",@progbits
 '''
     with tempfile.TemporaryDirectory(prefix='leanos-entry-audit-') as directory:

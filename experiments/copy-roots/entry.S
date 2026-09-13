@@ -20,6 +20,7 @@
 .extern qotom_entry_subject_root
 .extern qotom_entry_observed_root
 .extern qotom_entry_dispatch
+.extern qotom_entry_gp_dispatch
 
 .macro QOTOM_SAVE
     push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi
@@ -92,8 +93,18 @@ qotom_entry_isr80:
 QOTOM_EXCEPTION qotom_entry_isr2, '2'
 QOTOM_EXCEPTION qotom_entry_isr6, '6'
 QOTOM_EXCEPTION qotom_entry_isr8, '8'
-QOTOM_EXCEPTION qotom_entry_isr13, 'G'
 QOTOM_EXCEPTION qotom_entry_isr14, 'P'
+
+.global qotom_entry_isr13
+.type qotom_entry_isr13,@function
+qotom_entry_isr13:
+    cli
+    cld
+    QOTOM_CLOSE_OR_HALT qotom_entry_exception_unclosed
+    mov %rsp, %rdi
+    call qotom_entry_gp_dispatch
+    ud2
+.size qotom_entry_isr13, .-qotom_entry_isr13
 
 .global qotom_entry_exception_closed
 .type qotom_entry_exception_closed,@function

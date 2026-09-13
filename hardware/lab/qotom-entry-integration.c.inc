@@ -11,6 +11,22 @@ uint64_t qotom_entry_subject_root;
 volatile uint64_t qotom_entry_observed_root;
 static uint64_t qotom_entry_completed_returns;
 
+void __attribute__((noreturn)) qotom_entry_gp_dispatch(const uint64_t *frame) {
+    uint64_t active_root;
+    __asm__ volatile("mov %%cr3,%0":"=r"(active_root));
+    active_root&=QOTOM_ROOT_ADDRESS_MASK;
+    serial_puts("LEANOS-LAB/1 QOTOM-ENTRY-GP profile=qotom-copy-roots-v1 root=");
+    serial_u64(active_root);
+    serial_puts(" error=");serial_u64(frame[0]);
+    serial_puts(" rip=");serial_u64(frame[1]);
+    serial_puts(" cs=");serial_u64(frame[2]);
+    serial_puts(" rflags=");serial_u64(frame[3]);
+    serial_puts(" tail0=");serial_u64(frame[4]);
+    serial_puts(" tail1=");serial_u64(frame[5]);
+    serial_puts(" cpl3-authority=0\n");
+    pre_admission_fail("qotom-entry-gp");
+}
+
 static int qotom_entry_registers_exact(const uint64_t *saved) {
     return saved[0]==UINT64_C(0xffff) && saved[1]==UINT64_C(0xeeee) &&
         saved[2]==UINT64_C(0x51a7e51a7e51a7e5) &&
