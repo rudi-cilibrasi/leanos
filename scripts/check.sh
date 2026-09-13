@@ -72,6 +72,7 @@ python3 scripts/check-copy-root-transfer.py --self-test
 python3 scripts/test-copy-root-transfer-qemu.py
 python3 scripts/audit-qotom-entry-integration.py --self-test
 python3 scripts/test-qotom-entry-integration-capture.py
+python3 scripts/test-qotom-exception-integration-capture.py
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
   fixture_module="${fixture%.lean}"

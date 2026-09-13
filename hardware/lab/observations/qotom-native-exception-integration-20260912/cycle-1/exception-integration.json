@@ -1,0 +1,16 @@
+{
+  "schema": "leanos-qotom-exception-integration-v1",
+  "profile": "qotom-copy-roots-v1",
+  "status": 0,
+  "ordinary_entries": 2,
+  "completed_returns": 2,
+  "terminal_vector": 6,
+  "terminal_class": "closed-root",
+  "closed_root": 1716224,
+  "active_root_before_terminal": 1716224,
+  "saved_gprs": 15,
+  "user_return_value_validated": true,
+  "close_readback": true,
+  "cpl3_authority": false,
+  "next_checkpoint": "qotom-blocking-ipc-integration"
+}
