@@ -92,7 +92,42 @@ qotom_entry_isr80:
 .endm
 
 QOTOM_EXCEPTION qotom_entry_isr2, '2'
+#ifndef LEANOS_QOTOM_EXCEPTION_INTEGRATION
 QOTOM_EXCEPTION qotom_entry_isr6, '6'
+#else
+.global qotom_entry_isr6
+.type qotom_entry_isr6,@function
+qotom_entry_isr6:
+    mov $'6', %cl
+    cli
+    cld
+    mov %cr3, %r9
+    QOTOM_CLOSE_OR_HALT qotom_entry_exception_unclosed
+    mov qotom_entry_subject_root(%rip), %r10
+    cmp %r10, %r9
+    jne qotom_entry_exception_frame
+    lea qotom_entry_user_exception(%rip), %r10
+    cmp %r10, 0(%rsp)
+    jne qotom_entry_exception_frame
+    cmpq $0x23, 8(%rsp)
+    jne qotom_entry_exception_frame
+    lea user_a_stack_top(%rip), %r10
+    cmp %r10, 24(%rsp)
+    jne qotom_entry_exception_frame
+    cmpq $0x1b, 32(%rsp)
+    jne qotom_entry_exception_frame
+    mov 16(%rsp), %r10
+    /* Fault-class delivery sets RF in the saved image; user-controlled
+     * TF/IF/DF/IOPL/NT/VM/AC/VIF/VIP/ID remain forbidden. */
+    test $0x3e7700, %r10
+    jnz qotom_entry_exception_frame
+    test $0x10000, %r10
+    jz qotom_entry_exception_frame
+    test $2, %r10
+    jz qotom_entry_exception_frame
+    jmp qotom_entry_exception_closed
+.size qotom_entry_isr6, .-qotom_entry_isr6
+#endif
 QOTOM_EXCEPTION qotom_entry_isr8, '8'
 QOTOM_EXCEPTION qotom_entry_isr14, 'P'
 
@@ -120,6 +155,13 @@ qotom_entry_exception_unclosed:
     mov $'U', %al
     jmp qotom_entry_emit_and_halt
 .size qotom_entry_exception_unclosed, .-qotom_entry_exception_unclosed
+
+.global qotom_entry_exception_frame
+.type qotom_entry_exception_frame,@function
+qotom_entry_exception_frame:
+    mov $'E', %al
+    jmp qotom_entry_emit_and_halt
+.size qotom_entry_exception_frame, .-qotom_entry_exception_frame
 
 .global qotom_entry_entry_terminal
 .type qotom_entry_entry_terminal,@function
@@ -226,7 +268,20 @@ qotom_entry_user_after_first:
     int $0x80
 .global qotom_entry_user_after_second
 qotom_entry_user_after_second:
+#ifdef LEANOS_QOTOM_EXCEPTION_INTEGRATION
+    movabs $0x6162636465666768, %rdi
+    cmp %rdi, %rax
+    jne qotom_entry_user_failure
+.global qotom_entry_user_exception
+qotom_entry_user_exception:
+    ud2
+#endif
+.global qotom_entry_user_failure
 qotom_entry_user_failure:
+#ifdef LEANOS_QOTOM_EXCEPTION_INTEGRATION
+    mov $0xbad, %rax
+    int $0x80
+#endif
     ud2
 .size qotom_entry_user, .-qotom_entry_user
 

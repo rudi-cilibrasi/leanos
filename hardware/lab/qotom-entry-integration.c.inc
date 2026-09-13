@@ -112,7 +112,13 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
     serial_puts(" entry-contract=");serial_u64(accepted);
     serial_puts(" cpl3-authority=0\n");
     if(accepted!=1 || contract_errors!=0)pre_admission_fail("qotom-entry-contract");
+#ifdef LEANOS_QOTOM_EXCEPTION_INTEGRATION
+    qotom_entry_completed_returns=2;
+    saved[14]=UINT64_C(0x6162636465666768);
+    return qotom_entry_subject_root;
+#else
     pre_admission_fail("qotom-exception-integration-pending");
+#endif
 }
 
 static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(void) {

@@ -11,14 +11,14 @@ R = runpy.run_path(str(ROOT / 'scripts/run-qotom-recovery-lab.py'))
 C = ROOT / 'hardware/lab/observations/qotom-native-copy-root-publication-20260912'
 E = ROOT / 'hardware/lab/observations/qotom-native-entry-integration-20260912'
 P = runpy.run_path(str(ROOT / 'scripts/check-qotom-pci-diagnostic.py'))['load_protocol'](
-    C / 'diagnostic-protocol.tsv')
+    E / 'diagnostic-protocol.tsv')
 BASE = (C / 'cycle-1/serial.raw').read_bytes()
 OLD = P['FINAL'].encode() + b' status=FAIL reason=qotom-entry-integration-pending\n'
 BASE = BASE[BASE.index(P['BOOT'].encode()):BASE.index(OLD) + len(OLD)]
 READY = (b'LEANOS-LAB/1 QOTOM-ENTRY-READY profile=qotom-copy-roots-v1 '
          b'subject=1 address-space=1 gates=2,6,8,13,14,128 root=closed cpl3-authority=0\n')
-MANIFEST = D['MANIFEST']
-PORT_CONTROL = D['PORT_CONTROL']
+MANIFEST = P['ENTRY-MANIFEST'].encode() + D['MANIFEST_SUFFIX']
+PORT_CONTROL = P['DIRECT-PORT-CONTROL'].encode() + D['PORT_CONTROL_SUFFIX']
 FINAL = P['FINAL'].encode() + b' status=FAIL reason=qotom-exception-integration-pending\n'
 
 
