@@ -1,0 +1,19 @@
+{
+  "blocking_model_transitions": 4,
+  "capability_model_transitions": 4,
+  "context_switches": 2,
+  "copy_transfers": 2,
+  "cpl3_syscalls_including_failure_sentinels": 10,
+  "elf_sha256": "61e5a57715f48fe2e80888381a2178ad49d2ea088d3effa1ce0202bd7c0b6638",
+  "entry_audit_passed": true,
+  "pic_masks": [
+    255,
+    255
+  ],
+  "pit_programmed": false,
+  "recoverable_page_faults": 1,
+  "schema": "leanos-qotom-blocking-ipc-integration-audit-v1",
+  "semantic_syscalls": 8,
+  "terminal_policy": "cli-hlt",
+  "timer_gate_present": false
+}

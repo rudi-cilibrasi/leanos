@@ -51,3 +51,8 @@ This checkpoint demonstrates one synchronous CPL3 `#UD` delivery on the named
 Qotom image and a fail-stop closed-root terminal. It does not authorize
 recoverable exception dispatch, timer or external-interrupt routing, enable IF,
 run blocking IPC, establish liveness, or emit `FINAL PASS`.
+
+The next opt-in stage is documented in
+[Qotom blocking IPC integration](qotom-blocking-ipc-integration.md). It replaces
+the terminal `#UD` probe with one recoverable page fault and the fixed canonical
+blocking-IPC trace while keeping asynchronous interrupts masked.

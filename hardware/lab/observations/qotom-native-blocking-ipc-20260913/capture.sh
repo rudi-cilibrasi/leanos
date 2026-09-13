@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${SSHPASS:?set SSHPASS in the operator environment}"
+python3 scripts/run-qotom-recovery-lab.py \
+  --host freebsd@192.168.6.21 --host-key-alias freebsd.lan \
+  --ssh-prefix 'sshpass -e ssh' --usb-serial 11758C40 \
+  --serial-device /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG03A20M-if00-port0 \
+  --elf build/qotom-blocking-ipc-integration-lab/leanos-qotom-lab.elf \
+  --output build/qotom-blocking-ipc-integration-lab/physical-blocking-ipc-retry1-20260913 \
+  --cycles 1 --scenario watchdog-leanos --pci-diagnostic \
+  --diagnostic-protocol build/qotom-blocking-ipc-integration-lab/boot/serial-protocol.tsv \
+  --diagnostic-replay build/j1900-cpu-host/host \
+  --pci-replay build/qotom-native-inventory-host/host \
+  --handoff-capture --acpi-capture --bootstrap-capture --ecam-memory-capture \
+  --dsdt-capture --ecam-read --native-inventory --native-kernel \
+  --bsp-replay build/qotom-bsp-replay/host \
+  --pci-capabilities --af-observation \
+  --ehci-capabilities --ehci-legacy --ehci-handoff --ehci-smi \
+  --ehci-operational --ehci-bme \
+  --xhci-capabilities --xhci-legacy --xhci-handoff --xhci-smi \
+  --xhci-operational --xhci-bme \
+  --pcie-device-observation --ahci-capabilities --ahci-port \
+  --ahci-interrupts --ahci-bme --hda-observation --hda-state --hda-bme \
+  --txe-status --rootport-bme --realtek-state --realtek-bme \
+  --pcie-pending --broadcom-d3 --graphics-state --graphics-bme --txe-bme \
+  --pci-final-admission --pci-trust-contract --nosmap-control \
+  --copy-root-publication --entry-integration --exception-integration \
+  --blocking-ipc-integration

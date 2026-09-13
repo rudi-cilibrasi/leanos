@@ -1,0 +1,23 @@
+{
+  "schema": "leanos-qotom-blocking-ipc-integration-v1",
+  "profile": "qotom-blocking-ipc-v1",
+  "status": "PASS",
+  "subjects": 2,
+  "semantic_syscalls": 8,
+  "recoverable_page_faults": 1,
+  "context_switches": 2,
+  "copy_transfers": 2,
+  "blocking_model_transitions": 4,
+  "capability_model_transitions": 4,
+  "blocks": 1,
+  "wakes": 1,
+  "deliveries": 1,
+  "interrupts": "masked",
+  "timer_gate": "absent",
+  "pic": "masked",
+  "copy_in_root": "readonly",
+  "copy_out_root": "writable",
+  "cpl3_authority": true,
+  "terminal_policy": "halt-until-watchdog-reset",
+  "expectation_template": "scripts/expectations/blocking-ipc.transcript"
+}

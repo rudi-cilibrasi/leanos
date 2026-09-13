@@ -5,6 +5,13 @@ extern void qotom_entry_isr2(void), qotom_entry_isr6(void),
     qotom_entry_isr80(void);
 extern char qotom_entry_user[], qotom_entry_user_after_first[],
     qotom_entry_user_after_second[];
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+static uint64_t qotom_blocking_dispatch(uint64_t *saved);
+uint64_t qotom_blocking_page_fault_dispatch(uint64_t *frame);
+static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
+    uint64_t entry_checkpoint);
+static uint64_t qotom_blocking_active;
+#endif
 
 uint64_t qotom_entry_closed_root;
 uint64_t qotom_entry_subject_root;
@@ -47,6 +54,9 @@ static int qotom_entry_user_flags_safe(uint64_t flags) {
 }
 
 uint64_t qotom_entry_dispatch(uint64_t *saved) {
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    if(qotom_blocking_active)return qotom_blocking_dispatch(saved);
+#endif
     uint64_t active_root,flags;
     __asm__ volatile("mov %%cr3,%0":"=r"(active_root));
     __asm__ volatile("pushfq; pop %0":"=r"(flags)::"memory");
@@ -112,7 +122,9 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
     serial_puts(" entry-contract=");serial_u64(accepted);
     serial_puts(" cpl3-authority=0\n");
     if(accepted!=1 || contract_errors!=0)pre_admission_fail("qotom-entry-contract");
-#ifdef LEANOS_QOTOM_EXCEPTION_INTEGRATION
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+    lab_run_qotom_blocking_ipc(accepted);
+#elif defined(LEANOS_QOTOM_EXCEPTION_INTEGRATION)
     qotom_entry_completed_returns=2;
     saved[14]=UINT64_C(0x6162636465666768);
     return qotom_entry_subject_root;
@@ -154,3 +166,7 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(v
     qotom_entry_start(qotom_entry_subject_root,qotom_entry_closed_root,
         qotom_entry_user,user_a_stack_top);
 }
+
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+#include "qotom-blocking-ipc-integration.c.inc"
+#endif

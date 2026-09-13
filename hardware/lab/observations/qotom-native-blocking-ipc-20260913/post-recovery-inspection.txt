@@ -1,0 +1,10 @@
+qotom
+{ sec = 1789293459, usec = 915836 } Sun Sep 13 02:57:39 2026
+SHA256 (/mnt/leanos-lab/boot/leanos-qotom-lab.elf) = 61e5a57715f48fe2e80888381a2178ad49d2ea088d3effa1ce0202bd7c0b6638
+SHA256 (/mnt/leanos-lab/boot/leanos.sha256) = 88d46eb37dfaf32cb6a28a0de69d619daceab1f35706912dfdee47bf96e415cf
+SHA256 (/mnt/leanos-lab/boot/grub/grub.cfg) = 7a2d99a302b7b76160a876f2bb5d0e41f52cf90ea3a4fa03a10842df3f3e21ec
+SHA256 (/mnt/leanos-lab/boot/grub/grubenv) = 14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+SHA256 (/mnt/leanos-lab/boot/grub/watchdog-window.cfg) = 09b84ce6c11569a31b18aafe44a62c102eaee0399df7760136463e33b58a43ce
+SHA256 (/mnt/leanos-lab/boot/grub/watchdog.cfg) = 62be25eea8e488591797e62ba5e8bf66538fe985dc5b418f4396372182b68f86
+61e5a57715f48fe2e80888381a2178ad49d2ea088d3effa1ce0202bd7c0b6638  /boot/leanos-qotom-lab.elf
+request=none

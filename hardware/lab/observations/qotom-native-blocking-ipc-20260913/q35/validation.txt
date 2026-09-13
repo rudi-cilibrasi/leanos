@@ -1,0 +1,5 @@
+QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)
+LEANOS_QEMU_ACCELERATOR=tcg LEANOS_BOOT_SCENARIO=blocking-ipc scripts/run-image.sh
+LeanOS boot smoke test passed; guest success and complete protocol observed.
+LEANOS_QEMU_ACCELERATOR=kvm LEANOS_BOOT_SCENARIO=blocking-ipc scripts/run-image.sh
+LeanOS boot smoke test passed; guest success and complete protocol observed.

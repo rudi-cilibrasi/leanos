@@ -417,7 +417,28 @@ the existing return primitive and ten unsafe mutations. No path contains
 STAC/CLAC, and the scalar Lean boundary continues to publish zero general CPL3
 authority.
 
-This exercises one synchronous entry and one completed return on the Qotom. It
-does not yet implement blocking IPC, authorize arbitrary system calls, prove
-interrupt timing, test the terminal exception gates physically, or establish a
-production entry dispatcher. Those remain separate checkpoints.
+This checkpoint exercises one synchronous entry and one completed return on the
+Qotom. Its scalar boundary remains deliberately nonauthorizing. The later
+terminal `#UD` experiment and blocking-IPC profile are separate opt-in images,
+so evidence from either cannot silently promote this checkpoint.
+
+### Fixed Qotom blocking-IPC profile
+
+The next selected profile adds a distinct writable copy-out root, two complete
+saved-context banks, one recoverable CPL3 page-fault path, and bindings to the
+existing generated blocking-IPC and capability-reuse adapters. It admits only
+the eight-syscall, two-subject trace in
+`scripts/expectations/blocking-ipc.transcript`. The page fault is synchronous;
+vector 32 remains absent, both PIC masks remain `0xff`, IF remains clear, and no
+PIT setup is admitted.
+
+Successful completion emits the canonical structured PASS record and halts
+with `cli; hlt`. The physical profile does not retain the q35 debug-exit path.
+The external watchdog resets the board and returns to FreeBSD, which provides a
+bounded recovery mechanism rather than a kernel scheduling event. Linked audits
+check entry/root transitions, the exact retained model-call counts, absence of
+timer programming, and the terminal loop. The capture decoder derives the
+semantic suffix from the q35 expectation template and separately requires the
+loaded ELF digest, quiet interval, boot-epoch change, consumed request, and SSH
+recovery. The complete machine path and q35 comparison are in
+[Qotom blocking IPC integration](../qotom-blocking-ipc-integration.md).

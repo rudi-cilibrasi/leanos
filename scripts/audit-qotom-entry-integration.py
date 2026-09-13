@@ -11,7 +11,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def linked(elf):
+def linked(elf, extra=()):
     symbols = {}
     for line in subprocess.check_output(['nm', '-S', '--defined-only', str(elf)], text=True).splitlines():
         fields = line.split()
@@ -28,7 +28,7 @@ def linked(elf):
             'qotom_entry_exception_unclosed', 'qotom_entry_exception_frame',
             'qotom_entry_entry_terminal',
             'qotom_entry_emit_and_halt',
-            'qotom_entry_user')
+            'qotom_entry_user', *extra)
     output = ''.join(subprocess.check_output(
         ['objdump', '-d', '--no-show-raw-insn', f'--disassemble={name}', str(elf)], text=True)
         for name in code)
@@ -43,8 +43,9 @@ def linked(elf):
     return symbols, rows
 
 
-def check(elf, exception_integration=False):
-    symbols, rows = linked(elf)
+def check(elf, exception_integration=False, blocking_ipc_integration=False):
+    extra = ('qotom_blocking_page_fault_dispatch',) if blocking_ipc_integration else ()
+    symbols, rows = linked(elf, extra)
     required = {
         'qotom_entry_start', 'qotom_entry_isr80', 'qotom_entry_isr2',
         'qotom_entry_isr6', 'qotom_entry_isr8', 'qotom_entry_isr13',
@@ -122,6 +123,8 @@ def check(elf, exception_integration=False):
                        'mov', 'mov', 'cmp', 'jne', 'jmp']
     exception_stubs = ['qotom_entry_isr2', 'qotom_entry_isr8',
                        'qotom_entry_isr14']
+    if blocking_ipc_integration:
+        exception_stubs.remove('qotom_entry_isr14')
     if not exception_integration:
         exception_stubs.append('qotom_entry_isr6')
     for name in exception_stubs:
@@ -133,6 +136,26 @@ def check(elf, exception_integration=False):
         target(rows_for_stub[-1], 'qotom_entry_exception_closed')
         if any(row[1] in forbidden or row[1] == 'call' for row in rows_for_stub):
             raise ValueError(f'exception can call or return: {name}')
+    if blocking_ipc_integration:
+        fault = body('qotom_entry_isr14')
+        fault_shape = (['cld'] + ['push'] * 15 +
+            ['mov', 'push', 'mov', 'mov', 'mov', 'test', 'je', 'test', 'jne',
+             'mov', 'mov', 'cmp', 'jne', 'mov', 'call', 'mov', 'add'] +
+            ['mov', 'mov'] * 5 + ['mov', 'jmp'])
+        if [row[1] for row in fault] != fault_shape:
+            raise ValueError('recoverable page-fault shape differs')
+        if ([row[2] for row in fault[1:16]] != registers or
+                fault[16][2] != '%cr2,%rax' or fault[17][2] != '%rax' or
+                fault[18][2] != '%cr3,%rax' or
+                'qotom_entry_observed_root' not in fault[19][2] or
+                fault[25][2] != '%r10,%cr3' or fault[26][2] != '%cr3,%r11' or
+                fault[29][2] != '%rsp,%rdi' or fault[32][2] != '$0x8,%rsp'):
+            raise ValueError('recoverable page-fault entry operands differ')
+        target(fault[30], 'qotom_blocking_page_fault_dispatch')
+        target(fault[-1], 'leanos_closed_root_return')
+        if (sum(row[1] == 'call' for row in fault) != 1 or
+                any(row[1] in forbidden for row in fault)):
+            raise ValueError('recoverable page fault has an unsafe transfer')
     if exception_integration:
         invalid = body('qotom_entry_isr6')
         invalid_shape = [
@@ -227,7 +250,8 @@ def check(elf, exception_integration=False):
         'schema': 'leanos-qotom-entry-integration-audit-v1',
         'ordinary_saved_gprs': 15,
         'ordinary_calls_after_close': 1,
-        'terminal_exception_vectors': [2, 6, 8, 13, 14],
+        'terminal_exception_vectors': ([2, 6, 8, 13]
+            if blocking_ipc_integration else [2, 6, 8, 13, 14]),
         'user_entries': 2,
         'user_validated_gprs': 15,
         'closed_root_return_audited': True,
@@ -236,6 +260,10 @@ def check(elf, exception_integration=False):
     if exception_integration:
         result.update(terminal_user_exception=6,
                       completed_returns_before_terminal=2)
+    if blocking_ipc_integration:
+        result.update(recoverable_user_exception=14,
+                      page_fault_saved_gprs=15,
+                      page_fault_calls_after_close=1)
     return result
 
 
@@ -243,7 +271,9 @@ def self_test():
     source = (ROOT / 'experiments/copy-roots/entry.S').read_text()
     mutations = {
         'missing-final-save': ('push %r13; push %r14; push %r15', 'push %r13; push %r14; nop'),
-        'fake-incoming-root': ('    mov %cr3, %rax\n    mov %rax, qotom_entry_observed_root', '    xor %eax, %eax\n    mov %rax, qotom_entry_observed_root'),
+        'fake-incoming-root': (
+            'qotom_entry_isr80:\n    cld\n    QOTOM_SAVE\n    mov %cr3, %rax\n    mov %rax, qotom_entry_observed_root',
+            'qotom_entry_isr80:\n    cld\n    QOTOM_SAVE\n    xor %eax, %eax\n    mov %rax, qotom_entry_observed_root'),
         'missing-close-readback': ('    mov %cr3, %r11', '    mov %r10, %r11'),
         'ordinary-return': ('    jmp leanos_closed_root_return\n.size qotom_entry_isr80', '    ret\n.size qotom_entry_isr80'),
         'ordinary-stac': ('qotom_entry_isr80:\n    cld', 'qotom_entry_isr80:\n    stac\n    cld'),
@@ -266,14 +296,31 @@ def self_test():
         'exception-missing-trap': ('qotom_entry_user_exception:\n    ud2',
                                    'qotom_entry_user_exception:\n    nop'),
     }
+    blocking_mutations = {
+        'fault-fake-cr2': ('    mov %cr2, %rax\n    push %rax',
+                           '    xor %eax, %eax\n    push %rax'),
+        'fault-missing-dispatch': ('    call qotom_blocking_page_fault_dispatch',
+                                   '    nop'),
+        'fault-wrong-error-pop': ('    add $8, %rsp', '    add $16, %rsp'),
+        'fault-interrupts-enabled': ('qotom_entry_isr14:\n    cld',
+                                     'qotom_entry_isr14:\n    sti\n    cld'),
+        'fault-missing-frame-collapse': ('    mov 160(%rsp), %r10\n    mov %r10, 152(%rsp)',
+                                         '    mov 160(%rsp), %r10\n    nop'),
+        'fault-return': ('    mov qotom_entry_closed_root(%rip), %rsi\n    jmp leanos_closed_root_return\n.size qotom_entry_isr14',
+                         '    mov qotom_entry_closed_root(%rip), %rsi\n    ret\n.size qotom_entry_isr14'),
+    }
     fixture = '''
 .data
 .globl qotom_entry_closed_root, qotom_entry_subject_root, qotom_entry_observed_root
 qotom_entry_closed_root: .quad 0
 qotom_entry_subject_root: .quad 0
 qotom_entry_observed_root: .quad 0
+.bss
+.align 4096
+.globl user_a_stack
+user_a_stack: .skip 8192
 .globl user_a_stack_top
-user_a_stack_top: .quad 0
+user_a_stack_top:
 .text
 .globl qotom_entry_dispatch
 .type qotom_entry_dispatch,@function
@@ -283,12 +330,17 @@ qotom_entry_dispatch: xor %eax,%eax; ret
 .type qotom_entry_gp_dispatch,@function
 qotom_entry_gp_dispatch: ud2
 .size qotom_entry_gp_dispatch,.-qotom_entry_gp_dispatch
+.globl qotom_blocking_page_fault_dispatch
+.type qotom_blocking_page_fault_dispatch,@function
+qotom_blocking_page_fault_dispatch: xor %eax,%eax; ret
+.size qotom_blocking_page_fault_dispatch,.-qotom_blocking_page_fault_dispatch
 .section .note.GNU-stack,"",@progbits
 '''
     with tempfile.TemporaryDirectory(prefix='leanos-entry-audit-') as directory:
         directory = Path(directory)
 
-        def build(name, text, exception_integration=False):
+        def build(name, text, exception_integration=False,
+                  blocking_ipc_integration=False):
             asm = directory / f'{name}.S'; obj = directory / f'{name}.o'
             ret_obj = directory / f'{name}-return.o'; fixture_asm = directory / 'fixture.S'
             fixture_obj = directory / 'fixture.o'; elf = directory / f'{name}.elf'
@@ -297,6 +349,8 @@ qotom_entry_gp_dispatch: ud2
             command = [cc, '-m64']
             if exception_integration:
                 command.append('-DLEANOS_QOTOM_EXCEPTION_INTEGRATION=1')
+            if blocking_ipc_integration:
+                command.append('-DLEANOS_QOTOM_BLOCKING_IPC_INTEGRATION=1')
             subprocess.run(command + ['-c', str(asm), '-o', str(obj)], check=True)
             subprocess.run([cc, '-m64', '-c', str(ROOT / 'experiments/copy-roots/return.S'), '-o', str(ret_obj)], check=True)
             subprocess.run([cc, '-m64', '-c', str(fixture_asm), '-o', str(fixture_obj)], check=True)
@@ -306,6 +360,7 @@ qotom_entry_gp_dispatch: ud2
 
         check(build('baseline', source))
         check(build('exception-baseline', source, True), True)
+        check(build('blocking-baseline', source, True, True), True, True)
         for name, (old, new) in mutations.items():
             if source.count(old) != 1:
                 raise ValueError(f'mutation no longer applies uniquely: {name}')
@@ -322,7 +377,15 @@ qotom_entry_gp_dispatch: ud2
             except ValueError:
                 continue
             raise ValueError(f'unsafe mutation accepted: {name}')
-    total = len(mutations) + len(exception_mutations)
+        for name, (old, new) in blocking_mutations.items():
+            if source.count(old) != 1:
+                raise ValueError(f'mutation no longer applies uniquely: {name}')
+            try:
+                check(build(name, source.replace(old, new), True, True), True, True)
+            except ValueError:
+                continue
+            raise ValueError(f'unsafe mutation accepted: {name}')
+    total = len(mutations) + len(exception_mutations) + len(blocking_mutations)
     print(f'Qotom entry integration: linked baselines PASS; {total} mutations rejected')
 
 
@@ -331,11 +394,14 @@ if __name__ == '__main__':
     parser.add_argument('elf', nargs='?', type=Path)
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--exception-integration', action='store_true')
+    parser.add_argument('--blocking-ipc-integration', action='store_true')
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.elf:
         import json
-        print(json.dumps(check(args.elf, args.exception_integration), indent=2, sort_keys=True))
+        print(json.dumps(check(args.elf, args.exception_integration,
+                               args.blocking_ipc_integration), indent=2,
+                         sort_keys=True))
     else:
         parser.error('provide an ELF or --self-test')

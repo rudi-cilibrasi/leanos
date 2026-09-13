@@ -14108,6 +14108,12 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomBlockingIPCIntegration.lean",
+      "qualified": "LeanOS.QotomBlockingIPCIntegration.cpl3_authority_requires_admission",
+      "display": "cpl3_authority_requires_admission",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomBootstrapABI.lean",
       "qualified": "LeanOS.QotomBootstrapABI.out_of_range_is_zero",
       "display": "out_of_range_is_zero",
@@ -16163,6 +16169,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.privilege_entry_stack_budget_sound",
       "display": "privilege_entry_stack_budget_sound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.qotom_blocking_ipc_authority_requires_whole_profile",
+      "display": "qotom_blocking_ipc_authority_requires_whole_profile",
       "kind": "theorem"
     },
     {
