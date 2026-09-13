@@ -42,4 +42,3 @@ def extract(raw,protocol):
         'closed_root_published':False,'copy_root_published':False,
         'terminal_reason':'qotom-copy-roots-pending'}
     return b''.join(lines[:-2])+prior,metadata
-
