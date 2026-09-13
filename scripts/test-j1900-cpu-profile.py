@@ -36,6 +36,7 @@ def literal(snapshot, version=1, present=31):
 
 checks = ['import LeanOS.J1900CpuProfile', 'import LeanOS.PrivilegeEntryControl',
           'import LeanOS.J1900EntryControl',
+          'import LeanOS.J1900CpuControlPolicy',
           'open LeanOS.J1900CpuProfile']
 count = 0
 raw_count = 0
@@ -169,12 +170,36 @@ for words, expected in msr_cases:
     args = ' '.join(str(word) for word in words)
     checks.append(f'example : LeanOS.J1900MsrReadback.checkRaw {args} = {expected} := by rfl')
 
+policy_cpu = raw_words(base)
+policy_args = ' '.join(map(str, policy_cpu + msr_denied))
+checks += [
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 0 = 1 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 1 = 1 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 2 = 0 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 3 = 1 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 4 = 0x10000 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 5 = 1 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 6 = 1 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {policy_args} 7 = 0 := by rfl',
+]
+wrong_vendor = list(policy_cpu); wrong_vendor[3] ^= 1
+bad_cpu_args = ' '.join(map(str, wrong_vendor + msr_denied))
+bad_msr = list(msr_denied); bad_msr[0] ^= 1
+bad_msr_args = ' '.join(map(str, policy_cpu + bad_msr))
+checks += [
+    f'example : LeanOS.J1900CpuControlPolicy.query {bad_cpu_args} 1 = 2 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {bad_cpu_args} 2 = 5 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {bad_msr_args} 1 = 2 := by rfl',
+    f'example : LeanOS.J1900CpuControlPolicy.query {bad_msr_args} 2 = 13 := by rfl',
+]
+
 output = root / 'build/j1900'
 output.mkdir(parents=True, exist_ok=True)
 path = output / 'Checks.lean'
 path.write_text('\n'.join(checks) + '\n')
 subprocess.run(['lake', 'build', 'LeanOS.J1900CpuProfile',
-                'LeanOS.PrivilegeEntryControl', 'LeanOS.J1900EntryControl'], cwd=root, check=True)
+                'LeanOS.PrivilegeEntryControl', 'LeanOS.J1900EntryControl',
+                'LeanOS.J1900CpuControlPolicy'], cwd=root, check=True)
 subprocess.run(['lake', 'env', 'lean', str(path)], cwd=root, check=True)
 print(f'J1900 CPU profile: {len(captures)} captures, {count} Lean selection/rejection checks passed')
 print(f'Fast entry: {entry_count} vendor/mode/exposure/selector checks passed')
@@ -289,3 +314,20 @@ undefined = subprocess.check_output(['nm', '-u', str(msr_closed)], text=True)
 if undefined.strip():
     raise RuntimeError('MSR boundary needs runtime symbols:\n' + undefined)
 print('Freestanding MSR boundary: no unresolved runtime dependencies')
+
+# The composed production checkpoint retains only the two reviewed scalar
+# dependencies and publishes no CPL3 authority.
+policy_generated = output / 'cpu-control-policy-generated.o'
+policy_closed = output / 'cpu-control-policy-freestanding.elf'
+subprocess.run([compiler, *freestanding_flags,
+                '-I' + str(Path(prefix) / 'include'), '-c',
+                str(root / '.lake/build/ir/LeanOS/J1900CpuControlPolicy.c'),
+                '-o', str(policy_generated)], cwd=root, check=True)
+subprocess.run(['ld', '--gc-sections', '-e',
+                'leanos_j1900_cpu_control_policy_query',
+                str(policy_generated), str(generated_object), str(msr_generated),
+                '-o', str(policy_closed)], cwd=root, check=True)
+undefined = subprocess.check_output(['nm', '-u', str(policy_closed)], text=True)
+if undefined.strip():
+    raise RuntimeError('CPU/control policy boundary needs runtime symbols:\n' + undefined)
+print('Freestanding CPU/control policy: no unresolved runtime dependencies')

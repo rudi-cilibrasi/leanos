@@ -38,6 +38,11 @@ class Capture(unittest.TestCase):
         for status in range(1,8):
             _,result=D['extract'](BASE.replace(FINAL,record(status,[0]*30)+failure),P)
             self.assertEqual(result['status'],status)
+            self.assertFalse(result['stable'])
+            self.assertFalse(result['rings_invalid_and_idle'])
+            self.assertFalse(result['rings_empty'])
+            self.assertFalse(result['display_decode_preserved'])
+            self.assertFalse(result['graphics_bme_preserved'])
     def test_rejections(self):
         good=record()
         bad=(good.replace(b'index=1',b'index=2',1),
