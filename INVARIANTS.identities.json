@@ -13046,6 +13046,18 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/J1900CpuControlPolicy.lean",
+      "qualified": "LeanOS.J1900CpuControlPolicy.acceptance_iff",
+      "display": "acceptance_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/J1900CpuControlPolicy.lean",
+      "qualified": "LeanOS.J1900CpuControlPolicy.query_never_authorizes_cpl3",
+      "display": "query_never_authorizes_cpl3",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/J1900CpuProfile.lean",
       "qualified": "LeanOS.J1900CpuProfile.selection_does_not_authorize_cpl3",
       "display": "selection_does_not_authorize_cpl3",

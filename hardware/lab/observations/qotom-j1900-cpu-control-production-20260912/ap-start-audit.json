@@ -1,0 +1,34 @@
+{
+  "schema": "leanos-qotom-ap-start-exclusion-v1",
+  "elf_sha256": "9e7119f09cc133b72aa1cc0d3cd2ca033fd9ea847493f6b18435075cec852976",
+  "local_apic_page": 4276092928,
+  "plans": {
+    "leanos_boot_plan_a": {
+      "sha256": "9754f25cf2170cf3d68f3e8a3755744ba2580ac432c3c9039183282bcf5fb7b6",
+      "present_entries": 4091,
+      "local_apic_aliases": []
+    },
+    "leanos_boot_plan_b": {
+      "sha256": "a36f41a79238151183e380ff8e84152c89667ccfd0a16c1ca5e760e4d6e162bd",
+      "present_entries": 4090,
+      "local_apic_aliases": []
+    }
+  },
+  "wrmsr_sites": 8,
+  "wrmsr_selectors": [
+    3221225600,
+    3221225601,
+    3221225602,
+    3221225603,
+    3221225604,
+    372,
+    373,
+    374
+  ],
+  "x2apic_icr_msr_write": false,
+  "ap_start_symbol": false,
+  "leanos_ap_start_path_excluded": true,
+  "firmware_ap_dormancy_assumed": true,
+  "ap_dormancy_established": false,
+  "platform_admitted": false
+}

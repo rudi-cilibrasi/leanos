@@ -71,6 +71,7 @@ import LeanOS.UserCopyAliases
 import LeanOS.UserCopyOperands
 import LeanOS.J1900CpuProfile
 import LeanOS.J1900EntryControl
+import LeanOS.J1900CpuControlPolicy
 import LeanOS.BootTextConsole
 import LeanOS.PCIHeaderObservation
 import LeanOS.QotomPCIInventory
