@@ -398,13 +398,14 @@ the published closed root, and only then calls the C dispatcher. The existing
 audited return primitive performs the final subject-root reload, restores the
 complete saved bank and executes `IRETQ` without another C call.
 
-A CPL3 probe enters twice. The first call returns a fixed result; user code
+A CPL3 probe enters twice with IF disabled because this synchronous checkpoint
+has not admitted asynchronous interrupt routing. The first call returns a fixed result; user code
 checks that result and every other saved register before the second call. The
 second dispatcher validates both hardware frames, both incoming-root reports,
 the active closed root and the full register bank before publishing the bounded
 checkpoint. Terminal exception gates reload and read back the closed root and
 halt without resuming. The linked-object audit checks those instruction shapes,
-the existing return primitive and nine unsafe mutations. No path contains
+the existing return primitive and ten unsafe mutations. No path contains
 STAC/CLAC, and the scalar Lean boundary continues to publish zero general CPL3
 authority.
 

@@ -80,6 +80,9 @@ def check(elf):
             ['cli', 'cld', 'mov', 'mov'] + ['push'] * 5 +
             ['xor'] + ['push'] * 15 + ['mov', 'mov', 'jmp']):
         raise ValueError('initial CPL3 return frame differs')
+    if [row[2] for row in start[4:9]] != [
+            '$0x1b', '%rcx', '$0x2', '$0x23', '%rdx']:
+        raise ValueError('initial CPL3 return-frame operands differ')
     if any(row[1] in forbidden for row in start):
         raise ValueError('unsafe initial return instruction')
     target(start[-1], 'leanos_closed_root_return')
@@ -190,6 +193,8 @@ def self_test():
         'missing-gpr-check': ('    cmp $0xffff, %r15', '    cmp %r15, %r15'),
         'exception-return': ('    jmp qotom_entry_exception_closed', '    ret'),
         'terminal-return': ('5:  hlt\n    jmp 5b', '5:  hlt\n    ret'),
+        'user-interrupts-enabled': ('    pushq $0x2\n    pushq $0x23',
+                                    '    pushq $0x202\n    pushq $0x23'),
     }
     fixture = '''
 .data

@@ -178,7 +178,7 @@ Inventory completeness and runtime scan fidelity remain outside the proof.
 `SC-QOTOM-ENTRY-CHECKPOINT-NONAUTH` covers the next lab-only machine checkpoint.
 Its scalar boundary accepts only two CPL3 entries, one completed return, distinct
 aligned incoming and closed roots, active closed-root agreement, a validated
-hardware frame and complete fifteen-register bank, entry readback, and final
+hardware frame with user IF disabled, a complete fifteen-register bank, entry readback, and final
 return reload. The linked audit and physical capture connect those supplied
 words to the assembly path; the theorem itself does not prove compiler or CPU
 behavior. The checkpoint always leaves general CPL3 authority zero and does not

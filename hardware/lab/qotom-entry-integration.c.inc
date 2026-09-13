@@ -55,7 +55,7 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
        (flags&((UINT64_C(1)<<9)|(UINT64_C(1)<<10)|(UINT64_C(1)<<18)))!=0 ||
        !qotom_entry_registers_exact(saved) || saved[14]!=expected_call ||
        saved[15]!=expected_rip || saved[16]!=UINT64_C(0x23) ||
-       (saved[17]&UINT64_C(0x202))!=UINT64_C(0x202) ||
+       saved[17]!=UINT64_C(0x2) ||
        saved[18]!=user_rsp || saved[19]!=UINT64_C(0x1b))
         pre_admission_fail("qotom-entry-frame");
     if(qotom_entry_completed_returns==0) {
@@ -65,17 +65,17 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
     }
     uint64_t accepted=leanos_qotom_entry_integration_query(
         2,1,qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK,
-        qotom_entry_closed_root,active_root,1,15,1,1,1);
+        qotom_entry_closed_root,active_root,1,0,15,1,1,1);
     uint64_t errors=leanos_qotom_entry_integration_query(
         2,1,qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK,
-        qotom_entry_closed_root,active_root,1,15,1,1,2);
+        qotom_entry_closed_root,active_root,1,0,15,1,1,2);
     serial_puts("LEANOS-LAB/1 QOTOM-ENTRY profile=qotom-copy-roots-v1 status=");
     serial_u64(accepted==1?0:1);
     serial_puts(" entries=2 returns=1 incoming-root=");
     serial_u64(qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK);
     serial_puts(" closed-root=");serial_u64(qotom_entry_closed_root);
     serial_puts(" active-root=");serial_u64(active_root);
-    serial_puts(" frame=1 gprs=15 close-readback=1 return-reload=1 error-mask=");
+    serial_puts(" frame=1 user-if=0 gprs=15 close-readback=1 return-reload=1 error-mask=");
     serial_u64(errors);
     serial_puts(" entry-contract=");serial_u64(accepted);
     serial_puts(" cpl3-authority=0\n");

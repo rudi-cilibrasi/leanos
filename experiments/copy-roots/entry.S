@@ -49,7 +49,8 @@ qotom_entry_start:
     mov %rsi, qotom_entry_closed_root(%rip)
     pushq $0x1b
     push %rcx
-    pushq $0x202
+    /* This checkpoint has not admitted asynchronous interrupt routing. */
+    pushq $0x2
     pushq $0x23
     push %rdx
     xor %eax, %eax

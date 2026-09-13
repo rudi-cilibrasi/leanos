@@ -26,7 +26,7 @@ def extract(raw, protocol):
     pattern = (PREFIX + rb'profile=qotom-copy-roots-v1 status=' + DEC +
         rb' entries=' + DEC + rb' returns=' + DEC +
         rb' incoming-root=' + DEC + rb' closed-root=' + DEC +
-        rb' active-root=' + DEC + rb' frame=' + DEC + rb' gprs=' + DEC +
+        rb' active-root=' + DEC + rb' frame=' + DEC + rb' user-if=' + DEC + rb' gprs=' + DEC +
         rb' close-readback=' + DEC + rb' return-reload=' + DEC +
         rb' error-mask=' + DEC + rb' entry-contract=' + DEC +
         rb' cpl3-authority=' + DEC + rb'\n')
@@ -37,13 +37,13 @@ def extract(raw, protocol):
     if any(value > 0xffffffffffffffff for value in values):
         raise ValueError('Qotom entry word width')
     (status, entries, returns, incoming_root, closed_root, active_root,
-     frame, gprs, close_readback, return_reload, errors, contract, authority) = values
+     frame, user_if, gprs, close_readback, return_reload, errors, contract, authority) = values
     roots_valid = (incoming_root != 0 and closed_root != 0 and
                    incoming_root != closed_root and active_root == closed_root and
                    incoming_root < 0x1000000 and closed_root < 0x1000000 and
                    incoming_root & 0xfff == 0 and closed_root & 0xfff == 0)
-    if ((status, entries, returns, frame, gprs, close_readback,
-         return_reload, errors, contract, authority) != (0, 2, 1, 1, 15, 1, 1, 0, 1, 0)
+    if ((status, entries, returns, frame, user_if, gprs, close_readback,
+         return_reload, errors, contract, authority) != (0, 2, 1, 1, 0, 15, 1, 1, 0, 1, 0)
             or not roots_valid):
         raise ValueError('Qotom entry result')
     metadata = {
@@ -52,6 +52,7 @@ def extract(raw, protocol):
         'entries': 2, 'completed_returns': 1,
         'incoming_root': incoming_root, 'closed_root': closed_root,
         'active_root': active_root, 'frame_validated': True,
+        'user_if': False,
         'saved_gprs': 15, 'close_readback': True, 'return_reload': True,
         'error_mask': 0, 'entry_contract': True,
         'cpl3_authority': False,

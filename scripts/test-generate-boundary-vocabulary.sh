@@ -134,7 +134,7 @@ grep -Fxq $'export\tleanos_qotom_pci_final_commands\t16\tLeanOS.QotomPCIFinalAdm
 grep -Fxq $'export\tleanos_qotom_pci_initial_trust_contract\t16\tLeanOS.QotomPCIFinalAdmission.exportedInitialTrustContract\tLeanOS.QotomPCIFinalAdmission' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_nosmap_control_query\t6\tLeanOS.QotomNoSmapControl.exportedQuery\tLeanOS.QotomNoSmapControl' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_copy_root_publication_query\t13\tLeanOS.QotomCopyRootPublication.exportedQuery\tLeanOS.QotomCopyRootPublication' "$tmp/out/boundary-abi.tsv"
-grep -Fxq $'export\tleanos_qotom_entry_integration_query\t10\tLeanOS.QotomEntryIntegration.exportedQuery\tLeanOS.QotomEntryIntegration' "$tmp/out/boundary-abi.tsv"
+grep -Fxq $'export\tleanos_qotom_entry_integration_query\t11\tLeanOS.QotomEntryIntegration.exportedQuery\tLeanOS.QotomEntryIntegration' "$tmp/out/boundary-abi.tsv"
 
 # No hand-maintained copy of a boundary token or an exported prototype may
 # remain in the C sources; the checked-in dispatcher header carries prose

@@ -19,7 +19,7 @@ FINAL = P['FINAL'].encode() + b' status=FAIL reason=qotom-exception-integration-
 def record(**changes):
     values = {'status': 0, 'entries': 2, 'returns': 1,
               'incoming-root': 0x1a0000, 'closed-root': 0x1a2000,
-              'active-root': 0x1a2000, 'frame': 1, 'gprs': 15,
+              'active-root': 0x1a2000, 'frame': 1, 'user-if': 0, 'gprs': 15,
               'close-readback': 1, 'return-reload': 1, 'error-mask': 0,
               'entry-contract': 1, 'cpl3-authority': 0}
     values.update(changes)
@@ -47,6 +47,7 @@ class Capture(unittest.TestCase):
             good.replace(b'closed-root=1712128', b'closed-root=1712129'),
             good.replace(b'active-root=1712128', b'active-root=1703936'),
             good.replace(b'frame=1', b'frame=0'),
+            good.replace(b'user-if=0', b'user-if=1'),
             good.replace(b'gprs=15', b'gprs=14'),
             good.replace(b'close-readback=1', b'close-readback=0'),
             good.replace(b'return-reload=1', b'return-reload=0'),
