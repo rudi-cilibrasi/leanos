@@ -44,6 +44,20 @@ def exported
       fixedInfrastructureNonInitiating lpcNoDma postedWritesDrained
       txePrivateDmaQuiescent firmwareAndSmmNoninterference then 1 else 0
 
+/-- The first physical Qotom profile makes all five assumptions as one named
+trust decision.  In particular, the last three arguments below are policy
+premises about the bounded experiment, not values inferred from PCI reads. -/
+def initialTrustContractAccepted
+    (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 : UInt64) : Bool :=
+  accepted c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15
+    1 1 1 1 1
+
+@[export leanos_qotom_pci_initial_trust_contract]
+def exportedInitialTrustContract
+    (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 : UInt64) : UInt64 :=
+  if initialTrustContractAccepted c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15
+  then 1 else 0
+
 theorem exported_one_iff
     (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 : UInt64)
     (fixedInfrastructureNonInitiating lpcNoDma postedWritesDrained
@@ -57,8 +71,15 @@ theorem exported_one_iff
       firmwareAndSmmNoninterference = 1 := by
   simp [exported, accepted, Bool.and_eq_true]
 
+theorem initial_trust_contract_one_iff
+    (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 : UInt64) :
+    exportedInitialTrustContract c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 = 1 ↔
+      commandsAccepted c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 = true := by
+  simp [exportedInitialTrustContract, initialTrustContractAccepted, accepted]
+
 example : exported 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 1 1 1 1 1 = 1 := by decide
 example : exported 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 1 1 1 0 1 = 0 := by decide
 example : exportedCommands 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 = 1 := by decide
+example : exportedInitialTrustContract 7 3 3 2 0x102 2 3 3 3 3 0x402 7 3 3 0 3 = 1 := by decide
 
 end LeanOS.QotomPCIFinalAdmission

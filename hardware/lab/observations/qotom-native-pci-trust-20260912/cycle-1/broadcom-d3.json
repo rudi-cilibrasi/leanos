@@ -1,0 +1,22 @@
+{
+  "schema": "leanos-qotom-broadcom-d3-observation-v1",
+  "index": 14,
+  "status": 0,
+  "command_write_attempted": true,
+  "before_command": 6,
+  "after_command": 0,
+  "pending_polls": 2,
+  "device_status": 25,
+  "transactions_pending": false,
+  "before_pmcsr": 16392,
+  "d3_write_attempted": true,
+  "after_pmcsr": 16395,
+  "command_disabled_observed": true,
+  "d3hot_observed": true,
+  "pme_disabled_observed": true,
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "posted_write_drain_established": false,
+  "firmware_exclusion_established": false,
+  "dma_quarantine_established": false
+}

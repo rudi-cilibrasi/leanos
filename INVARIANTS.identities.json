@@ -14936,6 +14936,12 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomPCIFinalAdmission.lean",
+      "qualified": "LeanOS.QotomPCIFinalAdmission.initial_trust_contract_one_iff",
+      "display": "initial_trust_contract_one_iff",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomPCIInventory.lean",
       "qualified": "LeanOS.QotomPCIInventory.check_preserves_raw",
       "display": "check_preserves_raw",
@@ -16115,6 +16121,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.privilege_entry_stack_budget_sound",
       "display": "privilege_entry_stack_budget_sound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.qotom_pci_initial_trust_contract_confined",
+      "display": "qotom_pci_initial_trust_contract_confined",
       "kind": "theorem"
     },
     {

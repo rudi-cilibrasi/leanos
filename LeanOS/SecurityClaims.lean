@@ -16,6 +16,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
+import LeanOS.QotomPCIFinalAdmission
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -30,6 +31,18 @@ implementation theorem's assumptions or conclusion therefore require an
 explicit change here and in `docs/security-claims.md`.
 -/
 namespace LeanOS.SecurityClaims
+
+/-- SC-QOTOM-PCI-CONDITIONAL: the named initial J1900 trust profile accepts
+exactly the final Command vector. The hardware meaning of its five fixed
+premises remains an explicit platform assumption, outside this theorem. -/
+theorem qotom_pci_initial_trust_contract_confined
+    (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 : UInt64) :
+    QotomPCIFinalAdmission.exportedInitialTrustContract
+        c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 = 1 ↔
+      QotomPCIFinalAdmission.commandsAccepted
+        c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 = true :=
+  QotomPCIFinalAdmission.initial_trust_contract_one_iff
+    c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15
 
 /-- SC-SINGLE-CORE-BOOT-ADMISSION: accepted topology admission exposes exactly
 one enabled processor with BSP/executing-CPU agreement; the admitted runtime

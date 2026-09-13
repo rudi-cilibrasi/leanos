@@ -9,6 +9,7 @@ typedef uint64_t (*qotom_pci_final_admission_check)(
     uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,
     uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,
     uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
+typedef qotom_pci_final_commands_check qotom_pci_initial_trust_contract_check;
 
 struct qotom_pci_final_assumptions {
     uint64_t fixed_infrastructure_noninitiating;
@@ -86,5 +87,33 @@ static inline struct qotom_pci_final_result qotom_check_pci_final(
     if(out.assumption_mask!=0x1f) { out.status=QOTOM_PCI_FINAL_ASSUMPTIONS;return out; }
     if(out.admitted!=1) { out.status=QOTOM_PCI_FINAL_GENERATED;return out; }
     out.status=QOTOM_PCI_FINAL_MATCH;out.index=16;return out;
+}
+
+/* Select the repository's named initial J1900 trust contract as one policy
+ * decision.  The generated contract fixes all five assumptions; callers do
+ * not receive five independent exemption switches. */
+static inline struct qotom_pci_final_result qotom_check_pci_final_initial_trust(
+        enum pci_enumeration_status scan_status,
+        const struct pci_enumeration_snapshot *snapshot,
+        qotom_native_header_check header_check,
+        qotom_pci_final_commands_check commands_check,
+        qotom_pci_final_admission_check admission_check,
+        qotom_pci_initial_trust_contract_check trust_contract_check) {
+    if(!trust_contract_check) {
+        const struct qotom_pci_final_result invalid={QOTOM_PCI_FINAL_ARGUMENT,
+            0,0,0,0,{0}};
+        return invalid;
+    }
+    const struct qotom_pci_final_assumptions contract={1,1,1,1,1};
+    struct qotom_pci_final_result out=qotom_check_pci_final(scan_status,snapshot,
+        header_check,commands_check,admission_check,&contract);
+    if(out.status!=QOTOM_PCI_FINAL_MATCH)return out;
+    uint64_t accepted=trust_contract_check(
+        out.commands[0],out.commands[1],out.commands[2],out.commands[3],
+        out.commands[4],out.commands[5],out.commands[6],out.commands[7],
+        out.commands[8],out.commands[9],out.commands[10],out.commands[11],
+        out.commands[12],out.commands[13],out.commands[14],out.commands[15]);
+    if(accepted!=1) { out.status=QOTOM_PCI_FINAL_GENERATED;out.admitted=0; }
+    return out;
 }
 #endif
