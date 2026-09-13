@@ -5,7 +5,7 @@ initially BME-set PCI function, TXE at `00:1a.0`. It refreshes the two raw TXE
 firmware-status DWORDs, requires them to match the earlier observation, changes
 PCI Command from `0106` to `0102` with one 16-bit write, verifies immediate
 readback, and repeats the complete firmware-status and identity refresh. Memory
-decode and Interrupt Disable remain set.
+decode and SERR# Enable remain set.
 
 The helper is bounded to 23 configuration reads and one exact write. A private
 single-use window authorizes only `00:1a.0` offset 4 value `0102`; it temporarily
