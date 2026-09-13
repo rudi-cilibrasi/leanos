@@ -71,7 +71,9 @@ static int qotom_copy_root_exact(size_t protected_count) {
         if(alias>=0) {
             uint64_t expected=(qotom_aliases[alias].frame<<12)|
                 QOTOM_ROOT_PRESENT|QOTOM_ROOT_NX;
-            if(leaf!=expected)return 0;
+            /* A completed transfer may set hardware-maintained Accessed/Dirty
+             * metadata without changing the alias identity or permissions. */
+            if((leaf&~(QOTOM_ROOT_ACCESSED|QOTOM_ROOT_DIRTY))!=expected)return 0;
         } else if((leaf&QOTOM_ROOT_PRESENT) && qotom_root_protected_frame(
                 (leaf&QOTOM_ROOT_ADDRESS_MASK)>>12,
                 qotom_protected_frames,protected_count))return 0;
