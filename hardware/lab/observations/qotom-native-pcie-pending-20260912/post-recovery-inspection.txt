@@ -1,0 +1,12 @@
+boot={ sec = 1789196801, usec = 940983 } Sat Sep 12 00:06:41 2026
+serial=11758C40
+backup=0110f2522aa48238fc45df665e09da0ef57c9e6028c68e40daf2cfd7e2c55560
+elf=a8aa4fdd94279d3a4cc312361d8acbb7c49b081552b8943e745ac4d0ca836480
+cfg=2829a06d84be8f5b57b5016358dce6cf0143687a1b03cf4a171be3c4ddad4827
+sum=0e65231d644f5c8d5fb6a7b38f2e69607bf6f4188063f0c31cb28ae48d59f2d9
+env=14966b4aadefce8a97d5c6e4303bc04ffda6c4e738f4c1741b6edaf9da92ec66
+request=none
+mounts=none
+devices:
+<Hoodisk SSD SBFM21.0>             at scbus0 target 0 lun 0 (pass0,ada0)
+<Generic Flash Disk 8.07>          at scbus1 target 0 lun 0 (da0,pass1)
