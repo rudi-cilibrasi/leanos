@@ -1,0 +1,15 @@
+{
+  "schema": "leanos-qotom-ahci-port-observation-v1",
+  "status": 0,
+  "command_before": 6,
+  "interrupt": 0,
+  "task_file": 80,
+  "sata_status": 291,
+  "active": 0,
+  "issued": 0,
+  "command_after": 6,
+  "terminal_reason": "qotom-platform-pending",
+  "atomic_snapshot": false,
+  "hardware_operations_replayed": false,
+  "dma_quarantine_established": false
+}

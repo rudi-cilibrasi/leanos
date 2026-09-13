@@ -101,11 +101,19 @@ capability/continuing-state contract.
 The [TXE host-visible BME stage](qotom-txe-bme.md) refreshes the two firmware
 status DWORDs, clears only BME from `0106` to `0102`, verifies readback and
 refreshes identity and status again. This remains deliberately separate from
-the private DMA engine described by Intel. Production admission must state the bounded TXE/firmware
-noninterference assumption rather than call that readback a private-engine stop.
+the private DMA engine described by Intel. Production admission must state the
+bounded TXE/firmware noninterference assumption rather than call that readback
+a private-engine stop.
 
-The thirteen successful transitions do not discharge transaction drain or continuing
-firmware/AP exclusion. All sixteen functions must be covered by the final
-profile, including fixed-register and non-DMA cases with explicit justification.
-No subset of these observations is a production admission witness; the native
-terminal remains `qotom-platform-pending`.
+The thirteen successful transitions do not discharge transaction drain or
+continuing firmware/AP exclusion. All sixteen functions must be covered by the
+final profile, including fixed-register and non-DMA cases with explicit
+justification.
+
+The [final PCI boundary](qotom-pci-final-admission.md) performs a fresh
+sixteen-function rescan after those transitions and binds the exact final
+Command vector. It reports separately which trust assumptions have support.
+Only the fixed-infrastructure and LPC inputs are currently asserted; posted
+write drain, TXE-private DMA quiescence and continuing firmware/SMM exclusion
+remain false. The boundary must therefore reject with
+`qotom-pci-assumptions`. This is not a production admission witness.
