@@ -1,0 +1,25 @@
+{
+  "schema": "leanos-qotom-j1900-cpu-control-production-capture-v1",
+  "source_revision": "14bc87624a05058100b2c9679c0aec86557980b4",
+  "elf_sha256": "9e7119f09cc133b72aa1cc0d3cd2ca033fd9ea847493f6b18435075cec852976",
+  "raw_serial_sha256": "28579940afef0e9f16b31574b8176e27d6c11ef944489d72e924f51c9f41902d",
+  "evidence_class": "lab-recovery-experiment",
+  "platform_admitted": false,
+  "files": {
+    "README.md": "f26167368a41746758129a1b1e56f26ec6f509a2c36168898977e5a790f18558",
+    "ap-start-audit.json": "7b52511073efb81576c4d4c13f79ef31a73790482282240b867603dd470dcd1c",
+    "build-manifest.json": "a68fb39e181798632ed143b004045ead8bfe8c00962c2a3b2bef19589c4b2918",
+    "capture.sh": "9ae53ca72adf5d2f63c3dc54a1e77b319d969c7dbf0b989d524b78a240b72808",
+    "cycle-1/events.jsonl": "35ab38c57d0aa301ecf153a44ed5db181b10599e20757ecdd5a0d8bb7af3307f",
+    "cycle-1/reboot.txt": "bb2b77d90b104b17dda81507bac57668f7be848f2ca1366c94fe68cefee21669",
+    "cycle-1/recovery.json": "da7b7e7b72077e03bc95bb771e949a9908659c656d9c0ecab803f21c7fcb4c0a",
+    "cycle-1/result.json": "93a6f4d34f8094de1568972207514307c75bc51e2ae530d69beb8ab84cf641ac",
+    "cycle-1/serial.raw": "28579940afef0e9f16b31574b8176e27d6c11ef944489d72e924f51c9f41902d",
+    "cycle-1/verification.txt": "c71f628f66d0e312aa2d7f903f33fcd74c9fb524f88c180b7878b06fdd5194a7",
+    "grub.cfg": "7629b4cc973566c28d967f6b8f19d60c90d954409bb824d7012ae577e97bc7a2",
+    "leanos.sha256": "70b2e8f3f4985c074f51c58a2f6ae26839ebb6b937271d4f11064473635223ae",
+    "msr-write-audit.json": "09bba95e5e4fe5561023bf6da350c81a95ddc42ea7560492178b087a1ec92df4",
+    "post-recovery-inspection.txt": "96ac1282f754a3457705e2458343783899738d7287ea60520f93a707169b7617",
+    "request.env": "b6ebc3cb8c427bca243c9fed12ea3636d9930ab4ce2183f3f2bdf7ff1ad52030"
+  }
+}
