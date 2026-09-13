@@ -116,4 +116,10 @@ seconds of post-terminal silence, watchdog reset, a changed FreeBSD boot epoch,
 restored SSH, and a consumed one-shot request. The complete serial stream has
 SHA256 `05523b6791a4cabfd9fae346454cf5ede3bf81c303c4f62dae68db389027e437`.
 That capture predates the whole-platform record and seeds the version-two
-manifest. A fresh profile-bound capture is required for #291 acceptance.
+manifest. The later
+[profile-bound capture](../hardware/lab/observations/qotom-platform-admission-20260913/README.md)
+accepted the complete `qotom-j1900-clbtm210-v2` gate and the same bounded
+scenario. Its ELF SHA256 is
+`2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5`,
+and its complete serial SHA256 is
+`45acf984db238993b6e6b085312f70b21e78a7a7c80b44dc2d8a2727d1a2c4c4`.

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import hashlib
+import json
 import runpy
 import tempfile
 import unittest
@@ -95,6 +97,32 @@ class Capture(unittest.TestCase):
             structured_terminal=True, quiet_range=(30, 100))
         self.assertTrue(result['watchdog_protected'])
         self.assertEqual(result['quiet_seconds'], 35)
+
+    def test_retained_platform_admission_capture(self):
+        capture = (ROOT / 'hardware/lab/observations/'
+                   'qotom-platform-admission-20260913')
+        manifest = json.loads((capture / 'manifest.json').read_text())
+        for name, digest in manifest['files'].items():
+            self.assertEqual(
+                hashlib.sha256((capture / name).read_bytes()).hexdigest(), digest)
+        self.assertFalse(manifest['source_dirty'])
+        self.assertEqual(manifest['source_revision'],
+                         'c01cdc0a8831ccdbfb53049bbb695a040fd4c5de')
+        self.assertEqual(manifest['elf_sha256'],
+                         '2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5')
+        raw = (capture / 'cycle-1/serial.raw').read_bytes()
+        terminal = (P['10/FINAL'].encode() +
+                    b' status=PASS blocks=1 wakes=1 deliveries=1\n')
+        self.assertEqual(raw.count(terminal), 1)
+        end = raw.index(terminal) + len(terminal)
+        _, value, entry = D['extract'](raw[:end], P)
+        self.assertEqual(value['platform_profile'],
+                         'qotom-j1900-clbtm210-v2')
+        self.assertEqual(value['status'], 'PASS')
+        self.assertEqual(entry['completed_returns'], 1)
+        recovery = json.loads((capture / 'cycle-1/recovery.json').read_text())
+        self.assertTrue(recovery['request_consumed'])
+        self.assertEqual(recovery['recovery'], 'freebsd-ssh-restored')
 
 
 if __name__ == '__main__':

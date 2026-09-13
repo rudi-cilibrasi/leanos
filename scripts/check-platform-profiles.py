@@ -108,6 +108,33 @@ def validate(registry_path=REGISTRY):
             require(evidence_path.is_file(), 'Qotom evidence manifest')
             require(hashlib.sha256(evidence_path.read_bytes()).hexdigest() ==
                     evidence.get('manifest_sha256'), 'Qotom evidence digest')
+            observation = json.loads(evidence_path.read_text())
+            require(observation.get('schema') ==
+                    'leanos-qotom-platform-admission-observation-v1',
+                    'Qotom evidence schema')
+            require((observation.get('platform_profile'),
+                     observation.get('platform_profile_version')) ==
+                    (row['id'], row['version']), 'Qotom evidence profile binding')
+            require(observation.get('source_dirty') is False and
+                    observation.get('source_revision') ==
+                    evidence.get('source_revision') and
+                    observation.get('prepared_revision') ==
+                    evidence.get('prepared_revision'),
+                    'Qotom evidence source binding')
+            require(observation.get('elf_sha256') == evidence.get('elf_sha256') and
+                    observation.get('raw_serial_sha256') ==
+                    evidence.get('serial_sha256') and
+                    observation.get('terminal') == evidence.get('terminal'),
+                    'Qotom evidence result binding')
+            evidence_root = evidence_path.parent
+            for relative, digest in observation.get('files', {}).items():
+                item = Path(relative)
+                require(not item.is_absolute() and '..' not in item.parts,
+                        'Qotom evidence file path')
+                artifact = evidence_root / item
+                require(artifact.is_file() and
+                        hashlib.sha256(artifact.read_bytes()).hexdigest() == digest,
+                        f'Qotom evidence file digest: {relative}')
     return registry
 
 

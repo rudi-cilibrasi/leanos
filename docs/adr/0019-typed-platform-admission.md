@@ -57,7 +57,7 @@ therefore bind an image's profile identifier to the exact reviewed manifest.
 
 The Qotom boot emits `PLATFORM-ADMISSION` with
 `qotom-j1900-clbtm210-v2` before its existing blocking-IPC readiness and CPL3
-records. The physical evidence bundle must record that identifier, source and
+records. The retained physical evidence bundle records that identifier, source and
 ELF digests, the complete decoded observation, serial transcript, semantic
 terminal, watchdog recovery, and the two non-applicable scenario families.
 

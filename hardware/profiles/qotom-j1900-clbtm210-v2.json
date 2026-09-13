@@ -27,7 +27,24 @@
     "pci": {
       "profile_word": 6403,
       "function_count": 16,
-      "final_commands": [7, 3, 3, 2, 258, 2, 3, 3, 3, 3, 1026, 7, 3, 3, 0, 3],
+      "final_commands": [
+        7,
+        3,
+        3,
+        2,
+        258,
+        2,
+        3,
+        3,
+        3,
+        3,
+        1026,
+        7,
+        3,
+        3,
+        0,
+        3
+      ],
       "trust_contract": "qotom-j1900-pci-trust-v1",
       "final_observation_sha256": "51879632eeab8369e2a8dcba006aa0e4072f0b818e8fa8ff155fb4fb5a509b1c",
       "accepted_required": true
@@ -42,7 +59,12 @@
       "profile_word": 6404,
       "executing_apic_id": 0,
       "advertised_processors": 4,
-      "apic_ids": [0, 2, 4, 6],
+      "apic_ids": [
+        0,
+        2,
+        4,
+        6
+      ],
       "ap_start_published": false,
       "observation_sha256": "6c4d59425e791d7f1edf6efe90a03b1d79a32f2afc64736c8000ed52ddfcad4f",
       "accepted_required": true
@@ -101,12 +123,12 @@
     "compiler, linker, CPU, chipset, watchdog, and serial transport"
   ],
   "baseline_evidence": {
-    "manifest": "hardware/lab/observations/qotom-native-blocking-ipc-20260913/manifest.json",
-    "manifest_sha256": "f174176a29c7e08479eb74d74ea20dd86eea2e20605e2065bb6923d254416381",
-    "source_revision": "9734ed860141f45721d37c565ad8de84054735bc",
-    "prepared_revision": "4b0a428174cb868cb792f0c3f08387a9597e00d2",
-    "elf_sha256": "61e5a57715f48fe2e80888381a2178ad49d2ea088d3effa1ce0202bd7c0b6638",
-    "serial_sha256": "05523b6791a4cabfd9fae346454cf5ede3bf81c303c4f62dae68db389027e437",
+    "manifest": "hardware/lab/observations/qotom-platform-admission-20260913/manifest.json",
+    "manifest_sha256": "c1bec83394238a567075aa34734cbdc955d1f3d2681f8c63cc4a6529d6001aa6",
+    "source_revision": "c01cdc0a8831ccdbfb53049bbb695a040fd4c5de",
+    "prepared_revision": "c01cdc0a8831ccdbfb53049bbb695a040fd4c5de",
+    "elf_sha256": "2ca33caa063698c1648fbc630c27d8c9ccc46031553ef479de881b792b51e9e5",
+    "serial_sha256": "45acf984db238993b6e6b085312f70b21e78a7a7c80b44dc2d8a2727d1a2c4c4",
     "terminal": "LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1"
   }
 }

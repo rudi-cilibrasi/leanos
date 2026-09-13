@@ -22,7 +22,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='leanos-artifact-consumers-') as directory:
         root = Path(directory)
         for path in ('scripts', 'docs', 'build/evidence', 'build/boot',
-                     'hardware/profiles', 'hardware/lab/observations/qotom-native-blocking-ipc-20260913'):
+                     'hardware/profiles'):
             (root / path).mkdir(parents=True)
         for name in ('package-release.sh', 'write-reproducibility-manifest.sh'):
             shutil.copy2(ROOT / 'scripts' / name, root / 'scripts' / name)
@@ -33,9 +33,8 @@ def main():
         for name in ('q35-v1.json', 'qotom-j1900-clbtm210-v2.json'):
             shutil.copy2(ROOT / 'hardware/profiles' / name,
                          root / 'hardware/profiles' / name)
-        evidence_manifest = ROOT / 'hardware/lab/observations/qotom-native-blocking-ipc-20260913/manifest.json'
-        shutil.copy2(evidence_manifest,
-                     root / 'hardware/lab/observations/qotom-native-blocking-ipc-20260913/manifest.json')
+        evidence = 'hardware/lab/observations/qotom-platform-admission-20260913'
+        shutil.copytree(ROOT / evidence, root / evidence)
         service = root / 'scripts/run-emulator-evidence.py'
         service.write_text('''#!/usr/bin/env python3
 import os, sys
