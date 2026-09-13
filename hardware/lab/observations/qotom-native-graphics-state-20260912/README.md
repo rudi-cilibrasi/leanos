@@ -19,7 +19,9 @@ That attempt expected the recovered FreeBSD PCI Command value `0x0407`, but the
 boot-time PCI header captured Command `0x0007`; FreeBSD adds Interrupt Disable
 later. Binding the arm gate to the captured boot state fixed the mismatch while
 retaining the exact device, BAR and command checks. The successful observation
-then returned status 0.
+then returned status 0. The rejected record's zero-filled payload is a failure
+sentinel, so its derived stability, ring-state, decode-preservation and
+BME-preservation claims are all false.
 
 FreeBSD recovered automatically after 34.324949994974304 seconds of serial
 quiet, boot time 1789239099 to 1789240257, with the one-shot request consumed.

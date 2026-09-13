@@ -8,7 +8,7 @@ model, and first production-bound root builder now exist. Entry and return
 integration remain unfinished. This record does not authorize CPL3 on Qotom.
 
 The `qotom-copy-roots-v1` control checkpoint now validates CR0.WP, EFER.NXE,
-disabled interrupts, and disabled CR4.SMAP/PCID/PGE before making the exact
+disabled interrupts, and disabled CR4.SMEP/SMAP/PCID/PGE before making the exact
 CR4.SMEP transition. It reads back the result through a generated Lean boundary
 and reports both roots and CPL3 authority as zero. The following opt-in
 checkpoint constructs the roots and exercises a bounded transfer, while still

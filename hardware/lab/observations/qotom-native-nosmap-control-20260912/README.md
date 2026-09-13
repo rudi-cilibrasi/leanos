@@ -11,7 +11,7 @@ LEANOS/3 FINAL status=FAIL reason=qotom-copy-roots-pending
 ```
 
 The native reads establish CR0.WP, EFER.NXE, and disabled interrupts. They
-also establish that SMAP, PCID, and PGE were clear. The single audited CR4
+also establish that SMEP, SMAP, PCID, and PGE were clear. The single audited CR4
 write set SMEP and preserved every other observed bit. The generated policy
 selected at most 16 copied bytes, at most two aliases, and a mandatory CR3
 reload. It did not publish either page-table root and did not authorize CPL3.
