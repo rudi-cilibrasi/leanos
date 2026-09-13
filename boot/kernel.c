@@ -5277,6 +5277,18 @@ static void j1900_cpuid(uint32_t leaf, uint64_t words[4]) {
     words[0] = a; words[1] = b; words[2] = c; words[3] = d;
 }
 
+#ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+static uint64_t j1900_cpu_control_policy_query(
+    const uint64_t cpu[22], const uint64_t msrs[8], uint64_t word) {
+    return leanos_j1900_cpu_control_policy_query(
+        cpu[0], cpu[1], cpu[2], cpu[3], cpu[4], cpu[5], cpu[6], cpu[7],
+        cpu[8], cpu[9], cpu[10], cpu[11], cpu[12], cpu[13], cpu[14],
+        cpu[15], cpu[16], cpu[17], cpu[18], cpu[19], cpu[20], cpu[21],
+        msrs[0], msrs[1], msrs[2], msrs[3], msrs[4], msrs[5], msrs[6],
+        msrs[7], word);
+}
+#endif
+
 static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
     uint64_t w[22];
     /* Keep absent CPUID slots zero without a compiler-synthesized libc call.
@@ -5323,6 +5335,18 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
     serial_puts(" readback="); serial_u64(result); serial_putc('\n');
     if (result != 1) pre_admission_fail("j1900-msr-readback");
 #ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
+    /* Compose the two independently recorded observations into one generated
+       production checkpoint.  Its final word is deliberately zero: CPU and
+       entry-denial acceptance alone never grants CPL3 authority. */
+    if (j1900_cpu_control_policy_query(w, msrs, 0) != 1 ||
+        j1900_cpu_control_policy_query(w, msrs, 1) != 1 ||
+        j1900_cpu_control_policy_query(w, msrs, 2) != 0 ||
+        j1900_cpu_control_policy_query(w, msrs, 3) != 1 ||
+        j1900_cpu_control_policy_query(w, msrs, 4) != UINT64_C(0x10000) ||
+        j1900_cpu_control_policy_query(w, msrs, 5) != 1 ||
+        j1900_cpu_control_policy_query(w, msrs, 6) != 1 ||
+        j1900_cpu_control_policy_query(w, msrs, 7) != 0)
+        pre_admission_fail("j1900-cpu-control-policy");
     return;
 #endif
 #ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
