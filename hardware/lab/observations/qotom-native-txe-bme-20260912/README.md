@@ -5,7 +5,7 @@ Enable transition for the Intel Trusted Execution Engine at PCI `00:1a.0`
 (inventory index 4). LeanOS refreshed the exact TXE identity, PCI Command and
 two retained firmware-status words, performed one 16-bit Command write from
 `0x0106` to `0x0102`, then repeated every read and observed the exact result.
-Memory-space decoding and Interrupt Disable remained set while host-visible
+Memory-space decoding and SERR# Enable remained set while host-visible
 Bus Master Enable was clear.
 
 The public Valleyview/Bay Trail datasheet describes TXE multi-context DMA that
