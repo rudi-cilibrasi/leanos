@@ -352,6 +352,7 @@ if a.ecam_read:
     text = text.replace(call, 'pci_enumerate_segment(qotom_ecam_read, &lab_ecam_reader, &snapshot);\n    lab_ecam_window.armed = 0;')
     subprocess.run(['python3', 'scripts/generate-qotom-ecam-firmware.py',
                     str(build / 'qotom-ecam-firmware-inputs.h')], cwd=root, check=True)
+blocking_profile_object = None
 if a.native_inventory:
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
     stop = '#endif\n    pre_admission_fail("qotom-platform-pending");'
@@ -364,7 +365,6 @@ if a.native_inventory:
     native_pci = native_pci_dir / 'native-pci.o'
     # Prepared canonical inputs predate this export; refresh the generated ABI.
     shutil.copy2(root / 'build/boundary-abi/boundary-abi.h', build / 'boundary-abi.h')
-    blocking_profile_object = None
     if a.blocking_ipc_integration:
         blocking_profile_object = native_pci_dir / 'QotomBlockingIPCIntegration.o'
         subprocess.run([
