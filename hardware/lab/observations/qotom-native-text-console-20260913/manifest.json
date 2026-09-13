@@ -1,0 +1,69 @@
+{
+  "schema": "leanos-native-qotom-text-console-observation-v1",
+  "source_revision": "9f5d8e5e8ce1514c355ff0965145b9f6229fe89b",
+  "prepared_revision": "9f5d8e5e8ce1514c355ff0965145b9f6229fe89b",
+  "elf_sha256": "747e1a96d123ec7e429a33cf8fa3f9daa1e9aedb0f653d7c21fe627ed78c41d8",
+  "raw_serial_sha256": "1c95bca648bc230d5854330ef87bb63aef2d10ea61f7b3db0771d76a5b72fbf2",
+  "diagnostic_sha256": "5fdb08efff06f1b01cf217ca5c35b6b01f9294c7f282aeca6fc9ab905f0fd94f",
+  "terminal": "LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending",
+  "freebsd_boot_before": 1789326999,
+  "freebsd_boot_after": 1789332852,
+  "quiet_seconds": 34.320617220015265,
+  "watchdog_protected": true,
+  "request_consumed": true,
+  "request_token": "watchdog-leanos-747e1a96d123ec7e429a33cf8fa3f9daa1e9aedb0f653d7c21fe627ed78c41d8-2026-9-13-20-53",
+  "recovery": "freebsd-ssh-restored",
+  "serial_transport": {
+    "adapter": "FTDI FT232R USB UART",
+    "usb_serial": "11758C40",
+    "machine_port": "COM1",
+    "baud": 38400,
+    "data_bits": 8,
+    "parity": "none",
+    "stop_bits": 1,
+    "flow_control": "none",
+    "wiring": "FTDI DB9 cable through null-modem adapter"
+  },
+  "grub_framebuffer": {
+    "kind": 2,
+    "address": "0xb8000",
+    "pitch": 160,
+    "width": 80,
+    "height": 25,
+    "bits": 16,
+    "evidence": "../qotom-native-blocking-ipc-20260913/cycle-1/result.json",
+    "handoff_sha256": "dd2b2a1495d11e897e5674a73a2d66b3338be64ac5e00fdeacc3b78adba13c28"
+  },
+  "operator_visible_observation": {
+    "reported_during_exact_cycle": true,
+    "report_recorded_at_utc": "2026-09-13T20:55:26Z",
+    "visible_records": [
+      "BOOT",
+      "CPU",
+      "CONTROL",
+      "FINAL"
+    ],
+    "terminal_visible": true,
+    "report": "yes i see the top boot line, then CPU then CONTROL then FINAL FAIL qotom-platform-pending. it's all visible on the monitor."
+  },
+  "files": {
+    "README.md": "30916611cfd6ca7f7ae72b732faa7f82909ec27ae9056dbf99a22cc4599de8c9",
+    "build-manifest.json": "e4d72f9541668bbae30ef00481f5c4a6a99cd2f48cd35f1722aeca3b6d59083b",
+    "capture.sh": "8c14ae4da038c835224944bab0deba7f84ad469a4a5c7f93543652b8facc5a41",
+    "cycle-1/diagnostic.raw": "5fdb08efff06f1b01cf217ca5c35b6b01f9294c7f282aeca6fc9ab905f0fd94f",
+    "cycle-1/events.jsonl": "e79f20053375b5a7c976059f7bfc04c30652e08d2b0cc92bbea6baf924338b0f",
+    "cycle-1/reboot.txt": "dd6cf65a4093b4bb26786c176a51ea8ca796299f60e048d70a9def4de7f85a26",
+    "cycle-1/recovery.json": "d545aad6ad9b20896fca341b7dd1dc3bfb10feba4a5e00037dd4ee365cb2d2f3",
+    "cycle-1/result.json": "f9a900653bcc10077ac2c0cfcd8664d3dc0744b9252000480bd5a1b2883029f7",
+    "cycle-1/serial.raw": "1c95bca648bc230d5854330ef87bb63aef2d10ea61f7b3db0771d76a5b72fbf2",
+    "cycle-1/verification.txt": "4fe6fa77cc53066d3701ee6e7511b5fb967554a6f16154e0c1cbdcd594c6d1ad",
+    "diagnostic-protocol.tsv": "a630821ac044d14be1e194f4ed6f3dd4d0d723305ff23ac9ba88c10fc6c7629b",
+    "diagnostic-replay-inputs.json": "d10dffaf0149b6e7161682a3b4231c44b95f870f39b6e27111bf7caaf24dc8d2",
+    "grub.cfg": "f4f0f67af0ca7e33e3e49984f74b3db69d731e1594b450917530c1edf470cc6f",
+    "install.sh": "6a03bfc883226c1c2bb687e964e4b0fc3822ff729f11ce00b5e6c696bc11cee5",
+    "leanos.sha256": "d16d5f9078a3aa29e10e57ad21d0a43287cfbaef612a7b89fb4e3d280a1dd4c3",
+    "post-recovery-inspection.txt": "f15a5c1bfd90317f7fd1c018b0759de99810af4a6624c997eb47298d8ec1ccf7",
+    "request.env": "79ea990fafca4c70c6bfa4f42a529c869026645c412ff1f6716b347abd6b5655",
+    "validation.txt": "90c18226f0ae48c309e8ed6f8b98d1515f9254c4527bcce98dd14ed49178d88a"
+  }
+}
