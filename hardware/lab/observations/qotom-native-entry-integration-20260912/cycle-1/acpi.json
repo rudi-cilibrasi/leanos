@@ -1,0 +1,96 @@
+{
+  "schema": "leanos-native-acpi-dsdt-lab-v1",
+  "root_kind": 2,
+  "root_address": 3111776376,
+  "tables": [
+    {
+      "index": 0,
+      "address": 3111776376,
+      "length": 116,
+      "signature_hex": "58534454",
+      "sha256": "86a1ebf20c4aa4218cc360de3da582e06a484c3523b13c94637ae8535515143d"
+    },
+    {
+      "index": 1,
+      "address": 3111807440,
+      "length": 268,
+      "signature_hex": "46414350",
+      "sha256": "37b2378ed85d8e509ba75fd56ae44d9ed68c3c883d88c657023d4615ca9550de"
+    },
+    {
+      "index": 2,
+      "address": 3111807712,
+      "length": 132,
+      "signature_hex": "41504943",
+      "sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434"
+    },
+    {
+      "index": 3,
+      "address": 3111807848,
+      "length": 68,
+      "signature_hex": "46504454",
+      "sha256": "517b56f1ac7c73b7a33a6f2fc6139407f565daebf213aa9978884d677d5d6afc"
+    },
+    {
+      "index": 4,
+      "address": 3111807920,
+      "length": 60,
+      "signature_hex": "4d434647",
+      "sha256": "ea68ade449e37cbd39a4fb891b464229e7739dda4604880dc0606e2129d55538"
+    },
+    {
+      "index": 5,
+      "address": 3111807984,
+      "length": 260,
+      "signature_hex": "4c504954",
+      "sha256": "46fb70714057e99f36d3421704da665900d717cfaf676bc07b91304ebfd76483"
+    },
+    {
+      "index": 6,
+      "address": 3111808248,
+      "length": 56,
+      "signature_hex": "48504554",
+      "sha256": "0a72c80475ddddf1727db67087aa249bdae6999451e9e7b8d7e9278b3d60c9a1"
+    },
+    {
+      "index": 7,
+      "address": 3111808304,
+      "length": 1891,
+      "signature_hex": "53534454",
+      "sha256": "684e8e6829f37c6e0af256cbddd894b0659176aa3e517c2ff78c77c30dbfbcde"
+    },
+    {
+      "index": 8,
+      "address": 3111810200,
+      "length": 656,
+      "signature_hex": "53534454",
+      "sha256": "3079581dcbd1b6ef7ba4fcabb7bd37a970a7387a8a5bb0d0fa61724d41f753d8"
+    },
+    {
+      "index": 9,
+      "address": 3111810856,
+      "length": 378,
+      "signature_hex": "53534454",
+      "sha256": "b40f4d7b2cb7b6f4120294365fd0cb4b9878a50352f2478d7d0df18d342b10a1"
+    },
+    {
+      "index": 10,
+      "address": 3111811240,
+      "length": 66,
+      "signature_hex": "55454649",
+      "sha256": "336d587c8c9a430977d581dad5a7f3e7c0c7e841c4724271c93c6e2c23b924ce"
+    },
+    {
+      "index": 11,
+      "address": 3111776640,
+      "length": 30800,
+      "signature_hex": "44534454",
+      "sha256": "e02b949e57c1e9eae6714dd67bce15dc25df349167235612f19e8cd2df14543f"
+    }
+  ],
+  "platform_admitted": false,
+  "handoff_sha256": "d0d5765aede57f15174f3044efc1d16f2c3063300f9e0fe2242c59c324f071d2",
+  "dsdt_fadt_address": 3111807440,
+  "dsdt_address": 3111776640,
+  "aml_executed": false
+}

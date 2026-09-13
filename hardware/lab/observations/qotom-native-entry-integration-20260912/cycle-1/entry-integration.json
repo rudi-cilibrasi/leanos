@@ -1,0 +1,19 @@
+{
+  "schema": "leanos-qotom-entry-integration-v1",
+  "profile": "qotom-copy-roots-v1",
+  "status": 0,
+  "entries": 2,
+  "completed_returns": 1,
+  "incoming_root": 1523712,
+  "closed_root": 1716224,
+  "active_root": 1716224,
+  "frame_validated": true,
+  "user_if": false,
+  "saved_gprs": 15,
+  "close_readback": true,
+  "return_reload": true,
+  "error_mask": 0,
+  "entry_contract": true,
+  "cpl3_authority": false,
+  "terminal_reason": "qotom-exception-integration-pending"
+}

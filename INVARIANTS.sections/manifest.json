@@ -65,6 +65,7 @@
     "LeanOS/QotomBootstrapABI.lean",
     "LeanOS/QotomBspTopology.lean",
     "LeanOS/QotomCopyRootPublication.lean",
+    "LeanOS/QotomEntryIntegration.lean",
     "LeanOS/QotomMadtStream.lean",
     "LeanOS/QotomMadtStreamRun.lean",
     "LeanOS/QotomNativePCIFields.lean",

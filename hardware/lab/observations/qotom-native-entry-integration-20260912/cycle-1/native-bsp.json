@@ -1,0 +1,21 @@
+{
+  "schema": "leanos-native-bsp-capture-v1",
+  "observation": {
+    "madt": 3111807712,
+    "length": 132,
+    "executing": 0,
+    "cpuid-edx": 3219913727,
+    "available": 1,
+    "apic-base": 4276095232,
+    "sample-id": 0,
+    "status": 0,
+    "detail": 0,
+    "offset": 132,
+    "admitted-id": 0,
+    "count": 4,
+    "bound-base": 4276095232
+  },
+  "madt_sha256": "ba4a401cc01120bfd70f3ef7bfb98ec8693a98fe7e56bfc57d7e0c53e6528434",
+  "platform_admitted": false,
+  "ap_dormancy_established": false
+}

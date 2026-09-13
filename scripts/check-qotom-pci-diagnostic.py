@@ -26,6 +26,7 @@ INVENTORY_RESULTS.update(base + index for base in (0x30000, 0x40000, 0x50000, 0x
 def load_protocol(path):
     wanted = {('25', name) for name in ('BOOT', 'CPU', 'CONTROL', 'PCI-SCAN', 'PCI-HEADER')}
     wanted.add(('3', 'FINAL'))
+    wanted.update((('16', 'DIRECT-PORT-CONTROL'), ('17', 'ENTRY-MANIFEST')))
     found = {}
     for line in Path(path).read_text().splitlines():
         fields = line.split('\t')

@@ -33,5 +33,9 @@ PY
   "$build/native-pci/native-pci.o" -o "$build/copy-root-publication-test"
 "$build/copy-root-publication-test"
 "${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
+  -Ibuild/boundary-abi tests/qotom-entry-integration.c \
+  "$build/native-pci/native-pci.o" -o "$build/entry-integration-test"
+"$build/entry-integration-test"
+"${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
   -Iinclude tests/qotom-copy-root-builder.c -o "$build/copy-root-builder-test"
 "$build/copy-root-builder-test"

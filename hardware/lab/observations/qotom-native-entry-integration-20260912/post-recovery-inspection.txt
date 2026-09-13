@@ -1,0 +1,13 @@
+boot_time={ sec = 1789277322, usec = 892330 } Sat Sep 12 22:28:42 2026
+usb_serial=11758C40
+elf_sha256=53b64275e9d690052cf413c2c1c1431d541d8c9e342a42ee84342503944028b8
+checksum_sha256=931c61b556ce0a90a34338e8179389b1e9f8c978e16b4223cea1441e2d282595
+grub_sha256=80ccd8cc52a5897d177d35d4f1737222e08f15a9c9e392c6e0bc2db1c04ef8a3
+request=none
+53b64275e9d690052cf413c2c1c1431d541d8c9e342a42ee84342503944028b8  /boot/leanos-qotom-lab.elf
+txe
+none0@pci0:0:26:0:	class=0x108000 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f18 subvendor=0x8086 subdevice=0x0f18
+    vendor     = 'Intel Corporation'
+    device     = 'Atom Processor Z36xxx/Z37xxx Series Trusted Execution Engine'
+    class      = encrypt/decrypt
+mounts=none
