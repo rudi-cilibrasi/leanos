@@ -1,0 +1,21 @@
+{
+  "schema": "leanos-qotom-copy-root-publication-v1",
+  "profile": "qotom-copy-roots-v1",
+  "status": 0,
+  "protected_count": 5,
+  "removed_aliases": 3,
+  "retained_present": 4088,
+  "alias_count": 2,
+  "closed_root": 1716224,
+  "copy_root": 1671168,
+  "closed_scan": true,
+  "copy_scan": true,
+  "transferred": 16,
+  "bytes_match": true,
+  "active_root": 1716224,
+  "error_mask": 0,
+  "closed_root_published": true,
+  "copy_root_published": true,
+  "cpl3_authority": false,
+  "terminal_reason": "qotom-entry-integration-pending"
+}

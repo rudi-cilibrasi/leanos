@@ -60,6 +60,7 @@ p.add_argument('--pci-trust-contract', action='store_true', help='select the nam
 p.add_argument('--nosmap-control', action='store_true', help='enable SMEP and validate the named no-SMAP control strategy')
 p.add_argument('--copy-root-publication', action='store_true', help='construct, publish, and exercise the bounded Qotom copy roots')
 p.add_argument('--entry-integration', action='store_true', help='exercise a closed-root CPL3 entry and validated machine return')
+p.add_argument('--exception-integration', action='store_true', help='exercise a terminal CPL3 #UD after validated entry returns')
 p.add_argument('--realtek-state', action='store_true', help='observe routed Realtek engine state after root-port BME gating')
 p.add_argument('--rootport-bme', action='store_true', help='gate root-port upstream Memory/IO requests after TXE status')
 a = p.parse_args()
@@ -73,6 +74,8 @@ if a.copy_root_publication and not a.nosmap_control:
     p.error('--copy-root-publication requires --nosmap-control')
 if a.entry_integration and not a.copy_root_publication:
     p.error('--entry-integration requires --copy-root-publication')
+if a.exception_integration and not a.entry_integration:
+    p.error('--exception-integration requires --entry-integration')
 if a.txe_bme and not a.graphics_bme:
     p.error('--txe-bme requires --graphics-bme')
 if a.graphics_bme and not a.graphics_state:
@@ -171,7 +174,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-entry-integration-lab' if a.entry_integration else 'qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-copy-root-publication-lab' if a.copy_root_publication else 'qotom-nosmap-control-lab' if a.nosmap_control else 'qotom-pci-trust-lab' if a.pci_trust_contract else 'qotom-pci-final-lab' if a.pci_final_admission else 'qotom-txe-bme-lab' if a.txe_bme else 'qotom-graphics-bme-lab' if a.graphics_bme else 'qotom-graphics-state-lab' if a.graphics_state else 'qotom-broadcom-d3-lab' if a.broadcom_d3 else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('qotom-exception-integration-lab' if a.exception_integration else 'qotom-entry-integration-lab' if a.entry_integration else 'qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-copy-root-publication-lab' if a.copy_root_publication else 'qotom-nosmap-control-lab' if a.nosmap_control else 'qotom-pci-trust-lab' if a.pci_trust_contract else 'qotom-pci-final-lab' if a.pci_final_admission else 'qotom-txe-bme-lab' if a.txe_bme else 'qotom-graphics-bme-lab' if a.graphics_bme else 'qotom-graphics-state-lab' if a.graphics_state else 'qotom-broadcom-d3-lab' if a.broadcom_d3 else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -198,6 +201,8 @@ for item in prepared_build.iterdir():
         if item.resolve() != destination.resolve():
             shutil.copy2(item, destination)
 text = source.read_text()
+if a.exception_integration:
+    text = '#define LEANOS_QOTOM_EXCEPTION_INTEGRATION 1\n' + text
 if a.entry_integration:
     text = '#define LEANOS_QOTOM_ENTRY_INTEGRATION 1\n' + text
 if a.copy_root_publication:
@@ -460,7 +465,10 @@ if a.copy_root_publication:
     if a.entry_integration:
         entry_object = copy_root_dir / 'entry.o'
         return_object = copy_root_dir / 'return.o'
-        subprocess.run(['gcc', '-m64', '-c', 'experiments/copy-roots/entry.S',
+        entry_command = ['gcc', '-m64']
+        if a.exception_integration:
+            entry_command.append('-DLEANOS_QOTOM_EXCEPTION_INTEGRATION=1')
+        subprocess.run(entry_command + ['-c', 'experiments/copy-roots/entry.S',
                         '-o', str(entry_object)], cwd=root, check=True)
         subprocess.run(['gcc', '-m64', '-c', 'experiments/copy-roots/return.S',
                         '-o', str(return_object)], cwd=root, check=True)
@@ -540,7 +548,10 @@ if a.entry_integration:
     subprocess.run(['python3', 'scripts/audit-qotom-entry-integration.py', '--self-test'],
                    cwd=root, check=True, capture_output=True)
     entry_audit = out / 'entry-integration-audit.json'
-    checked = subprocess.run(['python3', 'scripts/audit-qotom-entry-integration.py', str(elf)],
+    audit_command = ['python3', 'scripts/audit-qotom-entry-integration.py']
+    if a.exception_integration:
+        audit_command.append('--exception-integration')
+    checked = subprocess.run(audit_command + [str(elf)],
                              cwd=root, check=True, capture_output=True)
     entry_audit.write_bytes(checked.stdout)
 files = [source, overlay, Path(__file__).resolve(), makefile, elf]
@@ -681,7 +692,10 @@ if a.entry_integration:
               root / 'experiments/copy-roots/return.S',
               root / 'scripts/audit-qotom-entry-integration.py', entry_audit,
               *entry_objects]
-manifest = {'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+if a.exception_integration:
+    files += [root / 'scripts/check-qotom-exception-integration-capture.py',
+              root / 'scripts/test-qotom-exception-integration-capture.py']
+manifest = {'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

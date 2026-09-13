@@ -1,0 +1,21 @@
+{
+  "schema": "leanos-qotom-hda-state-observation-v1",
+  "status": 0,
+  "corb": 0,
+  "rirb": 0,
+  "position": 0,
+  "streams": [
+    262144,
+    262144,
+    262144,
+    262144,
+    262144,
+    262144,
+    262144,
+    262144
+  ],
+  "terminal_reason": "qotom-platform-pending",
+  "hardware_operations_replayed": false,
+  "atomic_snapshot": false,
+  "dma_quarantine_established": false
+}

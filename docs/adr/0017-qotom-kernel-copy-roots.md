@@ -155,6 +155,14 @@ machine-integration obligations. The generated boundary also consumes trusted
 scalar observations; its proof does not establish the C builder, scans, assembly,
 compiler, CR3 invalidation semantics, or physical execution.
 
+The later opt-in exception checkpoint described in
+[`qotom-exception-integration.md`](../qotom-exception-integration.md) returns
+through the audited primitive a second time, executes a real CPL3 `UD2`, and
+requires the vector-6 assembly stub to reload/read back the closed root and
+validate the exact hardware frame before emitting its direct terminal marker.
+This is checked machine evidence layered on the non-authorizing scalar
+boundary. It does not add asynchronous routing or production dispatch authority.
+
 ### Sequential interruption model
 
 `LeanOS/UserCopyPrefix.lean` models a possible completed prefix in both copy

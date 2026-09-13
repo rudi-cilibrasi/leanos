@@ -1,0 +1,13 @@
+date=2026-09-13T06:46:56Z
+boot={ sec = 1789281412, usec = 895044 } Sat Sep 12 23:36:52 2026
+usb_serial=11758C40
+SHA256 (/mnt/leanos-lab/boot/leanos-qotom-lab.elf) = 6092c00a90a3ea96e75cb3b25b2a37f7a6bef63b3ad9515dd20da6a6ee25a8e4
+SHA256 (/mnt/leanos-lab/boot/leanos.sha256) = 6abaf991e70e0595e8737cdb24bf9354facb7f33badd9f3fc2c5ac74251963eb
+SHA256 (/mnt/leanos-lab/boot/grub/grub.cfg) = 0aafffaf2c0602e2d33e98bd6a354809360b4fa9225c5beda80b6f741ebc5902
+request=none
+mount_after=0
+PCI
+none0@pci0:0:26:0:	class=0x108000 rev=0x0e hdr=0x00 vendor=0x8086 device=0x0f18 subvendor=0x8086 subdevice=0x0f18
+    vendor     = 'Intel Corporation'
+    device     = 'Atom Processor Z36xxx/Z37xxx Series Trusted Execution Engine'
+    class      = encrypt/decrypt
