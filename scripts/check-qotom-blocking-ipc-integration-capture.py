@@ -22,9 +22,13 @@ def semantic_expectation(protocol, template=TEMPLATE):
         match = re.fullmatch(r'@([0-9]+)/([A-Z][A-Z0-9-]*)@(.*)', source)
         if not match:
             raise ValueError('blocking-IPC expectation template tail is malformed')
-        expected_prefix = f'LEANOS/{match.group(1)} {match.group(2)}'
+        key = f'{match.group(1)}/{match.group(2)}'
+        expected_prefix = protocol.get(key)
+        if expected_prefix is None:
+            raise ValueError('blocking-IPC expectation uses an unknown protocol identity')
         rendered.append(expected_prefix.encode() + match.group(3).encode() + b'\n')
-    if not rendered or not rendered[-1].startswith(b'LEANOS/10 FINAL '):
+    final_prefix = protocol['10/FINAL'].encode()
+    if not rendered or not rendered[-1].startswith(final_prefix + b' '):
         raise ValueError('blocking-IPC expectation template lacks its terminal')
     return READY + b''.join(rendered)
 
@@ -36,7 +40,7 @@ def extract(raw, protocol, template=TEMPLATE):
     start = len(raw) - len(expected)
     if raw.count(READY) != 1 or raw.find(READY) != start:
         raise ValueError('Qotom blocking-IPC readiness multiplicity')
-    if raw.count(b'LEANOS/10 FINAL ') != 1:
+    if raw.count(protocol['10/FINAL'].encode() + b' ') != 1:
         raise ValueError('Qotom blocking-IPC terminal multiplicity')
     if (re.search(rb'![CUE][268P0]\n', raw) or
             re.search(rb'^LEANOS/[0-9]+ [^\n]* status=FAIL(?: |\n)',

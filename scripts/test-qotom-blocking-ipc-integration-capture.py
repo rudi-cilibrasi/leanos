@@ -50,10 +50,10 @@ class Capture(unittest.TestCase):
             good.replace(b'direction=out length=4', b'direction=out length=3'),
             good.replace(b'canaries=preserved', b'canaries=changed'),
             good.replace(b'status=PASS blocks=1', b'status=FAIL blocks=1'),
-            good.replace(b'LEANOS/10 FINAL', b'LEANOS/10 IPC', 1),
+            good.replace(P['10/FINAL'].encode(), P['10/IPC'].encode(), 1),
             good[:-len(suffix)] + b'!C6\n' + suffix,
             good[:-len(suffix)] +
-                b'LEANOS/3 FINAL status=FAIL reason=forged-prefix\n' + suffix,
+                P['FINAL'].encode() + b' status=FAIL reason=forged-prefix\n' + suffix,
         ]
         for value in mutations:
             with self.subTest(value=value[-160:]), self.assertRaises(ValueError):
@@ -74,7 +74,8 @@ class Capture(unittest.TestCase):
                   digest.encode() + b'\n')
         mode = X['R']['EXPECTED'][:-len(X['R']['EXPECTED_KERNEL'])]
         raw = self.good()
-        terminal = b'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n'
+        terminal = (P['10/FINAL'].encode() +
+                    b' status=PASS blocks=1 wakes=1 deliveries=1\n')
         events = [
             {'hex': prefix.hex(), 'elapsed': 1},
             {'hex': (mode + raw).hex(), 'elapsed': 3},

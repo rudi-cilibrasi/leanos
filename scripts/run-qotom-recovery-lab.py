@@ -588,7 +588,8 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
         raise ValueError('ACPI capture requires raw handoff')
     module = cpu_replay_module(pci_replay is not None)
     protocol = module.load_protocol(protocol_path)
-    blocking_terminal = (b'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n'
+    blocking_terminal = (protocol['10/FINAL'].encode() +
+                         b' status=PASS blocks=1 wakes=1 deliveries=1\n'
                          if blocking_ipc_integration else None)
     expected, raw = cpu_diagnostic_bytes(
         events, protocol, handoff, blocking_terminal or
@@ -1229,7 +1230,8 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
                 protocol = cpu_replay_module(args.pci_diagnostic).load_protocol(args.diagnostic_protocol)
                 expected, raw = cpu_diagnostic_bytes(
                     events, protocol, args.handoff_capture,
-                    (b'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n'
+                    (protocol['10/FINAL'].encode() +
+                     b' status=PASS blocks=1 wakes=1 deliveries=1\n'
                      if args.blocking_ipc_integration else
                      b'!C6\n' if args.exception_integration else None))
                 if args.handoff_capture:
