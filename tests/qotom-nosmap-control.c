@@ -38,7 +38,7 @@ int main(void) {
     uint64_t changed[5];
     for(unsigned i=0;i<5;++i)changed[i]=baseline[i];
     changed[1]|=UINT64_C(0x100000);changed[2]=changed[1];
-    if(!accepted(changed))return 1;
+    if(!rejected(changed,0))return 1;
 
     const struct { unsigned slot; uint64_t bit; } pre[]={{0,UINT64_C(0x10000)},
         {3,UINT64_C(0x800)},{1,UINT64_C(0x200000)},
