@@ -51,8 +51,8 @@ The physical path remains at `qotom-platform-pending` for #330 and #291.
 ## Verified transitions and remaining contracts
 
 The table above and generated JSON deliberately preserve the initial inventory.
-The later [Realtek boot capture](../hardware/lab/observations/qotom-native-realtek-bme-20260911)
-contains all ten successful BME transitions in one serial stream. Its manifest
+The later [TXE boot capture](../hardware/lab/observations/qotom-native-txe-bme-20260912)
+contains all thirteen successful BME transitions in one serial stream. Its manifest
 and protected replay were verified; the transition starting values match the
 initial headers from that same boot. These are sequential transition
 observations rather than an atomic final inventory or proof of continuing
@@ -68,13 +68,7 @@ state.
 | Two Realtek endpoints | 01:00.0, 03:00.0 | 0007 | 0003 | Routed stopped engine state and BME |
 | Broadcom endpoint | 02:00.0 | 0006 | 0000, then PMCSR D3hot | Routed Command disable, delayed non-posted quiet and D3hot readback |
 | Graphics | 00:02.0 | 0007 | 0003 | Stable idle/empty RCS, VCS and BCS samples around BME |
-
-One initially BME-set function, in addition to the two fixed-Command functions,
-still has no successful disable transition in this sequence:
-
-| Functions | Missing device contract |
-| --- | --- |
-| TXE 00:1a.0 | Host-visible BME transition remains to be captured; private DMA control, firmware behavior and drain remain assumptions |
+| TXE | 00:1a.0 | 0106 | 0102 | Stable firmware-status samples around host-visible BME |
 
 The [graphics-ring observation stage](qotom-graphics-state.md) supplies a
 bounded read-only snapshot of the RCS, VCS and BCS ring registers while keeping
@@ -104,12 +98,13 @@ not establish device/fabric drain. The fixed host router and LPC still require
 the distinct contracts above; SMBus's initially clear BME also needs its
 capability/continuing-state contract.
 
-The proposed [TXE host-visible BME stage](qotom-txe-bme.md) is deliberately
-separate from the private DMA engine described by Intel. Even if the Command
-readback succeeds, production admission must state the bounded TXE/firmware
+The [TXE host-visible BME stage](qotom-txe-bme.md) refreshes the two firmware
+status DWORDs, clears only BME from `0106` to `0102`, verifies readback and
+refreshes identity and status again. This remains deliberately separate from
+the private DMA engine described by Intel. Production admission must state the bounded TXE/firmware
 noninterference assumption rather than call that readback a private-engine stop.
 
-The eleven successful transitions do not discharge transaction drain or continuing
+The thirteen successful transitions do not discharge transaction drain or continuing
 firmware/AP exclusion. All sixteen functions must be covered by the final
 profile, including fixed-register and non-DMA cases with explicit justification.
 No subset of these observations is a production admission witness; the native
