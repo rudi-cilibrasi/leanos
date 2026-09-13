@@ -20,6 +20,7 @@ import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
 import LeanOS.QotomEntryIntegration
+import LeanOS.QotomBlockingIPCIntegration
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -82,6 +83,25 @@ theorem qotom_entry_checkpoint_withholds_cpl3_and_gates_result
           activeRoot frame userIf gprs closeReadback returnReload = true) := by
   exact ⟨QotomEntryIntegration.query_never_authorizes_cpl3 _ _ _ _ _ _ _ _ _ _,
     QotomEntryIntegration.checkpoint_claim_requires_acceptance _ _ _ _ _ _ _ _ _ _⟩
+
+/-- SC-QOTOM-BLOCKING-IPC-CONDITIONAL: a nonzero CPL3 authority word from the
+physical blocking-IPC profile requires its complete scalar admission. -/
+theorem qotom_blocking_ipc_authority_requires_whole_profile
+    (pciTrust noSmap entryCheckpoint closedRoot copyInRoot copyOutRoot
+      closedScan copyInScan copyOutScan syscallGate pageFaultGate
+      timerGateAbsent picMasked contextBanks modelBindings : UInt64)
+    (h : QotomBlockingIPCIntegration.query pciTrust noSmap entryCheckpoint
+      closedRoot copyInRoot copyOutRoot closedScan copyInScan copyOutScan
+      syscallGate pageFaultGate timerGateAbsent picMasked contextBanks
+      modelBindings 3 = 1) :
+    QotomBlockingIPCIntegration.accepted pciTrust noSmap entryCheckpoint
+      closedRoot copyInRoot copyOutRoot closedScan copyInScan copyOutScan
+      syscallGate pageFaultGate timerGateAbsent picMasked contextBanks
+      modelBindings = true :=
+  QotomBlockingIPCIntegration.cpl3_authority_requires_admission
+    pciTrust noSmap entryCheckpoint closedRoot copyInRoot copyOutRoot
+    closedScan copyInScan copyOutScan syscallGate pageFaultGate timerGateAbsent
+    picMasked contextBanks modelBindings h
 
 /-- SC-QOTOM-PCI-CONDITIONAL: the named initial J1900 trust profile accepts
 exactly the final Command vector. The hardware meaning of its five fixed

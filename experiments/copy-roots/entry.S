@@ -21,6 +21,9 @@
 .extern qotom_entry_observed_root
 .extern qotom_entry_dispatch
 .extern qotom_entry_gp_dispatch
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+.extern qotom_blocking_page_fault_dispatch
+#endif
 
 .macro QOTOM_SAVE
     push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi
@@ -129,7 +132,43 @@ qotom_entry_isr6:
 .size qotom_entry_isr6, .-qotom_entry_isr6
 #endif
 QOTOM_EXCEPTION qotom_entry_isr8, '8'
+#ifndef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
 QOTOM_EXCEPTION qotom_entry_isr14, 'P'
+#else
+/* The blocking-IPC checkpoint contains exactly one recoverable CPL3 page
+ * fault. Preserve CR2 and the complete interrupted bank, close the root
+ * before the first C call, and remove the hardware error word before using
+ * the already-audited closed-root return primitive. */
+.global qotom_entry_isr14
+.type qotom_entry_isr14,@function
+qotom_entry_isr14:
+    cld
+    QOTOM_SAVE
+    mov %cr2, %rax
+    push %rax
+    mov %cr3, %rax
+    mov %rax, qotom_entry_observed_root(%rip)
+    QOTOM_CLOSE_OR_HALT qotom_entry_entry_terminal
+    mov %rsp, %rdi
+    call qotom_blocking_page_fault_dispatch
+    mov %rax, %rdi
+    add $8, %rsp
+    /* Collapse error,RIP,CS,RFLAGS,RSP,SS into the return primitive's
+     * contiguous frame layout. */
+    mov 128(%rsp), %r10
+    mov %r10, 120(%rsp)
+    mov 136(%rsp), %r10
+    mov %r10, 128(%rsp)
+    mov 144(%rsp), %r10
+    mov %r10, 136(%rsp)
+    mov 152(%rsp), %r10
+    mov %r10, 144(%rsp)
+    mov 160(%rsp), %r10
+    mov %r10, 152(%rsp)
+    mov qotom_entry_closed_root(%rip), %rsi
+    jmp leanos_closed_root_return
+.size qotom_entry_isr14, .-qotom_entry_isr14
+#endif
 
 .global qotom_entry_isr13
 .type qotom_entry_isr13,@function
@@ -284,5 +323,149 @@ qotom_entry_user_failure:
 #endif
     ud2
 .size qotom_entry_user, .-qotom_entry_user
+
+#ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
+/* Dedicated physical-profile user routines keep dormant q35-only privileged
+ * probes out of the retained hardware image.  Their syscall order and payload
+ * are the canonical blocking-IPC scenario. */
+.section .user.a.text,"ax",@progbits
+.global qotom_blocking_user_a
+.type qotom_blocking_user_a,@function
+qotom_blocking_user_a:
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    movb $0x5a, user_a_stack+4094(%rip)
+    movb $0xa5, user_a_stack+4095(%rip)
+    movb $0x3c, user_a_stack+4096(%rip)
+    movb $0xc3, user_a_stack+4097(%rip)
+    mov $4, %rax
+    xor %rbx, %rbx
+    lea user_a_stack+4094(%rip), %rcx
+    mov $4, %rdx
+    std
+    int $0x80
+    cld
+    mov $4, %rax
+    mov $1, %rbx
+    lea user_a_stack+4110(%rip), %rcx
+    mov $4, %rdx
+    std
+    int $0x80
+    cld
+    cmpb $0x5a, user_a_stack+4110(%rip)
+    jne qotom_blocking_user_a_failure
+    cmpb $0xa5, user_a_stack+4111(%rip)
+    jne qotom_blocking_user_a_failure
+    cmpb $0x3c, user_a_stack+4112(%rip)
+    jne qotom_blocking_user_a_failure
+    cmpb $0xc3, user_a_stack+4113(%rip)
+    jne qotom_blocking_user_a_failure
+.global qotom_blocking_user_a_fault_instruction
+qotom_blocking_user_a_fault_instruction:
+    mov 0, %rax
+.global qotom_blocking_user_a_fault_recovered
+qotom_blocking_user_a_fault_recovered:
+    mov $8, %rax
+    mov $0x4c45414e, %rbx
+    mov $0x4f53, %rcx
+    xor %rdx, %rdx
+    int $0x80
+    ud2
+qotom_blocking_user_a_failure:
+    mov $3, %rax
+    int $0x80
+    ud2
+.size qotom_blocking_user_a, .-qotom_blocking_user_a
+
+.section .user.b.text,"ax",@progbits
+.global qotom_blocking_user_b
+.type qotom_blocking_user_b,@function
+qotom_blocking_user_b:
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $10, %rax
+    mov $(2 * 65536), %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    int $0x80
+    mov %rax, %r14
+    cmp $(3 * 65536), %r14
+    jne qotom_blocking_user_b_failure
+    mov $11, %rax
+    mov $(2 * 65536), %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    int $0x80
+    test %rax, %rax
+    jne qotom_blocking_user_b_failure
+    mov $12, %rax
+    mov %r14, %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    int $0x80
+    cmp $1, %rax
+    jne qotom_blocking_user_b_failure
+    mov $7, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    mov $0x040004, %rdx
+    mov $0x050005, %rbp
+    mov $0x060006, %rsi
+    mov $0x070007, %rdi
+    mov $0x080008, %r8
+    mov $0x090009, %r9
+    mov $0x100010, %r10
+    mov $0x110011, %r11
+    movabs $0xc0dec0dec0dec0de, %r12
+    movabs $0x51a7e51a7e51a7e5, %r13
+    mov $0x140014, %r14
+    mov $0x150015, %r15
+    int $0x80
+    cmp $0x4c45414e, %rax
+    jne qotom_blocking_user_b_failure
+    cmp $0x4f53, %rbx
+    jne qotom_blocking_user_b_failure
+    cmp $1, %rcx
+    jne qotom_blocking_user_b_failure
+    cmp $0x040004, %rdx
+    jne qotom_blocking_user_b_failure
+    cmp $0x050005, %rbp
+    jne qotom_blocking_user_b_failure
+    cmp $0x060006, %rsi
+    jne qotom_blocking_user_b_failure
+    cmp $0x070007, %rdi
+    jne qotom_blocking_user_b_failure
+    cmp $0x080008, %r8
+    jne qotom_blocking_user_b_failure
+    cmp $0x090009, %r9
+    jne qotom_blocking_user_b_failure
+    cmp $0x100010, %r10
+    jne qotom_blocking_user_b_failure
+    cmp $0x110011, %r11
+    jne qotom_blocking_user_b_failure
+    movabs $0xc0dec0dec0dec0de, %rax
+    cmp %rax, %r12
+    jne qotom_blocking_user_b_failure
+    movabs $0x51a7e51a7e51a7e5, %rax
+    cmp %rax, %r13
+    jne qotom_blocking_user_b_failure
+    cmp $0x140014, %r14
+    jne qotom_blocking_user_b_failure
+    cmp $0x150015, %r15
+    jne qotom_blocking_user_b_failure
+    mov $0x4c45414e, %rbx
+    mov $0x4f53, %rcx
+    mov $1, %rdx
+    mov $9, %rax
+    int $0x80
+    ud2
+qotom_blocking_user_b_failure:
+    mov $3, %rax
+    int $0x80
+    ud2
+.size qotom_blocking_user_b, .-qotom_blocking_user_b
+#endif
 
 .section .note.GNU-stack,"",@progbits
