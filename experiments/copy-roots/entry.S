@@ -77,10 +77,11 @@ qotom_entry_isr80:
 
 /* These terminal stubs deliberately share one instruction shape. Hardware
  * error-code words remain untouched because no path returns or calls C. */
-.macro QOTOM_EXCEPTION name
+.macro QOTOM_EXCEPTION name code
     .global \name
     .type \name,@function
 \name:
+    mov $\code, %cl
     cli
     cld
     QOTOM_CLOSE_OR_HALT qotom_entry_exception_unclosed
@@ -88,35 +89,72 @@ qotom_entry_isr80:
     .size \name, .-\name
 .endm
 
-QOTOM_EXCEPTION qotom_entry_isr2
-QOTOM_EXCEPTION qotom_entry_isr6
-QOTOM_EXCEPTION qotom_entry_isr8
-QOTOM_EXCEPTION qotom_entry_isr13
-QOTOM_EXCEPTION qotom_entry_isr14
+QOTOM_EXCEPTION qotom_entry_isr2, '2'
+QOTOM_EXCEPTION qotom_entry_isr6, '6'
+QOTOM_EXCEPTION qotom_entry_isr8, '8'
+QOTOM_EXCEPTION qotom_entry_isr13, 'G'
+QOTOM_EXCEPTION qotom_entry_isr14, 'P'
 
 .global qotom_entry_exception_closed
 .type qotom_entry_exception_closed,@function
 qotom_entry_exception_closed:
-    cli
-1:  hlt
-    jmp 1b
+    mov $'C', %al
+    jmp qotom_entry_emit_and_halt
 .size qotom_entry_exception_closed, .-qotom_entry_exception_closed
 
 .global qotom_entry_exception_unclosed
 .type qotom_entry_exception_unclosed,@function
 qotom_entry_exception_unclosed:
-    cli
-2:  hlt
-    jmp 2b
+    mov $'U', %al
+    jmp qotom_entry_emit_and_halt
 .size qotom_entry_exception_unclosed, .-qotom_entry_exception_unclosed
 
 .global qotom_entry_entry_terminal
 .type qotom_entry_entry_terminal,@function
 qotom_entry_entry_terminal:
-    cli
-3:  hlt
-    jmp 3b
+    mov $'E', %al
+    mov $'0', %cl
+    jmp qotom_entry_emit_and_halt
 .size qotom_entry_entry_terminal, .-qotom_entry_entry_terminal
+
+/* Emit a four-byte terminal marker directly through COM1 without a stack or
+ * C call: !, C/U/E, vector, newline. AL carries the class and CL the vector. */
+.global qotom_entry_emit_and_halt
+.type qotom_entry_emit_and_halt,@function
+qotom_entry_emit_and_halt:
+    cli
+    mov %al, %bl
+    mov $0x3fd, %dx
+1:  in %dx, %al
+    test $0x20, %al
+    jz 1b
+    mov $0x3f8, %dx
+    mov $'!', %al
+    out %al, %dx
+    mov $0x3fd, %dx
+2:  in %dx, %al
+    test $0x20, %al
+    jz 2b
+    mov $0x3f8, %dx
+    mov %bl, %al
+    out %al, %dx
+    mov $0x3fd, %dx
+3:  in %dx, %al
+    test $0x20, %al
+    jz 3b
+    mov $0x3f8, %dx
+    mov %cl, %al
+    out %al, %dx
+    mov $0x3fd, %dx
+4:  in %dx, %al
+    test $0x20, %al
+    jz 4b
+    mov $0x3f8, %dx
+    mov $10, %al
+    out %al, %dx
+5:  hlt
+    jmp 5b
+.size qotom_entry_emit_and_halt, .-qotom_entry_emit_and_halt
 
 .section .user.a.text,"ax",@progbits
 .global qotom_entry_user

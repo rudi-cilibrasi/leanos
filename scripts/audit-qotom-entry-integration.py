@@ -26,6 +26,7 @@ def linked(elf):
             'qotom_entry_isr6', 'qotom_entry_isr8', 'qotom_entry_isr13',
             'qotom_entry_isr14', 'qotom_entry_exception_closed',
             'qotom_entry_exception_unclosed', 'qotom_entry_entry_terminal',
+            'qotom_entry_emit_and_halt',
             'qotom_entry_user')
     output = ''.join(subprocess.check_output(
         ['objdump', '-d', '--no-show-raw-insn', f'--disassemble={name}', str(elf)], text=True)
@@ -46,8 +47,9 @@ def check(elf):
     required = {
         'qotom_entry_start', 'qotom_entry_isr80', 'qotom_entry_isr2',
         'qotom_entry_isr6', 'qotom_entry_isr8', 'qotom_entry_isr13',
-        'qotom_entry_isr14', 'qotom_entry_exception_closed',
-        'qotom_entry_exception_unclosed', 'qotom_entry_entry_terminal',
+            'qotom_entry_isr14', 'qotom_entry_exception_closed',
+            'qotom_entry_exception_unclosed', 'qotom_entry_entry_terminal',
+            'qotom_entry_emit_and_halt',
         'qotom_entry_user', 'qotom_entry_user_after_first',
         'qotom_entry_user_after_second', 'leanos_closed_root_return',
         'qotom_entry_dispatch', 'qotom_entry_closed_root',
@@ -102,24 +104,34 @@ def check(elf):
     if any(row[1] in forbidden for row in ordinary) or sum(row[1] == 'call' for row in ordinary) != 1:
         raise ValueError('ordinary entry has an unsafe transfer')
 
-    exception_shape = ['cli', 'cld', 'mov', 'test', 'je', 'test', 'jne',
+    exception_shape = ['mov', 'cli', 'cld', 'mov', 'test', 'je', 'test', 'jne',
                        'mov', 'mov', 'cmp', 'jne', 'jmp']
     for name in ('qotom_entry_isr2', 'qotom_entry_isr6', 'qotom_entry_isr8',
                  'qotom_entry_isr13', 'qotom_entry_isr14'):
         rows_for_stub = body(name)
         if [row[1] for row in rows_for_stub] != exception_shape:
             raise ValueError(f'terminal exception shape differs: {name}')
-        if rows_for_stub[7][2] != '%r10,%cr3' or rows_for_stub[8][2] != '%cr3,%r11':
+        if rows_for_stub[8][2] != '%r10,%cr3' or rows_for_stub[9][2] != '%cr3,%r11':
             raise ValueError(f'exception does not close and read back root: {name}')
         target(rows_for_stub[-1], 'qotom_entry_exception_closed')
         if any(row[1] in forbidden or row[1] == 'call' for row in rows_for_stub):
             raise ValueError(f'exception can call or return: {name}')
 
-    for name in ('qotom_entry_exception_closed', 'qotom_entry_exception_unclosed',
-                 'qotom_entry_entry_terminal'):
+    for name, shape in (('qotom_entry_exception_closed', ['mov', 'jmp']),
+                        ('qotom_entry_exception_unclosed', ['mov', 'jmp']),
+                        ('qotom_entry_entry_terminal', ['mov', 'mov', 'jmp'])):
         terminal = body(name)
-        if [row[1] for row in terminal] != ['cli', 'hlt', 'jmp'] or terminal[-1][2].split()[0] != format(terminal[1][0], 'x'):
-            raise ValueError(f'terminal loop differs: {name}')
+        if [row[1] for row in terminal] != shape:
+            raise ValueError(f'terminal marker differs: {name}')
+        target(terminal[-1], 'qotom_entry_emit_and_halt')
+    emitter = body('qotom_entry_emit_and_halt')
+    if (sum(row[1] == 'out' for row in emitter) != 4 or
+            sum(row[1] == 'hlt' for row in emitter) != 1 or
+            any(row[1] in forbidden or row[1] == 'call' for row in emitter)):
+        raise ValueError('terminal serial marker can call or return')
+    halt = next(row[0] for row in emitter if row[1] == 'hlt')
+    if emitter[-1][1] != 'jmp' or emitter[-1][2].split()[0] != format(halt, 'x'):
+        raise ValueError('terminal marker halt loop differs')
 
     user = body('qotom_entry_user')
     ints = [row for row in user if row[1] == 'int']
@@ -167,7 +179,7 @@ def self_test():
         'one-user-entry': ('    mov $0x52, %rax\n    int $0x80', '    mov $0x52, %rax\n    nop'),
         'missing-gpr-check': ('    cmp $0xffff, %r15', '    cmp %r15, %r15'),
         'exception-return': ('    jmp qotom_entry_exception_closed', '    ret'),
-        'terminal-return': ('3:  hlt\n    jmp 3b', '3:  hlt\n    ret'),
+        'terminal-return': ('5:  hlt\n    jmp 5b', '5:  hlt\n    ret'),
     }
     fixture = '''
 .data

@@ -68,8 +68,10 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
 }
 
 static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(void) {
-    uint64_t active_root;
+    uint64_t active_root,flags,cr4;
     __asm__ volatile("mov %%cr3,%0":"=r"(active_root));
+    __asm__ volatile("pushfq; pop %0":"=r"(flags)::"memory");
+    __asm__ volatile("mov %%cr4,%0":"=r"(cr4));
     active_root&=QOTOM_ROOT_ADDRESS_MASK;
     qotom_entry_closed_root=(uint64_t)qotom_closed_root.pml4;
     qotom_entry_subject_root=(uint64_t)page_map_level_4_a;
@@ -77,6 +79,10 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(v
     qotom_entry_completed_returns=0;
     if(active_root!=qotom_entry_closed_root ||
        qotom_root_result.protected_count!=5 ||
+       (flags&(UINT64_C(1)<<9))!=0 || (cr4&UINT64_C(0x20080))!=0 ||
+       qotom_entry_subject_root==0 || (qotom_entry_subject_root&UINT64_C(0xfff))!=0 ||
+       qotom_entry_subject_root>=UINT64_C(0x1000000) ||
+       qotom_entry_subject_root==qotom_entry_closed_root ||
        !qotom_closed_root_exact(5) || !qotom_copy_root_exact(5))
         pre_admission_fail("qotom-entry-roots");
 
