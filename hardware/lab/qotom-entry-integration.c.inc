@@ -38,6 +38,14 @@ static int qotom_entry_registers_exact(const uint64_t *saved) {
         saved[12]==UINT64_C(0x3333) && saved[13]==UINT64_C(0x2222);
 }
 
+static int qotom_entry_user_flags_safe(uint64_t flags) {
+    const uint64_t prohibited=(UINT64_C(1)<<8)|(UINT64_C(1)<<9)|
+        (UINT64_C(1)<<10)|(UINT64_C(3)<<12)|(UINT64_C(1)<<14)|
+        (UINT64_C(1)<<16)|(UINT64_C(1)<<17)|(UINT64_C(1)<<18)|
+        (UINT64_C(1)<<19)|(UINT64_C(1)<<20)|(UINT64_C(1)<<21);
+    return (flags&UINT64_C(2))!=0 && (flags&prohibited)==0;
+}
+
 uint64_t qotom_entry_dispatch(uint64_t *saved) {
     uint64_t active_root,flags;
     __asm__ volatile("mov %%cr3,%0":"=r"(active_root));
@@ -60,7 +68,7 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
         (saved[14]!=expected_call?UINT64_C(64):0) |
         (saved[15]!=expected_rip?UINT64_C(128):0) |
         (saved[16]!=UINT64_C(0x23)?UINT64_C(256):0) |
-        (saved[17]!=UINT64_C(0x2)?UINT64_C(512):0) |
+        (!qotom_entry_user_flags_safe(saved[17])?UINT64_C(512):0) |
         (saved[18]!=user_rsp?UINT64_C(1024):0) |
         (saved[19]!=UINT64_C(0x1b)?UINT64_C(2048):0);
     if(frame_errors!=0) {
