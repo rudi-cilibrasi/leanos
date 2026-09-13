@@ -7,6 +7,12 @@ This is a design gate for #291 and #332. The page-table projection has initial
 Lean proofs; the complete transition model and runtime mechanism are not yet
 implemented. This record does not authorize CPL3 on Qotom.
 
+The `qotom-copy-roots-v1` control checkpoint now validates CR0.WP, EFER.NXE,
+disabled interrupts, and disabled CR4.SMEP/SMAP/PCID/PGE before making the exact
+CR4.SMEP transition. It reads back the result through a generated Lean boundary
+and reports both roots and CPL3 authority as zero. This is a physical precursor
+to root construction; passing it does not establish closed-root isolation.
+
 ## Required protection and alternatives
 
 The first Qotom scenario should retain architectural denial of ordinary kernel
@@ -110,6 +116,11 @@ including NMI and double-fault handling, and reject unsupported STAC/CLAC or
 CR4.SMAP writes on the selected path. Records must name the new strategy and
 report SMAP as absent. Physical Qotom evidence remains required. Until these
 obligations are discharged, retain a typed pre-CPL3 rejection.
+
+The intermediate serial record `NO-SMAP-CONTROL profile=qotom-copy-roots-v1`
+reports the live controls and fixed bounds of sixteen bytes and two aliases. A
+successful record terminates at `qotom-copy-roots-pending`; it cannot be read as
+root publication or CPL3 acceptance.
 
 ### Sequential interruption model
 
