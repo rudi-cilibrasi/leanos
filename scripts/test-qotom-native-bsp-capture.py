@@ -409,6 +409,37 @@ class Capture(unittest.TestCase):
                 pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True,
                 pci_final_admission=True,pci_trust_contract=True,nosmap_control=True)
 
+    def test_retained_nosmap_control_capture(self):
+        capture=ROOT / 'hardware/lab/observations/qotom-native-nosmap-control-20260912'
+        manifest=json.loads((capture / 'manifest.json').read_text())
+        for name,digest in manifest['files'].items():
+            self.assertEqual(hashlib.sha256((capture / name).read_bytes()).hexdigest(),digest)
+        expected=json.loads((capture / 'cycle-1/result.json').read_text())
+        events=[json.loads(line) for line in
+                (capture / 'cycle-1/events.jsonl').read_text().splitlines()]
+        result=R['classify_cpu_protected'](events,expected['elf_sha256'],
+            capture / 'diagnostic-protocol.tsv',CPU,PCI,handoff=True,acpi=True,
+            bootstrap=True,ecam_memory=True,dsdt=True,ecam_read=True,
+            native_inventory=True,native_kernel=True,bsp_replay=BSP,
+            pci_capabilities=True,af_observation=True,ehci_capabilities=True,
+            ehci_legacy=True,ehci_handoff=True,ehci_smi=True,ehci_operational=True,ehci_bme=True,
+            xhci_capabilities=True,xhci_legacy=True,xhci_handoff=True,xhci_smi=True,
+            xhci_operational=True,xhci_bme=True,pcie_device_observation=True,ahci_capabilities=True,
+            ahci_port=True,ahci_interrupts=True,ahci_bme=True,hda_observation=True,hda_state=True,
+            hda_bme=True,txe_status=True,rootport_bme=True,realtek_state=True,realtek_bme=True,
+            pcie_pending=True,broadcom_d3=True,graphics_state=True,graphics_bme=True,txe_bme=True,
+            pci_final_admission=True,pci_trust_contract=True,nosmap_control=True)
+        self.assertEqual(result['nosmap_control'],expected['nosmap_control'])
+        self.assertEqual(result['diagnostic']['terminal_reason'],'qotom-copy-roots-pending')
+        self.assertEqual(result['quiet_seconds'],expected['quiet_seconds'])
+        self.assertTrue(expected['request_consumed'])
+        self.assertNotEqual(expected['freebsd_boot_before'],expected['freebsd_boot_after'])
+        self.assertTrue(result['nosmap_control']['smep'])
+        self.assertFalse(result['nosmap_control']['smap'])
+        self.assertFalse(result['nosmap_control']['cpl3_authority'])
+        self.assertFalse(result['nosmap_control']['closed_root_published'])
+        self.assertFalse(result['nosmap_control']['copy_root_published'])
+
     def test_rootport_bme_protected_projection(self):
         capture=ROOT / 'hardware/lab/observations/qotom-native-txe-status-20260911'
         expected=json.loads((capture / 'cycle-1/result.json').read_text())
