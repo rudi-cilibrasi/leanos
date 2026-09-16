@@ -30,7 +30,7 @@
       "reference_environment": {
         "os": "Ubuntu 24.04",
         "architecture": "x86_64",
-        "ci_image_digest": "sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec"
+        "ci_image_digest": "sha256:5ad73aaa54fe5a431ce25e30cf71d83375c9933e7ae0622a77f304b12c693908"
       },
       "lean_toolchain": "leanprover/lean4:v4.34.0",
       "compiler": {
@@ -62,7 +62,7 @@
       "reference_environment": {
         "os": "Ubuntu 24.04",
         "architecture": "x86_64",
-        "ci_image_digest": "sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec"
+        "ci_image_digest": "sha256:5ad73aaa54fe5a431ce25e30cf71d83375c9933e7ae0622a77f304b12c693908"
       },
       "lean_toolchain": "leanprover/lean4:v4.34.0",
       "compiler": {

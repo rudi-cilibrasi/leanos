@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 env:
-  LEANOS_CI_IMAGE_DIGEST: sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
+  LEANOS_CI_IMAGE_DIGEST: sha256:5ad73aaa54fe5a431ce25e30cf71d83375c9933e7ae0622a77f304b12c693908
   LEANOS_TOOLCHAIN_PROFILE: gcc-reference
 
 concurrency:
@@ -28,7 +28,7 @@ jobs:
   build-image:
     name: Build revision-bound canonical image
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:5ad73aaa54fe5a431ce25e30cf71d83375c9933e7ae0622a77f304b12c693908
     # A canonical image build on a cold Lake cache takes 28 to 30 minutes on
     # the hosted runner, so retain the release-equivalent budget even though
     # the immutable cache below usually keeps it far shorter.
