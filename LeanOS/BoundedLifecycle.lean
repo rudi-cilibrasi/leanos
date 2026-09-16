@@ -1763,7 +1763,7 @@ theorem applyOperation_history_monotone (runtime : Runtime) (operation : Operati
             · have ho' : (runtime.endpoints.issued o ||
                   runtime.endpoints.issuedAddressSpace o) = true := ho
               simp only [EndpointIPC.setBool]
-              rw [if_neg heq]
+              rw [ite_eq_right heq]
               exact ho'
           · simp [hsubIssuer]
           · rw [hnext]
@@ -2051,7 +2051,7 @@ theorem applyOperation_kind_stable (runtime : Runtime) (operation : Operation)
             memory_allocate_accepted_registry runtime.virtualMemory.memory
               runtime.objectIssuer.next subject slot haccepted
           rw [hmemory, hkindsmap]
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           exact Or.inl hkind
   | releaseMemory subject slot =>
       simp only [applyOperation]
@@ -2086,7 +2086,7 @@ theorem applyOperation_kind_stable (runtime : Runtime) (operation : Operation)
             endpoint_create_accepted_registry runtime.endpoints runtime.objectIssuer.next
               subject slot haccepted
           rw [hmemory, hkindsmap]
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           exact Or.inl hkind
   | destroyEndpoint subject slot =>
       simp only [applyOperation]
@@ -2115,7 +2115,7 @@ theorem applyOperation_kind_stable (runtime : Runtime) (operation : Operation)
             address_space_create_accepted_registry runtime.virtualMemory
               runtime.objectIssuer.next subject slot haccepted
           rw [hvm, hkindsmap]
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           exact Or.inl hkind
   | destroyAddressSpace subject slot =>
       simp only [applyOperation]
@@ -2175,7 +2175,7 @@ theorem applyOperation_none_kind_stays (runtime : Runtime) (operation : Operatio
             memory_allocate_accepted_registry runtime.virtualMemory.memory
               runtime.objectIssuer.next subject slot haccepted
           rw [hmemory, hkindsmap]
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           exact hnone
   | releaseMemory subject slot =>
       simp only [applyOperation]
@@ -2210,7 +2210,7 @@ theorem applyOperation_none_kind_stays (runtime : Runtime) (operation : Operatio
             endpoint_create_accepted_registry runtime.endpoints runtime.objectIssuer.next
               subject slot haccepted
           rw [hmemory, hkindsmap]
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           exact hnone
   | destroyEndpoint subject slot =>
       simp only [applyOperation]
@@ -2239,7 +2239,7 @@ theorem applyOperation_none_kind_stays (runtime : Runtime) (operation : Operatio
             address_space_create_accepted_registry runtime.virtualMemory
               runtime.objectIssuer.next subject slot haccepted
           rw [hvm, hkindsmap]
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           exact hnone
   | destroyAddressSpace subject slot =>
       simp only [applyOperation]

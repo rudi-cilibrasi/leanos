@@ -124,7 +124,7 @@ theorem assemble_exact_bytes magic infoAddress extent chunks input
     input.bytes = streamBytes chunks ∧ input.bytes.length = extent := by
   unfold assemble at h
   by_cases hbound : extent < 16 || extent > maxTagBytes || extent % 8 != 0
-  · rw [if_pos hbound] at h
+  · rw [ite_eq_left hbound] at h
     contradiction
   · simp only [hbound, Bool.false_eq_true, ↓reduceIte] at h
     cases hreplay : replay (initialState infoAddress extent) chunks with
@@ -134,15 +134,15 @@ theorem assemble_exact_bytes magic infoAddress extent chunks input
     | some final =>
         simp only [hreplay] at h
         by_cases hincomplete : !final.complete || final.offset != extent
-        · rw [if_pos hincomplete] at h
+        · rw [ite_eq_left hincomplete] at h
           contradiction
         · simp only [hincomplete, Bool.false_eq_true, ↓reduceIte] at h
           by_cases hlength : (streamBytes chunks).length = extent
-          · rw [if_neg (by simpa using hlength)] at h
+          · rw [ite_eq_right (by simpa using hlength)] at h
             injection h with hinput
             rw [← hinput]
             exact ⟨rfl, hlength⟩
-          · rw [if_pos (by simpa using hlength)] at h
+          · rw [ite_eq_left (by simpa using hlength)] at h
             contradiction
 
 /-- Every arbitrary aligned buffer within the reviewed bound has one canonical
@@ -161,7 +161,7 @@ theorem assemble_canonicalChunks (magic infoAddress : UInt64) (bytes : List UInt
     intro h
     simp at h
     omega
-  rw [if_neg hbound]
+  rw [ite_eq_right hbound]
   unfold initialState at hreplay ⊢
   rw [hreplay]
   simp [streamBytes, canonicalChunks_reconstruct infoAddress bytes haligned]
@@ -308,11 +308,11 @@ theorem accepted_claim_is_canonical magic infoAddress extent chunks manifest own
       change (if claimed = projection canonical then Except.ok canonical
         else Except.error Error.outputMutation) = Except.ok authority at h
       by_cases heq : claimed = projection canonical
-      · rw [if_pos heq] at h
+      · rw [ite_eq_left heq] at h
         injection h with hauthority
         rw [← hauthority]
         exact heq
-      · rw [if_neg heq] at h
+      · rw [ite_eq_right heq] at h
         contradiction
 
 theorem rejected_exposes_no_authority magic infoAddress extent chunks manifest owner claimed
@@ -3234,8 +3234,8 @@ theorem canonicalMemoryMapEntrySuccessor_threads_remaining
   refine ⟨?_, hnextBytes, ?_⟩
   · rw [hphase, hcontent]
     by_cases hzero : remaining = 0
-    · rw [if_pos (hphaseTest.mpr hzero), if_pos hzero]
-    · rw [if_neg (fun heq => hzero (hphaseTest.mp heq)), if_neg hzero]
+    · rw [ite_eq_left (hphaseTest.mpr hzero), ite_eq_left hzero]
+    · rw [ite_eq_right (fun heq => hzero (hphaseTest.mp heq)), ite_eq_right hzero]
   · rw [hnextCount]
     omega
 
@@ -5490,14 +5490,14 @@ theorem scalarAllocatorAuthority_terminal_selection
     foldl_updateBlockedClassification_zero] at hblocked
   have hsound := authority.selectedUsable
   simp only [usableFrameSound, Bool.and_eq_true] at hsound
-  rw [if_pos hsound.1] at husable
+  rw [ite_eq_left hsound.1] at husable
   have hnoBlocked :
       authority.decoded.entries.any (fun entry =>
         entry.kind != MemoryKind.usable &&
           overlaps entry (authority.allocation.frame * pageBytes)
             (authority.allocation.frame * pageBytes + pageBytes)) = false := by
     simpa using hsound.2
-  rw [if_neg (by simp [hnoBlocked])] at hblocked
+  rw [ite_eq_right (by simp [hnoBlocked])] at hblocked
   exact ⟨husable, hblocked⟩
 
 /-- The exact rich decode/normalize/reserve/allocate chain determines the

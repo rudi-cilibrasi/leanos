@@ -15561,6 +15561,12 @@
     },
     {
       "source": "LeanOS/Scheduler.lean",
+      "qualified": "LeanOS.Scheduler.ownsAddressSpace_eq_some_iff",
+      "display": "ownsAddressSpace_eq_some_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Scheduler.lean",
       "qualified": "LeanOS.Scheduler.remove_preserves_wellFormed",
       "display": "remove_preserves_wellFormed",
       "kind": "theorem"

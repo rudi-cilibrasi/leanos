@@ -253,11 +253,11 @@ theorem accepted_identifies_complete_profile raw profile
       rw [hd] at h
       simp only at h
       by_cases hmatch : completeMatch (manifest selected) raw = true
-      · rw [if_pos hmatch] at h
+      · rw [ite_eq_left hmatch] at h
         injection h with hprofile
         subst profile
         exact hmatch
-      · rw [if_neg hmatch] at h
+      · rw [ite_eq_right hmatch] at h
         contradiction
 
 theorem accepted_profile_unique raw first second

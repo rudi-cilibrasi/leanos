@@ -215,7 +215,7 @@ theorem successful_access_owned state page context frame next
       state.virtual.memory.binding mapping.object = some frame ∧
       FrameAllocator.IsOwnedBy state.virtual.memory.allocator frame mapping.object := by
   obtain ⟨addressSpace, hactive, hwalk⟩ := access_success_current state page context frame next h
-  simp only [classify, encode] at hwalk
+  simp only [classify] at hwalk
   split at hwalk <;> try contradiction
   split at hwalk <;> try contradiction
   split at hwalk <;> try contradiction

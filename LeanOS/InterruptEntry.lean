@@ -382,7 +382,7 @@ theorem nested_never_authorizes raw context (hnested : context.entryActive = tru
     ∀ accepted, normalize raw context ≠ .accepted accepted := by
   intro accepted
   unfold normalize
-  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, ite_false]
   split <;> try simp
   split <;> try simp
   split <;> try simp
@@ -395,7 +395,7 @@ theorem uncleared_ac_never_authorizes raw context (hac : raw.acCleared = false) 
     ∀ accepted, normalize raw context ≠ .accepted accepted := by
   intro accepted
   unfold normalize
-  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, ite_false]
   split <;> try simp
   split <;> try simp
   split <;> try simp
@@ -410,7 +410,7 @@ theorem uncleared_df_never_authorizes raw context (hdf : raw.dfCleared = false) 
     ∀ accepted, normalize raw context ≠ .accepted accepted := by
   intro accepted
   unfold normalize
-  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, ite_false]
   split <;> try simp
   split <;> try simp
   split <;> try simp
@@ -427,7 +427,7 @@ theorem same_privilege_never_user raw context accepted
     accepted.origin = .kernel ∧ accepted.userRsp = none ∧ accepted.userSs = none := by
   rcases hshape with ⟨rip, cs, flags, hshape⟩
   unfold normalize at haccepted
-  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false] at haccepted
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, ite_false] at haccepted
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
@@ -454,7 +454,7 @@ theorem accepted_binds_manifest_shape raw context accepted
       raw.restartClass = restartClassFor entry.vector := by
   unfold normalize at haccepted
   simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true,
-    if_false] at haccepted
+    ite_false] at haccepted
   split at haccepted <;> try contradiction
   rename_i entry hentry
   refine ⟨entry, hentry, ?_⟩
@@ -483,7 +483,7 @@ theorem normalize_accepted_binds_context raw context accepted
       accepted.activeCr3 = context.activeCr3 := by
   unfold normalize at haccepted
   simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true,
-    if_false] at haccepted
+    ite_false] at haccepted
   split at haccepted <;> try contradiction
   rename_i entry hentry
   split at haccepted <;> try contradiction
@@ -954,8 +954,7 @@ theorem valid_canonical_page_fault_has_normalized_preimage record
       | mk protection write user instructionFetch =>
         cases user <;> cases record <;>
         simp_all [canonicalPageFaultSnapshot, canonicalPageFaultRecord,
-          pagingControlsCode, pageFaultAccessCode,
-          DecodedPageFaultError.accessKind]
+          pageFaultAccessCode, DecodedPageFaultError.accessKind]
 
 theorem decoded_canonical_page_fault_has_normalized_preimage words record
     (hdecoded : decodeCanonicalPageFault words = some record) :

@@ -69,7 +69,7 @@ tool declarations must agree with that selected inventory. A canonical entry
 cannot override the canonical inventory. No workflow resolves `latest`, installs
 ambient upgrades, or automatically blesses a newly observed compiler layout.
 
-The current adapters admit Lean 4.32.0 with GCC 13 or Clang 18 and their reviewed
+The current adapters admit Lean 4.34.0 with GCC 13 or Clang 18 and their reviewed
 ELF shapes. Another Lean interface or compiler family/major needs a reviewed
 resolver and adapter change plus controlled negatives; adding a version string
 alone is insufficient. Scheduled observation exercises registered immutable

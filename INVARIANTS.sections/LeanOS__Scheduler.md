@@ -2,6 +2,7 @@
 
 The scheduler decides which program (subject) runs next, keeping the others in a bounded waiting queue and rotating through them in round-robin order. These theorems guarantee that every refused request leaves the kernel untouched, that every operation keeps the scheduler's bookkeeping sound, that only live, runnable programs with their own address space are ever handed the processor, and that no waiting program can be starved: each one gets its turn within one bounded round.
 
+- `ownsAddressSpace_eq_some_iff` — The scheduler reports that a subject owns an address space exactly when the lifecycle records that subject as the owner of its own address space, and the reported space is that subject's own; this restates the ownership check so later proofs can use it without opening its internal conditional.
 - `add_rejected_unchanged` — Whenever the scheduler refuses to add a subject to the queue, the state is left exactly as it was.
 - `remove_rejected_unchanged` — Whenever the scheduler refuses to remove a subject, the state is left exactly as it was.
 - `select_rejected_unchanged` — Whenever selecting the next subject is refused, the state is left exactly as it was.

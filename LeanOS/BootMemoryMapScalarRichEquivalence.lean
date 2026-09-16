@@ -174,8 +174,8 @@ theorem roundInterval_of_withinPhysicalLimit
     omega
   have hoverflow : ¬(start.toNat ≥ wordLimit || length.toNat ≥ wordLimit ||
       length.toNat > wordLimit - start.toNat) := by
-    simp only [wordLimit, Bool.or_eq_true, decide_eq_true_eq]
-    simp only [physicalLimit] at hn
+    simp only [Bool.or_eq_true, decide_eq_true_eq]
+    simp only [wordLimit, physicalLimit] at hn ⊢
     omega
   have houtside : ¬(start.toNat + length.toNat > physicalLimit ||
       (start.toNat + length.toNat + pageBytes - 1) / pageBytes > frameLimit) := by
@@ -366,9 +366,14 @@ theorem canonicalIntervals_contained_of_manifestValid
   unfold richImageContained
   rw [hfind]
   simp +decide only [canonicalIntervals, roundedInterval, List.all_cons, List.all_nil,
-    Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq]
-  exact ⟨by simp, by simp, Or.inr hp, Or.inr hd, Or.inr hs, Or.inr hg,
-    Or.inr he, Or.inr hu, by simp⟩
+    Bool.and_eq_true, Bool.or_eq_true]
+  exact ⟨by simp, by simp,
+    Or.inr ⟨decide_eq_true hp.1, decide_eq_true hp.2⟩,
+    Or.inr ⟨decide_eq_true hd.1, decide_eq_true hd.2⟩,
+    Or.inr ⟨decide_eq_true hs.1, decide_eq_true hs.2⟩,
+    Or.inr ⟨decide_eq_true hg.1, decide_eq_true hg.2⟩,
+    Or.inr ⟨decide_eq_true he.1, decide_eq_true he.2⟩,
+    Or.inr ⟨decide_eq_true hu.1, decide_eq_true hu.2⟩, by simp⟩
 
 /-- Once the nine canonical ranges round successfully and satisfy rich
 loaded-image containment, `validateManifest` accepts exactly those intervals.
@@ -413,7 +418,7 @@ theorem canonicalManifest_validate_of_rounds
     simp [manifest, hidentity.2]
   change BootReservation.validateManifest manifest = .ok intervals
   simp only [BootReservation.validateManifest]
-  rw [if_neg hsize, if_neg hrequired, if_neg hvocabulary]
+  rw [ite_eq_right hsize, ite_eq_right hrequired, ite_eq_right hvocabulary]
   change manifest.mapM BootReservation.roundInterval = .ok intervals at hround
   rw [hround]
   change (if !richImageContained intervals then
@@ -1506,12 +1511,12 @@ theorem authorizeCanonical_acceptance_scalar_agreement
         by_cases hmatches :
             scalarTerminalProjectionMatches
               (canonicalScalarReplay input canonical) canonical = true
-        · rw [if_pos hmatches] at haccepted
+        · rw [ite_eq_left hmatches] at haccepted
           injection haccepted with heq
           subst authority
           exact ⟨hvalid, rfl,
             (scalarTerminalProjectionMatches_iff _ _).1 hmatches⟩
-        · rw [if_neg hmatches] at haccepted
+        · rw [ite_eq_right hmatches] at haccepted
           contradiction
   · contradiction
 
@@ -1578,7 +1583,7 @@ theorem authorizeCanonical_acceptance_binding
         guardStart guardLength entryStart entryLength usersStart usersLength
         infoStart infoLength owner = .ok authority := by
     unfold runCanonical
-    rw [if_pos hscalar.1]
+    rw [ite_eq_left hscalar.1]
     exact hauthorize.1
   have hbinding := runCanonical_acceptance_binding input
     lowStart lowLength imageStart imageLength pageStart pageLength

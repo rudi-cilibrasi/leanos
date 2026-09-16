@@ -202,11 +202,11 @@ theorem accepted_claim_is_canonical (input : Input)
       change (if claimed = projection canonical then Except.ok canonical
         else Except.error Error.outputMutation) = Except.ok authority at h
       by_cases heq : claimed = projection canonical
-      · rw [if_pos heq] at h
+      · rw [ite_eq_left heq] at h
         injection h with hauthority
         rw [← hauthority]
         exact heq
-      · rw [if_neg heq] at h
+      · rw [ite_eq_right heq] at h
         contradiction
 
 /-- Full authorization acceptance retains both halves of the boundary:
@@ -231,11 +231,11 @@ theorem authorize_acceptance_binding (input : Input)
       change (if claimed = projection canonical then Except.ok canonical
         else Except.error Error.outputMutation) = Except.ok authority at h
       by_cases heq : claimed = projection canonical
-      · rw [if_pos heq] at h
+      · rw [ite_eq_left heq] at h
         injection h with hauthority
         subst authority
         exact ⟨rfl, heq⟩
-      · rw [if_neg heq] at h
+      · rw [ite_eq_right heq] at h
         contradiction
 
 def abiVersion : UInt64 := 1

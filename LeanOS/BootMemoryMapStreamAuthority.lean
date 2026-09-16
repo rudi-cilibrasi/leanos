@@ -1293,15 +1293,15 @@ theorem entryTypeStepWords_of_admitted
   have hentriesNotHigh : ¬entryLimit ≤ entries := by
     simpa using hentries
   simp [stepWord, transitionError, completedError, nextPhase, nextContent,
-    nextPadded, entryUsableCoverage, entryNonUsableOverlap, low32, overlap,
-    entryStop, frameFirst, framePast, hidentityAligned, hextentNotLow,
+    nextPadded, entryUsableCoverage, entryNonUsableOverlap, overlap,
+    hidentityAligned, hextentNotLow,
     hextentNotHigh, hextentAligned, hoffsetNotHigh, hoffsetNotFinal,
     htargetNotHigh, husableNotHigh, hblockedNotHigh, htagCountNotHigh,
     hchunkHigh, hlength, hstopNotHigh, hentriesNotHigh, phaseInfo,
     phaseTag, phaseDone, phaseMapLayout, phaseIgnored, phaseEntryBase,
     phaseEntryLength, phaseEntryType]
-  <;> simp only [and_assoc]
-  <;> exact ⟨trivial, trivial⟩
+  <;> simp [frameFirst, framePast, entryStop, low32, and_assoc]
+  <;> exact ⟨rfl, rfl, rfl⟩
 
 /-- An admitted tag cursor consuming the unique terminal end-tag word reaches
 the exact successful scalar terminal state.  This is the terminal constructor
@@ -1442,8 +1442,9 @@ theorem accepted_entryType_classification_words
         noError := by
     simpa [stepWord] using haccepted
   simp [stepWord, hfinal, entryUsableCoverage,
-    entryNonUsableOverlap, low32, frameFirst, framePast, entryStop, overlap,
-    and_assoc]
+    entryNonUsableOverlap, low32, overlap, and_assoc]
+  simp [frameFirst, framePast, entryStop]
+  exact ⟨rfl, rfl⟩
 
 /-- The parse-once production event is not a second decoder: an accepted
 entry-type transition exposes exactly the pending base and length consumed by
@@ -1565,7 +1566,7 @@ theorem rejected_step_exposes_no_state
       streamIdentity streamOffset chunk terminal query = 0 := by
   rw [step_error_word] at hrejected
   simp only [stepWord, hzero, hone, htwo, beq_iff_eq, ↓reduceIte]
-  rw [if_pos hrejected]
+  rw [ite_eq_left hrejected]
 
 def validRange (start length : UInt64) : Bool :=
   length != 0 && length <= 0xffffffffffffffff - start

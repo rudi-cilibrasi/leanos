@@ -125,7 +125,7 @@ theorem encode_decode (word : UInt64) (identity : Nat)
         omega
       have hrepresentable : Representable word.toNat :=
         ⟨Nat.pos_of_ne_zero hnull, hbound⟩
-      simp only [encode, if_pos hrepresentable, Option.some.injEq]
+      simp only [encode, ite_eq_left hrepresentable, Option.some.injEq]
       apply UInt64.toNat_inj.mp
       rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt word.toNat_lt]
 

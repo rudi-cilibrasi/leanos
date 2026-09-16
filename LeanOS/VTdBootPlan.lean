@@ -148,8 +148,8 @@ theorem decode_encode_root (entry : RootEntry) (h : RootEntryEncodable entry) :
     have hmod : (frame * 4096 + 1) % 4096 = 1 := by omega
     have hdiv : (frame * 4096 + 1) / 4096 = frame := by omega
     simp only [decodeRootEntry, hlow, hpage, hmod, hdiv]
-    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-      if_neg (by omega)]
+    rw [ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega),
+      ite_eq_right (by omega)]
   next hpresent =>
     have hpf : present = false := by
       cases present with
@@ -229,8 +229,8 @@ theorem decode_encode_context (entry : ContextEntry) (h : ContextEntryEncodable 
     rw [hlow, hhigh]
     simp only [decodeContextEntry, hpage, hwidthValue, physicalFrameLimit_value,
       domainLimit_value]
-    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-      if_neg (by omega), if_neg (by omega)]
+    rw [ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega),
+      ite_eq_right (by omega), ite_eq_right (by omega)]
     refine congrArg Except.ok ?_
     congr 1 <;> omega
   next hpresent =>
