@@ -182,14 +182,14 @@ class CompatibilityTests(unittest.TestCase):
         profile = self.entries[self.data["default_profile"]]
         inventory = "\n".join(pin.replace("=", "\t", 1)
                               for pin in self.data["canonical_apt_packages"])
-        outputs = ["x86_64", inventory, "Lean (version 4.32.0, release)"]
+        outputs = ["x86_64", inventory, "Lean (version 4.34.0, release)"]
         with patch.dict(compat.os.environ, {
             "LEANOS_CI_IMAGE_DIGEST": profile["reference_environment"]["ci_image_digest"]
         }), patch.object(compat.profiles, "compiler_version", return_value="gcc (Ubuntu) 13.3.0"):
             with patch.object(compat, "checked_output", side_effect=outputs):
                 compat.environment(profile, self.data)
             for index, replacement in ((0, "aarch64"), (1, "gcc\t0"),
-                                       (2, "Lean (version 4.33.0, release)")):
+                                       (2, "Lean (version 4.35.0, release)")):
                 changed = list(outputs)
                 changed[index] = replacement
                 with self.subTest(component=index), \

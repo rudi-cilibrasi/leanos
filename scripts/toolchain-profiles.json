@@ -32,7 +32,7 @@
         "architecture": "x86_64",
         "ci_image_digest": "sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec"
       },
-      "lean_toolchain": "leanprover/lean4:v4.32.0",
+      "lean_toolchain": "leanprover/lean4:v4.34.0",
       "compiler": {
         "command": "gcc",
         "family": "gcc",
@@ -64,7 +64,7 @@
         "architecture": "x86_64",
         "ci_image_digest": "sha256:68e2dda17cfff2e94a60a4bfbbcb417d9e0a6ceb9a10f8fbb261bfbee59d48ec"
       },
-      "lean_toolchain": "leanprover/lean4:v4.32.0",
+      "lean_toolchain": "leanprover/lean4:v4.34.0",
       "compiler": {
         "command": "clang-18",
         "family": "clang",

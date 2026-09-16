@@ -1534,7 +1534,7 @@ theorem teardown_removes_all_mappings (state : State) (handle : AssignmentHandle
   | some assignment =>
       by_cases howner : assignment.owner != state.core.currentOwner
       · simp [gate, hfind, howner] at haccepted
-      · simp only [gate, hfind, howner, Bool.false_eq_true, if_false,
+      · simp only [gate, hfind, howner, Bool.false_eq_true, ite_false,
           commit] at haccepted
         split at haccepted
         · cases haccepted
@@ -1551,7 +1551,7 @@ theorem unmap_removes_mapping (state : State) (handle : MappingHandle)
   | some mapping =>
       by_cases howner : mapping.owner != state.core.currentOwner
       · simp [gate, hfind, howner] at haccepted
-      · simp only [gate, hfind, howner, Bool.false_eq_true, if_false,
+      · simp only [gate, hfind, howner, Bool.false_eq_true, ite_false,
           commit] at haccepted
         split at haccepted
         · cases haccepted
@@ -4350,7 +4350,7 @@ theorem authoritative_lifecycle_release_accepted
          scrub := lifecycleReleaseScrub } :
         AuthoritativeExtension).Invariant := by
     simpa [lifecycleReleased] using lifecycleReleased_invariant plan
-  simp only [commitAuthoritativeMemory, dif_pos hcap, dif_pos hvalid]
+  simp only [commitAuthoritativeMemory, dite_eq_left hcap, dite_eq_left hvalid]
   split
   · rfl
   · next hbad =>
@@ -4387,7 +4387,7 @@ private theorem authoritative_lifecycle_release_state_exact
          scrub := lifecycleReleaseScrub } :
         AuthoritativeExtension).Invariant := by
     simpa [lifecycleReleased] using lifecycleReleased_invariant plan
-  simp only [commitAuthoritativeMemory, dif_pos hcap, dif_pos hvalid]
+  simp only [commitAuthoritativeMemory, dite_eq_left hcap, dite_eq_left hvalid]
   split
   · change
       ({ kernel := lifecycleReleaseKernel plan
@@ -4557,7 +4557,7 @@ private theorem lifecycle_schedule_reconcile_exact
     rw [hcurrent, hcapability]
     rfl
   simp only [reconcileKernelAuthority, lifecycleReleaseIOMMU,
-    hcapability, not_true_eq_false, if_false, hcore]
+    hcapability, not_true_eq_false, ite_false, hcore]
   split
   · next _hwell =>
       split
@@ -4595,7 +4595,7 @@ private theorem lifecycle_schedule_state_exact
         lifecycleScheduledCandidate plan
       else lifecycleReleased plan) =
       lifecycleScheduledCandidate plan
-  rw [if_pos (lifecycleScheduledCandidate_coherent plan)]
+  rw [ite_eq_left (lifecycleScheduledCandidate_coherent plan)]
 
 private theorem lifecycleScheduled_invariant
     (plan : BootPageTablePlan.Plan) :
@@ -5457,7 +5457,7 @@ theorem authoritative_lifecycle_allocate_accepted
         (1 : FrameScrub.SubjectId) :=
     (lifecycleScheduledCandidate_coherent plan).1
   simp only [gatedMemoryByKernel, lifecycleScheduledCandidate,
-    hmode, hcurrent, if_pos]
+    hmode, hcurrent, ite_eq_left]
   rw [lifecycle_allocate_result_accepted]
   rw [lifecycle_allocate_state_exact]
   have hbinding :
@@ -5519,7 +5519,7 @@ private theorem authoritative_lifecycle_allocate_state_exact
         (1 : FrameScrub.SubjectId) :=
     (lifecycleScheduledCandidate_coherent plan).1
   simp only [gatedMemoryByKernel, lifecycleScheduledCandidate,
-    hmode, hcurrent, if_pos]
+    hmode, hcurrent, ite_eq_left]
   rw [lifecycle_allocate_result_accepted]
   rw [lifecycle_allocate_state_exact]
   have hbinding :
@@ -5669,8 +5669,7 @@ private theorem authoritative_lifecycle_assign_state_exact
              iommu := lifecycleAssignedIOMMU
              scrub := lifecycleAllocatedScrub } : AuthoritativeExtension).Coherent :=
         lifecycleAssigned_coherent plan
-      simp only [AuthoritativeOutcome.state]
-      rw [dif_pos hcoherent]
+      simp only [AuthoritativeOutcome.state, hcoherent, ↓reduceDIte]
       rfl
 
 private def lifecycleGrant : GrantRequest :=
@@ -5788,8 +5787,7 @@ private theorem authoritative_lifecycle_grant_state_exact
              iommu := lifecycleGrantedIOMMU
              scrub := lifecycleAllocatedScrub } : AuthoritativeExtension).Coherent :=
         lifecycleGranted_coherent plan
-      simp only [AuthoritativeOutcome.state]
-      rw [dif_pos hcoherent]
+      simp only [AuthoritativeOutcome.state, hcoherent, ↓reduceDIte]
       rfl
 
 private def lifecycleReadRequest : TransferRequest :=

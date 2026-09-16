@@ -31,7 +31,7 @@ theorem frame_index_lookup (frames : List PhysicalFrame) frame (h : frame ∈ fr
       by_cases he : frame = first
       · subst frame; simp
       · have hr : frame ∈ rest := by simpa [he] using h
-        simp [List.idxOf_cons, cond_eq_ite, beq_iff_eq, Ne.symm he, ih hr]
+        simp [List.idxOf_cons, beq_iff_eq, Ne.symm he, ih hr]
 
 theorem location_frame_in_plan state context start length access closed base protectedFrames plan location
     (h : prepare state context start length access closed base protectedFrames = .ok plan)

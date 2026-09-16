@@ -603,7 +603,7 @@ private theorem blockState_preserves_wellFormed state endpoint caller
         subst subject
         exact hcurrentProperties.2.2.2 hready
       exact ⟨hlive, by simpa [blockState, SubjectLifecycle.setBool, hne],
-        by simpa [Scheduler.ownsAddressSpace, blockState] using howns⟩
+        howns⟩
     · intro subject hselected
       simp [blockState] at hselected
   refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, hcaps⟩
@@ -631,12 +631,12 @@ private theorem blockState_preserves_wellFormed state endpoint caller
           ⟨hliveEndpoint, hauthority, hlive, hblocked, howns, _, hnotReady⟩
         exact ⟨hliveEndpoint, hauthority, hlive,
           by simpa [blockState, SubjectLifecycle.setBool, hne],
-          by simpa [Scheduler.ownsAddressSpace, blockState] using howns,
+          howns,
           by simp [blockState], hnotReady⟩
       · subst subject
         exact ⟨hauthorized.choose_spec.choose_spec.2.2.2.2, hauthorized,
           hcurrentProperties.1, by simp [blockState, SubjectLifecycle.setBool],
-          by simpa [Scheduler.ownsAddressSpace, blockState] using hcurrentProperties.2.2.1,
+          hcurrentProperties.2.2.1,
           by simp [blockState], hcurrentProperties.2.2.2⟩
     · have hold : subject ∈ state.waiters candidate := by
         simpa [blockState, setWaiters, heq] using hmember
@@ -648,7 +648,7 @@ private theorem blockState_preserves_wellFormed state endpoint caller
         ⟨hliveEndpoint, hauthority, hlive, hblocked, howns, _, hnotReady⟩
       exact ⟨hliveEndpoint, hauthority, hlive,
         by simpa [blockState, SubjectLifecycle.setBool, hne],
-        by simpa [Scheduler.ownsAddressSpace, blockState] using howns,
+        howns,
         by simp [blockState], hnotReady⟩
   · intro first second subject hfirst hsecond
     by_cases hsubject : subject = caller
@@ -775,10 +775,10 @@ private theorem wakeState_preserves_wellFormed state endpoint receiver rest enve
           subst subject
           exact hreceiverNotReady hold
         exact ⟨hlive, by simpa [wakeState, SubjectLifecycle.setBool, hne],
-          by simpa [wakeState, Scheduler.ownsAddressSpace] using howns⟩
+          howns⟩
       · subst subject
         exact ⟨hreceiverLive, by simp [wakeState, SubjectLifecycle.setBool],
-          by simpa [wakeState, Scheduler.ownsAddressSpace] using hreceiverOwns⟩
+          hreceiverOwns⟩
     · intro subject hcurrent
       rcases hcurrentProperties subject hcurrent with ⟨hlive, hruns, howns, hnotReady⟩
       have hne : subject ≠ receiver := by
@@ -786,7 +786,7 @@ private theorem wakeState_preserves_wellFormed state endpoint receiver rest enve
         subst subject
         exact hreceiverNotCurrent hcurrent
       exact ⟨hlive, by simpa [wakeState, SubjectLifecycle.setBool, hne],
-        by simpa [wakeState, Scheduler.ownsAddressSpace] using howns,
+        howns,
         by simp [wakeState, hnotReady, hne]⟩
   have hreceiverOnly (candidate : ObjectId)
       (hmember : receiver ∈ state.waiters candidate) : candidate = endpoint :=
@@ -831,7 +831,7 @@ private theorem wakeState_preserves_wellFormed state endpoint receiver rest enve
       ⟨hlive, hauthority, hsubjectLive, hblocked, howns, hnotCurrent, hnotReady⟩
     exact ⟨hlive, by simpa [authorizedReceive, wakeState] using hauthority,
       hsubjectLive, by simpa [wakeState, SubjectLifecycle.setBool, hne],
-      by simpa [wakeState, Scheduler.ownsAddressSpace] using howns, hnotCurrent,
+      howns, hnotCurrent,
       by simp [wakeState, hnotReady, hne]⟩
   · intro first second subject hfirst hsecond
     exact hunique first second subject (oldMember first subject hfirst)
@@ -929,7 +929,7 @@ private theorem cancelSubject_room_preserves_wellFormed state subject endpoint
           by simpa [Scheduler.ownsAddressSpace] using hcowns⟩
       · subst candidate
         exact ⟨hlive, by simp [SubjectLifecycle.setBool],
-          by simpa [Scheduler.ownsAddressSpace] using howns⟩
+          howns⟩
     · intro candidate hcurrent
       rcases hcurrentProperties candidate hcurrent with ⟨hcandidateLive, hruns, hcowns, hcnotReady⟩
       have hne : candidate ≠ subject := by

@@ -1027,7 +1027,7 @@ theorem run_records_count (length executing : UInt64) (state result : State)
       have ignored := run_nonprocessor_record length executing state middle kind width payload boundary nonprocessor sized firstRun
       have count : middle.count = state.count := congrArg Prod.fst ignored.2
       have tail := ih middle ignored.1 tailRun
-      simpa [WireRecord.processorValue, count] using tail
+      simpa [WireRecord.processorValue, List.filterMap_cons, count] using tail
 
 /-- Every processor in a successfully traversed record view occupies its
 exact baseline index, retaining order through interspersed ignored records. -/
@@ -1061,7 +1061,7 @@ theorem run_records_members (length executing : UInt64) (state result : State)
       have ignored := run_nonprocessor_record length executing state middle kind width payload boundary nonprocessor sized firstRun
       have count : middle.count = state.count := congrArg Prod.fst ignored.2
       have tail := ih middle ignored.1 tailRun
-      simpa [WireRecord.processorValue, count] using tail
+      simpa [WireRecord.processorValue, List.filterMap_cons, count] using tail
 
 /-- An initialized successful record-view traversal ending at count four has
 exactly the complete typed baseline, not merely the same count or ID bitset. -/
@@ -1195,8 +1195,8 @@ theorem records_reference_normalize (records : List WireRecord)
     | nil => rfl
     | cons record rest ih =>
       have restBound : (rest.filterMap WireRecord.processorValue).length ≤ BootTopology.maxProcessors := by
-        cases record <;> simp_all [WireRecord.processorValue] <;> omega
-      cases record <;> simp_all [WireRecord.rawValue, WireRecord.processorValue]
+        cases record <;> simp_all [WireRecord.processorValue, List.filterMap_cons] <;> omega
+      cases record <;> simp_all [WireRecord.rawValue, WireRecord.processorValue, List.filterMap_cons]
   · exact bounded
 
 /-- Terminal raw-byte stream success agrees with the authoritative entry

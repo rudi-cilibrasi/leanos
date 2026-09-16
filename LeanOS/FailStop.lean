@@ -504,13 +504,13 @@ theorem selectReturnAuthority_wellFormed state purpose
         state.core.lifecycle.runnable view.subject = true ∧
         state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject ∧
         view.planBound state.core.context.activeAddressSpace plan = true
-    · rw [if_pos hchecks]
+    · rw [ite_eq_left hchecks]
       refine ⟨hcore, ?_, hmode⟩
       intro _
       exact ⟨view, plan, hview, hplan, hchecks.2.2.2.2.2, hchecks.1,
         hchecks.2.1, hchecks.2.2.1, hchecks.2.2.2.1,
         hchecks.2.2.2.2.1, rfl, rfl, rfl⟩
-    · rw [if_neg hchecks]
+    · rw [ite_eq_right hchecks]
       exact ⟨hcore, by simp, hmode⟩
   · exact ⟨hcore, by simp, hmode⟩
 
@@ -2223,7 +2223,7 @@ theorem drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
             have haddress :
                 state.blockingIPC.scheduler.lifecycle.addressOwner subject = some subject := by
               simpa [CompositeState.blockingIPCContext,
-                Scheduler.ownsAddressSpace] using howns
+                Scheduler.ownsAddressSpace_eq_some_iff] using howns
             rw [hschedulerExact]
             simpa [CompositeState.blockingIPCContext, hvalidParts.1.1.2] using haddress
           have habsent := hstate.2.2.2 subject saved hretained
@@ -2253,12 +2253,12 @@ theorem drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
                   { state with deferredCancels := nextDeferred } next saved =
                 .ok published := by
             unfold publishReleasedBlockingContext
-            rw [if_neg (by simp [hvalidParts, hkindNe])]
-            rw [if_neg (by
+            rw [ite_eq_right (by simp [hvalidParts, hkindNe])]
+            rw [ite_eq_right (by
               simp [hnextLive, hnextAddress, hready, howner]
               exact hrunnable)]
-            rw [if_neg (by simp [habsent, howner])]
-            rw [if_neg hbankRoom]
+            rw [ite_eq_right (by simp [habsent, howner])]
+            rw [ite_eq_right hbankRoom]
           have hruntime : RuntimeWellFormed published :=
             publishReleasedBlockingContext_wake_preserves_runtimeWellFormed
               { state with deferredCancels := nextDeferred } next saved published
@@ -3348,7 +3348,7 @@ theorem dispatchBlockingReceive_blocked_uses_kernel_context state handleWord fra
                         have hcontext := restoreBlockingPeer_context_exact
                           state next published hrestore
                         simp only [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
-                          hrestore, if_true]
+                          hrestore, ite_true]
                         refine ⟨?_, rfl, rfl⟩
                         change published.blockingIPCContext.blocked
                           state.execution.core.context.currentSubject = some saved
@@ -3708,7 +3708,7 @@ theorem dispatchBlockingSend_woke_preserves_runtimeWellFormed
                           · have hfullContext : state.blockingIPCContext.ipc.scheduler.capacity ≤
                                 state.blockingIPCContext.ipc.scheduler.ready.length := by
                               simpa [CompositeState.blockingIPCContext, hsharedScheduler] using hfull
-                            rw [if_pos hfullContext] at hrawAccepted
+                            rw [ite_eq_left hfullContext] at hrawAccepted
                             contradiction
                           · have hroomContext : ¬ state.blockingIPCContext.ipc.scheduler.capacity ≤
                                 state.blockingIPCContext.ipc.scheduler.ready.length := by
@@ -5874,7 +5874,7 @@ theorem resumePreempt_synchronizes_current_context state frame registers
     cases reason with
     | fatalEntry =>
       cases hhalted : outcome.state.halted <;>
-        simp only [herror, hhalted, Bool.false_eq_true, if_false, if_true,
+        simp only [herror, hhalted, Bool.false_eq_true, ite_false, ite_true,
           installResumable]
       · exact hcontextScheduler
       · intro subject hcurrent
@@ -5980,7 +5980,7 @@ theorem observeDMAControl_continued_unchanged state snapshot
               LawfulBEq.eq_of_beq heq
             have hobserved : snapshot = state.dmaObserved :=
               hsnapshot.trans hstate.dmaQuarantined.symm
-            simp only [hvalidation, heq, if_true]
+            simp only [hvalidation, heq, ite_true]
             rw [hobserved]
           · simp [hvalidation, heq, latchDMAControlFailure] at hcontinued
 
@@ -10917,7 +10917,7 @@ private theorem resumeSwitch_halted_requires_fatal_dispatch state frame register
         obtain ⟨record, hrecord⟩ := hstate.2.2.2.2.2.2.2.2.2.2.1.mp hvalue
         rw [hmode] at hrecord
         contradiction
-  simp only [ResumablePreemption.switch, hresumable, Bool.false_eq_true, if_false]
+  simp only [ResumablePreemption.switch, hresumable, Bool.false_eq_true, ite_false]
     at hhalted
   generalize hdispatch : Interrupt.dispatchHardware state.execution.core frame = outcome
     at hhalted
@@ -14886,7 +14886,7 @@ private theorem authoritativeAcknowledgeInvalidation_preserves
   | none => simpa [authoritativeAcknowledgeInvalidation, hpending] using hstate
   | some pending =>
       by_cases hkind : pending.kind = kind
-      · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, if_pos]
+      · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, ite_eq_left]
         refine ⟨?_, ?_, ?_⟩
         · change RuntimeWellFormed state
           exact hstate.1
@@ -15039,7 +15039,7 @@ private theorem authoritativeAcknowledgeInvalidation_rejected_inert
           InvalidationPublication.acknowledge_rejected_inert
             state.invalidationPublication ack hrejected'
         constructor
-        · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, if_pos]
+        · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, ite_eq_left]
           rw [hinert.1]
           exact installInvalidationPublication_self state
         · simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using
@@ -16429,7 +16429,7 @@ private theorem installVirtualMemory_dormantCancellationCompatible
   have hschedulerLifecycle :
       state.scheduler.lifecycle = state.lifecycle :=
     hstate.1.1.2.1
-  simpa [installVirtualMemory, Scheduler.ownsAddressSpace,
+  simpa [installVirtualMemory, Scheduler.ownsAddressSpace_eq_some_iff,
       hblockingScheduler, hschedulerLifecycle] using
     And.intro hvalid.2.1
       (And.intro hvalid.2.2.1
@@ -16604,7 +16604,7 @@ theorem authoritativeCurrentUnmap_accepted_publication
   · refine ⟨?_, ?_, ?_⟩
     · show RuntimeWellFormed
         (authoritativeAcknowledgeCurrentUnmap prepared ack).state
-      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, if_pos]
+      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, ite_eq_left]
       change RuntimeWellFormed
         (installVirtualMemory prepared acknowledgedPublication.published.virtual
           acknowledgedPublication.published)
@@ -16623,7 +16623,7 @@ theorem authoritativeCurrentUnmap_accepted_publication
         hvirtualProjection, hvmAccepted] using hgate.1
     · show CompositeState.DeferredCancellationWellFormed
         (authoritativeAcknowledgeCurrentUnmap prepared ack).state
-      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, if_pos]
+      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, ite_eq_left]
       change (installVirtualMemory prepared
         acknowledgedPublication.published.virtual
           acknowledgedPublication.published).DeferredCancellationWellFormed
@@ -16642,7 +16642,7 @@ theorem authoritativeCurrentUnmap_accepted_publication
         hvirtualProjection, hvmAccepted] using hgate.2
     · show InvalidationPublication.WellFormed
         ((authoritativeAcknowledgeCurrentUnmap prepared ack).state.invalidationPublication)
-      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, if_pos]
+      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, ite_eq_left]
       change InvalidationPublication.WellFormed acknowledgedPublication
       simpa [acknowledgedPublication, authoritativeAcknowledgeUnmap,
         authoritativeAcknowledgeInvalidation, installInvalidationPublication,
@@ -16826,7 +16826,7 @@ private theorem installCopiedCapabilities_dormantCancellationCompatible
     simpa [installCopiedCapabilities, CompositeState.blockingIPCContext,
         hstate.1.blockingScheduler, hstate.1.blockingLifecycle,
         hschedulerLifecycle, hsubjects, hcapabilities,
-        Scheduler.ownsAddressSpace] using
+        Scheduler.ownsAddressSpace_eq_some_iff] using
       And.intro hvalid.2.1
         (And.intro hlive
           (And.intro hvalid.2.2.2.1
@@ -16912,7 +16912,7 @@ private theorem installTransfers_dormantCancellationCompatible
     simpa [installTransfers, CompositeState.blockingIPCContext,
         hstate.1.blockingScheduler, hstate.1.blockingLifecycle,
         hschedulerLifecycle, hsubjects, hcapabilities,
-        Scheduler.ownsAddressSpace] using
+        Scheduler.ownsAddressSpace_eq_some_iff] using
       And.intro hvalid.2.1
         (And.intro hlive
           (And.intro hvalid.2.2.2.1
@@ -18016,7 +18016,7 @@ theorem dispatchBlockingReceive_selected_block_projection_exact
                                 (some saved) := by
                           simpa [CompositeState.blockingIPCContext] using hblockedExact
                         simp only [dispatchBlockingReceive, hresolve, saved, houtcome,
-                          hsome, hrestore, if_true]
+                          hsome, hrestore, ite_true]
                         refine ⟨endpoint, rest, destination, ?_⟩
                         have hdeferred :=
                           restoreBlockingPeer_deferredExact
@@ -18730,7 +18730,7 @@ theorem blockingSend_authoritativeOperationCompatible state handleWord word0 wor
                           (And.intro hvalid.2.2.2.2.2.2
                             (hstate.2.2.2 candidate retained hretained))))))
             simpa [BlockingIPC.wakeState, BlockingIPC.setWaiterEndpoint,
-              SubjectLifecycle.setBool, Scheduler.ownsAddressSpace,
+              SubjectLifecycle.setBool, Scheduler.ownsAddressSpace_eq_some_iff,
               ResumablePreemption.contextFor, howner, hnotReceiver,
               Ne.symm hnotReceiver] using hbefore
 
@@ -19837,11 +19837,11 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
             active := none
             incomingVector := request.hardware.vector
             incomingOrigin := request.hardware.savedPrivilege }) := by
-    simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
+    simp only [gate, hmode, applyOperation, hlive, ite_true, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
   refine ⟨hterminal, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
+  · simp only [gate, hmode, applyOperation, hlive, ite_true, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
   · simp [gate, hmode, applyOperation, hlive, hfatal]
@@ -21081,7 +21081,7 @@ private theorem dispatcherAddressSpace_live (addressSpace : Nat)
   · exact hlive
   · have hne1 : addressSpace ≠ 1 := fun heq => hlive (Or.inl heq)
     have hne2 : addressSpace ≠ 2 := fun heq => hlive (Or.inr heq)
-    simp only [dispatcherCapabilities, hne1, hne2, if_false] at hkind
+    simp only [dispatcherCapabilities, hne1, hne2, ite_false] at hkind
     repeat' split at hkind <;> simp_all
 
 set_option maxHeartbeats 800000 in

@@ -570,7 +570,7 @@ theorem revokeSubtree_accepted_target (state : State) (actor : SubjectId)
   | found authority =>
       simp only [hauthority] at haccepted
       by_cases hrevoke : authority.rights.revoke = true
-      · simp only [hrevoke, if_true] at haccepted
+      · simp only [hrevoke, ite_true] at haccepted
         cases htarget : lookup state victim victimSlot with
         | invalidSubject => simp [htarget, reject] at haccepted
         | staleSlot => simp [htarget, reject] at haccepted
@@ -578,7 +578,7 @@ theorem revokeSubtree_accepted_target (state : State) (actor : SubjectId)
             simp only [htarget] at haccepted
             by_cases hmatch :
                 (authority.object = target.object && authority.kind = target.kind) = true
-            · simp only [hmatch, if_true, Outcome.mk.injEq] at haccepted
+            · simp only [hmatch, ite_true, Outcome.mk.injEq] at haccepted
               exact ⟨target, rfl, haccepted.1.symm⟩
             · simp only [hmatch] at haccepted
               simp [reject] at haccepted

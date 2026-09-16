@@ -25,6 +25,16 @@ structure State where
 def ownsAddressSpace (state : State) (subject : SubjectId) : Option AddressSpaceId :=
   if state.lifecycle.addressOwner subject = some subject then some subject else none
 
+/-- Characterize successful address-space ownership without exposing the
+`if` inside `ownsAddressSpace`; the `Decidable` instance of that `if` does not
+survive later rewriting of the scheduler state. -/
+theorem ownsAddressSpace_eq_some_iff (state : State) (subject target : SubjectId) :
+    ownsAddressSpace state subject = some target ↔
+      state.lifecycle.addressOwner subject = some subject ∧ target = subject := by
+  unfold ownsAddressSpace
+  by_cases howner : state.lifecycle.addressOwner subject = some subject <;>
+    simp [howner, eq_comm]
+
 /-- Scheduler invariants composed with the lifecycle model. -/
 def WellFormed (state : State) : Prop :=
   SubjectLifecycle.WellFormed state.lifecycle ∧

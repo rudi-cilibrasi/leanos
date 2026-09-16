@@ -986,7 +986,7 @@ theorem canonical_dma_memory_raw_subtree_derives_successor
     (plan : BootPageTablePlan.Plan) :
     (canonicalDMAMemorySubtreeRawAfter plan).result = .accepted ∧
       (canonicalDMAMemorySubtreeRawAfter plan).state.slots 2 2 = none := by
-  simp [canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
+  dsimp only [canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
     LeanOS.Capability.lookup, FailStop.compositeDispatcherInitial]
   native_decide
 
@@ -1843,7 +1843,7 @@ state, nor a mapping or assignment that can keep naming its frame. -/
 theorem canonical_dma_memory_subtree_checked_core_valid
     (plan : BootPageTablePlan.Plan) :
     validateCore (canonicalDMAMemorySubtreeCheckedCoreAfter plan) = true := by
-  simp [canonicalDMAMemorySubtreeCheckedCoreAfter,
+  dsimp only [canonicalDMAMemorySubtreeCheckedCoreAfter,
     subjectTerminationCheckedCore, authoritativeSampleCore,
     canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
     LeanOS.Capability.lookup, FailStop.compositeDispatcherInitial]
@@ -1981,7 +1981,7 @@ theorem canonical_dma_memory_subtree_cleanup_candidate_coherent
         authoritativeSample] using hunwritten
   rw [AuthoritativeExtension.Coherent]
   refine ⟨?_, ?_, ?_, ?_, hscrub, ?_, ?_, ?_, ?_⟩ <;>
-    simp [canonicalDMAMemorySubtreeCleanupCandidate,
+    dsimp only [canonicalDMAMemorySubtreeCleanupCandidate,
       canonicalDMAMemorySubtreeKernelAfter,
       canonicalDMAMemorySubtreeScrubAfter,
       canonicalDMAMemorySubtreeCheckedIOMMUAfter,
@@ -2729,7 +2729,7 @@ theorem subject_termination_checked_prepare_accepted
   have hremoved := subject_termination_checked_apply_removes_device_authority plan
   have hscopes := subject_termination_checked_removed_authority_scopes plan
     (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
-  simp only [prepareAuthorityCleanupPublication,
+  dsimp only [prepareAuthorityCleanupPublication,
     subjectTerminationCheckedPublicationState]
   rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
       (.ordinary (.terminateSubject 2)) =
@@ -2756,7 +2756,7 @@ theorem subject_termination_checked_acknowledges_exact_cleanup
   have hremoved := subject_termination_checked_apply_removes_device_authority plan
   have hscopes := subject_termination_checked_removed_authority_scopes plan
     (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
-  simp only [prepareAuthorityCleanupPublication,
+  dsimp only [prepareAuthorityCleanupPublication,
     subjectTerminationCheckedPublicationState]
   rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
       (.ordinary (.terminateSubject 2)) =
@@ -2816,7 +2816,7 @@ theorem subject_termination_checked_authoritative_acknowledges_exact_cleanup
   have hremoved := subject_termination_checked_apply_removes_device_authority plan
   have hscopes := subject_termination_checked_removed_authority_scopes plan
     (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
-  simp only [prepareAuthoritativePublication,
+  dsimp only [prepareAuthoritativePublication,
     prepareAuthorityCleanupPublication,
     subjectTerminationCheckedAuthoritativePublicationState]
   rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -2874,7 +2874,7 @@ theorem subject_termination_checked_authoritative_prepare_retains_old_authority
   have hremoved := subject_termination_checked_apply_removes_device_authority plan
   have hscopes := subject_termination_checked_removed_authority_scopes plan
     (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
-  simp only [prepareAuthoritativePublication,
+  dsimp only [prepareAuthoritativePublication,
     prepareAuthorityCleanupPublication,
     subjectTerminationCheckedAuthoritativePublicationState]
   rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4510,7 +4510,7 @@ theorem subject_termination_checked_retired_memory_candidate_scrub_invariant
     split at hderived <;> try contradiction
     next pending hpending =>
       have hpending' := hpending
-      simp only [prepareAuthoritativePublication,
+      dsimp only [prepareAuthoritativePublication,
         prepareAuthorityCleanupPublication,
         subjectTerminationCheckedAuthoritativePublicationState] at hpending'
       rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4580,7 +4580,7 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_ipc_autho
   apply derive_retired_memory_authoritative_candidate_preserves_ipc_authority
       _ _ _ _ (hderived := hderived)
   · intro pending hpending
-    simp only [prepareAuthoritativePublication,
+    dsimp only [prepareAuthoritativePublication,
       prepareAuthorityCleanupPublication,
       subjectTerminationCheckedAuthoritativePublicationState] at hpending
     rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4591,7 +4591,7 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_ipc_autho
     subst pending
     exact subject_termination_checked_after_invariant plan
   · intro pending hpending
-    simp only [prepareAuthoritativePublication,
+    dsimp only [prepareAuthoritativePublication,
       prepareAuthorityCleanupPublication,
       subjectTerminationCheckedAuthoritativePublicationState] at hpending
     rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4623,7 +4623,7 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_runtime
   apply derive_retired_memory_authoritative_candidate_preserves_runtime
       _ _ _ _ (hderived := hderived)
   · intro pending hpending
-    simp only [prepareAuthoritativePublication,
+    dsimp only [prepareAuthoritativePublication,
       prepareAuthorityCleanupPublication,
       subjectTerminationCheckedAuthoritativePublicationState] at hpending
     rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4634,7 +4634,7 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_runtime
     subst pending
     exact subject_termination_checked_after_invariant plan
   · intro pending hpending
-    simp only [prepareAuthoritativePublication,
+    dsimp only [prepareAuthoritativePublication,
       prepareAuthorityCleanupPublication,
       subjectTerminationCheckedAuthoritativePublicationState] at hpending
     rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4672,7 +4672,7 @@ theorem subject_termination_checked_retired_memory_candidate_coherent
   next receipt _hreceipt =>
     split at hderived <;> try contradiction
     next pending hpending =>
-      simp only [prepareAuthoritativePublication,
+      dsimp only [prepareAuthoritativePublication,
         prepareAuthorityCleanupPublication,
         subjectTerminationCheckedAuthoritativePublicationState] at hpending
       rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4866,7 +4866,7 @@ theorem subject_termination_checked_retired_memory_candidate_exists
           (subject_termination_checked_before_invariant plan)
           (.cleanup (.ordinary (.terminateSubject 2)))).state
         subjectTerminationWitnessCompletion 20 = some after := by
-    simp only [deriveRetiredMemoryAuthoritativeCandidate,
+    dsimp only [deriveRetiredMemoryAuthoritativeCandidate,
       prepareAuthoritativePublication, prepareAuthorityCleanupPublication,
       subjectTerminationCheckedAuthoritativePublicationState]
     rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4908,7 +4908,7 @@ theorem subject_termination_checked_retired_memory_candidate_releases_frame
     split at hderived <;> try contradiction
     next pending hpending =>
       have hpending' := hpending
-      simp only [prepareAuthoritativePublication,
+      dsimp only [prepareAuthoritativePublication,
         prepareAuthorityCleanupPublication,
         subjectTerminationCheckedAuthoritativePublicationState] at hpending'
       rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -4978,7 +4978,7 @@ theorem subject_termination_checked_retired_memory_candidate_allocates_fresh
     split at hderived <;> try contradiction
     next pending hpending =>
       have hpending' := hpending
-      simp only [prepareAuthoritativePublication,
+      dsimp only [prepareAuthoritativePublication,
         prepareAuthorityCleanupPublication,
         subjectTerminationCheckedAuthoritativePublicationState] at hpending'
       rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -5151,7 +5151,7 @@ theorem subject_termination_checked_authoritative_partial_completion_stutters
   have hremoved := subject_termination_checked_apply_removes_device_authority plan
   have hscopes := subject_termination_checked_removed_authority_scopes plan
     (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
-  simp only [prepareAuthoritativePublication,
+  dsimp only [prepareAuthoritativePublication,
     prepareAuthorityCleanupPublication,
     subjectTerminationCheckedAuthoritativePublicationState]
   rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
@@ -5527,7 +5527,7 @@ theorem checked_control_unmap_authoritative_acknowledges_exact
           simpa [subjectTerminationCheckedBefore] using
             checked_control_unmap_gate plan] at hgate
         simp only at hgate
-        rw [dif_pos (checked_control_unmap_candidate_coherent plan)] at hgate
+        rw [dite_eq_left (checked_control_unmap_candidate_coherent plan)] at hgate
         cases hgate
         exact ⟨rfl, rfl⟩
       rcases hexact with ⟨rfl, rfl⟩
@@ -5666,7 +5666,7 @@ theorem checked_control_attenuation_authoritative_acknowledges_exact
           simpa [subjectTerminationCheckedBefore] using
             checked_control_attenuation_gate plan] at hgate
         simp only at hgate
-        rw [dif_pos (checked_control_attenuation_candidate_coherent plan)] at hgate
+        rw [dite_eq_left (checked_control_attenuation_candidate_coherent plan)] at hgate
         cases hgate
         exact ⟨rfl, rfl⟩
       rcases hexact with ⟨rfl, rfl⟩
@@ -5828,7 +5828,7 @@ theorem checked_control_teardown_authoritative_acknowledges_exact
           simpa [subjectTerminationCheckedBefore] using
             checked_control_teardown_gate plan] at hgate
         simp only at hgate
-        rw [dif_pos (checked_control_teardown_candidate_coherent plan)] at hgate
+        rw [dite_eq_left (checked_control_teardown_candidate_coherent plan)] at hgate
         cases hgate
         exact ⟨rfl, rfl⟩
       rcases hexact with ⟨rfl, rfl⟩

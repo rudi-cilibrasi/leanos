@@ -744,7 +744,7 @@ theorem publishSubtreeRevocation_pending_some state root capabilities endpoint t
       by_cases hdescendant : descendsFromRoot state.capabilities root old = true
       · simp [hdescendant] at hpending
       · simp only [Bool.not_eq_true] at hdescendant
-        simp only [hdescendant, Bool.false_eq_true, if_false, Option.some.injEq] at hpending
+        simp only [hdescendant, Bool.false_eq_true, ite_false, Option.some.injEq] at hpending
         subst hpending
         exact ⟨rfl, hdescendant, by simp [hdescendant]⟩
 

@@ -21,7 +21,7 @@ SPEC.loader.exec_module(checker)
 
 def expect_failure(data: Any, needle: str) -> None:
     try:
-        checker.check_manifest(data, "leanprover/lean4:v4.32.0")
+        checker.check_manifest(data, "leanprover/lean4:v4.34.0")
     except checker.ProfileError as error:
         if needle not in str(error):
             raise AssertionError(f"missing expected diagnostic {needle!r}: {error}") from error
@@ -39,7 +39,7 @@ def expect_compiler_failure(profile: dict[str, Any], version: str) -> None:
 
 def main() -> None:
     manifest = checker.load_json(checker.DEFAULT_MANIFEST)
-    profiles = checker.check_manifest(manifest, "leanprover/lean4:v4.32.0")
+    profiles = checker.check_manifest(manifest, "leanprover/lean4:v4.34.0")
     gcc = profiles["gcc-reference"]
     clang = profiles["clang-reference"]
     checker.check_compiler(gcc, "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0")
@@ -66,7 +66,7 @@ def main() -> None:
     expect_failure(unknown_layout, "unknown ELF normalization")
 
     wrong_lean = copy.deepcopy(manifest)
-    wrong_lean["profiles"][0]["lean_toolchain"] = "leanprover/lean4:v4.33.0"
+    wrong_lean["profiles"][0]["lean_toolchain"] = "leanprover/lean4:v4.35.0"
     expect_failure(wrong_lean, "differs from lean-toolchain")
 
     floating_compiler = copy.deepcopy(manifest)

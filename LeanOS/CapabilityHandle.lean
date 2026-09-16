@@ -146,7 +146,7 @@ theorem encode_decode (word : UInt64) (handle : Handle)
             right
             simpa [generationReserved_value] using heq
           exact Nat.lt_of_le_of_ne (Nat.le_pred_of_lt hgenerationBound) hne
-      simp only [encode, if_pos hencodable, Option.some.injEq]
+      simp only [encode, ite_eq_left hencodable, Option.some.injEq]
       apply UInt64.toNat_inj.mp
       rw [UInt64.toNat_ofNat']
       have hrecompose :
@@ -650,7 +650,9 @@ theorem install_other_subject_cannot_resolve (state : State) (owner other : Subj
     (hne : other ≠ owner) :
     resolve (install state owner handle.slot capability) other handle expected =
       resolve state other handle expected := by
-  simp [resolve, install, slotInRange, hne]
+  unfold resolve
+  simp [install, hne]
+  rfl
 
 /-- Global live-identity uniqueness means two simultaneously live issued
 handles cannot alias different capability slots. -/

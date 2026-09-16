@@ -205,7 +205,7 @@ theorem remove_accepted_exact state subject context
           · injection haccepted with heq
             subst actual
             refine ⟨scheduler, rfl, ?_, by assumption⟩
-            rw [dif_pos (by assumption)]
+            rw [dite_eq_left (by assumption)]
           · simp at haccepted
 
 /-- An accepted result exposes both cleanup effects required by the composite

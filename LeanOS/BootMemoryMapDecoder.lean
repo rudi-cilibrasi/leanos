@@ -425,19 +425,19 @@ private theorem decodeEntries_constructs_traversal
               | ok kindWord =>
                   simp only [hkindWord] at hdecode
                   by_cases hreserved : high32Nat kindWord != 0
-                  · rw [if_pos hreserved] at hdecode
+                  · rw [ite_eq_left hreserved] at hdecode
                     contradiction
-                  · rw [if_neg hreserved] at hdecode
+                  · rw [ite_eq_right hreserved] at hdecode
                     by_cases hzero : length == 0
-                    · rw [if_pos hzero] at hdecode
+                    · rw [ite_eq_left hzero] at hdecode
                       contradiction
-                    · rw [if_neg hzero] at hdecode
+                    · rw [ite_eq_right hzero] at hdecode
                       by_cases hoverflow :
                           base ≥ wordLimit || length ≥ wordLimit ||
                             length ≥ wordLimit - base
-                      · rw [if_pos hoverflow] at hdecode
+                      · rw [ite_eq_left hoverflow] at hdecode
                         contradiction
-                      · rw [if_neg hoverflow] at hdecode
+                      · rw [ite_eq_right hoverflow] at hdecode
                         cases hrest :
                             decodeEntries bytes
                               (offset + memoryMapEntrySize) count with
@@ -748,21 +748,21 @@ private theorem decodeTags_constructs_traversal
   | zero =>
       unfold decodeTags at hdecode
       by_cases hoffset : offset == total
-      · rw [if_pos hoffset] at hdecode
+      · rw [ite_eq_left hoffset] at hdecode
         contradiction
-      · rw [if_neg hoffset] at hdecode
+      · rw [ite_eq_right hoffset] at hdecode
         contradiction
   | succ fuel ih =>
       unfold decodeTags at hdecode
       simp only [bind, Except.bind] at hdecode
       by_cases hoffset : offset == total
-      · rw [if_pos hoffset] at hdecode
+      · rw [ite_eq_left hoffset] at hdecode
         contradiction
-      · rw [if_neg hoffset] at hdecode
+      · rw [ite_eq_right hoffset] at hdecode
         by_cases hheader : offset + 8 > total
-        · rw [if_pos hheader] at hdecode
+        · rw [ite_eq_left hheader] at hdecode
           contradiction
-        · rw [if_neg hheader] at hdecode
+        · rw [ite_eq_right hheader] at hdecode
           cases htagWord : readU64 bytes offset with
           | error reason =>
               simp only [htagWord] at hdecode
@@ -770,33 +770,33 @@ private theorem decodeTags_constructs_traversal
           | ok tagWord =>
               simp only [htagWord] at hdecode
               by_cases hsize : high32Nat tagWord < 8
-              · rw [if_pos hsize] at hdecode
+              · rw [ite_eq_left hsize] at hdecode
                 contradiction
-              · rw [if_neg hsize] at hdecode
+              · rw [ite_eq_right hsize] at hdecode
                 by_cases hcontent : offset + high32Nat tagWord > total
-                · rw [if_pos hcontent] at hdecode
+                · rw [ite_eq_left hcontent] at hdecode
                   contradiction
-                · rw [if_neg hcontent] at hdecode
+                · rw [ite_eq_right hcontent] at hdecode
                   by_cases hadvance :
                       offset + aligned8 (high32Nat tagWord) > total
-                  · rw [if_pos hadvance] at hdecode
+                  · rw [ite_eq_left hadvance] at hdecode
                     contradiction
-                  · rw [if_neg hadvance] at hdecode
+                  · rw [ite_eq_right hadvance] at hdecode
                     by_cases hend : low32Nat tagWord == 0
-                    · rw [if_pos hend] at hdecode
+                    · rw [ite_eq_left hend] at hdecode
                       by_cases hendSize : high32Nat tagWord != 8
-                      · rw [if_pos hendSize] at hdecode
+                      · rw [ite_eq_left hendSize] at hdecode
                         contradiction
-                      · rw [if_neg hendSize] at hdecode
+                      · rw [ite_eq_right hendSize] at hdecode
                         by_cases hendOffset :
                             offset + aligned8 (high32Nat tagWord) != total
-                        · rw [if_pos hendOffset] at hdecode
+                        · rw [ite_eq_left hendOffset] at hdecode
                           contradiction
-                        · rw [if_neg hendOffset] at hdecode
+                        · rw [ite_eq_right hendOffset] at hdecode
                           by_cases hsaw : !sawMemoryMap
-                          · rw [if_pos hsaw] at hdecode
+                          · rw [ite_eq_left hsaw] at hdecode
                             contradiction
-                          · rw [if_neg hsaw] at hdecode
+                          · rw [ite_eq_right hsaw] at hdecode
                             injection hdecode with htags
                             subst tags
                             have hsawTrue : sawMemoryMap = true := by
@@ -813,18 +813,18 @@ private theorem decodeTags_constructs_traversal
                                 simp [hsizeEq, aligned8]
                               rw [haligned] at hendOffset
                               simpa using hendOffset
-                    · rw [if_neg hend] at hdecode
+                    · rw [ite_eq_right hend] at hdecode
                       by_cases hmap : low32Nat tagWord == 6
-                      · rw [if_pos hmap] at hdecode
+                      · rw [ite_eq_left hmap] at hdecode
                         by_cases hsaw : sawMemoryMap
-                        · rw [if_pos hsaw] at hdecode
+                        · rw [ite_eq_left hsaw] at hdecode
                           contradiction
-                        · rw [if_neg hsaw] at hdecode
+                        · rw [ite_eq_right hsaw] at hdecode
                           by_cases hmapSize :
                               high32Nat tagWord < memoryMapTagHeaderSize
-                          · rw [if_pos hmapSize] at hdecode
+                          · rw [ite_eq_left hmapSize] at hdecode
                             contradiction
-                          · rw [if_neg hmapSize] at hdecode
+                          · rw [ite_eq_right hmapSize] at hdecode
                             cases hlayout :
                                 readU64 bytes (offset + 8) with
                             | error reason =>
@@ -834,28 +834,28 @@ private theorem decodeTags_constructs_traversal
                                 simp only [hlayout] at hdecode
                                 by_cases hentrySize :
                                     low32Nat layoutWord != memoryMapEntrySize
-                                · rw [if_pos hentrySize] at hdecode
+                                · rw [ite_eq_left hentrySize] at hdecode
                                   contradiction
-                                · rw [if_neg hentrySize] at hdecode
+                                · rw [ite_eq_right hentrySize] at hdecode
                                   by_cases hentryVersion :
                                       high32Nat layoutWord != 0
-                                  · rw [if_pos hentryVersion] at hdecode
+                                  · rw [ite_eq_left hentryVersion] at hdecode
                                     contradiction
-                                  · rw [if_neg hentryVersion] at hdecode
+                                  · rw [ite_eq_right hentryVersion] at hdecode
                                     by_cases hentryAlignment :
                                         (high32Nat tagWord -
                                             memoryMapTagHeaderSize) %
                                             low32Nat layoutWord != 0
-                                    · rw [if_pos hentryAlignment] at hdecode
+                                    · rw [ite_eq_left hentryAlignment] at hdecode
                                       contradiction
-                                    · rw [if_neg hentryAlignment] at hdecode
+                                    · rw [ite_eq_right hentryAlignment] at hdecode
                                       by_cases hentryCount :
                                           (high32Nat tagWord -
                                               memoryMapTagHeaderSize) /
                                               low32Nat layoutWord > maxEntries
-                                      · rw [if_pos hentryCount] at hdecode
+                                      · rw [ite_eq_left hentryCount] at hdecode
                                         contradiction
-                                      · rw [if_neg hentryCount] at hdecode
+                                      · rw [ite_eq_right hentryCount] at hdecode
                                         have hsawFalse : sawMemoryMap = false := by
                                           simpa using hsaw
                                         subst sawMemoryMap
@@ -907,7 +907,7 @@ private theorem decodeTags_constructs_traversal
                                                   (high32Nat layoutWord) entries ::
                                                   tagsRev)
                                                 tags hdecode
-                      · rw [if_neg hmap] at hdecode
+                      · rw [ite_eq_right hmap] at hdecode
                         apply SuccessfulTagDecodeTraversal.ignoredTag
                           offset fuel tagWord sawMemoryMap tagsRev tags htagWord
                         · simpa using hsize
@@ -978,43 +978,43 @@ theorem successfulRichDecodeTraversal_entries_source
   unfold validateHandoff at hvalid
   simp only [bind, Except.bind] at hvalid
   by_cases hmagic : input.magic != multiboot2Magic
-  · rw [if_pos hmagic] at hvalid
+  · rw [ite_eq_left hmagic] at hvalid
     contradiction
-  · rw [if_neg hmagic] at hvalid
+  · rw [ite_eq_right hmagic] at hvalid
     by_cases haddress :
         input.infoAddress ≥ wordLimit || low32Nat infoWord ≥ wordLimit ||
           low32Nat infoWord > wordLimit - 1 - input.infoAddress
-    · rw [if_pos haddress] at hvalid
+    · rw [ite_eq_left haddress] at hvalid
       contradiction
-    · rw [if_neg haddress] at hvalid
+    · rw [ite_eq_right haddress] at hvalid
       by_cases halignment : input.infoAddress % 8 != 0
-      · rw [if_pos halignment] at hvalid
+      · rw [ite_eq_left halignment] at hvalid
         contradiction
-      · rw [if_neg halignment] at hvalid
+      · rw [ite_eq_right halignment] at hvalid
         by_cases hsize :
             low32Nat infoWord < 16 || low32Nat infoWord % 8 != 0
-        · rw [if_pos hsize] at hvalid
+        · rw [ite_eq_left hsize] at hvalid
           contradiction
-        · rw [if_neg hsize] at hvalid
+        · rw [ite_eq_right hsize] at hvalid
           by_cases htagCount : tags.length > maxTags
-          · rw [if_pos htagCount] at hvalid
+          · rw [ite_eq_left htagCount] at hvalid
             contradiction
-          · rw [if_neg htagCount] at hvalid
+          · rw [ite_eq_right htagCount] at hvalid
             by_cases hshape :
                 tags.any (fun tag => !tagShapeValid tag)
-            · rw [if_pos hshape] at hvalid
+            · rw [ite_eq_left hshape] at hvalid
               contradiction
-            · rw [if_neg hshape] at hvalid
+            · rw [ite_eq_right hshape] at hvalid
               let byteCount :=
                 8 + (tags.map (aligned8 ∘ Tag.size)).foldl (· + ·) 0
               by_cases hbyteCount : byteCount != low32Nat infoWord
-              · rw [if_pos hbyteCount] at hvalid
+              · rw [ite_eq_left hbyteCount] at hvalid
                 contradiction
-              · rw [if_neg hbyteCount] at hvalid
+              · rw [ite_eq_right hbyteCount] at hvalid
                 by_cases hbound : byteCount > maxTagBytes
-                · rw [if_pos hbound] at hvalid
+                · rw [ite_eq_left hbound] at hvalid
                   contradiction
-                · rw [if_neg hbound] at hvalid
+                · rw [ite_eq_right hbound] at hvalid
                   have hsame : sourceEntries = decoded.entries := by
                     rw [hextract] at hvalid
                     injection hvalid
@@ -1091,9 +1091,9 @@ theorem successful_decode_constructs_traversal (input : Input) (decoded : Decode
   unfold decode at h
   simp only [bind, Except.bind] at h
   by_cases hmagic : input.magic != multiboot2Magic
-  · rw [if_pos hmagic] at h
+  · rw [ite_eq_left hmagic] at h
     contradiction
-  · rw [if_neg hmagic] at h
+  · rw [ite_eq_right hmagic] at h
     cases haddress : validateInfoAddress input.infoAddress with
     | error reason =>
         simp only [haddress] at h
@@ -1101,13 +1101,13 @@ theorem successful_decode_constructs_traversal (input : Input) (decoded : Decode
     | ok infoAddressValid =>
         simp only [haddress] at h
         by_cases hsmall : input.bytes.length < 16
-        · rw [if_pos hsmall] at h
+        · rw [ite_eq_left hsmall] at h
           contradiction
-        · rw [if_neg hsmall] at h
+        · rw [ite_eq_right hsmall] at h
           by_cases hlarge : input.bytes.length > maxTagBytes
-          · rw [if_pos hlarge] at h
+          · rw [ite_eq_left hlarge] at h
             contradiction
-          · rw [if_neg hlarge] at h
+          · rw [ite_eq_right hlarge] at h
             cases hword : readU64 input.bytes 0 with
             | error reason =>
                 simp only [hword] at h
@@ -1115,17 +1115,17 @@ theorem successful_decode_constructs_traversal (input : Input) (decoded : Decode
             | ok infoWord =>
                 simp only [hword] at h
                 by_cases hlength : low32Nat infoWord != input.bytes.length
-                · rw [if_pos hlength] at h
+                · rw [ite_eq_left hlength] at h
                   contradiction
-                · rw [if_neg hlength] at h
+                · rw [ite_eq_right hlength] at h
                   by_cases haligned : low32Nat infoWord % 8 != 0
-                  · rw [if_pos haligned] at h
+                  · rw [ite_eq_left haligned] at h
                     contradiction
-                  · rw [if_neg haligned] at h
+                  · rw [ite_eq_right haligned] at h
                     by_cases hzero : high32Nat infoWord != 0
-                    · rw [if_pos hzero] at h
+                    · rw [ite_eq_left hzero] at h
                       contradiction
-                    · rw [if_neg hzero] at h
+                    · rw [ite_eq_right hzero] at h
                       cases htags :
                           decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] with
                       | error reason =>
@@ -1160,9 +1160,9 @@ theorem accepted_input_header (input : Input) (decoded : Decoded)
   unfold decode at h
   simp only [bind, Except.bind] at h
   by_cases hmagic : input.magic != multiboot2Magic
-  · rw [if_pos hmagic] at h
+  · rw [ite_eq_left hmagic] at h
     contradiction
-  · rw [if_neg hmagic] at h
+  · rw [ite_eq_right hmagic] at h
     cases haddress : validateInfoAddress input.infoAddress with
     | error reason =>
         simp only [haddress] at h
@@ -1170,13 +1170,13 @@ theorem accepted_input_header (input : Input) (decoded : Decoded)
     | ok infoAddressValid =>
         simp only [haddress] at h
         by_cases hsmall : input.bytes.length < 16
-        · rw [if_pos hsmall] at h
+        · rw [ite_eq_left hsmall] at h
           contradiction
-        · rw [if_neg hsmall] at h
+        · rw [ite_eq_right hsmall] at h
           by_cases hlarge : input.bytes.length > maxTagBytes
-          · rw [if_pos hlarge] at h
+          · rw [ite_eq_left hlarge] at h
             contradiction
-          · rw [if_neg hlarge] at h
+          · rw [ite_eq_right hlarge] at h
             cases hword : readU64 input.bytes 0 with
             | error reason =>
                 simp only [hword] at h
@@ -1184,17 +1184,17 @@ theorem accepted_input_header (input : Input) (decoded : Decoded)
             | ok infoWord =>
                 simp only [hword] at h
                 by_cases hlength : low32Nat infoWord != input.bytes.length
-                · rw [if_pos hlength] at h
+                · rw [ite_eq_left hlength] at h
                   contradiction
-                · rw [if_neg hlength] at h
+                · rw [ite_eq_right hlength] at h
                   by_cases haligned : low32Nat infoWord % 8 != 0
-                  · rw [if_pos haligned] at h
+                  · rw [ite_eq_left haligned] at h
                     contradiction
-                  · rw [if_neg haligned] at h
+                  · rw [ite_eq_right haligned] at h
                     by_cases hzero : high32Nat infoWord != 0
-                    · rw [if_pos hzero] at h
+                    · rw [ite_eq_left hzero] at h
                       contradiction
-                    · rw [if_neg hzero] at h
+                    · rw [ite_eq_right hzero] at h
                       cases htags :
                           decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] with
                       | error reason =>
@@ -1233,25 +1233,25 @@ theorem accepted_input_scalar_header (input : Input) (decoded : Decoded)
   unfold validateHandoff at hvalid
   simp only [bind, Except.bind] at hvalid
   by_cases hmagic : decoded.handoff.magic != multiboot2Magic
-  · rw [if_pos hmagic] at hvalid
+  · rw [ite_eq_left hmagic] at hvalid
     contradiction
-  · rw [if_neg hmagic] at hvalid
+  · rw [ite_eq_right hmagic] at hvalid
     by_cases hoverflow :
         decoded.handoff.infoAddress ≥ wordLimit ||
           decoded.handoff.totalSize ≥ wordLimit ||
           decoded.handoff.totalSize >
             wordLimit - 1 - decoded.handoff.infoAddress
-    · rw [if_pos hoverflow] at hvalid
+    · rw [ite_eq_left hoverflow] at hvalid
       contradiction
-    · rw [if_neg hoverflow] at hvalid
+    · rw [ite_eq_right hoverflow] at hvalid
       by_cases haligned : decoded.handoff.infoAddress % 8 != 0
-      · rw [if_pos haligned] at hvalid
+      · rw [ite_eq_left haligned] at hvalid
         contradiction
-      · rw [if_neg haligned] at hvalid
+      · rw [ite_eq_right haligned] at hvalid
         by_cases hsize :
             decoded.handoff.totalSize < 16 ||
               decoded.handoff.totalSize % 8 != 0
-        · rw [if_pos hsize] at hvalid
+        · rw [ite_eq_left hsize] at hvalid
           contradiction
         · have hbounds := decoded.bounds
           simp only [withinBounds, Bool.and_eq_true, decide_eq_true_eq] at hbounds
@@ -1283,32 +1283,32 @@ theorem validateHandoff_extractMemoryMap
   unfold validateHandoff at hvalid
   simp only [bind, Except.bind] at hvalid
   by_cases hmagic : handoff.magic != multiboot2Magic
-  · rw [if_pos hmagic] at hvalid
+  · rw [ite_eq_left hmagic] at hvalid
     contradiction
-  · rw [if_neg hmagic] at hvalid
+  · rw [ite_eq_right hmagic] at hvalid
     by_cases hoverflow :
         handoff.infoAddress ≥ wordLimit || handoff.totalSize ≥ wordLimit ||
           handoff.totalSize > wordLimit - 1 - handoff.infoAddress
-    · rw [if_pos hoverflow] at hvalid
+    · rw [ite_eq_left hoverflow] at hvalid
       contradiction
-    · rw [if_neg hoverflow] at hvalid
+    · rw [ite_eq_right hoverflow] at hvalid
       by_cases haligned : handoff.infoAddress % 8 != 0
-      · rw [if_pos haligned] at hvalid
+      · rw [ite_eq_left haligned] at hvalid
         contradiction
-      · rw [if_neg haligned] at hvalid
+      · rw [ite_eq_right haligned] at hvalid
         by_cases hsize :
             handoff.totalSize < 16 || handoff.totalSize % 8 != 0
-        · rw [if_pos hsize] at hvalid
+        · rw [ite_eq_left hsize] at hvalid
           contradiction
-        · rw [if_neg hsize] at hvalid
+        · rw [ite_eq_right hsize] at hvalid
           by_cases htags : handoff.tags.length > maxTags
-          · rw [if_pos htags] at hvalid
+          · rw [ite_eq_left htags] at hvalid
             contradiction
-          · rw [if_neg htags] at hvalid
+          · rw [ite_eq_right htags] at hvalid
             by_cases hshape : handoff.tags.any (fun tag => !tagShapeValid tag)
-            · rw [if_pos hshape] at hvalid
+            · rw [ite_eq_left hshape] at hvalid
               contradiction
-            · rw [if_neg hshape] at hvalid
+            · rw [ite_eq_right hshape] at hvalid
               let bytes :=
                 8 + (handoff.tags.map (aligned8 ∘ Tag.size)).foldl (· + ·) 0
               change
@@ -1318,13 +1318,13 @@ theorem validateHandoff_extractMemoryMap
                   throw .tagBytesExceeded
                 else extractMemoryMap handoff.tags) = .ok entries at hvalid
               by_cases hbytes : bytes != handoff.totalSize
-              · rw [if_pos hbytes] at hvalid
+              · rw [ite_eq_left hbytes] at hvalid
                 contradiction
-              · rw [if_neg hbytes] at hvalid
+              · rw [ite_eq_right hbytes] at hvalid
                 by_cases hbound : bytes > maxTagBytes
-                · rw [if_pos hbound] at hvalid
+                · rw [ite_eq_left hbound] at hvalid
                   contradiction
-                · rw [if_neg hbound] at hvalid
+                · rw [ite_eq_right hbound] at hvalid
                   exact hvalid
 
 theorem accepted_within_bounds (input : Input) (decoded : Decoded)
