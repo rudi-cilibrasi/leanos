@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 log="$(mktemp)"
+mkdir -p "$repo_root/build"
 fixture_build="$(mktemp -d "$repo_root/build/image-failure-fixture.XXXXXX")"
 trap 'rm -f "$log"; rm -rf "$fixture_build"' EXIT
 set +e
