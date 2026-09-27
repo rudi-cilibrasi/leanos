@@ -55,3 +55,53 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-kernel-root-return-replay"
 root = "tests.KernelRootReturnReplay"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-gen"
+root = "tests.WifiGen"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-vectors"
+root = "tests.WifiVectors"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-pmk"
+root = "tests.WifiPmk"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-devcrypto"
+root = "tests.WifiDevCrypto"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-xcheck"
+root = "tests.WifiXcheck"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-hssim"
+root = "tests.WifiHsSim"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-tx"
+root = "tests.WifiTx"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-devccmp"
+root = "tests.WifiDevCcmp"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-dhcpsim"
+root = "tests.WifiDhcpSim"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-rxcal"
+root = "tests.WifiNPhyRxCal"
+moreLeanArgs = ["-DwarningAsError=true"]

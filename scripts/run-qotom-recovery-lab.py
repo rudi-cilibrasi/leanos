@@ -878,6 +878,8 @@ def main():
     parser.add_argument('--usb-serial', required=True)
     parser.add_argument('--serial-device', required=True)
     parser.add_argument('--elf', type=Path, required=True)
+    parser.add_argument('--image-on-ssd', action='store_true',
+                        help='LeanOS ELF lives in /boot/efi/leanos (grub-qotom-ssd.cfg.in), not on the stick')
     parser.add_argument('--kernel-hang-elf', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cycles', type=int, default=1, choices=range(1, 4))
@@ -1131,12 +1133,21 @@ test "$(sudo -n camcontrol inquiry da0 -S)" = SERIAL
 sudo -n mkdir -p /mnt/leanos-lab
 sudo -n mount -t msdosfs /dev/da0s1 /mnt/leanos-lab
 trap 'sudo -n umount /mnt/leanos-lab' EXIT
-test "$(sha256 -q /mnt/leanos-lab/boot/leanos-qotom-lab.elf)" = DIGEST
+IMAGE_CHECKS
+sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
+'''
+        if args.image_on_ssd:
+            image_checks = '''test "$(sha256 -q /boot/efi/leanos/leanos-qotom-lab.elf)" = DIGEST
+grep -Fqx 'set leanos_digest=DIGEST' /boot/efi/leanos/leanos-digest.cfg
+grep -Fqx 'DIGEST  leanos-qotom-lab.elf' /boot/efi/leanos/leanos.sha256
+grep -Fq 'set wd_prefix=watchdog-leanos-${leanos_digest}' /mnt/leanos-lab/boot/grub/grub.cfg'''
+        else:
+            image_checks = '''test "$(sha256 -q /mnt/leanos-lab/boot/leanos-qotom-lab.elf)" = DIGEST
 grep -Fq 'if [ "$selected" = "leanos-DIGEST" ]; then' /mnt/leanos-lab/boot/grub/grub.cfg
 grep -Fq 'set wd_prefix=watchdog-leanos-DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
-grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
-sudo -n cp /var/tmp/leanos-lab-request.env /mnt/leanos-lab/boot/grub/grubenv
-'''.replace('SERIAL', shlex.quote(args.usb_serial)).replace('DIGEST', shlex.quote(digest))
+grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg'''
+        arm = arm.replace('IMAGE_CHECKS', image_checks)
+        arm = arm.replace('SERIAL', shlex.quote(args.usb_serial)).replace('DIGEST', shlex.quote(digest))
         if args.scenario == 'watchdog-kernel':
             # Check the installed payload before writing the dated request.
             check = 'test "$(sha256 -q /mnt/leanos-lab/boot/leanos-qotom-kernel-hang.elf)" = ' + shlex.quote(kernel_digest) + '\n'
