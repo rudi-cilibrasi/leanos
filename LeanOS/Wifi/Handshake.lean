@@ -38,6 +38,7 @@ def gtkIdAt : UInt32 := 0x8D0
 def eapolPtrAt : UInt32 := 0x8E0
 def eapolLenAt : UInt32 := 0x8E4
 def versionAt : UInt32 := 0x8E8
+def retryAt : UInt32 := 0x8EC
 def plainAt : UInt32 := 0x900
 def entropyAt : UInt32 := 0x980
 def entropy2At : UInt32 := 0x9E0
@@ -58,6 +59,7 @@ def msg3 : UInt32 := 0x0D03
 def msg4Sent : UInt32 := 0x0D04
 def gtkId : UInt32 := 0x0D05
 def complete : UInt32 := 0x0D06
+def msg1Again : UInt32 := 0x0D07
 end Tag
 
 /-- Copy `n` bytes from scratch `r(src) + off` to scratch `dst` (uses r0, r1). -/
@@ -134,9 +136,14 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   putBytes "pmk" pmkAt pmk
   copyFrom 0 bssidAt aaAt 6
   putBytes "spa" spaAt (ByteArray.mk ourMac.data)
-  -- Message 1: pairwise | ack, no MIC.
+  -- Message 1: pairwise | ack, no MIC. A retransmitted message 1 while
+  -- waiting for message 3 re-enters here (bounded by `retryAt`).
+  li 0 0
+  emit (.memStore 4 0 retryAt (.imm 4))
   waitEapol 400 tries
   saveEapol
+  let handle1 ← newLabel
+  place handle1
   emit (.memLoad 1 1 7 6)                 -- key info low byte
   mov 2 1
   andi 2 0x88
@@ -171,6 +178,17 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   andi 1 0x01
   let ok3 ← newLabel
   emit (.branch .ne 1 (.imm 0) ok3)
+  -- no MIC: the authenticator retransmitted message 1
+  li 0 0
+  emit (.memLoad 4 1 0 retryAt)
+  let giveUp ← newLabel
+  emit (.branch .eq 1 (.imm 0) giveUp)
+  emit (.alu .sub 1 (.imm 1))
+  emit (.memStore 4 0 retryAt (.reg 1))
+  printImm Tag.msg1Again 0
+  loadEapol
+  emit (.jump handle1)
+  place giveUp
   fail Fail.notMsg3
   place ok3
   printImm Tag.msg3 0

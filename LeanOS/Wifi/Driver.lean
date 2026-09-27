@@ -272,8 +272,8 @@ open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy
 
 /-- Transmit the `n`-byte MPDU at `Mlme.txMpdu`: build the run-time TX
 descriptor in front of it, push descriptor+frame into PIO FIFO `fifo`, then
-poll the transmit status and print it (tag 0x0E00: found, 0x0E01: status,
-0x0E02: acked, 0x0E03: attempts). -/
+poll the transmit status and print it (tag 0x0E10: found, 0x0E11: status,
+0x0E12: acked, 0x0E13: attempts). -/
 def sendMpdu (c : LeanOS.Wifi.Tx.TxConfig) (fifo : UInt32) (n : Nat) : ProgM Unit := do
   li 11 (Mlme.txMpdu - 118)
   li 12 n.toUInt32
@@ -282,10 +282,10 @@ def sendMpdu (c : LeanOS.Wifi.Tx.TxConfig) (fifo : UInt32) (n : Nat) : ProgM Uni
   li 12 (n + 118).toUInt32
   Mac.pioTx fifo 11 12
   LeanOS.Wifi.Tx.readTxStatus 8 2000 50
-  print 0x0E00 0
-  print 0x0E01 1
-  print 0x0E02 2
-  print 0x0E03 3
+  print 0x0E10 0
+  print 0x0E11 1
+  print 0x0E12 2
+  print 0x0E13 3
 
 /-- Associate with `bssid` (a QUAIL access point) on `cfg.channel` and run
 the WPA2 4-way handshake with `pmk`. -/
