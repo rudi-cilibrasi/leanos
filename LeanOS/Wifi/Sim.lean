@@ -21,6 +21,9 @@ structure Device (σ : Type) where
   cfgRead32 : σ → UInt32 → UInt32 × σ
   cfgWrite32 : σ → UInt32 → UInt32 → σ
 
+/-- Bus address the simulator reports for scratch byte 0 (`physAddr`). -/
+def simPhysBase : UInt32 := 0x01000000
+
 /-- A device that reads as zero and ignores writes. -/
 def Device.none : Device Unit where
   read32 _ _ := (0, ())
@@ -157,6 +160,9 @@ partial def loop {σ} [Inhabited σ] (p : Program) (d : Device σ) (maxSteps : N
       for i in [0:cnt] do s := d.write32 s w.a (memLoad m.mem (base + 4 * i) 4)
       return s
     loop p d maxSteps { m with dev := s }
+  | 25 =>
+    if w.b.toNat > scratchBytes then (.error "mem", m)
+    else loop p d maxSteps (m.setReg w.a (simPhysBase + w.b))
   | _ => (.error s!"opcode {w.op}", m)
 
 /-- Run `p` on device `d` from state `s0`, at most `maxSteps` instructions. -/

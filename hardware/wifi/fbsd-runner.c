@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
     r.bar = mmap(0, WIFI_WINDOW_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, bar0 & ~0xfu);
     if (r.bar == MAP_FAILED) { perror("mmap"); return 2; }
     struct wifi_hooks h = { mmio_read32, mmio_read16, mmio_write32, mmio_write16,
-                            cfg_read32, cfg_write32, delay_us, print, &r };
+                            cfg_read32, cfg_write32, delay_us, print, &r, 0 };
     uint32_t code = 0;
     int status = wifi_exec(image, (uint32_t)st.st_size, &h, 400000000ull, &code);
     printf("WIFI-END status=%d code=0x%x accesses=%lu\n", status, code, r.accesses);

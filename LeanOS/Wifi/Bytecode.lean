@@ -89,6 +89,9 @@ inductive Instr where
   /-- Scratch → transmit FIFO: write `r(count)` 32-bit words from
   `mem[r(base)..]` to device register `off`. -/
   | fifoOut (off : UInt32) (base : Reg) (count : Reg)
+  /-- `dst := physical address of scratch byte off` (bus address for DMA
+  descriptors). Executors without DMA-capable scratch report 0. -/
+  | physAddr (dst : Reg) (off : UInt32)
   deriving Repr
 
 /-- Opcode numbers shared with `hardware/wifi/wifi-exec.h`. -/
@@ -99,10 +102,10 @@ def opcode : Instr → UInt32
   | .alu .. => 12 | .branch .. => 13 | .jump .. => 14 | .delayUs .. => 15
   | .print .. => 16 | .blobStream32 .. => 17 | .blobLoad32 .. => 18
   | .call .. => 19 | .ret => 20 | .memLoad .. => 21 | .memStore .. => 22
-  | .fifoIn .. => 23 | .fifoOut .. => 24
+  | .fifoIn .. => 23 | .fifoOut .. => 24 | .physAddr .. => 25
 
 /-- Size of the executor's scratch RAM in bytes. -/
-def scratchBytes : Nat := 65536
+def scratchBytes : Nat := 262144
 
 /-- Operand flag bit in the opcode word marks an immediate operand. -/
 def immFlag : UInt32 := 0x100
@@ -155,6 +158,7 @@ def encode (i : Instr) : Option Word4 :=
       if w != 1 && w != 2 && w != 4 then none
       let (f, v) ← operandFields s
       some ⟨op ||| f ||| (w.toUInt32 <<< 16), ← r b, off, v⟩
+  | .physAddr d off => do some ⟨op, ← r d, off, 0⟩
   | .fifoIn off b n => do some ⟨op, off, ← r b, ← r n⟩
   | .fifoOut off b n => do some ⟨op, off, ← r b, ← r n⟩
 
@@ -163,6 +167,17 @@ def encode (i : Instr) : Option Word4 :=
 Programs are written in `ProgM`, which appends instructions, allocates labels
 and records a data blob. Labels are resolved once the program is complete. -/
 
+/-- PCI function a program drives: its configuration identity dword
+(vendor | device << 16) and the size of its register window. Images without
+a target (version 1) drive the Broadcom BCM43224 at 02:00.0. -/
+structure Target where
+  bus : UInt32
+  dev : UInt32
+  fn : UInt32
+  id : UInt32
+  windowBytes : UInt32
+  deriving Repr, BEq
+
 structure BuildState where
   code : Array Instr := #[]
   /-- label id ↦ instruction index (filled when placed). -/
@@ -170,8 +185,12 @@ structure BuildState where
   blob : ByteArray := ByteArray.empty
   /-- Named blob sections for diagnostics. -/
   sections : Array (String × Nat × Nat) := #[]
+  target : Option Target := none
 
 abbrev ProgM := StateM BuildState
+
+/-- Declare the PCI function this program drives (version-2 image). -/
+def setTarget (t : Target) : ProgM Unit := modify fun s => { s with target := some t }
 
 def emit (i : Instr) : ProgM Unit := modify fun s => { s with code := s.code.push i }
 
@@ -210,6 +229,7 @@ structure Program where
   words : Array Word4
   blob : ByteArray
   sections : Array (String × Nat × Nat)
+  target : Option Target := none
 
 def build (p : ProgM Unit) : Except String Program := do
   let ((), s) := p.run {}
@@ -219,12 +239,14 @@ def build (p : ProgM Unit) : Except String Program := do
     match encode i with
     | some w => words := words.push w
     | none => throw s!"bad register at pc {pc}: {repr i}"
-  return { words, blob := s.blob, sections := s.sections }
+  return { words, blob := s.blob, sections := s.sections, target := s.target }
 
 /-! ## Binary image
 
-Layout (little endian): magic `LWIF`, version 1, instruction count, blob
-length, then 16-byte instructions, then the blob. -/
+Layout (little endian): magic `LWIF`, version, instruction count, blob
+length; version 2 adds the target (bus << 16 | dev << 8 | fn, configuration
+identity dword, window bytes, reserved); then 16-byte instructions, then the
+blob. -/
 
 def putU32 (b : ByteArray) (v : UInt32) : ByteArray :=
   b.push v.toUInt8 |>.push (v >>> 8).toUInt8 |>.push (v >>> 16).toUInt8 |>.push (v >>> 24).toUInt8
@@ -232,9 +254,14 @@ def putU32 (b : ByteArray) (v : UInt32) : ByteArray :=
 def Program.image (p : Program) : ByteArray := Id.run do
   let mut b := ByteArray.empty
   b := putU32 b 0x4649574c -- "LWIF"
-  b := putU32 b 1
+  b := putU32 b (if p.target.isSome then 2 else 1)
   b := putU32 b p.words.size.toUInt32
   b := putU32 b p.blob.size.toUInt32
+  if let some t := p.target then
+    b := putU32 b ((t.bus <<< 16) ||| (t.dev <<< 8) ||| t.fn)
+    b := putU32 b t.id
+    b := putU32 b t.windowBytes
+    b := putU32 b 0
   for w in p.words do
     b := putU32 (putU32 (putU32 (putU32 b w.op) w.a) w.b) w.c
   return b ++ p.blob
