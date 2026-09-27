@@ -4,6 +4,7 @@ import LeanOS.Wifi.NPhyWorkarounds
 import LeanOS.Wifi.Mac
 import LeanOS.Wifi.NPhyInit
 import LeanOS.Wifi.NPhyRssiCal
+import LeanOS.Wifi.NPhyTxCal
 import LeanOS.Wifi.Tx
 import LeanOS.Wifi.Handshake
 import LeanOS.Wifi.Pbkdf2
@@ -257,12 +258,25 @@ end LeanOS.Wifi.Driver
 namespace LeanOS.Wifi.Driver
 open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy
 
+/-- The `do_nphy_cal` sequence selected by `cfg.calLevel` (≥ 2): precal TX
+gain, target gain, TX IQ/LO calibration and, when it succeeded (r0 = 0),
+save; RX IQ calibration joins at level 3. -/
+def txRxCalFor (cfg : PhyCfg) : ProgM Unit := do
+  if cfg.calLevel ≥ 2 then
+    LeanOS.Wifi.NPhyTxCal.precalAndTxiqlo cfg
+    let skip ← newLabel
+    emit (.branch .ne 0 (.imm 0) skip)
+    printImm 0x0470 0                      -- TX IQ/LO calibration succeeded
+    LeanOS.Wifi.NPhyTxCal.saveCal cfg
+    printImm 0x0471 0                      -- calibration saved
+    place skip
+
 /-- wlc_phy_init for this board (phy_cmn.c): anacore on, radio on and channel
 set (wlc_phy_switch_radio_nphy), then wlc_phy_init_nphy with the ported table
 init and workarounds; calibrations not yet ported. -/
 def phyInitFull (cfg : PhyCfg)
     (rssiCal : ProgM Unit := if cfg.calLevel ≥ 1 then LeanOS.Wifi.NPhyRssiCal.rssiCal cfg else pure ())
-    (txRxCal : ProgM Unit := pure ()) : ProgM Unit := do
+    (txRxCal : ProgM Unit := txRxCalFor cfg) : ProgM Unit := do
   LeanOS.Wifi.NPhyInit.anacoreOn cfg
   LeanOS.Wifi.Radio2056.radioOn cfg
   LeanOS.Wifi.NPhyInit.initNphy cfg (NPhyTables.tblInit cfg)
