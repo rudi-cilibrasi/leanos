@@ -168,9 +168,20 @@ their possible targets cannot be bounded by its reviewed static call graph, and
 Clang otherwise lowers the finite generated entry classifier through a jump
 table. This preserves the fail-closed stack analysis rather than allowlisting
 an optimizer-specific indirect edge.
-These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
-output, a fixed ISO UUID and file dates, no linker build ID, and normalized
-debug paths. Release CI and local validation retain
+These pins identify the build inputs. Every ISO boots under BIOS and UEFI:
+a BIOS El Torito entry from GRUB `i386-pc` and a UEFI El Torito entry plus
+GPT EFI system partition holding a monolithic GRUB `x86_64-efi` loader
+(`scripts/build-efi-grub.sh`). GRUB's own `grub-mkrescue` EFI image embeds a
+wall-clock UUID and uninitialised FAT bytes, so the build makes its own
+reproducible `efi.img` (fixed FAT serial, `SOURCE_DATE_EPOCH` file times, a
+pre-zeroed image) whose embedded configuration finds `/boot/leanos.elf` and
+reads the same `grub.cfg` as BIOS GRUB. Both loaders enter the same kernel ELF
+through Multiboot2 in 32-bit protected mode. The build also uses a fixed ISO
+UUID, GPT disk GUID and file dates, no linker build ID, and normalized debug
+paths. `./scripts/check-firmware-boot.sh` boots the canonical ISO on the pinned
+q35 platform under SeaBIOS and under OVMF (`LEANOS_QEMU_FIRMWARE=ovmf` adds
+the pinned `OVMF_CODE_4M.fd` and a private variable store) and requires the
+final PASS from both. Release CI and local validation retain
 `./scripts/test-reproducible-build.sh` for same-runner checks. A pull request
 promoted with the reviewed `ci:full-admission` label runs two Clang builds
 concurrently on independent hosted runners,

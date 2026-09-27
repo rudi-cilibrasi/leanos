@@ -1,4 +1,6 @@
-# Lab-only BIOS disk. Persistent default is the existing FreeBSD disk.
+# Lab-only BIOS/UEFI disk: i386-pc GRUB in the MBR and x86_64-efi GRUB at
+# EFI/BOOT/BOOTX64.EFI both read this file. Persistent default is the existing
+# FreeBSD disk.
 insmod part_gpt
 insmod part_msdos
 insmod fat
@@ -121,7 +123,12 @@ for disk in hd0 hd1 hd2 hd3; do
         if [ "$candidate" = "@FREEBSD_BOOT_UUID@" ]; then
             echo "LEANOS-LAB/1 CHAIN freebsd disk=$disk"
             set root=($disk)
-            chainloader +1
+            if [ "$grub_platform" = "efi" ]; then
+                # UEFI: FreeBSD's loader on the disk's EFI system partition.
+                chainloader ($disk,gpt1)/efi/freebsd/loader.efi
+            else
+                chainloader +1
+            fi
             boot
         fi
     fi

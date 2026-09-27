@@ -112,13 +112,20 @@ sha256 /var/tmp/usb-readback.bin
 The readback must equal the manifest's ISO hash. The prefix backup restores
 only the bytes written by this exact image; preserve a full backup if other
 changes to the stick are planned. The observed write was read back and matched.
-The image has a GRUB hybrid MBR and a BIOS El Torito entry, built with
-`grub-mkrescue -d /usr/lib/grub/i386-pc`; it is not a UEFI boot image.
+The image has a GRUB hybrid MBR, a BIOS El Torito entry built with
+`grub-mkrescue -d /usr/lib/grub/i386-pc`, and a UEFI El Torito entry and EFI
+system partition carrying the reproducible `x86_64-efi` GRUB from
+`scripts/build-efi-grub.sh`; the same image boots in either firmware mode.
 
 ## Firmware and serial setup
 
-Use the Qotom's **Win7 Legacy** compatibility mode and select the USB's legacy
-boot entry. Those labels name firmware modes, not an OS requirement. The first
+The Qotom observations below used its **Win7 Legacy** compatibility mode and
+the USB's legacy boot entry. Those labels name firmware modes, not an OS
+requirement. LeanOS images and the lab stick also boot in UEFI mode: the lab
+stick carries `EFI/BOOT/BOOTX64.EFI` (`hardware/lab/install-uefi-loader.sh`)
+beside its MBR GRUB, both read the same `grub.cfg`, and under UEFI its default
+path chains FreeBSD's `efi/freebsd/loader.efi` on the SSD's EFI system
+partition instead of the BIOS boot sector. The first
 attempt selected the internal FreeBSD UEFI entry instead and produced no LeanOS
 protocol. Record any different firmware setting as a new observation context.
 

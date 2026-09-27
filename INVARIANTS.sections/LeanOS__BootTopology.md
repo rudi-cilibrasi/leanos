@@ -4,7 +4,8 @@ At startup, firmware describes the machine's processors in a family of tables ca
 
 - `coherent_old_new_roots_select_new` — A worked check: when firmware publishes both the old-style and new-style root pointer and their shared contents agree exactly, the selector accepts and follows the newer one.
 - `coherent_root_selection_is_order_independent` — A worked check: those same two matching root pointers select the same result no matter which order they arrive in.
-- `conflicting_old_new_roots_rejected` — A worked check: when the old-style and new-style root pointers disagree about their shared contents, selection refuses rather than guessing.
+- `conflicting_old_new_roots_rejected` — A worked check: when the old-style and new-style root pointers name different OEM identities, selection refuses rather than guessing.
+- `uefi_distinct_rsdt_roots_select_new` — A worked check: UEFI firmware that publishes separate ACPI 1.0 and 2.0 tables, so the two root pointers name different RSDTs of the same OEM, selects the new root and its XSDT.
 - `duplicate_new_roots_rejected` — A worked check: two copies of the new-style root pointer are refused outright, even when they are identical.
 - `repository_xsdt_entries_decoded` — A worked check: the repository's reference root table decodes to exactly the two table addresses it advertises.
 - `xsdt_payload_misalignment_rejected` — A worked check: a root table whose address list is not a whole number of address-sized entries is refused.

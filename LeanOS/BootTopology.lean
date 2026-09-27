@@ -91,9 +91,12 @@ private def collectAcpiRoots : List RawAcpiRootTag →
       | none => collectAcpiRoots rest oldRoot (some (legacy, xsdtAddress))
 
 /-- Select one authoritative ACPI root from the bounded copied handoff.
-When firmware publishes both Multiboot2 ACPI tag forms, their complete checked
-legacy portions must agree exactly; the newer root then carries the selected
-XSDT address.  Duplicate or conflicting roots fail closed before MADT parsing. -/
+When firmware publishes both Multiboot2 ACPI tag forms, their checked OEM
+identities must agree; the newer root then carries the selected XSDT address.
+The RSDT addresses may differ: UEFI firmware (OVMF, AMI Aptio) publishes
+separate ACPI 1.0 and 2.0 table sets, so GRUB's tag 14 and tag 15 name distinct
+RSDTs of the same platform.  Duplicate or conflicting roots fail closed before
+MADT parsing. -/
 def selectAcpiRoot (tags : List RawAcpiRootTag) :
     Except AcpiRootError AcpiRoot := do
   let (oldRoot, newRoot) ← collectAcpiRoots tags none none
@@ -104,7 +107,7 @@ def selectAcpiRoot (tags : List RawAcpiRootTag) :
   | none, some (legacy, xsdtAddress) =>
       .ok { source := .newRsdp, legacy, xsdtAddress := some xsdtAddress }
   | some oldLegacy, some (newLegacy, xsdtAddress) =>
-      if oldLegacy == newLegacy then
+      if oldLegacy.oemId == newLegacy.oemId then
         .ok { source := .newRsdp, legacy := newLegacy, xsdtAddress := some xsdtAddress }
       else
         .error .conflictingRoots
@@ -140,6 +143,18 @@ theorem conflicting_old_new_roots_rejected :
       .new { repositoryLegacyRoot with oemId := [0x42] }
         0x00000000000f5c00
     ] = .error .conflictingRoots := by
+  rfl
+
+theorem uefi_distinct_rsdt_roots_select_new :
+    selectAcpiRoot [
+      .old { repositoryLegacyRoot with rsdtAddress := 0x1fb7d000 },
+      .new { repositoryLegacyRoot with rsdtAddress := 0x1fb7d074 }
+        0x000000001fb7d0e8
+    ] = .ok {
+      source := .newRsdp
+      legacy := { repositoryLegacyRoot with rsdtAddress := 0x1fb7d074 }
+      xsdtAddress := some 0x000000001fb7d0e8
+    } := by
   rfl
 
 theorem duplicate_new_roots_rejected :

@@ -115,6 +115,10 @@ if [[ ! -d /usr/lib/grub/i386-pc ]]; then
   echo "error: missing GRUB BIOS modules; install Ubuntu package grub-pc-bin=2.12-1ubuntu7.3" >&2
   exit 1
 fi
+if [[ ! -d /usr/lib/grub/x86_64-efi ]]; then
+  echo "error: missing GRUB UEFI modules; install Ubuntu package grub-efi-amd64-bin=2.12-1ubuntu7.3" >&2
+  exit 1
+fi
 grub_mkrescue_path="$(command -v grub-mkrescue)"
 xorriso_path="$(command -v xorriso)"
 mformat_path="$(command -v mformat)"
@@ -261,9 +265,15 @@ grub-mkrescue() {
 run_iso_packaging() {
   local output="$1"
   local staging_root="$2"
+  # BIOS El Torito entry from GRUB's i386-pc tree, plus a UEFI entry and
+  # GPT EFI system partition for the staged, deterministic efi.img.
   grub-mkrescue -d /usr/lib/grub/i386-pc -o "$output" "$staging_root" -- \
     -volume_date uuid 2000010100000000 \
-    -volume_date all_file_dates 2000010100000000 >/dev/null
+    -volume_date all_file_dates 2000010100000000 \
+    -boot_image any next \
+    -boot_image any efi_path=/efi.img \
+    -boot_image any efi_boot_part=--efi-boot-image \
+    -boot_image any gpt_disk_guid=volume_date_uuid >/dev/null
 }
 export repo_root iso_packaging_signature grub_mkrescue_path
 export -f compute_iso_signature grub-mkrescue run_iso_packaging
@@ -1439,6 +1449,10 @@ fi
 record_build_phase policy-and-fixture-validation
 
 printf '%s\n' "$source_revision" > "$build/SOURCE_REVISION"
+# One UEFI loader serves every image: its embedded configuration finds the
+# ISO tree and reads the same grub.cfg that BIOS GRUB reads.
+./scripts/build-efi-grub.sh binary "$build/BOOTX64.EFI" boot/grub-efi-iso.cfg
+./scripts/build-efi-grub.sh esp-image "$build/efi.img" "$build/BOOTX64.EFI"
 declare -A selected_iso_root_lookup=()
 stage_selected_image() {
   local elf="$1"
@@ -1448,6 +1462,7 @@ stage_selected_image() {
   selected_iso_root_lookup["$staging_root"]="$elf"
   cp "$elf" "$staging_root/boot/leanos.elf"
   cp "$grub_config" "$staging_root/boot/grub/grub.cfg"
+  cp "$build/efi.img" "$staging_root/efi.img"
   cp "$build/SOURCE_REVISION" "$staging_root/boot/SOURCE_REVISION"
   cp "$build/TOOLCHAIN_PROFILE.json" \
     "$staging_root/boot/TOOLCHAIN_PROFILE.json"
@@ -1464,13 +1479,16 @@ for spec in "${return_corruptions[@]}"; do
   mkdir -p "$fixture_root/boot/grub"
   cp "$return_elf" "$fixture_root/boot/leanos.elf"
   cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
+  cp "$build/efi.img" "$fixture_root/efi.img"
   cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
   cp "$build/TOOLCHAIN_PROFILE.json" \
     "$fixture_root/boot/TOOLCHAIN_PROFILE.json"
   selected_iso_root_lookup["$fixture_root"]="$return_elf"
 done
-# BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
-# UUID and file dates make repeated builds independent of wall-clock time. The
+# Each ISO boots under BIOS and UEFI. GRUB's own FAT/EFI image is
+# nondeterministic, so the UEFI entry uses the reproducible efi.img staged
+# above (scripts/build-efi-grub.sh). A fixed ISO UUID, GPT disk GUID and file
+# dates make repeated builds independent of wall-clock time. The
 # staging roots and outputs are disjoint, so package the image family with the
 # same bounded worker count used by the independent validation batches.
 iso_task_file="$build/iso-packaging-tasks.nul"

@@ -27,6 +27,24 @@ leanos_qemu_accelerator() {
   esac
 }
 
+# Firmware family: SeaBIOS (QEMU's built-in default, BIOS/El Torito boot) or
+# OVMF (EDK II UEFI, El Torito EFI boot).  Both reach the same GRUB
+# configuration and the same Multiboot2 kernel entry.  OVMF is loaded as the
+# pinned read-only code flash plus a private copy of the variable store.
+readonly LEANOS_OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+readonly LEANOS_OVMF_VARS=/usr/share/OVMF/OVMF_VARS_4M.fd
+
+leanos_qemu_firmware() {
+  local firmware="${LEANOS_QEMU_FIRMWARE:-seabios}"
+  case "$firmware" in
+    seabios|ovmf) printf '%s\n' "$firmware" ;;
+    *)
+      echo "error: QEMU firmware must be exactly 'seabios' or 'ovmf'" >&2
+      return 1
+      ;;
+  esac
+}
+
 leanos_q35_cpu() {
   local requested="$1"
   local accelerator
@@ -51,9 +69,12 @@ leanos_validate_q35_command() {
   local -n q35_command="$command_name"
   local machine=0 nodefaults=0 iommu=0 vga=0 cdrom=0 cdrom_drive=0
   local debug_exit=0 devices=0 cpu_options=0 smp_options=0
-  local argument previous= first_device= accelerator
+  local ovmf_code=0 ovmf_vars=0 pflash=0 expected_pflash=0
+  local argument previous= first_device= accelerator firmware
 
   accelerator="$(leanos_qemu_accelerator)" || return 1
+  firmware="$(leanos_qemu_firmware)" || return 1
+  [[ "$firmware" == ovmf ]] && expected_pflash=2
 
   for argument in "${q35_command[@]}"; do
     if [[ "$previous" == -cpu ]]; then
@@ -94,6 +115,11 @@ leanos_validate_q35_command() {
         ((cdrom_drive += 1))
         ;;
       isa-debug-exit,iobase=0xf4,iosize=0x04) ((debug_exit += 1)) ;;
+      if=pflash,format=raw,readonly=on,file="$LEANOS_OVMF_CODE")
+        ((ovmf_code += 1))
+        ;;
+      if=pflash,format=raw,file=*) ((ovmf_vars += 1)) ;;
+      *if=pflash*|-bios|-pflash) ((pflash += 1)) ;;
       -device) ((devices += 1)) ;;
       -cdrom)
         echo "error: q35 platform must use the explicit ide-cd attachment" >&2
@@ -110,6 +136,11 @@ leanos_validate_q35_command() {
      $cdrom_drive -eq 1 && $debug_exit -eq 1 && $cpu_options -eq 1 &&
      $smp_options -eq 1 ]] || {
     echo "error: q35 platform device topology drifted" >&2
+    return 1
+  }
+  [[ $pflash -eq 0 && $ovmf_code -eq $((expected_pflash / 2)) &&
+     $ovmf_vars -eq $((expected_pflash / 2)) ]] || {
+    echo "error: q35 platform firmware drifted from $firmware" >&2
     return 1
   }
   [[ "$first_device" == intel-iommu,* ]] || {
@@ -151,6 +182,16 @@ leanos_q35_command() {
     -drive "id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=$image"
     -device ide-cd,drive=leanos-cd,bus=ide.0
   )
+  if [[ "$(leanos_qemu_firmware)" == ovmf ]]; then
+    # UEFI writes boot variables, so each run gets a fresh private store
+    # next to its serial log; the pinned code flash stays read-only.
+    local vars="${serial_log}.ovmf-vars.fd"
+    cp "$LEANOS_OVMF_VARS" "$vars" || return 1
+    q35_command+=(
+      -drive "if=pflash,format=raw,readonly=on,file=$LEANOS_OVMF_CODE"
+      -drive "if=pflash,format=raw,file=$vars"
+    )
+  fi
   leanos_validate_q35_command "$command_name"
 }
 

@@ -2817,6 +2817,12 @@
     },
     {
       "source": "LeanOS/BootTopology.lean",
+      "qualified": "LeanOS.BootTopology.uefi_distinct_rsdt_roots_select_new",
+      "display": "uefi_distinct_rsdt_roots_select_new",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootTopology.lean",
       "qualified": "LeanOS.BootTopology.unsupported_madt_record_rejected_before_admission",
       "display": "unsupported_madt_record_rejected_before_admission",
       "kind": "theorem"

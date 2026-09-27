@@ -319,6 +319,12 @@ jobs:
             2>&1 | tee build/ci/clang-canonical-boot.log
           test -s build/boot/serial.log
 
+      - name: Boot the canonical image under SeaBIOS and OVMF
+        run: |
+          set -o pipefail
+          ./scripts/check-firmware-boot.sh build/boot/leanos-0.1.0-x86_64.iso \
+            build/ci/firmware-boot 2>&1 | tee build/ci/firmware-boot.log
+
       - name: Preserve Clang compiler and canonical boot evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
