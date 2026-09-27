@@ -110,18 +110,22 @@ partial def loop {σ} [Inhabited σ] (p : Program) (d : Device σ) (maxSteps : N
       for i in [0:w.c.toNat] do s := d.write32 s w.a (le32 p.blob (w.b.toNat + 4 * i))
       return s
     loop p d maxSteps { m with dev }
-  | 18 => loop p d maxSteps (m.setReg w.a (le32 p.blob (w.c.toNat + 4 * (m.reg w.b).toNat)))
+  | 18 =>
+    let off := w.c.toNat + 4 * (m.reg w.b).toNat
+    if w.c &&& 3 != 0 || off + 4 > p.blob.size then (.error "blob", m)
+    else loop p d maxSteps (m.setReg w.a (le32 p.blob off))
   | 19 => if m.stack.length ≥ 16 then (.error "stack", m)
           else loop p d maxSteps { m with stack := m.pc :: m.stack, pc := w.a.toNat }
   | 20 => match m.stack with
           | [] => (.error "stack", m)
           | r :: rest => loop p d maxSteps { m with stack := rest, pc := r }
   | 21 =>
-    let at_ := (m.reg w.b + w.c).toNat
+    -- 64-bit address sum as in the C executor (no 32-bit wrap-around).
+    let at_ := (m.reg w.b).toNat + w.c.toNat
     if at_ + sub.toNat > scratchBytes then (.error "mem", m)
     else loop p d maxSteps (m.setReg w.a (memLoad m.mem at_ sub.toNat))
   | 22 =>
-    let at_ := (m.reg w.a + w.b).toNat
+    let at_ := (m.reg w.a).toNat + w.b.toNat
     if at_ + sub.toNat > scratchBytes then (.error "mem", m)
     else loop p d maxSteps { m with mem := memStore m.mem at_ sub.toNat (val w.c) }
   | 23 =>
