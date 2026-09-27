@@ -1005,6 +1005,7 @@ def wlcPhySpurwarNphy (cfg : PhyCfg) : ProgM Unit := do
 /-- Spur-avoid mode chosen by `wlc_phy_chanspec_nphy_setup` for rev 3..6 at
 20 MHz with `SPURAVOID_AUTO`. -/
 def spurAvoidMode (cfg : PhyCfg) : Nat :=
+  if cfg.spurAvoidDisable then 0 else
   if (cfg.channel >= 5 && cfg.channel <= 8) || cfg.channel == 13 || cfg.channel == 14 then 1
   else 0
 

@@ -33,6 +33,10 @@ structure PhyCfg where
   channel : Nat
   /-- The 220 SROM words (revision 8 layout). -/
   sprom : Array UInt32
+  /-- brcmsmac `phy_spuravoid = SPURAVOID_DISABLE`: keep spur-avoid mode 0 on
+  every channel. Default until the PMU PLL spur-avoid update
+  (`bcma_pmu_spuravoid_pllupdate`, mode 1 on channels 5–8, 13) is ported. -/
+  spurAvoidDisable : Bool := true
 
 /-- 16-bit SROM word at *byte* offset `off`. -/
 def PhyCfg.srom16 (c : PhyCfg) (off : Nat) : UInt32 := c.sprom.getD (off / 2) (0 : UInt32)

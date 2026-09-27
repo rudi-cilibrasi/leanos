@@ -59,6 +59,8 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("scan1", scanProg fwDir 1), ("scan2", scanProg fwDir 2), ("scan3", scanProg fwDir 3),
    ("scan4", scanProg fwDir 4), ("scan9", scanProg fwDir 9), ("scan10", scanProg fwDir 10),
    ("scan11", scanProg fwDir 11), ("scan12", scanProg fwDir 12),
+   ("scan5", scanProg fwDir 5), ("scan6", scanProg fwDir 6), ("scan7", scanProg fwDir 7),
+   ("scan8", scanProg fwDir 8), ("scan13", scanProg fwDir 13),
    ("raw11", do
       let cfg := LeanOS.Wifi.NPhy.qotom 11
       return listen (← loadFirmware fwDir) (phyInitFull cfg) 8 24 4000),
