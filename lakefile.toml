@@ -90,3 +90,13 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-wifi-tx"
 root = "tests.WifiTx"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-devccmp"
+root = "tests.WifiDevCcmp"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-dhcpsim"
+root = "tests.WifiDhcpSim"
+moreLeanArgs = ["-DwarningAsError=true"]
