@@ -37,6 +37,37 @@ enum wifi_status {
     WIFI_BAD_BLOB = 8,
 };
 
+/* With WIFI_HOOKS_DIRECT the executor calls fixed hook functions by name
+   (the LeanOS lab kernel forbids indirect control flow); otherwise it calls
+   through `struct wifi_hooks`. */
+#ifdef WIFI_HOOKS_DIRECT
+uint32_t wifi_hook_mmio_read32(uint32_t off);
+uint16_t wifi_hook_mmio_read16(uint32_t off);
+void wifi_hook_mmio_write32(uint32_t off, uint32_t value);
+void wifi_hook_mmio_write16(uint32_t off, uint16_t value);
+uint32_t wifi_hook_cfg_read32(uint32_t off);
+void wifi_hook_cfg_write32(uint32_t off, uint32_t value);
+void wifi_hook_delay_us(uint32_t us);
+void wifi_hook_print(uint32_t tag, uint32_t value);
+#define WH_R32(o) wifi_hook_mmio_read32(o)
+#define WH_R16(o) wifi_hook_mmio_read16(o)
+#define WH_W32(o, v) wifi_hook_mmio_write32((o), (v))
+#define WH_W16(o, v) wifi_hook_mmio_write16((o), (v))
+#define WH_CR32(o) wifi_hook_cfg_read32(o)
+#define WH_CW32(o, v) wifi_hook_cfg_write32((o), (v))
+#define WH_DELAY(u) wifi_hook_delay_us(u)
+#define WH_PRINT(t, v) wifi_hook_print((t), (v))
+#else
+#define WH_R32(o) h->mmio_read32(h->ctx, (o))
+#define WH_R16(o) h->mmio_read16(h->ctx, (o))
+#define WH_W32(o, v) h->mmio_write32(h->ctx, (o), (v))
+#define WH_W16(o, v) h->mmio_write16(h->ctx, (o), (v))
+#define WH_CR32(o) h->cfg_read32(h->ctx, (o))
+#define WH_CW32(o, v) h->cfg_write32(h->ctx, (o), (v))
+#define WH_DELAY(u) h->delay_us(h->ctx, (u))
+#define WH_PRINT(t, v) h->print(h->ctx, (t), (v))
+#endif
+
 static inline uint32_t wifi_le32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -58,6 +89,9 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
     uint32_t r[16] = {0};
     uint32_t stack[WIFI_STACK_DEPTH];
     uint32_t sp = 0, pc = 0;
+#ifdef WIFI_HOOKS_DIRECT
+    (void)h;
+#endif
     for (uint64_t step = 0; step < max_steps; ++step) {
         if (pc >= n) { *code = pc; return WIFI_BAD_PC; }
         const uint8_t *in = code_base + (uint64_t)pc * 16;
@@ -71,26 +105,26 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
         case 0: *code = 0; return WIFI_HALT;
         case 1: *code = a; return WIFI_FAIL;
         case 2: REG(a); if (b > 0xffc || (b & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
-            r[a] = h->cfg_read32(h->ctx, b); break;
+            r[a] = WH_CR32(b); break;
         case 3: { uint32_t v = imm ? b : (b < 16 ? r[b] : 0);
             if (!imm) REG(b);
             if (a > 0xffc || (a & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
-            h->cfg_write32(h->ctx, a, v); break; }
-        case 4: REG(a); OFF(b, 4); r[a] = h->mmio_read32(h->ctx, b); break;
-        case 5: REG(a); OFF(b, 2); r[a] = h->mmio_read16(h->ctx, b); break;
+            WH_CW32(a, v); break; }
+        case 4: REG(a); OFF(b, 4); r[a] = WH_R32(b); break;
+        case 5: REG(a); OFF(b, 2); r[a] = WH_R16(b); break;
         case 6: case 7: { if (!imm) REG(b);
             uint32_t v = imm ? b : r[b];
-            if (base == 6) { OFF(a, 4); h->mmio_write32(h->ctx, a, v); }
-            else { OFF(a, 2); h->mmio_write16(h->ctx, a, (uint16_t)v); }
+            if (base == 6) { OFF(a, 4); WH_W32(a, v); }
+            else { OFF(a, 2); WH_W16(a, (uint16_t)v); }
             break; }
         case 8: case 10: { REG(a); REG(b); uint32_t off = r[b] + c;
-            if (base == 8) { OFF(off, 4); r[a] = h->mmio_read32(h->ctx, off); }
-            else { OFF(off, 2); r[a] = h->mmio_read16(h->ctx, off); }
+            if (base == 8) { OFF(off, 4); r[a] = WH_R32(off); }
+            else { OFF(off, 2); r[a] = WH_R16(off); }
             break; }
         case 9: case 11: { REG(a); if (!imm) REG(c);
             uint32_t off = r[a] + b, v = imm ? c : r[c];
-            if (base == 9) { OFF(off, 4); h->mmio_write32(h->ctx, off, v); }
-            else { OFF(off, 2); h->mmio_write16(h->ctx, off, (uint16_t)v); }
+            if (base == 9) { OFF(off, 4); WH_W32(off, v); }
+            else { OFF(off, 2); WH_W16(off, (uint16_t)v); }
             break; }
         case 12: { REG(a); if (!imm) REG(b);
             uint32_t v = imm ? b : r[b];
@@ -119,13 +153,13 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             if (t) pc = c;
             break; }
         case 14: pc = a; break;
-        case 15: h->delay_us(h->ctx, a); break;
-        case 16: { if (!imm) REG(b); h->print(h->ctx, a, imm ? b : r[b]); break; }
+        case 15: WH_DELAY(a); break;
+        case 16: { if (!imm) REG(b); WH_PRINT(a, imm ? b : r[b]); break; }
         case 17: { if (b > blob_len || c > (blob_len - b) / 4 || (b & 3)) {
                 *code = pc - 1; return WIFI_BAD_BLOB; }
             OFF(a, 4);
             for (uint32_t i = 0; i < c; ++i)
-                h->mmio_write32(h->ctx, a, wifi_le32(blob + b + 4 * i));
+                WH_W32(a, wifi_le32(blob + b + 4 * i));
             break; }
         case 18: { REG(a); REG(b);
             uint64_t off = (uint64_t)c + (uint64_t)r[b] * 4;

@@ -8,7 +8,8 @@ Corporation) `phy_cmn.c`: PHY registers through `phyregaddr/phyregdata`
 (0x3FC/0x3FE), radio registers through `phy4waddr/phy4wdatalo`
 (0x3F6/0x3FA) with the 2055-style read offset for N-PHY revisions below 7,
 and PHY tables through the N-PHY table address/data registers
-(0x72/0x73/0x74).
+(0x72 address, 0x74 data-high, 0x73 data-low: brcmsmac
+phy_int.h `wlc_phy_write_table(pi, pti, 0x72, 0x74, 0x73)`).
 
 Porting convention: brcmsmac branches on PHY revision, band, board flags and
 SROM contents are decided while *generating* the program from `PhyCfg`, so
@@ -199,8 +200,8 @@ def radioAnd (addr mask : UInt32) : ProgM Unit := radioMod addr ((~~~mask) &&& 0
 /-! ## PHY tables -/
 
 def tblAddr : UInt32 := 0x72
-def tblDataHi : UInt32 := 0x73
-def tblDataLo : UInt32 := 0x74
+def tblDataHi : UInt32 := 0x74
+def tblDataLo : UInt32 := 0x73
 /-- NPHY_TBL_ID_ANTSWCTRLLUT; subject to the 43224 rev 1 table quirk. -/
 def tblIdAntSwCtrlLut : UInt32 := 9
 
@@ -232,8 +233,13 @@ def tableWriteR (id offset width : UInt32) (r : Reg) : ProgM Unit := do
     phyWriteR tblDataHi 9
   phyWriteR tblDataLo r
 
-/-- wlc_phy_read_table, one element into `dst` (32-bit reads combine hi/lo). -/
+/-- wlc_phy_read_table, one element into `dst` (32-bit reads combine hi/lo).
+The BCM43224 chip-rev-1 read quirk (a dummy data read and re-addressing before
+every element, for every table) is applied unconditionally; on hardware that
+does not need it the extra accesses are harmless. -/
 def tableRead (dst : Reg) (id offset width : UInt32) : ProgM Unit := do
+  phyWrite tblAddr ((id <<< 10) ||| offset)
+  phyRead 9 tblDataLo
   phyWrite tblAddr ((id <<< 10) ||| offset)
   if width == 32 then
     phyRead 9 tblDataLo

@@ -1,11 +1,11 @@
-import LeanOS.Wifi.Bcm43224
+import LeanOS.Wifi.Driver
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
 
 usage: leanos-wifi-gen <program> <output.bin> [firmware-dir] -/
 
-open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Driver
 
 /-- Split the brcmsmac firmware container (`bcm43xx-0.fw` with its
 `bcm43xx_hdr-0.fw` index of {offset, length, id} little-endian words). -/
@@ -25,6 +25,8 @@ def loadFirmware (dir : System.FilePath) : IO Firmware := do
 
 def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
   [("probe", pure probe), ("sprom", pure spromDump),
+   ("tables", pure (tableCheck (LeanOS.Wifi.NPhy.qotom 6))),
+   ("tblexp", pure tableExperiment), ("tblexp2", pure tableExperiment2),
    ("ucode", do return ucodeBoot (← loadFirmware fwDir))]
 
 def main (args : List String) : IO UInt32 := do
