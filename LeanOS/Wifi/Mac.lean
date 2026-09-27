@@ -293,3 +293,65 @@ def rxBeacons (frames tries hdr : UInt32) : ProgM Unit := do
   print Tag.rxSummary 5
 
 end LeanOS.Wifi.Mac
+
+namespace LeanOS.Wifi.Mac
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224
+
+/-- PIO transmit queue control/data registers for FIFO `q` (core rev ≥ 11:
+`fifo64[q].piotx` at 0x200 + 0x40·q + 0x18). -/
+def txPioCtl (q : UInt32) : UInt32 := 0x200 + 0x40 * q + 0x18
+def txPioData (q : UInt32) : UInt32 := 0x200 + 0x40 * q + 0x1C
+
+def txCtlBytesAll : UInt32 := 0x0F
+def txCtlEof : UInt32 := 0x10
+def txCtlFReady : UInt32 := 0x80
+
+/-- Push one frame (TX descriptor header followed by the 802.11 frame,
+contiguous in scratch at `r(base)`, `r(len)` bytes) into PIO transmit queue
+`q`. Register semantics are hardware facts of the 4-byte PIO FIFO: FREADY
+opens a frame, the low four control bits enable bytes of each data word,
+EOF closes the frame. Clobbers r0–r3 (base and len registers must not be
+r0–r3). -/
+def pioTx (q : UInt32) (base len : Reg) : ProgM Unit := do
+  r32 0 (txPioCtl q)
+  ori 0 txCtlFReady
+  andi 0 (~~~txCtlEof)
+  ori 0 txCtlBytesAll
+  emit (.write32 (txPioCtl q) (.reg 0))
+  -- whole words
+  mov 1 len
+  shri 1 2
+  emit (.fifoOut (txPioData q) base 1)
+  -- trailing bytes
+  mov 2 len
+  andi 2 3
+  let noTail ← newLabel
+  emit (.branch .eq 2 (.imm 0) noTail)
+  andi 0 (~~~txCtlBytesAll)
+  -- enables: 1 byte → 0x1, 2 → 0x3, 3 → 0x7
+  mov 3 2
+  let e2 ← newLabel
+  let e3 ← newLabel
+  let eDone ← newLabel
+  emit (.branch .eq 3 (.imm 2) e2)
+  emit (.branch .eq 3 (.imm 3) e3)
+  ori 0 0x1
+  emit (.jump eDone)
+  place e2
+  ori 0 0x3
+  emit (.jump eDone)
+  place e3
+  ori 0 0x7
+  place eDone
+  emit (.write32 (txPioCtl q) (.reg 0))
+  -- last partial word at base + (len & ~3)
+  mov 3 len
+  andi 3 (~~~(3 : UInt32))
+  emit (.alu .add 3 (.reg base))
+  emit (.memLoad 4 2 3 0)
+  emit (.write32 (txPioData q) (.reg 2))
+  place noTail
+  ori 0 txCtlEof
+  emit (.write32 (txPioCtl q) (.reg 0))
+
+end LeanOS.Wifi.Mac

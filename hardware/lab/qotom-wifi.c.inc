@@ -82,13 +82,18 @@ static void lab_wifi_invlpg(const void *address) {
 static void lab_wifi_run(void) {
     uint32_t id = wifi_hook_cfg_read32(0);
     uint32_t bar0 = wifi_hook_cfg_read32(0x10);
+    uint32_t bar1 = wifi_hook_cfg_read32(0x14);
     serial_puts("LEANOS-LAB/1 WIFI-BEGIN id=0x");
     lab_wifi_hex(id, 8);
     serial_puts(" bar0=0x");
     lab_wifi_hex(bar0, 8);
     serial_putc('\n');
-    /* 32-bit non-prefetchable memory BAR below 4 GiB, 16 KiB aligned. */
-    if (id != UINT32_C(0x435314e4) || (bar0 & 0xfu) != 0 || (bar0 & 0x3fffu) != 0 ||
+    /* Non-prefetchable memory BAR, 32-bit (type 0) or 64-bit (type 2 with a
+       zero upper half), 16 KiB aligned, in the PCI hole below 4 GiB. */
+    uint32_t type = bar0 & 0xfu;
+    bar0 &= ~UINT32_C(0xf);
+    if (id != UINT32_C(0x435314e4) || (type != 0 && !(type == 4 && bar1 == 0)) ||
+        (bar0 & 0x3fffu) != 0 ||
         bar0 < UINT32_C(0x80000000) || bar0 > UINT32_C(0xfec00000)) {
         serial_puts("LEANOS-LAB/1 WIFI-END status=reject\n");
         return;
