@@ -80,3 +80,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-wifi-xcheck"
 root = "tests.WifiXcheck"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-hssim"
+root = "tests.WifiHsSim"
+moreLeanArgs = ["-DwarningAsError=true"]
