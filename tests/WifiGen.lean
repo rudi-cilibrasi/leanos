@@ -64,6 +64,15 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("raw11", do
       let cfg := LeanOS.Wifi.NPhy.qotom 11
       return listen (← loadFirmware fwDir) (phyInitFull cfg) 8 24 4000),
+   ("connect", do
+      let psk ← IO.getEnv "LEANOS_WIFI_PSK"
+      let some psk := psk | throw (IO.userError "set LEANOS_WIFI_PSK")
+      let pmk := LeanOS.Wifi.Pbkdf2.pmkOfPassphrase psk.toUTF8 "QUAIL".toUTF8
+      let bssidHex := (← IO.getEnv "LEANOS_WIFI_BSSID").getD "c4f174138a47"
+      let bssid := ByteArray.mk ((List.range 6).map fun i =>
+        ((LeanOS.Wifi.NPhy.hexU32s (bssidHex.drop (2*i) |>.take 2).toString).getD 0 0).toUInt8).toArray
+      if bssid.size != 6 || bssidHex.length != 12 then throw (IO.userError "bad LEANOS_WIFI_BSSID")
+      return connect (← loadFirmware fwDir) (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir

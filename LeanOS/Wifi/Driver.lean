@@ -3,6 +3,9 @@ import LeanOS.Wifi.Radio2056
 import LeanOS.Wifi.NPhyWorkarounds
 import LeanOS.Wifi.Mac
 import LeanOS.Wifi.NPhyInit
+import LeanOS.Wifi.Tx
+import LeanOS.Wifi.Handshake
+import LeanOS.Wifi.Pbkdf2
 
 /-
 Top-level BCM43224 driver programs, composed from the ported brcmsmac pieces.
@@ -261,5 +264,45 @@ def phyInitFull (cfg : PhyCfg) : ProgM Unit := do
   LeanOS.Wifi.Radio2056.radioOn cfg
   LeanOS.Wifi.NPhyInit.initNphy cfg (NPhyTables.tblInit cfg)
     (LeanOS.Wifi.NPhyWorkarounds.workarounds cfg) (pure ()) (pure ())
+
+end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy
+
+/-- Transmit the `n`-byte MPDU at `Mlme.txMpdu`: build the run-time TX
+descriptor in front of it, push descriptor+frame into PIO FIFO `fifo`, then
+poll the transmit status and print it (tag 0x0E00: found, 0x0E01: status,
+0x0E02: acked, 0x0E03: attempts). -/
+def sendMpdu (c : LeanOS.Wifi.Tx.TxConfig) (fifo : UInt32) (n : Nat) : ProgM Unit := do
+  li 11 (Mlme.txMpdu - 118)
+  li 12 n.toUInt32
+  LeanOS.Wifi.Tx.emitTxHeader c 11 12
+  emit (.memLoad 2 8 11 76)
+  li 12 (n + 118).toUInt32
+  Mac.pioTx fifo 11 12
+  LeanOS.Wifi.Tx.readTxStatus 8 2000 50
+  print 0x0E00 0
+  print 0x0E01 1
+  print 0x0E02 2
+  print 0x0E03 3
+
+/-- Associate with `bssid` (a QUAIL access point) on `cfg.channel` and run
+the WPA2 4-way handshake with `pmk`. -/
+def connect (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM Unit := do
+  let L ← LeanOS.Wifi.DevCrypto.install
+  bringUp
+  ucodeStart fw
+  Mac.coreInitTail
+  Mac.bandInit fw (phyInitFull cfg)
+  LeanOS.Wifi.Tx.txSetup cfg (ByteArray.mk Mlme.ourMac.data) bssid
+  Mac.enableMacPromisc
+  Mlme.putBytes "bssid" Mlme.bssidAt bssid
+  let tc := LeanOS.Wifi.Tx.TxConfig.ofPhy cfg .cck1
+  let send := sendMpdu tc 3
+  Mlme.authAssoc send 3000
+  LeanOS.Wifi.Handshake.fourWay L pmk LeanOS.Wifi.Ieee80211.wpa2PskCcmpRsnIe send 3000
+  printImm Tag.done 0
+  halt
 
 end LeanOS.Wifi.Driver
