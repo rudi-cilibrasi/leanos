@@ -60,3 +60,13 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-wifi-gen"
 root = "tests.WifiGen"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-vectors"
+root = "tests.WifiVectors"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-pmk"
+root = "tests.WifiPmk"
+moreLeanArgs = ["-DwarningAsError=true"]
