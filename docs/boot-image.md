@@ -127,12 +127,14 @@ manifest; edit the manifest and regenerate rather than editing this table.
 | `gcc-13` | `13.3.0-6ubuntu2~24.04.1` |
 | `git` | `1:2.43.0-1ubuntu7.3` |
 | `grub-common` | `2.12-1ubuntu7.3` |
+| `grub-efi-amd64-bin` | `2.12-1ubuntu7.3` |
 | `grub-pc-bin` | `2.12-1ubuntu7.3` |
 | `libasan8` | `14.2.0-4ubuntu2~24.04.1` |
 | `libubsan1` | `14.2.0-4ubuntu2~24.04.1` |
 | `jq` | `1.7.1-3ubuntu0.24.04.2` |
 | `make` | `4.3-4.1build2` |
 | `mtools` | `4.0.43-1build1` |
+| `ovmf` | `2024.02-2ubuntu0.9` |
 | `python3` | `3.12.3-0ubuntu2.1` |
 | `qemu-system-x86` | `1:8.2.2+ds-0ubuntu1.18` |
 | `xorriso` | `1:1.5.6-1.1ubuntu3` |
