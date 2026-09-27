@@ -13,10 +13,13 @@ sudo -n mount -t msdosfs /dev/da0s1 /mnt/leanos-usb
 trap 'cd /; sudo -n umount /mnt/leanos-usb' EXIT
 test "$(sha256 -q /mnt/leanos-usb/boot/leanos-qotom-lab.elf)" = "$old"
 grep -a -q '^request=none$' /mnt/leanos-usb/boot/grub/grubenv
-if [ ! -f "/mnt/leanos-usb/boot/leanos-qotom-lab.elf.$old" ]; then
+# Keep one backup: the image that was installed before the first WiFi
+# install (the stick's FAT partition holds only a few 19 MB images).
+if ! ls /mnt/leanos-usb/boot | grep -Eq '^leanos-qotom-lab\.elf\.[0-9a-f]{64}$'; then
   sudo -n cp /mnt/leanos-usb/boot/leanos-qotom-lab.elf "/mnt/leanos-usb/boot/leanos-qotom-lab.elf.$old"
   sudo -n cp /mnt/leanos-usb/boot/grub/grub.cfg "/mnt/leanos-usb/boot/grub/grub.cfg.$old"
 fi
+sudo -n rm -f /mnt/leanos-usb/boot/leanos-qotom-lab.elf.new
 sudo -n cp /var/tmp/leanos-wifi.elf /mnt/leanos-usb/boot/leanos-qotom-lab.elf.new
 sudo -n cp /var/tmp/grub-wifi.cfg /mnt/leanos-usb/boot/grub/grub.cfg.new
 sudo -n cp /var/tmp/leanos-wifi.sha256 /mnt/leanos-usb/boot/leanos.sha256.new

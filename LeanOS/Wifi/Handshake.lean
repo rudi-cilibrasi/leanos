@@ -60,6 +60,7 @@ def msg4Sent : UInt32 := 0x0D04
 def gtkId : UInt32 := 0x0D05
 def complete : UInt32 := 0x0D06
 def msg1Again : UInt32 := 0x0D07
+def msg4Again : UInt32 := 0x0D08
 end Tag
 
 /-- Copy `n` bytes from scratch `r(src) + off` to scratch `dst` (uses r0, r1). -/
@@ -130,6 +131,29 @@ def sendKeyMsg (L : Lib) (send : Nat → ProgM Unit) (name : String) (tmpl : Byt
   callMicCompute L (.imm kckAt) (.imm e) (.imm tmpl.size.toUInt32)
   send mpdu.size
 
+def msg4 : Eapol.KeyFrame :=
+  { protocolVersion := 2,
+    keyInfo := Eapol.KeyInfo.versionHmacSha1Aes ||| Eapol.KeyInfo.pairwise |||
+      Eapol.KeyInfo.mic ||| Eapol.KeyInfo.secure,
+    keyLength := 0, replayCounter := 0, nonce := zeros 32, keyData := ByteArray.empty }
+
+/-- After the handshake: answer a retransmitted message 3 (EAPOL at r7,
+length r8, MIC bit set) with a fresh message 4 if its MIC verifies under
+the installed KCK. Keys are not reinstalled. -/
+def answerMsg3 (L : Lib) (send : Nat → ProgM Unit) : ProgM Unit := do
+  saveEapol
+  let skip ← newLabel
+  emit (.memLoad 1 1 7 5)
+  andi 1 0x01
+  emit (.branch .eq 1 (.imm 0) skip)
+  callMicVerify L (.imm kckAt) (.reg 7) (.reg 8)
+  emit (.branch .ne 0 (.imm 1) skip)
+  loadEapol
+  copyFrom 7 9 replayAt 8
+  sendKeyMsg L send "msg4-again" msg4.encode false
+  printImm Tag.msg4Again 0
+  place skip
+
 /-- Run the 4-way handshake after association. -/
 def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → ProgM Unit)
     (tries : UInt32) : ProgM Unit := do
@@ -140,7 +164,11 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   -- waiting for message 3 re-enters here (bounded by `retryAt`).
   li 0 0
   emit (.memStore 4 0 retryAt (.imm 4))
-  waitEapol 400 tries
+  -- One SNonce per handshake: a retransmitted message 1 is answered with the
+  -- same SNonce, so the authenticator's PTK (from our first message 2) stays
+  -- consistent with ours.
+  makeSNonce L
+  waitEapol 3000000 tries
   saveEapol
   let handle1 ← newLabel
   place handle1
@@ -163,7 +191,6 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   copyFrom 7 17 anonceAt 32
   loadEapol
   copyFrom 7 9 replayAt 8
-  makeSNonce L
   callPtk L (.imm pmkAt) (.imm aaAt) (.imm spaAt) (.imm anonceAt) (.imm snonceAt) (.imm ptkAt)
   let msg2 : Eapol.KeyFrame :=
     { protocolVersion := 2,
@@ -172,7 +199,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   sendKeyMsg L send "msg2" msg2.encode true
   printImm Tag.msg2Sent 0
   -- Message 3: pairwise | ack | MIC | install (| secure), encrypted key data.
-  waitEapol 400 tries
+  waitEapol 3000000 tries
   saveEapol
   emit (.memLoad 1 1 7 5)
   andi 1 0x01
@@ -264,11 +291,6 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   print Tag.gtkId 1
   copyFrom 7 8 gtkAt 16
   -- Message 4.
-  let msg4 : Eapol.KeyFrame :=
-    { protocolVersion := 2,
-      keyInfo := Eapol.KeyInfo.versionHmacSha1Aes ||| Eapol.KeyInfo.pairwise |||
-        Eapol.KeyInfo.mic ||| Eapol.KeyInfo.secure,
-      keyLength := 0, replayCounter := 0, nonce := zeros 32, keyData := ByteArray.empty }
   sendKeyMsg L send "msg4" msg4.encode false
   printImm Tag.msg4Sent 0
   printImm Tag.complete 0

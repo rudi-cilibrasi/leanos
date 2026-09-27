@@ -71,30 +71,36 @@ def sendProtected (C : DevCcmp.CcmpLib) (c : LeanOS.Wifi.Tx.TxConfig) (build : P
   sendMpduR c 1
 
 /-- Receive until a protected data frame from the BSSID decrypts (TK or GTK)
-to a DHCP reply of our transaction; r0 = DHCP message type. -/
-def waitDhcpWith (C : DevCcmp.CcmpLib) (D : DevDhcp.DhcpLib) (frames tries : UInt32)
-    (soft : Bool) : ProgM Unit := do
+to a DHCP reply of our transaction, for at most `frames` microseconds of
+TSF time; r0 = DHCP message type. -/
+def waitDhcpWith (L : DevCrypto.Lib) (mgmt : LeanOS.Wifi.Tx.TxConfig) (C : DevCcmp.CcmpLib)
+    (D : DevDhcp.DhcpLib) (frames tries : UInt32) (soft : Bool) : ProgM Unit := do
   let top ← newLabel
   let skip ← newLabel
   let give ← newLabel
   let done ← newLabel
+  -- Deadline in microseconds of the MAC's TSF timer (tsf_timerlow, 0x180):
+  -- wall-clock bounded, independent of executor speed and channel load.
   li 0 0
-  emit (.memStore 4 0 (leasedIpAt + 4) (.imm frames))
-  place top
-  li 0 0
-  emit (.memLoad 4 6 0 (leasedIpAt + 4))
-  emit (.branch .eq 6 (.imm 0) give)
-  emit (.alu .sub 6 (.imm 1))
+  r32 6 0x180
   emit (.memStore 4 0 (leasedIpAt + 4) (.reg 6))
+  place top
+  r32 6 0x180
+  li 0 0
+  emit (.memLoad 4 7 0 (leasedIpAt + 4))
+  emit (.alu .sub 6 (.reg 7))
+  emit (.branch .geu 6 (.imm frames) give)
   Mlme.rxFrame tries
   emit (.branch .ltu 5 (.imm (24 + 16 + 4)) skip)
   -- diagnostics: deauthentication/disassociation addressed to us
   li 0 0
   emit (.memLoad 1 1 0 Mlme.rxMpdu)
   let notMgmtKill ← newLabel
-  mov 3 1
-  andi 3 0xEF                                   -- 0xA0 / 0xC0 share bit layout
-  emit (.branch .ne 3 (.imm 0xA0) notMgmtKill)
+  let isKill ← newLabel
+  emit (.branch .eq 1 (.imm 0xA0) isKill)       -- disassociation
+  emit (.branch .eq 1 (.imm 0xC0) isKill)       -- deauthentication
+  emit (.jump notMgmtKill)
+  place isKill
   Mlme.matchBytes (Mlme.rxMpdu + 4) Mlme.ourMac notMgmtKill
   li 0 0
   emit (.memLoad 2 2 0 (Mlme.rxMpdu + 24))
@@ -106,7 +112,30 @@ def waitDhcpWith (C : DevCcmp.CcmpLib) (D : DevDhcp.DhcpLib) (frames tries : UIn
   emit (.branch .ne 1 (.imm 0x08) skip)
   emit (.memLoad 1 1 0 (Mlme.rxMpdu + 1))
   andi 1 0x40
-  emit (.branch .eq 1 (.imm 0) skip)
+  let prot ← newLabel
+  emit (.branch .ne 1 (.imm 0) prot)
+  -- unprotected data: a retransmitted EAPOL message 3 from the BSSID?
+  Mlme.matchScratch (Mlme.rxMpdu + 10) Mlme.bssidAt 6 skip
+  li 0 0
+  emit (.memLoad 1 1 0 Mlme.rxMpdu)
+  li 7 (Mlme.rxMpdu + 24)
+  andi 1 0x80
+  let plainHdr ← newLabel
+  emit (.branch .eq 1 (.imm 0) plainHdr)
+  li 7 (Mlme.rxMpdu + 26)
+  place plainHdr
+  emit (.memLoad 1 1 7 6)
+  emit (.branch .ne 1 (.imm 0x88) skip)
+  emit (.memLoad 1 1 7 7)
+  emit (.branch .ne 1 (.imm 0x8E) skip)
+  addi 7 8
+  mov 8 5
+  emit (.alu .add 8 (.imm Mlme.rxMpdu))
+  emit (.alu .sub 8 (.reg 7))
+  emit (.alu .sub 8 (.imm 4))
+  Handshake.answerMsg3 L (sendMpdu mgmt 3)
+  emit (.jump skip)
+  place prot
   Mlme.matchScratch (Mlme.rxMpdu + 10) Mlme.bssidAt 6 skip
   mov 2 5
   emit (.alu .sub 2 (.imm 4))
@@ -145,13 +174,15 @@ def waitDhcpWith (C : DevCcmp.CcmpLib) (D : DevDhcp.DhcpLib) (frames tries : UIn
   if soft then li 0 0 else fail Fail.noReply
   place done
 
-def waitDhcp (C : DevCcmp.CcmpLib) (D : DevDhcp.DhcpLib) (frames tries : UInt32) : ProgM Unit :=
-  waitDhcpWith C D frames tries false
+def waitDhcp (L : DevCrypto.Lib) (mgmt : LeanOS.Wifi.Tx.TxConfig) (C : DevCcmp.CcmpLib)
+    (D : DevDhcp.DhcpLib) (frames tries : UInt32) : ProgM Unit :=
+  waitDhcpWith L mgmt C D frames tries false
 
 /-- Like `waitDhcp`, but returns r0 = 0 instead of failing when no reply
 arrives within `frames` frames. -/
-def waitDhcpSoft (C : DevCcmp.CcmpLib) (D : DevDhcp.DhcpLib) (frames tries : UInt32) : ProgM Unit :=
-  waitDhcpWith C D frames tries true
+def waitDhcpSoft (L : DevCrypto.Lib) (mgmt : LeanOS.Wifi.Tx.TxConfig) (C : DevCcmp.CcmpLib)
+    (D : DevDhcp.DhcpLib) (frames tries : UInt32) : ProgM Unit :=
+  waitDhcpWith L mgmt C D frames tries true
 
 /-- Associate, authenticate with WPA2-PSK and lease an address. -/
 def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM Unit := do
@@ -175,7 +206,7 @@ def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM U
   for _ in [0:3] do
     sendProtected C data (DevDhcp.callDiscover D (.imm plainBuf))
     printImm Tag.discoverSent 0
-    waitDhcpSoft C D 1500 3000
+    waitDhcpSoft L mgmt C D 5000000 1000
     emit (.branch .eq 0 (.imm 2) gotOffer)
   fail Fail.noReply
   place gotOffer
@@ -185,7 +216,7 @@ def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM U
   sendProtected C data (DevDhcp.callRequest D (.imm plainBuf))
   printImm Tag.requestSent 0
   let gotAck ← newLabel
-  waitDhcp C D 400 3000
+  waitDhcp L mgmt C D 5000000 1000
   emit (.branch .eq 0 (.imm 5) gotAck)
   fail Fail.nak
   place gotAck

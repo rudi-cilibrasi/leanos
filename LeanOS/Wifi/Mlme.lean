@@ -253,26 +253,44 @@ namespace Fail
 def noEapol : UInt32 := 0x7C06
 end Fail
 
+/-- Scratch word holding the `waitEapol` start time. -/
+def eapolDeadlineAt : UInt32 := 0x0F10
+
 namespace Tag
 def eapol : UInt32 := 0x0C20
+def fromBss : UInt32 := 0x0C21
 end Tag
 
-/-- Wait for an unprotected data frame from the latched BSSID to us carrying
+/-- Wait (at most `frames` µs) for an unprotected data frame from the latched BSSID to us carrying
 LLC/SNAP ethertype 0x888E. Accepts plain (24-byte header) and QoS (26-byte)
 data. On success r7 = scratch address of the EAPOL (802.1X) header and
 r8 = its length in bytes (MPDU length minus header, SNAP and FCS). -/
 def waitEapol (frames tries : UInt32) : ProgM Unit := do
-  li 6 frames
+  -- `frames` bounds the wait in microseconds of MAC TSF time (register
+  -- 0x180), so the bound is the same under every executor.
   let top ← newLabel
   let done ← newLabel
   let give ← newLabel
+  li 0 0
+  r32 6 0x180
+  emit (.memStore 4 0 eapolDeadlineAt (.reg 6))
   place top
-  emit (.branch .eq 6 (.imm 0) give)
-  emit (.alu .sub 6 (.imm 1))
+  r32 6 0x180
+  li 0 0
+  emit (.memLoad 4 9 0 eapolDeadlineAt)
+  emit (.alu .sub 6 (.reg 9))
+  emit (.branch .geu 6 (.imm frames) give)
   rxFrame tries
   let skip ← newLabel
   emit (.branch .eq 5 (.imm 0) skip)
   -- type data (fc0 & 0x0C == 0x08), not protected (fc1 & 0x40 == 0)
+  -- diagnostics: any frame from the BSSID addressed to us (fc word, addr1)
+  let notUs ← newLabel
+  matchScratch (rxMpdu + 10) bssidAt 6 notUs
+  matchBytes (rxMpdu + 4) ourMac notUs
+  li 0 0
+  emit (.memLoad 4 1 0 rxMpdu); print Tag.fromBss 1
+  place notUs
   li 0 0
   emit (.memLoad 1 1 0 rxMpdu)
   mov 2 1
