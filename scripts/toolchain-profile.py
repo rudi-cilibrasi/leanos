@@ -26,7 +26,8 @@ STATUS_CLAIMS = {
 }
 ELF_LAYOUTS = {"gcc-reference-v1", "clang18-v1"}
 SHARED_TOOLS = {
-    "binutils", "grub", "mtools", "xorriso", "qemu", "seabios", "coreutils"
+    "binutils", "grub", "mtools", "xorriso", "qemu", "seabios", "ovmf",
+    "coreutils"
 }
 APT_PACKAGE_RE = re.compile(
     r"^[a-z0-9][a-z0-9+.-]*=[0-9A-Za-z][0-9A-Za-z.+:~-]*$"
