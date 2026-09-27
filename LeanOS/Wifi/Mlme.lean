@@ -245,3 +245,68 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
   printImm Tag.assocOk 0
 
 end LeanOS.Wifi.Mlme
+
+namespace LeanOS.Wifi.Mlme
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Mac
+
+namespace Fail
+def noEapol : UInt32 := 0x7C06
+end Fail
+
+namespace Tag
+def eapol : UInt32 := 0x0C20
+end Tag
+
+/-- Wait for an unprotected data frame from the latched BSSID to us carrying
+LLC/SNAP ethertype 0x888E. Accepts plain (24-byte header) and QoS (26-byte)
+data. On success r7 = scratch address of the EAPOL (802.1X) header and
+r8 = its length in bytes (MPDU length minus header, SNAP and FCS). -/
+def waitEapol (frames tries : UInt32) : ProgM Unit := do
+  li 6 frames
+  let top ← newLabel
+  let done ← newLabel
+  let give ← newLabel
+  place top
+  emit (.branch .eq 6 (.imm 0) give)
+  emit (.alu .sub 6 (.imm 1))
+  rxFrame tries
+  let skip ← newLabel
+  emit (.branch .eq 5 (.imm 0) skip)
+  -- type data (fc0 & 0x0C == 0x08), not protected (fc1 & 0x40 == 0)
+  li 0 0
+  emit (.memLoad 1 1 0 rxMpdu)
+  mov 2 1
+  andi 2 0x0C
+  emit (.branch .ne 2 (.imm 0x08) skip)
+  emit (.memLoad 1 2 0 (rxMpdu + 1))
+  andi 2 0x40
+  emit (.branch .ne 2 (.imm 0) skip)
+  matchBytes (rxMpdu + 4) ourMac skip
+  matchScratch (rxMpdu + 10) bssidAt 6 skip
+  -- header length 24, or 26 for QoS data (subtype bit 0x80)
+  li 7 (rxMpdu + 24)
+  andi 1 0x80
+  let plain ← newLabel
+  emit (.branch .eq 1 (.imm 0) plain)
+  li 7 (rxMpdu + 26)
+  place plain
+  -- LLC/SNAP AA AA 03 00 00 00 88 8E
+  let snap : Array UInt32 := #[0xAA, 0xAA, 0x03, 0, 0, 0, 0x88, 0x8E]
+  for h : k in [0:snap.size] do
+    emit (.memLoad 1 0 7 k.toUInt32)
+    emit (.branch .ne 0 (.imm snap[k]) skip)
+  addi 7 8
+  -- r8 = MPDU length - (r7 - rxMpdu) - 4 (FCS)
+  mov 8 5
+  emit (.alu .add 8 (.imm rxMpdu))
+  emit (.alu .sub 8 (.reg 7))
+  emit (.alu .sub 8 (.imm 4))
+  print Tag.eapol 8
+  emit (.jump done)
+  place skip
+  emit (.jump top)
+  place give
+  fail Fail.noEapol
+  place done
+
+end LeanOS.Wifi.Mlme
