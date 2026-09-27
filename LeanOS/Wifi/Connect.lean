@@ -185,12 +185,12 @@ def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
   Mlme.putBytes "bssid" Mlme.bssidAt bssid
   let mgmt := LeanOS.Wifi.Tx.TxConfig.ofPhy cfg .cck1
   let data := LeanOS.Wifi.Tx.TxConfig.ofPhy cfg .cck1 1
-  -- Join with up to four attempts: a lost association response ACK, a
+  -- Join with up to six attempts, 2 s apart: a lost association response ACK, a
   -- disassociation or a stalled handshake restarts from authentication.
   let joined ← newLabel
   let giveUp ← newLabel
   li 0 0
-  emit (.memStore 4 0 joinTriesAt (.imm 4))
+  emit (.memStore 4 0 joinTriesAt (.imm 6))
   let attempt ← newLabel
   let retry ← newLabel
   place attempt
@@ -205,7 +205,7 @@ def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
   emit (.memStore 4 0 joinTriesAt (.reg 1))
   print Tag.rejoin 1
   emit (.branch .eq 1 (.imm 0) giveUp)
-  delay 500000
+  delay 2000000
   emit (.jump attempt)
   place giveUp
   fail Fail.join

@@ -21,6 +21,8 @@ def rxMpdu : UInt32 := rxBuf + rxHdr
 def txBuf : UInt32 := 0x3000
 /-- Chosen BSSID (6 bytes). -/
 def bssidAt : UInt32 := 0x0F00
+/-- Scratch word holding the start time of a bounded receive wait. -/
+def eapolDeadlineAt : UInt32 := 0x0F10
 
 /-- Our station address (SROM IL0 MAC of the Qotom card). -/
 def ourMac : ByteArray := ByteArray.mk #[0x10, 0x0d, 0x7f, 0xc9, 0x75, 0xf1]
@@ -145,13 +147,19 @@ the latched BSSID (addr2). Up to `frames` frames; `fail code` otherwise.
 On success r5 = MPDU length. -/
 def waitMgmt (subtype : UInt8) (frames tries code : UInt32) (onFail : Option Nat := none) :
     ProgM Unit := do
-  li 6 frames
+  -- `frames` bounds the wait in microseconds of MAC TSF time (0x180).
   let top ← newLabel
   let done ← newLabel
   let give ← newLabel
+  li 0 0
+  r32 6 0x180
+  emit (.memStore 4 0 eapolDeadlineAt (.reg 6))
   place top
-  emit (.branch .eq 6 (.imm 0) give)
-  emit (.alu .sub 6 (.imm 1))
+  r32 6 0x180
+  li 0 0
+  emit (.memLoad 4 9 0 eapolDeadlineAt)
+  emit (.alu .sub 6 (.reg 9))
+  emit (.branch .geu 6 (.imm frames) give)
   rxFrame tries
   let skip ← newLabel
   emit (.branch .eq 5 (.imm 0) skip)
@@ -212,7 +220,7 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) (onFail : Option Nat 
   putBssid (txMpdu + 16)
   send auth.size
   printImm Tag.sent 0xB0
-  waitMgmt MgmtSubtype.auth 200 tries Fail.noAuth onFail
+  waitMgmt MgmtSubtype.auth 1500000 tries Fail.noAuth onFail
   -- algorithm 0, transaction 2, status 0
   let bad ← newLabel
   let ok ← newLabel
@@ -232,7 +240,7 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) (onFail : Option Nat 
   putBssid (txMpdu + 16)
   send assoc.size
   printImm Tag.sent 0x00
-  waitMgmt MgmtSubtype.assocResp 200 tries Fail.noAssoc onFail
+  waitMgmt MgmtSubtype.assocResp 1500000 tries Fail.noAssoc onFail
   let bad2 ← newLabel
   let ok2 ← newLabel
   matchBytes (rxMpdu + 26) (ByteArray.mk #[0, 0]) bad2
@@ -256,8 +264,7 @@ def noEapol : UInt32 := 0x7C06
 def dropped : UInt32 := 0x7C07
 end Fail
 
-/-- Scratch word holding the `waitEapol` start time. -/
-def eapolDeadlineAt : UInt32 := 0x0F10
+
 
 namespace Tag
 def eapol : UInt32 := 0x0C20
