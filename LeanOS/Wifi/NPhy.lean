@@ -41,6 +41,9 @@ structure PhyCfg where
   brcmsmac's SROM-derived chains. The board sets BFL2_SINGLEANT_CCK, which
   brcmsmac ignores; single-chain CCK is selected with `some 1`. -/
   txChainOverride : Option Nat := none
+  /-- Calibrations run during PHY init: 0 none, 1 RSSI, 2 RSSI + TX IQ/LO +
+  RX IQ + save (brcmsmac `do_nphy_cal`, non-MPHASE path). -/
+  calLevel : Nat := 0
 
 /-- 16-bit SROM word at *byte* offset `off`. -/
 def PhyCfg.srom16 (c : PhyCfg) (off : Nat) : UInt32 := c.sprom.getD (off / 2) (0 : UInt32)
