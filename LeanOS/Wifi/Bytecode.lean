@@ -21,12 +21,12 @@ namespace LeanOS.Wifi.Bytecode
 abbrev Reg := Nat
 
 inductive AluOp where
-  | mov | add | sub | and | or | xor | shl | shr
+  | mov | add | sub | and | or | xor | shl | shr | mul | rotl
   deriving Repr, BEq, DecidableEq
 
 def AluOp.code : AluOp → UInt32
   | .mov => 0 | .add => 1 | .sub => 2 | .and => 3
-  | .or => 4 | .xor => 5 | .shl => 6 | .shr => 7
+  | .or => 4 | .xor => 5 | .shl => 6 | .shr => 7 | .mul => 8 | .rotl => 9
 
 inductive Cond where
   | eq | ne | ltu | geu
@@ -70,6 +70,17 @@ inductive Instr where
   /-- Call and return; the executor keeps a bounded return stack (depth 16). -/
   | call (target : Nat)
   | ret
+  /-- Scratch RAM (`scratchBytes`): `dst := mem[r(base) + off]` with width
+  1, 2 or 4 bytes, little endian. -/
+  | memLoad (width : Nat) (dst : Reg) (base : Reg) (off : UInt32)
+  /-- `mem[r(base) + off] := src` (low `width` bytes, little endian). -/
+  | memStore (width : Nat) (base : Reg) (off : UInt32) (src : Operand)
+  /-- Receive FIFO → scratch: read `r(count)` 32-bit words from device
+  register `off` into `mem[r(base)..]`. -/
+  | fifoIn (off : UInt32) (base : Reg) (count : Reg)
+  /-- Scratch → transmit FIFO: write `r(count)` 32-bit words from
+  `mem[r(base)..]` to device register `off`. -/
+  | fifoOut (off : UInt32) (base : Reg) (count : Reg)
   deriving Repr
 
 /-- Opcode numbers shared with `hardware/wifi/wifi-exec.h`. -/
@@ -79,7 +90,11 @@ def opcode : Instr → UInt32
   | .read32At .. => 8 | .write32At .. => 9 | .read16At .. => 10 | .write16At .. => 11
   | .alu .. => 12 | .branch .. => 13 | .jump .. => 14 | .delayUs .. => 15
   | .print .. => 16 | .blobStream32 .. => 17 | .blobLoad32 .. => 18
-  | .call .. => 19 | .ret => 20
+  | .call .. => 19 | .ret => 20 | .memLoad .. => 21 | .memStore .. => 22
+  | .fifoIn .. => 23 | .fifoOut .. => 24
+
+/-- Size of the executor's scratch RAM in bytes. -/
+def scratchBytes : Nat := 65536
 
 /-- Operand flag bit in the opcode word marks an immediate operand. -/
 def immFlag : UInt32 := 0x100
@@ -125,6 +140,15 @@ def encode (i : Instr) : Option Word4 :=
   | .blobLoad32 d idx b => do some ⟨op, ← r d, ← r idx, b⟩
   | .call t => some ⟨op, t.toUInt32, 0, 0⟩
   | .ret => some ⟨op, 0, 0, 0⟩
+  | .memLoad w d b off => do
+      if w != 1 && w != 2 && w != 4 then none
+      some ⟨op ||| (w.toUInt32 <<< 16), ← r d, ← r b, off⟩
+  | .memStore w b off s => do
+      if w != 1 && w != 2 && w != 4 then none
+      let (f, v) ← operandFields s
+      some ⟨op ||| f ||| (w.toUInt32 <<< 16), ← r b, off, v⟩
+  | .fifoIn off b n => do some ⟨op, off, ← r b, ← r n⟩
+  | .fifoOut off b n => do some ⟨op, off, ← r b, ← r n⟩
 
 /-! ## Builder
 
