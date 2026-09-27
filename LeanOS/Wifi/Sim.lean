@@ -94,12 +94,19 @@ partial def loop {σ} [Inhabited σ] (p : Program) (d : Device σ) (maxSteps : N
       | 6 => if v ≥ 32 then 0 else x <<< v
       | 7 => if v ≥ 32 then 0 else x >>> v
       | 8 => x * v
-      | _ => let k := v &&& 31; if k == 0 then x else (x <<< k) ||| (x >>> (32 - k))
+      | 9 => let k := v &&& 31; if k == 0 then x else (x <<< k) ||| (x >>> (32 - k))
+      | 10 => if v == 0 then 0 else x / v
+      | 11 => if v == 0 then 0 else (x.toInt32 / v.toInt32).toUInt32
+      | 12 => if v == 0 then x else x % v
+      | 13 => if v == 0 then x else (x.toInt32 % v.toInt32).toUInt32
+      | _ => let k := if v ≥ 31 then 31 else v; (x.toInt32 >>> k.toInt32).toUInt32
     loop p d maxSteps (m.setReg w.a r)
   | 13 =>
     let x := m.reg w.a
     let v := val w.b
-    let t := match sub with | 0 => x == v | 1 => x != v | 2 => x < v | _ => x ≥ v
+    let t := match sub with
+      | 0 => x == v | 1 => x != v | 2 => x < v | 3 => x ≥ v
+      | 4 => x.toInt32 < v.toInt32 | _ => x.toInt32 ≥ v.toInt32
     loop p d maxSteps (if t then { m with pc := w.c.toNat } else m)
   | 14 => loop p d maxSteps { m with pc := w.a.toNat }
   | 15 => loop p d maxSteps m

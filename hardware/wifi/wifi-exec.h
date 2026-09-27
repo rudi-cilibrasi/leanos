@@ -145,6 +145,16 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             case 7: r[a] = v >= 32 ? 0 : r[a] >> v; break;
             case 8: r[a] *= v; break;
             case 9: v &= 31; r[a] = v ? (r[a] << v) | (r[a] >> (32 - v)) : r[a]; break;
+            case 10: r[a] = v ? r[a] / v : 0; break;
+            case 11: { int32_t x = (int32_t)r[a], y = (int32_t)v;
+                r[a] = (y == 0) ? 0 : (x == INT32_MIN && y == -1) ? (uint32_t)x : (uint32_t)(x / y);
+                break; }
+            case 12: r[a] = v ? r[a] % v : r[a]; break;
+            case 13: { int32_t x = (int32_t)r[a], y = (int32_t)v;
+                r[a] = (y == 0) ? (uint32_t)x : (x == INT32_MIN && y == -1) ? 0 : (uint32_t)(x % y);
+                break; }
+            case 14: { uint32_t k = v >= 31 ? 31 : v;
+                r[a] = (r[a] & 0x80000000u) ? ~((~r[a]) >> k) : r[a] >> k; break; }
             default: *code = pc - 1; return WIFI_BAD_OPCODE;
             }
             break; }
@@ -156,6 +166,8 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             case 1: t = x != v; break;
             case 2: t = x < v; break;
             case 3: t = x >= v; break;
+            case 4: t = (int32_t)x < (int32_t)v; break;
+            case 5: t = (int32_t)x >= (int32_t)v; break;
             default: *code = pc - 1; return WIFI_BAD_OPCODE;
             }
             if (t) pc = c;

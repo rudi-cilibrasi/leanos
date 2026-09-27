@@ -22,18 +22,26 @@ abbrev Reg := Nat
 
 inductive AluOp where
   | mov | add | sub | and | or | xor | shl | shr | mul | rotl
+  /-- Unsigned and signed (two's-complement, truncating) division and
+  remainder; division by zero yields 0 (quotient) or the dividend (remainder). -/
+  | udiv | sdiv | urem | srem
+  /-- Arithmetic (sign-propagating) shift right. -/
+  | sar
   deriving Repr, BEq, DecidableEq
 
 def AluOp.code : AluOp → UInt32
   | .mov => 0 | .add => 1 | .sub => 2 | .and => 3
   | .or => 4 | .xor => 5 | .shl => 6 | .shr => 7 | .mul => 8 | .rotl => 9
+  | .udiv => 10 | .sdiv => 11 | .urem => 12 | .srem => 13 | .sar => 14
 
 inductive Cond where
   | eq | ne | ltu | geu
+  /-- Signed (two's-complement) comparisons. -/
+  | lts | ges
   deriving Repr, BEq, DecidableEq
 
 def Cond.code : Cond → UInt32
-  | .eq => 0 | .ne => 1 | .ltu => 2 | .geu => 3
+  | .eq => 0 | .ne => 1 | .ltu => 2 | .geu => 3 | .lts => 4 | .ges => 5
 
 /-- Operand: a register or a 32-bit immediate. -/
 inductive Operand where
