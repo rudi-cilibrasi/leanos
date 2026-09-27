@@ -194,3 +194,57 @@ def listenStats (fw : Firmware) (phyInit : ProgM Unit) : ProgM Unit := do
   halt
 
 end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy
+
+/-- wlc_phy_force_rfseq_nphy (phy_n.c:21316-21358) for a trigger/status mask. -/
+def forceRfseq (mask : UInt32) : ProgM Unit := do
+  phyRead 7 0xa1
+  phyOr 0xa1 0x3
+  phyOr 0xa3 mask
+  let done ← newLabel
+  let top ← newLabel
+  li 6 20000
+  place top
+  phyRead 0 0xa4
+  andi 0 mask
+  emit (.branch .eq 0 (.imm 0) done)
+  delay 10
+  emit (.alu .sub 6 (.imm 1))
+  emit (.branch .ne 6 (.imm 0) top)
+  printImm 0x0810 mask
+  place done
+  phyWriteR 0xa1 7
+
+/-- Experiment: partial init plus RX2TX / RESET2RX sequencing. -/
+def phyInitPartial2 (cfg : PhyCfg) : ProgM Unit := do
+  phyInitPartial cfg
+  forceRfseq 0x1
+  forceRfseq 0x20
+
+end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy LeanOS.Wifi.Mac
+
+/-- Snapshot core registers 0x000..0x7FC (step 4) and SHM 0..0x7FE twice. -/
+def activityDump (us : UInt32) : ProgM Unit := do
+  for pass in [0:2] do
+    for k in [0:0x200] do
+      r32 0 (4 * k.toUInt32); print ((0x1000 * (pass.toUInt32 + 1)) + k.toUInt32) 0
+    for k in [0:0x400] do
+      shmRead16 0 (2 * k.toUInt32); print ((0x1000 * (pass.toUInt32 + 3)) + k.toUInt32) 0
+    if pass == 0 then delay us
+
+def listenActivity (fw : Firmware) (phyInit : ProgM Unit) : ProgM Unit := do
+  bringUp
+  ucodeStart fw
+  coreInitTail
+  bandInit fw phyInit
+  enableMacPromisc
+  activityDump 1000000
+  printImm Tag.done 0
+  halt
+
+end LeanOS.Wifi.Driver

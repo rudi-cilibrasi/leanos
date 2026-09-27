@@ -33,7 +33,13 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       return listen (← loadFirmware fwDir) (phyInitPartial cfg) 20 12 3000),
    ("stats1p", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
-      return listenStats (← loadFirmware fwDir) (phyInitPartial cfg))]
+      return listenStats (← loadFirmware fwDir) (phyInitPartial cfg)),
+   ("stats1q", do
+      let cfg := LeanOS.Wifi.NPhy.qotom 1
+      return listenStats (← loadFirmware fwDir) (phyInitPartial2 cfg)),
+   ("act1q", do
+      let cfg := LeanOS.Wifi.NPhy.qotom 1
+      return listenActivity (← loadFirmware fwDir) (phyInitPartial2 cfg))]
 
 def main (args : List String) : IO UInt32 := do
   match args with
