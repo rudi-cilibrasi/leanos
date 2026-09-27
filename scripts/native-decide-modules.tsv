@@ -1,6 +1,7 @@
 # Source module	policy category
 LeanOS/BlockingIPC.lean	bounded-model
 LeanOS/BootAllocation.lean	bounded-model
+LeanOS/BootHandoffUefiReplay.lean	bounded-model
 LeanOS/BootInterruptPhase.lean	bounded-model
 LeanOS/BootMemoryMap.lean	bounded-model
 LeanOS/BootMemoryMapDecoder.lean	bounded-model
