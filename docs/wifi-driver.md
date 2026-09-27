@@ -10,7 +10,7 @@ instruction names: MMIO, configuration space, delays, scratch memory, FIFOs
 and serial records.
 
 | Layer | Modules |
-|---|---|
+| --- | --- |
 | Machine, simulator | `Bytecode`, `Sim` |
 | Chip bring-up, microcode | `Bcm43224` |
 | N-PHY and radio (brcmsmac port, ISC) | `NPhy`, `NPhyTables`, `NPhyTablesData`, `NPhyWorkarounds`, `Radio2056`, `NPhyInit` |
@@ -31,6 +31,23 @@ kernel with `scripts/build-qotom-recovery-lab.py --wifi-program` and installed
 by `hardware/wifi/install-lab.sh`. Hardware observations:
 `hardware/lab/observations/qotom-wifi-scan-20260926` and
 `qotom-wifi-connect-20260926`.
+
+## Booting the image from the SSD
+
+The lab stick can instead load the LeanOS image from the FreeBSD disk's EFI
+system partition, so updates no longer touch the stick. Install the generic
+`hardware/lab/grub-qotom-ssd.cfg.in` (rendered with the FreeBSD boot partition
+UUID) as the stick's `boot/grub/grub.cfg` once. GRUB locates the FreeBSD disk
+by that UUID and reads `/leanos/leanos-digest.cfg`, `/leanos/leanos.sha256`
+and `/leanos/leanos-qotom-lab.elf` from its `gpt1`. It boots LeanOS only when
+the one-shot request names that digest and the ELF hash matches; otherwise it
+falls back to FreeBSD as before. The stick keeps GRUB, the one-shot request
+and the watchdog scripts.
+
+Update an image from FreeBSD with `hardware/wifi/install-ssd.sh <sha256>`
+(it expects the ELF at `/var/tmp/leanos-wifi.elf` and keeps the previous
+image in `/leanos/previous/`), then run
+`scripts/run-qotom-recovery-lab.py --image-on-ssd ...`.
 
 Program images for `connect` embed the network PMK (from `LEANOS_WIFI_PSK`)
 and must never be committed. Known gaps: calibrations are not ported, the

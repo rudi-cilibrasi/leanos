@@ -43,6 +43,7 @@ def body : UInt32 := 0x0E24
 def parse : UInt32 := 0x0E25
 def dump : UInt32 := 0x0E26
 def rejoin : UInt32 := 0x0E27
+def dhcpRestart : UInt32 := 0x0E28
 end Tag
 
 /-- `sendMpdu` with the MPDU length in register r12 (run-time length). -/
@@ -212,27 +213,32 @@ def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
   place joined
   Handshake.copyFrom 0 (Handshake.entropy2At + 12) DevDhcp.xidAt 4
   delay 200000
-  let gotOffer ← newLabel
-  for _ in [0:3] do
-    sendProtected C data (DevDhcp.callDiscover D (.imm plainBuf))
-    printImm Tag.discoverSent 0
-    waitDhcpSoft L mgmt C D 5000000 1000
-    emit (.branch .eq 0 (.imm 2) gotOffer)
-  fail Fail.noReply
-  place gotOffer
-  li 0 0
-  emit (.memLoad 4 1 0 DevDhcp.yiaddrAt)
-  print Tag.offer 1
+  -- DHCP client: up to three DISCOVER rounds; within a round, up to three
+  -- REQUESTs. A NAK or an unanswered REQUEST restarts from DISCOVER (RFC 2131
+  -- 3.1, 4.4.1); only then does the program give up.
   let gotAck ← newLabel
-  let nak ← newLabel
   for _ in [0:3] do
-    sendProtected C data (DevDhcp.callRequest D (.imm plainBuf))
-    printImm Tag.requestSent 0
-    waitDhcpSoft L mgmt C D 5000000 1000
-    emit (.branch .eq 0 (.imm 5) gotAck)
-    emit (.branch .eq 0 (.imm 6) nak)
-  place nak
-  fail Fail.nak
+    let gotOffer ← newLabel
+    let nextRound ← newLabel
+    for _ in [0:3] do
+      sendProtected C data (DevDhcp.callDiscover D (.imm plainBuf))
+      printImm Tag.discoverSent 0
+      waitDhcpSoft L mgmt C D 5000000 1000
+      emit (.branch .eq 0 (.imm 2) gotOffer)
+    emit (.jump nextRound)
+    place gotOffer
+    li 0 0
+    emit (.memLoad 4 1 0 DevDhcp.yiaddrAt)
+    print Tag.offer 1
+    for _ in [0:3] do
+      sendProtected C data (DevDhcp.callRequest D (.imm plainBuf))
+      printImm Tag.requestSent 0
+      waitDhcpSoft L mgmt C D 5000000 1000
+      emit (.branch .eq 0 (.imm 5) gotAck)
+      emit (.branch .eq 0 (.imm 6) nextRound)
+    place nextRound
+    printImm Tag.dhcpRestart 0
+  fail Fail.noReply
   place gotAck
   printImm Tag.ack 0
   li 0 0
