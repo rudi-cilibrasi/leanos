@@ -106,6 +106,11 @@ def bandInit (fw : Firmware) (phyInit : ProgM Unit) : ProgM Unit := do
 /-- brcms_c_enable_mac with promiscuous reception of all frames including
 beacons from any BSS (scan mode). -/
 def enableMacPromisc : ProgM Unit := do
+  -- Receive by programmed I/O: route RX FIFO 0 directly to its PIO
+  -- registers (64-bit DMA RX control "direct FIFO", bit 8) and tell the
+  -- microcode not to insert receive padding (shared word 0x34 = 0).
+  maskSet32 rxDmaCtl 0xFFFFFFFF 0x100
+  shmWrite16 0x34 0
   mctrl (mctlPromisc ||| mctlBcnsPromisc) (mctlPromisc ||| mctlBcnsPromisc)
   mctrl mctlEnMac mctlEnMac
   w32 d11MacIntStatus miMacSuspended

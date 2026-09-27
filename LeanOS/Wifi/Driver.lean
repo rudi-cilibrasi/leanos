@@ -2,6 +2,7 @@ import LeanOS.Wifi.NPhyTables
 import LeanOS.Wifi.Radio2056
 import LeanOS.Wifi.NPhyWorkarounds
 import LeanOS.Wifi.Mac
+import LeanOS.Wifi.NPhyInit
 
 /-
 Top-level BCM43224 driver programs, composed from the ported brcmsmac pieces.
@@ -246,5 +247,19 @@ def listenActivity (fw : Firmware) (phyInit : ProgM Unit) : ProgM Unit := do
   activityDump 1000000
   printImm Tag.done 0
   halt
+
+end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy
+
+/-- wlc_phy_init for this board (phy_cmn.c): anacore on, radio on and channel
+set (wlc_phy_switch_radio_nphy), then wlc_phy_init_nphy with the ported table
+init and workarounds; calibrations not yet ported. -/
+def phyInitFull (cfg : PhyCfg) : ProgM Unit := do
+  LeanOS.Wifi.NPhyInit.anacoreOn cfg
+  LeanOS.Wifi.Radio2056.radioOn cfg
+  LeanOS.Wifi.NPhyInit.initNphy cfg (NPhyTables.tblInit cfg)
+    (LeanOS.Wifi.NPhyWorkarounds.workarounds cfg) (pure ()) (pure ())
 
 end LeanOS.Wifi.Driver
