@@ -5,6 +5,7 @@ import LeanOS.Wifi.Mac
 import LeanOS.Wifi.NPhyInit
 import LeanOS.Wifi.NPhyRssiCal
 import LeanOS.Wifi.NPhyTxCal
+import LeanOS.Wifi.NPhyRxCal
 import LeanOS.Wifi.Tx
 import LeanOS.Wifi.Handshake
 import LeanOS.Wifi.Pbkdf2
@@ -267,6 +268,10 @@ def txRxCalFor (cfg : PhyCfg) : ProgM Unit := do
     let skip ← newLabel
     emit (.branch .ne 0 (.imm 0) skip)
     printImm 0x0470 0                      -- TX IQ/LO calibration succeeded
+    if cfg.calLevel ≥ 3 then
+      LeanOS.Wifi.NPhyRxCal.rxiqCal cfg
+      emit (.branch .ne 0 (.imm 0) skip)
+      printImm 0x0472 0                    -- RX IQ calibration succeeded
     LeanOS.Wifi.NPhyTxCal.saveCal cfg
     printImm 0x0471 0                      -- calibration saved
     place skip

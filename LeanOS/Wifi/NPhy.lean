@@ -99,7 +99,10 @@ def qotom (channel : Nat) : PhyCfg :=
     -- Measured 2026-09-26: with CCK on both chains or on core 0 the access
     -- point often missed our ACKs; transmitting on core 1 only joins and
     -- answers pings reliably (the card's antenna is on chain 1).
-    txChainOverride := some 2 }
+    txChainOverride := some 2,
+    -- brcmsmac's full do_nphy_cal sequence; each calibration completed on
+    -- this card (2026-09-27) and the link measured no worse than without.
+    calLevel := 3 }
 
 /-- Decode whitespace/comma-separated hexadecimal numbers (optional `0x`
 prefix) into words. Large brcmsmac data tables are carried as string

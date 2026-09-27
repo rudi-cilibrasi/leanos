@@ -100,3 +100,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-wifi-dhcpsim"
 root = "tests.WifiDhcpSim"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-rxcal"
+root = "tests.WifiNPhyRxCal"
+moreLeanArgs = ["-DwarningAsError=true"]

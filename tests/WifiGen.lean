@@ -76,7 +76,8 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       let full := (← IO.getEnv "LEANOS_WIFI_DHCP").isSome
       let serve := (← IO.getEnv "LEANOS_WIFI_SERVE_SECONDS").bind String.toNat?
       let chain := (← IO.getEnv "LEANOS_WIFI_TXCHAIN").bind String.toNat?
-      let cal := ((← IO.getEnv "LEANOS_WIFI_CAL").bind String.toNat?).getD 0
+      let cal := ((← IO.getEnv "LEANOS_WIFI_CAL").bind String.toNat?).getD
+        (LeanOS.Wifi.NPhy.qotom 6).calLevel
       let base : LeanOS.Wifi.NPhy.PhyCfg := { LeanOS.Wifi.NPhy.qotom 6 with calLevel := cal }
       let cfg6 : LeanOS.Wifi.NPhy.PhyCfg :=
         match chain with
