@@ -104,7 +104,7 @@ structure Word4 where
   a : UInt32
   b : UInt32
   c : UInt32
-  deriving Repr, BEq
+  deriving Repr, BEq, Inhabited
 
 def regOk (r : Reg) : Bool := r < 16
 

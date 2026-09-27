@@ -312,13 +312,10 @@ def writeInits (t : ByteArray) : ProgM Unit := do
   if !ended then fail Fail.badInitvals
 
 /-- Upload the MIMO microcode, let the PSM run to its self-suspended state,
-then apply the N-PHY init values (brcms_b_coreinit, first half). -/
-def ucodeBoot (fw : Firmware) : ProgM Unit := do
+then apply the N-PHY init values (brcms_b_coreinit, first half). The D11
+core must already be out of reset. -/
+def ucodeStart (fw : Firmware) : ProgM Unit := do
   let ucodeOff ← addBlob "d11ucode16_mimo" fw.ucode
-  identify
-  selectD11
-  d11CoreReset
-  identifyPhy
   -- Reset the PSM with the host interface enabled.
   w32 d11MacCtl (mctlIhrEn ||| mctlPsmJmp0 ||| mctlWake)
   -- Upload microcode words through the auto-incrementing object window.
@@ -336,6 +333,14 @@ def ucodeBoot (fw : Firmware) : ProgM Unit := do
   printImm Tag.initvals (fw.initvals.size / 8).toUInt32
   shmRead16 0 0x0000; print Tag.ucodeRev 0
   shmRead16 0 0x0002; print Tag.ucodePatch 0
+
+/-- Identification, core reset, microcode boot, then a report. -/
+def ucodeBoot (fw : Firmware) : ProgM Unit := do
+  identify
+  selectD11
+  d11CoreReset
+  identifyPhy
+  ucodeStart fw
   shmRead16 0 0x0004; print Tag.ucodeDate 0
   shmRead16 0 0x0006; print Tag.ucodeTime 0
   shmRead16 0 (0x4c * 2); print Tag.fifoSize0 0

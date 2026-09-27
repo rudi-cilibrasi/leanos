@@ -1,4 +1,7 @@
 import LeanOS.Wifi.NPhyTables
+import LeanOS.Wifi.Radio2056
+import LeanOS.Wifi.NPhyWorkarounds
+import LeanOS.Wifi.Mac
 
 /-
 Top-level BCM43224 driver programs, composed from the ported brcmsmac pieces.
@@ -113,6 +116,80 @@ def tableExperiment2 : ProgM Unit := do
   phyRead 0 tblDataLo; print 0x0620 0
   phyRead 0 tblDataLo; print 0x0621 0
   phyRead 0 tblDataLo; print 0x0622 0
+  printImm Tag.done 0
+  halt
+
+end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy
+
+/-- wlc_phy_anacore(ON) for N-PHY rev >= 3 (phy_cmn.c). -/
+def anacoreOnRev3 : ProgM Unit := do
+  phyWrite 0xa6 0x0d
+  phyWrite 0x8f 0x0
+  phyWrite 0xa7 0x0d
+  phyWrite 0xa5 0x0
+
+/-- Radio power-up and channel set only (no N-PHY init body). -/
+def radioTest (cfg : PhyCfg) : ProgM Unit := do
+  bringUp
+  anacoreOnRev3
+  LeanOS.Wifi.Radio2056.radioOn cfg
+  radioRead 0 0x01; print 0x0800 0
+  phyRead 0 0x01; print 0x0801 0
+  printImm Tag.done 0
+  halt
+
+end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy LeanOS.Wifi.Mac
+
+/-- Power up, initialise MAC and PHY with the supplied PHY init, enable the
+MAC promiscuously and drain received frames by PIO. -/
+def listen (fw : Firmware) (phyInit : ProgM Unit) (frames words tries : UInt32) :
+    ProgM Unit := do
+  bringUp
+  ucodeStart fw
+  coreInitTail
+  bandInit fw phyInit
+  enableMacPromisc
+  rxDump frames words tries
+  printImm Tag.done 0
+  halt
+
+/-- Interim PHY init: anacore, radio on + channel, tables and workarounds. -/
+def phyInitPartial (cfg : PhyCfg) : ProgM Unit := do
+  anacoreOnRev3
+  LeanOS.Wifi.Radio2056.radioOn cfg
+  NPhyTables.tblInit cfg
+  LeanOS.Wifi.NPhyWorkarounds.workarounds cfg
+
+end LeanOS.Wifi.Driver
+
+namespace LeanOS.Wifi.Driver
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy LeanOS.Wifi.Mac
+
+/-- Dump the microcode MAC statistics block (SHM bytes 0xE0..0x19F) twice,
+`us` apart, as tags 0x09nn (nn = byte offset / 2 - 0x70) and 0x0Ann. -/
+def macstatDump (us : UInt32) : ProgM Unit := do
+  for k in [0:0x60] do
+    shmRead16 0 (0xE0 + 2 * k.toUInt32); print (0x0900 + k.toUInt32) 0
+  delay us
+  for k in [0:0x60] do
+    shmRead16 0 (0xE0 + 2 * k.toUInt32); print (0x0A00 + k.toUInt32) 0
+  r32 0 d11MacIntStatus; print 0x0B00 0
+  r32 0 rxPioCtl; print 0x0B01 0
+  r32 0 (rxDmaCtl + 0x10); print 0x0B02 0
+
+def listenStats (fw : Firmware) (phyInit : ProgM Unit) : ProgM Unit := do
+  bringUp
+  ucodeStart fw
+  coreInitTail
+  bandInit fw phyInit
+  enableMacPromisc
+  macstatDump 2000000
   printImm Tag.done 0
   halt
 

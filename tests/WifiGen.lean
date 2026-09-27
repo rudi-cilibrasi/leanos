@@ -26,8 +26,14 @@ def loadFirmware (dir : System.FilePath) : IO Firmware := do
 def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
   [("probe", pure probe), ("sprom", pure spromDump),
    ("tables", pure (tableCheck (LeanOS.Wifi.NPhy.qotom 6))),
-   ("tblexp", pure tableExperiment), ("tblexp2", pure tableExperiment2),
-   ("ucode", do return ucodeBoot (← loadFirmware fwDir))]
+   ("tblexp", pure tableExperiment), ("radio1", pure (radioTest (LeanOS.Wifi.NPhy.qotom 1))), ("tblexp2", pure tableExperiment2),
+   ("ucode", do return ucodeBoot (← loadFirmware fwDir)),
+   ("listen1p", do
+      let cfg := LeanOS.Wifi.NPhy.qotom 1
+      return listen (← loadFirmware fwDir) (phyInitPartial cfg) 20 12 3000),
+   ("stats1p", do
+      let cfg := LeanOS.Wifi.NPhy.qotom 1
+      return listenStats (← loadFirmware fwDir) (phyInitPartial cfg))]
 
 def main (args : List String) : IO UInt32 := do
   match args with
