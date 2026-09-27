@@ -70,3 +70,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-wifi-pmk"
 root = "tests.WifiPmk"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-tx"
+root = "tests.WifiTx"
+moreLeanArgs = ["-DwarningAsError=true"]
