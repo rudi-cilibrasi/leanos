@@ -147,24 +147,6 @@ def waitDhcpWith (L : DevCrypto.Lib) (mgmt : LeanOS.Wifi.Tx.TxConfig) (C : DevCc
     (.reg 5)
   print Tag.decap 0
   emit (.branch .eq 0 (.imm 0) skip)
-  print Tag.bodyLen 2
-  emit (.memLoad 4 3 1 6); print Tag.body 3        -- ethertype + IP version
-  emit (.memLoad 4 3 1 16); print Tag.body 3       -- protocol/checksum
-  -- dump UDP bodies (IPv4 protocol 17) of plausible DHCP size
-  let noDump ← newLabel
-  emit (.memLoad 1 3 1 17)
-  emit (.branch .ne 3 (.imm 17) noDump)
-  emit (.branch .ltu 2 (.imm 200) noDump)
-  li 4 0
-  let dl ← newLabel
-  place dl
-  mov 3 1
-  emit (.alu .add 3 (.reg 4))
-  emit (.memLoad 4 3 3 0)
-  print Tag.dump 3
-  addi 4 4
-  emit (.branch .ltu 4 (.reg 2) dl)
-  place noDump
   DevDhcp.callParse D (.reg 1) (.reg 2)
   print Tag.parse 0
   emit (.branch .ne 0 (.imm 0) done)
