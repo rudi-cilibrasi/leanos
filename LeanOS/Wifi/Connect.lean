@@ -16,11 +16,13 @@ open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.NPhy LeanOS.Wifi.Driv
 def plainBuf : UInt32 := 0x4000
 def txPnAt : UInt32 := 0x0C00
 def leasedIpAt : UInt32 := 0x0C08
+def joinTriesAt : UInt32 := 0x0C40
 
 namespace Fail
 def noReply : UInt32 := 0x7E01
 def nak : UInt32 := 0x7E02
 def encap : UInt32 := 0x7E03
+def join : UInt32 := 0x7E04
 end Fail
 
 namespace Tag
@@ -40,6 +42,7 @@ def bodyLen : UInt32 := 0x0E23
 def body : UInt32 := 0x0E24
 def parse : UInt32 := 0x0E25
 def dump : UInt32 := 0x0E26
+def rejoin : UInt32 := 0x0E27
 end Tag
 
 /-- `sendMpdu` with the MPDU length in register r12 (run-time length). -/
@@ -167,7 +170,9 @@ def waitDhcpSoft (L : DevCrypto.Lib) (mgmt : LeanOS.Wifi.Tx.TxConfig) (C : DevCc
   waitDhcpWith L mgmt C D frames tries true
 
 /-- Associate, authenticate with WPA2-PSK and lease an address. -/
-def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM Unit := do
+def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
+    (after : DevCrypto.Lib → DevCcmp.CcmpLib → LeanOS.Wifi.Tx.TxConfig → ProgM Unit) :
+    ProgM Unit := do
   let L ← DevCrypto.install
   let C ← DevCcmp.install L
   let D ← DevDhcp.install
@@ -180,8 +185,31 @@ def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM U
   Mlme.putBytes "bssid" Mlme.bssidAt bssid
   let mgmt := LeanOS.Wifi.Tx.TxConfig.ofPhy cfg .cck1
   let data := LeanOS.Wifi.Tx.TxConfig.ofPhy cfg .cck1 1
-  Mlme.authAssoc (sendMpdu mgmt 3) 3000
+  -- Join with up to four attempts: a lost association response ACK, a
+  -- disassociation or a stalled handshake restarts from authentication.
+  let joined ← newLabel
+  let giveUp ← newLabel
+  li 0 0
+  emit (.memStore 4 0 joinTriesAt (.imm 4))
+  let attempt ← newLabel
+  let retry ← newLabel
+  place attempt
+  Mlme.authAssoc (sendMpdu mgmt 3) 3000 (some retry)
   Handshake.fourWay L pmk LeanOS.Wifi.Ieee80211.wpa2PskCcmpRsnIe (sendMpdu mgmt 3) 3000
+    (some retry)
+  emit (.jump joined)
+  place retry
+  li 0 0
+  emit (.memLoad 4 1 0 joinTriesAt)
+  emit (.alu .sub 1 (.imm 1))
+  emit (.memStore 4 0 joinTriesAt (.reg 1))
+  print Tag.rejoin 1
+  emit (.branch .eq 1 (.imm 0) giveUp)
+  delay 500000
+  emit (.jump attempt)
+  place giveUp
+  fail Fail.join
+  place joined
   Handshake.copyFrom 0 (Handshake.entropy2At + 12) DevDhcp.xidAt 4
   delay 200000
   let gotOffer ← newLabel
@@ -195,11 +223,15 @@ def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM U
   li 0 0
   emit (.memLoad 4 1 0 DevDhcp.yiaddrAt)
   print Tag.offer 1
-  sendProtected C data (DevDhcp.callRequest D (.imm plainBuf))
-  printImm Tag.requestSent 0
   let gotAck ← newLabel
-  waitDhcp L mgmt C D 5000000 1000
-  emit (.branch .eq 0 (.imm 5) gotAck)
+  let nak ← newLabel
+  for _ in [0:3] do
+    sendProtected C data (DevDhcp.callRequest D (.imm plainBuf))
+    printImm Tag.requestSent 0
+    waitDhcpSoft L mgmt C D 5000000 1000
+    emit (.branch .eq 0 (.imm 5) gotAck)
+    emit (.branch .eq 0 (.imm 6) nak)
+  place nak
   fail Fail.nak
   place gotAck
   printImm Tag.ack 0
@@ -210,7 +242,11 @@ def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM U
   emit (.memLoad 4 1 0 DevDhcp.routerAt); print Tag.router 1
   emit (.memLoad 4 1 0 DevDhcp.subnetAt); print Tag.subnet 1
   emit (.memLoad 4 1 0 DevDhcp.leaseAt); print Tag.lease 1
+  after L C data
   printImm Bcm43224.Tag.done 0
   halt
+
+def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM Unit :=
+  connectDhcpThen fw cfg bssid pmk fun _ _ _ => pure ()
 
 end LeanOS.Wifi.Connect

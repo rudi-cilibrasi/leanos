@@ -37,6 +37,10 @@ structure PhyCfg where
   every channel. Default until the PMU PLL spur-avoid update
   (`bcma_pmu_spuravoid_pllupdate`, mode 1 on channels 5–8, 13) is ported. -/
   spurAvoidDisable : Bool := true
+  /-- Transmit chain mask override (1 = core 0, 2 = core 1). `none` keeps
+  brcmsmac's SROM-derived chains. The board sets BFL2_SINGLEANT_CCK, which
+  brcmsmac ignores; single-chain CCK is selected with `some 1`. -/
+  txChainOverride : Option Nat := none
 
 /-- 16-bit SROM word at *byte* offset `off`. -/
 def PhyCfg.srom16 (c : PhyCfg) (off : Nat) : UInt32 := c.sprom.getD (off / 2) (0 : UInt32)
@@ -85,10 +89,14 @@ def qotomSprom : Array UInt32 := #[
   0xffff, 0xffff, 0xffff, 0x8b08]
 
 /-- Qotom card: chip 43224 rev 1 package 8, N-PHY rev 6, radio 2056 rev 11,
-board flags 0x0200 / 0x1000 (SROM bytes 0x84/0x88). -/
+board flags 0x0200 / 0x1000 (SROM bytes 0x84/0x88), transmit on chain 1. -/
 def qotom (channel : Nat) : PhyCfg :=
   { phyRev := 6, radioRev := 11, chipRev := 1, chipPkg := 8,
-    boardFlags := 0x0200, boardFlags2 := 0x1000, channel, sprom := qotomSprom }
+    boardFlags := 0x0200, boardFlags2 := 0x1000, channel, sprom := qotomSprom,
+    -- Measured 2026-09-26: with CCK on both chains or on core 0 the access
+    -- point often missed our ACKs; transmitting on core 1 only joins and
+    -- answers pings reliably (the card's antenna is on chain 1).
+    txChainOverride := some 2 }
 
 /-- Decode whitespace/comma-separated hexadecimal numbers (optional `0x`
 prefix) into words. Large brcmsmac data tables are carried as string

@@ -1,4 +1,4 @@
-import LeanOS.Wifi.Connect
+import LeanOS.Wifi.Responder
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
@@ -74,7 +74,16 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       if bssid.size != 6 || bssidHex.length != 12 then throw (IO.userError "bad LEANOS_WIFI_BSSID")
       let fw ← loadFirmware fwDir
       let full := (← IO.getEnv "LEANOS_WIFI_DHCP").isSome
-      return if full then LeanOS.Wifi.Connect.connectDhcp fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk
+      let serve := (← IO.getEnv "LEANOS_WIFI_SERVE_SECONDS").bind String.toNat?
+      let chain := (← IO.getEnv "LEANOS_WIFI_TXCHAIN").bind String.toNat?
+      let cfg6 : LeanOS.Wifi.NPhy.PhyCfg :=
+        match chain with
+        | some c => { LeanOS.Wifi.NPhy.qotom 6 with txChainOverride := some c }
+        | none => LeanOS.Wifi.NPhy.qotom 6
+      return if let some secs := serve then
+               LeanOS.Wifi.Responder.connectAndServe fw cfg6 bssid pmk
+                 (secs * 1000000).toUInt32
+             else if full then LeanOS.Wifi.Connect.connectDhcp fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk
              else connect fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1

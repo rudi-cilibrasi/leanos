@@ -316,8 +316,11 @@ def antAvailBg (cfg : PhyCfg) : Nat := (cfg.srom16 0x9C &&& 0xFF).toNat
 /-- `wlc->stf->txchain` (`brcms_c_stf_phy_chain_calc`, stf.c:370-405):
 SROM txchain, or TXCHAIN_DEF_NPHY (3) when 0 or 0xf. -/
 def txChain (cfg : PhyCfg) : Nat :=
-  let t := sromTxChain cfg
-  if t == 0 || t == 0xF then 3 else t
+  match cfg.txChainOverride with
+  | some c => c
+  | none =>
+    let t := sromTxChain cfg
+    if t == 0 || t == 0xF then 3 else t
 
 /-- Transmit antenna bits of PhyTxControlWord for this board.
 

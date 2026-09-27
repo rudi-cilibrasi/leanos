@@ -156,7 +156,7 @@ def answerMsg3 (L : Lib) (send : Nat → ProgM Unit) : ProgM Unit := do
 
 /-- Run the 4-way handshake after association. -/
 def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → ProgM Unit)
-    (tries : UInt32) : ProgM Unit := do
+    (tries : UInt32) (onFail : Option Nat := none) : ProgM Unit := do
   putBytes "pmk" pmkAt pmk
   copyFrom 0 bssidAt aaAt 6
   putBytes "spa" spaAt (ByteArray.mk ourMac.data)
@@ -168,7 +168,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   -- same SNonce, so the authenticator's PTK (from our first message 2) stays
   -- consistent with ours.
   makeSNonce L
-  waitEapol 3000000 tries
+  waitEapol 3000000 tries onFail
   saveEapol
   let handle1 ← newLabel
   place handle1
@@ -182,7 +182,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   andi 1 0x01
   emit (.branch .eq 1 (.imm 0) ok1)
   place bad1
-  fail Fail.notMsg1
+  failOr onFail Fail.notMsg1
   place ok1
   printImm Tag.msg1 0
   loadEapol
@@ -199,7 +199,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   sendKeyMsg L send "msg2" msg2.encode true
   printImm Tag.msg2Sent 0
   -- Message 3: pairwise | ack | MIC | install (| secure), encrypted key data.
-  waitEapol 3000000 tries
+  waitEapol 3000000 tries onFail
   saveEapol
   emit (.memLoad 1 1 7 5)
   andi 1 0x01
@@ -216,7 +216,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   loadEapol
   emit (.jump handle1)
   place giveUp
-  fail Fail.notMsg3
+  failOr onFail Fail.notMsg3
   place ok3
   printImm Tag.msg3 0
   -- ANonce must match message 1.
@@ -230,13 +230,13 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
     emit (.branch .ne 0 (.reg 1) badA)
   emit (.jump okA)
   place badA
-  fail Fail.anonce
+  failOr onFail Fail.anonce
   place okA
   loadEapol
   callMicVerify L (.imm kckAt) (.reg 7) (.reg 8)
   let okM ← newLabel
   emit (.branch .eq 0 (.imm 1) okM)
-  fail Fail.mic
+  failOr onFail Fail.mic
   place okM
   loadEapol
   copyFrom 7 9 replayAt 8
@@ -252,7 +252,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   callKeyUnwrap L (.imm kekAt) (.reg 7) (.reg 3) (.imm plainAt)
   let okU ← newLabel
   emit (.branch .eq 0 (.imm 1) okU)
-  fail Fail.unwrap
+  failOr onFail Fail.unwrap
   place okU
   -- Walk key data elements for the GTK KDE (dd len 00 0f ac 01 id rsvd gtk).
   li 7 plainAt
@@ -282,7 +282,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   emit (.alu .add 7 (.reg 2))
   emit (.jump walk)
   place none_
-  fail Fail.noGtk
+  failOr onFail Fail.noGtk
   place found
   emit (.memLoad 1 1 7 6)
   andi 1 3

@@ -143,7 +143,8 @@ def findSsid (ssid : ByteArray) (frames tries code : UInt32) : ProgM Unit := do
 /-- Wait for a management frame of `subtype` addressed to us (addr1) from
 the latched BSSID (addr2). Up to `frames` frames; `fail code` otherwise.
 On success r5 = MPDU length. -/
-def waitMgmt (subtype : UInt8) (frames tries code : UInt32) : ProgM Unit := do
+def waitMgmt (subtype : UInt8) (frames tries code : UInt32) (onFail : Option Nat := none) :
+    ProgM Unit := do
   li 6 frames
   let top ← newLabel
   let done ← newLabel
@@ -163,7 +164,7 @@ def waitMgmt (subtype : UInt8) (frames tries code : UInt32) : ProgM Unit := do
   emit (.jump top)
   place give
   printImm Tag.waitTimeout subtype.toUInt32
-  fail code
+  failOr onFail code
   place done
 
 end LeanOS.Wifi.Mlme
@@ -201,7 +202,8 @@ end Tag
 /-- Open-system authentication then association with the latched BSSID.
 `send len` must transmit the `len`-byte MPDU at `txMpdu` (length given as
 a generation-time constant) to the BSSID and may clobber r0–r9. -/
-def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
+def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) (onFail : Option Nat := none) :
+    ProgM Unit := do
   -- Authentication request (algorithm 0, sequence 1).
   let zero : Mac := replicate 6 0
   let auth := authRequest (ByteArray.mk ourMac.data) zero 0
@@ -210,7 +212,7 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
   putBssid (txMpdu + 16)
   send auth.size
   printImm Tag.sent 0xB0
-  waitMgmt MgmtSubtype.auth 200 tries Fail.noAuth
+  waitMgmt MgmtSubtype.auth 200 tries Fail.noAuth onFail
   -- algorithm 0, transaction 2, status 0
   let bad ← newLabel
   let ok ← newLabel
@@ -219,7 +221,7 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
   place bad
   li 0 0
   emit (.memLoad 2 1 0 (rxMpdu + 28)); print 0x0C1F 1
-  fail Fail.authRejected
+  failOr onFail Fail.authRejected
   place ok
   printImm Tag.authOk 0
   -- Association request with the WPA2-PSK-CCMP RSN element.
@@ -230,7 +232,7 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
   putBssid (txMpdu + 16)
   send assoc.size
   printImm Tag.sent 0x00
-  waitMgmt MgmtSubtype.assocResp 200 tries Fail.noAssoc
+  waitMgmt MgmtSubtype.assocResp 200 tries Fail.noAssoc onFail
   let bad2 ← newLabel
   let ok2 ← newLabel
   matchBytes (rxMpdu + 26) (ByteArray.mk #[0, 0]) bad2
@@ -238,7 +240,7 @@ def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
   place bad2
   li 0 0
   emit (.memLoad 2 1 0 (rxMpdu + 26)); print 0x0C1E 1
-  fail Fail.assocRejected
+  failOr onFail Fail.assocRejected
   place ok2
   li 0 0
   emit (.memLoad 2 1 0 (rxMpdu + 28)); andi 1 0x3FFF; print Tag.aid 1
@@ -251,6 +253,7 @@ open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Mac
 
 namespace Fail
 def noEapol : UInt32 := 0x7C06
+def dropped : UInt32 := 0x7C07
 end Fail
 
 /-- Scratch word holding the `waitEapol` start time. -/
@@ -265,7 +268,7 @@ end Tag
 LLC/SNAP ethertype 0x888E. Accepts plain (24-byte header) and QoS (26-byte)
 data. On success r7 = scratch address of the EAPOL (802.1X) header and
 r8 = its length in bytes (MPDU length minus header, SNAP and FCS). -/
-def waitEapol (frames tries : UInt32) : ProgM Unit := do
+def waitEapol (frames tries : UInt32) (onFail : Option Nat := none) : ProgM Unit := do
   -- `frames` bounds the wait in microseconds of MAC TSF time (register
   -- 0x180), so the bound is the same under every executor.
   let top ← newLabel
@@ -290,6 +293,13 @@ def waitEapol (frames tries : UInt32) : ProgM Unit := do
   matchBytes (rxMpdu + 4) ourMac notUs
   li 0 0
   emit (.memLoad 4 1 0 rxMpdu); print Tag.fromBss 1
+  andi 1 0xFF
+  let kill ← newLabel
+  emit (.branch .eq 1 (.imm 0xA0) kill)
+  emit (.branch .eq 1 (.imm 0xC0) kill)
+  emit (.jump notUs)
+  place kill
+  failOr onFail Fail.dropped
   place notUs
   li 0 0
   emit (.memLoad 1 1 0 rxMpdu)
@@ -324,7 +334,7 @@ def waitEapol (frames tries : UInt32) : ProgM Unit := do
   place skip
   emit (.jump top)
   place give
-  fail Fail.noEapol
+  failOr onFail Fail.noEapol
   place done
 
 end LeanOS.Wifi.Mlme

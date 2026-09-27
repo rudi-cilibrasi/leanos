@@ -250,6 +250,13 @@ def w16 (off v : UInt32) : ProgM Unit := emit (.write16 off (.imm v))
 def r32 (d : Reg) (off : UInt32) : ProgM Unit := emit (.read32 d off)
 def r16 (d : Reg) (off : UInt32) : ProgM Unit := emit (.read16 d off)
 
+/-- Typed rejection, or — when a retry label is supplied — report the code
+(tag 0xEEF0) and continue at that label. -/
+def failOr (onFail : Option Nat) (code : UInt32) : ProgM Unit :=
+  match onFail with
+  | none => fail code
+  | some l => do printImm 0xEEF0 code; emit (.jump l)
+
 /-- Fail with `code` unless `r` equals `v`. -/
 def expectEq (r : Reg) (v code : UInt32) : ProgM Unit := do
   let ok ← newLabel

@@ -67,7 +67,37 @@ static void lab_wifi_hex(uint32_t value, unsigned digits) {
         serial_putc(nibble[(value >> (4 * i)) & 0xfu]);
 }
 
+static void lab_wifi_dotted(uint32_t v) {
+    /* Lease words hold network-order bytes in little-endian registers. */
+    for (unsigned i = 0; i < 4; ++i) {
+        if (i) serial_putc('.');
+        serial_u64((v >> (8 * i)) & 0xffu);
+    }
+}
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
+    /* Lease records from LeanOS/Wifi/Connect.lean (Tag.leasedIp, router,
+       subnet, lease) are also rendered as a readable boot message. */
+    if (tag == 0x0E05 || tag == 0x0E07 || tag == 0x0E08) {
+        serial_puts(tag == 0x0E05 ? "LEANOS-LAB/1 WIFI-DHCP address=" :
+                    tag == 0x0E07 ? "LEANOS-LAB/1 WIFI-DHCP router=" :
+                                    "LEANOS-LAB/1 WIFI-DHCP netmask=");
+        lab_wifi_dotted(value);
+        serial_putc('\n');
+    } else if (tag == 0x0E09) {
+        serial_puts("LEANOS-LAB/1 WIFI-DHCP lease-seconds=");
+        serial_u64(((value & 0xffu) << 24) | ((value & 0xff00u) << 8) |
+                   ((value >> 8) & 0xff00u) | (value >> 24));
+        serial_putc('\n');
+    } else if (tag == 0x0F05) {
+        serial_puts("LEANOS-LAB/1 WIFI-PING listening address=");
+        lab_wifi_dotted(value);
+        serial_putc('\n');
+    } else if (tag == 0x0F04) {
+        serial_puts("LEANOS-LAB/1 WIFI-PING echo-replies=");
+        serial_u64(value);
+        serial_putc('\n');
+    }
     serial_puts("WIFI ");
     lab_wifi_hex(tag, 4);
     serial_puts(" 0x");
