@@ -167,3 +167,81 @@ def waitMgmt (subtype : UInt8) (frames tries code : UInt32) : ProgM Unit := do
   place done
 
 end LeanOS.Wifi.Mlme
+
+namespace LeanOS.Wifi.Mlme
+open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Mac
+open LeanOS.Wifi.Ieee80211 LeanOS.Wifi.Bytes
+
+/-- MPDU template area inside the transmit buffer: the caller-supplied
+sender prepends its descriptor in front of `txMpdu`. -/
+def txMpdu : UInt32 := txBuf + 0x100
+
+/-- Write the latched BSSID into scratch at `at_` (6 bytes). Uses r0, r1. -/
+def putBssid (at_ : UInt32) : ProgM Unit := do
+  li 0 0
+  for k in [0:6] do
+    emit (.memLoad 1 1 0 (bssidAt + k.toUInt32))
+    emit (.memStore 1 0 (at_ + k.toUInt32) (.reg 1))
+
+namespace Fail
+def noQuail : UInt32 := 0x7C01
+def noAuth : UInt32 := 0x7C02
+def authRejected : UInt32 := 0x7C03
+def noAssoc : UInt32 := 0x7C04
+def assocRejected : UInt32 := 0x7C05
+end Fail
+
+namespace Tag
+def authOk : UInt32 := 0x0C10
+def assocOk : UInt32 := 0x0C11
+def aid : UInt32 := 0x0C12
+def sent : UInt32 := 0x0C13
+end Tag
+
+/-- Open-system authentication then association with the latched BSSID.
+`send len` must transmit the `len`-byte MPDU at `txMpdu` (length given as
+a generation-time constant) to the BSSID and may clobber r0–r9. -/
+def authAssoc (send : Nat → ProgM Unit) (tries : UInt32) : ProgM Unit := do
+  -- Authentication request (algorithm 0, sequence 1).
+  let zero : Mac := replicate 6 0
+  let auth := authRequest (ByteArray.mk ourMac.data) zero 0
+  putBytes "auth" txMpdu auth
+  putBssid (txMpdu + 4)
+  putBssid (txMpdu + 16)
+  send auth.size
+  printImm Tag.sent 0xB0
+  waitMgmt MgmtSubtype.auth 200 tries Fail.noAuth
+  -- algorithm 0, transaction 2, status 0
+  let bad ← newLabel
+  let ok ← newLabel
+  matchBytes (rxMpdu + 24) (ByteArray.mk #[0, 0, 2, 0, 0, 0]) bad
+  emit (.jump ok)
+  place bad
+  li 0 0
+  emit (.memLoad 2 1 0 (rxMpdu + 28)); print 0x0C1F 1
+  fail Fail.authRejected
+  place ok
+  printImm Tag.authOk 0
+  -- Association request with the WPA2-PSK-CCMP RSN element.
+  let cap : UInt16 := Capability.ess ||| Capability.privacy ||| Capability.shortSlot
+  let assoc := assocRequest (ByteArray.mk ourMac.data) zero ssidQuail cap 10 1
+  putBytes "assoc" txMpdu assoc
+  putBssid (txMpdu + 4)
+  putBssid (txMpdu + 16)
+  send assoc.size
+  printImm Tag.sent 0x00
+  waitMgmt MgmtSubtype.assocResp 200 tries Fail.noAssoc
+  let bad2 ← newLabel
+  let ok2 ← newLabel
+  matchBytes (rxMpdu + 26) (ByteArray.mk #[0, 0]) bad2
+  emit (.jump ok2)
+  place bad2
+  li 0 0
+  emit (.memLoad 2 1 0 (rxMpdu + 26)); print 0x0C1E 1
+  fail Fail.assocRejected
+  place ok2
+  li 0 0
+  emit (.memLoad 2 1 0 (rxMpdu + 28)); andi 1 0x3FFF; print Tag.aid 1
+  printImm Tag.assocOk 0
+
+end LeanOS.Wifi.Mlme
