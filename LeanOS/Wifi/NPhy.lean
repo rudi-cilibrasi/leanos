@@ -85,6 +85,32 @@ def qotom (channel : Nat) : PhyCfg :=
   { phyRev := 6, radioRev := 11, chipRev := 1, chipPkg := 8,
     boardFlags := 0x0200, boardFlags2 := 0x1000, channel, sprom := qotomSprom }
 
+/-- Decode whitespace/comma-separated hexadecimal numbers (optional `0x`
+prefix) into words. Large brcmsmac data tables are carried as string
+literals and decoded while generating, which keeps elaboration fast.
+Malformed tokens decode as 0xDEADBEEF so generation-time checks can catch
+them (`hexU32sValid`). -/
+def hexU32s (s : String) : Array UInt32 := Id.run do
+  let mut out := #[]
+  for tok in s.split (fun c => c == ' ' || c == ',' || c == '\n' || c == '\t') do
+    let t := tok.toString
+    let t := if t.startsWith "0x" || t.startsWith "0X" then (t.drop 2).toString else t
+    if t.isEmpty then continue
+    let mut v : UInt32 := 0
+    let mut ok := true
+    for c in t.toList do
+      let d := if c.isDigit then c.toNat - '0'.toNat
+        else if 'a' ≤ c && c ≤ 'f' then c.toNat - 'a'.toNat + 10
+        else if 'A' ≤ c && c ≤ 'F' then c.toNat - 'A'.toNat + 10
+        else 99
+      if d == 99 then ok := false
+      v := v * 16 + d.toUInt32
+    out := out.push (if ok then v else 0xDEADBEEF)
+  return out
+
+/-- True when every token of `s` decodes (no 0xDEADBEEF sentinel). -/
+def hexU32sValid (s : String) : Bool := !(hexU32s s).contains 0xDEADBEEF
+
 /-! ## Scratch register convention
 
 r0–r9 are free for ported code; r10–r11 are used by the accessors below;
