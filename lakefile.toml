@@ -55,3 +55,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-kernel-root-return-replay"
 root = "tests.KernelRootReturnReplay"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-gen"
+root = "tests.WifiGen"
+moreLeanArgs = ["-DwarningAsError=true"]
