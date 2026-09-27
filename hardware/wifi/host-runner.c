@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
     static uint8_t image[4 << 20];
     size_t n = fread(image, 1, sizeof image, f);
     fclose(f);
-    struct wifi_hooks h = { r32, r16, w32, w16, cr, cw, dl, pr, 0 };
+    struct wifi_hooks h = { r32, r16, w32, w16, cr, cw, dl, pr, 0, 0 };
     uint32_t code = 0;
     int s = wifi_exec(image, (uint32_t)n, &h, 1000000000ull, &code);
     printf("WIFI-END status=%d code=0x%x\n", s, code);

@@ -1,4 +1,5 @@
 import LeanOS.Wifi.Responder
+import LeanOS.Usb.Keyboard
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
@@ -88,6 +89,10 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
                  (secs * 1000000).toUInt32
              else if full then LeanOS.Wifi.Connect.connectDhcp fw cfg6 bssid pmk
              else connect fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
+   ("kbd", do
+      let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
+      let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
+      return LeanOS.Usb.Keyboard.program secs.toUInt32 idle.toUInt32),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir
