@@ -277,6 +277,25 @@ def qotomXhciPolicy : Policy where
   dma := true
   addrSinks := [0x98, 0xB0, 0x2030, 0x2038]
 
+/-- Intel AHCI at 00:13.0 (ABAR, 2 KiB): identity and command reads, no
+configuration writes, Memory Space and Bus Master (and clearing Bus Master
+again), DMA into scratch. Port 1's command-list and FIS base registers
+(PxCLB 0x180, PxFB 0x188) are address sinks. -/
+def qotomAhciPolicy : Policy where
+  window := 0x800
+  cfgRead := cfgBits [0x00, 0x04]
+  cfgWrite := 0
+  cmdClear := 0xFFFF0004
+  cmdSet := 0x6
+  dma := true
+  addrSinks := [0x180, 0x188]
+
+theorem qotomAhciPolicy_sane : qotomAhciPolicy.sane = true := by decide
+
+theorem qotomAhciPolicy_bits :
+    qotomAhciPolicy.cfgRead = 0x3 ∧ qotomAhciPolicy.cfgWrite = 0 := by
+  decide
+
 theorem qotomBcm43224Policy_sane : qotomBcm43224Policy.sane = true := by decide
 theorem qotomXhciPolicy_sane : qotomXhciPolicy.sane = true := by decide
 

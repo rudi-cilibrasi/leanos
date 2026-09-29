@@ -53,7 +53,7 @@ static uint8_t wifi_scratch[WIFI_SCRATCH_BYTES] __attribute__((aligned(65536)));
 
 /* PCI function an image drives. Version-1 images imply the BCM43224. */
 struct wifi_target {
-    uint32_t bus, dev, fn, id, window;
+    uint32_t bus, dev, fn, id, window, bar;  /* bar: config offset 0x10-0x24 */
 };
 
 /* Confinement policy declared by a version-3 image (Policy in
@@ -146,7 +146,7 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
     pol->sink_count = 0;
     if (version == 1) {
         t->bus = 2; t->dev = 0; t->fn = 0;
-        t->id = 0x435314e4u; t->window = WIFI_WINDOW_BYTES;
+        t->id = 0x435314e4u; t->window = WIFI_WINDOW_BYTES; t->bar = 0x10;
         *header_len = 16;
         return 0;
     }
@@ -156,7 +156,10 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
     t->bus = (bdf >> 16) & 0xffu; t->dev = (bdf >> 8) & 0x1fu; t->fn = bdf & 7u;
     t->id = wifi_le32(image + 20);
     t->window = wifi_le32(image + 24);
-    if (t->window == 0 || t->window > WIFI_WINDOW_MAX || (t->window & 0xfffu) ||
+    t->bar = wifi_le32(image + 28) ? wifi_le32(image + 28) : 0x10u;
+    if (t->bar < 0x10u || t->bar > 0x24u || (t->bar & 3u))
+        return WIFI_BAD_IMAGE;
+    if (t->window == 0 || t->window > WIFI_WINDOW_MAX || (t->window & 0x7ffu) ||
         (bdf & ~0xff1f07u))
         return WIFI_BAD_IMAGE;
     *header_len = 32;

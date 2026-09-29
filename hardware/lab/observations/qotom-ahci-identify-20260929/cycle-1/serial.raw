@@ -1,0 +1,59 @@
+[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: disk `hd2,gpt2' not found.
+error: disk `hd3,gpt2' not found.
+LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1
+LEANOS-LAB/1 WATCHDOG-STATE pmc=10 smi=20073 count=800 timer=4
+LEANOS-LAB/1 WATCHDOG-ARMED ticks=120
+LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD
+sha256=395b43807686a5a2f5b9f7aa6ce
+ef3df9b4f7dad1634cd3791dada27f7b5c94c
+leanos-qotom-lab.elf: OK
+WARNING: no console will be available to OS
+error: no suitable video mode found.
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/24 BOOT target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0
+LEANOS/24 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/24 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS-LAB/1 WIFI-BEGIN id=0x0f238086 bar0=0xd0916000
+WIFI 3100 0x0f238086
+WIFI 3101 0xc720ff01
+WIFI 3102 0x80000002
+WIFI 3104 0x00010300
+WIFI 3103 0x00000002
+WIFI 3106 0x00000123
+WIFI 3105 0x00000006
+WIFI 3108 0x00000050
+WIFI 3107 0x00000101
+WIFI 320a 0x4d544834
+WIFI 320c 0x43324342
+WIFI 320e 0x33333031
+WIFI 3210 0x31203235
+WIFI 3212 0x20202020
+WIFI 3216 0x53420000
+WIFI 3218 0x3231464d
+WIFI 321a 0x486f2e30
+WIFI 321c 0x69736f64
+WIFI 321e 0x53536b20
+WIFI 3220 0x20204420
+WIFI 3222 0x20202020
+WIFI 3224 0x20202020
+WIFI 3226 0x20202020
+WIFI 3228 0x20202020
+WIFI 322a 0x20202020
+WIFI 322c 0x20202020
+WIFI 322e 0x80102020
+WIFI 3264 0x0ee7c2b0
+WIFI 3266 0x00000000
+WIFI 31ff 0x00000000
+LEANOS-LAB/1 WIFI-END status=0 code=0x00000000
+LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
+[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: disk `hd2,gpt2' not found.
+error: disk `hd3,gpt2' not found.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+
+FreeBSD/amd64 (qotom) (ttyu0)
+
+login: 

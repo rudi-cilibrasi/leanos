@@ -15,7 +15,7 @@ rm -rf "$out"
 mkdir -p "$out"
 
 lake build leanos-wifi-gen leanos-wifi-xcheck leanos-wifi-fuzz
-for program in probe sprom tables kbd; do
+for program in probe sprom tables kbd ahci-identify; do
   .lake/build/bin/leanos-wifi-gen "$program" "$out/$program.bin" >/dev/null
   # Version-3 header: the image carries its checked policy.
   version="$(od -An -tu4 -j4 -N4 "$out/$program.bin" | tr -d ' ')"

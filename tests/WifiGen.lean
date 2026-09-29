@@ -1,6 +1,7 @@
 import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
 import LeanOS.DeviceProgramConfinement
+import LeanOS.Storage.Ahci
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
@@ -18,6 +19,8 @@ open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Driver
 def admittedPolicy (p : Program) : Option Policy :=
   if p.effTarget == bcm43224Target then some LeanOS.DeviceProgramConfinement.qotomBcm43224Policy
   else if p.effTarget == LeanOS.Usb.Xhci.target then some LeanOS.DeviceProgramConfinement.qotomXhciPolicy
+  else if p.effTarget == LeanOS.Storage.Ahci.target then
+    some LeanOS.DeviceProgramConfinement.qotomAhciPolicy
   else none
 
 /-- Check `p` against its target's policy and attach the policy. -/
@@ -113,6 +116,7 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
                  (secs * 1000000).toUInt32
              else if full then LeanOS.Wifi.Connect.connectDhcp fw cfg6 bssid pmk
              else connect fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
+   ("ahci-identify", pure LeanOS.Storage.Ahci.program),
    ("kbd", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0

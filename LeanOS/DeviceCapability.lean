@@ -311,7 +311,7 @@ def witnessSystem : System Unit :=
   { caps := { subjects := fun _ => false, objects := fun _ => false, kinds := fun _ => none,
               slots := fun _ _ => none }
     devices := fun k => if k = 0 then
-      some { target := LeanOS.Wifi.Bytecode.Target.mk 0 20 0 0x0f358086 0x10000,
+      some { target := { bus := 0, dev := 20, fn := 0, id := 0x0f358086, windowBytes := 0x10000 },
              policy := qotomXhciPolicy } else none
     deviceCaps := fun _ => none
     bound := fun _ => none
@@ -320,7 +320,7 @@ def witnessSystem : System Unit :=
 /-- Yield the key 'A', then halt. -/
 def witnessProgram : Program :=
   { words := #[⟨27 ||| 0x100, 0x41, 0, 0⟩, ⟨0, 0, 0, 0⟩], blob := .empty, sections := #[],
-    target := some (LeanOS.Wifi.Bytecode.Target.mk 0 20 0 0x0f358086 0x10000),
+    target := some { bus := 0, dev := 20, fn := 0, id := 0x0f358086, windowBytes := 0x10000 },
     policy := some qotomXhciPolicy }
 
 def witnessModels : Nat → Wifi.Sim.Device Unit := fun _ => Wifi.Sim.Device.none

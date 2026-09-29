@@ -179,14 +179,17 @@ Programs are written in `ProgM`, which appends instructions, allocates labels
 and records a data blob. Labels are resolved once the program is complete. -/
 
 /-- PCI function a program drives: its configuration identity dword
-(vendor | device << 16) and the size of its register window. Images without
-a target (version 1) drive the Broadcom BCM43224 at 02:00.0. -/
+(vendor | device << 16), the size of its register window, and the
+configuration offset of the memory BAR that locates the window (0x10–0x24;
+AHCI's ABAR is 0x24). Images without a target (version 1) drive the Broadcom
+BCM43224 at 02:00.0. -/
 structure Target where
   bus : UInt32
   dev : UInt32
   fn : UInt32
   id : UInt32
   windowBytes : UInt32
+  bar : UInt32 := 0x10
   deriving Repr, BEq, DecidableEq
 
 /-- The target implied by version-1 images: the BCM43224 at 02:00.0. -/
@@ -323,7 +326,7 @@ def build (p : ProgM Unit) : Except String Program := do
 
 Layout (little endian): magic `LWIF`, version, instruction count, blob
 length; version 2 adds the target (bus << 16 | dev << 8 | fn, configuration
-identity dword, window bytes, reserved); version 3 further adds the policy
+identity dword, window bytes, BAR offset or 0 for 0x10); version 3 further adds the policy
 (flags with bit 0 = DMA, policy window, read bitmap low/high, write bitmap
 low/high, command clear mask, command set mask, address-sink count, then
 that many sink offsets); then 16-byte instructions, then the blob. -/
@@ -342,7 +345,7 @@ def Program.image (p : Program) : ByteArray := Id.run do
     b := putU32 b ((t.bus <<< 16) ||| (t.dev <<< 8) ||| t.fn)
     b := putU32 b t.id
     b := putU32 b t.windowBytes
-    b := putU32 b 0
+    b := putU32 b (if t.bar == 0x10 then 0 else t.bar)
   if let some π := p.policy then
     b := putU32 b (if π.dma then 1 else 0)
     b := putU32 b π.window
