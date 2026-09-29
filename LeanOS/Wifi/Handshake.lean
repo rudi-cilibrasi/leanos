@@ -137,6 +137,47 @@ def msg4 : Eapol.KeyFrame :=
       Eapol.KeyInfo.mic ||| Eapol.KeyInfo.secure,
     keyLength := 0, replayCounter := 0, nonce := zeros 32, keyData := ByteArray.empty }
 
+/-- Walk the unwrapped key data at `plainAt` (wrapped length at
+`eapolPtrAt + 8`) for the GTK KDE (dd len 00 0f ac 01 id rsvd gtk) and
+install it (`gtkIdAt`, `gtkAt`); run `onNone` when there is none. Used by
+message 3 of the 4-way handshake and by the group-key handshake. -/
+def installGtk (onNone : ProgM Unit) : ProgM Unit := do
+  li 7 plainAt
+  li 0 0
+  emit (.memLoad 4 9 0 (eapolPtrAt + 8))
+  emit (.alu .sub 9 (.imm 8))
+  emit (.alu .add 9 (.imm plainAt))      -- r9 = end of plaintext
+  let walk ← newLabel
+  let next ← newLabel
+  let found ← newLabel
+  let none_ ← newLabel
+  place walk
+  mov 2 7
+  addi 2 2
+  emit (.branch .geu 2 (.reg 9) none_)
+  emit (.memLoad 1 1 7 0)                 -- type
+  emit (.memLoad 1 2 7 1)                 -- length
+  emit (.branch .ne 1 (.imm 0xdd) next)
+  emit (.branch .ltu 2 (.imm 22) next)
+  let sel : Array UInt32 := #[0x00, 0x0f, 0xac, 0x01]
+  for h : k in [0:sel.size] do
+    emit (.memLoad 1 3 7 (2 + k.toUInt32))
+    emit (.branch .ne 3 (.imm sel[k]) next)
+  emit (.jump found)
+  place next
+  addi 7 2
+  emit (.alu .add 7 (.reg 2))
+  emit (.jump walk)
+  place none_
+  onNone
+  place found
+  emit (.memLoad 1 1 7 6)
+  andi 1 3
+  li 0 0
+  emit (.memStore 1 0 gtkIdAt (.reg 1))
+  print Tag.gtkId 1
+  copyFrom 7 8 gtkAt 16
+
 /-- After the handshake: answer a retransmitted message 3 (EAPOL at r7,
 length r8, MIC bit set) with a fresh message 4 if its MIC verifies under
 the installed KCK. Keys are not reinstalled. -/
@@ -254,42 +295,7 @@ def fourWay (L : Lib) (pmk : ByteArray) (rsnIe : ByteArray) (send : Nat → Prog
   emit (.branch .eq 0 (.imm 1) okU)
   failOr onFail Fail.unwrap
   place okU
-  -- Walk key data elements for the GTK KDE (dd len 00 0f ac 01 id rsvd gtk).
-  li 7 plainAt
-  li 0 0
-  emit (.memLoad 4 9 0 (eapolPtrAt + 8))
-  emit (.alu .sub 9 (.imm 8))
-  emit (.alu .add 9 (.imm plainAt))      -- r9 = end of plaintext
-  let walk ← newLabel
-  let next ← newLabel
-  let found ← newLabel
-  let none_ ← newLabel
-  place walk
-  mov 2 7
-  addi 2 2
-  emit (.branch .geu 2 (.reg 9) none_)
-  emit (.memLoad 1 1 7 0)                 -- type
-  emit (.memLoad 1 2 7 1)                 -- length
-  emit (.branch .ne 1 (.imm 0xdd) next)
-  emit (.branch .ltu 2 (.imm 22) next)
-  let sel : Array UInt32 := #[0x00, 0x0f, 0xac, 0x01]
-  for h : k in [0:sel.size] do
-    emit (.memLoad 1 3 7 (2 + k.toUInt32))
-    emit (.branch .ne 3 (.imm sel[k]) next)
-  emit (.jump found)
-  place next
-  addi 7 2
-  emit (.alu .add 7 (.reg 2))
-  emit (.jump walk)
-  place none_
-  failOr onFail Fail.noGtk
-  place found
-  emit (.memLoad 1 1 7 6)
-  andi 1 3
-  li 0 0
-  emit (.memStore 1 0 gtkIdAt (.reg 1))
-  print Tag.gtkId 1
-  copyFrom 7 8 gtkAt 16
+  installGtk (failOr onFail Fail.noGtk)
   -- Message 4.
   sendKeyMsg L send "msg4" msg4.encode false
   printImm Tag.msg4Sent 0
