@@ -4,7 +4,6 @@
    usage: fuzz-runner image.bin... */
 #include <stdio.h>
 #include <stdlib.h>
-#define WIFI_EXPOSE_REGS 1
 #include "wifi-exec.h"
 
 #define FUZZ_MAX_STEPS 4000u
@@ -41,14 +40,19 @@ int main(int argc, char **argv) {
         fclose(f);
         struct model m = { 0, 0, 0 };
         struct wifi_hooks h = { r32, r16, w32, w16, cr, cw, dl, pr, &m, ph };
-        uint32_t code = 0;
-        int s = wifi_exec(image, (uint32_t)len, &h, FUZZ_MAX_STEPS, &code);
+        static struct wifi_vm vm;
+        uint32_t code = 0, yields = 0;
+        int s = wifi_start(&vm, image, (uint32_t)len);
+        if (s) { printf("%d\n", s); continue; }
+        /* Resume after every yield; the step budget is shared. */
+        while ((s = wifi_resume(&vm, &h, FUZZ_MAX_STEPS, &code)) == WIFI_YIELD)
+            yields = mix(yields, code);
         uint32_t scratch = 0x811c9dc5u;
         for (uint32_t i = 0; i < WIFI_SCRATCH_BYTES; ++i)
             scratch = (scratch ^ wifi_scratch[i]) * 0x01000193u;
         printf("%d %u", s, code);
-        for (int i = 0; i < 16; ++i) printf(" %u", wifi_regs[i]);
-        printf(" %u %u %u %u\n", m.prints, m.acc, m.n, scratch);
+        for (int i = 0; i < 16; ++i) printf(" %u", vm.r[i]);
+        printf(" %u %u %u %u %u\n", m.prints, m.acc, m.n, scratch, yields);
     }
     return 0;
 }

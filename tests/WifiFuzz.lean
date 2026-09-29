@@ -69,8 +69,8 @@ def scratchAddr : GenM UInt32 := do
 /-- One random instruction word for a program of `n` words, window `win`,
 blob of `blobLen` bytes. -/
 def genWord (n win blobLen : Nat) : GenM Word4 := do
-  let base : UInt32 ← if ← chance 1 then pure (27 + (← below 229)).toUInt32
-    else pure (← below 27).toUInt32
+  let base : UInt32 ← if ← chance 1 then pure (28 + (← below 228)).toUInt32
+    else pure (← below 28).toUInt32
   let imm : UInt32 := if ← chance 50 then 0x100 else 0
   let target : GenM UInt32 := do
     if ← chance 5 then pure (n + (← below 4)).toUInt32 else pure (← below n).toUInt32
@@ -100,6 +100,7 @@ def genWord (n win blobLen : Nat) : GenM Word4 := do
     | 22 => pure (← pick #[1, 2, 4, 3, 0, 8], ← regField, ← scratchAddr, ← regField)
     | 23 | 24 => pure (0, ← offsetIn win 4, ← regField, ← regField)
     | 25 => pure (0, ← regField, ← scratchAddr, 0)
+    | 27 => pure (0, ← regField, 0, 0)
     | 26 => pure (0, ← cfgOffset, ← pick #[0, 0xFFFF0000, 0xFFFFFFFF, ← rand],
                     ← pick #[0, 2, 4, 6, 1, ← rand])
     | _ => pure ((← below 3).toUInt32, ← rand, ← rand, ← rand)
@@ -242,14 +243,23 @@ def statusCode : Sim.Status → Nat
   | .halt => 0 | .fail _ => 1 | .stepLimit => 7
   | .error "bad-pc" => 3 | .error "bad-offset" => 4 | .error "bad-opcode" => 5
   | .error "stack" => 6 | .error "bad-blob" => 8 | .error "bad-mem" => 9
-  | .error "policy" => 10 | .error _ => 99
+  | .error "policy" => 10 | .yield _ => 11 | .error _ => 99
 
 /-- The summary line `fuzz-runner.c` prints for the same image. -/
 def summary (p : Program) : String := Id.run do
-  let (st, m) := Sim.run p model (0, 0) maxSteps
+  -- Resume after every yield with the shared step budget, as fuzz-runner.c does.
+  let mut (st, m) := Sim.run p model (0, 0) maxSteps
+  let mut yields : UInt32 := 0
+  for _ in [0:maxSteps] do
+    match st with
+    | .yield v =>
+      yields := mix yields v
+      (st, m) := Sim.resume p model maxSteps m
+    | _ => break
   let code : Nat := match st with
     | .halt => 0
     | .fail c => c.toNat
+    | .yield v => v.toNat
     | .stepLimit => m.pc
     | .error "bad-pc" => m.pc
     | .error _ => m.pc - 1
@@ -258,7 +268,7 @@ def summary (p : Program) : String := Id.run do
   for i in [0:scratchBytes] do
     scratch := (scratch ^^^ (m.mem.get! i).toUInt32) * 0x01000193
   let regs := (List.range 16).map fun i => toString (m.regs.getD i 0)
-  return s!"{statusCode st} {code} {" ".intercalate regs} {prints} {m.dev.1} {m.dev.2} {scratch}"
+  return s!"{statusCode st} {code} {" ".intercalate regs} {prints} {m.dev.1} {m.dev.2} {scratch} {yields}"
 
 def main (args : List String) : IO UInt32 := do
   let (dir, count, seed) ← match args with
@@ -268,7 +278,7 @@ def main (args : List String) : IO UInt32 := do
   IO.FS.createDirAll dir
   let mut g : Rng := ⟨if seed == 0 then 1 else seed.toUInt32⟩
   let mut lines := #[]
-  let mut statuses : Array Nat := Array.replicate 11 0
+  let mut statuses : Array Nat := Array.replicate 12 0
   for k in [0:count] do
     let (p, g') := genProgram.run g
     g := g'
@@ -277,7 +287,7 @@ def main (args : List String) : IO UInt32 := do
     let line := summary p
     lines := lines.push line
     let s := (line.splitOn " ").head!.toNat!
-    statuses := statuses.modify (min s 10) (· + 1)
+    statuses := statuses.modify (min s 11) (· + 1)
   IO.FS.writeFile s!"{dir}/expected.txt" ("\n".intercalate lines.toList ++ "\n")
   IO.println s!"wrote {count} programs; status histogram {statuses}"
   return 0

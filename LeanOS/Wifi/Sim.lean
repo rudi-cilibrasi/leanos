@@ -51,6 +51,8 @@ def Device.none : Device Unit where
 `policy`); the faulting instruction is `pc - 1` of the final machine. -/
 inductive Status where
   | halt | fail (code : UInt32) | error (what : String) | stepLimit
+  /-- `yield`: the program handed out `value`; `resume` continues it. -/
+  | yield (value : UInt32)
   deriving Repr, BEq, Inhabited
 
 structure Machine (σ : Type) where
@@ -268,6 +270,9 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if !cfgOffOk w.a then bad "bad-offset" else
     if !(p.policy.map (·.updateOk w.a w.b w.c)).getD true then bad "policy" else
     .next { m with dev := d.cfgUpdate32 m.dev w.a w.b w.c }
+  | 27 =>
+    if srcBad w.a then bad "bad-opcode" else
+    .stop (.yield (val w.a)) m
   | _ => bad "bad-opcode"
 
 /-- One instruction of `p`. -/
@@ -283,6 +288,12 @@ def loop {σ} (p : Program) (d : Device σ) : Nat → Machine σ → Status × M
     match step p d m with
     | .next m' => loop p d fuel m'
     | .stop s m' => (s, m')
+
+/-- Continue a machine after `yield` until `stepLimit` total steps (the C
+executor's `wifi_resume`). -/
+def resume {σ} (p : Program) (d : Device σ) (stepLimit : Nat) (m : Machine σ) :
+    Status × Machine σ :=
+  loop p d (stepLimit - m.steps) m
 
 /-- Run `p` on device `d` from state `s0`, at most `maxSteps` instructions. -/
 def run {σ} (p : Program) (d : Device σ) (s0 : σ) (maxSteps : Nat := 100000000)

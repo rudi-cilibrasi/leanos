@@ -8,6 +8,7 @@ import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
 import LeanOS.DeviceProgramConfinement
+import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.BootMemoryMap
 import LeanOS.BootMemoryMapDecoder

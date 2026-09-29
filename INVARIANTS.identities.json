@@ -5462,6 +5462,66 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.bind_accepted_admissible",
+      "display": "bind_accepted_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.cap_step_caps",
+      "display": "cap_step_caps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.device_state_changes_only_by_holder",
+      "display": "device_state_changes_only_by_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.initial_inv",
+      "display": "initial_inv",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.invoke_other_device_unchanged",
+      "display": "invoke_other_device_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.no_capability_no_effect",
+      "display": "no_capability_no_effect",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.non_cap_step_caps",
+      "display": "non_cap_step_caps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.revoke_denies_invoke",
+      "display": "revoke_denies_invoke",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.run_inv",
+      "display": "run_inv",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.step_inv",
+      "display": "step_inv",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.Step.machine_ite",
       "display": "Step.machine_ite",
@@ -16109,6 +16169,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.composite_terminateSubject_then_deferred_trace_preserves",
       "display": "composite_terminateSubject_then_deferred_trace_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.device_capability_confinement",
+      "display": "device_capability_confinement",
       "kind": "theorem"
     },
     {
