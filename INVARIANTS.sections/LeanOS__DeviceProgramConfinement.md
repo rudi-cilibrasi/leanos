@@ -1,0 +1,24 @@
+# Keeping hardware drivers inside their fence
+
+LeanOS drives its WiFi card and USB keyboard controller with small programs written in Lean and run by a tiny interpreter. Each program gets a written fence — a policy naming the stretch of device registers it may touch, the few configuration settings it may read or change, which switches of the device's master control register it may flip, and whether it may learn physical memory addresses for the device to copy data to on its own. These theorems guarantee that a program which passes the automatic fence check, or whose image carries its fence for the interpreter to enforce, never asks the hardware for anything outside that fence — whatever the device answers and however long the program runs. They are proved about the interpreter's reference model; that the real interpreter matches the model is tested, not proved.
+
+- `iter_preserve` — A stepping-stone fact: if each round of a repeated operation keeps a property true, the whole repetition keeps it true.
+- `mmioOk_mono` — A stepping-stone fact: a register access that fits in a smaller window also fits in any larger window.
+- `setReg_dev` — Bookkeeping: changing one of the interpreter's scratch registers leaves the device's state alone.
+- `setReg_stack` — Bookkeeping: changing a scratch register leaves the interpreter's return stack alone.
+- `Step.machine_next` — Bookkeeping: the state left by an instruction that continues is exactly the state it produced.
+- `Step.machine_stop` — Bookkeeping: the state left by an instruction that stops is exactly the state it stopped in.
+- `Step.machine_ite` — Bookkeeping: looking at the state an either-or instruction leaves is the same as looking inside whichever branch was taken.
+- `exec_confined` — Any single instruction that passed the fence check, executed from a clean state, requests no hardware action outside the fence.
+- `exec_declared_confined` — Any single instruction at all, in a program whose image carries its fence, requests no hardware action outside that fence: the interpreter's own checks stop it first.
+- `loop_flag` — A stepping-stone fact: if every single step keeps the "stepped outside the fence" alarm off, then a whole run of any length keeps it off.
+- `run_confined` — A program accepted by the fence check never asks the hardware for anything outside its fence — no register outside its window, no forbidden configuration setting, no forbidden control switch, no memory address unless allowed — on any device, from any starting registers and memory, for any number of steps.
+- `run_declared_confined` — Any program whose image carries a fence, even one the checker never saw, is held inside that fence by the interpreter's run-time checks alone.
+- `step_stack_bounded` — The interpreter's record of pending subroutine returns never grows past its fixed limit of 16.
+- `sane_cfgWrite_outside_header` — Under a sensible fence, a program may never directly overwrite the device's identity, master control switches, or the address ranges it answers to.
+- `sane_update_bus_master` — Under a sensible fence, a program can switch on the device's ability to read and write main memory on its own only if the fence explicitly allows that, and can never switch on the old port-based access mode.
+- `qotomBcm43224Policy_sane` — The WiFi card's fence on the lab machine is a sensible fence.
+- `qotomXhciPolicy_sane` — The USB controller's fence on the lab machine is a sensible fence.
+- `qotomBcm43224Policy_no_bus_master` — The WiFi driver can never switch on the card's ability to reach main memory by itself; it moves every frame through the card's registers instead.
+- `qotomBcm43224Policy_bits` — The WiFi fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.
+- `qotomXhciPolicy_bits` — The USB controller fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.

@@ -312,10 +312,8 @@ def bringUp : ProgM Unit := do
   let noLegacy ← newLabel
   emit (.cfgRead32 0 0)
   print Tag.begin 0
-  -- memory space + bus master
-  emit (.cfgRead32 0 0x04)
-  ori 0 0x6
-  emit (.cfgWrite32 0x04 (.reg 0))
+  -- Memory Space + Bus Master; zeros to the RW1C status half.
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
   -- Bay Trail port routing: route every routable USB 2 port to xHCI
   -- (XUSB2PR := XUSB2PRM) and enable SuperSpeed (USB3_PSSEN := USB3PRM).
   emit (.cfgRead32 0 0xD4)

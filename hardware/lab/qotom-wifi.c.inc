@@ -1,7 +1,12 @@
 /* Lab-only: execute Lean-authored device programs (LeanOS/Wifi/Bytecode.lean,
-   hardware/wifi/wifi-exec.h) on the Qotom: the BCM43224 WiFi driver
-   (version-1 images) and version-2 images that name their own PCI target,
-   such as the xHCI USB keyboard driver.
+   hardware/wifi/wifi-exec.h) on the Qotom: the BCM43224 WiFi driver and the
+   xHCI USB keyboard driver.
+
+   Only version-3 images run: each declares its PCI target and confinement
+   policy, the declared policy must lie inside the admitted profile for that
+   function below (the Qotom policies proved sane in
+   LeanOS/DeviceProgramConfinement.lean), and wifi_exec then enforces it on
+   every configuration access and physAddr.
 
    For each program the target's memory BAR is shown through borrowed
    identity leaves of `page_table_a` covering `lab_dev_window`: the leaves are
@@ -15,6 +20,41 @@
 static uint8_t lab_dev_window[LAB_DEV_MAX_PAGES * 4096] __attribute__((aligned(65536)));
 static uint64_t lab_dev_saved_leaves[LAB_DEV_MAX_PAGES];
 static struct wifi_target lab_dev_target;
+
+/* Admitted device-program profiles: the widest policy each function may
+   declare. Mirrors `qotomBcm43224Policy` / `qotomXhciPolicy`. */
+struct lab_dev_profile {
+    uint32_t bus, dev, fn, id;
+    struct wifi_policy max;
+};
+static const struct lab_dev_profile lab_dev_profiles[] = {
+    /* BCM43224 at 02:00.0: identity/command reads, the two BAR0 core windows,
+       Memory Space only (PIO; no bus mastering), no DMA. */
+    { 2, 0, 0, UINT32_C(0x435314e4),
+      { 1, 0, 0x4000u, UINT64_C(0x3), (UINT64_C(1) << (0x80 / 4)) | (UINT64_C(1) << (0xAC / 4)),
+        UINT32_C(0xffff0000), UINT32_C(0x2) } },
+    /* xHCI at 00:14.0: identity/command and port-routing mask reads, port
+       routing writes, Memory Space and Bus Master, DMA into scratch. */
+    { 0, 20, 0, UINT32_C(0x0f358086),
+      { 1, 1, 0x10000u, UINT64_C(0x3) | (UINT64_C(1) << (0xD4 / 4)) | (UINT64_C(1) << (0xDC / 4)),
+        (UINT64_C(1) << (0xD0 / 4)) | (UINT64_C(1) << (0xD8 / 4)),
+        UINT32_C(0xffff0000), UINT32_C(0x6) } },
+};
+
+/* The declared policy is present and no wider than the target's profile. */
+static int lab_dev_policy_admitted(const struct wifi_target *t, const struct wifi_policy *p) {
+    if (!p->present)
+        return 0;
+    for (unsigned i = 0; i < sizeof lab_dev_profiles / sizeof lab_dev_profiles[0]; ++i) {
+        const struct lab_dev_profile *q = &lab_dev_profiles[i];
+        if (q->bus != t->bus || q->dev != t->dev || q->fn != t->fn || q->id != t->id)
+            continue;
+        return p->window <= q->max.window && (p->dma <= q->max.dma) &&
+               !(p->cfg_read & ~q->max.cfg_read) && !(p->cfg_write & ~q->max.cfg_write) &&
+               !(p->cmd_clear & ~q->max.cmd_clear) && !(p->cmd_set & ~q->max.cmd_set);
+    }
+    return 0;
+}
 
 static uint32_t lab_wifi_cfg_address(uint32_t off) {
     return UINT32_C(0x80000000) | (lab_dev_target.bus << 16) | (lab_dev_target.dev << 11) |
@@ -152,8 +192,13 @@ static void lab_dev_restore(unsigned pages) {
 
 static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
     uint32_t hdr = 0;
-    if (wifi_image_target(image, image_len, &lab_dev_target, &hdr)) {
+    struct wifi_policy policy;
+    if (wifi_image_header(image, image_len, &lab_dev_target, &policy, &hdr)) {
         serial_puts("LEANOS-LAB/1 WIFI-END status=bad-image\n");
+        return;
+    }
+    if (!lab_dev_policy_admitted(&lab_dev_target, &policy)) {
+        serial_puts("LEANOS-LAB/1 WIFI-END status=policy-not-admitted\n");
         return;
     }
     uint32_t id = wifi_hook_cfg_read32(0);

@@ -2,6 +2,7 @@ import LeanOS.NegativeFixtures.BootMemory
 import LeanOS.NegativeFixtures.BootPhase
 import LeanOS.NegativeFixtures.BootPlans
 import LeanOS.NegativeFixtures.BootTopology
+import LeanOS.NegativeFixtures.DeviceProgramConfinement
 import LeanOS.NegativeFixtures.DirectPort
 import LeanOS.NegativeFixtures.DMAQuarantine
 import LeanOS.NegativeFixtures.Example
