@@ -24,6 +24,21 @@ the keyboard program refuses to run there.
 The program is admitted under the xHCI confinement policy
 (`docs/device-program-confinement.md`), the only Qotom policy that admits DMA.
 
+## QEMU
+
+The driver source is generated per controller through `Xhci.Layout`
+(`bayTrail` for the Qotom, `qemu` for QEMU's `qemu-xhci`: CAPLENGTH, runtime
+and doorbell offsets, and Bay Trail's configuration-space port routing).
+`scripts/run-q35-device-lab.py` builds the `kbd-q35` program into the q35
+device-lab kernel, boots it on QEMU q35 with a `qemu-xhci` at 00:03.0, a hub
+on root port 1 and a USB keyboard behind it, types a string through QMP
+`input-send-event`, and requires every character back as a `KBD key=`
+record, in order. With `--service` the `kbd-q35-service` program yields each
+key instead of printing it and runs through the lab device service
+(ADR 0022): subject 1 is granted the controller, an ungranted subject is
+denied, the driver runs in fixed step budgets with one key per yield, and
+after revocation the former holder is denied. `scripts/check.sh` runs both.
+
 ## Trying it
 
 Build and install the image from FreeBSD's side, then boot it once under the

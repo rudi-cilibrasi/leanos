@@ -127,8 +127,14 @@ example : admissible (oneX (.cfgUpdate32 0x04 0xFFFF0000 0x6)) qotomXhciPolicy =
 /-- The xHCI policy's sinks are exactly the driver's CRCR, DCBAAP, ERSTBA and
 ERDP registers. -/
 example : qotomXhciPolicy.addrSinks =
-    [LeanOS.Usb.Xhci.crcrLo, LeanOS.Usb.Xhci.dcbaapLo, LeanOS.Usb.Xhci.erstbaLo,
-      LeanOS.Usb.Xhci.erdpLo] := by
+    [@LeanOS.Usb.Xhci.crcrLo LeanOS.Usb.Xhci.bayTrail, @LeanOS.Usb.Xhci.dcbaapLo LeanOS.Usb.Xhci.bayTrail,
+      @LeanOS.Usb.Xhci.erstbaLo LeanOS.Usb.Xhci.bayTrail, @LeanOS.Usb.Xhci.erdpLo LeanOS.Usb.Xhci.bayTrail] := by
+  decide
+
+/-- The QEMU xHCI policy's sinks are the same registers in qemu-xhci's layout. -/
+example : q35XhciPolicy.addrSinks =
+    [@LeanOS.Usb.Xhci.crcrLo LeanOS.Usb.Xhci.qemu, @LeanOS.Usb.Xhci.dcbaapLo LeanOS.Usb.Xhci.qemu,
+      @LeanOS.Usb.Xhci.erstbaLo LeanOS.Usb.Xhci.qemu, @LeanOS.Usb.Xhci.erdpLo LeanOS.Usb.Xhci.qemu] := by
   decide
 
 /-- The AHCI policy's sinks are exactly port 1's PxCLB and PxFB. -/

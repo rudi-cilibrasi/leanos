@@ -12,6 +12,8 @@ namespace LeanOS.Usb.Keyboard
 
 open LeanOS.Wifi.Bytecode LeanOS.Usb.Xhci
 
+variable [Layout]
+
 /-! ## State (scratch words after the xHCI driver's) -/
 
 namespace V
@@ -429,7 +431,7 @@ def armReport : ProgM Unit := do
 
 /-- Report `reportBuf` against `prevReport`: every newly pressed usage in
 bytes 2–7 becomes one character (tag 0x2100). -/
-def decodeReport (tableOff : UInt32) : ProgM Unit := do
+def decodeReport (tableOff : UInt32) (yieldKeys : Bool := false) : ProgM Unit := do
   ld 1 8 reportBuf                              -- modifiers
   andi 8 0x22                                   -- either Shift
   for i in [2:8] do
@@ -447,7 +449,8 @@ def decodeReport (tableOff : UInt32) : ProgM Unit := do
     place noShift
     emit (.blobLoad32 4 3 tableOff)
     emit (.branch .eq 4 (.imm 0) skip)
-    print Tag.key 4
+    -- Hand the key to the invoking subject (device service), or print it.
+    if yieldKeys then emit (.yield (.reg 4)) else print Tag.key 4
     ld 4 5 V.keys
     addi 5 1
     st 4 V.keys (.reg 5)
@@ -457,7 +460,7 @@ def decodeReport (tableOff : UInt32) : ProgM Unit := do
     st 1 (prevReport + i.toUInt32) (.reg 1)
 
 /-- Echo keys for `seconds` of controller time (MFINDEX, 125 µs units). -/
-def session (seconds : UInt32) (tableOff : UInt32) : ProgM Unit := do
+def session (seconds : UInt32) (tableOff : UInt32) (yieldKeys : Bool := false) : ProgM Unit := do
   st 4 V.elapsed (.imm 0)
   st 4 V.keys (.imm 0)
   st 4 V.reports (.imm 0)
@@ -500,7 +503,7 @@ def session (seconds : UInt32) (tableOff : UInt32) : ProgM Unit := do
   ld 4 1 V.reports
   addi 1 1
   st 4 V.reports (.reg 1)
-  decodeReport tableOff
+  decodeReport tableOff yieldKeys
   armReport
   emit (.jump top)
   place out
@@ -510,8 +513,10 @@ def session (seconds : UInt32) (tableOff : UInt32) : ProgM Unit := do
   print Tag.sessionEnd 1
 
 /-- The complete keyboard program: controller bring-up, enumeration through
-at most one hub, keyboard setup, and a `seconds`-long echo session. -/
-def program (seconds : UInt32) (idle : UInt32 := 0) : ProgM Unit := do
+at most one hub, keyboard setup, and a `seconds`-long echo session. With
+`yieldKeys` each typed character is handed to the invoking subject by
+`yield` (the device-service form, ADR 0022) instead of being printed. -/
+def program (seconds : UInt32) (idle : UInt32 := 0) (yieldKeys : Bool := false) : ProgM Unit := do
   let tableOff ← addBlob "hid-us-ascii" tableBytes
   bringUp
   let hubFound ← newLabel
@@ -524,7 +529,7 @@ def program (seconds : UInt32) (idle : UInt32 := 0) : ProgM Unit := do
   fail Fail.noKeyboard
   place kbdFound
   setupKeyboard idle
-  session seconds tableOff
+  session seconds tableOff yieldKeys
   halt
 
 end LeanOS.Usb.Keyboard

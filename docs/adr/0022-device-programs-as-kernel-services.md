@@ -76,10 +76,16 @@ change:
    assigned-EDU variant does), a pinned BAR, a multi-page MMIO window in the
    boot page-table plan, and a VT-d domain that lets the controller reach
    only the executor scratch.
-4. **A q35 target for the keyboard program.** The program pins Bay Trail
-   offsets and routing registers; `qemu-xhci` (1b36:000d) needs CAPLENGTH,
-   RTSOFF and DBOFF read from the controller and no routing writes, plus a
-   policy of its own.
+4. **A q35 target for the keyboard program.** Done (stage 2a): the driver is
+   generated per `Xhci.Layout` (Bay Trail or `qemu-xhci`), reads xECP from
+   HCCPARAMS1, and `q35XhciPolicy` confines the QEMU variant. The q35 device
+   lab (`scripts/run-q35-device-lab.py`) runs it in the lab kernel on QEMU
+   with QMP-typed keys, in `scripts/check.sh`. Its `--service` mode runs the
+   yield-per-key program through a lab device service that follows
+   `DeviceCapability.step` (grant, bind by admission, budgeted invocations,
+   denial of an ungranted subject, revocation), with ring-0 stand-ins for
+   the subjects; what stage 2 still adds is real ring-3 subjects, the IPC
+   path and the canonical kernel's admission of the controller.
 5. **Entry-path rules.** The executor's `switch` must compile without jump
    tables (`-fno-jump-tables` in both toolchain lanes) and every function
    reachable from the syscall entry must be listed with its stack budget in

@@ -17,6 +17,9 @@
    below 16 MiB, so its virtual address is its physical (DMA) address. */
 
 #define LAB_DEV_MAX_PAGES 16u
+#ifndef LAB_PM_TIMER_PORT
+#define LAB_PM_TIMER_PORT 0x408u   /* Qotom; QEMU q35 (ICH9) uses 0x608 */
+#endif
 static uint8_t lab_dev_window[LAB_DEV_MAX_PAGES * 4096] __attribute__((aligned(65536)));
 static uint64_t lab_dev_saved_leaves[LAB_DEV_MAX_PAGES];
 static struct wifi_target lab_dev_target;
@@ -28,6 +31,14 @@ struct lab_dev_profile {
     struct wifi_policy max;
 };
 static const struct lab_dev_profile lab_dev_profiles[] = {
+#ifdef LAB_Q35_DEVICE_LAB
+    /* QEMU q35 device lab: qemu-xhci at 00:03.0 (16 KiB), identity/command
+       reads, MEM+BM, DMA; sinks CRCR, DCBAAP, ERSTBA, ERDP in qemu-xhci's
+       layout. Mirrors `q35XhciPolicy`. */
+    { 0, 3, 0, UINT32_C(0x000d1b36),
+      { 1, 1, 0x4000u, UINT64_C(0x3), 0, UINT32_C(0xffff0000), UINT32_C(0x6), 4,
+        { 0x58, 0x70, 0x1030, 0x1038 } } },
+#endif
     /* BCM43224 at 02:00.0: identity/command reads, the two BAR0 core windows,
        Memory Space set and Bus Master cleared (PIO only), no DMA. */
     { 2, 0, 0, UINT32_C(0x435314e4),
@@ -124,10 +135,10 @@ uint32_t wifi_hook_phys(uint32_t off) {
 void wifi_hook_delay_us(uint32_t us) {
     /* 3.579545 ticks per microsecond; +1 tick rounds up. */
     uint64_t need = ((uint64_t)us * 3579545u + 999999u) / 1000000u + 1u;
-    uint32_t last = in32(0x408) & 0xffffffu;
+    uint32_t last = in32(LAB_PM_TIMER_PORT) & 0xffffffu;
     uint64_t seen = 0;
     while (seen < need) {
-        uint32_t now = in32(0x408) & 0xffffffu;
+        uint32_t now = in32(LAB_PM_TIMER_PORT) & 0xffffffu;
         seen += (now - last) & 0xffffffu;
         last = now;
     }
@@ -145,6 +156,16 @@ static void lab_wifi_dotted(uint32_t v) {
         if (i) serial_putc('.');
         serial_u64((v >> (8 * i)) & 0xffu);
     }
+}
+
+/* One typed character: printable ASCII as itself, others by name or code. */
+static void lab_kbd_render(uint32_t value) {
+    if (value == '\n') serial_puts("enter");
+    else if (value == '\b') serial_puts("backspace");
+    else if (value == '\t') serial_puts("tab");
+    else if (value == ' ') serial_puts("space");
+    else if (value > 0x20 && value < 0x7f) serial_putc((char)value);
+    else { serial_puts("0x"); lab_wifi_hex(value, 2); }
 }
 
 void wifi_hook_print(uint32_t tag, uint32_t value) {
@@ -173,12 +194,7 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         /* USB keyboard (LeanOS/Usb/Keyboard.lean): one typed character.
            Printable ASCII is echoed as itself, others by name or code. */
         serial_puts("LEANOS-LAB/1 KBD key=");
-        if (value == '\n') serial_puts("enter");
-        else if (value == '\b') serial_puts("backspace");
-        else if (value == '\t') serial_puts("tab");
-        else if (value == ' ') serial_puts("space");
-        else if (value > 0x20 && value < 0x7f) serial_putc((char)value);
-        else { serial_puts("0x"); lab_wifi_hex(value, 2); }
+        lab_kbd_render(value);
         serial_putc('\n');
         return;
     } else if (tag == 0x2101) {
@@ -214,6 +230,61 @@ static void lab_dev_restore(unsigned pages) {
         lab_wifi_invlpg(lab_dev_window + 4096 * j);
     }
 }
+
+#define LAB_DEV_STEP_LIMIT UINT64_C(40000000000)
+
+#ifdef LAB_DEVICE_SERVICE
+/* Device service (LeanOS/DeviceCapability.lean, ADR 0022), exercised in the
+   lab with ring-0 stand-ins for two subjects. The kernel grants subject 1 the
+   capability for the admitted device; `bind` is the admission check above
+   plus wifi_start; each `invoke` resumes the bound program for at most
+   LAB_SERVICE_BUDGET steps and returns what it yielded (one key) or that the
+   budget ran out. A subject without the capability is denied, and so is the
+   holder after revocation. */
+#define LAB_SERVICE_BUDGET 200000u
+static uint32_t lab_service_holder;       /* subject holding the device; 0 = none */
+
+static int lab_service_invoke(struct wifi_vm *vm, uint32_t subject, uint32_t *code) {
+    if (subject == 0 || subject != lab_service_holder)
+        return -1;
+    return wifi_resume(vm, 0, vm->steps + LAB_SERVICE_BUDGET, code);
+}
+
+static int lab_dev_execute(const uint8_t *image, uint32_t image_len, uint32_t *code) {
+    static struct wifi_vm vm;
+    if (wifi_start(&vm, image, image_len))
+        return WIFI_BAD_IMAGE;
+    lab_service_holder = 1;
+    serial_puts("LEANOS-LAB/1 SERVICE grant subject=1 bind=accepted\n");
+    if (lab_service_invoke(&vm, 2, code) < 0)
+        serial_puts("LEANOS-LAB/1 SERVICE invoke subject=2 denied\n");
+    uint64_t invocations = 0;
+    int status;
+    for (;;) {
+        status = lab_service_invoke(&vm, 1, code);
+        ++invocations;
+        if (status == WIFI_YIELD) {
+            serial_puts("LEANOS-LAB/1 SERVICE subject=1 key=");
+            lab_kbd_render(*code);
+            serial_putc('\n');
+        } else if (!(status == WIFI_STEP_LIMIT && vm.steps < LAB_DEV_STEP_LIMIT)) {
+            break;
+        }
+    }
+    lab_service_holder = 0;
+    serial_puts("LEANOS-LAB/1 SERVICE revoke subject=1 invocations=");
+    serial_u64(invocations);
+    serial_putc('\n');
+    uint32_t ignored;
+    if (lab_service_invoke(&vm, 1, &ignored) < 0)
+        serial_puts("LEANOS-LAB/1 SERVICE invoke subject=1 denied\n");
+    return status;
+}
+#else
+static int lab_dev_execute(const uint8_t *image, uint32_t image_len, uint32_t *code) {
+    return wifi_exec(image, image_len, 0, LAB_DEV_STEP_LIMIT, code);
+}
+#endif
 
 static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
     uint32_t hdr = 0;
@@ -259,7 +330,7 @@ static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
         lab_wifi_invlpg(lab_dev_window + 4096 * i);
     }
     uint32_t code = 0;
-    int status = wifi_exec(image, image_len, 0, UINT64_C(40000000000), &code);
+    int status = lab_dev_execute(image, image_len, &code);
     lab_dev_restore(pages);
     serial_puts("LEANOS-LAB/1 WIFI-END status=");
     serial_u64((uint64_t)status);

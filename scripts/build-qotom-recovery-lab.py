@@ -11,6 +11,8 @@ import subprocess
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--prepared-repo', type=Path, required=True)
 p.add_argument('--mode', choices=('completion', 'kernel-hang'), default='completion')
+p.add_argument('--device-service', action='store_true', help='with --q35-device-lab: run the program through the lab device service (grant, bind, budgeted invocations, revoke)')
+p.add_argument('--q35-device-lab', action='store_true', help='QEMU q35 device-program lab: run the --lab-program images right after serial init (q35 PM timer at 0x608), then exit through isa-debug-exit with 0x10; no Qotom gates')
 p.add_argument('--pci-diagnostic', action='store_true',
                help='build the PCI diagnostic with completion reset transport')
 p.add_argument('--handoff-capture', action='store_true',
@@ -180,7 +182,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('qotom-wifi-lab' if (a.wifi_program or a.lab_program) else 'qotom-blocking-ipc-integration-lab' if a.blocking_ipc_integration else 'qotom-exception-integration-lab' if a.exception_integration else 'qotom-entry-integration-lab' if a.entry_integration else 'qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-copy-root-publication-lab' if a.copy_root_publication else 'qotom-nosmap-control-lab' if a.nosmap_control else 'qotom-pci-trust-lab' if a.pci_trust_contract else 'qotom-pci-final-lab' if a.pci_final_admission else 'qotom-txe-bme-lab' if a.txe_bme else 'qotom-graphics-bme-lab' if a.graphics_bme else 'qotom-graphics-state-lab' if a.graphics_state else 'qotom-broadcom-d3-lab' if a.broadcom_d3 else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('q35-device-lab' if a.q35_device_lab else 'qotom-wifi-lab' if (a.wifi_program or a.lab_program) else 'qotom-blocking-ipc-integration-lab' if a.blocking_ipc_integration else 'qotom-exception-integration-lab' if a.exception_integration else 'qotom-entry-integration-lab' if a.entry_integration else 'qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-copy-root-publication-lab' if a.copy_root_publication else 'qotom-nosmap-control-lab' if a.nosmap_control else 'qotom-pci-trust-lab' if a.pci_trust_contract else 'qotom-pci-final-lab' if a.pci_final_admission else 'qotom-txe-bme-lab' if a.txe_bme else 'qotom-graphics-bme-lab' if a.graphics_bme else 'qotom-graphics-state-lab' if a.graphics_state else 'qotom-broadcom-d3-lab' if a.broadcom_d3 else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -295,7 +297,16 @@ old = '''static __attribute__((noreturn)) void finish(uint8_t value) {
 }'''
 if text.count(old) != 1 or text.count('    serial_init();') != 1:
     raise SystemExit('unsupported kernel terminal/init shape')
-if a.mode == 'completion':
+if a.q35_device_lab and (a.mode != 'completion' or not a.lab_program or a.wifi_program):
+    raise SystemExit('--q35-device-lab needs --lab-program images and completion mode')
+if a.device_service and not a.q35_device_lab:
+    raise SystemExit('--device-service needs --q35-device-lab')
+if a.q35_device_lab:
+    text = text.replace('    serial_init();', '''    serial_init();
+    serial_puts("LEANOS-LAB/1 MODE q35-device-lab\\n");
+    lab_wifi_run();
+    finish(0x10);''')
+elif a.mode == 'completion':
     text = text.replace(old, (root / 'hardware/lab/qotom-finish.c.inc').read_text())
     text = text.replace('    serial_init();', '    serial_init();\n    serial_puts("LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\\n");')
 else:
@@ -315,7 +326,8 @@ if lab_programs:
     gate = '    if (result != 1) pre_admission_fail("j1900-msr-readback");'
     if text.count(gate) != 1:
         raise SystemExit('unsupported CPU/MSR gate shape')
-    text = text.replace(gate, gate + '\n    lab_wifi_run();')
+    if not a.q35_device_lab:
+        text = text.replace(gate, gate + '\n    lab_wifi_run();')
     arrays = ''
     for k, image in enumerate(images):
         body = ',\n'.join(', '.join(str(b) for b in image[i:i + 24]) for i in range(0, len(image), 24))
@@ -327,6 +339,8 @@ if lab_programs:
     arrays += f'#define lab_dev_program_count {len(images)}u\n'
     marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
     text = text.replace(marker, '#define WIFI_HOOKS_DIRECT 1\n' +
+                        ('#define LAB_PM_TIMER_PORT 0x608u\n#define LAB_Q35_DEVICE_LAB 1\n' if a.q35_device_lab else '') +
+                        ('#define LAB_DEVICE_SERVICE 1\n' if a.device_service else '') +
                         (root / 'hardware/wifi/wifi-exec.h').read_text() + '\n' + arrays +
                         (root / 'hardware/lab/qotom-wifi.c.inc').read_text() + '\n' + marker)
 if a.handoff_capture:
@@ -575,7 +589,7 @@ if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(target), str(final_plan)], cwd=root, check=True)
     if final_plan.read_bytes() != plan.read_bytes():
         raise SystemExit('ACPI lab final ELF differs from prelink page plan')
-elf = out / ('leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
+elf = out / ('leanos-q35-device-lab.elf' if a.q35_device_lab else 'leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
 shutil.copy2(target, elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
 if a.bsp_topology or a.bsp_production:

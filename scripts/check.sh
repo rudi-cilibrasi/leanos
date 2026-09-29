@@ -59,6 +59,8 @@ lake build leanos-kernel-root-return-replay
 lake build leanos-wifi-vectors
 .lake/build/bin/leanos-wifi-vectors
 ./scripts/check-device-programs.sh
+python3 scripts/run-q35-device-lab.py
+python3 scripts/run-q35-device-lab.py --service
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 lake build leanos-copy-root-construction
