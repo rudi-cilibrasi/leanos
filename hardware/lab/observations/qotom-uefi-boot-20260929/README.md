@@ -52,5 +52,14 @@ ELF SHA256 `302d2ec0cf126f5700114dddbec409a50136f86fec3084918804f94f3bf085e6`
 (embeds the network PMK; not retained). Capture SHA256
 `4f1001fde4eb61e0d1b9f08d7daf8d9929b7430d2011926a47778b83054b13e6`.
 
-Not established: pure-UEFI (Win8 / CSM off) mode, where there is no legacy
-text display; serial evidence is unaffected, but that mode was not run.
+A second Win7 UEFI cycle repeated the result (20/20 pings). The firmware
+was then switched to **Win8 UEFI** (pure UEFI, CSM off, Secure Boot off):
+FreeBSD came back through the stick's UEFI GRUB, and the same one-shot
+boot again reached DHCP 192.168.6.30 and 20/20 pings (RTT 6.7–23.2 ms,
+average 8.8 ms) before chaining back to FreeBSD with
+`machdep.bootmethod=UEFI`. Capture SHA256
+`1efe7d225edcca8bf7f61922f233668f72bd71dcf628c3b99e29a58431b242f0` (not
+retained; `cycle-1/` is the Win7 UEFI run).
+
+Not established: any display output under Win8 UEFI, where there is no
+legacy text mode; the evidence above is serial only.
