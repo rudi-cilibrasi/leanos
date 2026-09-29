@@ -16,6 +16,7 @@ terminal_input console serial
 terminal_output console serial
 set timeout=0
 set labroot=$root
+export labroot
 # Locate the FreeBSD disk by its boot partition UUID; its gpt1 holds /leanos.
 set leanosroot=none
 set leanos_digest=missing
@@ -151,19 +152,27 @@ for disk in hd0 hd1 hd2 hd3; do
     if probe --set=candidate --part-uuid ($disk,gpt2); then
         if [ "$candidate" = "@FREEBSD_BOOT_UUID@" ]; then
             echo "LEANOS-LAB/1 CHAIN freebsd disk=$disk"
-            set root=($disk)
             if [ "$grub_platform" = "efi" ]; then
                 # UEFI: FreeBSD's loader on the disk's EFI system partition.
-                chainloader ($disk,gpt1)/efi/freebsd/loader.efi
+                # Chainloaded, it would search the firmware's current boot
+                # entry (this stick) for its pool, so name the root dataset.
+                chainloader ($disk,gpt1)/efi/freebsd/loader.efi loader.efi rootdev=zfs:zroot/ROOT/default:
             else
+                set root=($disk)
                 chainloader +1
             fi
             boot
         fi
     fi
 done
+if [ "$grub_platform" = "efi" ]; then
+    # Return to the firmware boot manager, which boots its next entry.
+    echo 'LEANOS-LAB/1 CHAIN-EXIT firmware-next-entry'
+    exit
+fi
 echo 'LEANOS-LAB/1 CHAIN-FAILED manual-recovery-required'
 set timeout=-1
 menuentry 'Retry FreeBSD default' {
+    set root=$labroot
     configfile ($labroot)/boot/grub/grub.cfg
 }

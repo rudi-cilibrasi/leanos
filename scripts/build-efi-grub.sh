@@ -20,7 +20,7 @@
 set -euo pipefail
 
 readonly LEANOS_EFI_GRUB_MODULES=(
-  normal configfile echo test true sleep reboot halt boot
+  normal configfile echo test true sleep reboot halt boot minicmd
   search search_fs_file search_fs_uuid probe regexp
   part_gpt part_msdos fat iso9660
   serial terminal loadenv hashsum gcry_sha256
