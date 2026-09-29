@@ -15,3 +15,8 @@ if (sp == WIFI_STACK_DEPTH)@if (sp == WIFI_STACK_DEPTH - 1)
 case 5: t = (int32_t)x >= (int32_t)v; break;@case 5: t = x >= v; break;
 POLICY(pol.dma);@POLICY(1);
 case 9: v &= 31;@case 9: v &= 15;
+if (wifi_is_sink(p, off)) return v - base < WIFI_SCRATCH_BYTES;@if (wifi_is_sink(p, off)) return v - base <= WIFI_SCRATCH_BYTES;
+if (wifi_is_sink(p, off - 4u)) return v == 0;@if (wifi_is_sink(p, off - 4u)) return 1;
+if (off - p->sinks[i] < 8u) return 1;@if (off - p->sinks[i] < 4u) return 1;
+if (base == 24) POLICY(NO_SINK(a));@
+POLICY(NO_SINK(a));@

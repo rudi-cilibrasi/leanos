@@ -23,8 +23,9 @@ def admittedPolicy (p : Program) : Option Policy :=
 /-- Check `p` against its target's policy and attach the policy. -/
 def admit (p : Program) : Except String Program := do
   let some π := admittedPolicy p | throw s!"no admitted policy for target {repr p.effTarget}"
+  let p := { p with policy := some π }
   if LeanOS.DeviceProgramConfinement.admissible p π then
-    return { p with policy := some π }
+    return p
   let at_ := LeanOS.DeviceProgramConfinement.firstViolation p π
   let what := match at_ with
     | some i => s!"instruction {i}: {repr p.words[i]!}"

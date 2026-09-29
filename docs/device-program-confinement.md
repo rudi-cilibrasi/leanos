@@ -9,12 +9,14 @@ confined to a **policy** (`Policy` in `LeanOS/Wifi/Bytecode.lean`):
 * the configuration dwords below 0x100 it may read, and those it may write;
 * the command-register bits it may clear or set, changed only through the
   executor's read-modify-write `cfgUpdate32` whose masks are immediates;
-* whether it may learn bus addresses of its scratch RAM (`physAddr`, DMA).
+* whether it may learn bus addresses of its scratch RAM (`physAddr`, DMA);
+* its *address sinks*: MMIO address registers that may only receive bus
+  addresses inside scratch (low dword) or zero (high dword).
 
-| Device | Window | Config reads | Config writes | Command | DMA |
-| --- | --- | --- | --- | --- | --- |
-| BCM43224 02:00.0 | 16 KiB | 0x00, 0x04 | 0x80, 0xAC (backplane windows) | may set Memory Space only | no |
-| xHCI 00:14.0 | 64 KiB | 0x00, 0x04, 0xD4, 0xDC | 0xD0, 0xD8 (port routing) | may set Memory Space and Bus Master | yes |
+| Device | Window | Config reads | Config writes | Command | DMA | Address sinks |
+| --- | --- | --- | --- | --- | --- | --- |
+| BCM43224 02:00.0 | 16 KiB | 0x00, 0x04 | 0x80, 0xAC (backplane windows) | may set Memory Space and clear Bus Master | no | — |
+| xHCI 00:14.0 | 64 KiB | 0x00, 0x04, 0xD4, 0xDC | 0xD0, 0xD8 (port routing) | may set Memory Space and Bus Master | yes | CRCR, DCBAAP, ERSTBA, ERDP |
 
 ## Three layers
 
@@ -50,8 +52,9 @@ Hardware: `hardware/lab/observations/qotom-device-confinement-20260929`.
 * That `wifi-exec.h` refines `Sim.step` is tested, not proved: differential
   fuzzing with a mutation self-test
   ([ADR 0020](adr/0020-device-program-executor-assurance.md)).
-* Where a DMA-capable device writes: the xHCI program hands the controller
-  scratch bus addresses, and the J1900 has no IOMMU (#448).
+* Where a DMA-capable device writes beyond the root registers: pointers in
+  scratch descriptors are a trusted assumption on the IOMMU-less J1900
+  ([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
 * What an allowed register write does inside the device, e.g. the BCM43224
   backplane windows reach every core on the chip.
 * The programs still run in ring 0 of the lab kernel, not as kernel subjects

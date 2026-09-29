@@ -195,7 +195,14 @@ Configuration offsets are dword offsets below 0x100 (the header and the
 legacy capability area reachable through mechanism 1); bit `k` of a bitmap
 names offset `4 * k`. The command register (0x04) is changed only through
 `cfgUpdate32`, whose masks must lie inside `cmdClear` / `cmdSet`. `dma`
-admits `physAddr`, the only way a program learns a bus address. -/
+admits `physAddr`, the only way a program learns a bus address.
+
+`addrSinks` names the low dwords of 64-bit MMIO registers the device
+dereferences as bus addresses (for xHCI: CRCR, DCBAAP, ERSTBA, ERDP). A
+program may write such a low dword only with `write32`/`write32At` and a
+value inside the executor's scratch (`value - phys(0) < scratchBytes`), and
+the high dword (`+ 4`) only with zero; any other write that touches a sink
+is a policy violation. -/
 structure Policy where
   window : UInt32
   cfgRead : UInt64
@@ -203,6 +210,7 @@ structure Policy where
   cmdClear : UInt32
   cmdSet : UInt32
   dma : Bool
+  addrSinks : List UInt32 := []
   deriving Repr, BEq, DecidableEq
 
 /-- Bitmap of the given configuration offsets (offsets ≥ 0x100 are dropped). -/
@@ -212,6 +220,27 @@ def cfgBits (offs : List UInt32) : UInt64 :=
 /-- `off` is a dword offset below 0x100 whose bit is set in `bits`. -/
 def cfgAllowed (bits : UInt64) (off : UInt32) : Bool :=
   off < 0x100 && off % 4 == 0 && (bits >>> (off / 4).toUInt64) &&& 1 == 1
+
+/-- The write at `off` lands in some address sink's 8 bytes. -/
+def Policy.sinkTouch (π : Policy) (off : UInt32) : Bool :=
+  π.addrSinks.any fun s => off - s < 8
+
+/-- A 32-bit write of `v` to `off` respects the address sinks, given the bus
+address `base` of scratch byte 0: outside every sink anything goes; the low
+dword takes only a bus address inside scratch and the high dword only zero. -/
+def Policy.sinkOk (π : Policy) (base off v : UInt32) : Bool :=
+  if !π.sinkTouch off then true
+  else if π.addrSinks.contains off then v - base < scratchBytes.toUInt32
+  else if π.addrSinks.contains (off - 4) then v == 0
+  else false
+
+theorem Policy.sinkOk_of_not_touch {π : Policy} {base off v : UInt32}
+    (h : π.sinkTouch off = false) : π.sinkOk base off v = true := by
+  simp [Policy.sinkOk, h]
+
+theorem Policy.sinkTouch_of_nil {π : Policy} {off : UInt32} (h : π.addrSinks = []) :
+    π.sinkTouch off = false := by
+  simp [Policy.sinkTouch, h]
 
 /-- Command-register update masks allowed by `π`. -/
 def Policy.updateOk (π : Policy) (off clr set : UInt32) : Bool :=
@@ -292,8 +321,8 @@ Layout (little endian): magic `LWIF`, version, instruction count, blob
 length; version 2 adds the target (bus << 16 | dev << 8 | fn, configuration
 identity dword, window bytes, reserved); version 3 further adds the policy
 (flags with bit 0 = DMA, policy window, read bitmap low/high, write bitmap
-low/high, command clear mask, command set mask); then 16-byte instructions,
-then the blob. -/
+low/high, command clear mask, command set mask, address-sink count, then
+that many sink offsets); then 16-byte instructions, then the blob. -/
 
 def putU32 (b : ByteArray) (v : UInt32) : ByteArray :=
   b.push v.toUInt8 |>.push (v >>> 8).toUInt8 |>.push (v >>> 16).toUInt8 |>.push (v >>> 24).toUInt8
@@ -319,6 +348,8 @@ def Program.image (p : Program) : ByteArray := Id.run do
     b := putU32 b (π.cfgWrite >>> 32).toUInt32
     b := putU32 b π.cmdClear
     b := putU32 b π.cmdSet
+    b := putU32 b π.addrSinks.length.toUInt32
+    for o in π.addrSinks do b := putU32 b o
   for w in p.words do
     b := putU32 (putU32 (putU32 (putU32 b w.op) w.a) w.b) w.c
   return b ++ p.blob
