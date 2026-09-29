@@ -58,6 +58,8 @@ lake build leanos-kernel-root-return-replay
 .lake/build/bin/leanos-kernel-root-return-replay
 lake build leanos-wifi-vectors
 .lake/build/bin/leanos-wifi-vectors
+lake build leanos-wifi-respsim
+.lake/build/bin/leanos-wifi-respsim
 ./scripts/check-device-programs.sh
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service

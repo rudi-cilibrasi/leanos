@@ -2,8 +2,8 @@ import LeanOS.Wifi.Connect
 
 /-
 Minimal IPv4 host responder for the associated station: answers ARP
-requests for the leased address and ICMP echo requests addressed to it, for
-a bounded time. Received frames are CCMP-decapsulated with the TK or GTK;
+requests for the leased address, and ICMP echo requests and UDP echo
+datagrams (port 7) addressed to it, for a bounded time. Received frames are CCMP-decapsulated with the TK or GTK;
 replies are built in scratch, CCMP-protected with the TK and sent through
 the best-effort FIFO.
 
@@ -13,12 +13,15 @@ Reply construction:
   destination swapped (the IPv4 header checksum is unchanged by a swap) and
   type 8 → 0; the ICMP checksum is updated incrementally (RFC 1624:
   HC' = HC + 0x0800 in ones'-complement arithmetic).
+* UDP echo (RFC 862): the request's datagram with the IPv4 addresses and the
+  UDP ports swapped. Both checksums are ones'-complement sums over the
+  swapped fields, so neither changes.
 -/
 namespace LeanOS.Wifi.Responder
 
 open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Connect
 
-/-! Scratch (0x0C10–0x0C3F; `plainBuf` 0x4000 holds the reply). -/
+/-! Scratch (0x0C10–0x0C3F and 0x0C44; `plainBuf` 0x4000 holds the reply). -/
 def seqAt : UInt32 := 0x0C10
 def startAt : UInt32 := 0x0C14
 def bodyAt : UInt32 := 0x0C18      -- decrypted body address
@@ -26,6 +29,7 @@ def lenAt : UInt32 := 0x0C1C       -- decrypted body length
 def srcMacAt : UInt32 := 0x0C20    -- sender MAC of the request (6 bytes)
 def arpCount : UInt32 := 0x0C28
 def pingCount : UInt32 := 0x0C2C
+def udpCount : UInt32 := 0x0C44
 /-- Last accepted CCMP packet number per key: pairwise (TK) and group (GTK);
 48-bit, low word then high half-word. -/
 def lastPnTk : UInt32 := 0x0C30
@@ -38,6 +42,8 @@ def summaryArp : UInt32 := 0x0F03
 def summaryPing : UInt32 := 0x0F04
 def listening : UInt32 := 0x0F05
 def replay : UInt32 := 0x0F06
+def udpReplied : UInt32 := 0x0F07
+def summaryUdp : UInt32 := 0x0F08
 end Tag
 
 /-- Copy `r(n)` bytes from scratch `r(src)` to scratch `r(dst)`. Clobbers the
@@ -135,6 +141,7 @@ def respond (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32)
   emit (.memStore 4 1 startAt (.reg 2))
   emit (.memStore 4 1 arpCount (.imm 0))
   emit (.memStore 4 1 pingCount (.imm 0))
+  emit (.memStore 4 1 udpCount (.imm 0))
   emit (.memLoad 4 2 1 DevDhcp.yiaddrAt)
   print Tag.listening 2
   let top ← newLabel
@@ -185,7 +192,15 @@ def respond (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32)
   emit (.jump top)
   place notArp
   emit (.branch .ne 3 (.imm 0x0800) skip)
+  -- IPv4: dispatch on the protocol byte (IP header at body + 8)
+  emit (.memLoad 1 3 1 (8 + 9))
+  let notIcmp ← newLabel
+  emit (.branch .ne 3 (.imm 1) notIcmp)
   icmp C data skip
+  emit (.jump top)
+  place notIcmp
+  emit (.branch .ne 3 (.imm 17) skip)
+  udp C data skip
   emit (.jump top)
   place skip
   emit (.jump top)
@@ -193,6 +208,7 @@ def respond (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32)
   li 1 0
   emit (.memLoad 4 2 1 arpCount); print Tag.summaryArp 2
   emit (.memLoad 4 2 1 pingCount); print Tag.summaryPing 2
+  emit (.memLoad 4 2 1 udpCount); print Tag.summaryUdp 2
 where
   /-- ARP request (body+8) for our address → reply. -/
   arp (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (skip : Nat) : ProgM Unit := do
@@ -294,6 +310,63 @@ where
     li 1 0
     emit (.memLoad 4 2 1 pingCount); addi 2 1; emit (.memStore 4 1 pingCount (.reg 2))
     print Tag.pingReplied 2
+  /-- IPv4 UDP datagram to our address, port 7 → echo (RFC 862). -/
+  udp (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (skip : Nat) : ProgM Unit := do
+    li 0 0
+    emit (.memLoad 4 1 0 bodyAt)
+    addi 1 8                                         -- IP header
+    emit (.memLoad 1 3 1 0)
+    emit (.branch .ne 3 (.imm 0x45) skip)            -- IPv4, 20-byte header
+    emit (.memLoad 1 3 1 6)
+    andi 3 0x3F
+    emit (.branch .ne 3 (.imm 0) skip)               -- not a fragment (MF, offset)
+    emit (.memLoad 1 3 1 7)
+    emit (.branch .ne 3 (.imm 0) skip)
+    li 0 0
+    emit (.memLoad 4 4 0 DevDhcp.yiaddrAt)
+    emit (.memLoad 4 3 1 16)
+    emit (.branch .ne 3 (.reg 4) skip)               -- destination = us
+    emit (.memLoad 1 3 1 22)
+    emit (.branch .ne 3 (.imm 0) skip)               -- destination port 7
+    emit (.memLoad 1 3 1 23)
+    emit (.branch .ne 3 (.imm 7) skip)
+    -- total length (big-endian), bounded by the decrypted body
+    emit (.memLoad 1 5 1 2)
+    emit (.memLoad 1 6 1 3)
+    shli 5 8
+    emit (.alu .or 5 (.reg 6))
+    emit (.branch .ltu 5 (.imm 28) skip)
+    li 0 0
+    emit (.memLoad 4 6 0 lenAt)
+    emit (.alu .sub 6 (.imm 8))
+    emit (.branch .ltu 6 (.reg 5) skip)
+    emit (.branch .geu 5 (.imm 1500) skip)
+    li 0 0
+    emit (.memStore 4 0 (lenAt + 0) (.reg 5))       -- now: IP total length
+    replyHeader 0x0800
+    li 0 0
+    emit (.memLoad 4 1 0 bodyAt)
+    addi 1 8
+    li 2 (plainBuf + 32)
+    emit (.memLoad 4 3 0 lenAt)
+    copyR 2 1 3
+    -- swap source/destination addresses (12, 16) and ports (20, 22)
+    li 2 (plainBuf + 32)
+    emit (.memLoad 4 3 2 12)
+    emit (.memLoad 4 4 2 16)
+    emit (.memStore 4 2 12 (.reg 4))
+    emit (.memStore 4 2 16 (.reg 3))
+    emit (.memLoad 2 3 2 20)
+    emit (.memLoad 2 4 2 22)
+    emit (.memStore 2 2 20 (.reg 4))
+    emit (.memStore 2 2 22 (.reg 3))
+    li 0 0
+    emit (.memLoad 4 12 0 lenAt)
+    addi 12 32
+    sendReply C data
+    li 1 0
+    emit (.memLoad 4 2 1 udpCount); addi 2 1; emit (.memStore 4 1 udpCount (.reg 2))
+    print Tag.udpReplied 2
 
 end LeanOS.Wifi.Responder
 
