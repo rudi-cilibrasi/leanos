@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a local BIOS lab disk image. Never writes a physical disk."""
+"""Create a local BIOS/UEFI lab disk image. Never writes a physical disk."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -32,6 +32,10 @@ def main():
         (output / 'kernel-hang.sha256').write_text(hang_digest + '  /boot/leanos-qotom-kernel-hang.elf\n')
     (output / 'grub.cfg').write_text(config)
     (output / 'leanos.sha256').write_text(digest + '  /boot/leanos-qotom-lab.elf\n')
+    # UEFI firmware loads EFI/BOOT/BOOTX64.EFI from the FAT partition; it takes
+    # its prefix device from that partition and reads the same grub.cfg.
+    efi_loader = output / 'BOOTX64.EFI'
+    run(str(root / 'scripts/build-efi-grub.sh'), 'binary', str(efi_loader))
     # Work on a new regular file, then replace the previous image only on success.
     with tempfile.TemporaryDirectory(prefix='usb-', dir=output) as directory:
         staging = Path(directory)
@@ -50,6 +54,8 @@ def main():
                 run('sudo', '-n', 'grub-install', '--target=i386-pc',
                     '--boot-directory=' + str(mount / 'boot'), '--no-floppy', loop)
                 run('sudo', '-n', 'cp', str(output / 'grub.cfg'), str(mount / 'boot/grub/grub.cfg'))
+                run('sudo', '-n', 'mkdir', '-p', str(mount / 'EFI/BOOT'))
+                run('sudo', '-n', 'cp', str(efi_loader), str(mount / 'EFI/BOOT/BOOTX64.EFI'))
                 run('sudo', '-n', 'cp', str(root / 'hardware/lab/grub-qotom-watchdog-window.cfg'),
                     str(mount / 'boot/grub/watchdog-window.cfg'))
                 run('sudo', '-n', 'cp', str(root / 'hardware/lab/grub-qotom-watchdog.cfg'),

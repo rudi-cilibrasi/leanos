@@ -332,13 +332,37 @@ int check_stream(void) {
     CHECK_RESULT("decode-v5.duplicate-old.kind", decoded_v5.word[39], 0, 46);
     CHECK_RESULT("decode-v5.duplicate-old.address", decoded_v5.word[40], 0, 46);
 
+    /* UEFI firmware publishes separate ACPI 1.0 and 2.0 table sets, so
+       the old and new RSDPs of one platform may name different RSDTs: the
+       new root and its XSDT are selected. */
+    uint64_t distinct_rsdt[20] = {0};
+    uint64_t distinct_new_rsdp[6];
+    for (uint64_t index = 0; index < 6; ++index)
+        distinct_new_rsdp[index] = new_rsdp[index];
+    /* Move RSDT by eight bytes and compensate the legacy checksum. */
+    distinct_new_rsdp[2] = UINT64_C(0x022020554d455185);
+    distinct_new_rsdp[3] = UINT64_C(0x00000024000f5b78);
+    distinct_rsdt[0] = sizeof(distinct_rsdt);
+    for (uint64_t index = 0; index < 4; ++index)
+        distinct_rsdt[1 + index] = old_rsdp[index];
+    for (uint64_t index = 0; index < 6; ++index)
+        distinct_rsdt[5 + index] = distinct_new_rsdp[index];
+    for (uint64_t index = 0; index < 9; ++index)
+        distinct_rsdt[11 + index] = map_and_end[index];
+    decoded_v5 = decode_v5_extent(distinct_rsdt, 20);
+    CHECK_RESULT("decode-v5.distinct-rsdt.status", decoded_v5.word[1], 1, 47);
+    CHECK_RESULT("decode-v5.distinct-rsdt.error", decoded_v5.word[2], 0, 47);
+    CHECK_RESULT("decode-v5.distinct-rsdt.kind", decoded_v5.word[39], 2, 47);
+    CHECK_RESULT("decode-v5.distinct-rsdt.address", decoded_v5.word[40],
+        UINT64_C(0x00000000000f5c00), 47);
+
+    /* Roots naming different OEM identities still conflict. */
     uint64_t conflicting_roots[20] = {0};
     uint64_t conflicting_new_rsdp[6];
     for (uint64_t index = 0; index < 6; ++index)
         conflicting_new_rsdp[index] = new_rsdp[index];
-    /* Move RSDT by eight bytes and compensate the legacy checksum. */
-    conflicting_new_rsdp[2] = UINT64_C(0x022020554d455185);
-    conflicting_new_rsdp[3] = UINT64_C(0x00000024000f5b78);
+    /* OEM "QEMU  " becomes "REMU  "; compensate the legacy checksum. */
+    conflicting_new_rsdp[2] = UINT64_C(0x022020554d45528c);
     conflicting_roots[0] = sizeof(conflicting_roots);
     for (uint64_t index = 0; index < 4; ++index)
         conflicting_roots[1 + index] = old_rsdp[index];
@@ -347,10 +371,10 @@ int check_stream(void) {
     for (uint64_t index = 0; index < 9; ++index)
         conflicting_roots[11 + index] = map_and_end[index];
     decoded_v5 = decode_v5_extent(conflicting_roots, 20);
-    CHECK_RESULT("decode-v5.conflicting-roots.status", decoded_v5.word[1], 2, 47);
-    CHECK_RESULT("decode-v5.conflicting-roots.error", decoded_v5.word[2], 13, 47);
-    CHECK_RESULT("decode-v5.conflicting-roots.kind", decoded_v5.word[39], 0, 47);
-    CHECK_RESULT("decode-v5.conflicting-roots.address", decoded_v5.word[40], 0, 47);
+    CHECK_RESULT("decode-v5.conflicting-roots.status", decoded_v5.word[1], 2, 97);
+    CHECK_RESULT("decode-v5.conflicting-roots.error", decoded_v5.word[2], 13, 97);
+    CHECK_RESULT("decode-v5.conflicting-roots.kind", decoded_v5.word[39], 0, 97);
+    CHECK_RESULT("decode-v5.conflicting-roots.address", decoded_v5.word[40], 0, 97);
 
     uint64_t bad_old_signature[14];
     for (uint64_t index = 0; index < 14; ++index)

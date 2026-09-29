@@ -73,10 +73,10 @@ def acpiRootStepWord
         (tagType == 14 && tagXsdt != 0) then acpiRootBadTag
     else if tagType == 14 && oldSeen == 1 then acpiRootDuplicateOld
     else if tagType == 15 && newSeen == 1 then acpiRootDuplicateNew
-    else if tagType == 14 && newSeen == 1 &&
-        (tagOem != newOem || tagRsdt != newRsdt) then acpiRootConflict
-    else if tagType == 15 && oldSeen == 1 &&
-        (tagOem != oldOem || tagRsdt != oldRsdt) then acpiRootConflict
+    else if tagType == 14 && newSeen == 1 && tagOem != newOem then
+      acpiRootConflict
+    else if tagType == 15 && oldSeen == 1 && tagOem != oldOem then
+      acpiRootConflict
     else acpiRootErrorNone
   let noldSeen := if tagType == 14 then 1 else oldSeen
   let nnewSeen := if tagType == 15 then 1 else newSeen
@@ -119,6 +119,11 @@ example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
 
 example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
     15 0x424144 repositoryRsdt repositoryXsdt 2 = acpiRootConflict := by
+  native_decide
+
+-- UEFI firmware publishes distinct ACPI 1.0 and 2.0 RSDTs; the new root wins.
+example : acpiRootStepWord active 0 1 0 repositoryOem 0x1fb7d000 0 0 0
+    15 repositoryOem 0x1fb7d074 0x1fb7d0e8 11 = 0x1fb7d0e8 := by
   native_decide
 
 example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
@@ -587,8 +592,13 @@ def stepWordV5
     (low32 chunk == 14 || low32 chunk == 15)
   let payloadIsAcpi := phase == phaseIgnored &&
     (tagType == 14 || tagType == 15)
-  let ntagType := if headerIsAcpi then low32 chunk else tagType
-  let ntagSize := if headerIsAcpi then high32 chunk else tagSize
+  -- Every tag header re-latches the ACPI tag type: a non-ACPI tag that
+  -- follows tag 14/15 (UEFI GRUB places the EFI memory map, tag 17, right
+  -- after tag 15) must not have its payload validated as an RSDP.
+  let ntagType :=
+    if headerIsAcpi then low32 chunk else if phase == phaseTag then 0 else tagType
+  let ntagSize :=
+    if headerIsAcpi then high32 chunk else if phase == phaseTag then 0 else tagSize
   let tagWord := fun q => acpiTagStepWord tagType tagSize tagIndex tagChecksum
     tagOem tagRsdt tagXsdt chunk q
   let ntagStatus :=

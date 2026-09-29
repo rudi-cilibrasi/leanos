@@ -269,6 +269,7 @@ end Fail
 namespace Tag
 def eapol : UInt32 := 0x0C20
 def fromBss : UInt32 := 0x0C21
+def dropReason : UInt32 := 0x0C22
 end Tag
 
 /-- Wait (at most `frames` µs) for an unprotected data frame from the latched BSSID to us carrying
@@ -306,6 +307,9 @@ def waitEapol (frames tries : UInt32) (onFail : Option Nat := none) : ProgM Unit
   emit (.branch .eq 1 (.imm 0xC0) kill)
   emit (.jump notUs)
   place kill
+  -- deauthentication/disassociation reason code (IEEE 802.11 9.4.1.7)
+  li 0 0
+  emit (.memLoad 2 1 0 (rxMpdu + 24)); print Tag.dropReason 1
   failOr onFail Fail.dropped
   place notUs
   li 0 0
