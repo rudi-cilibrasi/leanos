@@ -1,8 +1,9 @@
 # Device-program confinement
 
 The Lean device programs (the BCM43224 WiFi driver, `docs/wifi-driver.md`,
-the xHCI keyboard driver, `docs/usb-keyboard.md`, and the AHCI identify
-program, `docs/storage-ahci.md`) run in ring 0 of the
+the xHCI keyboard driver, `docs/usb-keyboard.md`, the AHCI identify
+program, `docs/storage-ahci.md`, and the RTL8168 Ethernet program,
+`docs/net-rtl8168.md`) run in ring 0 of the
 lab kernel through the executor `hardware/wifi/wifi-exec.h`. Each program is
 confined to a **policy** (`Policy` in `LeanOS/Wifi/Bytecode.lean`):
 
@@ -19,6 +20,7 @@ confined to a **policy** (`Policy` in `LeanOS/Wifi/Bytecode.lean`):
 | BCM43224 02:00.0 | 16 KiB | 0x00, 0x04 | 0x80, 0xAC (backplane windows) | may set Memory Space and clear Bus Master | no | — |
 | xHCI 00:14.0 | 64 KiB | 0x00, 0x04, 0xD4, 0xDC | 0xD0, 0xD8 (port routing) | may set Memory Space and Bus Master | yes | CRCR, DCBAAP, ERSTBA, ERDP |
 | AHCI 00:13.0 (ABAR) | 2 KiB | 0x00, 0x04 | — | may set Memory Space and Bus Master, clear Bus Master | yes | P1CLB, P1FB |
+| RTL8168E-VL 01:00.0 (BAR2) | 4 KiB | 0x00, 0x04 | — | may set Memory Space and Bus Master, clear Bus Master | yes | DTCCR, TNPDS, THPDS, RDSAR |
 
 ## Three layers
 

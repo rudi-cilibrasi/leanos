@@ -1,6 +1,7 @@
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Usb.Xhci
 import LeanOS.Storage.Ahci
+import LeanOS.Net.Rtl8168
 
 namespace LeanOS.NegativeFixtures.DeviceProgramConfinement
 
@@ -133,6 +134,22 @@ example : qotomXhciPolicy.addrSinks =
 /-- The AHCI policy's sinks are exactly port 1's PxCLB and PxFB. -/
 example : qotomAhciPolicy.addrSinks = [LeanOS.Storage.Ahci.pClb, LeanOS.Storage.Ahci.pFb] := by
   decide
+
+/-- The RTL8168 policy's sinks are exactly the driver's DMA address registers. -/
+example : qotomRtl8168Policy.addrSinks =
+    [LeanOS.Net.Rtl8168.dtccr, LeanOS.Net.Rtl8168.tnpds, LeanOS.Net.Rtl8168.thpds,
+      LeanOS.Net.Rtl8168.rdsar] := by
+  decide
+
+/- A byte write into a ring-base sink is refused like any partial sink write. -/
+private def rtlByteSink : Program where
+  words := #[(encode (.write8 0x20 (.imm 0))).getD ⟨0, 0, 0, 0⟩, (encode .halt).getD ⟨0, 0, 0, 0⟩]
+  blob := .empty
+  sections := #[]
+  target := some LeanOS.Net.Rtl8168.target
+  policy := some qotomRtl8168Policy
+
+#guard (Sim.run rtlByteSink Sim.Device.none () 10).1 == .error "policy"
 
 /-- An xHCI program declaring its policy. -/
 private def xhciProg (is : List Instr) : Program :=

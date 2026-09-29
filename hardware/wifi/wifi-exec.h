@@ -29,6 +29,8 @@ struct wifi_hooks {
     /* Physical address of scratch + off, or NULL when scratch is not
        DMA-capable (the program then sees 0). */
     uint32_t (*phys)(void *ctx, uint32_t off);
+    uint8_t (*mmio_read8)(void *ctx, uint32_t off);
+    void (*mmio_write8)(void *ctx, uint32_t off, uint8_t value);
 };
 
 enum wifi_status {
@@ -108,7 +110,11 @@ void wifi_hook_cfg_write32(uint32_t off, uint32_t value);
 void wifi_hook_delay_us(uint32_t us);
 void wifi_hook_print(uint32_t tag, uint32_t value);
 uint32_t wifi_hook_phys(uint32_t off);
+uint8_t wifi_hook_mmio_read8(uint32_t off);
+void wifi_hook_mmio_write8(uint32_t off, uint8_t value);
 #define WH_PHYS(o) wifi_hook_phys(o)
+#define WH_R8(o) wifi_hook_mmio_read8(o)
+#define WH_W8(o, v) wifi_hook_mmio_write8((o), (v))
 #define WH_R32(o) wifi_hook_mmio_read32(o)
 #define WH_R16(o) wifi_hook_mmio_read16(o)
 #define WH_W32(o, v) wifi_hook_mmio_write32((o), (v))
@@ -127,6 +133,8 @@ uint32_t wifi_hook_phys(uint32_t off);
 #define WH_DELAY(u) h->delay_us(h->ctx, (u))
 #define WH_PRINT(t, v) h->print(h->ctx, (t), (v))
 #define WH_PHYS(o) (h->phys ? h->phys(h->ctx, (o)) : 0u)
+#define WH_R8(o) h->mmio_read8(h->ctx, (o))
+#define WH_W8(o, v) h->mmio_write8(h->ctx, (o), (v))
 #endif
 
 static inline uint32_t wifi_le32(const uint8_t *p) {
@@ -365,6 +373,10 @@ static int wifi_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
         case 26: if (a > 0xffc || (a & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
             POLICY(a == 4 && !(b & ~pol.cmd_clear) && !(c & ~pol.cmd_set));
             WH_CW32(a, (WH_CR32(a) & ~b) | c); break;
+        case 28: REG(a); OFF(b, 1); r[a] = WH_R8(b); break;
+        case 29: { if (!imm) REG(b);
+            uint32_t v = imm ? b : r[b];
+            OFF(a, 1); POLICY(NO_SINK(a)); WH_W8(a, (uint8_t)v); break; }
         case 27: { if (!imm) REG(a);
             *code = imm ? a : r[a]; st = WIFI_YIELD; goto out; }
         default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }

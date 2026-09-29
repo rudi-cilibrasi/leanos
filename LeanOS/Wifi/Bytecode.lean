@@ -100,6 +100,9 @@ inductive Instr where
   /-- Suspend and hand `src` to the executor's caller; resuming continues with
   the next instruction (a driver delivering one event at a time). -/
   | yield (src : Operand)
+  /-- 8-bit MMIO (byte registers such as the RTL8168's command register). -/
+  | read8 (dst : Reg) (off : UInt32)
+  | write8 (off : UInt32) (src : Operand)
   deriving Repr
 
 /-- Opcode numbers shared with `hardware/wifi/wifi-exec.h`. -/
@@ -111,7 +114,7 @@ def opcode : Instr → UInt32
   | .print .. => 16 | .blobStream32 .. => 17 | .blobLoad32 .. => 18
   | .call .. => 19 | .ret => 20 | .memLoad .. => 21 | .memStore .. => 22
   | .fifoIn .. => 23 | .fifoOut .. => 24 | .physAddr .. => 25
-  | .cfgUpdate32 .. => 26 | .yield _ => 27
+  | .cfgUpdate32 .. => 26 | .yield _ => 27 | .read8 .. => 28 | .write8 .. => 29
 
 /-- Size of the executor's scratch RAM in bytes. -/
 def scratchBytes : Nat := 262144
@@ -172,6 +175,8 @@ def encode (i : Instr) : Option Word4 :=
   | .fifoOut off b n => do some ⟨op, off, ← r b, ← r n⟩
   | .cfgUpdate32 off clr set => some ⟨op, off, clr, set⟩
   | .yield s => do let (f, v) ← operandFields s; some ⟨op ||| f, v, 0, 0⟩
+  | .read8 d off => do some ⟨op, ← r d, off, 0⟩
+  | .write8 off s => do let (f, v) ← operandFields s; some ⟨op ||| f, off, v, 0⟩
 
 /-! ## Builder
 

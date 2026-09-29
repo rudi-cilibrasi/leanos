@@ -45,6 +45,13 @@ static const struct lab_dev_profile lab_dev_profiles[] = {
        PxFB are sinks. Mirrors `qotomAhciPolicy`. */
     { 0, 19, 0, UINT32_C(0x0f238086),
       { 1, 1, 0x800u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 2, { 0x180, 0x188 } } },
+    /* RTL8168E-VL at 01:00.0 (BAR2, 4 KiB): identity/command reads, no
+       configuration writes, Memory Space and Bus Master, DMA into scratch;
+       the ring bases and the tally dump address are sinks. Mirrors
+       `qotomRtl8168Policy`. */
+    { 1, 0, 0, UINT32_C(0x816810ec),
+      { 1, 1, 0x1000u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 4,
+        { 0x10, 0x20, 0x28, 0xE4 } } },
 };
 
 /* The declared policy is present and no wider than the target's profile. */
@@ -87,6 +94,14 @@ static volatile uint8_t *lab_wifi_bar(void) {
 
 uint32_t wifi_hook_mmio_read32(uint32_t off) {
     return *(volatile uint32_t *)(lab_wifi_bar() + off);
+}
+
+uint8_t wifi_hook_mmio_read8(uint32_t off) {
+    return *(volatile uint8_t *)(lab_wifi_bar() + off);
+}
+
+void wifi_hook_mmio_write8(uint32_t off, uint8_t value) {
+    *(volatile uint8_t *)(lab_wifi_bar() + off) = value;
 }
 
 uint16_t wifi_hook_mmio_read16(uint32_t off) {

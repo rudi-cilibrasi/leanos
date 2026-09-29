@@ -59,6 +59,21 @@ static uint16_t mmio_read16(void *ctx, uint32_t off) {
     return v;
 }
 
+static uint8_t mmio_read8(void *ctx, uint32_t off) {
+    struct run *r = ctx;
+    uint8_t v = *(volatile uint8_t *)(r->bar + off);
+    r->accesses++;
+    if (r->trace) printf("  mmio R8 %04x -> %02x\n", off, v);
+    return v;
+}
+
+static void mmio_write8(void *ctx, uint32_t off, uint8_t value) {
+    struct run *r = ctx;
+    r->accesses++;
+    if (r->trace) printf("  mmio W8 %04x <- %02x\n", off, value);
+    *(volatile uint8_t *)(r->bar + off) = value;
+}
+
 static void mmio_write32(void *ctx, uint32_t off, uint32_t value) {
     struct run *r = ctx;
     r->accesses++;
@@ -114,7 +129,8 @@ int main(int argc, char **argv) {
     r.bar = mmap(0, WIFI_WINDOW_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, bar0 & ~0xfu);
     if (r.bar == MAP_FAILED) { perror("mmap"); return 2; }
     struct wifi_hooks h = { mmio_read32, mmio_read16, mmio_write32, mmio_write16,
-                            cfg_read32, cfg_write32, delay_us, print, &r, 0 };
+                            cfg_read32, cfg_write32, delay_us, print, &r, 0,
+                            mmio_read8, mmio_write8 };
     uint32_t code = 0;
     int status = wifi_exec(image, (uint32_t)st.st_size, &h, 400000000ull, &code);
     printf("WIFI-END status=%d code=0x%x accesses=%lu\n", status, code, r.accesses);

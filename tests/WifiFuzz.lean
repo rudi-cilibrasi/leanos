@@ -69,8 +69,8 @@ def scratchAddr : GenM UInt32 := do
 /-- One random instruction word for a program of `n` words, window `win`,
 blob of `blobLen` bytes. -/
 def genWord (n win blobLen : Nat) : GenM Word4 := do
-  let base : UInt32 ← if ← chance 1 then pure (28 + (← below 228)).toUInt32
-    else pure (← below 28).toUInt32
+  let base : UInt32 ← if ← chance 1 then pure (30 + (← below 226)).toUInt32
+    else pure (← below 30).toUInt32
   let imm : UInt32 := if ← chance 50 then 0x100 else 0
   let target : GenM UInt32 := do
     if ← chance 5 then pure (n + (← below 4)).toUInt32 else pure (← below n).toUInt32
@@ -101,6 +101,8 @@ def genWord (n win blobLen : Nat) : GenM Word4 := do
     | 23 | 24 => pure (0, ← offsetIn win 4, ← regField, ← regField)
     | 25 => pure (0, ← regField, ← scratchAddr, 0)
     | 27 => pure (0, ← regField, 0, 0)
+    | 28 => pure (0, ← regField, ← offsetIn win 1, 0)
+    | 29 => pure (0, ← offsetIn win 1, ← regField, 0)
     | 26 => pure (0, ← cfgOffset, ← pick #[0, 0xFFFF0000, 0xFFFFFFFF, ← rand],
                     ← pick #[0, 2, 4, 6, 1, ← rand])
     | _ => pure ((← below 3).toUInt32, ← rand, ← rand, ← rand)
@@ -141,7 +143,7 @@ def gadget (win : Nat) (sinks : List UInt32) : GenM (Array Word4) := do
   | 6 | 7 | 8 | 9 => do  -- address sinks: bus addresses at the scratch edges, high dwords, partial writes
     let sink ← pick sinks.toArray
     let scratchOff := (S + nudge - 1 - 4 * (← below 2)).toUInt32
-    match ← below 8 with
+    match ← below 9 with
     | 6 => pure #[movW r 0, movW q (← pick #[0, 1, 2]), ⟨24, sink + 4 * (← below 2).toUInt32, r, q⟩]
     | 7 => pure #[⟨17, sink + 4 * (← below 2).toUInt32, 0, ← pick #[0, 1]⟩]
     | 0 => pure #[⟨25, r, scratchOff, 0⟩, ⟨6, sink, r, 0⟩]
@@ -151,6 +153,7 @@ def gadget (win : Nat) (sinks : List UInt32) : GenM (Array Word4) := do
                     0x00FFFFFF, junk], 0⟩]
     | 4 => pure #[movW r (sink - 4 * (← below 2).toUInt32), ⟨25, q, (← below 64).toUInt32, 0⟩,
                   ⟨9, r, 4 * (← below 3).toUInt32, q⟩]
+    | 5 => pure #[⟨29 ||| 0x100, sink + (← below 9).toUInt32, junk, 0⟩]
     | _ => pure #[⟨7 ||| 0x100, sink + 2 * (← below 4).toUInt32, junk, 0⟩]
   | 0 => do  -- scratch load/store ending exactly at (or one past) the end
     let w : UInt32 ← pick #[1, 2, 4]
@@ -236,6 +239,9 @@ def model : Sim.Device (UInt32 × UInt32) where
   cfgRead32 s o :=
     let n := s.2 + 1; let v := mix n (o ^^^ 0x5a5a5a5a); (v, (mix s.1 (v ^^^ 5), n))
   cfgWrite32 s o v := (mix (mix s.1 (o ^^^ 6)) v, s.2)
+  read8 s o :=
+    let n := s.2 + 1; let v := mix n (o ^^^ 0x69696969); (v.toUInt8, (mix s.1 (v ^^^ 7), n))
+  write8 s o v := (mix (mix s.1 (o ^^^ 8)) v.toUInt32, s.2)
 
 def maxSteps : Nat := 4000
 
