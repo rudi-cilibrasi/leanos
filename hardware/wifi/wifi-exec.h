@@ -49,6 +49,10 @@ enum wifi_status {
    through volatile pointers because devices may write it by DMA. */
 static uint8_t wifi_scratch[WIFI_SCRATCH_BYTES] __attribute__((aligned(65536)));
 
+#ifdef WIFI_EXPOSE_REGS
+static uint32_t wifi_regs[16];
+#endif
+
 /* PCI function an image drives. Version-1 images imply the BCM43224. */
 struct wifi_target {
     uint32_t bus, dev, fn, id, window;
@@ -166,7 +170,13 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
     const uint8_t *code_base = image + hdr;
     volatile uint8_t *const S = wifi_scratch;
     const uint8_t *blob = code_base + (uint64_t)n * 16;
+#ifdef WIFI_EXPOSE_REGS
+    /* Test builds (fuzz-runner.c) read the final registers. */
+    uint32_t *const r = wifi_regs;
+    for (unsigned i = 0; i < 16; ++i) r[i] = 0;
+#else
     uint32_t r[16] = {0};
+#endif
     uint32_t stack[WIFI_STACK_DEPTH];
     uint32_t sp = 0, pc = 0;
     for (uint32_t i = 0; i < WIFI_SCRATCH_BYTES; ++i) S[i] = 0;

@@ -110,3 +110,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-usb-kbd-decode"
 root = "tests.UsbKbdDecode"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-fuzz"
+root = "tests.WifiFuzz"
+moreLeanArgs = ["-DwarningAsError=true"]

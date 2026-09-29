@@ -1,0 +1,17 @@
+// One mutant per line, "original@mutated": the first occurrence of `original`
+// in hardware/wifi/wifi-exec.h is replaced (scripts/check-device-programs.sh).
+uint32_t k = v >= 31 ? 31 : v;@uint32_t k = v >= 30 ? 30 : v;
+if (at + sub > WIFI_SCRATCH_BYTES@if (at + sub >= WIFI_SCRATCH_BYTES
+(x == INT32_MIN && y == -1) ? (uint32_t)x@(x == INT32_MIN && y == -1) ? 0
+|| (b & 3)) {@) {
+if (at + 4 * n > WIFI_SCRATCH_BYTES)@if (at + 4 * n >= WIFI_SCRATCH_BYTES)
+case 7: r[a] = v >= 32 ? 0 : r[a] >> v;@case 7: r[a] = r[a] >> (v & 31);
+if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; return WIFI_BAD_MEM; }@if (b >= WIFI_SCRATCH_BYTES) { *code = pc - 1; return WIFI_BAD_MEM; }
+if (pc >= n) { *code = pc; return WIFI_BAD_PC; }@if (pc > n) { *code = pc; return WIFI_BAD_PC; }
+POLICY(wifi_cfg_allowed(pol.cfg_read, b));@
+(x == INT32_MIN && y == -1) ? 0 : (uint32_t)(x % y)@(uint32_t)(x % y)
+#define OFF(x, w) do { if ((x) > window - (w)@#define OFF(x, w) do { if ((x) >= window - (w)
+if (sp == WIFI_STACK_DEPTH)@if (sp == WIFI_STACK_DEPTH - 1)
+case 5: t = (int32_t)x >= (int32_t)v; break;@case 5: t = x >= v; break;
+POLICY(pol.dma);@POLICY(1);
+case 9: v &= 31;@case 9: v &= 15;

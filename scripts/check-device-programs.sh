@@ -3,7 +3,9 @@
 # the generator admits every firmware-free program under its target's
 # confinement policy (LeanOS/DeviceProgramConfinement.lean), the C executor
 # builds warning-free, and it agrees with LeanOS/Wifi/Sim.lean on the
-# computation-only cross-check program.
+# computation-only cross-check program and on random programs (differential
+# fuzzing, issue #451). The fuzzer's power is itself checked: every mutant of
+# wifi-exec.h in tests/fixtures/wifi-exec-mutants.txt must be caught.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,7 +14,7 @@ out=build/ci/device-programs
 rm -rf "$out"
 mkdir -p "$out"
 
-lake build leanos-wifi-gen leanos-wifi-xcheck
+lake build leanos-wifi-gen leanos-wifi-xcheck leanos-wifi-fuzz
 for program in probe sprom tables kbd; do
   .lake/build/bin/leanos-wifi-gen "$program" "$out/$program.bin" >/dev/null
   # Version-3 header: the image carries its checked policy.
@@ -40,3 +42,43 @@ if 'WIFI-END status=0 ' not in open(sys.argv[2]).read():
     sys.exit('error: C executor did not halt')
 print(f'device programs: admitted, {len(sim)} cross-check records agree')
 PY
+
+# Differential fuzzing: simulator vs C executor on the same random images.
+fuzz_count="${LEANOS_WIFI_FUZZ_COUNT:-3000}"
+fuzz_seed="${LEANOS_WIFI_FUZZ_SEED:-451}"
+.lake/build/bin/leanos-wifi-fuzz "$out/fuzz" "$fuzz_count" "$fuzz_seed"
+cc -std=c11 -Wall -Wextra -Werror -O2 -o "$out/fuzz-runner" hardware/wifi/fuzz-runner.c
+find "$out/fuzz" -name '*.bin' | sort | xargs "$out/fuzz-runner" >"$out/fuzz/c.txt"
+if ! cmp -s "$out/fuzz/expected.txt" "$out/fuzz/c.txt"; then
+  diff "$out/fuzz/expected.txt" "$out/fuzz/c.txt" | head -20 >&2
+  echo "error: simulator and C executor disagree on fuzzed programs (seed $fuzz_seed)" >&2
+  exit 1
+fi
+echo "device programs: $fuzz_count fuzzed programs agree (seed $fuzz_seed)"
+
+# Mutation self-test: each seeded executor bug (first occurrence of the
+# pattern) must change some summary line or crash the runner.
+mkdir -p "$out/mutant"
+cp hardware/wifi/fuzz-runner.c "$out/mutant/"
+killed=0
+total=0
+while IFS='@' read -r original mutated; do
+  [[ "$original" == '//'* ]] && continue
+  total=$((total + 1))
+  python3 - "$original" "$mutated" "$out/mutant/wifi-exec.h" <<'PY'
+import sys
+source = open('hardware/wifi/wifi-exec.h').read()
+original, mutated, target = sys.argv[1:4]
+if original not in source:
+    sys.exit(f'error: mutant pattern no longer occurs in wifi-exec.h: {original}')
+open(target, 'w').write(source.replace(original, mutated, 1))  # first occurrence
+PY
+  cc -std=c11 -O2 -w -o "$out/mutant/fuzz-runner" "$out/mutant/fuzz-runner.c"
+  if find "$out/fuzz" -name '*.bin' | sort | xargs "$out/mutant/fuzz-runner" >"$out/mutant/c.txt" 2>/dev/null &&
+      cmp -s "$out/fuzz/expected.txt" "$out/mutant/c.txt"; then
+    echo "error: fuzzing missed executor mutant $total: $original -> $mutated" >&2
+    exit 1
+  fi
+  killed=$((killed + 1))
+done < tests/fixtures/wifi-exec-mutants.txt
+echo "device programs: fuzzing caught $killed/$total executor mutants"

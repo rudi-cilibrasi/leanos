@@ -40,13 +40,16 @@ under the WiFi policy, `physAddr` without DMA, out-of-window MMIO,
 configuration offsets ≥ 0x100 (which alias under mechanism-1 access) and an
 oversized target window are all rejected. `scripts/check-device-programs.sh`
 generates the firmware-free programs through the check and cross-checks the C
-executor against the simulator.
+executor against the simulator, on a fixed program and on seeded random
+programs.
 
 Hardware: `hardware/lab/observations/qotom-device-confinement-20260929`.
 
 ## Not covered
 
-* That `wifi-exec.h` refines `Sim.step` is tested, not proved (#451).
+* That `wifi-exec.h` refines `Sim.step` is tested, not proved: differential
+  fuzzing with a mutation self-test
+  ([ADR 0020](adr/0020-device-program-executor-assurance.md)).
 * Where a DMA-capable device writes: the xHCI program hands the controller
   scratch bus addresses, and the J1900 has no IOMMU (#448).
 * What an allowed register write does inside the device, e.g. the BCM43224
