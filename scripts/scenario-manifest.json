@@ -1066,10 +1066,13 @@
       },
       {
         "image": "leanos-nmi",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-nmi.h",
         "final": "boot-page-plan-nmi.final.h",
-        "description": "NMI probe"
+        "description": "NMI probe",
+        "targets": [
+          "leanos-nmi"
+        ]
       },
       {
         "image": "leanos-bootstrap32-ud",
