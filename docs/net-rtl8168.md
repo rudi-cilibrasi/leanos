@@ -69,7 +69,7 @@ program (2026-09-29, ten cycles) found:
 | plus C+ command, unlock, station address | no | normal |
 | plus ring bases, TXCFG, early-TX threshold | no | normal |
 | plus MAR, RXCFG, IMR/ISR, max packet length | no | normal |
-| the above, then re(4)'s CMDSTOP stop (`STOPREQ | TE | RE`) | yes | stalls |
+| the above, then re(4)'s CMDSTOP stop (STOPREQ with TE and RE) | yes | stalls |
 | full program, stop by clearing TE/RE instead of CMDSTOP | yes | stalls |
 | full program with a final MAC reset | yes | stalls |
 
