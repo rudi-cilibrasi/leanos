@@ -78,10 +78,10 @@ class Layout where
   scratchpads := 16
   spPages := 0x10000
 
-/-- QEMU's `qemu-xhci` (1b36:000d; the q35 device lab places it at 00:03.0):
+/-- QEMU's `qemu-xhci` (1b36:000d; the q35 device lab places it at 00:02.0, requester 16):
 CAPLENGTH 0x40, runtime registers at 0x1000, doorbells at 0x2000, 16 KiB. -/
 @[instance_reducible] def qemu : Layout where
-  target := { bus := 0, dev := 3, fn := 0, id := 0x000d1b36, windowBytes := 0x4000 }
+  target := { bus := 0, dev := 2, fn := 0, id := 0x000d1b36, windowBytes := 0x4000 }
   capLength := 0x40
   runtime := 0x1000
   doorbells := 0x2000
