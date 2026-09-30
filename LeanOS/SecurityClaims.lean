@@ -3243,4 +3243,14 @@ theorem device_capability_confinement {σ : Type}
   ⟨DeviceCapability.run_inv models ts sys hinv,
     fun t k h => DeviceCapability.device_state_changes_only_by_holder models sys t k h⟩
 
+/-- SC-IPC-EVENT-STREAM: from any state where a receiver waits for and a
+sender holds authority over one endpoint (`CycleReady`), the blocking IPC
+delivers every sequence of payloads exactly and in order, one exchange per
+payload, and returns to the starting state. -/
+theorem ipc_event_stream {s : BlockingIPC.State} {rc sc : Capability.Capability}
+    (h : BlockingIPC.CycleReady s rc sc) (payloads : List BlockingIPC.Payload) :
+    BlockingIPC.keyStream s payloads =
+      (s, payloads.map fun p => .delivered (BlockingIPC.bootEnvelope p)) :=
+  BlockingIPC.keyStream_delivers h payloads
+
 end LeanOS.SecurityClaims

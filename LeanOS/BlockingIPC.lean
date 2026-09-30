@@ -1687,4 +1687,215 @@ example : blockingIpcDemo 1 2 1 0x4c45414e 0x4f53 =
 example (word1 : UInt64) : blockingIpcDemo 1 2 1 0 word1 = 0 := by
   simp [blockingIpcDemo]
 
+/-! ## Payload-generic boot trace
+
+The runtime witness above is checked for one demonstration payload. The
+transitions never branch on the payload — it only travels in the envelope —
+so the same trace delivers *any* payload: control facts about the blocked
+boot state that do not mention the payload are checked once, and `send` and
+`receiveOrBlock` are then unfolded generically. This is the delivery half of
+carrying device events (key presses) over the blocking IPC path
+(ADR 0022, stage 2). -/
+
+private def bootSendCap : Capability.Capability :=
+  match Capability.lookup bootBlocked.scheduler.lifecycle.capabilities 1 0 with
+  | .found c => c
+  | _ => endpointCap {}
+
+private theorem bootBlocked_send_facts :
+    bootBlocked.scheduler.lifecycle.current = some 1 ∧
+    Capability.lookup bootBlocked.scheduler.lifecycle.capabilities 1 0 = .found bootSendCap ∧
+    bootSendCap.kind = .endpoint ∧ bootSendCap.rights.send = true ∧
+    bootBlocked.scheduler.lifecycle.capabilities.objects bootSendCap.object = true ∧
+    bootSendCap.object = 10 ∧ bootBlocked.waiters 10 = [2] ∧
+    bootBlocked.scheduler.ready.length < bootBlocked.scheduler.capacity := by
+  native_decide
+
+/-- The envelope B receives when A sends `payload` in the boot trace. -/
+def bootEnvelope (payload : Payload) : Envelope := { endpoint := 10, sender := 1, payload }
+
+/-- For every payload, A's send to the blocked B is accepted and is exactly
+the wakeup that reserves that payload's envelope for B. -/
+theorem boot_send_any_payload (payload : Payload) :
+    send bootBlocked 1 0 payload =
+      { state := wakeState bootBlocked 10 2 (bootEnvelope payload), result := .accepted } := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := bootBlocked_send_facts
+  rw [h6] at h5
+  simp [send, h1, h2, h3, h4, h5, h6, h7, Nat.not_le.mpr h8, bootEnvelope]
+
+/-- The boot state after A's send of `payload` and the scheduler dispatching B. -/
+private def bootDispatchedWith (payload : Payload) : State :=
+  let awakened := wakeState bootBlocked 10 2 (bootEnvelope payload)
+  { awakened with scheduler := (Scheduler.yield awakened.scheduler).state }
+
+private theorem bootDispatchedWith_scheduler (payload : Payload) :
+    (bootDispatchedWith payload).scheduler = (bootDispatchedWith bootPayload).scheduler := rfl
+
+private def bootRecvCap : Capability.Capability :=
+  match Capability.lookup (bootDispatchedWith bootPayload).scheduler.lifecycle.capabilities 2 0 with
+  | .found c => c
+  | _ => endpointCap {}
+
+private theorem bootDispatched_receive_facts :
+    (bootDispatchedWith bootPayload).scheduler.lifecycle.current = some 2 ∧
+    Capability.lookup (bootDispatchedWith bootPayload).scheduler.lifecycle.capabilities 2 0 =
+      .found bootRecvCap ∧
+    bootRecvCap.kind = .endpoint ∧ bootRecvCap.rights.receive = true ∧
+    (bootDispatchedWith bootPayload).scheduler.lifecycle.capabilities.objects bootRecvCap.object =
+      true := by
+  native_decide
+
+/-- **Payload-generic delivery.** For every payload, the boot trace — B
+blocks on the endpoint, A sends, the scheduler dispatches B, B receives —
+hands B exactly the envelope carrying that payload, and leaves B's
+completion record empty. -/
+theorem boot_receive_any_payload (payload : Payload) :
+    (receiveOrBlock (bootDispatchedWith payload) 2 0).result = .delivered (bootEnvelope payload) ∧
+    ((receiveOrBlock (bootDispatchedWith payload) 2 0).state.completion 2 = none) := by
+  obtain ⟨h1, h2, h3, h4, h5⟩ := bootDispatched_receive_facts
+  rw [← bootDispatchedWith_scheduler payload] at h1 h2 h5
+  have hc : (bootDispatchedWith payload).completion 2 = some (.delivered (bootEnvelope payload)) := by
+    simp [bootDispatchedWith, wakeState, setCompletion]
+  simp [receiveOrBlock, h1, h2, h3, h4, h5, hc, setCompletion]
+
+/-- The payload never influences control: the scheduler after the boot
+trace's send and dispatch is the same for every payload. -/
+theorem boot_trace_control_payload_independent (p q : Payload) :
+    (send bootBlocked 1 0 p).result = (send bootBlocked 1 0 q).result ∧
+    (send bootBlocked 1 0 p).state.scheduler = (send bootBlocked 1 0 q).state.scheduler := by
+  simp [boot_send_any_payload, wakeState]
+
+/-! ## One key per cycle
+
+`keyCycle` is the whole per-event exchange: the receiver B (subject 2)
+blocks on endpoint 10, the sender A (subject 1) sends a payload, the
+scheduler's yield dispatches B, and B receives. From any state satisfying
+`CycleReady`, it delivers exactly the sent payload and returns to *the same
+state*, so the exchange can repeat once per event indefinitely. -/
+
+/-- Control facts under which one exchange runs: B current and holding a
+receive capability for endpoint 10 in slot 0, A the only ready subject and
+holding a send capability for it in slot 0, the endpoint live, idle and
+empty, and B with no pending completion. -/
+structure CycleReady (s : State) (rc sc : Capability.Capability) : Prop where
+  current : s.scheduler.lifecycle.current = some 2
+  ready : s.scheduler.ready = [1]
+  capacity : 2 ≤ s.scheduler.capacity
+  owner1 : s.scheduler.lifecycle.addressOwner 1 = some 1
+  owner2 : s.scheduler.lifecycle.addressOwner 2 = some 2
+  recvLookup : Capability.lookup s.scheduler.lifecycle.capabilities 2 0 = .found rc
+  recvKind : rc.kind = .endpoint
+  recvRight : rc.rights.receive = true
+  recvObj : rc.object = 10
+  sendLookup : Capability.lookup s.scheduler.lifecycle.capabilities 1 0 = .found sc
+  sendKind : sc.kind = .endpoint
+  sendRight : sc.rights.send = true
+  sendObj : sc.object = 10
+  live : s.scheduler.lifecycle.capabilities.objects 10 = true
+  noWaiters : s.waiters 10 = []
+  notWaiting : s.waiterEndpoint 2 = none
+  waiterRoom : 0 < s.waiterCapacity
+  noCompletion : s.completion 2 = none
+  noMail : s.mailbox 10 = none
+  runnable : s.scheduler.lifecycle.runnable 2 = true
+
+/-- One event exchange carrying `payload` from A to B. -/
+def keyCycle (s : State) (payload : Payload) : ReceiveOutcome :=
+  let blocked := (receiveOrBlock s 2 0).state
+  let awakened := (send blocked 1 0 payload).state
+  receiveOrBlock { awakened with scheduler := (Scheduler.yield awakened.scheduler).state } 2 0
+
+theorem keyCycle_delivers {s : State} {rc sc : Capability.Capability} (h : CycleReady s rc sc)
+    (payload : Payload) :
+    (keyCycle s payload).result = .delivered (bootEnvelope payload) := by
+  have hcap : s.scheduler.capacity ≠ 1 := by have := h.capacity; omega
+  have hcap0 : s.scheduler.capacity ≠ 0 := by have := h.capacity; omega
+  have hcap1 : 1 ≠ s.scheduler.capacity := fun e => hcap e.symm
+  have hw : ¬ s.waiterCapacity ≤ 0 := by have := h.waiterRoom; omega
+  simp [keyCycle, receiveOrBlock, send, wakeState, blockState, Scheduler.yield,
+    Scheduler.selectNext, Scheduler.ownsAddressSpace, allWaiters, setWaiters, setWaiterEndpoint,
+    setCompletion, SubjectLifecycle.setBool, h.current, h.ready, h.owner1, h.owner2, h.recvLookup,
+    h.recvKind, h.recvRight, h.recvObj, h.sendLookup, h.sendKind, h.sendRight, h.sendObj, h.live,
+    h.noWaiters, h.notWaiting, h.noCompletion, h.noMail, hcap, hcap0, hcap1, hw, bootEnvelope]
+
+theorem keyCycle_returns {s : State} {rc sc : Capability.Capability} (h : CycleReady s rc sc)
+    (payload : Payload) : (keyCycle s payload).state = s := by
+  have hcap : s.scheduler.capacity ≠ 1 := by have := h.capacity; omega
+  have hcap0 : s.scheduler.capacity ≠ 0 := by have := h.capacity; omega
+  have hcap1 : 1 ≠ s.scheduler.capacity := fun e => hcap e.symm
+  have hw : ¬ s.waiterCapacity ≤ 0 := by have := h.waiterRoom; omega
+  simp [keyCycle, receiveOrBlock, send, wakeState, blockState, Scheduler.yield,
+    Scheduler.selectNext, Scheduler.ownsAddressSpace, allWaiters, setWaiters, setWaiterEndpoint,
+    setCompletion, setMailbox, h.current, h.ready, h.owner1,
+    h.owner2, h.recvLookup, h.recvKind, h.recvRight, h.recvObj, h.sendLookup, h.sendKind,
+    h.sendRight, h.sendObj, h.live, h.noWaiters, h.notWaiting, h.noCompletion, h.noMail, hcap,
+    hcap0, hcap1, hw]
+  have hr : SubjectLifecycle.setBool (SubjectLifecycle.setBool s.scheduler.lifecycle.runnable 2 false)
+      2 true = s.scheduler.lifecycle.runnable := by
+    funext x; by_cases hx : x = 2 <;> simp [SubjectLifecycle.setBool, hx, h.runnable]
+  have hq : setWaiters (setWaiters s.waiters 10 [2]) 10 [] = s.waiters := by
+    funext x; by_cases hx : x = 10 <;> simp [setWaiters, hx, h.noWaiters]
+  have he : setWaiterEndpoint (setWaiterEndpoint s.waiterEndpoint 2 (some 10)) 2 none =
+      s.waiterEndpoint := by
+    funext x; by_cases hx : x = 2 <;> simp [setWaiterEndpoint, hx, h.notWaiting]
+  have hc : setCompletion (setCompletion s.completion 2
+      (some (Completion.delivered { endpoint := 10, sender := 1, payload := payload }))) 2 none =
+      s.completion := by
+    funext x; by_cases hx : x = 2 <;> simp [setCompletion, hx, h.noCompletion]
+  rw [hr, hq, he, hc, ← h.current, ← h.ready]
+
+/-- Run one exchange per payload, collecting what B receives. -/
+def keyStream (s : State) : List Payload → State × List ReceiveResult
+  | [] => (s, [])
+  | p :: ps =>
+    let r := keyCycle s p
+    let rest := keyStream r.state ps
+    (rest.1, r.result :: rest.2)
+
+/-- **Event stream.** From a `CycleReady` state, any sequence of payloads is
+delivered to B exactly and in order, one exchange per payload, and the
+system ends where it started. -/
+theorem keyStream_delivers {s : State} {rc sc : Capability.Capability} (h : CycleReady s rc sc) :
+    ∀ payloads : List Payload,
+      keyStream s payloads = (s, payloads.map fun p => .delivered (bootEnvelope p))
+  | [] => rfl
+  | p :: ps => by
+    simp only [keyStream, keyCycle_returns h p, keyCycle_delivers h p, keyStream_delivers h ps,
+      List.map_cons]
+
+private def bootRecvCap0 : Capability.Capability :=
+  match Capability.lookup bootInitial.scheduler.lifecycle.capabilities 2 0 with
+  | .found c => c
+  | _ => endpointCap {}
+
+/-- The reviewed boot state is ready for the exchange, so the boot trace
+extends to an unbounded stream of events carrying arbitrary payloads. -/
+theorem bootInitial_cycleReady : CycleReady bootInitial bootRecvCap0 bootSendCap where
+  current := by native_decide
+  ready := by native_decide
+  capacity := by native_decide
+  owner1 := by native_decide
+  owner2 := by native_decide
+  recvLookup := by native_decide
+  recvKind := by native_decide
+  recvRight := by native_decide
+  recvObj := by native_decide
+  sendLookup := by native_decide
+  sendKind := by native_decide
+  sendRight := by native_decide
+  sendObj := by native_decide
+  live := by native_decide
+  noWaiters := by native_decide
+  notWaiting := by native_decide
+  waiterRoom := by native_decide
+  noCompletion := by native_decide
+  noMail := by native_decide
+  runnable := by native_decide
+
+/-- The boot trace carries any finite stream of payloads, in order. -/
+theorem boot_key_stream (payloads : List Payload) :
+    keyStream bootInitial payloads =
+      (bootInitial, payloads.map fun p => .delivered (bootEnvelope p)) :=
+  keyStream_delivers bootInitial_cycleReady payloads
+
 end LeanOS.BlockingIPC

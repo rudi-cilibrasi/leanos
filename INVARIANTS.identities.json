@@ -21,6 +21,54 @@
     },
     {
       "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.bootBlocked_send_facts",
+      "display": "bootBlocked_send_facts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.bootDispatchedWith_scheduler",
+      "display": "bootDispatchedWith_scheduler",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.bootDispatched_receive_facts",
+      "display": "bootDispatched_receive_facts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.bootInitial_cycleReady",
+      "display": "bootInitial_cycleReady",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.boot_key_stream",
+      "display": "boot_key_stream",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.boot_receive_any_payload",
+      "display": "boot_receive_any_payload",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.boot_send_any_payload",
+      "display": "boot_send_any_payload",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.boot_trace_control_payload_independent",
+      "display": "boot_trace_control_payload_independent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
       "qualified": "LeanOS.BlockingIPC.cancelSubjectTyped_cancelled_exact",
       "display": "cancelSubjectTyped_cancelled_exact",
       "kind": "theorem"
@@ -95,6 +143,24 @@
       "source": "LeanOS/BlockingIPC.lean",
       "qualified": "LeanOS.BlockingIPC.completed_send_word_resolves_exact",
       "display": "completed_send_word_resolves_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.keyCycle_delivers",
+      "display": "keyCycle_delivers",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.keyCycle_returns",
+      "display": "keyCycle_returns",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.keyStream_delivers",
+      "display": "keyStream_delivers",
       "kind": "theorem"
     },
     {
@@ -16385,6 +16451,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.iommu_translation_nonforgery",
       "display": "iommu_translation_nonforgery",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.ipc_event_stream",
+      "display": "ipc_event_stream",
       "kind": "theorem"
     },
     {
