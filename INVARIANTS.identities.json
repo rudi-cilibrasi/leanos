@@ -5589,14 +5589,32 @@
     },
     {
       "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.run_deviceCap_none",
+      "display": "run_deviceCap_none",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
       "qualified": "LeanOS.DeviceCapability.run_inv",
       "display": "run_inv",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.step_deviceCap_none",
+      "display": "step_deviceCap_none",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
       "qualified": "LeanOS.DeviceCapability.step_inv",
       "display": "step_inv",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceCapability.lean",
+      "qualified": "LeanOS.DeviceCapability.ungranted_subject_no_device_effects",
+      "display": "ungranted_subject_no_device_effects",
       "kind": "theorem"
     },
     {

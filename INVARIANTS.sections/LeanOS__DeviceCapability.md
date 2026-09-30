@@ -12,3 +12,6 @@ Hardware drivers written as small Lean programs run inside the kernel, but only 
 - `run_inv` — Those two facts stay true across any sequence of operations whatsoever.
 - `initial_inv` — A freshly started system, with no permissions handed out and no drivers attached, satisfies both facts.
 - `invoke_other_device_unchanged` — Running one device's driver leaves every other device untouched.
+- `step_deviceCap_none` — A program that has no device permission can only gain one if the kernel explicitly hands one to it; no other operation, by anyone, gives it one.
+- `run_deviceCap_none` — Across any sequence of operations in which the kernel never hands a program a device permission, that program still holds none at the end.
+- `ungranted_subject_no_device_effects` — A program the kernel never grants a device — such as the planned network program that only talks to the WiFi driver by message passing — cannot touch any device directly: every attempt to attach or run a driver is refused and changes nothing, device states included.
