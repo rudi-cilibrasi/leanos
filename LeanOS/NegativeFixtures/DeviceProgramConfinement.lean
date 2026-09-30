@@ -1,5 +1,6 @@
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Usb.Xhci
+import LeanOS.Storage.Ahci
 
 namespace LeanOS.NegativeFixtures.DeviceProgramConfinement
 
@@ -127,6 +128,10 @@ ERDP registers. -/
 example : qotomXhciPolicy.addrSinks =
     [LeanOS.Usb.Xhci.crcrLo, LeanOS.Usb.Xhci.dcbaapLo, LeanOS.Usb.Xhci.erstbaLo,
       LeanOS.Usb.Xhci.erdpLo] := by
+  decide
+
+/-- The AHCI policy's sinks are exactly port 1's PxCLB and PxFB. -/
+example : qotomAhciPolicy.addrSinks = [LeanOS.Storage.Ahci.pClb, LeanOS.Storage.Ahci.pFb] := by
   decide
 
 /-- An xHCI program declaring its policy. -/

@@ -40,6 +40,11 @@ static const struct lab_dev_profile lab_dev_profiles[] = {
       { 1, 1, 0x10000u, UINT64_C(0x3) | (UINT64_C(1) << (0xD4 / 4)) | (UINT64_C(1) << (0xDC / 4)),
         (UINT64_C(1) << (0xD0 / 4)) | (UINT64_C(1) << (0xD8 / 4)),
         UINT32_C(0xffff0000), UINT32_C(0x6), 4, { 0x98, 0xB0, 0x2030, 0x2038 } } },
+    /* AHCI at 00:13.0 (ABAR, 2 KiB): identity/command reads, no configuration
+       writes, Memory Space and Bus Master, DMA into scratch; port 1 PxCLB and
+       PxFB are sinks. Mirrors `qotomAhciPolicy`. */
+    { 0, 19, 0, UINT32_C(0x0f238086),
+      { 1, 1, 0x800u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 2, { 0x180, 0x188 } } },
 };
 
 /* The declared policy is present and no wider than the target's profile. */
@@ -207,8 +212,8 @@ static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
         return;
     }
     uint32_t id = wifi_hook_cfg_read32(0);
-    uint32_t bar0 = wifi_hook_cfg_read32(0x10);
-    uint32_t bar1 = wifi_hook_cfg_read32(0x14);
+    uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);
+    uint32_t bar1 = lab_dev_target.bar < 0x24u ? wifi_hook_cfg_read32(lab_dev_target.bar + 4u) : 0;
     serial_puts("LEANOS-LAB/1 WIFI-BEGIN id=0x");
     lab_wifi_hex(id, 8);
     serial_puts(" bar0=0x");
@@ -217,7 +222,7 @@ static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
     /* Non-prefetchable memory BAR, 32-bit (type 0) or 64-bit (type 2 with a
        zero upper half), aligned to the window, in the PCI hole below 4 GiB. */
     uint32_t type = bar0 & 0xfu;
-    uint32_t pages = lab_dev_target.window / 4096u;
+    uint32_t pages = (lab_dev_target.window + 4095u) / 4096u;
     bar0 &= ~UINT32_C(0xf);
     if (id != lab_dev_target.id || (type != 0 && !(type == 4 && bar1 == 0)) ||
         pages == 0 || pages > LAB_DEV_MAX_PAGES ||

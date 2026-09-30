@@ -17,6 +17,8 @@ LeanOS drives its WiFi card and USB keyboard controller with small programs writ
 - `step_stack_bounded` — The interpreter's record of pending subroutine returns never grows past its fixed limit of 16.
 - `sane_cfgWrite_outside_header` — Under a sensible fence, a program may never directly overwrite the device's identity, master control switches, or the address ranges it answers to.
 - `sane_update_bus_master` — Under a sensible fence, a program can switch on the device's ability to read and write main memory on its own only if the fence explicitly allows that, and can never switch on the old port-based access mode.
+- `qotomAhciPolicy_sane` — The disk controller's fence on the lab machine is a sensible fence.
+- `qotomAhciPolicy_bits` — The disk controller fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.
 - `qotomBcm43224Policy_sane` — The WiFi card's fence on the lab machine is a sensible fence.
 - `qotomXhciPolicy_sane` — The USB controller's fence on the lab machine is a sensible fence.
 - `qotomBcm43224Policy_no_bus_master` — The WiFi driver can never switch on the card's ability to reach main memory by itself; it moves every frame through the card's registers instead.
