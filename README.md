@@ -161,6 +161,16 @@ full implementation refinement remain outside
 the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
+The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
+boundary: they run in ring 0, and their confinement to a per-device policy is
+proved about the reference simulator while the C executor is tested against
+it ([ADR 0020](docs/adr/0020-device-program-executor-assurance.md)). On the
+Qotom J1900, which has no IOMMU, **where a DMA-capable device writes is an
+unproved assumption**: the xHCI controller's root address registers provably
+receive only addresses inside the executor's scratch, but the descriptors in
+scratch (TRBs, contexts, DCBAA and ERST entries) are trusted to hold only
+scratch addresses ([ADR 0021](docs/adr/0021-j1900-device-dma-destinations.md)).
+
 ## Why LeanOS?
 
 Projects such as seL4 show the value of connecting a kernel implementation to a

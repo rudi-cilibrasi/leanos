@@ -129,14 +129,28 @@ def movW (r v : UInt32) : Word4 := ⟨12 ||| 0x100, r, v, 0⟩
 /-- Short sequences that set a register to a boundary value and use it at
 once, so exact edges (last scratch byte, `INT32_MIN / -1`, shift by 31) are
 reached far more often than by independent random words. -/
-def gadget (win : Nat) : GenM (Array Word4) := do
+def gadget (win : Nat) (sinks : List UInt32) : GenM (Array Word4) := do
   let r := (← below 16).toUInt32
   let q := ((r.toNat + 1 + (← below 15)) % 16).toUInt32  -- a different register
   let S := scratchBytes
   let junk ← rand
   let fifoOff := ((← below (win / 4)) * 4).toUInt32
   let nudge ← below 3  -- 0, 1, 2 → one before, at, one past the edge
-  match ← below 6 with
+  match ← below (if sinks.isEmpty then 6 else 10) with
+  | 6 | 7 | 8 | 9 => do  -- address sinks: bus addresses at the scratch edges, high dwords, partial writes
+    let sink ← pick sinks.toArray
+    let scratchOff := (S + nudge - 1 - 4 * (← below 2)).toUInt32
+    match ← below 8 with
+    | 6 => pure #[movW r 0, movW q (← pick #[0, 1, 2]), ⟨24, sink + 4 * (← below 2).toUInt32, r, q⟩]
+    | 7 => pure #[⟨17, sink + 4 * (← below 2).toUInt32, 0, ← pick #[0, 1]⟩]
+    | 0 => pure #[⟨25, r, scratchOff, 0⟩, ⟨6, sink, r, 0⟩]
+    | 1 => pure #[⟨25, r, ← pick #[0, 0x100], 0⟩, ⟨6, sink, r, 0⟩]
+    | 2 => pure #[⟨6 ||| 0x100, sink + 4, ← pick #[0, 0, 1, junk], 0⟩]
+    | 3 => pure #[⟨6 ||| 0x100, sink, ← pick #[0x01040000, 0x0103FFFF, 0x01040000, 0x01000000,
+                    0x00FFFFFF, junk], 0⟩]
+    | 4 => pure #[movW r (sink - 4 * (← below 2).toUInt32), ⟨25, q, (← below 64).toUInt32, 0⟩,
+                  ⟨9, r, 4 * (← below 3).toUInt32, q⟩]
+    | _ => pure #[⟨7 ||| 0x100, sink + 2 * (← below 4).toUInt32, junk, 0⟩]
   | 0 => do  -- scratch load/store ending exactly at (or one past) the end
     let w : UInt32 ← pick #[1, 2, 4]
     let base : UInt32 ← pick #[0, 1, 4096]
@@ -150,8 +164,9 @@ def gadget (win : Nat) : GenM (Array Word4) := do
     let op : UInt32 ← pick #[23, 24]
     pure #[movW r at_, movW q k, ⟨op, fifoOff, r, q⟩]
   | 2 => do  -- signed division and remainder edges
-    let x : UInt32 ← pick #[0x80000000, 0x7FFFFFFF, 0xFFFFFFFF, 0, 7]
-    let v : UInt32 ← pick #[0xFFFFFFFF, 0, 1, 0x80000000, 2]
+    let (x, v) : UInt32 × UInt32 ← pick #[(0x80000000, 0xFFFFFFFF), (0x80000000, 0xFFFFFFFF),
+      (0x80000000, 1), (0x7FFFFFFF, 0xFFFFFFFF), (0xFFFFFFF9, 2), (7, 0xFFFFFFFE), (7, 0),
+      (0x80000000, 0x80000000), (0, 0)]
     let sub : UInt32 ← pick #[10, 11, 12, 13]
     pure #[movW r x, ⟨(12 : UInt32) ||| 0x100 ||| (sub <<< (16 : UInt32)), r, v, 0⟩]
   | 3 => do  -- shifts and rotates at the width edges
@@ -168,8 +183,15 @@ def gadget (win : Nat) : GenM (Array Word4) := do
     if op == 8 || op == 10 then pure #[movW r 0, ⟨op, q, r, off⟩]
     else pure #[movW r 0, ⟨op ||| 0x100, r, off, junk⟩]
 
-def genPolicy : GenM Policy := do
-  return { window := ← pick #[0x4000, 0x10000]
+def genPolicy (win : Nat) : GenM Policy := do
+  let nSinks ← below 4
+  let mut sinks : List UInt32 := []
+  for _ in [0:nSinks] do
+    let base : UInt32 ← pick #[0, 8, 0x10, 0x98, 0xB0]
+    let far ← below (win / 8)
+    sinks := sinks ++ [base + (if ← chance 20 then (far * 8).toUInt32 else 0)]
+  return { addrSinks := sinks
+           window := ← pick #[0x4000, 0x10000]
            cfgRead := (((← rand).toUInt64 <<< 32) ||| (← rand).toUInt64)
            cfgWrite := (((← rand).toUInt64 <<< 32) ||| (← rand).toUInt64)
            cmdClear := ← pick #[0xFFFF0000, 0xFFFFFFFF, 0, ← rand]
@@ -183,9 +205,10 @@ def genProgram : GenM Program := do
     some { bus := 0, dev := 20, fn := 0, id := 0x0f358086, windowBytes := win.toUInt32 }
   let mut policy : Option Policy := none
   if version == 2 then
-    let π ← genPolicy
+    let π ← genPolicy win
     -- The executor rejects a target window wider than the policy window.
     policy := some { π with window := max π.window win.toUInt32 }
+  let sinks := (policy.map (·.addrSinks)).getD []
   let blobLen := (← below 16) * 4
   let bytes ← (List.range blobLen).toArray.mapM fun _ => do return (← rand).toUInt8
   let blob := ByteArray.mk bytes
@@ -194,7 +217,7 @@ def genProgram : GenM Program := do
   let n := pre.size + body
   let mut words := pre
   for _ in [0:body] do
-    if ← chance 12 then words := words ++ (← gadget win)
+    if ← chance 12 then words := words ++ (← gadget win sinks)
     else words := words.push (← genWord n win blobLen)
   return { words, blob, sections := #[], target, policy }
 

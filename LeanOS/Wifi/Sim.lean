@@ -134,6 +134,10 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
   let srcBad (x : UInt32) := !imm && decide (x > 15)
   let cfgR (off : UInt32) := match p.policy with | some π => cfgAllowed π.cfgRead off | none => true
   let cfgW (off : UInt32) := match p.policy with | some π => cfgAllowed π.cfgWrite off | none => true
+  -- Address sinks: the executor compares against the bus address of scratch 0.
+  let sinkW (off v : UInt32) := match p.policy with
+    | some π => π.sinkOk (d.phys m.dev 0).1 off v | none => true
+  let sinkT (off : UInt32) := match p.policy with | some π => π.sinkTouch off | none => false
   match w.op &&& 0xFF with
   | 0 => .stop .halt m
   | 1 => .stop (.fail w.a) m
@@ -161,10 +165,12 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
   | 6 =>
     if srcBad w.b then bad "bad-opcode" else
     if !mmioOk window w.a 4 then bad "bad-offset" else
+    if !sinkW w.a (val w.b) then bad "policy" else
     .next { m with dev := d.write32 m.dev w.a (val w.b) }
   | 7 =>
     if srcBad w.b then bad "bad-opcode" else
     if !mmioOk window w.a 2 then bad "bad-offset" else
+    if sinkT w.a then bad "policy" else
     .next { m with dev := d.write16 m.dev w.a (val w.b).toUInt16 }
   | 8 =>
     if regBad w.a || regBad w.b then bad "bad-opcode" else
@@ -176,6 +182,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if regBad w.a || srcBad w.c then bad "bad-opcode" else
     let off := m.reg w.a + w.b
     if !mmioOk window off 4 then bad "bad-offset" else
+    if !sinkW off (val w.c) then bad "policy" else
     .next { m with dev := d.write32 m.dev off (val w.c) }
   | 10 =>
     if regBad w.a || regBad w.b then bad "bad-opcode" else
@@ -187,6 +194,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if regBad w.a || srcBad w.c then bad "bad-opcode" else
     let off := m.reg w.a + w.b
     if !mmioOk window off 2 then bad "bad-offset" else
+    if sinkT off then bad "policy" else
     .next { m with dev := d.write16 m.dev off (val w.c).toUInt16 }
   | 12 =>
     if regBad w.a || srcBad w.b then bad "bad-opcode" else
@@ -207,6 +215,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if w.b.toNat > p.blob.size || w.c.toNat > (p.blob.size - w.b.toNat) / 4 || w.b % 4 != 0 then
       bad "bad-blob" else
     if !mmioOk window w.a 4 then bad "bad-offset" else
+    if sinkT w.a then bad "policy" else
     let dev := iter (fun i s => d.write32 s w.a (le32 p.blob (w.b.toNat + 4 * i))) 0 w.c.toNat m.dev
     .next { m with dev }
   | 18 =>
@@ -243,6 +252,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
   | 24 =>
     if regBad w.b || regBad w.c then bad "bad-opcode" else
     if !mmioOk window w.a 4 then bad "bad-offset" else
+    if sinkT w.a then bad "policy" else
     let base := (m.reg w.b).toNat
     let cnt := (m.reg w.c).toNat
     if base + 4 * cnt > scratchBytes then bad "bad-mem" else

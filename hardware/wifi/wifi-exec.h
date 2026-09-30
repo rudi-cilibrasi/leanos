@@ -14,6 +14,7 @@
 #define WIFI_WINDOW_MAX 0x10000u
 #define WIFI_STACK_DEPTH 16
 #define WIFI_SCRATCH_BYTES 262144u
+#define WIFI_MAX_SINKS 8
 
 struct wifi_hooks {
     uint32_t (*mmio_read32)(void *ctx, uint32_t off);
@@ -61,12 +62,37 @@ struct wifi_target {
 /* Confinement policy declared by a version-3 image (Policy in
    LeanOS/Wifi/Bytecode.lean). Configuration bitmaps cover dword offsets
    below 0x100; the command register changes only through opcode 26 within
-   the clear/set masks; `dma` admits physAddr. Older images carry none. */
+   the clear/set masks; `dma` admits physAddr. Address sinks are the low
+   dwords of 64-bit MMIO address registers: only write32 of an in-scratch
+   bus address (low) or zero (high) may touch them. Older images carry none. */
 struct wifi_policy {
     uint32_t present, dma, window;
     uint64_t cfg_read, cfg_write;
     uint32_t cmd_clear, cmd_set;
+    uint32_t sink_count, sinks[WIFI_MAX_SINKS];
 };
+
+static inline int wifi_is_sink(const struct wifi_policy *p, uint32_t off) {
+    for (uint32_t i = 0; i < p->sink_count; ++i)
+        if (p->sinks[i] == off) return 1;
+    return 0;
+}
+
+/* Policy.sinkTouch: `off` lies in some sink's 8 bytes. */
+static inline int wifi_sink_touch(const struct wifi_policy *p, uint32_t off) {
+    for (uint32_t i = 0; i < p->sink_count; ++i)
+        if (off - p->sinks[i] < 8u) return 1;
+    return 0;
+}
+
+/* Policy.sinkOk: base is the bus address of scratch byte 0. */
+static inline int wifi_sink_ok(const struct wifi_policy *p, uint32_t base,
+                               uint32_t off, uint32_t v) {
+    if (!wifi_sink_touch(p, off)) return 1;
+    if (wifi_is_sink(p, off)) return v - base < WIFI_SCRATCH_BYTES;
+    if (wifi_is_sink(p, off - 4u)) return v == 0;
+    return 0;
+}
 
 static inline int wifi_cfg_allowed(uint64_t bits, uint32_t off) {
     return off < 0x100u && !(off & 3u) && ((bits >> (off / 4u)) & 1u);
@@ -120,13 +146,14 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
     uint32_t version = wifi_le32(image + 4);
     pol->present = 0; pol->dma = 0; pol->window = 0;
     pol->cfg_read = 0; pol->cfg_write = 0; pol->cmd_clear = 0; pol->cmd_set = 0;
+    pol->sink_count = 0;
     if (version == 1) {
         t->bus = 2; t->dev = 0; t->fn = 0;
         t->id = 0x435314e4u; t->window = WIFI_WINDOW_BYTES;
         *header_len = 16;
         return 0;
     }
-    if ((version != 2 && version != 3) || image_len < (version == 3 ? 64u : 32u))
+    if ((version != 2 && version != 3) || image_len < (version == 3 ? 68u : 32u))
         return WIFI_BAD_IMAGE;
     uint32_t bdf = wifi_le32(image + 16);
     t->bus = (bdf >> 16) & 0xffu; t->dev = (bdf >> 8) & 0x1fu; t->fn = bdf & 7u;
@@ -145,9 +172,13 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
         pol->cfg_write = wifi_le32(image + 48) | ((uint64_t)wifi_le32(image + 52) << 32);
         pol->cmd_clear = wifi_le32(image + 56);
         pol->cmd_set = wifi_le32(image + 60);
-        if ((flags & ~1u) || t->window > pol->window)
+        pol->sink_count = image_len >= 68 ? wifi_le32(image + 64) : 0xffffffffu;
+        if ((flags & ~1u) || t->window > pol->window || pol->sink_count > WIFI_MAX_SINKS ||
+            image_len < 68u + 4u * pol->sink_count)
             return WIFI_BAD_IMAGE;
-        *header_len = 64;
+        for (uint32_t i = 0; i < pol->sink_count; ++i)
+            pol->sinks[i] = wifi_le32(image + 68 + 4 * i);
+        *header_len = 68 + 4 * pol->sink_count;
     }
     return 0;
 }
@@ -193,6 +224,8 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
 #define REG(x) do { if ((x) > 15) { *code = pc - 1; return WIFI_BAD_OPCODE; } } while (0)
 #define OFF(x, w) do { if ((x) > window - (w) || ((x) & ((w) - 1))) { *code = pc - 1; return WIFI_BAD_OFFSET; } } while (0)
 #define POLICY(ok) do { if (pol.present && !(ok)) { *code = pc - 1; return WIFI_POLICY; } } while (0)
+#define SINK_OK(o, v) wifi_sink_ok(&pol, WH_PHYS(0), (o), (v))
+#define NO_SINK(o) (!wifi_sink_touch(&pol, (o)))
         switch (base) {
         case 0: *code = 0; return WIFI_HALT;
         case 1: *code = a; return WIFI_FAIL;
@@ -208,8 +241,8 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
         case 5: REG(a); OFF(b, 2); r[a] = WH_R16(b); break;
         case 6: case 7: { if (!imm) REG(b);
             uint32_t v = imm ? b : r[b];
-            if (base == 6) { OFF(a, 4); WH_W32(a, v); }
-            else { OFF(a, 2); WH_W16(a, (uint16_t)v); }
+            if (base == 6) { OFF(a, 4); POLICY(SINK_OK(a, v)); WH_W32(a, v); }
+            else { OFF(a, 2); POLICY(NO_SINK(a)); WH_W16(a, (uint16_t)v); }
             break; }
         case 8: case 10: { REG(a); REG(b); uint32_t off = r[b] + c;
             if (base == 8) { OFF(off, 4); r[a] = WH_R32(off); }
@@ -217,8 +250,8 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             break; }
         case 9: case 11: { REG(a); if (!imm) REG(c);
             uint32_t off = r[a] + b, v = imm ? c : r[c];
-            if (base == 9) { OFF(off, 4); WH_W32(off, v); }
-            else { OFF(off, 2); WH_W16(off, (uint16_t)v); }
+            if (base == 9) { OFF(off, 4); POLICY(SINK_OK(off, v)); WH_W32(off, v); }
+            else { OFF(off, 2); POLICY(NO_SINK(off)); WH_W16(off, (uint16_t)v); }
             break; }
         case 12: { REG(a); if (!imm) REG(b);
             uint32_t v = imm ? b : r[b];
@@ -266,6 +299,7 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
         case 17: { if (b > blob_len || c > (blob_len - b) / 4 || (b & 3)) {
                 *code = pc - 1; return WIFI_BAD_BLOB; }
             OFF(a, 4);
+            POLICY(NO_SINK(a));
             for (uint32_t i = 0; i < c; ++i)
                 WH_W32(a, wifi_le32(blob + b + 4 * i));
             break; }
@@ -292,6 +326,7 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             for (uint32_t i = 0; i < sub; ++i) S[at + i] = (uint8_t)(v >> (8 * i));
             break; }
         case 23: case 24: { REG(b); REG(c); OFF(a, 4);
+            if (base == 24) POLICY(NO_SINK(a));
             uint64_t at = r[b], n = r[c];
             if (at + 4 * n > WIFI_SCRATCH_BYTES) { *code = pc - 1; return WIFI_BAD_MEM; }
             for (uint64_t i = 0; i < n; ++i) {
@@ -318,6 +353,8 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
 #undef REG
 #undef OFF
 #undef POLICY
+#undef SINK_OK
+#undef NO_SINK
     }
     *code = pc;
     return WIFI_STEP_LIMIT;

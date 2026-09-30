@@ -29,16 +29,17 @@ struct lab_dev_profile {
 };
 static const struct lab_dev_profile lab_dev_profiles[] = {
     /* BCM43224 at 02:00.0: identity/command reads, the two BAR0 core windows,
-       Memory Space only (PIO; no bus mastering), no DMA. */
+       Memory Space set and Bus Master cleared (PIO only), no DMA. */
     { 2, 0, 0, UINT32_C(0x435314e4),
       { 1, 0, 0x4000u, UINT64_C(0x3), (UINT64_C(1) << (0x80 / 4)) | (UINT64_C(1) << (0xAC / 4)),
-        UINT32_C(0xffff0000), UINT32_C(0x2) } },
+        UINT32_C(0xffff0004), UINT32_C(0x2), 0, { 0 } } },
     /* xHCI at 00:14.0: identity/command and port-routing mask reads, port
-       routing writes, Memory Space and Bus Master, DMA into scratch. */
+       routing writes, Memory Space and Bus Master, DMA into scratch; the
+       CRCR, DCBAAP, ERSTBA and ERDP address registers are sinks. */
     { 0, 20, 0, UINT32_C(0x0f358086),
       { 1, 1, 0x10000u, UINT64_C(0x3) | (UINT64_C(1) << (0xD4 / 4)) | (UINT64_C(1) << (0xDC / 4)),
         (UINT64_C(1) << (0xD0 / 4)) | (UINT64_C(1) << (0xD8 / 4)),
-        UINT32_C(0xffff0000), UINT32_C(0x6) } },
+        UINT32_C(0xffff0000), UINT32_C(0x6), 4, { 0x98, 0xB0, 0x2030, 0x2038 } } },
 };
 
 /* The declared policy is present and no wider than the target's profile. */
@@ -49,6 +50,10 @@ static int lab_dev_policy_admitted(const struct wifi_target *t, const struct wif
         const struct lab_dev_profile *q = &lab_dev_profiles[i];
         if (q->bus != t->bus || q->dev != t->dev || q->fn != t->fn || q->id != t->id)
             continue;
+        /* Address sinks restrict: the image must declare every profile sink. */
+        for (uint32_t k = 0; k < q->max.sink_count; ++k)
+            if (!wifi_is_sink(p, q->max.sinks[k]))
+                return 0;
         return p->window <= q->max.window && (p->dma <= q->max.dma) &&
                !(p->cfg_read & ~q->max.cfg_read) && !(p->cfg_write & ~q->max.cfg_write) &&
                !(p->cmd_clear & ~q->max.cmd_clear) && !(p->cmd_set & ~q->max.cmd_set);

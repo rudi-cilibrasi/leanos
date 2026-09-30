@@ -50,18 +50,21 @@ def wordOk (π : Policy) (w : Word4) : Bool :=
   | 4 => mmioOk π.window w.b 4
   | 5 => mmioOk π.window w.b 2
   | 6 => mmioOk π.window w.a 4
-  | 7 => mmioOk π.window w.a 2
-  | 17 => mmioOk π.window w.a 4
+  | 7 => mmioOk π.window w.a 2 && !π.sinkTouch w.a
+  | 17 => mmioOk π.window w.a 4 && !π.sinkTouch w.a
   | 23 => mmioOk π.window w.a 4
-  | 24 => mmioOk π.window w.a 4
+  | 24 => mmioOk π.window w.a 4 && !π.sinkTouch w.a
   | 25 => π.dma
   | 26 => π.updateOk w.a w.b w.c
   | _ => true
 
 /-- A program is admissible under `π` when its target window fits the
-policy window and every instruction word passes `wordOk`. -/
+policy window, every instruction word passes `wordOk`, and — since values
+written to address sinks are only known at run time — a policy with address
+sinks is declared in the image, so the executor checks them. -/
 def admissible (p : Program) (π : Policy) : Bool :=
-  p.effTarget.windowBytes.toNat ≤ π.window.toNat && p.words.toList.all (wordOk π)
+  p.effTarget.windowBytes.toNat ≤ π.window.toNat && p.words.toList.all (wordOk π) &&
+    (π.addrSinks.isEmpty || decide (p.policy = some π))
 
 /-- The first instruction index that `wordOk` rejects (diagnostics). -/
 def firstViolation (p : Program) (π : Policy) : Option Nat :=
@@ -77,12 +80,15 @@ def _root_.LeanOS.Wifi.Bytecode.Policy.sane (π : Policy) : Bool :=
 /-! ## The monitor -/
 
 /-- `d` with a latched flag that becomes `true` as soon as the simulator
-requests any device effect outside `π`. -/
+requests any device effect outside `π`, including a write to an address
+sink of a value that is not a bus address inside scratch (low dword) or not
+zero (high dword). -/
 def guard {σ} (π : Policy) (d : Device σ) : Device (σ × Bool) where
   read32 s off := let r := d.read32 s.1 off; (r.1, (r.2, s.2 || !mmioOk π.window off 4))
   read16 s off := let r := d.read16 s.1 off; (r.1, (r.2, s.2 || !mmioOk π.window off 2))
-  write32 s off v := (d.write32 s.1 off v, s.2 || !mmioOk π.window off 4)
-  write16 s off v := (d.write16 s.1 off v, s.2 || !mmioOk π.window off 2)
+  write32 s off v :=
+    (d.write32 s.1 off v, s.2 || !mmioOk π.window off 4 || !π.sinkOk (d.phys s.1 0).1 off v)
+  write16 s off v := (d.write16 s.1 off v, s.2 || !mmioOk π.window off 2 || π.sinkTouch off)
   cfgRead32 s off := let r := d.cfgRead32 s.1 off; (r.1, (r.2, s.2 || !cfgAllowed π.cfgRead off))
   cfgWrite32 s off v := (d.cfgWrite32 s.1 off v, s.2 || !cfgAllowed π.cfgWrite off)
   cfgUpdate32 s off c t := (d.cfgUpdate32 s.1 off c t, s.2 || !π.updateOk off c t)
@@ -116,6 +122,7 @@ theorem mmioOk_mono {w₁ w₂ off k : UInt32} (hw : w₁.toNat ≤ w₂.toNat)
 /-- One instruction that passes `wordOk` keeps the violation flag clear. -/
 theorem exec_confined {σ} (π : Policy) (d : Device σ) (p : Program)
     (hwin : p.effTarget.windowBytes.toNat ≤ π.window.toNat)
+    (hsink : π.addrSinks = [] ∨ p.policy = some π)
     (w : Word4) (hwi : wordOk π w = true)
     (m : Machine (σ × Bool)) (hm : m.dev.2 = false) :
     (exec p (guard π d) w m).machine.dev.2 = false := by
@@ -123,9 +130,10 @@ theorem exec_confined {σ} (π : Policy) (d : Device σ) (p : Program)
   dsimp only
   simp only [wordOk] at hwi
   generalize w.op &&& 0xFF = b at hwi ⊢
-  split
+  rcases hsink with hsink | hsink
+  all_goals split
   all_goals (try dsimp only at hwi)
-  all_goals (try simp_all [guard])
+  all_goals (try simp_all [guard, Policy.sinkOk_of_not_touch, Policy.sinkTouch_of_nil])
   all_goals (repeat' split)
   all_goals (try simp_all)
   all_goals first
@@ -145,7 +153,7 @@ theorem exec_declared_confined {σ} (π : Policy) (d : Device σ) (p : Program)
   dsimp only
   generalize w.op &&& 0xFF = b
   split
-  all_goals (try simp_all [guard])
+  all_goals (try simp_all [guard, Policy.sinkOk_of_not_touch])
   all_goals (repeat' split)
   all_goals (try simp_all)
   all_goals first
@@ -178,11 +186,12 @@ theorem run_confined {σ} (π : Policy) (p : Program) (hp : admissible p π = tr
     (init : Machine (σ × Bool) → Machine (σ × Bool))
     (hinit : ∀ m, (init m).dev = m.dev) :
     (run p (guard π d) (s0, false) fuel init).2.dev.2 = false := by
-  simp only [admissible, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hp
+  simp only [admissible, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+    Bool.or_eq_true, List.isEmpty_iff] at hp
   refine loop_flag π d p (fun m hm => ?_) fuel _ (by simp [hinit])
   unfold step
   split
-  · exact exec_confined π d p hp.1 _ (hp.2 _ (Array.getElem_mem_toList ‹_›)) _ hm
+  · exact exec_confined π d p hp.1.1 hp.2 _ (hp.1.2 _ (Array.getElem_mem_toList ‹_›)) _ hm
   · simpa using hm
 
 /-- **Dynamic confinement.** Any program whose image declares `π` (with a
@@ -242,19 +251,23 @@ The widest policy each Qotom device program may declare; the lab kernel's
 refuses images whose declared policy is wider. -/
 
 /-- BCM43224 at 02:00.0: identity and command reads, the two BAR0 backplane
-windows (0x80, 0xAC), Memory Space only — the driver moves frames by
-programmed I/O, so Bus Master stays off — and no DMA. -/
+windows (0x80, 0xAC), Memory Space set and Bus Master cleared — the driver
+moves frames by programmed I/O, so the card cannot master the bus at all
+while it runs — and no DMA. -/
 def qotomBcm43224Policy : Policy where
   window := 0x4000
   cfgRead := cfgBits [0x00, 0x04]
   cfgWrite := cfgBits [0x80, 0xAC]
-  cmdClear := 0xFFFF0000
+  cmdClear := 0xFFFF0004
   cmdSet := 0x2
   dma := false
 
 /-- Intel xHCI at 00:14.0: identity, command and the port-routing masks
 (0xD4, 0xDC) readable; port routing (0xD0, 0xD8) writable; Memory Space and
-Bus Master; DMA into scratch. -/
+Bus Master; DMA into scratch. The four registers from which the controller
+finds every DMA structure — CRCR (0x98), DCBAAP (0xB0), ERSTBA (0x2030)
+and ERDP (0x2038) with CAPLENGTH 0x80 and runtime base 0x2000 — are address
+sinks: they only ever receive bus addresses inside scratch. -/
 def qotomXhciPolicy : Policy where
   window := 0x10000
   cfgRead := cfgBits [0x00, 0x04, 0xD4, 0xDC]
@@ -262,6 +275,7 @@ def qotomXhciPolicy : Policy where
   cmdClear := 0xFFFF0000
   cmdSet := 0x6
   dma := true
+  addrSinks := [0x98, 0xB0, 0x2030, 0x2038]
 
 theorem qotomBcm43224Policy_sane : qotomBcm43224Policy.sane = true := by decide
 theorem qotomXhciPolicy_sane : qotomXhciPolicy.sane = true := by decide

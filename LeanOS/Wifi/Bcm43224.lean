@@ -101,10 +101,11 @@ def identify : ProgM Unit := do
   print Tag.pciCmd 0
   -- `pci_enable_device`: legacy BIOS leaves the card's memory decoding on,
   -- but UEFI firmware (no driver for it) leaves the command register 0. Set
-  -- Memory Space (bit 1) only: frames move by programmed I/O, so the card
-  -- never needs Bus Master (`qotomBcm43224Policy`). The executor writes
-  -- zeros to the status half so its RW1C bits are untouched.
-  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0002)
+  -- Memory Space (bit 1) and clear Bus Master (bit 2) in case firmware left
+  -- it on: frames move by programmed I/O, so the card never masters the bus
+  -- (`qotomBcm43224Policy`). The executor writes zeros to the status half so
+  -- its RW1C bits are untouched.
+  emit (.cfgUpdate32 0x04 0xFFFF0004 0x0002)
   r32 0 ccChipId
   print Tag.chipId 0
   andi 0 0xFFFF
