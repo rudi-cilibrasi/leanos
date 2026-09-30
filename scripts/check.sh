@@ -60,6 +60,8 @@ lake build leanos-wifi-tx
 .lake/build/bin/leanos-wifi-tx
 lake build leanos-wifi-vectors
 .lake/build/bin/leanos-wifi-vectors
+lake build leanos-wifi-respsim
+.lake/build/bin/leanos-wifi-respsim
 ./scripts/check-device-programs.sh
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service

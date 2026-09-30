@@ -64,9 +64,17 @@ Surveying the canonical kernel found these prerequisites, each a separate
 change:
 
 1. **A real IPC path.** The runtime blocking IPC is a Lean export that
-   accepts one fixed demonstration payload (`leanos_blocking_ipc_demo`); key
-   events need a generated entry point over real payload words, through the
-   composite dispatcher or a scalar-state export (ADR 0002 boundary).
+   accepts one fixed demonstration payload (`leanos_blocking_ipc_demo`): a
+   scalar witness of one block → send/wake → dispatch → deliver trace, tied
+   to the `BlockingIPC` transitions by agreement theorems; the C kernel keeps
+   no model state. The smallest extension that carries key events is a
+   *payload-generic, cyclic* witness: the accepted edges ignore the payload
+   words, one theorem shows that for every `(word0, word1)` the model's send
+   delivers exactly those words to the blocked receiver (building on
+   `wake_reserves_exact_envelope`), and another that the state after
+   delivery and the receiver's next receive is again the blocked state, so
+   the trace repeats once per key. The kernel then copies the words through
+   its mailbox, as it does for the demonstration payload.
 2. **An echo target.** The early text console is disabled before quarantine
    and before any ring-3 entry, because quarantine may remove VGA decode.
    Either keep the aperture mapped and decoded for the scenario, or echo on

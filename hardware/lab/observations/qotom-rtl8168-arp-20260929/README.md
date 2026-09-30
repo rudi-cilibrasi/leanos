@@ -34,3 +34,8 @@ The program then stopped the MAC and cleared Bus Master; FreeBSD booted
 normally and used `re0` afterwards.
 
 ELF SHA256 `42852a6fec8323cf561cb8bcb57e4f29c8443afaf64c16e4ffa26757cec504d3` (no secrets). Capture SHA256 `7a7b8bd5a4112f0fb5b2d0cfb880360068e0aad41251c96ab67b87a60b00bbe7`.
+
+**Side effect found afterwards:** the FreeBSD boot that followed stalled
+`re0`'s receive ring after 256 frames until `ifconfig re0 down up`. It
+reproduces on every run; the bisection and workaround are in
+[`docs/net-rtl8168.md`](../../../../docs/net-rtl8168.md#known-issue-freebsds-re0-after-a-run).

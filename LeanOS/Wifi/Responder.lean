@@ -2,8 +2,8 @@ import LeanOS.Wifi.Connect
 
 /-
 Minimal IPv4 host responder for the associated station: answers ARP
-requests for the leased address and ICMP echo requests addressed to it, for
-a bounded time. Received frames are CCMP-decapsulated with the TK or GTK;
+requests for the leased address, and ICMP echo requests and UDP echo
+datagrams (port 7) addressed to it, for a bounded time. Received frames are CCMP-decapsulated with the TK or GTK;
 replies are built in scratch, CCMP-protected with the TK and sent through
 the best-effort FIFO.
 
@@ -13,12 +13,22 @@ Reply construction:
   destination swapped (the IPv4 header checksum is unchanged by a swap) and
   type 8 → 0; the ICMP checksum is updated incrementally (RFC 1624:
   HC' = HC + 0x0800 in ones'-complement arithmetic).
+* UDP echo (RFC 862): the request's datagram with the IPv4 addresses and the
+  UDP ports swapped. Both checksums are ones'-complement sums over the
+  swapped fields, so neither changes.
+
+Group-key handshake (IEEE 802.11-2016 12.7.7): an EAPOL-Key message 1 from
+the access point (group, ack, MIC, secure, encrypted key data), protected by
+the TK, with a replay counter above the last one accepted and a valid MIC
+(KCK) installs the GTK KDE unwrapped with the KEK and is answered with
+message 2 (MIC | secure, the same replay counter), so a session survives the
+access point's group-key rotation.
 -/
 namespace LeanOS.Wifi.Responder
 
 open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Connect
 
-/-! Scratch (0x0C10–0x0C3F; `plainBuf` 0x4000 holds the reply). -/
+/-! Scratch (0x0C10–0x0C3F and 0x0C44; `plainBuf` 0x4000 holds the reply). -/
 def seqAt : UInt32 := 0x0C10
 def startAt : UInt32 := 0x0C14
 def bodyAt : UInt32 := 0x0C18      -- decrypted body address
@@ -26,6 +36,7 @@ def lenAt : UInt32 := 0x0C1C       -- decrypted body length
 def srcMacAt : UInt32 := 0x0C20    -- sender MAC of the request (6 bytes)
 def arpCount : UInt32 := 0x0C28
 def pingCount : UInt32 := 0x0C2C
+def udpCount : UInt32 := 0x0C44
 /-- Last accepted CCMP packet number per key: pairwise (TK) and group (GTK);
 48-bit, low word then high half-word. -/
 def lastPnTk : UInt32 := 0x0C30
@@ -38,6 +49,10 @@ def summaryArp : UInt32 := 0x0F03
 def summaryPing : UInt32 := 0x0F04
 def listening : UInt32 := 0x0F05
 def replay : UInt32 := 0x0F06
+def rekeyed : UInt32 := 0x0F09
+def rekeyDropped : UInt32 := 0x0F0A
+def udpReplied : UInt32 := 0x0F07
+def summaryUdp : UInt32 := 0x0F08
 end Tag
 
 /-- Copy `r(n)` bytes from scratch `r(src)` to scratch `r(dst)`. Clobbers the
@@ -128,13 +143,14 @@ def replayCheck (skip : Nat) : ProgM Unit := do
   emit (.memStore 2 6 4 (.reg 2))
 
 /-- Answer ARP and ICMP echo for `us` microseconds of TSF time. -/
-def respond (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32) :
-    ProgM Unit := do
+def respond (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
+    (us : UInt32) : ProgM Unit := do
   li 1 0
   r32 2 0x180
   emit (.memStore 4 1 startAt (.reg 2))
   emit (.memStore 4 1 arpCount (.imm 0))
   emit (.memStore 4 1 pingCount (.imm 0))
+  emit (.memStore 4 1 udpCount (.imm 0))
   emit (.memLoad 4 2 1 DevDhcp.yiaddrAt)
   print Tag.listening 2
   let top ← newLabel
@@ -180,12 +196,25 @@ def respond (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32)
   shli 3 8
   emit (.alu .or 3 (.reg 4))
   let notArp ← newLabel
+  let notEapol ← newLabel
+  emit (.branch .ne 3 (.imm 0x888E) notEapol)
+  groupKey L C data skip
+  emit (.jump top)
+  place notEapol
   emit (.branch .ne 3 (.imm 0x0806) notArp)
   arp C data skip
   emit (.jump top)
   place notArp
   emit (.branch .ne 3 (.imm 0x0800) skip)
+  -- IPv4: dispatch on the protocol byte (IP header at body + 8)
+  emit (.memLoad 1 3 1 (8 + 9))
+  let notIcmp ← newLabel
+  emit (.branch .ne 3 (.imm 1) notIcmp)
   icmp C data skip
+  emit (.jump top)
+  place notIcmp
+  emit (.branch .ne 3 (.imm 17) skip)
+  udp C data skip
   emit (.jump top)
   place skip
   emit (.jump top)
@@ -193,6 +222,7 @@ def respond (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32)
   li 1 0
   emit (.memLoad 4 2 1 arpCount); print Tag.summaryArp 2
   emit (.memLoad 4 2 1 pingCount); print Tag.summaryPing 2
+  emit (.memLoad 4 2 1 udpCount); print Tag.summaryUdp 2
 where
   /-- ARP request (body+8) for our address → reply. -/
   arp (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (skip : Nat) : ProgM Unit := do
@@ -294,6 +324,146 @@ where
     li 1 0
     emit (.memLoad 4 2 1 pingCount); addi 2 1; emit (.memStore 4 1 pingCount (.reg 2))
     print Tag.pingReplied 2
+  /-- Group-key message 1 → install the new GTK, answer with message 2. -/
+  groupKey (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
+      (skip : Nat) : ProgM Unit := do
+    let drop ← newLabel
+    li 0 0
+    emit (.memLoad 4 7 0 bodyAt)
+    addi 7 8                                         -- EAPOL packet
+    emit (.memLoad 4 8 0 lenAt)
+    emit (.alu .sub 8 (.imm 8))
+    Handshake.saveEapol
+    emit (.branch .ltu 8 (.imm 99) skip)
+    emit (.memLoad 1 3 7 1)
+    emit (.branch .ne 3 (.imm 3) skip)               -- EAPOL-Key
+    emit (.memLoad 1 3 7 4)
+    emit (.branch .ne 3 (.imm 2) skip)               -- RSN descriptor
+    emit (.memLoad 1 3 7 5)
+    emit (.memLoad 1 4 7 6)
+    shli 3 8
+    emit (.alu .or 3 (.reg 4))                       -- key information
+    andi 3 (Eapol.KeyInfo.versionMask.toUInt32 ||| Eapol.KeyInfo.pairwise.toUInt32 |||
+      Eapol.KeyInfo.ack.toUInt32 ||| Eapol.KeyInfo.mic.toUInt32 |||
+      Eapol.KeyInfo.secure.toUInt32 ||| Eapol.KeyInfo.encryptedKeyData.toUInt32)
+    emit (.branch .ne 3 (.imm (Eapol.KeyInfo.versionHmacSha1Aes.toUInt32 |||
+      Eapol.KeyInfo.ack.toUInt32 ||| Eapol.KeyInfo.mic.toUInt32 |||
+      Eapol.KeyInfo.secure.toUInt32 ||| Eapol.KeyInfo.encryptedKeyData.toUInt32)) drop)
+    -- replay counter (big-endian, bytes 9..16) must exceed the last one
+    let newer ← newLabel
+    for k in [0:8] do
+      emit (.memLoad 1 3 7 (9 + k.toUInt32))
+      li 0 0
+      emit (.memLoad 1 4 0 (Handshake.replayAt + k.toUInt32))
+      emit (.branch .ltu 4 (.reg 3) newer)
+      emit (.branch .ltu 3 (.reg 4) drop)
+    emit (.jump drop)                                -- equal: a retransmission
+    place newer
+    DevCrypto.callMicVerify L (.imm Handshake.kckAt) (.reg 7) (.reg 8)
+    emit (.branch .ne 0 (.imm 1) drop)
+    Handshake.loadEapol
+    Handshake.copyFrom 7 9 Handshake.replayAt 8
+    -- key data: big-endian length at 97, data at 99; unwrap with the KEK
+    emit (.memLoad 1 3 7 97)
+    emit (.memLoad 1 4 7 98)
+    shli 3 8
+    emit (.alu .or 3 (.reg 4))
+    addi 7 99
+    li 0 0
+    emit (.memStore 4 0 (Handshake.eapolPtrAt + 8) (.reg 3))
+    DevCrypto.callKeyUnwrap L (.imm Handshake.kekAt) (.reg 7) (.reg 3) (.imm Handshake.plainAt)
+    emit (.branch .ne 0 (.imm 1) drop)
+    Handshake.installGtk (emit (.jump drop))
+    -- the new key starts a new packet-number sequence
+    li 0 0
+    emit (.memStore 4 0 lastPnGtk (.imm 0))
+    emit (.memStore 4 0 (lastPnGtk + 4) (.imm 0))
+    -- message 2: version 2 | MIC | secure, same replay counter, no key data
+    replyHeader 0x888E
+    let msg2 : Eapol.KeyFrame :=
+      { protocolVersion := 2
+        keyInfo := Eapol.KeyInfo.versionHmacSha1Aes ||| Eapol.KeyInfo.mic ||| Eapol.KeyInfo.secure
+        keyLength := 0, replayCounter := 0, nonce := LeanOS.Wifi.Bytes.zeros 32,
+        keyData := ByteArray.empty }
+    let tmpl := msg2.encode
+    li 2 (plainBuf + 32)
+    storeBytes 2 0 tmpl
+    Handshake.loadEapol
+    emit (.memLoad 1 3 7 0)                          -- echo the protocol version
+    li 2 (plainBuf + 32)
+    emit (.memStore 1 2 0 (.reg 3))
+    li 2 (plainBuf + 32 + 9)
+    li 3 8
+    addi 7 9
+    copyR 2 7 3                                      -- replay counter
+    DevCrypto.callMicCompute L (.imm Handshake.kckAt) (.imm (plainBuf + 32))
+      (.imm tmpl.size.toUInt32)
+    li 12 (32 + tmpl.size.toUInt32)
+    sendReply C data
+    li 0 0
+    emit (.memLoad 1 1 0 Handshake.gtkIdAt)
+    print Tag.rekeyed 1
+    emit (.jump skip)
+    place drop
+    printImm Tag.rekeyDropped 0
+    emit (.jump skip)
+  /-- IPv4 UDP datagram to our address, port 7 → echo (RFC 862). -/
+  udp (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) (skip : Nat) : ProgM Unit := do
+    li 0 0
+    emit (.memLoad 4 1 0 bodyAt)
+    addi 1 8                                         -- IP header
+    emit (.memLoad 1 3 1 0)
+    emit (.branch .ne 3 (.imm 0x45) skip)            -- IPv4, 20-byte header
+    emit (.memLoad 1 3 1 6)
+    andi 3 0x3F
+    emit (.branch .ne 3 (.imm 0) skip)               -- not a fragment (MF, offset)
+    emit (.memLoad 1 3 1 7)
+    emit (.branch .ne 3 (.imm 0) skip)
+    li 0 0
+    emit (.memLoad 4 4 0 DevDhcp.yiaddrAt)
+    emit (.memLoad 4 3 1 16)
+    emit (.branch .ne 3 (.reg 4) skip)               -- destination = us
+    emit (.memLoad 1 3 1 22)
+    emit (.branch .ne 3 (.imm 0) skip)               -- destination port 7
+    emit (.memLoad 1 3 1 23)
+    emit (.branch .ne 3 (.imm 7) skip)
+    -- total length (big-endian), bounded by the decrypted body
+    emit (.memLoad 1 5 1 2)
+    emit (.memLoad 1 6 1 3)
+    shli 5 8
+    emit (.alu .or 5 (.reg 6))
+    emit (.branch .ltu 5 (.imm 28) skip)
+    li 0 0
+    emit (.memLoad 4 6 0 lenAt)
+    emit (.alu .sub 6 (.imm 8))
+    emit (.branch .ltu 6 (.reg 5) skip)
+    emit (.branch .geu 5 (.imm 1500) skip)
+    li 0 0
+    emit (.memStore 4 0 (lenAt + 0) (.reg 5))       -- now: IP total length
+    replyHeader 0x0800
+    li 0 0
+    emit (.memLoad 4 1 0 bodyAt)
+    addi 1 8
+    li 2 (plainBuf + 32)
+    emit (.memLoad 4 3 0 lenAt)
+    copyR 2 1 3
+    -- swap source/destination addresses (12, 16) and ports (20, 22)
+    li 2 (plainBuf + 32)
+    emit (.memLoad 4 3 2 12)
+    emit (.memLoad 4 4 2 16)
+    emit (.memStore 4 2 12 (.reg 4))
+    emit (.memStore 4 2 16 (.reg 3))
+    emit (.memLoad 2 3 2 20)
+    emit (.memLoad 2 4 2 22)
+    emit (.memStore 2 2 20 (.reg 4))
+    emit (.memStore 2 2 22 (.reg 3))
+    li 0 0
+    emit (.memLoad 4 12 0 lenAt)
+    addi 12 32
+    sendReply C data
+    li 1 0
+    emit (.memLoad 4 2 1 udpCount); addi 2 1; emit (.memStore 4 1 udpCount (.reg 2))
+    print Tag.udpReplied 2
 
 end LeanOS.Wifi.Responder
 
@@ -303,6 +473,6 @@ open LeanOS.Wifi.Bytecode LeanOS.Wifi.NPhy
 /-- Connect, lease an address, then answer ARP/ping for `us` microseconds. -/
 def connectAndServe (fw : Bcm43224.Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
     (us : UInt32) : ProgM Unit :=
-  Connect.connectDhcpThen fw cfg bssid pmk fun _ C data => respond C data us
+  Connect.connectDhcpThen fw cfg bssid pmk fun L C data => respond L C data us
 
 end LeanOS.Wifi.Responder
