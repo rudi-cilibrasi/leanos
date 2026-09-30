@@ -97,6 +97,9 @@ inductive Instr where
   confinement policy can bound which bits a program may change (for example
   the command register's Memory Space and Bus Master bits). -/
   | cfgUpdate32 (off : UInt32) (clear : UInt32) (set : UInt32)
+  /-- Suspend and hand `src` to the executor's caller; resuming continues with
+  the next instruction (a driver delivering one event at a time). -/
+  | yield (src : Operand)
   deriving Repr
 
 /-- Opcode numbers shared with `hardware/wifi/wifi-exec.h`. -/
@@ -108,7 +111,7 @@ def opcode : Instr → UInt32
   | .print .. => 16 | .blobStream32 .. => 17 | .blobLoad32 .. => 18
   | .call .. => 19 | .ret => 20 | .memLoad .. => 21 | .memStore .. => 22
   | .fifoIn .. => 23 | .fifoOut .. => 24 | .physAddr .. => 25
-  | .cfgUpdate32 .. => 26
+  | .cfgUpdate32 .. => 26 | .yield _ => 27
 
 /-- Size of the executor's scratch RAM in bytes. -/
 def scratchBytes : Nat := 262144
@@ -168,6 +171,7 @@ def encode (i : Instr) : Option Word4 :=
   | .fifoIn off b n => do some ⟨op, off, ← r b, ← r n⟩
   | .fifoOut off b n => do some ⟨op, off, ← r b, ← r n⟩
   | .cfgUpdate32 off clr set => some ⟨op, off, clr, set⟩
+  | .yield s => do let (f, v) ← operandFields s; some ⟨op ||| f, v, 0, 0⟩
 
 /-! ## Builder
 
@@ -183,7 +187,7 @@ structure Target where
   fn : UInt32
   id : UInt32
   windowBytes : UInt32
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 /-- The target implied by version-1 images: the BCM43224 at 02:00.0. -/
 def bcm43224Target : Target :=

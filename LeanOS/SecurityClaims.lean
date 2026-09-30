@@ -26,6 +26,7 @@ import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
 import LeanOS.DeviceProgramConfinement
+import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
@@ -3228,5 +3229,18 @@ theorem device_program_declared_confinement {σ : Type} (π : Wifi.Bytecode.Poli
     (Wifi.Sim.run p (DeviceProgramConfinement.guard π d) (s0, false) fuel init).2.dev.2 =
       false :=
   DeviceProgramConfinement.run_declared_confined π p hpol hwin d s0 fuel init hinit
+
+/-- SC-DEVICE-CAPABILITY-CONFINEMENT: in the device-capability kernel
+service, no sequence of capability operations, grants, binds, invocations and
+revocations makes any device act outside its policy, and only an invocation by
+a current holder of a device's capability changes that device. -/
+theorem device_capability_confinement {σ : Type}
+    (models : Nat → Wifi.Sim.Device σ) (ts : List DeviceCapability.Transition)
+    (sys : DeviceCapability.System σ) (hinv : DeviceCapability.Inv sys) :
+    DeviceCapability.Inv (DeviceCapability.run models sys ts) ∧
+      ∀ t k, (DeviceCapability.step models sys t).1.devState k ≠ sys.devState k →
+        ∃ subject fuel, t = .invoke subject fuel ∧ sys.deviceCaps subject = some ⟨k⟩ :=
+  ⟨DeviceCapability.run_inv models ts sys hinv,
+    fun t k h => DeviceCapability.device_state_changes_only_by_holder models sys t k h⟩
 
 end LeanOS.SecurityClaims

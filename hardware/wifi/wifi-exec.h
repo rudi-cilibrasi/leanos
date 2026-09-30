@@ -43,16 +43,13 @@ enum wifi_status {
     WIFI_BAD_BLOB = 8,
     WIFI_BAD_MEM = 9,
     WIFI_POLICY = 10,       /* effect outside the image's declared policy */
+    WIFI_YIELD = 11,        /* opcode 27: value in *code; resume continues */
 };
 
 /* Scratch RAM for frames, protocol state and (where the executor provides
    physical addresses) DMA structures; zeroed at program start. Accessed
    through volatile pointers because devices may write it by DMA. */
 static uint8_t wifi_scratch[WIFI_SCRATCH_BYTES] __attribute__((aligned(65536)));
-
-#ifdef WIFI_EXPOSE_REGS
-static uint32_t wifi_regs[16];
-#endif
 
 /* PCI function an image drives. Version-1 images imply the BCM43224. */
 struct wifi_target {
@@ -183,58 +180,75 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
     return 0;
 }
 
-/* Execute `image` (the Lean-encoded program). `code` receives the fail code
-   or the offending pc; `max_steps` bounds execution. Every check mirrors
-   `step` in LeanOS/Wifi/Sim.lean, in the same order. */
-static int wifi_exec(const uint8_t *image, uint32_t image_len,
-                     const struct wifi_hooks *h, uint64_t max_steps,
-                     uint32_t *code) {
-    struct wifi_target target;
+/* Resumable executor state. `wifi_start` parses an image and zeroes the
+   registers and scratch; `wifi_resume` runs until the program halts, fails,
+   faults, yields (opcode 27) or the step count reaches `step_limit`. After a
+   yield, the next resume continues with the following instruction. */
+struct wifi_vm {
+    const uint8_t *code_base, *blob;
+    uint32_t n, blob_len, window;
     struct wifi_policy pol;
+    struct wifi_target target;
+    uint32_t r[16], stack[WIFI_STACK_DEPTH], sp, pc;
+    uint64_t steps;
+};
+
+static int wifi_start(struct wifi_vm *vm, const uint8_t *image, uint32_t image_len) {
     uint32_t hdr = 0;
-    if (wifi_image_header(image, image_len, &target, &pol, &hdr))
+    if (wifi_image_header(image, image_len, &vm->target, &vm->pol, &hdr))
         return WIFI_BAD_IMAGE;
-    const uint32_t window = target.window;
     uint32_t n = wifi_le32(image + 8), blob_len = wifi_le32(image + 12);
     if (n > (image_len - hdr) / 16 || blob_len != image_len - hdr - n * 16)
         return WIFI_BAD_IMAGE;
-    const uint8_t *code_base = image + hdr;
+    vm->window = vm->target.window;
+    vm->n = n;
+    vm->blob_len = blob_len;
+    vm->code_base = image + hdr;
+    vm->blob = vm->code_base + (uint64_t)n * 16;
+    for (unsigned i = 0; i < 16; ++i) vm->r[i] = 0;
+    vm->sp = 0; vm->pc = 0; vm->steps = 0;
     volatile uint8_t *const S = wifi_scratch;
-    const uint8_t *blob = code_base + (uint64_t)n * 16;
-#ifdef WIFI_EXPOSE_REGS
-    /* Test builds (fuzz-runner.c) read the final registers. */
-    uint32_t *const r = wifi_regs;
-    for (unsigned i = 0; i < 16; ++i) r[i] = 0;
-#else
-    uint32_t r[16] = {0};
-#endif
-    uint32_t stack[WIFI_STACK_DEPTH];
-    uint32_t sp = 0, pc = 0;
     for (uint32_t i = 0; i < WIFI_SCRATCH_BYTES; ++i) S[i] = 0;
+    return 0;
+}
+
+/* Run a started program. `code` receives the fail code, the yielded value or
+   the offending pc; `step_limit` bounds the total steps since `wifi_start`.
+   Every check mirrors `exec` in LeanOS/Wifi/Sim.lean, in the same order. */
+static int wifi_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
+                       uint64_t step_limit, uint32_t *code) {
+    const uint32_t window = vm->window, n = vm->n, blob_len = vm->blob_len;
+    const uint8_t *const code_base = vm->code_base, *const blob = vm->blob;
+    const struct wifi_policy pol = vm->pol;
+    volatile uint8_t *const S = wifi_scratch;
+    uint32_t *const r = vm->r, *const stack = vm->stack;
+    uint32_t sp = vm->sp, pc = vm->pc;
+    int st;
 #ifdef WIFI_HOOKS_DIRECT
     (void)h;
 #endif
-    for (uint64_t step = 0; step < max_steps; ++step) {
-        if (pc >= n) { *code = pc; return WIFI_BAD_PC; }
+    while (vm->steps < step_limit) {
+        vm->steps++;
+        if (pc >= n) { *code = pc; st = WIFI_BAD_PC; goto out; }
         const uint8_t *in = code_base + (uint64_t)pc * 16;
         uint32_t op = wifi_le32(in), a = wifi_le32(in + 4);
         uint32_t b = wifi_le32(in + 8), c = wifi_le32(in + 12);
         uint32_t base = op & 0xffu, imm = op & 0x100u, sub = op >> 16;
         pc++;
-#define REG(x) do { if ((x) > 15) { *code = pc - 1; return WIFI_BAD_OPCODE; } } while (0)
-#define OFF(x, w) do { if ((x) > window - (w) || ((x) & ((w) - 1))) { *code = pc - 1; return WIFI_BAD_OFFSET; } } while (0)
-#define POLICY(ok) do { if (pol.present && !(ok)) { *code = pc - 1; return WIFI_POLICY; } } while (0)
+#define REG(x) do { if ((x) > 15) { *code = pc - 1; st = WIFI_BAD_OPCODE; goto out; } } while (0)
+#define OFF(x, w) do { if ((x) > window - (w) || ((x) & ((w) - 1))) { *code = pc - 1; st = WIFI_BAD_OFFSET; goto out; } } while (0)
+#define POLICY(ok) do { if (pol.present && !(ok)) { *code = pc - 1; st = WIFI_POLICY; goto out; } } while (0)
 #define SINK_OK(o, v) wifi_sink_ok(&pol, WH_PHYS(0), (o), (v))
 #define NO_SINK(o) (!wifi_sink_touch(&pol, (o)))
         switch (base) {
-        case 0: *code = 0; return WIFI_HALT;
-        case 1: *code = a; return WIFI_FAIL;
-        case 2: REG(a); if (b > 0xffc || (b & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
+        case 0: *code = 0; { st = WIFI_HALT; goto out; }
+        case 1: *code = a; { st = WIFI_FAIL; goto out; }
+        case 2: REG(a); if (b > 0xffc || (b & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
             POLICY(wifi_cfg_allowed(pol.cfg_read, b));
             r[a] = WH_CR32(b); break;
         case 3: { uint32_t v = imm ? b : (b < 16 ? r[b] : 0);
             if (!imm) REG(b);
-            if (a > 0xffc || (a & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
+            if (a > 0xffc || (a & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
             POLICY(wifi_cfg_allowed(pol.cfg_write, a));
             WH_CW32(a, v); break; }
         case 4: REG(a); OFF(b, 4); r[a] = WH_R32(b); break;
@@ -276,7 +290,7 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
                 break; }
             case 14: { uint32_t k = v >= 31 ? 31 : v;
                 r[a] = (r[a] & 0x80000000u) ? ~((~r[a]) >> k) : r[a] >> k; break; }
-            default: *code = pc - 1; return WIFI_BAD_OPCODE;
+            default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }
             }
             break; }
         case 13: { REG(a); if (!imm) REG(b);
@@ -289,7 +303,7 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             case 3: t = x >= v; break;
             case 4: t = (int32_t)x < (int32_t)v; break;
             case 5: t = (int32_t)x >= (int32_t)v; break;
-            default: *code = pc - 1; return WIFI_BAD_OPCODE;
+            default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }
             }
             if (t) pc = c;
             break; }
@@ -297,7 +311,7 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
         case 15: WH_DELAY(a); break;
         case 16: { if (!imm) REG(b); WH_PRINT(a, imm ? b : r[b]); break; }
         case 17: { if (b > blob_len || c > (blob_len - b) / 4 || (b & 3)) {
-                *code = pc - 1; return WIFI_BAD_BLOB; }
+                *code = pc - 1; { st = WIFI_BAD_BLOB; goto out; } }
             OFF(a, 4);
             POLICY(NO_SINK(a));
             for (uint32_t i = 0; i < c; ++i)
@@ -305,16 +319,16 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             break; }
         case 18: { REG(a); REG(b);
             uint64_t off = (uint64_t)c + (uint64_t)r[b] * 4;
-            if ((c & 3) || off + 4 > blob_len) { *code = pc - 1; return WIFI_BAD_BLOB; }
+            if ((c & 3) || off + 4 > blob_len) { *code = pc - 1; { st = WIFI_BAD_BLOB; goto out; } }
             r[a] = wifi_le32(blob + off); break; }
-        case 19: if (sp == WIFI_STACK_DEPTH) { *code = pc - 1; return WIFI_STACK; }
+        case 19: if (sp == WIFI_STACK_DEPTH) { *code = pc - 1; { st = WIFI_STACK; goto out; } }
             stack[sp++] = pc; pc = a; break;
-        case 20: if (sp == 0) { *code = pc - 1; return WIFI_STACK; }
+        case 20: if (sp == 0) { *code = pc - 1; { st = WIFI_STACK; goto out; } }
             pc = stack[--sp]; break;
         case 21: { REG(a); REG(b);
             uint64_t at = (uint64_t)r[b] + c;
             if (at + sub > WIFI_SCRATCH_BYTES || (sub != 1 && sub != 2 && sub != 4)) {
-                *code = pc - 1; return WIFI_BAD_MEM; }
+                *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
             uint32_t v = 0;
             for (uint32_t i = 0; i < sub; ++i) v |= (uint32_t)S[at + i] << (8 * i);
             r[a] = v; break; }
@@ -322,13 +336,13 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             uint64_t at = (uint64_t)r[a] + b;
             uint32_t v = imm ? c : r[c];
             if (at + sub > WIFI_SCRATCH_BYTES || (sub != 1 && sub != 2 && sub != 4)) {
-                *code = pc - 1; return WIFI_BAD_MEM; }
+                *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
             for (uint32_t i = 0; i < sub; ++i) S[at + i] = (uint8_t)(v >> (8 * i));
             break; }
         case 23: case 24: { REG(b); REG(c); OFF(a, 4);
             if (base == 24) POLICY(NO_SINK(a));
             uint64_t at = r[b], n = r[c];
-            if (at + 4 * n > WIFI_SCRATCH_BYTES) { *code = pc - 1; return WIFI_BAD_MEM; }
+            if (at + 4 * n > WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
             for (uint64_t i = 0; i < n; ++i) {
                 volatile uint8_t *p = S + at + 4 * i;
                 if (base == 23) {
@@ -342,13 +356,15 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             }
             break; }
         case 25: REG(a);
-            if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; return WIFI_BAD_MEM; }
+            if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
             POLICY(pol.dma);
             r[a] = WH_PHYS(b); break;
-        case 26: if (a > 0xffc || (a & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
+        case 26: if (a > 0xffc || (a & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
             POLICY(a == 4 && !(b & ~pol.cmd_clear) && !(c & ~pol.cmd_set));
             WH_CW32(a, (WH_CR32(a) & ~b) | c); break;
-        default: *code = pc - 1; return WIFI_BAD_OPCODE;
+        case 27: { if (!imm) REG(a);
+            *code = imm ? a : r[a]; st = WIFI_YIELD; goto out; }
+        default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }
         }
 #undef REG
 #undef OFF
@@ -357,7 +373,22 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
 #undef NO_SINK
     }
     *code = pc;
-    return WIFI_STEP_LIMIT;
+    st = WIFI_STEP_LIMIT;
+out:
+    vm->sp = sp;
+    vm->pc = pc;
+    return st;
+}
+
+/* Start and run `image` to completion (programs that never yield); a yield
+   ends the run with WIFI_YIELD. */
+static inline int wifi_exec(const uint8_t *image, uint32_t image_len,
+                            const struct wifi_hooks *h, uint64_t max_steps,
+                            uint32_t *code) {
+    static struct wifi_vm vm;
+    if (wifi_start(&vm, image, image_len))
+        return WIFI_BAD_IMAGE;
+    return wifi_resume(&vm, h, max_steps, code);
 }
 
 #endif

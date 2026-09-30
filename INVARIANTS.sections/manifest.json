@@ -29,6 +29,7 @@
     "LeanOS/CompositeFootprint.lean",
     "LeanOS/DMAQuarantine.lean",
     "LeanOS/DMAQuarantineCorpus.lean",
+    "LeanOS/DeviceCapability.lean",
     "LeanOS/DeviceProgramConfinement.lean",
     "LeanOS/DirectPortContainment.lean",
     "LeanOS/DirectPortIO.lean",
