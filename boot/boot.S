@@ -1360,6 +1360,10 @@ isr80_cld:
     je 8f
     cmp $0xcafe, %rax
     je 9f
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+    cmp $0xa55a, %rax
+    je 10f
+#endif
     cmp $0xfeed, %rax
     jne 7f
     /* The scheduler selected fresh subject B.  Replace A's complete saved
@@ -1413,9 +1417,26 @@ isr80_cld:
     mov %rsp, %rdi
     mov $20, %ecx
     rep movsq
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+    /* Record A's continuation for its resume, and hand B exactly the two
+       payload words A passed to send (saved RBX, RCX) plus the delivery
+       flag, as the generic exchange (BlockingIPC.keyCycle) delivers them. */
+    mov saved_context_a+120(%rip), %rax
+    mov %rax, saved_context_a_original_rip(%rip)
+    mov saved_context_a+136(%rip), %rax
+    mov %rax, saved_context_a_original_flags(%rip)
+    mov saved_context_a+144(%rip), %rax
+    mov %rax, saved_context_a_original_rsp(%rip)
+    mov saved_context_a+104(%rip), %rax
+    mov %rax, 112(%rsp)
+    mov saved_context_a+96(%rip), %rax
+    mov %rax, 104(%rsp)
+    movq $1, 96(%rsp)
+#else
     movq $0x4c45414e, 112(%rsp)
     movq $0x4f53, 104(%rsp)
     movq $1, 96(%rsp)
+#endif
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
     mov %rsp, %rdi
@@ -1424,6 +1445,33 @@ isr80_cld:
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+10: /* B blocked again: preserve its continuation and resume A after its
+       send, which returns 0. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
+    lea saved_context_a(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $0, 112(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+#endif
 .global isr14
 isr14:
 .global isr14_clac
@@ -1709,6 +1757,22 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+    /* Driver subject: ask the source for the next event (0 = end) and send
+       each one to B over endpoint 10. */
+1:  mov $60, %rax
+    int $0x80
+    test %rax, %rax
+    jz 2f
+    mov %rax, %rbx
+    xor %ecx, %ecx
+    mov $8, %rax
+    int $0x80
+    jmp 1b
+2:  mov $61, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
     /* Fresh-owner probe: this is a real CPL3 load through A/page 7 after B's
        stale access faulted.  The syscall reports the independently observed
@@ -2154,6 +2218,17 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+    /* Echo subject: block on endpoint 10; when woken, RAX/RBX hold the two
+       payload words; echo them back (syscall 9) and block again. */
+1:  mov $7, %rax
+    int $0x80
+    mov %rbx, %rcx
+    mov %rax, %rbx
+    mov $9, %rax
+    int $0x80
+    jmp 1b
+#endif
 #ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
     /* Stale-translation probe: read the canary at the mutable mapping,
        then request the unmap syscall.  After the kernel invalidates

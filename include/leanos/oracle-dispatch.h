@@ -5,6 +5,8 @@
 
 #define LEANOS_ORACLE_CALL_2(symbol, vector) \
     symbol((vector)->words[0], (vector)->words[1])
+#define LEANOS_ORACLE_CALL_3(symbol, vector) \
+    symbol((vector)->words[0], (vector)->words[1], (vector)->words[2])
 #define LEANOS_ORACLE_CALL_4(symbol, vector) \
     symbol((vector)->words[0], (vector)->words[1], \
            (vector)->words[2], (vector)->words[3])
@@ -41,5 +43,6 @@ leanos_oracle_dispatch(const struct oracle_vector *vector) {
 #undef LEANOS_ORACLE_CALL_5
 #undef LEANOS_ORACLE_CALL_4
 #undef LEANOS_ORACLE_CALL_2
+#undef LEANOS_ORACLE_CALL_3
 
 #endif

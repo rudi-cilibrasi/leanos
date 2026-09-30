@@ -71,7 +71,8 @@ def adapters : List AdapterSpec := [
   adapter "StaleTranslation.scalar" 16 "leanos_stale_translation_demo" 6,
   adapter "Interrupt.pageFault" 17 "leanos_page_fault_demo" 5,
   adapter "CompositeDispatcher.stateful" 18 "leanos_composite_dispatch" 6,
-  adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6]
+  adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6,
+  adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -114,6 +115,10 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
     expected := if 10 ≤ operation then
       BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
     else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+
+private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
+  { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
+    expected := BlockingIPC.blockingIpcEvent step operation caller }
 
 private def capabilityReuse (id : String) (phase caller word word0 word1 : UInt64) : Vector :=
   { id, adapter := "CapabilityReuse.scalar", words := [phase, caller, word, word0, word1],
@@ -388,6 +393,17 @@ private def bootPhase (id : String)
     words := [phase, operation, detail, latchWord, bootPhaseBusiness],
     expected := BootInterruptPhase.bootPhaseModelExpected phase operation detail
       latchWord bootPhaseBusiness }
+
+/-- The repeating event-exchange witness: its four accepted edges and three
+refusals (wrong caller, wrong step, a step outside 0–3). -/
+def blockingIpcEventVectors : List Vector := [
+  blockingIPCEvent "blocking-ipc-event.block-b" 0 1 2,
+  blockingIPCEvent "blocking-ipc-event.send-wake-b" 1 2 1,
+  blockingIPCEvent "blocking-ipc-event.dispatch-b" 2 3 1,
+  blockingIPCEvent "blocking-ipc-event.deliver-b" 3 4 2,
+  blockingIPCEvent "blocking-ipc-event.wrong-caller" 1 2 2,
+  blockingIPCEvent "blocking-ipc-event.wrong-step" 0 2 1,
+  blockingIPCEvent "blocking-ipc-event.out-of-cycle" 4 1 2]
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -730,9 +746,9 @@ def vectors : List Vector := [
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
-    inFlightRevocationNegativeVectors
+    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors
 
-theorem corpus_shape : vectors.length = 412 := by decide
+theorem corpus_shape : vectors.length = 419 := by decide
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -757,7 +773,8 @@ repeated-revocation and stale-offer denials, the switch to subject 2, the
 canceled receipt denial, same-slot replacement, canceled-handle denial, and
 the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
-    vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors := by
+    vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
+      blockingIpcEventVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

@@ -57,3 +57,5 @@ These theorems cover the kernel's blocking message system: a program that asks f
 - `keyStream_delivers` — Repeating the exchange delivers any sequence of messages exactly and in order, one exchange per message, and ends where it started.
 - `bootInitial_cycleReady` — The reviewed boot state meets those conditions.
 - `boot_key_stream` — So the boot trace can carry an unlimited stream of arbitrary messages — such as key presses from a keyboard driver — each delivered exactly and in order.
+- `blockingIpcEvent_agrees_demo` — The kernel's per-event exchange witness gives exactly the same answers as the checked boot-trace witness at each of the four exchange steps, so the running kernel's repeating message exchange follows the proven model.
+- `blockingIpcEvent_accepts_only_edges` — The per-event witness accepts only the four exchange steps, each from the right program; any other request, caller or step is refused.
