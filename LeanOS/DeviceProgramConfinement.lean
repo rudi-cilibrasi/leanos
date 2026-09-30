@@ -320,6 +320,21 @@ theorem qotomAhciPolicy_bits :
     qotomAhciPolicy.cfgRead = 0x3 ∧ qotomAhciPolicy.cfgWrite = 0 := by
   decide
 
+/-- QEMU `qemu-xhci` at 00:03.0 in the q35 device lab (16 KiB BAR0):
+identity and command reads, no configuration writes, Memory Space and Bus
+Master, DMA into scratch; CRCR, DCBAAP, ERSTBA and ERDP in qemu-xhci's
+layout (CAPLENGTH 0x40, runtime base 0x1000) are address sinks. -/
+def q35XhciPolicy : Policy where
+  window := 0x4000
+  cfgRead := cfgBits [0x00, 0x04]
+  cfgWrite := 0
+  cmdClear := 0xFFFF0000
+  cmdSet := 0x6
+  dma := true
+  addrSinks := [0x58, 0x70, 0x1030, 0x1038]
+
+theorem q35XhciPolicy_sane : q35XhciPolicy.sane = true := by decide
+
 theorem qotomBcm43224Policy_sane : qotomBcm43224Policy.sane = true := by decide
 theorem qotomXhciPolicy_sane : qotomXhciPolicy.sane = true := by decide
 

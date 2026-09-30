@@ -18,12 +18,46 @@ namespace LeanOS.Usb.Xhci
 
 open LeanOS.Wifi.Bytecode
 
-def target : Target :=
-  { bus := 0, dev := 20, fn := 0, id := 0x0f358086, windowBytes := 0x10000 }
+/-- The controller-specific facts a program is generated for. Every
+definition below that touches a register takes the layout as an instance
+argument, so the same driver source is generated for the Qotom's Bay Trail
+controller (`bayTrail`) and for QEMU's `qemu-xhci` (`qemu`). -/
+class Layout where
+  target : Target
+  /-- CAPLENGTH: the operational registers' offset. -/
+  capLength : UInt32
+  /-- RTSOFF: the runtime registers' offset. -/
+  runtime : UInt32
+  /-- DBOFF: the doorbell array's offset. -/
+  doorbells : UInt32
+  /-- Bay Trail port routing through configuration space (XUSB2PR,
+  USB3_PSSEN); other controllers route by themselves. -/
+  routing : Bool
+
+/-- The Qotom's Intel Bay Trail controller (8086:0f35 at 00:14.0). -/
+@[instance_reducible] def bayTrail : Layout where
+  target := { bus := 0, dev := 20, fn := 0, id := 0x0f358086, windowBytes := 0x10000 }
+  capLength := 0x80
+  runtime := 0x2000
+  doorbells := 0x3000
+  routing := true
+
+/-- QEMU's `qemu-xhci` (1b36:000d; the q35 device lab places it at 00:03.0):
+CAPLENGTH 0x40, runtime registers at 0x1000, doorbells at 0x2000, 16 KiB. -/
+@[instance_reducible] def qemu : Layout where
+  target := { bus := 0, dev := 3, fn := 0, id := 0x000d1b36, windowBytes := 0x4000 }
+  capLength := 0x40
+  runtime := 0x1000
+  doorbells := 0x2000
+  routing := false
+
+variable [Layout]
+
+def target : Target := Layout.target
 
 /-! ## Register layout -/
 
-def capLength : UInt32 := 0x80
+def capLength : UInt32 := Layout.capLength
 def op (o : UInt32) : UInt32 := capLength + o
 def usbCmd : UInt32 := op 0x00
 def usbSts : UInt32 := op 0x04
@@ -33,7 +67,7 @@ def dcbaapLo : UInt32 := op 0x30
 def dcbaapHi : UInt32 := op 0x34
 def config : UInt32 := op 0x38
 def portsc (port : UInt32) : UInt32 := op (0x400 + 0x10 * (port - 1))
-def runtime : UInt32 := 0x2000
+def runtime : UInt32 := Layout.runtime
 def mfindex : UInt32 := runtime
 def ir0 (o : UInt32) : UInt32 := runtime + 0x20 + o
 def iman : UInt32 := ir0 0x00
@@ -42,7 +76,7 @@ def erstbaLo : UInt32 := ir0 0x10
 def erstbaHi : UInt32 := ir0 0x14
 def erdpLo : UInt32 := ir0 0x18
 def erdpHi : UInt32 := ir0 0x1C
-def doorbell (slot : UInt32) : UInt32 := 0x3000 + 4 * slot
+def doorbell (slot : UInt32) : UInt32 := Layout.doorbells + 4 * slot
 
 def cmdRun : UInt32 := 0x1
 def cmdReset : UInt32 := 0x2
@@ -316,15 +350,20 @@ def bringUp : ProgM Unit := do
   emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
   -- Bay Trail port routing: route every routable USB 2 port to xHCI
   -- (XUSB2PR := XUSB2PRM) and enable SuperSpeed (USB3_PSSEN := USB3PRM).
-  emit (.cfgRead32 0 0xD4)
-  emit (.cfgWrite32 0xD0 (.reg 0))
-  emit (.cfgRead32 0 0xDC)
-  emit (.cfgWrite32 0xD8 (.reg 0))
-  -- BIOS handoff. Walk the extended capability list (HCCPARAMS1.xECP =
-  -- 0x2000 dwords → 0x8000; next pointer in bits 8–15, in dwords) to the USB
-  -- legacy support capability (ID 1; 0x8460 on this controller), set HC OS
-  -- Owned (bit 24) and wait for HC BIOS Owned (bit 16) to clear.
-  li 5 0x8000
+  if Layout.routing then
+    emit (.cfgRead32 0 0xD4)
+    emit (.cfgWrite32 0xD0 (.reg 0))
+    emit (.cfgRead32 0 0xDC)
+    emit (.cfgWrite32 0xD8 (.reg 0))
+  -- BIOS handoff. Walk the extended capability list (HCCPARAMS1.xECP in
+  -- dwords — 0x2000 → 0x8000 on Bay Trail; next pointer in bits 8–15, in
+  -- dwords) to the USB legacy support capability (ID 1; 0x8460 on Bay
+  -- Trail; absent on qemu-xhci), set HC OS Owned (bit 24) and wait for HC
+  -- BIOS Owned (bit 16) to clear.
+  r32 5 0x10
+  shri 5 16
+  shli 5 2
+  emit (.branch .eq 5 (.imm 0) noLegacy)
   li 6 32                                      -- bounded walk
   let walk ← newLabel
   let found ← newLabel
@@ -338,7 +377,7 @@ def bringUp : ProgM Unit := do
   emit (.branch .eq 0 (.imm 0) noLegacy)
   shli 0 2
   emit (.alu .add 5 (.reg 0))
-  emit (.branch .geu 5 (.imm 0xFFF0) noLegacy)
+  emit (.branch .geu 5 (.imm (target.windowBytes - 4)) noLegacy)
   emit (.alu .sub 6 (.imm 1))
   emit (.branch .ne 6 (.imm 0) walk)
   emit (.jump noLegacy)

@@ -21,6 +21,7 @@ LeanOS drives its WiFi card and USB keyboard controller with small programs writ
 - `qotomAhciPolicy_bits` — The disk controller fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.
 - `qotomRtl8168Policy_sane` — The wired network card's fence on the lab machine is a sensible fence.
 - `qotomRtl8168Policy_bits` — The wired network card fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.
+- `q35XhciPolicy_sane` — The fence for the emulated USB controller used in the QEMU test lab is a sensible fence.
 - `qotomBcm43224Policy_sane` — The WiFi card's fence on the lab machine is a sensible fence.
 - `qotomXhciPolicy_sane` — The USB controller's fence on the lab machine is a sensible fence.
 - `qotomBcm43224Policy_no_bus_master` — The WiFi driver can never switch on the card's ability to reach main memory by itself; it moves every frame through the card's registers instead.

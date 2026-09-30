@@ -19,7 +19,10 @@ open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Driver
 /-- The admitted policy for a program's target, if the target is admitted. -/
 def admittedPolicy (p : Program) : Option Policy :=
   if p.effTarget == bcm43224Target then some LeanOS.DeviceProgramConfinement.qotomBcm43224Policy
-  else if p.effTarget == LeanOS.Usb.Xhci.target then some LeanOS.DeviceProgramConfinement.qotomXhciPolicy
+  else if p.effTarget == @LeanOS.Usb.Xhci.target LeanOS.Usb.Xhci.bayTrail then
+    some LeanOS.DeviceProgramConfinement.qotomXhciPolicy
+  else if p.effTarget == @LeanOS.Usb.Xhci.target LeanOS.Usb.Xhci.qemu then
+    some LeanOS.DeviceProgramConfinement.q35XhciPolicy
   else if p.effTarget == LeanOS.Storage.Ahci.target then
     some LeanOS.DeviceProgramConfinement.qotomAhciPolicy
   else if p.effTarget == LeanOS.Net.Rtl8168.target then
@@ -124,7 +127,14 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("kbd", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
-      return LeanOS.Usb.Keyboard.program secs.toUInt32 idle.toUInt32),
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32 idle.toUInt32 false),
+   ("kbd-q35-service", do
+      let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 10
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 0 true),
+   ("kbd-q35", do
+      let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 10
+      let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 idle.toUInt32 false),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir
