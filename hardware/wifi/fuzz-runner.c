@@ -20,6 +20,11 @@ static uint16_t r16(void *c, uint32_t o) {
     struct model *m = c; m->n++;
     uint32_t v = mix(m->n, o ^ 0x3c3c3c3cu); m->acc = mix(m->acc, v ^ 2u); return (uint16_t)v;
 }
+static uint8_t r8(void *c, uint32_t o) {
+    struct model *m = c; m->n++;
+    uint32_t v = mix(m->n, o ^ 0x69696969u); m->acc = mix(m->acc, v ^ 7u); return (uint8_t)v;
+}
+static void w8(void *c, uint32_t o, uint8_t v) { struct model *m = c; m->acc = mix(mix(m->acc, o ^ 8u), v); }
 static void w32(void *c, uint32_t o, uint32_t v) { struct model *m = c; m->acc = mix(mix(m->acc, o ^ 3u), v); }
 static void w16(void *c, uint32_t o, uint16_t v) { struct model *m = c; m->acc = mix(mix(m->acc, o ^ 4u), v); }
 static uint32_t cr(void *c, uint32_t o) {
@@ -39,7 +44,7 @@ int main(int argc, char **argv) {
         size_t len = fread(image, 1, sizeof image, f);
         fclose(f);
         struct model m = { 0, 0, 0 };
-        struct wifi_hooks h = { r32, r16, w32, w16, cr, cw, dl, pr, &m, ph };
+        struct wifi_hooks h = { r32, r16, w32, w16, cr, cw, dl, pr, &m, ph, r8, w8 };
         static struct wifi_vm vm;
         uint32_t code = 0, yields = 0;
         int s = wifi_start(&vm, image, (uint32_t)len);

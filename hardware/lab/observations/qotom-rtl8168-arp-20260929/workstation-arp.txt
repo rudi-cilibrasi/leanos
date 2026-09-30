@@ -1,0 +1,1 @@
+14:45:49.329199 00:0e:c4:cc:a2:94 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 74: Request who-has 192.168.6.1 tell 0.0.0.0, length 60

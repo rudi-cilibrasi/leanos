@@ -36,6 +36,12 @@ structure Device (σ : Type) where
     cfgWrite32 s off ((v &&& ~~~clr) ||| set)
   /-- Bus address of scratch byte `off` (`physAddr`). -/
   phys : σ → UInt32 → UInt32 × σ := fun s off => (simPhysBase + off, s)
+  /-- 8-bit MMIO; models without byte registers default to the containing
+  dword (read) and drop the write. -/
+  read8 : σ → UInt32 → UInt8 × σ := fun s off =>
+    let (v, s) := read32 s (off &&& ~~~3)
+    ((v >>> (8 * (off &&& 3))).toUInt8, s)
+  write8 : σ → UInt32 → UInt8 → σ := fun s _ _ => s
 
 /-- A device that reads as zero and ignores writes. -/
 def Device.none : Device Unit where
@@ -270,6 +276,16 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if !cfgOffOk w.a then bad "bad-offset" else
     if !(p.policy.map (·.updateOk w.a w.b w.c)).getD true then bad "policy" else
     .next { m with dev := d.cfgUpdate32 m.dev w.a w.b w.c }
+  | 28 =>
+    if regBad w.a then bad "bad-opcode" else
+    if !mmioOk window w.b 1 then bad "bad-offset" else
+    let (v, s) := d.read8 m.dev w.b
+    .next { (m.setReg w.a v.toUInt32) with dev := s }
+  | 29 =>
+    if srcBad w.b then bad "bad-opcode" else
+    if !mmioOk window w.a 1 then bad "bad-offset" else
+    if sinkT w.a then bad "policy" else
+    .next { m with dev := d.write8 m.dev w.a (val w.b).toUInt8 }
   | 27 =>
     if srcBad w.a then bad "bad-opcode" else
     .stop (.yield (val w.a)) m

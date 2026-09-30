@@ -2,6 +2,7 @@ import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Storage.Ahci
+import LeanOS.Net.Rtl8168
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
@@ -21,6 +22,8 @@ def admittedPolicy (p : Program) : Option Policy :=
   else if p.effTarget == LeanOS.Usb.Xhci.target then some LeanOS.DeviceProgramConfinement.qotomXhciPolicy
   else if p.effTarget == LeanOS.Storage.Ahci.target then
     some LeanOS.DeviceProgramConfinement.qotomAhciPolicy
+  else if p.effTarget == LeanOS.Net.Rtl8168.target then
+    some LeanOS.DeviceProgramConfinement.qotomRtl8168Policy
   else none
 
 /-- Check `p` against its target's policy and attach the policy. -/
@@ -117,6 +120,7 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
              else if full then LeanOS.Wifi.Connect.connectDhcp fw cfg6 bssid pmk
              else connect fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
    ("ahci-identify", pure LeanOS.Storage.Ahci.program),
+   ("rtl8168-arp", pure LeanOS.Net.Rtl8168.program),
    ("kbd", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0

@@ -5601,6 +5601,18 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.qotomRtl8168Policy_bits",
+      "display": "qotomRtl8168Policy_bits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.qotomRtl8168Policy_sane",
+      "display": "qotomRtl8168Policy_sane",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.qotomXhciPolicy_bits",
       "display": "qotomXhciPolicy_bits",
       "kind": "theorem"

@@ -56,6 +56,8 @@ def wordOk (π : Policy) (w : Word4) : Bool :=
   | 24 => mmioOk π.window w.a 4 && !π.sinkTouch w.a
   | 25 => π.dma
   | 26 => π.updateOk w.a w.b w.c
+  | 28 => mmioOk π.window w.b 1
+  | 29 => mmioOk π.window w.a 1 && !π.sinkTouch w.a
   | _ => true
 
 /-- A program is admissible under `π` when its target window fits the
@@ -93,6 +95,8 @@ def guard {σ} (π : Policy) (d : Device σ) : Device (σ × Bool) where
   cfgWrite32 s off v := (d.cfgWrite32 s.1 off v, s.2 || !cfgAllowed π.cfgWrite off)
   cfgUpdate32 s off c t := (d.cfgUpdate32 s.1 off c t, s.2 || !π.updateOk off c t)
   phys s off := let r := d.phys s.1 off; (r.1, (r.2, s.2 || !π.dma))
+  read8 s off := let r := d.read8 s.1 off; (r.1, (r.2, s.2 || !mmioOk π.window off 1))
+  write8 s off v := (d.write8 s.1 off v, s.2 || !mmioOk π.window off 1 || π.sinkTouch off)
 
 /-- The machine a step leaves behind, whether it continues or stops. -/
 def _root_.LeanOS.Wifi.Sim.Step.machine {σ} : Step σ → Machine σ
@@ -291,6 +295,26 @@ def qotomAhciPolicy : Policy where
   addrSinks := [0x180, 0x188]
 
 theorem qotomAhciPolicy_sane : qotomAhciPolicy.sane = true := by decide
+
+/-- Realtek RTL8168E-VL at 01:00.0 (BAR2, 4 KiB): identity and command reads,
+no configuration writes, Memory Space and Bus Master (and clearing Bus
+Master), DMA into scratch. The transmit and high-priority ring bases (TNPDS
+0x20, THPDS 0x28), the receive ring base (RDSAR 0xE4) and the tally-counter
+dump address (DTCCR 0x10) are address sinks. -/
+def qotomRtl8168Policy : Policy where
+  window := 0x1000
+  cfgRead := cfgBits [0x00, 0x04]
+  cfgWrite := 0
+  cmdClear := 0xFFFF0004
+  cmdSet := 0x6
+  dma := true
+  addrSinks := [0x10, 0x20, 0x28, 0xE4]
+
+theorem qotomRtl8168Policy_sane : qotomRtl8168Policy.sane = true := by decide
+
+theorem qotomRtl8168Policy_bits :
+    qotomRtl8168Policy.cfgRead = 0x3 ∧ qotomRtl8168Policy.cfgWrite = 0 := by
+  decide
 
 theorem qotomAhciPolicy_bits :
     qotomAhciPolicy.cfgRead = 0x3 ∧ qotomAhciPolicy.cfgWrite = 0 := by

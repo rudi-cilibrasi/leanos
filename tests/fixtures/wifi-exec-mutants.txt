@@ -22,3 +22,5 @@ if (base == 24) POLICY(NO_SINK(a));@
 POLICY(NO_SINK(a));@
 *code = imm ? a : r[a]; st = WIFI_YIELD; goto out; }@*code = a; st = WIFI_YIELD; goto out; }
     vm->pc = pc;@    vm->pc = pc - (st == WIFI_YIELD);
+case 28: REG(a); OFF(b, 1); r[a] = WH_R8(b); break;@case 28: REG(a); OFF(b, 2); r[a] = WH_R8(b); break;
+OFF(a, 1); POLICY(NO_SINK(a)); WH_W8(a, (uint8_t)v); break; }@OFF(a, 1); WH_W8(a, (uint8_t)v); break; }
