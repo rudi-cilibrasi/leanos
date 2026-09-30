@@ -281,6 +281,14 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
         dword_callers.add("vtd_boot_remap")
     if "inject_dma_bus_master_reenable" in functions:
         command_callers.add("inject_dma_bus_master_reenable")
+    # The device-service image (issue #449) assigns q35 xHCI after VT-d
+    # activation and lets its admitted program reach configuration space and
+    # the ACPI PM timer only through three noinline executor hooks.
+    device_service = "device_service_assign" in functions
+    if device_service:
+        command_callers.add("device_service_assign")
+        dword_callers |= {"device_service_assign", "wifi_hook_cfg_read32",
+                          "device_service_observe_command"}
     expected = {
         "out16": {"pci_config_command"},
         "out32": {"pci_config_command", "pci_config_dword"},
@@ -295,6 +303,13 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
         expected["inject_dma_bus_master_reenable"] = {
             "validate_user_return",
         }
+    if device_service:
+        expected["out32"] = {"pci_config_command", "pci_config_dword",
+                             "pci_config_write_dword"}
+        expected["in32"] = {"pci_config_dword", "wifi_hook_delay_us"}
+        expected["pci_config_write_dword"] = {"device_service_assign",
+                                              "wifi_hook_cfg_write32"}
+        expected["device_service_assign"] = {"vtd_boot_remap"}
     for callee, expected_callers in expected.items():
         observed = callers.get(callee, set())
         if observed != expected_callers:
@@ -520,9 +535,15 @@ def validate_source(source: Path, byte_manifest: Path) -> None:
         "static __attribute__((noinline, noipa)) void out16(uint16_t port, uint16_t value) {": 1,
         "static __attribute__((noinline, noipa)) void out32(uint16_t port, uint32_t value) {": 1,
         "static __attribute__((noinline, noipa)) uint32_t in32(uint16_t port) {": 1,
-        "out32(PCI_CONFIG_ADDRESS, address);": 2,
+        "out32(PCI_CONFIG_ADDRESS, address);": 3,
         "return in32(PCI_CONFIG_DATA);": 1,
         "out16(PCI_CONFIG_DATA, command);": 1,
+        # Device-service image only (issue #449): the assigned xHCI's
+        # configuration writes, admitted by its program policy, and the ICH9
+        # ACPI PM timer the executor's delay hook reads.
+        "out32(PCI_CONFIG_DATA, value);": 1,
+        "uint32_t last = in32(DEVICE_SERVICE_PM_TIMER) & 0xffffffu;": 1,
+        "uint32_t now = in32(DEVICE_SERVICE_PM_TIMER) & 0xffffffu;": 1,
     })
     observed_invocations = Counter(
         line.strip() for line in text.splitlines()

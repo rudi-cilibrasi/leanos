@@ -48,11 +48,13 @@ SECTIONS
     . += 4K;
     __vtd_mmio_window_end = .;
   }
-  /* Assigned-image-only virtual window for q35 EDU's pinned BAR.  Ordinary
-     images retain the backing linker page as identity-mapped kernel data. */
+  /* Assigned-image-only virtual window for the assigned device's pinned BAR
+     (q35 EDU, 4 KiB; the device-service image's xHCI, which defines
+     leanos_assigned_window_bytes as 16 KiB).  Ordinary images retain the
+     backing linker page as identity-mapped kernel data. */
   .edu_mmio_window (NOLOAD) : ALIGN(4K) {
     __edu_mmio_window_start = .;
-    . += 4K;
+    . += DEFINED(leanos_assigned_window_bytes) ? leanos_assigned_window_bytes : 4K;
     __edu_mmio_window_end = .;
   }
   .bss : ALIGN(4K) { *(COMMON) *(.bss .bss.*) }

@@ -31,6 +31,9 @@ structure Layout where
   assignedReadBufferStart : Nat
   assignedWriteBufferStart : Nat
   assignedGuardAfterStart : Nat
+  /-- Device-service images only: the executor scratch whose first pages form
+  the xHCI DMA window; `none` for every other image. -/
+  serviceDmaStart : Option Nat := none
   deriving Repr
 
 def expectedArgumentCount : Nat := 12
@@ -41,8 +44,8 @@ def parseNat (value : String) : Except String Nat :=
   | none => .error s!"invalid decimal address: {value}"
 
 def parseLayout (args : List String) : Except String Layout := do
-  if args.length != expectedArgumentCount then
-    throw s!"expected {expectedArgumentCount} decimal addresses, got {args.length}"
+  if args.length != expectedArgumentCount && args.length != expectedArgumentCount + 1 then
+    throw s!"expected {expectedArgumentCount} decimal addresses (+1 for a device service), got {args.length}"
   let values ← args.mapM parseNat
   let valueAt (index : Nat) := values[index]?.getD 0
   pure {
@@ -53,7 +56,8 @@ def parseLayout (args : List String) : Except String Layout := do
     assignedGuardBeforeStart := valueAt 8,
     assignedReadBufferStart := valueAt 9,
     assignedWriteBufferStart := valueAt 10,
-    assignedGuardAfterStart := valueAt 11 }
+    assignedGuardAfterStart := valueAt 11,
+    serviceDmaStart := if args.length > expectedArgumentCount then some (valueAt 12) else none }
 
 def frameOf (address : Nat) : Nat := address / pageBytes
 
@@ -239,6 +243,61 @@ def emitArray (name : String) (entries : List Nat) : String :=
 def emitConstant (name : String) (value : Nat) : String :=
   "#define " ++ name ++ " " ++ toString value ++ "ULL"
 
+/-! The device-service projection: the single read/write mapping of
+`deviceServiceState` scaled to hardware pages, starting at the executor
+scratch. Only these leaves are present; the rest of scratch, and every other
+page, stays unmapped for the controller. -/
+
+def serviceMapping : IOMMU.Mapping := deviceServiceState.core.mappings.head!
+
+def servicePages : Nat := serviceMapping.length / IOMMU.pageSize
+
+def serviceAuthorityValid : Bool :=
+  deviceServiceState.core.mappings.length == 1 &&
+    deviceServiceState.core.assignments.length == 1 &&
+    serviceMapping.iova == 4 * IOMMU.pageSize && serviceMapping.frameOffset == 0 &&
+    serviceMapping.permission == IOMMU.readWrite && servicePages == 4 &&
+    validateDeviceServiceTransfer 0 1 serviceMapping.iova serviceMapping.length 1 == 0 &&
+    validateDeviceServiceTransfer 0 1 serviceMapping.iova serviceMapping.length 2 == 0 &&
+    validateDeviceServiceTransfer 0 1 0 1 1 == 4 &&
+    validateDeviceServiceTransfer 0 1 (serviceMapping.iova + serviceMapping.length) 1 1 == 4
+
+/-- The first hardware page of the window: IOVA 16 KiB, leaf index 4. -/
+def serviceFirstPage : Nat := hardwareIova serviceMapping.iova / pageBytes
+
+example : serviceAuthorityValid = true := by native_decide
+
+def serviceSecondLevelTableWords (dmaStart : Nat) : List Nat :=
+  (List.range 512).map fun index =>
+    if serviceFirstPage ≤ index && index < serviceFirstPage + servicePages then
+      dmaStart + (index - serviceFirstPage) * pageBytes +
+        permissionBits serviceMapping.permission
+    else 0
+
+/-- The window is page-aligned kernel memory clear of both table families. -/
+def serviceLayoutValid (layout : Layout) (dmaStart : Nat) : Bool :=
+  dmaStart != 0 && dmaStart % pageBytes == 0 &&
+    (dmaStart + servicePages * pageBytes ≤ layout.rootTableStart ||
+      layout.assignedGuardAfterStart + pageBytes ≤ dmaStart) &&
+    (dmaStart + servicePages * pageBytes ≤ layout.cpuRootA ||
+      layout.cpuTableEnd ≤ dmaStart)
+
+def emitService (layout : Layout) : Except String (List String) :=
+  match layout.serviceDmaStart with
+  | none => pure []
+  | some dmaStart => do
+    if !serviceAuthorityValid then
+      throw "device-service model authority is not the reviewed read/write window"
+    if !serviceLayoutValid layout dmaStart then
+      throw "device-service DMA window is not page-aligned kernel memory clear of the tables"
+    pure
+      [emitConstant "LEANOS_VTD_SERVICE_TOPOLOGY" deviceServiceTopologyVersion.toNat,
+       emitConstant "LEANOS_VTD_SERVICE_DMA_FRAME" (frameOf dmaStart),
+       emitConstant "LEANOS_VTD_SERVICE_DMA_PAGES" servicePages,
+       emitConstant "LEANOS_VTD_SERVICE_IOVA" (hardwareIova serviceMapping.iova),
+       emitArray "leanos_vtd_service_second_level_table"
+         (serviceSecondLevelTableWords dmaStart)]
+
 def emit (layout : Layout) : Except String String := do
   if !assignedTableLayoutValid layout then
     throw "linked VT-d assigned-table reservation is not contiguous and page-aligned"
@@ -246,11 +305,12 @@ def emit (layout : Layout) : Except String String := do
     throw "assigned EDU model authority is not the reviewed read/write projection"
   if !assignedHardwareProjectionValid layout then
     throw "assigned EDU hardware tables do not match the reviewed model projection"
+  let service ← emitService layout
   match compile (input layout) with
   | .error error => throw s!"canonical linked VT-d plan rejected: {repr error}"
   | .ok plan =>
     pure <| String.intercalate "\n"
-      ["/* Generated by the accepted LeanOS.VTdBootPlan; do not edit. */",
+      (["/* Generated by the accepted LeanOS.VTdBootPlan; do not edit. */",
        emitConstant "LEANOS_VTD_MMIO_BASE" mmioBase,
        emitConstant "LEANOS_VTD_PLAN_VERSION" planVersion.toNat,
        emitConstant "LEANOS_VTD_EXPECTED_VERSION" expectedVersionRegister.toNat,
@@ -327,7 +387,7 @@ def emit (layout : Layout) : Except String String := do
        emitArray "leanos_vtd_assigned_second_level_directory"
          (assignedSecondLevelDirectoryWords layout),
        emitArray "leanos_vtd_assigned_second_level_table"
-         (assignedSecondLevelTableWords layout)] ++ "\n"
+         (assignedSecondLevelTableWords layout)] ++ service) ++ "\n"
 
 end LeanOS.VTdBootPlanGenerator
 

@@ -220,3 +220,50 @@ leanos_q35_assigned_edu_command() {
   assigned_command+=(-device edu,bus=pcie.0,addr=0x2)
   leanos_validate_q35_assigned_edu_command "$command_name"
 }
+
+# The device-service scenario (issue #449) is its own construction contract:
+# qemu-xhci at 00:02.0 with a hub on root port 1 and a USB keyboard behind it,
+# appended after the unchanged production devices and bound to the QMP socket
+# the runner types through.
+readonly LEANOS_Q35_DEVICE_SERVICE_TOPOLOGY_VERSION=0001000800020004
+readonly -a LEANOS_Q35_DEVICE_SERVICE_DEVICES=(
+  -device qemu-xhci,id=xhci,bus=pcie.0,addr=0x2
+  -device usb-hub,id=hub,bus=xhci.0,port=1
+  -device usb-kbd,id=kbd0,bus=xhci.0,port=1.1
+)
+
+leanos_validate_q35_device_service_command() {
+  local command_name="$1"
+  local -n service_command="$command_name"
+  local count="${#service_command[@]}"
+  local tail=$((${#LEANOS_Q35_DEVICE_SERVICE_DEVICES[@]} + 2))
+  local -a production_command=()
+  local i
+
+  [[ $count -ge $tail && "${service_command[$((count - 2))]}" == -qmp &&
+     "${service_command[$((count - 1))]}" == unix:*,server=on,wait=off ]] || {
+    echo "error: device-service platform requires the runner's QMP socket last" >&2
+    return 1
+  }
+  for ((i = 0; i < ${#LEANOS_Q35_DEVICE_SERVICE_DEVICES[@]}; ++i)); do
+    [[ "${service_command[$((count - tail + i))]}" == \
+       "${LEANOS_Q35_DEVICE_SERVICE_DEVICES[$i]}" ]] || {
+      echo "error: device-service platform requires the pinned xHCI, hub and keyboard" >&2
+      return 1
+    }
+  done
+  production_command=("${service_command[@]:0:$((count - tail))}")
+  leanos_validate_q35_command production_command
+}
+
+leanos_q35_device_service_command() {
+  local command_name="$1"
+  local qmp_socket="$2"
+  shift 2
+
+  leanos_q35_command "$command_name" "$@"
+  local -n service_command="$command_name"
+  service_command+=("${LEANOS_Q35_DEVICE_SERVICE_DEVICES[@]}"
+    -qmp "unix:$qmp_socket,server=on,wait=off")
+  leanos_validate_q35_device_service_command "$command_name"
+}

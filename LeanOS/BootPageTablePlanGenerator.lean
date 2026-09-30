@@ -58,7 +58,9 @@ structure Layout where
   vtdWindowEnd : Nat
   eduWindowStart : Nat
   eduWindowEnd : Nat
-  assignedEdu : Bool
+  /-- 0: no assigned device; 1: q35 EDU (4 KiB BAR); 2: the device-service
+  image's q35 xHCI (16 KiB BAR). The window pages map the device's BAR. -/
+  assignedDevice : Nat
   vtdTableStart : Nat
   vtdTableEnd : Nat
 
@@ -92,12 +94,18 @@ def parseLayout (args : List String) : Except String Layout := do
     userBStackStart := valueAt 33, userBStackEnd := valueAt 34,
     vtdWindowStart := valueAt 35, vtdWindowEnd := valueAt 36,
     eduWindowStart := valueAt 37, eduWindowEnd := valueAt 38,
-    assignedEdu := valueAt 39 == 1,
+    assignedDevice := valueAt 39,
     vtdTableStart := valueAt 40, vtdTableEnd := valueAt 41 }
 
 def firstPage (address : Nat) : Nat := address / pageBytes
 def endPage (address : Nat) : Nat := (address + pageBytes - 1) / pageBytes
 def pageIn (page start stop : Nat) : Bool := firstPage start ≤ page && page < endPage stop
+
+/-- The pinned BAR each assigned device is placed at: EDU where SeaBIOS puts
+it, and the xHCI at the address the device-service kernel programs into its
+BAR0 before enabling memory decoding. -/
+def assignedBarBase (device : Nat) : Nat :=
+  if device == 2 then 0xFEBF0000 else 0xFEA00000
 
 structure PageClass where
   policy : PolicyRegion
@@ -121,7 +129,7 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
     some ⟨.kernelText, .supervisor⟩
   else if pageIn page layout.vtdWindowStart layout.vtdWindowEnd then
     some ⟨.mmioWindow, .supervisor⟩
-  else if layout.assignedEdu && pageIn page layout.eduWindowStart layout.eduWindowEnd then
+  else if layout.assignedDevice != 0 && pageIn page layout.eduWindowStart layout.eduWindowEnd then
     some ⟨.mmioWindow, .supervisor⟩
   else if pageIn page layout.vtdTableStart layout.vtdTableEnd then
     some ⟨.remappingTables, .supervisor⟩
@@ -141,7 +149,7 @@ def physicalStartAt (layout : Layout) (classification : PageClass)
   if classification.policy == .mmioWindow then
     if pageIn page layout.vtdWindowStart layout.vtdWindowEnd then
       VTdBootPlan.mmioBase + (page * pageBytes - layout.vtdWindowStart)
-    else 0xFEA00000 + (page * pageBytes - layout.eduWindowStart)
+    else assignedBarBase layout.assignedDevice + (page * pageBytes - layout.eduWindowStart)
   else page * pageBytes
 
 def regionAt (layout : Layout) (space : Space) (page : Nat) : Option Region :=

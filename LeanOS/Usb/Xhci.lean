@@ -399,8 +399,11 @@ def bringUp : ProgM Unit := do
   let noLegacy ← newLabel
   emit (.cfgRead32 0 0)
   print Tag.begin 0
-  -- Memory Space + Bus Master; zeros to the RW1C status half.
-  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
+  -- Memory Space only; zeros to the RW1C status half. Bus Master waits
+  -- until the controller is reset: firmware may leave it running with ring
+  -- pointers into its own memory, which an IOMMU (the q35 device service's
+  -- VT-d window) would fault.
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0002)
   -- Bay Trail port routing: route every routable USB 2 port to xHCI
   -- (XUSB2PR := XUSB2PRM) and enable SuperSpeed (USB3_PSSEN := USB3PRM).
   if Layout.routing then
@@ -471,6 +474,8 @@ def bringUp : ProgM Unit := do
   delay 1000
   poll32 usbCmd cmdReset 0 1000 100 Fail.resetStuck
   poll32 usbSts stsNotReady 0 1000 100 Fail.resetStuck
+  -- the reset controller holds no stale DMA pointers: Bus Master on
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
   w32 config maxSlots
   -- scratchpad buffers and DCBAA
   for i in [0:(Layout.scratchpads : Nat)] do

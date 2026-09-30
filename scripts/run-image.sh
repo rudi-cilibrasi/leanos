@@ -12,6 +12,7 @@ version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 fault_scenario=0
 stale_translation_scenario=0
+device_service_scenario=0
 extended_instruction=x87
 extended_vector=7
 if [[ "$scenario" == fast-entry-syscall ]]; then
@@ -43,6 +44,10 @@ elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
 elif [[ "$scenario" == ipc-stream ]]; then
   default_image="build/boot/leanos-${version}-x86_64-ipc-stream.iso"
+elif [[ "$scenario" == device-service ]]; then
+  device_service_scenario=1
+  expectation_q35_topology=device-service
+  default_image="build/boot/leanos-${version}-x86_64-device-service.iso"
 elif [[ "$scenario" == stale-translation-denial ]]; then
   stale_translation_scenario=1
   default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"
@@ -169,10 +174,31 @@ elif (( stale_translation_scenario )); then
 fi
 mkdir -p "$(dirname "$log")"; : > "$log"
 command=()
-leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+qmp_dir=
+if (( device_service_scenario )); then
+  # The keyboard behind the assigned xHCI is typed through QMP once the
+  # guest's device program reports it ready.
+  qmp_dir="$(mktemp -d)"
+  leanos_q35_device_service_command command "$qmp_dir/qmp.sock" \
+    "$qemu" "$memory_mib" "$log" "$image"
+else
+  leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+fi
 qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
 printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
+typist=
+if (( device_service_scenario )); then
+  ./scripts/type-device-service.py --timeout "$limit" \
+    --ready "${LEANOS_SERIAL_10_DEVICE} event=ready " \
+    "$log" "$qmp_dir/qmp.sock" &
+  typist=$!
+fi
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
+typist_status=0
+if [[ -n "$typist" ]]; then
+  set +e; wait "$typist"; typist_status=$?; set -e
+  rm -rf "$qmp_dir"
+fi
 expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
@@ -206,6 +232,7 @@ render_expectation "$expectation_template" > "$expected"
 if [[ $status -eq 124 || $status -eq 137 ]]; then echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2; exit 1; fi
 if [[ $status -eq 35 ]]; then echo "failure_class=guest-error: guest emitted failure signal" >&2; exit 1; fi
 if [[ $status -ne 33 ]]; then echo "failure_class=qemu-error: QEMU exit status $status (expected 33)" >&2; exit 1; fi
+if [[ $typist_status -ne 0 ]]; then echo "failure_class=device-service-input: QMP keyboard input was not delivered" >&2; exit 1; fi
 allocation_trace="$(awk "/^$(leanos_serial_family_re 7) /" "$log")"
 mapfile -t allocation_lines <<<"$allocation_trace"
 if [[ ${#allocation_lines[@]} -ne 6 ]] ||
@@ -242,6 +269,15 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
 done
 vtd_trace="$(awk "/^$(leanos_serial_family_re 21) /" "$log")"
 mapfile -t vtd_lines <<<"$vtd_trace"
+if (( device_service_scenario )); then
+  # The assigned xHCI adds exactly one assignment record before activation.
+  if [[ ${#vtd_lines[@]} -ne 5 ]] ||
+     [[ "${vtd_lines[3]}" != "${LEANOS_SERIAL_21_VTD_ASSIGN} bdf=0:2.0 requester=16 domain=0 tables=generated-readback bar=4273930240 window=16384 dma-iova=16384,32768 dma=scratch,0,16384,read-write capabilities=16777280 command=2 memory=enabled bus-master=program stage=post-translation result=PASS" ]]; then
+    echo "failure_class=vtd-evidence: exact device-service assignment evidence not observed" >&2
+    exit 1
+  fi
+  vtd_lines=("${vtd_lines[@]:0:3}" "${vtd_lines[4]}")
+fi
 vtd_root_frame=0
 vtd_context_frame=0
 if [[ ${#vtd_lines[@]} -ne 4 ]] ||
@@ -336,6 +372,12 @@ if [[ -n "${LEANOS_DUMP_EXPECTED_DIR:-}" ]]; then
   cp "$expected" "$LEANOS_DUMP_EXPECTED_DIR/$scenario.expected"
 fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
+if (( device_service_scenario )); then
+  # The assigned-device topology has its own inventory; the canonical
+  # deny-all DMA and VT-d snapshot writers do not describe it.
+  echo "LeanOS device-service scenario passed; typed keys crossed the blocking IPC; serial log: $log"
+  exit 0
+fi
 if ! ./scripts/write-dma-snapshot.py \
     --serial-log "$log" \
     --source-revision "$source_revision_file" \

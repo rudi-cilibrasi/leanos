@@ -205,6 +205,11 @@
       "kernel-ipc-stream": [
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-ipc-stream.h\""
+      ],
+      "kernel-device-service": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service.h\""
       ]
     },
     "boot_objects": {
@@ -447,6 +452,12 @@
         "definitions": []
       },
       "boot-ipc-stream": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_IPC_STREAM_SCENARIO=1"
+        ]
+      },
+      "boot-device-service": {
         "source": "boot/boot.S",
         "definitions": [
           "-DLEANOS_IPC_STREAM_SCENARIO=1"
@@ -753,6 +764,14 @@
         "final_link": true,
         "prelink_plan": "boot-page-plan-ipc-stream.h",
         "plan_equal_to": null
+      },
+      "leanos-device-service": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service.h",
+        "plan_equal_to": null
       }
     },
     "policy_fixtures": {
@@ -1055,6 +1074,13 @@
         "policy": {
           "key": "ipc-stream"
         }
+      },
+      "leanos-device-service": {
+        "iso": "leanos-@VERSION@-x86_64-device-service.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "device-service"
+        }
       }
     },
     "plan_checks": [
@@ -1314,6 +1340,13 @@
         "expected": "boot-page-plan-ipc-stream.h",
         "final": "boot-page-plan-ipc-stream.final.h",
         "description": "ipc-stream"
+      },
+      {
+        "image": "leanos-device-service",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service.h",
+        "final": "boot-page-plan-device-service.final.h",
+        "description": "device-service"
       }
     ],
     "disassemblies": [
@@ -2651,6 +2684,28 @@
         "elf": "leanos-ipc-stream.elf",
         "serial_log": "ipc-stream.serial.log",
         "scenario": "ipc-stream",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
+    },
+    "device-service": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/device-service.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "120",
+        "image": "leanos-@VERSION@-x86_64-device-service.iso",
+        "elf": "leanos-device-service.elf",
+        "serial_log": "device-service.serial.log",
+        "scenario": "device-service",
         "mode": "-",
         "reason": "-"
       },
