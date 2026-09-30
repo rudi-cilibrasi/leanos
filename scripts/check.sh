@@ -56,6 +56,8 @@ lake env lean tests/user-copy-prefix.lean
 lake env lean tests/user-copy-aliases.lean
 lake build leanos-kernel-root-return-replay
 .lake/build/bin/leanos-kernel-root-return-replay
+lake build leanos-wifi-tx
+.lake/build/bin/leanos-wifi-tx
 lake build leanos-wifi-vectors
 .lake/build/bin/leanos-wifi-vectors
 ./scripts/check-device-programs.sh

@@ -29,8 +29,9 @@ Development runs from FreeBSD userland with `hardware/wifi/fbsd-runner.c`
 (`/dev/mem`, `/dev/pci`); the same program image is spliced into the lab
 kernel with `scripts/build-qotom-recovery-lab.py --wifi-program` and installed
 by `hardware/wifi/install-lab.sh`. Hardware observations:
-`hardware/lab/observations/qotom-wifi-scan-20260926` and
-`qotom-wifi-connect-20260926`.
+`hardware/lab/observations/qotom-wifi-scan-20260926`,
+`qotom-wifi-connect-20260926`, `qotom-wifi-ping-20260926` and
+`qotom-wifi-calibrated-20260927`.
 
 ## Booting the image from the SSD
 
@@ -50,6 +51,27 @@ image in `/leanos/previous/`), then run
 `scripts/run-qotom-recovery-lab.py --image-on-ssd ...`.
 
 Program images for `connect` embed the network PMK (from `LEANOS_WIFI_PSK`)
-and must never be committed. Known gaps: calibrations are not ported, the
-PMU spur-avoid PLL update is replaced by `SPURAVOID_DISABLE`, the SNonce comes
-from timer jitter, and nothing beyond DHCP (ARP, IP traffic, rekeying) runs.
+and must never be committed.
+
+What runs beyond association: brcmsmac's full N-PHY calibration (RSSI, TX
+IQ/LO and RX IQ with the RC filter sweep; `calLevel := 3`, the Qotom default),
+DHCP, and a responder that answers ARP and ICMP echo for the leased address
+(`LeanOS/Wifi/Responder.lean`). Evidence:
+`hardware/lab/observations/qotom-wifi-ping-20260926` and
+`hardware/lab/observations/qotom-wifi-calibrated-20260927` (25/25 pings with
+calibration on).
+
+Known gaps:
+
+* The PMU spur-avoid PLL update (`bcma_pmu_spuravoid_pllupdate`) is not
+  ported; spur-avoid mode stays 0 on every channel (`SPURAVOID_DISABLE`,
+  `PhyCfg.spurAvoidDisable`).
+* The SNonce is hashed from timing jitter (TSF samples), a lab-grade source,
+  not a vetted RNG.
+* No group-key (GTK) rekeying: once the AP rotates its group key, broadcast
+  frames (including ARP requests) stop decrypting. There is no IP traffic
+  beyond ARP and ICMP echo (no UDP or TCP).
+* Calibration accuracy has no reference measurement, and an A/B from the
+  development runner showed no measurable link-quality change.
+* The driver runs in ring 0 of the lab kernel, outside the kernel's authority
+  model (tracked in #454).
