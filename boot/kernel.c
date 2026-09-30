@@ -3911,12 +3911,126 @@ static void frame_budget_retire_mapping(
 }
 #endif
 
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+/* Repeating blocking-IPC event exchange (ADR 0022, issue #449). Subject A
+   obtains events from its source (`ipc_stream_next_event`) and sends each one
+   to subject B over endpoint 10; B blocks, is woken with the payload copied
+   from A's send registers (boot.S), and echoes it back. Every accepted edge is
+   checked against the generated Lean witness `leanos_blocking_ipc_event`,
+   whose four edges repeat by `BlockingIPC.keyCycle_returns` and deliver any
+   payload exactly by `BlockingIPC.keyCycle_delivers`; the kernel additionally
+   checks that B echoes exactly the words A sent. */
+#define IPC_EVENT_WORD(event, phase, current, space, sender)                   \
+    ((uint64_t)(event) + (uint64_t)(phase) * 0x100u +                        \
+     (uint64_t)(current) * 0x10000u + (uint64_t)(space) * 0x100000000ull +   \
+     (uint64_t)(sender) * 0x1000000000000ull)
+#define IPC_STREAM_RESUME_A 0xa55au
+static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
+    uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
+static unsigned ipc_stream_step;          /* 0 block, 1 send, 3 deliver */
+static unsigned ipc_stream_started;       /* A has run at least once */
+static uint64_t ipc_stream_sent0, ipc_stream_sent1, ipc_stream_events;
+static const char ipc_stream_source[] = "lean ipc\n";
+static unsigned ipc_stream_source_at;
+
+static uint64_t ipc_stream_next_event(void) {
+    if (ipc_stream_source[ipc_stream_source_at] == 0) return 0;
+    return (uint8_t)ipc_stream_source[ipc_stream_source_at++];
+}
+
+static void ipc_stream_key_name(uint64_t key) {
+    if (key == '\n') serial_puts("enter");
+    else if (key == ' ') serial_puts("space");
+    else if (key > 0x20 && key < 0x7f) serial_putc((char)key);
+    else serial_u64(key);
+}
+
+static uint64_t ipc_stream_syscall(uint64_t number, uint64_t arg0, uint64_t arg1) {
+    if (number == 7 && current_subject == 2 && ipc_stream_step == 0) {
+        if (leanos_blocking_ipc_event(0, 1, 2) != IPC_EVENT_WORD(1, 1, 1, 1, 0))
+            fail("ipc-stream-model-block");
+        ipc_stream_step = 1;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 round=");
+        serial_u64(ipc_stream_events); serial_putc('\n');
+        if (!ipc_stream_started) {
+            ipc_stream_started = 1;
+            return 0xbeef;
+        }
+        return IPC_STREAM_RESUME_A;
+    }
+    if (number == 60 && current_subject == 1 && ipc_stream_step == 1)
+        return ipc_stream_next_event();
+    if (number == 8 && current_subject == 1 && ipc_stream_step == 1) {
+        if (leanos_blocking_ipc_event(1, 2, 1) != IPC_EVENT_WORD(2, 2, 1, 1, 0) ||
+            leanos_blocking_ipc_event(2, 3, 1) != IPC_EVENT_WORD(3, 3, 2, 2, 0))
+            fail("ipc-stream-model-send");
+        ipc_stream_sent0 = arg0;
+        ipc_stream_sent1 = arg1;
+        ipc_stream_step = 3;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=10 payload0=");
+        serial_u64(arg0); serial_puts(" payload1="); serial_u64(arg1);
+        serial_puts(" accepted=1\n");
+        return 0xcafe;
+    }
+    if (number == 9 && current_subject == 2 && ipc_stream_step == 3) {
+        if (leanos_blocking_ipc_event(3, 4, 2) != IPC_EVENT_WORD(4, 4, 2, 2, 1))
+            fail("ipc-stream-model-delivery");
+        if (arg0 != ipc_stream_sent0 || arg1 != ipc_stream_sent1)
+            fail("ipc-stream-payload");
+        ipc_stream_step = 0;
+        ipc_stream_events++;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 sender=1 exact=1 echo=");
+        ipc_stream_key_name(arg0); serial_putc('\n');
+        return 0;
+    }
+    if (number == 61 && current_subject == 1 && ipc_stream_step == 1) {
+        if (ipc_stream_events != sizeof ipc_stream_source - 1) fail("ipc-stream-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS events=");
+        serial_u64(ipc_stream_events);
+        serial_puts(" blocks="); serial_u64(ipc_stream_events + 1);
+        serial_puts(" deliveries="); serial_u64(ipc_stream_events); serial_putc('\n');
+        finish(0x10);
+    }
+    fail("ipc-stream-sequence");
+}
+
+static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
+                              uint64_t saved_owner) {
+    if (current_subject == 1 && ipc_stream_step == 1) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("ipc-stream-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        if (ipc_stream_events > 0)
+            check_original_frame(target, saved_context_a_original_rip,
+                saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=2\n");
+        return;
+    }
+    if (current_subject == 2 && ipc_stream_step == 3) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 1) fail("ipc-stream-switch-b-owner");
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 woken=1\n");
+        return;
+    }
+    fail("ipc-stream-switch");
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+    (void)arg2; (void)saved_flags;
+    return ipc_stream_syscall(number, arg0, arg1);
+#endif
 #ifdef LEANOS_CAPABILITY_TRANSFER_SCENARIO
     if (number >= 26 && number <= 30) {
         uint64_t cr3;
@@ -4685,6 +4799,10 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 }
 
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
+#ifdef LEANOS_IPC_STREAM_SCENARIO
+    ipc_stream_switch(target, target_owner, saved_owner);
+    return;
+#endif
     if (current_subject == 1 && blocking_ipc_step == 1) {
         check_selected_root_a();
         if (target_owner != 1 || saved_owner != 2) fail("blocking-ipc-switch-a-owner");

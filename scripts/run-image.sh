@@ -41,6 +41,8 @@ elif [[ "$scenario" == extended-state ]]; then
   default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+elif [[ "$scenario" == ipc-stream ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-ipc-stream.iso"
 elif [[ "$scenario" == stale-translation-denial ]]; then
   stale_translation_scenario=1
   default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"

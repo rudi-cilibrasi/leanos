@@ -1898,4 +1898,41 @@ theorem boot_key_stream (payloads : List Payload) :
       (bootInitial, payloads.map fun p => .delivered (bootEnvelope p)) :=
   keyStream_delivers bootInitial_cycleReady payloads
 
+/-- Allocation-free runtime witness for the repeating event exchange. The
+kernel keeps `step` in 0–3 and advances it once per accepted edge: B blocks
+(0), A sends and wakes B (1), the scheduler dispatches B (2), B receives
+(3), then 0 again. The words are those of the checked boot witness, but no
+payload is consulted: by `keyCycle_delivers` every payload is delivered
+exactly, and by `keyCycle_returns` each exchange ends in the state it began
+in, so the same four edges repeat for every event. -/
+@[export leanos_blocking_ipc_event]
+def blockingIpcEvent (step operation caller : UInt64) : UInt64 :=
+  -- Literal words (not `encodeBootEvent` calls) so the generated C holds no
+  -- lazily initialised closed terms; `blockingIpcEvent_agrees_demo` pins
+  -- them to the checked boot witness.
+  if operation = 1 ∧ step = 0 ∧ caller = 2 then 0x0000000100010101
+  else if operation = 2 ∧ step = 1 ∧ caller = 1 then 0x0000000100010202
+  else if operation = 3 ∧ step = 2 ∧ caller = 1 then 0x0000000200020303
+  else if operation = 4 ∧ step = 3 ∧ caller = 2 then 0x0001000200020404
+  else 0
+
+/-- Its four accepted edges are exactly the checked boot witness's, whose
+agreement with the composite transitions is
+`blockingIpcDemo_agrees_with_composite_scenario`. -/
+theorem blockingIpcEvent_agrees_demo :
+    blockingIpcEvent 0 1 2 = blockingIpcDemo 0 1 2 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcEvent 1 2 1 = blockingIpcDemo 1 2 1 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcEvent 2 3 1 = blockingIpcDemo 2 3 1 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcEvent 3 4 2 = blockingIpcDemo 3 4 2 bootPayload.word0 bootPayload.word1 := by
+  decide
+
+/-- Every other (step, operation, caller) is refused with 0. -/
+theorem blockingIpcEvent_accepts_only_edges (step operation caller : UInt64)
+    (h : blockingIpcEvent step operation caller ≠ 0) :
+    (step, operation, caller) = (0, 1, 2) ∨ (step, operation, caller) = (1, 2, 1) ∨
+    (step, operation, caller) = (2, 3, 1) ∨ (step, operation, caller) = (3, 4, 2) := by
+  unfold blockingIpcEvent at h
+  repeat' split at h
+  all_goals simp_all
+
 end LeanOS.BlockingIPC

@@ -21,6 +21,18 @@
     },
     {
       "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.blockingIpcEvent_accepts_only_edges",
+      "display": "blockingIpcEvent_accepts_only_edges",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
+      "qualified": "LeanOS.BlockingIPC.blockingIpcEvent_agrees_demo",
+      "display": "blockingIpcEvent_agrees_demo",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BlockingIPC.lean",
       "qualified": "LeanOS.BlockingIPC.bootBlocked_send_facts",
       "display": "bootBlocked_send_facts",
       "kind": "theorem"

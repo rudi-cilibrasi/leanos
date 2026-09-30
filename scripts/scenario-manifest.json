@@ -201,6 +201,10 @@
       "kernel-qotom-pci-diagnostic": [
         "-DLEANOS_QOTOM_PCI_DIAGNOSTIC=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-qotom-pci-diagnostic.h\""
+      ],
+      "kernel-ipc-stream": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-ipc-stream.h\""
       ]
     },
     "boot_objects": {
@@ -441,6 +445,12 @@
       "pci-config-read": {
         "source": "boot/pci-config-read.S",
         "definitions": []
+      },
+      "boot-ipc-stream": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_IPC_STREAM_SCENARIO=1"
+        ]
       }
     },
     "images": {
@@ -734,6 +744,14 @@
         ],
         "final_link": true,
         "prelink_plan": "boot-page-plan-qotom-pci-diagnostic.h",
+        "plan_equal_to": null
+      },
+      "leanos-ipc-stream": {
+        "boot": "boot-ipc-stream",
+        "kernel": "kernel-ipc-stream",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-ipc-stream.h",
         "plan_equal_to": null
       }
     },
@@ -1030,6 +1048,13 @@
         "policy": {
           "key": "breakpoint"
         }
+      },
+      "leanos-ipc-stream": {
+        "iso": "leanos-@VERSION@-x86_64-ipc-stream.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "ipc-stream"
+        }
       }
     },
     "plan_checks": [
@@ -1282,6 +1307,13 @@
         "targets": [
           "leanos-fault-stale-translation"
         ]
+      },
+      {
+        "image": "leanos-ipc-stream",
+        "check": "validate",
+        "expected": "boot-page-plan-ipc-stream.h",
+        "final": "boot-page-plan-ipc-stream.final.h",
+        "description": "ipc-stream"
       }
     ],
     "disassemblies": [
@@ -2602,6 +2634,28 @@
         "map"
       ],
       "negative_evidence": null
+    },
+    "ipc-stream": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/ipc-stream.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-ipc-stream.iso",
+        "elf": "leanos-ipc-stream.elf",
+        "serial_log": "ipc-stream.serial.log",
+        "scenario": "ipc-stream",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
     }
   }
 }

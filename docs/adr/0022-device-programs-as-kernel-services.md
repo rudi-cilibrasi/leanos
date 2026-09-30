@@ -80,8 +80,16 @@ change:
    exchange delivers exactly that payload and returns to the same state;
    `keyStream_delivers` (claim SC-IPC-EVENT-STREAM) lifts this to any
    sequence of payloads, and `bootInitial_cycleReady` shows the reviewed boot
-   state qualifies. The runtime export that lets the kernel drive the cycle
-   is left for the scenario that consumes it.
+   state qualifies.
+   *Runtime half done:* the q35 `ipc-stream` scenario
+   (`LEANOS_IPC_STREAM_SCENARIO`) runs the exchange in a loop. Subject A takes
+   events from a source (a fixed string for now; the device service in the
+   next step) and sends each one; `boot.S` copies A's two send registers into
+   B's wakeup frame and resumes A after B blocks again; B echoes the words and
+   the kernel requires them to equal what A sent. Each edge is checked
+   against the generated export `leanos_blocking_ipc_event`
+   (`blockingIpcEvent_agrees_demo`, `blockingIpcEvent_accepts_only_edges`,
+   oracle-replayed on the host), and the serial transcript is exact.
 2. **An echo target.** The early text console is disabled before quarantine
    and before any ring-3 entry, because quarantine may remove VGA decode.
    Either keep the aperture mapped and decoded for the scenario, or echo on
