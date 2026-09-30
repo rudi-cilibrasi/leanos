@@ -627,6 +627,9 @@ else
     record_bootstrap_phase "lean-c-$module" reused
   done
 fi
+record_bootstrap_phase complete
+record_build_phase bootstrap-and-lean-generation
+lean_prefix="$(lake env lean --print-prefix)"
 # The device-service image embeds the Lean xHCI keyboard program (issue
 # #449). leanos-wifi-gen refuses a program outside its target's admitted
 # policy; the header is rewritten only when the image bytes change.
@@ -645,10 +648,6 @@ out = Path(sys.argv[2])
 if not out.exists() or out.read_text() != text:
     out.write_text(text)
 PY
-record_bootstrap_phase device-service-program
-record_bootstrap_phase complete
-record_build_phase bootstrap-and-lean-generation
-lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
