@@ -128,6 +128,9 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
       return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32 idle.toUInt32 false),
+   ("kbd-service", do
+      let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32 0 true),
    ("kbd-q35-service", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 10
       return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 0 true),
