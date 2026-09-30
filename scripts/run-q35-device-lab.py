@@ -3,7 +3,7 @@
 
 Builds the q35 device-lab kernel (`build-qotom-recovery-lab.py
 --q35-device-lab`) around the `kbd-q35` program, boots it from a GRUB ISO on
-q35 with a `qemu-xhci` controller at 00:03.0, a hub on root port 1 and a USB
+q35 with a `qemu-xhci` controller at 00:02.0, a hub on root port 1 and a USB
 keyboard behind it, waits for the driver's ready record, types a string
 through QMP `input-send-event` addressed to the USB keyboard, and checks the
 serial transcript: every typed character must come back as a
@@ -135,7 +135,7 @@ def main() -> int:
         "-serial", f"file:{serial}", "-qmp", f"unix:{qmp_path},server=on,wait=off",
         "-device", "VGA,id=vga0,bus=pcie.0,addr=0x1",
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
-        "-device", "qemu-xhci,id=xhci,bus=pcie.0,addr=0x3",
+        "-device", "qemu-xhci,id=xhci,bus=pcie.0,addr=0x2",
         "-device", "usb-hub,id=hub,bus=xhci.0,port=1",
         "-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0",
         "-drive", f"id=cd,if=none,format=raw,media=cdrom,readonly=on,file={iso}",

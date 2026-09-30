@@ -829,6 +829,67 @@ theorem validateActivation_deterministic (version topology unitVersion capabilit
   rw [hfirst] at hsecond
   exact hsecond
 
+/-! ## Device-service xHCI assignment (issue #449)
+
+The device-service image assigns q35 `qemu-xhci` at 00:02.0 through the same
+requester slot (16) and second-level table storage as the assigned-EDU image.
+Its authority is one read/write mapping of four model pages, IOVA `[64, 128)`,
+which the generated hardware projection scales to IOVA `[16 KiB, 32 KiB)` over
+the four 4 KiB pages at the start of the device executor's scratch: the `qemu`
+layout of `LeanOS.Usb.Xhci` keeps every structure the controller reads or
+writes inside them. The window starts above zero because the xHCI program
+reads a zero bus address as "no DMA". -/
+
+def deviceServiceTopologyVersion : UInt64 := 0x0001000800020004
+
+def deviceServiceGrant : IOMMU.GrantRequest :=
+  ⟨IOMMU.assignment0, ⟨0, 1⟩, 4 * IOMMU.pageSize, 0, 4 * IOMMU.pageSize, IOMMU.readWrite⟩
+
+/-- The one reviewed device-service assignment and its read/write window.
+Table generation reads this state; nothing in the image supplies authority. -/
+def deviceServiceState : IOMMU.State :=
+  (IOMMU.gate IOMMU.assignedState (.grant deviceServiceGrant)).state
+
+/-- Transfer admission over `deviceServiceState`: 0 accepted, 3 stale or
+foreign assignment, 4 outside the window, 5 permission, 6 stale frame, 7
+other. Direction 1 is a device read, 2 a device write. -/
+def validateDeviceServiceTransfer
+    (source assignmentGeneration iova length direction : Nat) : Nat :=
+  let request : IOMMU.TransferRequest := ⟨source, assignmentGeneration, iova, length⟩
+  let result := IOMMU.translate deviceServiceState request
+    (if direction == 1 then .read else .write)
+  if direction != 1 && direction != 2 then 2
+  else match result with
+    | .ok _ => 0
+    | .error .staleAssignment => 3
+    | .error .invalidRange => 4
+    | .error .permissionDenied => 5
+    | .error .staleFrame => 6
+    | .error _ => 7
+
+/-- The grant is accepted and is the only mapping: one assignment (device 0,
+source 0, domain 0) holding IOVA `[64, 128)` read/write at frame 0, offset 0. -/
+theorem deviceServiceState_shape :
+    deviceServiceState.core.assignments.map (fun a => (a.device, a.source, a.domain.slot)) =
+        [(0, 0, 0)] ∧
+    deviceServiceState.core.mappings.map
+        (fun m => (m.iova, m.length, m.frame.frame, m.frameOffset, m.permission)) =
+      [(64, 64, 0, 0, IOMMU.readWrite)] := by
+  native_decide
+
+/-- Both directions are admitted anywhere inside the window, and nothing
+outside it or from another source is. -/
+theorem deviceServiceTransfer_window :
+    validateDeviceServiceTransfer 0 1 64 64 1 = 0 ∧
+    validateDeviceServiceTransfer 0 1 64 64 2 = 0 ∧
+    validateDeviceServiceTransfer 0 1 112 16 2 = 0 ∧
+    validateDeviceServiceTransfer 0 1 112 32 1 = 4 ∧
+    validateDeviceServiceTransfer 0 1 0 16 2 = 4 ∧
+    validateDeviceServiceTransfer 0 1 128 16 2 = 4 ∧
+    validateDeviceServiceTransfer 1 1 64 16 1 = 3 ∧
+    validateDeviceServiceTransfer 0 2 64 16 1 = 3 := by
+  native_decide
+
 /-! ## Executable vectors -/
 
 def sampleRootTableFrame : Nat := 8

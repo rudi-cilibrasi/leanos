@@ -630,6 +630,24 @@ fi
 record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
+# The device-service image embeds the Lean xHCI keyboard program (issue
+# #449). leanos-wifi-gen refuses a program outside its target's admitted
+# policy; the header is rewritten only when the image bytes change.
+lake build leanos-wifi-gen
+LEANOS_KBD_SECONDS=20 .lake/build/bin/leanos-wifi-gen kbd-q35-service \
+  "$build/device-service-program.bin" >/dev/null
+python3 - "$build/device-service-program.bin" "$build/device-service-program.h" <<'PY'
+import sys
+from pathlib import Path
+image = Path(sys.argv[1]).read_bytes()
+rows = ",\n".join("  " + ", ".join(str(b) for b in image[i:i + 16])
+                   for i in range(0, len(image), 16))
+text = ("/* Generated from leanos-wifi-gen kbd-q35-service; do not edit. */\n"
+        "static const uint8_t device_service_program[] = {\n" + rows + "\n};\n")
+out = Path(sys.argv[2])
+if not out.exists() or out.read_text() != text:
+    out.write_text(text)
+PY
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
@@ -726,13 +744,14 @@ compute_graph_make_input_signature() {
   local graph_tool_signature="$1"
   {
     printf 'graph-tools:%s\0' "$graph_tool_signature"
-    find "$repo_root/boot" "$repo_root/include" -type f -print0 | sort -z |
+    find "$repo_root/boot" "$repo_root/include" "$repo_root/hardware/wifi" \
+      -type f -print0 | sort -z |
       while IFS= read -r -d '' input; do
         sha256sum "$input"
       done
     find "$build" -maxdepth 1 -type f \
       \( -name '*.c' -o -name 'composite-tokens.h' -o -name 'boundary-abi.h' -o \
-      -name 'serial-protocol.h' -o \
+      -name 'serial-protocol.h' -o -name 'device-service-program.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
       while IFS= read -r -d '' input; do

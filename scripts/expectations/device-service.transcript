@@ -1,0 +1,77 @@
+@10/BOOT@ target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=enter subject=2 address-space=2 cpl=3 endpoint=10
+@10/IPC@ event=block subject=2 endpoint=10 round=0
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/DEVICE@ event=bind subject=1 device=0:2.0 image-bytes=290084 policy=admitted window=16384 dma=vtd result=PASS
+@10/DEVICE@ event=ready subject=1 vendor=1575 product=1 type-now
+@10/IPC@ event=send sender=1 endpoint=10 payload0=108 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=l
+@10/IPC@ event=block subject=2 endpoint=10 round=1
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=101 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=e
+@10/IPC@ event=block subject=2 endpoint=10 round=2
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=97 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=a
+@10/IPC@ event=block subject=2 endpoint=10 round=3
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=110 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=n
+@10/IPC@ event=block subject=2 endpoint=10 round=4
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=32 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=space
+@10/IPC@ event=block subject=2 endpoint=10 round=5
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=105 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=i
+@10/IPC@ event=block subject=2 endpoint=10 round=6
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=112 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=p
+@10/IPC@ event=block subject=2 endpoint=10 round=7
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=99 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=c
+@10/IPC@ event=block subject=2 endpoint=10 round=8
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=send sender=1 endpoint=10 payload0=10 payload1=0 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=deliver receiver=2 sender=1 exact=1 echo=enter
+@10/IPC@ event=block subject=2 endpoint=10 round=9
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/DEVICE@ event=end subject=1 status=0 code=0
+@10/FINAL@ status=PASS events=9 blocks=10 deliveries=9

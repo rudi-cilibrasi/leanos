@@ -17991,6 +17991,18 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.deviceServiceState_shape",
+      "display": "deviceServiceState_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.deviceServiceTransfer_window",
+      "display": "deviceServiceTransfer_window",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.domainLimit_value",
       "display": "domainLimit_value",
       "kind": "theorem"

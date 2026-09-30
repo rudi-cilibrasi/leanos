@@ -84,6 +84,37 @@ if leanos_validate_q35_assigned_edu_command negative 2>/dev/null; then
   exit 1
 fi
 
+device_service=()
+leanos_q35_device_service_command device_service /tmp/leanos-qmp.sock \
+  qemu-system-x86_64 128 build/evidence/device-service.serial.log \
+  build/boot/leanos.iso
+leanos_validate_q35_device_service_command device_service
+[[ "$LEANOS_Q35_DEVICE_SERVICE_TOPOLOGY_VERSION" != "$LEANOS_Q35_TOPOLOGY_VERSION" &&
+   "$LEANOS_Q35_DEVICE_SERVICE_TOPOLOGY_VERSION" != "$LEANOS_Q35_ASSIGNED_EDU_TOPOLOGY_VERSION" ]] || {
+  echo "error: device-service construction reused another topology version" >&2
+  exit 1
+}
+if leanos_validate_q35_command device_service 2>/dev/null; then
+  echo "error: production q35 platform accepted the device-service xHCI" >&2
+  exit 1
+fi
+negative=("${device_service[@]}")
+negative[-7]=qemu-xhci,id=xhci,bus=pcie.0,addr=0x3
+if leanos_validate_q35_device_service_command negative 2>/dev/null; then
+  echo "error: device-service platform accepted a drifted xHCI BDF" >&2
+  exit 1
+fi
+negative=("${device_service[@]:0:${#device_service[@]}-2}")
+if leanos_validate_q35_device_service_command negative 2>/dev/null; then
+  echo "error: device-service platform accepted a missing QMP socket" >&2
+  exit 1
+fi
+negative=("${device_service[@]:0:${#device_service[@]}-2}" -device edu,bus=pcie.0,addr=0x3 "${device_service[@]: -2}")
+if leanos_validate_q35_device_service_command negative 2>/dev/null; then
+  echo "error: device-service platform accepted an extra function" >&2
+  exit 1
+fi
+
 negative=("${command[@]}")
 for index in "${!negative[@]}"; do
   if [[ "${negative[$index]}" == -nodefaults ]]; then

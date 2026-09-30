@@ -100,23 +100,46 @@ if [[ "${1:-}" == --stub ]]; then
     echo '  28674ULL,'
     for ((word = 2; word < 512; ++word)); do echo '  0ULL,'; done
     echo '};'
+    # Device-service placeholders; ordinary images never reference them. The
+    # frame is 64 KiB-aligned like the executor scratch, so no check folds. The
+    # frame is 64 KiB-aligned like the executor scratch, so no check folds.
+    echo '#define LEANOS_VTD_SERVICE_TOPOLOGY 281509336580100ULL'
+    echo '#define LEANOS_VTD_SERVICE_DMA_FRAME 16ULL'
+    echo '#define LEANOS_VTD_SERVICE_DMA_PAGES 4ULL'
+    echo '#define LEANOS_VTD_SERVICE_IOVA 16384ULL'
+    echo 'static const unsigned long long leanos_vtd_service_second_level_table[512] = {'
+    for ((word = 0; word < 4; ++word)); do echo '  0ULL,'; done
+    for ((word = 4; word < 8; ++word)); do echo "  ($((65536 + (word - 4) * 4096))ULL + 3ULL),"; done
+    for ((word = 8; word < 512; ++word)); do echo '  0ULL,'; done
+    echo '};'
   } > "$output"
   install_if_changed "$output" "$destination"
   trap - EXIT
   exit 0
 fi
 
+# The assigned-device kind selects the pinned BAR behind the linker-owned
+# device window: 1 is q35 EDU, 2 the device-service image's q35 xHCI.
 assigned_edu=0
 if [[ "${1:-}" == --assigned-edu ]]; then
   assigned_edu=1
   shift
+elif [[ "${1:-}" == --device-service ]]; then
+  assigned_edu=2
+  shift
 fi
-elf="${1:?usage: $0 [--assigned-edu] ELF OUTPUT}"
-destination="${2:?usage: $0 [--assigned-edu] ELF OUTPUT}"
+elf="${1:?usage: $0 [--assigned-edu|--device-service] ELF OUTPUT}"
+destination="${2:?usage: $0 [--assigned-edu|--device-service] ELF OUTPUT}"
 mkdir -p "$(dirname "$destination")"
 output="$(mktemp "${destination}.tmp.XXXXXX")"
 trap 'rm -f "$output"' EXIT
 [[ -f "$elf" ]] || { echo "error: missing prelinked ELF '$elf'" >&2; exit 1; }
+# A device-service kernel sizes the assigned-device window itself, so its
+# prelinked ELF, not the caller, selects the device-service plan.
+if [[ "$assigned_edu" == 0 ]] &&
+    nm "$elf" | awk '$3 == "leanos_assigned_window_bytes" { found = 1 } END { exit !found }'; then
+  assigned_edu=2
+fi
 
 # The image wrapper invokes this generator for every image variant. Avoid
 # replaying both Lean executables when neither the ELF nor the generator/tool
@@ -182,6 +205,9 @@ vtd_symbols=(
 )
 vtd_args=()
 for name in "${vtd_symbols[@]}"; do vtd_args+=("$(symbol_decimal "$name")"); done
+if [[ "$assigned_edu" == 2 ]]; then
+  vtd_args+=("$(symbol_decimal wifi_scratch)")
+fi
 
 if [[ "${LEANOS_BOOT_PLAN_EXECUTABLES_READY:-}" == 1 ]]; then
   # `scripts/build-image.sh` publishes these executables before parallel plan

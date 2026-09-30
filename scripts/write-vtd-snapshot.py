@@ -47,6 +47,15 @@ TABLES_RE = re.compile(
     r"scrub=verified construct=verified root-words=512 context-words=512 "
     r"result=PASS$"
 )
+# The device-service construction (issue #449) records one assignment of the
+# q35 xHCI between table construction and activation.
+SERVICE_TOPOLOGY = "0001000800020004"
+SERVICE_ASSIGN_RE = re.compile(
+    "^" + re.escape(SERIAL["21/VTD-ASSIGN"]) + r" bdf=0:2\.0 requester=16 domain=0 "
+    r"tables=generated-readback bar=4273930240 window=16384 "
+    r"dma-iova=16384,32768 dma=scratch,0,16384,read-write capabilities=16777280 "
+    r"command=2 memory=enabled bus-master=program stage=post-translation result=PASS$"
+)
 ACTIVATE_RE = re.compile(
     "^" + re.escape(SERIAL["21/VTD-ACTIVATE"]) + r" order=validate,scrub,construct,publish,"
     r"invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 "
@@ -55,12 +64,16 @@ ACTIVATE_RE = re.compile(
 )
 
 
-def parse(serial_log: Path) -> tuple[int, int, int]:
+def parse(serial_log: Path, profile: str = "production") -> tuple[int, int, int]:
     lines = [
         line
         for line in serial_log.read_text(encoding="utf-8", errors="strict").splitlines()
         if line.startswith(SERIAL["21"] + " ")
     ]
+    if profile == "device-service":
+        if len(lines) != 5 or SERVICE_ASSIGN_RE.match(lines[3]) is None:
+            raise ValueError("expected the device-service VT-d assignment record")
+        del lines[3]
     if len(lines) != 4:
         raise ValueError(f"expected exactly 4 VT-d records, found {len(lines)}")
     if UNIT_RE.match(lines[0]) is None:
@@ -93,6 +106,7 @@ def write_snapshot(
     root_address: int,
     qemu_version: str,
     revision: str,
+    profile: str = "production",
 ) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("source revision must be a full lowercase Git commit")
@@ -104,7 +118,7 @@ def write_snapshot(
         "meta\tmachine\tq35",
         "meta\taccelerator\ttcg",
         "meta\tplan-version\t1",
-        f"meta\ttopology-version\t{TOPOLOGY}",
+        f"meta\ttopology-version\t{SERVICE_TOPOLOGY if profile == 'device-service' else TOPOLOGY}",
         "meta\tunit-version\t16",
         "meta\tcapability\t59110346977575430",
         "meta\textended-capability\t3842",
@@ -127,13 +141,15 @@ def main() -> int:
     parser.add_argument("--source-revision", type=Path, required=True)
     parser.add_argument("--qemu-version", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--profile", choices=("production", "device-service"),
+                        default="production")
     args = parser.parse_args()
     try:
         revision = args.source_revision.read_text(encoding="ascii").strip()
-        root_frame, context_frame, root_address = parse(args.serial_log)
+        root_frame, context_frame, root_address = parse(args.serial_log, args.profile)
         write_snapshot(
             args.output, root_frame, context_frame, root_address,
-            args.qemu_version, revision,
+            args.qemu_version, revision, args.profile,
         )
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)

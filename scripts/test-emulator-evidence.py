@@ -1046,7 +1046,7 @@ def run_fixtures() -> None:
             evidence.run(args)
         shard_report = json.loads(shard_output.read_text(encoding="utf-8"))
         assert [result["id"] for result in shard_report["results"]] == [
-            row["id"] for row in matrix_rows[1::4]
+            row["id"] for row in evidence.select_rows(matrix_rows, None, "all", 1, 4)
         ]
         args.output = output
         args.shard_index = None

@@ -30,7 +30,7 @@ The driver source is generated per controller through `Xhci.Layout`
 (`bayTrail` for the Qotom, `qemu` for QEMU's `qemu-xhci`: CAPLENGTH, runtime
 and doorbell offsets, and Bay Trail's configuration-space port routing).
 `scripts/run-q35-device-lab.py` builds the `kbd-q35` program into the q35
-device-lab kernel, boots it on QEMU q35 with a `qemu-xhci` at 00:03.0, a hub
+device-lab kernel, boots it on QEMU q35 with a `qemu-xhci` at 00:02.0, a hub
 on root port 1 and a USB keyboard behind it, types a string through QMP
 `input-send-event`, and requires every character back as a `KBD key=`
 record, in order. With `--service` the `kbd-q35-service` program yields each

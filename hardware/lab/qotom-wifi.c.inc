@@ -32,10 +32,10 @@ struct lab_dev_profile {
 };
 static const struct lab_dev_profile lab_dev_profiles[] = {
 #ifdef LAB_Q35_DEVICE_LAB
-    /* QEMU q35 device lab: qemu-xhci at 00:03.0 (16 KiB), identity/command
+    /* QEMU q35 device lab: qemu-xhci at 00:02.0 (16 KiB), identity/command
        reads, MEM+BM, DMA; sinks CRCR, DCBAAP, ERSTBA, ERDP in qemu-xhci's
        layout. Mirrors `q35XhciPolicy`. */
-    { 0, 3, 0, UINT32_C(0x000d1b36),
+    { 0, 2, 0, UINT32_C(0x000d1b36),
       { 1, 1, 0x4000u, UINT64_C(0x3), 0, UINT32_C(0xffff0000), UINT32_C(0x6), 4,
         { 0x58, 0x70, 0x1030, 0x1038 } } },
 #endif

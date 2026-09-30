@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted for stage 1 (model and executor), issue #449. Stage 2 (canonical
-kernel service and QEMU scenario) and stage 3 (Qotom capture) are planned
-below and not yet implemented.
+Accepted, issue #449. Stage 1 (model and executor) and stage 2 (canonical
+kernel service and the exact QEMU scenario, `device-service`) are
+implemented; stage 3 (the Qotom capture) needs a person typing at the
+keyboard and is not yet done.
 
 ## Context
 
@@ -94,11 +95,22 @@ change:
    and before any ring-3 entry, because quarantine may remove VGA decode.
    Either keep the aperture mapped and decoded for the scenario, or echo on
    the serial console and record that choice.
-3. **A q35 xHCI platform variant.** The q35 command is pinned to four devices;
-   add a validated variant with `qemu-xhci` and `usb-kbd` (as the
-   assigned-EDU variant does), a pinned BAR, a multi-page MMIO window in the
-   boot page-table plan, and a VT-d domain that lets the controller reach
-   only the executor scratch.
+3. **A q35 xHCI platform variant.** Done. `leanos_q35_device_service_command`
+   appends `qemu-xhci` at 00:02.0, a hub and a `usb-kbd` to the unchanged
+   production construction (topology `0001000800020004`, validated like the
+   assigned-EDU variant). The kernel admits exactly that function, quarantines
+   it, and after VT-d translation is enabled places BAR0 at the pinned
+   `0xFEBF0000` (so firmware placement does not matter), maps its 16 KiB
+   through the assigned-device window of the generated boot page-table plan,
+   and enables memory decoding. The controller's only DMA authority is
+   `VTdBootPlan.deviceServiceState`: one read/write grant of four model pages
+   that the generated requester-16 tables map at IOVA 16 KiB onto the first
+   four pages of the executor scratch (`deviceServiceState_shape`,
+   `deviceServiceTransfer_window`); the `qemu` layout of `LeanOS.Usb.Xhci`
+   keeps every DMA structure inside them. The program enables bus mastering
+   only after resetting the controller: SeaBIOS leaves qemu-xhci running with
+   rings in firmware memory, and the first run of the scenario showed VT-d
+   refusing exactly that stale DMA.
 4. **A q35 target for the keyboard program.** Done (stage 2a): the driver is
    generated per `Xhci.Layout` (Bay Trail or `qemu-xhci`), reads xECP from
    HCCPARAMS1, and `q35XhciPolicy` confines the QEMU variant. The q35 device
@@ -109,14 +121,24 @@ change:
    denial of an ungranted subject, revocation), with ring-0 stand-ins for
    the subjects; what stage 2 still adds is real ring-3 subjects, the IPC
    path and the canonical kernel's admission of the controller.
-5. **Entry-path rules.** The executor's `switch` must compile without jump
-   tables (`-fno-jump-tables` in both toolchain lanes) and every function
-   reachable from the syscall entry must be listed with its stack budget in
-   `scripts/entry-stack-callgraph.tsv`.
-6. **The scenario.** Subject B holds the device capability and invokes the
-   driver; each yielded key goes over IPC to subject A, which echoes it. Keys
-   are injected through QMP `input-send-event`; the serial transcript is
-   compared exactly, as in the other scenarios.
+5. **Entry-path rules.** The executor's `switch` compiles without jump
+   tables in both toolchain lanes (the Clang lane's global `-fno-jump-tables`,
+   a scoped GCC pragma around the executor). Its configuration and PM-timer
+   hooks are pinned in the direct-port audit (source sites and final-ELF
+   callers). The scenario image, like the other scenario images, is not yet
+   part of the final-ELF entry-stack call-graph gate, which covers the
+   canonical and extended-state images; that remains open.
+6. **The scenario.** Done: `device-service` (`LEANOS_DEVICE_SERVICE_SCENARIO`
+   on top of the `ipc-stream` exchange). Subject 1, the holder of the one
+   assigned device, invokes the driver with syscall 60; the kernel binds the
+   embedded `kbd-q35-service` image only if its declared target and policy lie
+   inside `q35XhciPolicy`, then resumes it in bounded slices until it yields a
+   key. Subject 1 sends each key over the verified blocking IPC to subject 2,
+   which echoes it. `scripts/type-device-service.py` types `lean ipc⏎`
+   through QMP once the program reports the keyboard ready, and
+   `scripts/run-image.sh` compares the complete serial transcript exactly
+   (`scripts/expectations/device-service.transcript`), including the VT-d
+   assignment record.
 
 Stage 3 repeats the path on the Qotom with a real keyboard, which needs a
 person at the keyboard during the capture.

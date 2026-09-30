@@ -339,18 +339,27 @@ boot_cpu_gate_end:
     movl $0xFED90003, page_table_b(%eax)
     movl $0x80000000, page_table_b+4(%eax)
 
-    /* The dedicated assigned image alone maps q35 EDU's pinned 4 KiB BAR.
-       The link-visible C constant prevents the shared bootstrap object from
-       widening the ordinary image's MMIO surface. */
-    cmpl $0, leanos_assigned_edu_enabled
+    /* The dedicated assigned images alone map their device's pinned BAR:
+       q35 EDU's 4 KiB, or the device-service xHCI's 16 KiB.  The
+       link-visible C constants (BAR leaf, zero for ordinary images, and page
+       count) prevent the shared bootstrap object from widening the ordinary
+       image's MMIO surface. */
+    mov leanos_assigned_bar_leaf, %edx
+    test %edx, %edx
     je 9f
+    mov leanos_assigned_window_pages, %ecx
     mov $__edu_mmio_window_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
-    movl $0xFEA00003, page_table_a(%eax)
+8:
+    movl %edx, page_table_a(%eax)
     movl $0x80000000, page_table_a+4(%eax)
-    movl $0xFEA00003, page_table_b(%eax)
+    movl %edx, page_table_b(%eax)
     movl $0x80000000, page_table_b+4(%eax)
+    add $0x1000, %edx
+    add $8, %eax
+    dec %ecx
+    jnz 8b
 9:
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
        PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE

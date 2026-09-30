@@ -10,9 +10,24 @@
 # record prefix through leanos_serial, @var:<name>@ substitutes an allowlisted
 # runner variable, and the named markers below expand to the segments every
 # boot scenario shares, which are spelled once here.
+# The DMA quarantine summary names the scenario's pinned q35 construction:
+# the production inventory, or the device-service one (issue #449) whose
+# assigned xHCI firmware leaves bus-mastering; runners select it through
+# expectation_q35_topology.
+expectation_dma_summary() {
+  case "${expectation_q35_topology:-production}" in
+    production)
+      printf '%s\n' "${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS" ;;
+    device-service)
+      printf '%s\n' "${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020004 bus=0 scanned=256 present=6 optional-absent=1 writes=6 readbacks=6 initial-bus-masters=2 initial-bus-master-mask=80 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS" ;;
+    *)
+      echo "failure_class=runner-template: unknown q35 topology ${expectation_q35_topology}" >&2
+      exit 1 ;;
+  esac
+}
 expectation_common_prefix() {
+  expectation_dma_summary
   printf '%s\n' \
-    "${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS" \
     "${LEANOS_SERIAL_8_PAGING} root=A selected=1 leaves=4096 policy=manifest result=PASS" \
     "${LEANOS_SERIAL_8_PAGING} root=B selected=0 leaves=4096 policy=manifest result=PASS" \
     "${LEANOS_SERIAL_19_TLB} path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS" \
