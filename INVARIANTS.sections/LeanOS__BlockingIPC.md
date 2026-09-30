@@ -46,3 +46,14 @@ These theorems cover the kernel's blocking message system: a program that asks f
 - `rejection_adapter_refines_model_boundary` — Bookkeeping: the compact question-and-answer table exported for the boot demo gives the same answers as the full model on every one of its named rejection cases.
 - `blockingIpcDemo_agrees_with_composite_scenario` — The compact demo's four accepted answers match the real model transitions of the reviewed boot story: the receiver sleeps, the sender wakes it with the exact message, the scheduler switches to the receiver, and the receiver collects exactly what was sent.
 - `blockingIpcDemo_rejection_scenario_agrees` — The demo's rejection answers each correspond to a concrete, named model failure — wrong caller, missing permission, retired meeting point, full queues, and so on — and in addition cancelling twice is harmless while a send after cancellation cannot resurrect a delivery.
+- `bootBlocked_send_facts` — A stepping-stone fact: in the reviewed boot trace, once the receiver has gone to sleep, the sender is the running program, holds a valid send permission for the meeting point, and the receiver is first in its waiting line with room in the run queue — none of which depends on the message being sent.
+- `boot_send_any_payload` — Whatever message the sender sends in the boot trace, the send is accepted and is exactly the standard wake-up that reserves that very message for the sleeping receiver.
+- `bootDispatchedWith_scheduler` — Bookkeeping: which program runs next after the wake-up does not depend on the message's contents.
+- `bootDispatched_receive_facts` — A stepping-stone fact: after the wake-up the receiver runs again and still holds a valid receive permission for the meeting point.
+- `boot_receive_any_payload` — Whatever message was sent, the receiver then collects exactly that message from the right sender and meeting point, and its delivery receipt is cleared.
+- `boot_trace_control_payload_independent` — The contents of a message never influence control: the send's outcome and the scheduler's state are the same whatever message is sent.
+- `keyCycle_delivers` — In any state where one program is waiting to receive and another is ready to send (the conditions in `CycleReady`), one full exchange hands the receiver exactly the message that was sent — for every possible message.
+- `keyCycle_returns` — The same exchange then leaves the whole system in exactly the state it started from, so it can repeat for the next message.
+- `keyStream_delivers` — Repeating the exchange delivers any sequence of messages exactly and in order, one exchange per message, and ends where it started.
+- `bootInitial_cycleReady` — The reviewed boot state meets those conditions.
+- `boot_key_stream` — So the boot trace can carry an unlimited stream of arbitrary messages — such as key presses from a keyboard driver — each delivered exactly and in order.

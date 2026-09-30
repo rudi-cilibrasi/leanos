@@ -75,6 +75,13 @@ change:
    delivery and the receiver's next receive is again the blocked state, so
    the trace repeats once per key. The kernel then copies the words through
    its mailbox, as it does for the demonstration payload.
+   *Model half done:* `BlockingIPC.keyCycle_delivers` and `keyCycle_returns`
+   prove, for any state satisfying `CycleReady` and any payload, that one
+   exchange delivers exactly that payload and returns to the same state;
+   `keyStream_delivers` (claim SC-IPC-EVENT-STREAM) lifts this to any
+   sequence of payloads, and `bootInitial_cycleReady` shows the reviewed boot
+   state qualifies. The runtime export that lets the kernel drive the cycle
+   is left for the scenario that consumes it.
 2. **An echo target.** The early text console is disabled before quarantine
    and before any ring-3 entry, because quarantine may remove VGA decode.
    Either keep the aperture mapped and decoded for the scenario, or echo on
