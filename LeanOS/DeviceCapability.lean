@@ -304,6 +304,64 @@ theorem invoke_other_device_unchanged {σ} (models : Nat → Wifi.Sim.Device σ)
   cases ht
   rw [hc] at hs; cases hs; exact hk rfl
 
+/-! ## Subjects that are never granted a device (issue #450)
+
+The network subject of issue #450 talks to the WiFi driver only over IPC; the
+kernel never grants it a device. Such a subject never comes to hold a device
+capability, so every `bind` or `invoke` it attempts is denied and leaves the
+whole system — every device's state included — unchanged. -/
+
+/-- Only a `grant` to `s` can give `s` a device capability. -/
+theorem step_deviceCap_none {σ} (models : Nat → Wifi.Sim.Device σ) (sys : System σ)
+    (s : SubjectId) (t : Transition) (hnone : sys.deviceCaps s = none)
+    (ht : ∀ d, t ≠ .grant s d) : (step models sys t).1.deviceCaps s = none := by
+  cases t with
+  | cap op => exact hnone
+  | grant s' d =>
+    have hs : s ≠ s' := fun h => ht d (by rw [h])
+    simp only [step]
+    split <;> simp [hs, hnone]
+  | bind s' p =>
+    simp only [step]
+    split
+    · exact hnone
+    · split
+      · exact hnone
+      · split <;> exact hnone
+  | invoke s' f =>
+    simp only [step]
+    split
+    · split
+      · exact hnone
+      · exact hnone
+    · exact hnone
+  | revoke s' =>
+    simp only [step]
+    by_cases hs : s = s' <;> simp [hs, hnone]
+
+/-- Along any run that never grants `s` a device, `s` holds none. -/
+theorem run_deviceCap_none {σ} (models : Nat → Wifi.Sim.Device σ) (s : SubjectId) :
+    ∀ (ts : List Transition) (sys : System σ), sys.deviceCaps s = none →
+      (∀ d, Transition.grant s d ∉ ts) → (run models sys ts).deviceCaps s = none
+  | [], _, h, _ => h
+  | t :: ts, sys, h, hg =>
+    run_deviceCap_none models s ts _
+      (step_deviceCap_none models sys s t h (fun d he => hg d (he ▸ List.mem_cons_self ..)))
+      (fun d hd => hg d (List.mem_cons_of_mem _ hd))
+
+/-- Issue #450: a subject the kernel never grants a device — the ring-3
+network subject — cannot cause device effects directly. After any run
+without a grant to it, each `bind` or `invoke` it attempts is denied and
+leaves the system, including every device's state, exactly as it was. -/
+theorem ungranted_subject_no_device_effects {σ} (models : Nat → Wifi.Sim.Device σ)
+    (sys : System σ) (s : SubjectId) (ts : List Transition)
+    (hnone : sys.deviceCaps s = none) (hg : ∀ d, Transition.grant s d ∉ ts) :
+    (∀ program, step models (run models sys ts) (.bind s program) =
+        (run models sys ts, .denied)) ∧
+    (∀ fuel, step models (run models sys ts) (.invoke s fuel) =
+        (run models sys ts, .denied)) :=
+  no_capability_no_effect models _ s (run_deviceCap_none models s ts sys hnone hg)
+
 /-! ## Witness: a keyboard-shaped driver delivering one event -/
 
 /-- A one-device system: device 0 is the xHCI under its Qotom policy. -/
