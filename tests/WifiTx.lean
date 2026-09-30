@@ -33,7 +33,13 @@ def checkBytes (ctx : Ctx) (name : String) (got want : ByteArray) : IO Unit :=
 /-- `n` zero bytes as hex. -/
 def z (n : Nat) : String := String.join (List.replicate n "00")
 
-def qotom6 : PhyCfg := qotom 6
+/-- The brcmsmac reference vectors below were computed with brcmsmac's own
+chain selection, so they use the Qotom SROM without the lab's transmit-chain
+override (`PhyCfg.txChainOverride`); `qotom6Lab` checks the override. -/
+def qotom6 : PhyCfg := { qotom 6 with txChainOverride := none }
+
+/-- The configuration the lab programs actually use. -/
+def qotom6Lab : PhyCfg := qotom 6
 def bcast : ByteArray := ofHex "ffffffffffff"
 def ap : ByteArray := ofHex "001122334455"
 
@@ -197,6 +203,9 @@ def powerTests (ctx : Ctx) : IO Unit := do
   check ctx "ss_opmode after up = CDD" (ssOpmodeUp qotom6 == stfCdd)
   check ctx "phy tx antenna bits 0xC0" (phyTxAnt qotom6 == 0x00C0 && antAvailBg qotom6 == 3 &&
     txChain qotom6 == 3)
+  -- The lab override (`txChainOverride := some 2`) transmits on chain 1 only.
+  check ctx "lab override: chain 1, antenna bits 0x80, not CDD"
+    (txChain qotom6Lab == 2 && phyTxAnt qotom6Lab == 0x0080 && ssOpmodeUp qotom6Lab != stfCdd)
   check ctx "SROM MAC 10:0d:7f:c9:75:f1" (Bytes.beq (macAddr qotom6) (ofHex "100d7fc975f1"))
   check ctx "rate table basic map" (basicRateTable hwRates ==
     #[(2, 2), (4, 4), (11, 11), (12, 12), (18, 12), (22, 22), (24, 24), (36, 24), (48, 48),
