@@ -52,3 +52,30 @@ router's address and the counters.
 Hardware: `hardware/lab/observations/qotom-rtl8168-arp-20260929` — the
 workstation captured the probe on the wire, and the router address the
 program received matches the workstation's neighbour table.
+
+## Known issue: FreeBSD's `re0` after a run
+
+After this program has run, the next FreeBSD boot on the Qotom brings `re0`
+up, but its receive side stops after exactly one pass of its 256-entry ring
+(input counter stuck at 256); the box is unreachable until
+`ifconfig re0 down; ifconfig re0 up`, which runs `re_init` a second time and
+restores it. It reproduces on every run. A hardware bisection of the
+program (2026-09-29, ten cycles) found:
+
+| Variant | TX/RX engines ever enabled | FreeBSD afterwards |
+| --- | --- | --- |
+| identity and MAC reads only | no | normal |
+| plus the initial MAC reset | no | normal |
+| plus C+ command, unlock, station address | no | normal |
+| plus ring bases, TXCFG, early-TX threshold | no | normal |
+| plus MAR, RXCFG, IMR/ISR, max packet length | no | normal |
+| the above, then re(4)'s CMDSTOP stop (`STOPREQ | TE | RE`) | yes | stalls |
+| full program, stop by clearing TE/RE instead of CMDSTOP | yes | stalls |
+| full program with a final MAC reset | yes | stalls |
+
+So the trigger is enabling the transmit/receive engines at all; neither a
+MAC reset nor the CF9 warm reset between LeanOS and FreeBSD clears the
+state, and FreeBSD's second `re_init` does. The root cause is not
+established. Workaround in the lab: run `ifconfig re0 down up` (serial
+console) after a run of this program. The other device programs do not
+affect `re0`.
