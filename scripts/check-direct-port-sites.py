@@ -96,6 +96,10 @@ CLANG18_SITE_ALTERNATIVES = {
         Site("out32", 0x4, "out", "%eax,(%dx)"),
     Site("in32", 0xD, "in", "(%dx),%eax"):
         Site("in32", 0x2, "in", "(%dx),%eax"),
+    # The device-service image also reads the ACPI PM timer through in32, so
+    # Clang cannot specialize the wrapper to the PCI data port.
+    Site("in32", 0xB, "in", "(%dx),%eax"):
+        Site("in32", 0x2, "in", "(%dx),%eax"),
     Site("isr2_cld", 0x88, "in", "(%dx),%al"):
         Site("isr2_cld", 0x87, "in", "(%dx),%al"),
     Site("isr2_cld", 0x93, "out", "%al,(%dx)"):

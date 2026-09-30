@@ -372,13 +372,9 @@ if [[ -n "${LEANOS_DUMP_EXPECTED_DIR:-}" ]]; then
   cp "$expected" "$LEANOS_DUMP_EXPECTED_DIR/$scenario.expected"
 fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
-if (( device_service_scenario )); then
-  # The assigned-device topology has its own inventory; the canonical
-  # deny-all DMA and VT-d snapshot writers do not describe it.
-  echo "LeanOS device-service scenario passed; typed keys crossed the blocking IPC; serial log: $log"
-  exit 0
-fi
-if ! ./scripts/write-dma-snapshot.py \
+snapshot_profile=production
+(( device_service_scenario )) && snapshot_profile=device-service
+if ! ./scripts/write-dma-snapshot.py --profile "$snapshot_profile" \
     --serial-log "$log" \
     --source-revision "$source_revision_file" \
     --qemu-version "${qemu_version:-unknown}" \
@@ -386,7 +382,7 @@ if ! ./scripts/write-dma-snapshot.py \
   echo "failure_class=dma-snapshot: canonical per-function snapshot rejected" >&2
   exit 1
 fi
-if ! ./scripts/write-vtd-snapshot.py \
+if ! ./scripts/write-vtd-snapshot.py --profile "$snapshot_profile" \
     --serial-log "$log" \
     --source-revision "$source_revision_file" \
     --qemu-version "${qemu_version:-unknown}" \
