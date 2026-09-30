@@ -1,12 +1,35 @@
 import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
+import LeanOS.DeviceProgramConfinement
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
 
+Every image is confined: the program must pass
+`LeanOS.DeviceProgramConfinement.admissible` under the admitted policy of its
+target, which is then embedded in the version-3 header for the executor to
+enforce.
+
 usage: leanos-wifi-gen <program> <output.bin> [firmware-dir] -/
 
 open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Driver
+
+/-- The admitted policy for a program's target, if the target is admitted. -/
+def admittedPolicy (p : Program) : Option Policy :=
+  if p.effTarget == bcm43224Target then some LeanOS.DeviceProgramConfinement.qotomBcm43224Policy
+  else if p.effTarget == LeanOS.Usb.Xhci.target then some LeanOS.DeviceProgramConfinement.qotomXhciPolicy
+  else none
+
+/-- Check `p` against its target's policy and attach the policy. -/
+def admit (p : Program) : Except String Program := do
+  let some π := admittedPolicy p | throw s!"no admitted policy for target {repr p.effTarget}"
+  if LeanOS.DeviceProgramConfinement.admissible p π then
+    return { p with policy := some π }
+  let at_ := LeanOS.DeviceProgramConfinement.firstViolation p π
+  let what := match at_ with
+    | some i => s!"instruction {i}: {repr p.words[i]!}"
+    | none => "target window exceeds the policy window"
+  throw s!"program is not admissible under its policy ({what})"
 
 /-- Split the brcmsmac firmware container (`bcm43xx-0.fw` with its
 `bcm43xx_hdr-0.fw` index of {offset, length, id} little-endian words). -/
@@ -111,7 +134,7 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"unknown program {name}; known: {(programs fwDir).map (·.1)}"
       return 2
     | some mk =>
-      match build (← mk) with
+      match build (← mk) >>= admit with
       | .error e => IO.eprintln s!"build failed: {e}"; return 1
       | .ok prog =>
         IO.FS.writeBinFile out prog.image

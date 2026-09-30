@@ -92,6 +92,11 @@ inductive Instr where
   /-- `dst := physical address of scratch byte off` (bus address for DMA
   descriptors). Executors without DMA-capable scratch report 0. -/
   | physAddr (dst : Reg) (off : UInt32)
+  /-- Configuration read-modify-write done by the executor:
+  `cfg[off] := (cfg[off] & ~clear) | set`. Both masks are immediates, so a
+  confinement policy can bound which bits a program may change (for example
+  the command register's Memory Space and Bus Master bits). -/
+  | cfgUpdate32 (off : UInt32) (clear : UInt32) (set : UInt32)
   deriving Repr
 
 /-- Opcode numbers shared with `hardware/wifi/wifi-exec.h`. -/
@@ -103,6 +108,7 @@ def opcode : Instr → UInt32
   | .print .. => 16 | .blobStream32 .. => 17 | .blobLoad32 .. => 18
   | .call .. => 19 | .ret => 20 | .memLoad .. => 21 | .memStore .. => 22
   | .fifoIn .. => 23 | .fifoOut .. => 24 | .physAddr .. => 25
+  | .cfgUpdate32 .. => 26
 
 /-- Size of the executor's scratch RAM in bytes. -/
 def scratchBytes : Nat := 262144
@@ -161,6 +167,7 @@ def encode (i : Instr) : Option Word4 :=
   | .physAddr d off => do some ⟨op, ← r d, off, 0⟩
   | .fifoIn off b n => do some ⟨op, off, ← r b, ← r n⟩
   | .fifoOut off b n => do some ⟨op, off, ← r b, ← r n⟩
+  | .cfgUpdate32 off clr set => some ⟨op, off, clr, set⟩
 
 /-! ## Builder
 
@@ -177,6 +184,38 @@ structure Target where
   id : UInt32
   windowBytes : UInt32
   deriving Repr, BEq
+
+/-- The target implied by version-1 images: the BCM43224 at 02:00.0. -/
+def bcm43224Target : Target :=
+  { bus := 2, dev := 0, fn := 0, id := 0x435314e4, windowBytes := 0x4000 }
+
+/-- Confinement policy of a device program (`LeanOS/DeviceProgramConfinement`).
+
+Configuration offsets are dword offsets below 0x100 (the header and the
+legacy capability area reachable through mechanism 1); bit `k` of a bitmap
+names offset `4 * k`. The command register (0x04) is changed only through
+`cfgUpdate32`, whose masks must lie inside `cmdClear` / `cmdSet`. `dma`
+admits `physAddr`, the only way a program learns a bus address. -/
+structure Policy where
+  window : UInt32
+  cfgRead : UInt64
+  cfgWrite : UInt64
+  cmdClear : UInt32
+  cmdSet : UInt32
+  dma : Bool
+  deriving Repr, BEq, DecidableEq
+
+/-- Bitmap of the given configuration offsets (offsets ≥ 0x100 are dropped). -/
+def cfgBits (offs : List UInt32) : UInt64 :=
+  offs.foldl (fun (m : UInt64) (o : UInt32) => if o < 0x100 && o % 4 == 0 then m ||| ((1 : UInt64) <<< (o / 4).toUInt64) else m) 0
+
+/-- `off` is a dword offset below 0x100 whose bit is set in `bits`. -/
+def cfgAllowed (bits : UInt64) (off : UInt32) : Bool :=
+  off < 0x100 && off % 4 == 0 && (bits >>> (off / 4).toUInt64) &&& 1 == 1
+
+/-- Command-register update masks allowed by `π`. -/
+def Policy.updateOk (π : Policy) (off clr set : UInt32) : Bool :=
+  off == 0x04 && clr &&& ~~~π.cmdClear == 0 && set &&& ~~~π.cmdSet == 0
 
 structure BuildState where
   code : Array Instr := #[]
@@ -230,6 +269,12 @@ structure Program where
   blob : ByteArray
   sections : Array (String × Nat × Nat)
   target : Option Target := none
+  /-- Declared confinement policy (version-3 image); the executor enforces
+  it and the generator only sets it after the static check passes. -/
+  policy : Option Policy := none
+
+/-- The PCI function the program drives (version-1 images: the BCM43224). -/
+def Program.effTarget (p : Program) : Target := p.target.getD bcm43224Target
 
 def build (p : ProgM Unit) : Except String Program := do
   let ((), s) := p.run {}
@@ -245,8 +290,10 @@ def build (p : ProgM Unit) : Except String Program := do
 
 Layout (little endian): magic `LWIF`, version, instruction count, blob
 length; version 2 adds the target (bus << 16 | dev << 8 | fn, configuration
-identity dword, window bytes, reserved); then 16-byte instructions, then the
-blob. -/
+identity dword, window bytes, reserved); version 3 further adds the policy
+(flags with bit 0 = DMA, policy window, read bitmap low/high, write bitmap
+low/high, command clear mask, command set mask); then 16-byte instructions,
+then the blob. -/
 
 def putU32 (b : ByteArray) (v : UInt32) : ByteArray :=
   b.push v.toUInt8 |>.push (v >>> 8).toUInt8 |>.push (v >>> 16).toUInt8 |>.push (v >>> 24).toUInt8
@@ -254,14 +301,24 @@ def putU32 (b : ByteArray) (v : UInt32) : ByteArray :=
 def Program.image (p : Program) : ByteArray := Id.run do
   let mut b := ByteArray.empty
   b := putU32 b 0x4649574c -- "LWIF"
-  b := putU32 b (if p.target.isSome then 2 else 1)
+  b := putU32 b (if p.policy.isSome then 3 else if p.target.isSome then 2 else 1)
   b := putU32 b p.words.size.toUInt32
   b := putU32 b p.blob.size.toUInt32
-  if let some t := p.target then
+  if p.target.isSome || p.policy.isSome then
+    let t := p.effTarget
     b := putU32 b ((t.bus <<< 16) ||| (t.dev <<< 8) ||| t.fn)
     b := putU32 b t.id
     b := putU32 b t.windowBytes
     b := putU32 b 0
+  if let some π := p.policy then
+    b := putU32 b (if π.dma then 1 else 0)
+    b := putU32 b π.window
+    b := putU32 b π.cfgRead.toUInt32
+    b := putU32 b (π.cfgRead >>> 32).toUInt32
+    b := putU32 b π.cfgWrite.toUInt32
+    b := putU32 b (π.cfgWrite >>> 32).toUInt32
+    b := putU32 b π.cmdClear
+    b := putU32 b π.cmdSet
   for w in p.words do
     b := putU32 (putU32 (putU32 (putU32 b w.op) w.a) w.b) w.c
   return b ++ p.blob

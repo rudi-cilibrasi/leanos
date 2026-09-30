@@ -21,6 +21,9 @@ lab kernel's scratch RAM is identity-mapped below 16 MiB, so its virtual
 address is its DMA address. The FreeBSD development runner offers no DMA;
 the keyboard program refuses to run there.
 
+The program is admitted under the xHCI confinement policy
+(`docs/device-program-confinement.md`), the only Qotom policy that admits DMA.
+
 ## Trying it
 
 Build and install the image from FreeBSD's side, then boot it once under the

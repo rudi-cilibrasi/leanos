@@ -60,6 +60,7 @@ lake build leanos-wifi-tx
 .lake/build/bin/leanos-wifi-tx
 lake build leanos-wifi-vectors
 .lake/build/bin/leanos-wifi-vectors
+./scripts/check-device-programs.sh
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 lake build leanos-copy-root-construction

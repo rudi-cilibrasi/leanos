@@ -99,13 +99,12 @@ def identify : ProgM Unit := do
   expectEq 0 0x435314e4 Fail.wrongDevice
   emit (.cfgRead32 0 0x04)
   print Tag.pciCmd 0
-  -- `pci_enable_device` + `pci_set_master`: legacy BIOS leaves the card's
-  -- memory decoding on, but UEFI firmware (no driver for it) leaves the
-  -- command register 0. Set Memory Space (bit 1) and Bus Master (bit 2);
-  -- write zeros to the status half so its RW1C bits are untouched.
-  andi 0 0xFFFF
-  ori 0 0x0006
-  emit (.cfgWrite32 0x04 (.reg 0))
+  -- `pci_enable_device`: legacy BIOS leaves the card's memory decoding on,
+  -- but UEFI firmware (no driver for it) leaves the command register 0. Set
+  -- Memory Space (bit 1) only: frames move by programmed I/O, so the card
+  -- never needs Bus Master (`qotomBcm43224Policy`). The executor writes
+  -- zeros to the status half so its RW1C bits are untouched.
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0002)
   r32 0 ccChipId
   print Tag.chipId 0
   andi 0 0xFFFF

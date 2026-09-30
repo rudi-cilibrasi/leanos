@@ -41,6 +41,7 @@ enum wifi_status {
     WIFI_STEP_LIMIT = 7,
     WIFI_BAD_BLOB = 8,
     WIFI_BAD_MEM = 9,
+    WIFI_POLICY = 10,       /* effect outside the image's declared policy */
 };
 
 /* Scratch RAM for frames, protocol state and (where the executor provides
@@ -52,6 +53,20 @@ static uint8_t wifi_scratch[WIFI_SCRATCH_BYTES] __attribute__((aligned(65536)));
 struct wifi_target {
     uint32_t bus, dev, fn, id, window;
 };
+
+/* Confinement policy declared by a version-3 image (Policy in
+   LeanOS/Wifi/Bytecode.lean). Configuration bitmaps cover dword offsets
+   below 0x100; the command register changes only through opcode 26 within
+   the clear/set masks; `dma` admits physAddr. Older images carry none. */
+struct wifi_policy {
+    uint32_t present, dma, window;
+    uint64_t cfg_read, cfg_write;
+    uint32_t cmd_clear, cmd_set;
+};
+
+static inline int wifi_cfg_allowed(uint64_t bits, uint32_t off) {
+    return off < 0x100u && !(off & 3u) && ((bits >> (off / 4u)) & 1u);
+}
 
 /* With WIFI_HOOKS_DIRECT the executor calls fixed hook functions by name
    (the LeanOS lab kernel forbids indirect control flow); otherwise it calls
@@ -92,21 +107,22 @@ static inline uint32_t wifi_le32(const uint8_t *p) {
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-/* Execute `image` (the Lean-encoded program). `code` receives the fail code
-   or the offending pc; `steps` bounds execution. */
-/* Parse the image header: target and header length. 0 on success. */
-static int wifi_image_target(const uint8_t *image, uint32_t image_len,
-                             struct wifi_target *t, uint32_t *header_len) {
+/* Parse the image header: target, policy and header length. 0 on success. */
+static int wifi_image_header(const uint8_t *image, uint32_t image_len,
+                             struct wifi_target *t, struct wifi_policy *pol,
+                             uint32_t *header_len) {
     if (image_len < 16 || wifi_le32(image) != WIFI_MAGIC)
         return WIFI_BAD_IMAGE;
     uint32_t version = wifi_le32(image + 4);
+    pol->present = 0; pol->dma = 0; pol->window = 0;
+    pol->cfg_read = 0; pol->cfg_write = 0; pol->cmd_clear = 0; pol->cmd_set = 0;
     if (version == 1) {
         t->bus = 2; t->dev = 0; t->fn = 0;
         t->id = 0x435314e4u; t->window = WIFI_WINDOW_BYTES;
         *header_len = 16;
         return 0;
     }
-    if (version != 2 || image_len < 32)
+    if ((version != 2 && version != 3) || image_len < (version == 3 ? 64u : 32u))
         return WIFI_BAD_IMAGE;
     uint32_t bdf = wifi_le32(image + 16);
     t->bus = (bdf >> 16) & 0xffu; t->dev = (bdf >> 8) & 0x1fu; t->fn = bdf & 7u;
@@ -116,15 +132,32 @@ static int wifi_image_target(const uint8_t *image, uint32_t image_len,
         (bdf & ~0xff1f07u))
         return WIFI_BAD_IMAGE;
     *header_len = 32;
+    if (version == 3) {
+        uint32_t flags = wifi_le32(image + 32);
+        pol->present = 1;
+        pol->dma = flags & 1u;
+        pol->window = wifi_le32(image + 36);
+        pol->cfg_read = wifi_le32(image + 40) | ((uint64_t)wifi_le32(image + 44) << 32);
+        pol->cfg_write = wifi_le32(image + 48) | ((uint64_t)wifi_le32(image + 52) << 32);
+        pol->cmd_clear = wifi_le32(image + 56);
+        pol->cmd_set = wifi_le32(image + 60);
+        if ((flags & ~1u) || t->window > pol->window)
+            return WIFI_BAD_IMAGE;
+        *header_len = 64;
+    }
     return 0;
 }
 
+/* Execute `image` (the Lean-encoded program). `code` receives the fail code
+   or the offending pc; `max_steps` bounds execution. Every check mirrors
+   `step` in LeanOS/Wifi/Sim.lean, in the same order. */
 static int wifi_exec(const uint8_t *image, uint32_t image_len,
                      const struct wifi_hooks *h, uint64_t max_steps,
                      uint32_t *code) {
     struct wifi_target target;
+    struct wifi_policy pol;
     uint32_t hdr = 0;
-    if (wifi_image_target(image, image_len, &target, &hdr))
+    if (wifi_image_header(image, image_len, &target, &pol, &hdr))
         return WIFI_BAD_IMAGE;
     const uint32_t window = target.window;
     uint32_t n = wifi_le32(image + 8), blob_len = wifi_le32(image + 12);
@@ -149,14 +182,17 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
         pc++;
 #define REG(x) do { if ((x) > 15) { *code = pc - 1; return WIFI_BAD_OPCODE; } } while (0)
 #define OFF(x, w) do { if ((x) > window - (w) || ((x) & ((w) - 1))) { *code = pc - 1; return WIFI_BAD_OFFSET; } } while (0)
+#define POLICY(ok) do { if (pol.present && !(ok)) { *code = pc - 1; return WIFI_POLICY; } } while (0)
         switch (base) {
         case 0: *code = 0; return WIFI_HALT;
         case 1: *code = a; return WIFI_FAIL;
         case 2: REG(a); if (b > 0xffc || (b & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
+            POLICY(wifi_cfg_allowed(pol.cfg_read, b));
             r[a] = WH_CR32(b); break;
         case 3: { uint32_t v = imm ? b : (b < 16 ? r[b] : 0);
             if (!imm) REG(b);
             if (a > 0xffc || (a & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
+            POLICY(wifi_cfg_allowed(pol.cfg_write, a));
             WH_CW32(a, v); break; }
         case 4: REG(a); OFF(b, 4); r[a] = WH_R32(b); break;
         case 5: REG(a); OFF(b, 2); r[a] = WH_R16(b); break;
@@ -262,11 +298,16 @@ static int wifi_exec(const uint8_t *image, uint32_t image_len,
             break; }
         case 25: REG(a);
             if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; return WIFI_BAD_MEM; }
+            POLICY(pol.dma);
             r[a] = WH_PHYS(b); break;
+        case 26: if (a > 0xffc || (a & 3)) { *code = pc - 1; return WIFI_BAD_OFFSET; }
+            POLICY(a == 4 && !(b & ~pol.cmd_clear) && !(c & ~pol.cmd_set));
+            WH_CW32(a, (WH_CR32(a) & ~b) | c); break;
         default: *code = pc - 1; return WIFI_BAD_OPCODE;
         }
 #undef REG
 #undef OFF
+#undef POLICY
     }
     *code = pc;
     return WIFI_STEP_LIMIT;

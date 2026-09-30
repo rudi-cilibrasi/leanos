@@ -25,6 +25,7 @@ import LeanOS.PlatformAdmission
 import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
+import LeanOS.DeviceProgramConfinement
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
@@ -3201,5 +3202,31 @@ theorem page_table_separation_witness :
 /-- Adversarial executable check: an unsupported command cannot be accepted. -/
 example : (KernelTransition.transition KernelTransition.initialState .unsupported).result =
     .rejected := by decide
+
+/-- SC-DEVICE-PROGRAM-STATIC-CONFINEMENT: a device program accepted by the
+static checker, run by the reference simulator on any device model from any
+registers and scratch, requests no MMIO, configuration or bus-address effect
+outside its policy. -/
+theorem device_program_static_confinement {σ : Type} (π : Wifi.Bytecode.Policy)
+    (p : Wifi.Bytecode.Program) (hp : DeviceProgramConfinement.admissible p π = true)
+    (d : Wifi.Sim.Device σ) (s0 : σ) (fuel : Nat)
+    (init : Wifi.Sim.Machine (σ × Bool) → Wifi.Sim.Machine (σ × Bool))
+    (hinit : ∀ m, (init m).dev = m.dev) :
+    (Wifi.Sim.run p (DeviceProgramConfinement.guard π d) (s0, false) fuel init).2.dev.2 =
+      false :=
+  DeviceProgramConfinement.run_confined π p hp d s0 fuel init hinit
+
+/-- SC-DEVICE-PROGRAM-DECLARED-CONFINEMENT: any program whose image declares a
+policy (target window inside the policy window) is confined to it by the
+simulator's dynamic policy checks alone. -/
+theorem device_program_declared_confinement {σ : Type} (π : Wifi.Bytecode.Policy)
+    (p : Wifi.Bytecode.Program) (hpol : p.policy = some π)
+    (hwin : p.effTarget.windowBytes.toNat ≤ π.window.toNat)
+    (d : Wifi.Sim.Device σ) (s0 : σ) (fuel : Nat)
+    (init : Wifi.Sim.Machine (σ × Bool) → Wifi.Sim.Machine (σ × Bool))
+    (hinit : ∀ m, (init m).dev = m.dev) :
+    (Wifi.Sim.run p (DeviceProgramConfinement.guard π d) (s0, false) fuel init).2.dev.2 =
+      false :=
+  DeviceProgramConfinement.run_declared_confined π p hpol hwin d s0 fuel init hinit
 
 end LeanOS.SecurityClaims

@@ -1,0 +1,9 @@
+{
+  "freebsd_boot_before": 1790708584,
+  "freebsd_boot_after": 1790714356,
+  "elf_sha256": "49a7f56b667879c5e4238c768f851aaf6a57a89060a4c86f4fc97412104d9c39",
+  "evidence_class": "lab-recovery-experiment",
+  "hang_recovery": false,
+  "request_consumed": true,
+  "recovery": "freebsd-ssh-restored"
+}
