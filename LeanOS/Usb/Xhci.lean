@@ -33,6 +33,27 @@ class Layout where
   /-- Bay Trail port routing through configuration space (XUSB2PR,
   USB3_PSSEN); other controllers route by themselves. -/
   routing : Bool
+  /-- Scratch offsets of the DMA structures (the executor zeroes scratch at
+  start). A layout that confines them to a few pages lets a platform expose
+  only those pages to the controller (the q35 device-service VT-d window). -/
+  dcbaa : UInt32
+  spArray : UInt32
+  cmdRing : UInt32
+  evRing : UInt32
+  erst : UInt32
+  inputCtx : UInt32
+  outCtxBase : UInt32
+  ep0RingBase : UInt32
+  intRing : UInt32
+  dataBuf : UInt32
+  reportBuf : UInt32
+  prevReport : UInt32
+  /-- Driver state words (never handed to the controller). -/
+  vars : UInt32
+  /-- Scratchpad buffers handed to the controller (HCSPARAMS2), 4 KiB each
+  from `spPages`. -/
+  scratchpads : Nat
+  spPages : UInt32
 
 /-- The Qotom's Intel Bay Trail controller (8086:0f35 at 00:14.0). -/
 @[instance_reducible] def bayTrail : Layout where
@@ -41,6 +62,21 @@ class Layout where
   runtime := 0x2000
   doorbells := 0x3000
   routing := true
+  dcbaa := 0x20000
+  spArray := 0x20200
+  cmdRing := 0x20400
+  evRing := 0x20800
+  erst := 0x20C00
+  inputCtx := 0x21000
+  outCtxBase := 0x22000
+  ep0RingBase := 0x24000
+  intRing := 0x25000
+  dataBuf := 0x25800
+  reportBuf := 0x25C00
+  prevReport := 0x25C40
+  vars := 0x26000
+  scratchpads := 16
+  spPages := 0x10000
 
 /-- QEMU's `qemu-xhci` (1b36:000d; the q35 device lab places it at 00:03.0):
 CAPLENGTH 0x40, runtime registers at 0x1000, doorbells at 0x2000, 16 KiB. -/
@@ -50,6 +86,23 @@ CAPLENGTH 0x40, runtime registers at 0x1000, doorbells at 0x2000, 16 KiB. -/
   runtime := 0x1000
   doorbells := 0x2000
   routing := false
+  -- Everything the controller reads or writes lies in scratch 0x0000–0x3E47
+  -- (four pages); qemu-xhci asks for no scratchpad buffers.
+  dcbaa := 0x0000
+  spArray := 0x0100
+  cmdRing := 0x0400
+  evRing := 0x0800
+  erst := 0x0C00
+  inputCtx := 0x1000
+  outCtxBase := 0x1800
+  ep0RingBase := 0x2800
+  intRing := 0x3800
+  dataBuf := 0x3C00
+  reportBuf := 0x3E00
+  prevReport := 0x3E40
+  vars := 0x4000
+  scratchpads := 0
+  spPages := 0
 
 variable [Layout]
 
@@ -96,20 +149,20 @@ def pscNeutral : UInt32 := 0x0E00C3E0 ||| 0x00000009 ||| 0x00003C00 ||| 0x400000
 
 /-! ## Scratch layout (bytes; the executor zeroes scratch at start) -/
 
-def spPages : UInt32 := 0x10000        -- 16 × 4 KiB scratchpad buffers
-def dcbaa : UInt32 := 0x20000          -- (MaxSlots + 1) × 8
-def spArray : UInt32 := 0x20200        -- 16 × 8
-def cmdRing : UInt32 := 0x20400        -- 64 TRBs
-def evRing : UInt32 := 0x20800         -- 64 TRBs
-def erst : UInt32 := 0x20C00           -- one segment entry
-def inputCtx : UInt32 := 0x21000       -- 33 × 32
-def outCtxBase : UInt32 := 0x22000     -- slot n: + 0x400 × (n - 1), 4 slots
-def ep0RingBase : UInt32 := 0x24000    -- slot n: + 0x400 × (n - 1)
-def intRing : UInt32 := 0x25000        -- keyboard interrupt IN ring
-def dataBuf : UInt32 := 0x25800        -- control transfer data (512)
-def reportBuf : UInt32 := 0x25C00      -- interrupt report (64)
-def prevReport : UInt32 := 0x25C40
-def vars : UInt32 := 0x26000           -- driver state words
+def spPages : UInt32 := Layout.spPages        -- scratchpad buffers, 4 KiB each
+def dcbaa : UInt32 := Layout.dcbaa            -- (MaxSlots + 1) × 8
+def spArray : UInt32 := Layout.spArray        -- scratchpad array, 8 per buffer
+def cmdRing : UInt32 := Layout.cmdRing        -- 64 TRBs
+def evRing : UInt32 := Layout.evRing          -- 64 TRBs
+def erst : UInt32 := Layout.erst              -- one segment entry
+def inputCtx : UInt32 := Layout.inputCtx      -- 33 × 32
+def outCtxBase : UInt32 := Layout.outCtxBase  -- slot n: + 0x400 × (n - 1), 4 slots
+def ep0RingBase : UInt32 := Layout.ep0RingBase -- slot n: + 0x400 × (n - 1)
+def intRing : UInt32 := Layout.intRing        -- keyboard interrupt IN ring
+def dataBuf : UInt32 := Layout.dataBuf        -- control transfer data (512)
+def reportBuf : UInt32 := Layout.reportBuf    -- interrupt report (64)
+def prevReport : UInt32 := Layout.prevReport
+def vars : UInt32 := Layout.vars              -- driver state words
 def ringTrbs : UInt32 := 64
 def maxSlots : UInt32 := 4
 
@@ -420,7 +473,7 @@ def bringUp : ProgM Unit := do
   poll32 usbSts stsNotReady 0 1000 100 Fail.resetStuck
   w32 config maxSlots
   -- scratchpad buffers and DCBAA
-  for i in [0:16] do
+  for i in [0:(Layout.scratchpads : Nat)] do
     storePhys64 (spArray + 8 * i.toUInt32) (spPages + 0x1000 * i.toUInt32)
   storePhys64 dcbaa spArray
   writePhys64 dcbaapLo dcbaapHi dcbaa
