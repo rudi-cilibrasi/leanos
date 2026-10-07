@@ -45,7 +45,13 @@ record_check_phase() {
 ./scripts/test-native-decide-policy.sh
 ./scripts/check-native-decide-policy.py
 
-lake build
+# Lake prints each rebuilt module's elaboration time only without ANSI output;
+# the proof-time budget (#498) records and gates those times.
+lean_build_log="${LEANOS_LEAN_BUILD_LOG:-build/ci/lean-build.log}"
+mkdir -p "$(dirname "$lean_build_log")"
+lake build --no-ansi 2>&1 | tee "$lean_build_log"
+python3 scripts/check-proof-time-budget.py "$lean_build_log" \
+  --record "$(dirname "$lean_build_log")/lean-module-times.tsv"
 python3 scripts/test-qotom-bsp-capture.py
 python3 scripts/test-qotom-bsp-capture.py --native
 python3 scripts/test-qotom-bootstrap-binding.py
@@ -243,6 +249,8 @@ python3 scripts/hardware-evidence.py verify hardware/observations/qotom-20260909
 ./scripts/test-build-timing.py
 
 python3 scripts/test-check-timing.py
+
+python3 scripts/test-proof-time-budget.py
 
 ./scripts/test-image-bundle.sh
 

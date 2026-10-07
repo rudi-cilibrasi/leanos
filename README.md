@@ -663,7 +663,13 @@ tarball per emulator shard for 14 days, including available diagnostics from
 failed runs. Image-producing lanes also retain the validated six-phase timing
 records described in [the boot-image guide](docs/boot-image.md), so issue #266
 performance work can compare measured phases without treating timing as a
-reproducibility input. Controlled negative fixtures ensure
+reproducibility input. The Lean lane records each rebuilt module's
+elaboration time and gates it against `scripts/proof-time-baseline.tsv`
+after normalizing for runner speed (`scripts/check-proof-time-budget.py`,
+issue #498): one of the fifteen slowest modules may not regress by more than
+35% and 15 seconds, and no other module may enter that set above 60 seconds.
+A PR raises the baseline only by editing it, with its `# reason:` line
+updated. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 
