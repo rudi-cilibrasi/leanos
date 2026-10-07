@@ -4,7 +4,7 @@ namespace LeanOS.NegativeFixtures.VTdBootPlan
 
 open LeanOS.VTdBootPlan
 
-/- The v1 boot plan is deny-all: an assigned device-domain state is rejected. -/
+/- An assigned device-domain state without its reviewed grant binding is rejected. -/
 /--
 error: Tactic `native_decide` evaluated that the proposition
   (match
@@ -12,7 +12,7 @@ error: Tactic `native_decide` evaluated that the proposition
         (let __src := sampleInput;
         { state := IOMMU.assignedState, rootTableFrame := __src.rootTableFrame,
           contextTableFrame := __src.contextTableFrame, cpuTableFrames := __src.cpuTableFrames,
-          reservationResult := __src.reservationResult }) with
+          reservationResult := __src.reservationResult, grantBinding := __src.grantBinding }) with
     | Except.ok a => true
     | Except.error a => false) =
     true
@@ -20,6 +20,20 @@ is false
 -/
 #guard_msgs in
 example : (match compile { sampleInput with state := LeanOS.IOMMU.assignedState } with
+    | .ok _ => true | .error _ => false) = true := by
+  native_decide
+
+/- A grant whose hardware frame is a CPU page-table frame is rejected. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  (match compile (withFrameBase 10) with
+    | Except.ok a => true
+    | Except.error a => false) =
+    true
+is false
+-/
+#guard_msgs in
+example : (match compile (withFrameBase 10) with
     | .ok _ => true | .error _ => false) = true := by
   native_decide
 

@@ -110,19 +110,57 @@ accepted word pair cannot encode two entries.
 
 ## Plan compilation and the accepted domain projection
 
-`VTdBootPlan.compile` is the only constructor of `Plan`; every field, including
-the deny-all and reservation proofs, is private, so an accepted plan cannot be
-reconstructed with substituted tables. The v1 subset installs the deny-all boot
-tables: one present root entry for bus 0 selecting the reserved context table,
-and 256 absent context entries. This is exactly the projection of an accepted
-static device-domain `IOMMU.State` that carries no live assignment or mapping:
-`accepted_state_deny_all` requires the model state itself to be deny-all, and
-`accepted_agrees_with_domain_projection` shows no source and generation resolves
-to a live assignment in that state. `accepted_maps_no_frame` shows no physical
-frame is reachable through an accepted plan, and `accepted_requesters_bound_once`
-fixes the 256-entry context table indexed by requester. A device-domain state
-that carries a live assignment is rejected until the assigned-device issue
-reviews it.
+`VTdBootPlan.compile` is the only constructor of `Plan` and the single authority
+for every VT-d table word any q35 image installs. A `Plan` is a privately
+constructed checked `Input`; every table (root, context, and the three
+second-level levels) is a function of that checked input, so an accepted plan
+cannot be reconstructed with substituted tables. Every accepted plan has one
+present root entry for bus 0 selecting the reserved context table.
+
+- **Deny-all.** Without a grant binding the plan has 256 absent context
+  entries. This is exactly the projection of an accepted static device-domain
+  `IOMMU.State` that carries no live assignment or mapping:
+  `accepted_state_deny_all` requires the model state itself to be deny-all,
+  `accepted_agrees_with_domain_projection` shows no source and generation
+  resolves to a live assignment in that state, and `accepted_maps_no_frame`
+  and `accepted_unbound_translates_nothing` show no frame is reachable.
+- **One assignment.** A state with exactly one live assignment is accepted
+  only together with a reviewed `GrantBinding`: the requester the assigned
+  function answers as, the three linked second-level table frames, and the
+  hardware frame holding model page 0 of each granted model frame. The binding
+  carries no authority of its own; which IOVA pages are mapped, with which
+  permission, and at which model frame offset still comes only from the
+  accepted `IOMMU.State`. The bound requester's context entry selects a
+  three-level second-level table whose top and directory levels each hold one
+  read/write entry at slot 0, and whose leaf maps each granted model page to
+  one 4 KiB hardware page with the granted permission.
+
+`compile` rejects, with a typed reason: a missing reservation, more than one
+live assignment, a mapping without its assignment, an assignment without a
+binding or a binding without an assignment, an out-of-range domain or
+requester, duplicate, CPU-aliasing, out-of-range, or unreserved table frames, a
+mapping whose model frame the binding does not place, an empty permission, a
+grant beyond the single leaf table, a granted frame out of range, and
+(`grantOverlapsReservedFrame`) a granted frame that overlaps a kernel
+reservation other than the loaded image, a CPU page-table frame, or any VT-d
+table frame.
+
+The general theorem `accepted_translation_exact` states that for every
+requester and every IOVA page, walking the encoded root, context, and
+second-level words of an accepted plan (`Plan.translate`) yields exactly
+`grantedTranslation`: the granted hardware frame and permission for the bound
+requester's granted pages, and nothing anywhere else.
+`accepted_translation_from_grant` ties each translation back to one model
+mapping, `accepted_grant_translates` shows no granted page is dropped, and
+`accepted_translation_avoids_protected` shows no translation reaches a
+protected frame. `accepted_requesters_bound_once` fixes the 256-entry context
+table indexed by requester. These are statements about the encoded tables, not
+about the IOMMU's table walk, which remains a trusted hardware boundary. The
+assigned-EDU and device-service tables are instances: the per-scenario facts
+that remain (`deviceServiceState_shape`, `deviceServiceTransfer_window`) are
+about the model state and its transfer admission, and the executable vectors
+in `VTdBootPlan` check the translation of both scenarios over the sample
+layout.
 
 The remapping-table frames are identity-mapped and covered by the same
 validated boot-reservation overlay that excludes CPU page tables from
@@ -152,17 +190,30 @@ rejects boot before an assigned device could be enabled.
 ## Generator
 
 `leanos-vtd-plan` is a host-only executable. It receives the final-ELF
-remapping-table symbol addresses and the CPU page-table layout, builds the same
-finite `VTdBootPlan.Input` over the accepted deny-all device-domain state,
-requires `compile` to accept it, and emits the canonical root/context table
-words and pinned register constants as a C header. If the linked plan is
-rejected it fails rather than emitting tables.
+remapping-table symbol addresses and the CPU page-table layout and builds the
+finite `VTdBootPlan.Input` values those symbols represent: the deny-all state,
+the assigned-EDU state bound to requester 16 and the linked read/write
+buffers, and, for a device-service image, the device-service state bound to the
+start of the executor scratch. It requires `compile` to accept every one and
+emits only compiled table words (`leanos_vtd_root_table`,
+`leanos_vtd_context_table`, the `leanos_vtd_assigned_*` context and
+second-level arrays, and `leanos_vtd_service_second_level_table`) plus pinned
+register constants as a C header. If any plan is rejected it fails rather than
+emitting tables. Moving the assigned and service tables onto `compile` left
+every generated header byte-identical.
+
+The activation order is unchanged and stays fail-closed: the image writes the
+tables, reads them back and compares them with the generated words, enables
+translation, and rechecks the live tables before every CPL3 entry; any mismatch
+stops before CPL3.
 
 ## Assumptions, TCB, and exclusions
 
 Proved: everything decided in Lean above — the codec round-trip and injectivity,
-the deny-all projection agreement with `IOMMU.validateCore`, the table-frame
-reservation and disjointness, the MMIO/RAM separation of the page-table policy,
+the deny-all projection agreement with `IOMMU.validateCore`, the exact
+translation of the encoded tables for every requester and IOVA page, the
+table-frame reservation and disjointness, the separation of granted frames
+from protected frames, the MMIO/RAM separation of the page-table policy,
 and the activation-order encoding.
 
 No axiom, `unsafe`, `@[extern]`, `@[implemented_by]`, or FFI is added, and the
@@ -172,9 +223,11 @@ Trusted and out of scope for this issue: the ACPI DMAR firmware description and
 its correspondence to the pinned unit, PCIe requester-ID delivery, VT-d MMIO
 register semantics and table walks, IOTLB and context-cache invalidation
 behavior, the boot assembly and C that will map the MMIO window and write the
-tables, the linker and generated header, QEMU's VT-d implementation, and any
-claim that the final binary refines this model. Enabling a bus master,
-performing a real assigned-device transfer, dynamic map/unmap, interrupt
+tables, the linker and generated header, QEMU's VT-d implementation, the
+platform binding of a model device to a PCI requester and of a model frame to
+linked memory, and any claim that the final binary refines this model or that
+the hardware walk agrees with `Plan.translate`. Dynamic map/unmap, more than
+one assigned device, interrupt
 remapping, PASID, ATS, device IOTLB, SR-IOV, hotplug, SMP, and timing or covert
 channels are all excluded. The deny-all PCI quarantine of
 [dma-quarantine.md](dma-quarantine.md) is preserved unchanged.

@@ -5,6 +5,12 @@ Lean model only. It does not program Intel VT-d, construct remapping tables,
 invalidate an IOTLB, enable EDU DMA, or establish correspondence to generated
 C, QEMU, firmware, PCIe, or physical hardware.
 
+`LeanOS.VTdBootPlan` consumes accepted states of this model: its `compile`
+turns a deny-all state, or a state with one live assignment plus a reviewed
+platform binding, into the encoded VT-d tables, and `accepted_translation_exact`
+proves those encoded tables translate exactly this model's granted pages (see
+[vtd-boot-plan.md](vtd-boot-plan.md)).
+
 ## Authority and bounded identities
 
 The model has finite bounds for owners, platform device slots, requester/source
