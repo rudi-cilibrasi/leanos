@@ -15,6 +15,7 @@ import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
+import LeanOS.NotifyReply
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -72,7 +73,8 @@ def adapters : List AdapterSpec := [
   adapter "Interrupt.pageFault" 17 "leanos_page_fault_demo" 5,
   adapter "CompositeDispatcher.stateful" 18 "leanos_composite_dispatch" 6,
   adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6,
-  adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3]
+  adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3,
+  adapter "NotifyReply.event" 21 "leanos_notify_reply_event" 4]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -115,6 +117,10 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
     expected := if 10 ≤ operation then
       BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
     else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+
+private def notifyReplyEvent (id : String) (script step operation subject : UInt64) : Vector :=
+  { id, adapter := "NotifyReply.event", words := [script, step, operation, subject],
+    expected := NotifyReply.notifyReplyEvent script step operation subject }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -404,6 +410,24 @@ def blockingIpcEventVectors : List Vector := [
   blockingIPCEvent "blocking-ipc-event.wrong-caller" 1 2 2,
   blockingIPCEvent "blocking-ipc-event.wrong-step" 0 2 1,
   blockingIPCEvent "blocking-ipc-event.out-of-cycle" 4 1 2]
+
+/-- Notification and reply-capability edges (#471): the machine scenario,
+the rejected edges (signal without the right, copying a reply capability,
+reply after the caller terminated, a double reply), and off-script refusals. -/
+def notifyReplyVectors : List Vector := [
+  notifyReplyEvent "notify-reply.wait-blocks" 0 0 2 2,
+  notifyReplyEvent "notify-reply.signal" 0 1 1 1,
+  notifyReplyEvent "notify-reply.wait-wakes" 0 2 2 2,
+  notifyReplyEvent "notify-reply.call" 0 3 3 1,
+  notifyReplyEvent "notify-reply.reply" 0 4 4 2,
+  notifyReplyEvent "notify-reply.double-reply" 0 5 4 2,
+  notifyReplyEvent "notify-reply.signal-without-right" 1 0 1 2,
+  notifyReplyEvent "notify-reply.negative-call" 1 1 3 1,
+  notifyReplyEvent "notify-reply.copy-reply" 1 2 5 2,
+  notifyReplyEvent "notify-reply.caller-terminates" 1 3 6 1,
+  notifyReplyEvent "notify-reply.reply-after-termination" 1 4 4 2,
+  notifyReplyEvent "notify-reply.off-script-step" 0 9 4 2,
+  notifyReplyEvent "notify-reply.unknown-script" 2 0 2 2]
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -746,9 +770,14 @@ def vectors : List Vector := [
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
-    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors
+    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++ notifyReplyVectors
 
-theorem corpus_shape : vectors.length = 419 := by decide
+theorem corpus_shape : vectors.length = 432 := by decide
+
+/-- Oracle indices 419--431 are the notification/reply corpus (#471). -/
+theorem hosted_notify_reply_vectors_exact :
+    vectors.drop 419 = notifyReplyVectors := by
+  rfl
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -774,7 +803,7 @@ canceled receipt denial, same-slot replacement, canceled-handle denial, and
 the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
-      blockingIpcEventVectors := by
+      blockingIpcEventVectors ++ notifyReplyVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

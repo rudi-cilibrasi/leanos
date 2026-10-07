@@ -304,7 +304,8 @@ fi
 for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
     CallerSuppliedCompositeContext TautologicalAuthoritativeContract \
     UniversalAuthoritativePreservation GenericCompositeSuccess \
-    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation; do
+    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation \
+    ReplyCapabilityAmplification CopyableReplyCapability; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
