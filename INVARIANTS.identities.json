@@ -15975,6 +15975,18 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_transition_agreement",
+      "display": "boot_transition_agreement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_transition_refinement",
+      "display": "boot_transition_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.capability_copy_no_authority_amplification",
       "display": "capability_copy_no_authority_amplification",
       "kind": "theorem"
