@@ -13521,6 +13521,12 @@
     },
     {
       "source": "LeanOS/KernelTransition.lean",
+      "qualified": "LeanOS.KernelTransition.bootTransition_spec",
+      "display": "bootTransition_spec",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelTransition.lean",
       "qualified": "LeanOS.KernelTransition.initialState_wellFormed",
       "display": "initialState_wellFormed",
       "kind": "theorem"
@@ -13895,6 +13901,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.general_protection_entry_scenario_agrees",
       "display": "general_protection_entry_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_boot_transition_class_vectors_exact",
+      "display": "hosted_boot_transition_class_vectors_exact",
       "kind": "theorem"
     },
     {

@@ -405,6 +405,17 @@ def blockingIpcEventVectors : List Vector := [
   blockingIPCEvent "blocking-ipc-event.wrong-step" 0 2 1,
   blockingIPCEvent "blocking-ipc-event.out-of-cycle" 4 1 2]
 
+/-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
+classification. Each argument ranges over the boundary words 0, 1, 2 and
+2^64 − 1, which cover its equivalence classes (the accepting word, the
+other model encoding, words that encode nothing, and the maximum word). -/
+def bootTransitionClassWords : List UInt64 := [0, 1, 2, 0xffffffffffffffff]
+
+def bootTransitionClassVectors : List Vector :=
+  bootTransitionClassWords.flatMap fun state =>
+    bootTransitionClassWords.map fun command =>
+      boot s!"boot.class.state-{state}.command-{command}" state command
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -746,9 +757,15 @@ def vectors : List Vector := [
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
-    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors
+    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
+    bootTransitionClassVectors
 
-theorem corpus_shape : vectors.length = 419 := by decide
+theorem corpus_shape : vectors.length = 435 := by decide
+
+/-- Oracle indices 419--434 are the boot-transition classification grid. -/
+theorem hosted_boot_transition_class_vectors_exact :
+    vectors.drop 419 = bootTransitionClassVectors := by
+  rfl
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -774,7 +791,7 @@ canceled receipt denial, same-slot replacement, canceled-handle denial, and
 the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
-      blockingIpcEventVectors := by
+      blockingIpcEventVectors ++ bootTransitionClassVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :
