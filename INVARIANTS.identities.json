@@ -5324,6 +5324,78 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.bootAuthority_b_unprivileged",
+      "display": "bootAuthority_b_unprivileged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.console_confidentiality",
+      "display": "console_confidentiality",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.console_integrity",
+      "display": "console_integrity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.console_integrity_pair",
+      "display": "console_integrity_pair",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.demo_a_accepted",
+      "display": "demo_a_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.demo_b_refused",
+      "display": "demo_b_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.demo_output",
+      "display": "demo_output",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_observations_other",
+      "display": "step_observations_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_preserves_noQueuedFrom",
+      "display": "step_preserves_noQueuedFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_unprivileged_delivery",
+      "display": "step_unprivileged_delivery",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_unprivileged_state",
+      "display": "step_unprivileged_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.unprivileged_observations",
+      "display": "unprivileged_observations",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/DMAQuarantine.lean",
       "qualified": "LeanOS.DMAQuarantine.accepted_accounts_every_manifest_entry",
       "display": "accepted_accounts_every_manifest_entry",
@@ -16295,6 +16367,18 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.composite_terminateSubject_then_deferred_trace_preserves",
       "display": "composite_terminateSubject_then_deferred_trace_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.console_confidentiality",
+      "display": "console_confidentiality",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.console_integrity",
+      "display": "console_integrity",
       "kind": "theorem"
     },
     {
