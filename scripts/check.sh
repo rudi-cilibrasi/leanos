@@ -218,6 +218,7 @@ check_phase="image-and-emulator-contracts"
 ./scripts/test-run-bootstrap64-nmi.sh
 
 ./scripts/test-entry-stack-budget.sh
+./scripts/test-scenario-claims.sh
 
 ./scripts/test-entry-stack-layout.sh
 
