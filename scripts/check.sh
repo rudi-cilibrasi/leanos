@@ -190,6 +190,7 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-run-extended-state-image.sh
 ./scripts/test-run-extended-state-peer-pke.sh
+./scripts/test-run-device-service-rejection.sh
 
 ./scripts/test-run-fast-entry-image.sh
 

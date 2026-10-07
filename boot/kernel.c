@@ -3451,6 +3451,19 @@ static __attribute__((noinline)) void device_service_assign(void) {
     serial_u64(DEVICE_SERVICE_CAPABILITIES);
     serial_puts(" command=2 memory=enabled bus-master=program"
         " stage=post-translation result=PASS\n");
+#if defined(LEANOS_DEVICE_SERVICE_UNPLANNED_BUS_MASTER_FIXTURE) || \
+    defined(LEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE)
+    /* Controlled negatives (#482): with the service tables live, the SATA
+       controller, a function outside the VT-d plan, regains memory decode and
+       bus mastering.  The outbound read-back must still reject it. */
+    pci_config_command(31, 2, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
+#ifdef LEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE
+    /* The boot record is forged to agree with the new Command word, so only
+       the plan-membership check can reject the function. */
+    q35_live_pci_snapshot.functions[4].command_after =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+#endif
+#endif
 }
 
 static int device_service_admitted(const struct wifi_target *target,
@@ -3792,6 +3805,19 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     serial_puts(" tables=generated-readback bar=4271898624 mmio-id=16777453"
         " command=6 memory=enabled bus-master=enabled"
         " stage=post-translation result=PASS\n");
+#if defined(LEANOS_ASSIGNED_EDU_UNPLANNED_BUS_MASTER_FIXTURE) || \
+    defined(LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE)
+    /* Controlled negatives (#482): with the assigned tables live, the SATA
+       controller, a function outside the VT-d plan, regains memory decode and
+       bus mastering.  The outbound read-back must still reject it. */
+    pci_config_command(31, 2, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
+#ifdef LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE
+    /* The boot record is forged to agree with the new Command word, so only
+       the plan-membership check can reject the function. */
+    q35_live_pci_snapshot.functions[4].command_after =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+#endif
+#endif
 #endif
 #ifdef LEANOS_DEVICE_SERVICE_SCENARIO
     device_service_assign();

@@ -210,6 +210,18 @@
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service.h\""
+      ],
+      "kernel-device-service-unplanned-bus-master": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_UNPLANNED_BUS_MASTER_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service-unplanned-bus-master.h\""
+      ],
+      "kernel-device-service-unplanned-recorded-command": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service-unplanned-recorded-command.h\""
       ]
     },
     "boot_objects": {
@@ -772,6 +784,22 @@
         "final_link": true,
         "prelink_plan": "boot-page-plan-device-service.h",
         "plan_equal_to": null
+      },
+      "leanos-device-service-unplanned-bus-master": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service-unplanned-bus-master",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service-unplanned-bus-master.h",
+        "plan_equal_to": null
+      },
+      "leanos-device-service-unplanned-recorded-command": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service-unplanned-recorded-command",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service-unplanned-recorded-command.h",
+        "plan_equal_to": null
       }
     },
     "policy_fixtures": {
@@ -1081,6 +1109,14 @@
         "policy": {
           "key": "device-service"
         }
+      },
+      "leanos-device-service-unplanned-bus-master": {
+        "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
+        "grub": "boot/grub.cfg"
+      },
+      "leanos-device-service-unplanned-recorded-command": {
+        "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-recorded-command.iso",
+        "grub": "boot/grub.cfg"
       }
     },
     "plan_checks": [
@@ -1347,6 +1383,20 @@
         "expected": "boot-page-plan-device-service.h",
         "final": "boot-page-plan-device-service.final.h",
         "description": "device-service"
+      },
+      {
+        "image": "leanos-device-service-unplanned-bus-master",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service-unplanned-bus-master.h",
+        "final": "boot-page-plan-device-service-unplanned-bus-master.final.h",
+        "description": "device-service-unplanned-bus-master"
+      },
+      {
+        "image": "leanos-device-service-unplanned-recorded-command",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service-unplanned-recorded-command.h",
+        "final": "boot-page-plan-device-service-unplanned-recorded-command.final.h",
+        "description": "device-service-unplanned-recorded-command"
       }
     ],
     "disassemblies": [
@@ -1619,6 +1669,18 @@
           "fixture": "omit-reuse-invalidation",
           "macro": "LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE",
           "reason": "vtd-reuse-invalidation-omitted"
+        },
+        {
+          "fixture": "unplanned-bus-master",
+          "macro": "LEANOS_ASSIGNED_EDU_UNPLANNED_BUS_MASTER_FIXTURE",
+          "reason": "dma-live-command",
+          "stage": "post-assignment"
+        },
+        {
+          "fixture": "unplanned-recorded-command",
+          "macro": "LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE",
+          "reason": "dma-live-assignment-command",
+          "stage": "post-assignment"
         }
       ]
     },
@@ -2710,6 +2772,38 @@
         "reason": "-"
       },
       "negative_evidence": null,
+      "reproducibility_artifacts": []
+    },
+    "device-service-unplanned-bus-master": {
+      "tier": "evidence",
+      "row": {
+        "runner": "device-service-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
+        "elf": "leanos-device-service-unplanned-bus-master.elf",
+        "serial_log": "device-service-unplanned-bus-master.serial.log",
+        "scenario": "device-service-unplanned-bus-master",
+        "mode": "-",
+        "reason": "dma-live-command"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": []
+    },
+    "device-service-unplanned-recorded-command": {
+      "tier": "pr",
+      "row": {
+        "runner": "device-service-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-device-service-unplanned-recorded-command.iso",
+        "elf": "leanos-device-service-unplanned-recorded-command.elf",
+        "serial_log": "device-service-unplanned-recorded-command.serial.log",
+        "scenario": "device-service-unplanned-recorded-command",
+        "mode": "-",
+        "reason": "dma-live-assignment-command"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
       "reproducibility_artifacts": []
     }
   }
