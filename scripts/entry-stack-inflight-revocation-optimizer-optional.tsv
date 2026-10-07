@@ -17,3 +17,12 @@ kernel-diagnostic	decoded_root_matches
 kernel-diagnostic	l_LeanOS_FaultDispatch_faultDispatchDemo
 kernel-diagnostic	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
 kernel-diagnostic	serial_u64
+syscall	check_original_frame
+syscall	check_resumable_witness
+timer-switch	check_original_frame
+timer-switch	check_resumable_witness
+syscall	check_initial_b_frame
+syscall	leanos_resumable_preemption_demo
+timer-switch	check_initial_b_frame
+timer-switch	leanos_preemption_demo
+timer-switch	leanos_resumable_preemption_demo

@@ -17,3 +17,4 @@ kernel-diagnostic	decoded_root_matches
 kernel-diagnostic	l_LeanOS_FaultDispatch_faultDispatchDemo
 kernel-diagnostic	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
 kernel-diagnostic	serial_u64
+timer-switch	leanos_preemption_demo

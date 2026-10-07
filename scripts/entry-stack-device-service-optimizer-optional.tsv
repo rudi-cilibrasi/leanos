@@ -18,3 +18,5 @@ kernel-diagnostic	l_LeanOS_FaultDispatch_faultDispatchDemo
 kernel-diagnostic	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
 kernel-diagnostic	serial_u64
 syscall	device_service_next_key
+syscall	wifi_hook_print
+timer-switch	leanos_preemption_demo
