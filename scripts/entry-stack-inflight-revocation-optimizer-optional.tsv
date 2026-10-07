@@ -26,3 +26,6 @@ syscall	leanos_resumable_preemption_demo
 timer-switch	check_initial_b_frame
 timer-switch	leanos_preemption_demo
 timer-switch	leanos_resumable_preemption_demo
+syscall	l_LeanOS_CompositeDispatcher_inFlightRevocationDispatchRaw.part.0
+syscall	l_LeanOS_CompositeDispatcher_invalidationDispatchRaw.part.0
+syscall	l_LeanOS_CompositeDispatcher_invalidationDispatchRaw
