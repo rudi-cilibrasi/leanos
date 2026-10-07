@@ -1,0 +1,51 @@
+# number	scenario	subject	meaning
+# The scripted, scenario-scoped ring-3 syscall vocabulary (issue #483). Each
+# number is accepted only in the listed scenario image, from the listed
+# subject, at one scripted step; anything else stops the machine.
+# scripts/check-userspace-abi.py keeps this table, boot/kernel.c and
+# docs/userspace-abi.md in agreement.
+1	canonical (blocking-ipc, preemption)	1	first entry of A: yield into the preemption script
+2	canonical (blocking-ipc, preemption)	2	B's authorized syscall; arms the timer
+3	canonical (blocking-ipc, preemption)	1, 2	register-canary failure report (stops the machine)
+4	canonical (blocking-ipc, preemption)	1	bounded user copy: RBX=direction, RCX=address, RDX=length
+5	canonical (blocking-ipc, preemption)	1	final resumed-context check after preemption
+6	canonical (blocking-ipc, preemption)	1	resume probe (returns the preemption phase)
+7	canonical (blocking-ipc, preemption)	2	block on endpoint 10 (empty)
+7	ipc-stream, device-service	2	block on endpoint 10
+8	canonical (blocking-ipc, preemption)	1	send on endpoint 10 (RBX, RCX = payload)
+8	ipc-stream, device-service	1	send one event on endpoint 10
+9	canonical (blocking-ipc, preemption)	2	report the delivered payload
+9	ipc-stream, device-service	2	echo the delivered event
+10	canonical (blocking-ipc, preemption)	2	capability reuse: use the initial handle
+11	canonical (blocking-ipc, preemption)	2	capability reuse: replay the stale handle (rejected)
+12	canonical (blocking-ipc, preemption)	2	capability reuse: use the fresh handle
+13	extended-state family	2	peer entry after the denied extended-state instruction; reports CR0/CR4 state
+14	fault-containment family	2	peer report after the contained fault
+15	entry-adversarial	2	peer report after the adversarial entry attempts
+16	direct-port family	2	peer report after the denied port access
+17	divide-error, breakpoint	2	peer report after the contained integer fault
+19	fault-stale-translation	2	stale-translation probe: check the runtime mapping before invalidation
+20	fault-stale-translation	1	stale-translation probe: subject A after the unmap
+20	frame-budget	1	frame-budget script step
+21	frame-budget	1, 2	frame-budget script step
+22	frame-budget	1, 2	frame-budget script step
+23	frame-budget	1, 2	frame-budget script step
+24	frame-budget	1, 2	frame-budget script step
+25	frame-budget	1, 2	frame-budget script step
+26	capability-transfer	1	sealed transfer: offer
+27	capability-transfer	2	sealed transfer: reject the sealed handle before receipt
+28	capability-transfer	2	sealed transfer: accept
+29	capability-transfer	2	sealed transfer: delegated send
+30	capability-transfer	2	sealed transfer: excess-right denial
+31	inflight-revocation	1, 2	in-flight revocation script step
+32	inflight-revocation	1, 2	in-flight revocation script step
+33	inflight-revocation	1, 2	in-flight revocation script step
+34	inflight-revocation	1, 2	in-flight revocation script step
+35	inflight-revocation	1, 2	in-flight revocation script step
+36	inflight-revocation	1, 2	in-flight revocation script step
+37	inflight-revocation	1, 2	in-flight revocation script step
+38	inflight-revocation	1, 2	in-flight revocation script step
+39	inflight-revocation	1, 2	in-flight revocation script step
+40	inflight-revocation	1, 2	in-flight revocation script step
+60	ipc-stream, device-service	1	next event (device-service: the next key from the bound device program)
+61	ipc-stream, device-service	1	end of stream (final record)

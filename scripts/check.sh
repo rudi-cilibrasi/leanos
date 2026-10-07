@@ -218,6 +218,7 @@ check_phase="image-and-emulator-contracts"
 ./scripts/test-run-bootstrap64-nmi.sh
 
 ./scripts/test-entry-stack-budget.sh
+python3 scripts/check-userspace-abi.py
 
 ./scripts/test-entry-stack-layout.sh
 
