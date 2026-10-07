@@ -1,0 +1,20 @@
+# path	function (reviewed contributor that a supported optimizer may inline or eliminate)
+syscall	check_fast_entry_control
+syscall	check_selected_root_a
+syscall	check_selected_root_b
+syscall	l_LeanOS_CapabilityReuse_scenarioTransition___redArg
+syscall	q35_manifest_entry
+syscall	serial_u64
+timer-switch	check_fast_entry_control
+timer-switch	check_selected_root_a
+timer-switch	check_selected_root_b
+timer-switch	q35_manifest_entry
+user-page-fault	decoded_root_matches
+user-page-fault	l_LeanOS_FaultDispatch_faultDispatchDemo
+user-page-fault	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
+user-page-fault	serial_u64
+kernel-diagnostic	decoded_root_matches
+kernel-diagnostic	l_LeanOS_FaultDispatch_faultDispatchDemo
+kernel-diagnostic	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
+kernel-diagnostic	serial_u64
+syscall	device_service_next_key
