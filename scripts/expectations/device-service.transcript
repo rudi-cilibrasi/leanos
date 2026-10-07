@@ -8,7 +8,7 @@
 @10/IPC@ event=block subject=2 endpoint=10 round=0
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
-@10/DEVICE@ event=bind subject=1 device=0:2.0 image-bytes=290084 policy=admitted window=16384 dma=vtd result=PASS
+@10/DEVICE@ event=bind subject=1 device=0:2.0 image-bytes=413300 policy=admitted window=16384 dma=vtd result=PASS
 @10/DEVICE@ event=ready subject=1 vendor=1575 product=1 type-now
 @10/IPC@ event=send sender=1 endpoint=10 payload0=108 payload1=0 accepted=1
 @8/PAGING@ root=B selected=1 result=PASS

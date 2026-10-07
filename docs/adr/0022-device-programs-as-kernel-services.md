@@ -2,10 +2,9 @@
 
 ## Status
 
-Accepted, issue #449. Stage 1 (model and executor) and stage 2 (canonical
-kernel service and the exact QEMU scenario, `device-service`) are
-implemented; stage 3 (the Qotom capture) needs a person typing at the
-keyboard and is not yet done.
+Accepted, issue #449. All three stages are implemented: stage 1 (model and
+executor), stage 2 (canonical kernel service and the exact QEMU scenario,
+`device-service`), and stage 3 (the Qotom capture, below).
 
 ## Context
 
@@ -140,8 +139,18 @@ change:
    (`scripts/expectations/device-service.transcript`), including the VT-d
    assignment record.
 
-Stage 3 repeats the path on the Qotom with a real keyboard, which needs a
-person at the keyboard during the capture.
+Stage 3 repeats the path on the Qotom with a real keyboard. The lab builder's
+`--ipc-device-stream` extends the audited `qotom-blocking-ipc-v1` profile:
+after whole-platform admission the kernel binds the Bay Trail keyboard
+program for subject 1. Each "next key" syscall maps the xHCI BAR through
+borrowed leaves of the closed root and resumes the program in budgeted
+slices. Subject 1 sends each key to subject 2, which echoes it, and every
+edge is checked against `leanos_blocking_ipc_event`. The IPC audit pins the
+extended syscall traces. The [2026-10-07 observation](../../hardware/lab/observations/qotom-device-stream-20261007/README.md)
+captured 231 typed keys (`hello lean⏎` typed 21 times), all delivered and
+echoed, ending in `FINAL status=PASS events=231`. On the J1900 the
+controller's DMA is confined by the program's address-sink policy alone
+(ADR 0021).
 
 ## Consequences
 

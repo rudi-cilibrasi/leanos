@@ -221,19 +221,49 @@ EXPECTED = {
 }
 
 
-def validate(observed):
-    for key, expected in EXPECTED.items():
+# Issue #449 stage 3: after the fixed first exchange, subject A streams keys
+# from the kernel-hosted keyboard program (syscall 60) to B over endpoint 10
+# (8), B blocks (7) and echoes each delivery (9), and 61 ends the stream. The
+# dispatcher checks four generated cyclic-witness edges and invokes the
+# device from exactly one site; setup binds it exactly once.
+STREAM_EXPECTED = {
+    **EXPECTED,
+    'a_syscalls': [4, 4, 8, 60, 8, 61, 3],
+    'b_syscalls': [10, 11, 12, 7, 9, 7, 9, 3],
+    'stream_event_calls': 4,
+    'stream_invoke_calls': 1,
+    'stream_bind_calls': 1,
+}
+
+
+def stream_facts(elf):
+    symbols, rows = load(elf)
+    dispatch = body(symbols, rows, 'qotom_entry_dispatch')
+    setup = body(symbols, rows, 'lab_run_qotom_blocking_ipc')
+    return {
+        'stream_event_calls': calls(dispatch, 'leanos_blocking_ipc_event'),
+        'stream_invoke_calls': calls(dispatch, 'lab_stream_next_key'),
+        'stream_bind_calls': calls(setup, 'lab_stream_bind'),
+    }
+
+
+def validate(observed, expected_facts=EXPECTED):
+    for key, expected in expected_facts.items():
         if observed.get(key) != expected:
             raise ValueError(f'blocking-IPC linked contract differs: {key}')
     if any(port in {0x40, 0x41, 0x42, 0x43} for port in observed['direct_ports']):
         raise ValueError('blocking profile retains PIT programming')
 
 
-def check(elf):
+def check(elf, device_stream=False):
     runpy.run_path(str(ROOT / 'scripts/audit-qotom-entry-integration.py'))['check'](
         elf, exception_integration=True, blocking_ipc_integration=True)
     observed = facts(elf)
-    validate(observed)
+    if device_stream:
+        observed.update(stream_facts(elf))
+        validate(observed, STREAM_EXPECTED)
+    else:
+        validate(observed)
     raw = Path(elf).read_bytes()
     return {
         'schema': 'leanos-qotom-blocking-ipc-integration-audit-v1',
@@ -293,10 +323,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('elf', nargs='?', type=Path)
     parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--device-stream', action='store_true',
+                        help='audit the issue #449 keyboard stream continuation')
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.elf:
-        print(json.dumps(check(args.elf), indent=2, sort_keys=True))
+        print(json.dumps(check(args.elf, args.device_stream), indent=2, sort_keys=True))
     else:
         parser.error('provide an ELF or --self-test')
