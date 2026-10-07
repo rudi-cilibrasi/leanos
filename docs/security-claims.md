@@ -15,6 +15,17 @@ decidable computation is not replayed by kernel reduction. The repository-owned
 policy check inventories and classifies those source modules without treating
 the compiler as verified.
 
+## Device-read confidentiality by image class
+
+SC-IOMMU-READ-CONFIDENTIALITY is a statement about the finite IOMMU model. What
+it means for a booted image depends on the image class:
+
+| Image class | What device-read confidentiality means |
+| --- | --- |
+| All images | The model theorem only (SC-IOMMU-READ-CONFIDENTIALITY). |
+| q35 deny-all, `assigned-edu-inventory`, `device-service` | In addition, the guest's read-back of the installed VT-d tables against the generated words is tested evidence (SC-VTD-INSTALLED-TABLES). The hardware table walk, IOTLB and device obedience are not proved. |
+| Qotom J1900 (`vtd=not-applicable`) | Not applicable: there is no IOMMU, and DMA destinations are an assumption per ADR 0021. |
+
 <!-- claim-index:start -->
 | ID | Contract declaration | Source theorem | Model / transition | Assumptions | Evidence | Explicit exclusions |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -94,6 +105,7 @@ the compiler as verified.
 | SC-DEVICE-PROGRAM-DECLARED-CONFINEMENT | `device_program_declared_confinement` | `DeviceProgramConfinement.run_declared_confined` | `Wifi.Sim.run` of any program whose version-3 image declares `π` | Declared policy `π` with the target window inside the policy window (checked by the executor's header parser) | Proved | Same as SC-DEVICE-PROGRAM-STATIC-CONFINEMENT; that the lab kernel's profile table matches the Lean policies |
 | SC-DEVICE-CAPABILITY-CONFINEMENT | `device_capability_confinement` | `DeviceCapability.run_inv`, `DeviceCapability.device_state_changes_only_by_holder` | `DeviceCapability.step`/`run`: capability operations, device grant, bind, bounded resumable invoke and revoke over `Capability.State` and guarded device models | `DeviceCapability.Inv` initially (`initial_inv` for a fresh system); devices and their policies fixed at boot | Proved | The C kernel service and ring-3 subjects (ADR 0022 stage 2; exercised by the exact `device-service` QEMU scenario, not proved), IPC delivery of yielded events, scheduling and step-time accounting, executor refinement (ADR 0020), DMA through descriptors (ADR 0021) |
 | SC-IPC-EVENT-STREAM | `ipc_event_stream` | `BlockingIPC.keyStream_delivers` (with `keyCycle_delivers`, `keyCycle_returns`; `boot_key_stream` instantiates it for the reviewed boot state) | `BlockingIPC.keyStream`: repeated receive-or-block, send, scheduler yield and receive on endpoint 10 | `CycleReady`: receiver current with a live receive capability, sender the only ready subject with a send capability, endpoint idle and empty, no pending completion, room in the queues | Proved | The C kernel's copy of payload words (the runtime witness is still the fixed boot trace), interrupts and preemption between steps, other subjects, the device service feeding the sender (ADR 0022) |
+| SC-VTD-INSTALLED-TABLES | `verify_vtd_state` | `VTdBootPlan.accepted_state_deny_all`, `deviceServiceState_shape`, the assigned-EDU projection checks | q35 images: the generated VT-d root, context and second-level tables, as installed and read back by the guest at activation and at every CPL3 gate | The pinned QEMU 8.2.2 `intel-iommu` configuration | Tested by `scripts/run-image.sh`, `scripts/run-assigned-edu.sh` and `scripts/check-vtd-mmio-policy.sh` | Not a proof: the hardware table walk, IOTLB caching, device obedience and the Qotom J1900 (no IOMMU) are excluded; refinement of the guest's C and assembly is not claimed |
 <!-- claim-index:end -->
 
 `SC-COMPOSITE-AUTHORITATIVE-COMPATIBLE-GATE` is the final published composite
