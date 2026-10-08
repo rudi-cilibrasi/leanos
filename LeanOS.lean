@@ -4,6 +4,7 @@ import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
 import LeanOS.CompositeDispatcher
+import LeanOS.PostStateProjection
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
