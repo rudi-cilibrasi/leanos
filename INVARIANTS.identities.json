@@ -14414,6 +14414,12 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/PostStateProjection.lean",
+      "qualified": "LeanOS.PostStateProjection.poststate_shape",
+      "display": "poststate_shape",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/Preemption.lean",
       "qualified": "LeanOS.Preemption.accepted_context_comes_from_scheduler",
       "display": "accepted_context_comes_from_scheduler",

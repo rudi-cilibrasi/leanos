@@ -64,6 +64,7 @@
     "LeanOS/Oracle.lean",
     "LeanOS/PCIHeaderObservation.lean",
     "LeanOS/PlatformAdmission.lean",
+    "LeanOS/PostStateProjection.lean",
     "LeanOS/Preemption.lean",
     "LeanOS/PrivilegeEntryControl.lean",
     "LeanOS/PrivilegeEntryStack.lean",
