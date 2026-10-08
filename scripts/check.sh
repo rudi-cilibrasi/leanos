@@ -219,6 +219,7 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-entry-stack-budget.sh
 python3 scripts/check-userspace-abi.py
+./scripts/test-scenario-claims.sh
 ./scripts/test-extract-generated-c.sh
 ./scripts/check-oracle-doc-counts.sh
 
