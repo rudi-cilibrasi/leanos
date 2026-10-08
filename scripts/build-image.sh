@@ -1194,6 +1194,40 @@ LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
 fi
+if selected_final_enabled "$build/leanos-device-service.elf"; then
+# The device-service image runs the device-program executor inside syscall 60
+# (issue #469). Its reviewed manifest covers every function reachable from
+# the entry roots, executor hooks included; a manifest that omits one hook
+# must fail and name it.
+LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-device-service-callgraph.tsv \
+  LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-device-service-optimizer-optional.tsv \
+  LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-device-service-final-elf-edges.tsv" \
+  ./scripts/check-entry-stack-budget.sh "$build/leanos-device-service.elf" \
+  | tee "$build/entry-stack-device-service-final-elf.txt"
+device_service_negative="$build/entry-stack-device-service-negative.tsv"
+sed 's/;wifi_hook_delay_us//' scripts/entry-stack-device-service-callgraph.tsv \
+  >"$device_service_negative"
+if LEANOS_ENTRY_STACK_MANIFEST="$device_service_negative" \
+    LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-device-service-optimizer-optional.tsv \
+    ./scripts/check-entry-stack-budget.sh "$build/leanos-device-service.elf" \
+    >"$device_service_negative.log" 2>&1 ||
+    ! grep -q 'final-elf-unreviewed-stack-usage=wifi_hook_delay_us' \
+      "$device_service_negative.log"; then
+  echo "error: device-service entry-stack gate accepted an unreviewed executor hook" >&2
+  exit 1
+fi
+fi
+# Scenario images that reach CPL3 with their own syscall dispatch are gated
+# against their own reviewed manifests (#469, #503).
+for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget; do
+  if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
+    LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
+      LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \
+      LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-$gated_scenario-final-elf-edges.tsv" \
+      ./scripts/check-entry-stack-budget.sh "$build/leanos-$gated_scenario.elf" \
+      | tee "$build/entry-stack-$gated_scenario-final-elf.txt"
+  fi
+done
 if selected_final_enabled "$build/leanos-extended-state.elf"; then
 LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-extended-optimizer-optional.tsv \
