@@ -7,8 +7,9 @@ independent finite capability space whose capacity is stored in the model.
 `copyLowest` deterministically selects the lowest free slot. Together they
 report invalid subject, out-of-range, full, and occupied outcomes separately,
 and all rejections preserve the complete state. Each occupied slot contains an object identifier, its recorded
-`ObjectKind`, and a nonempty valid subset of
-`read`, `write`, `grant`, and `revoke`. Authority means that such a slot grants
+`ObjectKind` (`memory`, `addressSpace` or `endpoint`), and a nonempty subset
+of the six rights `read`, `write`, `send`, `receive`, `grant` and `revoke` that
+is valid for that kind. Authority means that such a slot grants
 the named object/right pair. Lookup distinguishes forged subjects from stale or
 empty slots.
 
@@ -28,7 +29,9 @@ kind to equal the live registry kind. `authorizeKind` is the reusable typed
 dispatch boundary: a memory capability presented to an address-space operation,
 or the converse, is rejected before operation-specific state can change.
 Memory supports read/write/grant/revoke rights; address-space capabilities in
-this slice support only grant/revoke because lifecycle operations are deferred.
+this slice support only grant/revoke because lifecycle operations are deferred;
+endpoint capabilities support send/receive/grant/revoke
+(`Capability.rightsValid`).
 
 ## Proved guarantees
 

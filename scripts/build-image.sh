@@ -599,7 +599,7 @@ lean_c_modules=(
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
-  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply
 )
 lean_c_signature="$build/generated-lean-c.sha256"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
@@ -630,6 +630,10 @@ fi
 record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
+# Issue #470: the emitted C of leanos_boot_transition must still be exactly
+# the AST that LeanOS.Refinement.BootTransitionC proves refines the model.
+python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
+  leanos_boot_transition LeanOS/Refinement/BootTransitionC.lean
 # The device-service image embeds the Lean xHCI keyboard program (issue
 # #449). leanos-wifi-gen refuses a program outside its target's admitted
 # policy; the header is rewritten only when the image bytes change.
@@ -1194,6 +1198,12 @@ LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
 fi
+# Handwritten assembly windows at the CPL boundary (issue #477): every
+# privileged window in boot.S has an inventory row with its size in this lane.
+if selected_final_enabled "$build/leanos.elf"; then
+  python3 scripts/check-asm-windows.py "$build/boot.o" "$build/leanos.elf" \
+    | tee "$build/asm-windows.txt"
+fi
 if selected_final_enabled "$build/leanos-device-service.elf"; then
 # The device-service image runs the device-program executor inside syscall 60
 # (issue #469). Its reviewed manifest covers every function reachable from
@@ -1218,10 +1228,8 @@ if LEANOS_ENTRY_STACK_MANIFEST="$device_service_negative" \
 fi
 fi
 # Scenario images that reach CPL3 with their own syscall dispatch are gated
-# against their own reviewed manifests (#469). frame-budget is not yet: its
-# publication-authority check has a dynamic (bounded) frame, which the gate
-# refuses by design.
-for gated_scenario in ipc-stream capability-transfer inflight-revocation; do
+# against their own reviewed manifests (#469, #503).
+for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \

@@ -617,6 +617,26 @@ includes the manifest and query source, so changing a declaration invalidates
 the cached family. CI runs the suite whenever its parent assigned-EDU image is
 present; individual negative images remain mandatory to the runner.
 
+An entry may also carry `stage`. It is `pre-assignment` by default: the
+variant must fail before the assigned function is enabled, so its log has no
+passing `VTD-ASSIGN` record. A `post-assignment` variant (#482) must fail only
+after that record passed, which means only after the assigned translation
+tables are live. Two post-assignment variants turn on memory decode and bus
+mastering for the SATA controller, a function outside the VT-d plan, once the
+EDU grant is live:
+
+- `unplanned-bus-master` is rejected at the outbound CPL3 gate as
+  `dma-live-command`, because the Command word differs from the boot record.
+- `unplanned-recorded-command` also forges the boot record to agree with the
+  new Command word, so only the plan-membership check can reject it, as
+  `dma-live-assignment-command`.
+
+The `device-service` image has the same two fixtures, as the
+`device-service-unplanned-*` scenarios. Their `device-service-rejection`
+runner requires exactly one passing `VTD-ASSIGN` record and the exact terminal
+reason. With the plan-membership check removed, the recorded-command variant
+reaches CPL3 and binds the xHCI service with SATA bus mastering still enabled.
+
 This list describes executable boot variants. The separate `negative_evidence`
 field describes retained fixture-directory reports and may remain null when a
 scenario has no report in that format.

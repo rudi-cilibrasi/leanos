@@ -44,7 +44,7 @@ assigned_outputs=(
 assigned_negative_rows="$(./scripts/scenario-manifest.py negative-variants assigned-edu-inventory)" || return 1
 mapfile -t assigned_edu_negative_specs <<< "$assigned_negative_rows"
 for spec in "${assigned_edu_negative_specs[@]}"; do
-  IFS=$'\t' read -r fixture _fixture_macro _reason <<<"$spec"
+  IFS=$'\t' read -r fixture _fixture_macro _reason _stage <<<"$spec"
   assigned_outputs+=(
     "build/boot/boot-page-plan-assigned-edu-${fixture}.h"
     "build/boot/boot-page-plan-assigned-edu-${fixture}.final.h"
@@ -116,7 +116,7 @@ done
 # generated CPU mapping, exact device read-back, forged fault binding, and a
 # changed protected victim record.
 for spec in "${assigned_edu_negative_specs[@]}"; do
-  IFS=$'\t' read -r fixture fixture_macro _reason <<<"$spec"
+  IFS=$'\t' read -r fixture fixture_macro _reason _stage <<<"$spec"
   fixture_base="leanos-assigned-edu-${fixture}"
   fixture_iso_root="$build/iso-assigned-edu-${fixture}"
   fixture_plan="$build/boot-page-plan-assigned-edu-${fixture}.h"
