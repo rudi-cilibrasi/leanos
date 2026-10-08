@@ -1198,6 +1198,12 @@ LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
 fi
+# Handwritten assembly windows at the CPL boundary (issue #477): every
+# privileged window in boot.S has an inventory row with its size in this lane.
+if selected_final_enabled "$build/leanos.elf"; then
+  python3 scripts/check-asm-windows.py "$build/boot.o" "$build/leanos.elf" \
+    | tee "$build/asm-windows.txt"
+fi
 if selected_final_enabled "$build/leanos-device-service.elf"; then
 # The device-service image runs the device-program executor inside syscall 60
 # (issue #469). Its reviewed manifest covers every function reachable from
