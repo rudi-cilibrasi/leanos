@@ -230,10 +230,13 @@ refinement remain trusted or tested boundaries. The per-vector error-word and
 saved-RIP restart-class conventions for #DE, #BP, and #PF are AMD64-manual
 machine assumptions carried as normalized inputs; the terminated subject is
 never resumed, so no transition rewrites RIP to authorize recovery or retry.
-Recovery, signals, demand paging, exception upcalls, restart/instruction
-retry, userspace handlers, debugger support, #DB, SMP, nested interrupts, and
-kernel-fault recovery are out of scope; the machine IDT/C slice for vectors 0
-and 3 is deferred to the follow-up machine issue.
+Recovery, signals, demand paging, restart/instruction retry, debugger
+support, #DB, SMP, nested interrupts, and kernel-fault recovery are out of scope. One
+boot-fixed fault handler subject for one class is the separate wrapper
+described in [Fault handler subject](#fault-handler-subject); it does not change
+this transition. The machine IDT/C slice for vectors 0 and 3 exists: the
+`divide-error` and `breakpoint` scenarios drive real CPL3 `#DE` and `#BP`
+through their live gates into this containment.
 
 ## Shared containment vocabulary
 
@@ -255,5 +258,68 @@ and `contained_classes_retire_faulting_select_survivor` restates the retirement
 of subject A. The stable contract restates this as
 `SC-USER-FAULT-SHARED-CONTAINMENT`, and the negative fixture
 `tests/negative/SharedContainmentReasonSubstitution.lean` shows the typed reason
-cannot be relabeled. The two live IDT-gate/real-instruction QEMU scenarios that
-consume this vocabulary remain the follow-up machine slice.
+cannot be relabeled. The live IDT-gate/real-instruction QEMU scenarios that
+consume this vocabulary are `divide-error` and `breakpoint`.
+
+## Fault handler subject
+
+`LeanOS.FaultHandler` (#488) wraps `dispatch` without changing it. A
+`Binding`, fixed at boot, names one contained class, the subject whose faults
+of that class are handled, and the handler subject.
+
+- **No handler bound.** `fault` is exactly `dispatch` on the core state
+  (`unbound_is_default`), and so is a fault of another class or from another
+  subject when a handler is bound (`unbound_class_is_default`). Containment,
+  idle, rejection and every fail-stop halt are unchanged.
+- **Handler bound.** The handler path applies only when `dispatch` would have
+  contained the fault and the class and faulting subject are the bound ones.
+  The faulting subject, which was the live, runnable current subject, is
+  suspended: not runnable, not current, not queued. The handler's one-record
+  inbox receives exactly `recordOf reason frame`: class, vector, faulting
+  subject, saved RIP and the architectural error word (zero for `#DE`/`#BP`).
+  The record is built from those normalized fields only
+  (`record_fields_only`), carries no capability, register or memory word, and
+  the capability state, context bank and translations are unchanged
+  (`delivered_exact`, `delivered_no_amplification`). A handler that is dead,
+  already holds a record, or is the faulting subject itself makes the fault
+  take the default.
+- **Reply.** The only decision in this slice is `terminate`. It is accepted
+  only from the bound handler while its subject is suspended, and retires that
+  subject with the same `ResumablePreemption.cleanupSubject` the default uses,
+  so the subject never resumes (`reply_terminates`,
+  `reply_other_rejected`). Cleanup only removes capability slots, so no
+  holder gains authority (`reply_no_amplification`).
+- **Only the handler receives.** `InboxBound` (every nonempty inbox belongs to
+  the bound handler) holds when all inboxes are empty and is preserved by every
+  `fault`, `receive` and `reply` step (`step_preserves_inboxBound`); a subject
+  receives only its own inbox (`received_only_by_handler`).
+
+The stable claims are `SC-FAULT-HANDLER-DEFAULT` and
+`SC-FAULT-HANDLER-DELIVERY`; the negative fixture
+`tests/negative/FaultHandlerAuthorityAmplification.lean` shows the delivery
+claim cannot be weakened to give the handler the faulting subject's slots.
+
+The generated witness `leanos_fault_handler_route` (oracle adapter 22) is the
+allocation-free lowering for the `fault-handler` image's one binding, `#DE`
+from A (1) to C (3). Event 0 is a fault (vector, faulting subject, handler
+waiting) and answers the delivery word or 2, "take the image's default path";
+event 1 is the handler's reply and answers terminate or 0, refused.
+`faultHandlerRoute_agrees` ties every answer the image uses, and the refused
+edges, to `fault` and `reply` on a concrete three-subject system built from the
+shared containment witness. Faults outside the binding stay on the default,
+including any fault raised by C: the page-fault agreement gate selects only
+the A and B roots, so a C page fault is an `unsupportedAddressSpace`
+integrity fail-stop exactly as before, and a C `#DE` is answered "default".
+
+The `fault-handler` scenario (evidence tier, exact transcript
+`scripts/expectations/fault-handler.transcript`) runs this on q35. C is built
+from `subjects/fault-handler` with the subject template and blocks receiving
+on fault endpoint 14; B runs once from its initial context; A divides by zero.
+The witness answers "deliver", so the kernel keeps A's frame (never restored)
+and wakes C with the record in RAX/RBX/RCX/RDX and C's own registers otherwise.
+C reports the record (syscall 64), replies terminate (syscall 65), and blocks
+forever; B continues from its saved continuation and reports its canaries.
+Every other image's `#DE` path is unchanged. The scenario is integration
+evidence: the C kernel, `boot.S`, the subject build, the compiler and QEMU
+stay trusted, and the witness is checked against the model only on the
+concrete system.

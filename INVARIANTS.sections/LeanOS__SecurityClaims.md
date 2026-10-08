@@ -163,3 +163,5 @@ This file is the kernel's master security contract: each theorem here independen
 - `notify_reply_no_stale_reuse` — A reply to a caller that has ended or whose identity has moved on is refused and changes nothing.
 - `notify_reply_single_use` — A reply permission answers once: a second answer is refused, and the permission can never be passed to another program.
 - `notify_reply_budget` — A program's reply slots change only through calls to its own endpoint or its own replies, so no other program can use them up or clear them.
+- `fault_handler_default` — The security-claim contract SC-FAULT-HANDLER-DEFAULT: with no fault handler set up, or for any other kind of fault or program, a fault is handled exactly as before.
+- `fault_handler_delivery` — The security-claim contract SC-FAULT-HANDLER-DELIVERY: a handled fault reaches only the configured handler, as exactly the fault record; the faulting program is put on hold and, when the handler answers, ended and never resumed; and nobody gains a permission.

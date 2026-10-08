@@ -28,6 +28,7 @@ import LeanOS.DirectPortContainment
 import LeanOS.DeviceProgramConfinement
 import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
+import LeanOS.FaultHandler
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -3301,5 +3302,74 @@ theorem notify_reply_budget (sys : NotifyReply.System) (t : NotifyReply.Transiti
         sys.endpointServer capability.object = some other) ∨
       (∃ r word, t = .reply other r word) :=
   NotifyReply.replies_change_only_at_server sys t other hchanged
+
+/-- SC-FAULT-HANDLER-DEFAULT: with no fault handler bound, a fault is handled
+exactly as before: the system's core state and action are those of
+`FaultDispatch.dispatch` (containment, idle, rejection, or fail-stop halt), and
+the same holds for every fault of another class or from another subject when
+a handler is bound. -/
+theorem fault_handler_default (sys : FaultHandler.System) (entry : InterruptEntry.Result)
+    (hunbound : sys.binding = none ∨ FaultHandler.boundFor sys.binding entry = none) :
+    (FaultHandler.fault sys entry).1.core = (FaultDispatch.dispatch sys.core entry).state ∧
+      (FaultHandler.fault sys entry).2 =
+        .default (FaultDispatch.dispatch sys.core entry).action := by
+  rcases hunbound with hnone | hclass
+  · rw [FaultHandler.unbound_is_default sys entry hnone]
+    exact ⟨rfl, rfl⟩
+  · rw [FaultHandler.unbound_class_is_default sys entry hclass]
+    exact ⟨rfl, rfl⟩
+
+/-- SC-FAULT-HANDLER-DELIVERY: a bound fault is delivered only to the bound
+handler and only as the typed record built from the normalized frame (class,
+vector, faulting subject, saved RIP, error word); the faulting subject, which
+was the live, runnable current subject, is suspended (not runnable, not
+current, not queued); every other subject's inbox is unchanged; and the
+capability state is unchanged (no amplification).  The handler's terminate
+retires exactly that subject with the default cleanup, so it never resumes,
+and cleanup gives no holder a capability slot it lacked.  Only the bound
+handler ever holds a fault record. -/
+theorem fault_handler_delivery (sys : FaultHandler.System) (entry : InterruptEntry.Result)
+    (handler : Capability.SubjectId) (record : FaultHandler.FaultRecord)
+    (h : (FaultHandler.fault sys entry).2 = .delivered handler record) :
+    (∃ b frame reason,
+      sys.binding = some b ∧ handler = b.handler ∧ entry = .accepted frame ∧
+      InterruptEntry.containedReason? frame.vector = some reason ∧ reason = b.reason ∧
+      record = FaultHandler.recordOf reason frame ∧ record.faulting = b.faulting ∧
+      b.handler ≠ b.faulting ∧
+      sys.core.scheduler.lifecycle.current = some b.faulting ∧
+      sys.core.scheduler.lifecycle.runnable b.faulting = true ∧
+      (FaultHandler.fault sys entry).1.inbox b.handler = some record ∧
+      (∀ s, s ≠ b.handler → (FaultHandler.fault sys entry).1.inbox s = sys.inbox s) ∧
+      (FaultHandler.fault sys entry).1.core.scheduler.lifecycle.runnable b.faulting = false ∧
+      (FaultHandler.fault sys entry).1.core.scheduler.lifecycle.current = none ∧
+      b.faulting ∉ (FaultHandler.fault sys entry).1.core.scheduler.ready ∧
+      (FaultHandler.fault sys entry).1.core.scheduler.lifecycle.capabilities =
+        sys.core.scheduler.lifecycle.capabilities) ∧
+    (∀ next : FaultHandler.System, next.binding = sys.binding →
+      ∀ subject faulting,
+        (FaultHandler.reply next subject .terminate).2 = .terminated faulting →
+        (FaultHandler.reply next subject .terminate).1.core.scheduler.lifecycle.capabilities.subjects
+            faulting = false ∧
+          faulting ∉ (FaultHandler.reply next subject .terminate).1.core.scheduler.ready ∧
+          ResumablePreemption.contextFor
+            (FaultHandler.reply next subject .terminate).1.core.contexts faulting = none ∧
+          (∀ holder slot capability,
+            (FaultHandler.reply next subject .terminate).1.core.scheduler.lifecycle.capabilities.slots
+                holder slot = some capability →
+              next.core.scheduler.lifecycle.capabilities.slots holder slot = some capability)) ∧
+    (∀ (start : FaultHandler.System) (op : FaultHandler.Op), FaultHandler.InboxBound start →
+      FaultHandler.InboxBound (FaultHandler.step start op).1) := by
+  refine ⟨?_, ?_, fun start op hinv => FaultHandler.step_preserves_inboxBound start op hinv⟩
+  · obtain ⟨b, frame, reason, hb, hh, he, hr, hre, hrec, hf, hd, hc, _, hrun, hs, hin, hother,
+        hnr, hcur, hready, hcaps, _, _⟩ :=
+      FaultHandler.delivered_exact sys entry handler record h
+    exact ⟨b, frame, reason, hb, hh, he, hr, hre, hrec, hf, hd, hc, hrun, hin, hother, hnr,
+      hcur, hready, hcaps⟩
+  · intro next _ subject faulting hterm
+    obtain ⟨b, _, _, _, _, _, _, hdead, hready, _, hcontext⟩ :=
+      FaultHandler.reply_terminates next subject .terminate faulting hterm
+    exact ⟨hdead, hready, hcontext,
+      fun holder slot capability hslot =>
+        FaultHandler.reply_no_amplification next subject .terminate holder slot capability hslot⟩
 
 end LeanOS.SecurityClaims

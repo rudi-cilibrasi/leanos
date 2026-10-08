@@ -38,6 +38,7 @@
     "LeanOS/ExtendedState.lean",
     "LeanOS/FailStop.lean",
     "LeanOS/FaultDispatch.lean",
+    "LeanOS/FaultHandler.lean",
     "LeanOS/FrameAllocator.lean",
     "LeanOS/FrameBudget.lean",
     "LeanOS/FrameBudgetScenario.lean",

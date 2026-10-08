@@ -16,6 +16,7 @@ import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
 import LeanOS.NotifyReply
+import LeanOS.FaultHandler
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -74,7 +75,8 @@ def adapters : List AdapterSpec := [
   adapter "CompositeDispatcher.stateful" 18 "leanos_composite_dispatch" 6,
   adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6,
   adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3,
-  adapter "NotifyReply.event" 21 "leanos_notify_reply_event" 4]
+  adapter "NotifyReply.event" 21 "leanos_notify_reply_event" 4,
+  adapter "FaultHandler.route" 22 "leanos_fault_handler_route" 4]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -121,6 +123,10 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
 private def notifyReplyEvent (id : String) (script step operation subject : UInt64) : Vector :=
   { id, adapter := "NotifyReply.event", words := [script, step, operation, subject],
     expected := NotifyReply.notifyReplyEvent script step operation subject }
+
+private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
+  { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
+    expected := FaultHandler.faultHandlerRoute event vector subject word }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -428,6 +434,23 @@ def notifyReplyVectors : List Vector := [
   notifyReplyEvent "notify-reply.reply-after-termination" 1 4 4 2,
   notifyReplyEvent "notify-reply.off-script-step" 0 9 4 2,
   notifyReplyEvent "notify-reply.unknown-script" 2 0 2 2]
+
+/-- Fault-handler routes (#488): the bound `#DE` delivery from A to C, the
+default for another class, a page fault, a busy handler, a fault from B and
+one from the handler C itself, the bound handler's terminate, and the refused
+replies (wrong subject, nothing suspended, another decision, unknown event). -/
+def faultHandlerVectors : List Vector := [
+  faultHandlerRoute "fault-handler.deliver" 0 0 1 1,
+  faultHandlerRoute "fault-handler.other-class" 0 3 1 1,
+  faultHandlerRoute "fault-handler.page-fault" 0 14 1 1,
+  faultHandlerRoute "fault-handler.handler-busy" 0 0 1 0,
+  faultHandlerRoute "fault-handler.other-subject" 0 0 2 1,
+  faultHandlerRoute "fault-handler.handler-faults" 0 0 3 1,
+  faultHandlerRoute "fault-handler.reply-terminate" 1 1 3 1,
+  faultHandlerRoute "fault-handler.reply-wrong-subject" 1 1 2 1,
+  faultHandlerRoute "fault-handler.reply-nothing-suspended" 1 0 3 1,
+  faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
+  faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
 
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
@@ -782,9 +805,9 @@ def vectors : List Vector := [
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
-    bootTransitionClassVectors ++ notifyReplyVectors
+    bootTransitionClassVectors ++ notifyReplyVectors ++ faultHandlerVectors
 
-theorem corpus_shape : vectors.length = 448 := by decide
+theorem corpus_shape : vectors.length = 459 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -794,7 +817,12 @@ theorem hosted_boot_transition_class_vectors_exact :
 
 /-- Oracle indices 435--447 are the notification/reply corpus (#471). -/
 theorem hosted_notify_reply_vectors_exact :
-    vectors.drop 435 = notifyReplyVectors := by
+    (vectors.drop 435).take notifyReplyVectors.length = notifyReplyVectors := by
+  rfl
+
+/-- Oracle indices 448--458 are the fault-handler route corpus (#488). -/
+theorem hosted_fault_handler_vectors_exact :
+    vectors.drop 448 = faultHandlerVectors := by
   rfl
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
@@ -821,7 +849,8 @@ canceled receipt denial, same-slot replacement, canceled-handle denial, and
 the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
-      blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors := by
+      blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
+      faultHandlerVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

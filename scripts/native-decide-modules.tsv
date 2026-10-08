@@ -26,6 +26,7 @@ LeanOS/EndpointIPC.lean	bounded-model
 LeanOS/ExtendedState.lean	bounded-model
 LeanOS/FailStop.lean	bounded-model
 LeanOS/FaultDispatch.lean	bounded-model
+LeanOS/FaultHandler.lean	bounded-model
 LeanOS/FrameBudget.lean	bounded-model
 LeanOS/FrameBudgetScenario.lean	bounded-model
 LeanOS/FrameScrub.lean	bounded-model

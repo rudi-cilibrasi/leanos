@@ -4631,6 +4631,182 @@ static uint64_t example_subject_syscall(uint64_t number, uint64_t arg0,
 }
 #endif
 
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+/* Fault handler subject (#488, LeanOS.FaultHandler).  This image is the
+   three-subject image with subject C built from subjects/fault-handler by the
+   subject template.  The boot-fixed binding is: divide errors (#DE, vector 0)
+   raised by A (1) are delivered to C (3).  C blocks receiving on the fault
+   endpoint 14; B runs once from its initial context (the three-subject step);
+   A, dispatched fresh, divides by zero.  The kernel asks the generated
+   witness `leanos_fault_handler_route` (tied to the model by
+   FaultHandler.faultHandlerRoute_agrees): the answer is a delivery, so A is
+   suspended (its frame is kept in saved_context_a and never restored) and C
+   is woken with exactly the typed record in RAX/RBX/RCX/RDX.  C reports the
+   record (syscall 64) and replies "terminate" (syscall 65), which the witness
+   accepts only from the bound handler; A is retired.  C then blocks forever
+   on endpoint 13, and B continues from its saved continuation and reports
+   (syscall 63).  Any other fault in this image, including one raised by C or
+   B, is answered "default" by the witness and takes the image's unchanged
+   default path: fail-stop. */
+extern char user_c_template_text[];
+extern char user_a_fault_handler_divide[];
+#define FAULT_HANDLER_ENDPOINT 14u
+#define FAULT_HANDLER_IDLE_ENDPOINT 13u
+#define FAULT_HANDLER_STACK_BYTES 2048u
+#define FAULT_HANDLER_C_RESUMES_B 0x3c04u
+#define FAULT_HANDLER_DELIVER UINT64_C(0x01010301)
+#define FAULT_HANDLER_TERMINATE UINT64_C(0x01000003)
+/* 0 C runs, 1 C blocked on 14, 2 B ran, 3 A suspended and record delivered,
+   4 record reported, 5 A terminated, 6 C blocked forever and B resumed. */
+static unsigned fault_handler_step;
+uint64_t fault_handler_record[4];
+static uint64_t fault_handler_suspended_rip, fault_handler_suspended_rsp;
+
+static void check_fault_handler_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != FAULT_HANDLER_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("fault-handler-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/fault-handler entry=text-start stack=2048 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=binding class=divide-error vector=0 faulting=1 handler=3 endpoint=14 fixed=boot\n");
+}
+
+/* The #DE adapter: reached only through the manifest-checked vector-0 gate
+   and the common normalizer.  Returns to isr0, which saves A's frame and
+   installs C's blocked continuation with the record words. */
+static void fault_handler_divide_error(uint64_t rip, uint64_t saved_cs) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    uint64_t waiting = fault_handler_step == 2 ? 1u : 0u;
+    uint64_t route = leanos_fault_handler_route(0, 0, current_subject, waiting);
+    if (route != FAULT_HANDLER_DELIVER) fail("fault-handler-default-fail-stop");
+    if (saved_cs != 0x23 || current_subject != 1 || three_subject_step != 2 ||
+        rip != (uint64_t)user_a_fault_handler_divide ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a)
+        fail("fault-handler-binding");
+    uint64_t handler = (route >> 8) & 0xffu;
+    uint64_t reason = (route >> 16) & 0xffu;
+    uint64_t faulting = (route >> 24) & 0xffu;
+    uint64_t vector = route >> 32;
+    if (handler != 3 || reason != 1 || faulting != current_subject || vector != 0)
+        fail("fault-handler-route-encoding");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=fault vector=0 class=divide-error origin=cpl3 subject=1 address-space=1 saved-rip=faulting-instruction route=deliver handler=3\n");
+    fault_handler_record[0] = reason + vector * 0x100u;
+    fault_handler_record[1] = faulting;
+    fault_handler_record[2] = rip;
+    fault_handler_record[3] = 0;
+    fault_handler_step = 3;
+    three_subject_step = 3;
+    current_subject = 3;
+    serial_puts(LEANOS_SERIAL_10_IPC " event=suspend subject=1 runnable=0 current=0 queued=0 resumed=0\n");
+}
+
+/* Called by isr0 after it saved A's frame and installed C's continuation
+   with the record words; checks both before the validated return. */
+void fault_handler_deliver_complete(const uint64_t *target) {
+    if (fault_handler_step != 3 || current_subject != 3) fail("fault-handler-deliver-state");
+    check_selected_root_c();
+    if (target[15] != saved_context_c_original_rip ||
+        target[17] != saved_context_c_original_flags ||
+        target[18] != saved_context_c_original_rsp)
+        fail("fault-handler-handler-frame");
+    if (target[14] != fault_handler_record[0] || target[13] != fault_handler_record[1] ||
+        target[12] != fault_handler_record[2] || target[11] != fault_handler_record[3])
+        fail("fault-handler-record-registers");
+    /* The rest of C's bank is C's own blocked state, not A's registers. */
+    for (unsigned i = 0; i < 11; ++i)
+        if (target[i] != saved_context_c[i]) fail("fault-handler-handler-bank");
+    if (saved_context_a[15] != (uint64_t)user_a_fault_handler_divide)
+        fail("fault-handler-suspended-frame");
+    fault_handler_suspended_rip = saved_context_a[15];
+    fault_handler_suspended_rsp = saved_context_a[18];
+    serial_puts(LEANOS_SERIAL_10_IPC " event=deliver handler=3 endpoint=14 words=4 class=divide-error faulting=1 address=divide-instruction error=0 other-words=0\n");
+}
+
+static uint64_t fault_handler_syscall(uint64_t number, uint64_t arg0,
+                                      uint64_t arg1, uint64_t arg2) {
+    if (number == 7 && current_subject == 3 && fault_handler_step == 0) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != FAULT_HANDLER_ENDPOINT) fail("fault-handler-receive-endpoint");
+        fault_handler_step = 1;
+        three_subject_step = 1;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=14 empty=1 role=fault-handler result=PASS\n");
+        return THREE_SUBJECT_C_BLOCKED;
+    }
+    if (number == 62 && current_subject == 2 && fault_handler_step == 1) {
+        fault_handler_step = 2;
+        return three_subject_syscall(number, arg0, arg1, arg2);
+    }
+    if (number == 64 && current_subject == 3 && fault_handler_step == 3) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg0 != fault_handler_record[0] || arg1 != fault_handler_record[1] ||
+            arg2 != fault_handler_record[2])
+            fail("fault-handler-record");
+        fault_handler_step = 4;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=report handler=3 class-word=");
+        serial_u64(arg0);
+        serial_puts(" faulting=");
+        serial_u64(arg1);
+        serial_puts(" address=divide-instruction exact=1\n");
+        return 0;
+    }
+    if (number == 65 && current_subject == 3 && fault_handler_step == 4) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != FAULT_HANDLER_ENDPOINT) fail("fault-handler-reply-endpoint");
+        /* A reply from any other subject or with nothing suspended is refused
+           by the witness. */
+        if (leanos_fault_handler_route(1, 1, 2, arg0) != 0 ||
+            leanos_fault_handler_route(1, 0, 3, arg0) != 0)
+            fail("fault-handler-reply-refusals");
+        uint64_t route = leanos_fault_handler_route(1, arg1, current_subject, arg0);
+        if (route != FAULT_HANDLER_TERMINATE) fail("fault-handler-reply");
+        if (((route >> 24) & 0xffu) != 1) fail("fault-handler-reply-encoding");
+        fault_handler_step = 5;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=reply handler=3 decision=terminate route=terminate subject=1 live=0 runnable=0 resumable=0 result=PASS\n");
+        return 0;
+    }
+    if (number == 7 && current_subject == 3 && fault_handler_step == 5) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != FAULT_HANDLER_IDLE_ENDPOINT) fail("fault-handler-block-endpoint");
+        fault_handler_step = 6;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS\n");
+        return FAULT_HANDLER_C_RESUMES_B;
+    }
+    if (number == 63 && current_subject == 2 && fault_handler_step == 6) {
+        three_subject_require_root(page_map_level_4_b);
+        if (arg0 != 0xc0dec0dec0dec0deull || arg1 != 0x51a7e51a7e51a7e5ull)
+            fail("fault-handler-b-continued");
+        if (saved_context_a[15] != fault_handler_suspended_rip ||
+            saved_context_a[18] != fault_handler_suspended_rsp)
+            fail("fault-handler-suspended-changed");
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=continue subject=2 address-space=2 context=saved canaries=exact result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 faults=1 delivered=1 handler=3 decision=terminate resumed-a=0 survivor=2 blocked-forever=3\n");
+        finish(0x10);
+    }
+    fail("fault-handler-sequence");
+}
+
+static void fault_handler_switch(uint64_t *target, uint64_t target_owner,
+                                 uint64_t saved_owner) {
+    if (current_subject == 2 && fault_handler_step == 6) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("fault-handler-switch-b-owner");
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 context=saved retired-subject=1\n");
+        return;
+    }
+    three_subject_switch(target, target_owner, saved_owner);
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
@@ -4640,6 +4816,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     (void)saved_flags;
     return example_subject_syscall(number, arg0, arg1, arg2);
+#endif
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+    (void)saved_flags;
+    return fault_handler_syscall(number, arg0, arg1, arg2);
 #endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
     (void)saved_flags;
@@ -5424,6 +5604,10 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 }
 
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+    fault_handler_switch(target, target_owner, saved_owner);
+    return;
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
     three_subject_switch(target, target_owner, saved_owner);
     return;
@@ -5945,7 +6129,10 @@ uint64_t direct_port_containment_gp_handler(uint64_t error, uint64_t rip,
    and dispatches B.  isr0/isr3 always link these; the containment logic is only
    built into the shared integer-fault kernel object. */
 uint64_t divide_error_handler(uint64_t rip, uint64_t saved_cs) {
-#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+    fault_handler_divide_error(rip, saved_cs);
+    return 0;
+#elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
     uint64_t cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if (integer_fault_probe_class != 0 || saved_cs != 0x23 ||
@@ -6207,6 +6394,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
+#elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=fault-handler controls=wp,smep,smap\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -6381,6 +6570,14 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_selected_root_a();
     serial_puts(LEANOS_SERIAL_18_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
+    check_boot_page_table_c();
+    check_fault_handler_slot();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=14\n");
+    enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     check_boot_page_table_c();
     check_example_subject_slot();
