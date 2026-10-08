@@ -651,7 +651,11 @@ That scenario adds no authority. The `console-server` image builds the same
 three subjects (it defines `LEANOS_THREE_SUBJECT_SCENARIO` and
 `LEANOS_CONSOLE_SERVER_SCENARIO`) and adds the console capability, the server
 loop and one more switch path, in which C blocks again and A resumes. See
-[the console-server page](console-server.md).
+[the console-server page](console-server.md). The `keyboard-echo` image
+(issue #493) adds the device service of `device-service` to the
+console-server image. It is the only image that maps the assigned-device
+window in C's address space as well, because the generated plan maps that
+supervisor-only window in every root of an assigned image.
 
 ### Assigned-EDU negative variants
 

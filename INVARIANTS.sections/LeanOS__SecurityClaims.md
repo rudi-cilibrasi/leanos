@@ -165,3 +165,4 @@ This file is the kernel's master security contract: each theorem here independen
 - `notify_reply_budget` — A program's reply slots change only through calls to its own endpoint or its own replies, so no other program can use them up or clear them.
 - `console_integrity` — The security-claim contract SC-CONSOLE-INTEGRITY: a program holding neither the console permission nor a connection to the console server cannot change what the console prints.
 - `console_confidentiality` — The security-claim contract SC-CONSOLE-CONFIDENTIALITY: such a program learns nothing about what was typed on the console.
+- `device_console_separation` — The security-claim contract SC-DEVICE-CONSOLE-SEPARATION: in the keyboard-echo image's permission layout, only the console server can make the console print and only the keyboard program can make the keyboard device do anything, and these are different programs.

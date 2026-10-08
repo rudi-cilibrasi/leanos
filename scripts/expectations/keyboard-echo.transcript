@@ -1,0 +1,81 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=keyboard-echo controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/CAP@ event=install console-holders=1 holder=3 server-senders=1 sender=1 model=agree result=PASS
+@10/CAP@ event=install-device device=0:2.0 device-holders=1 holder=1 holder-console=refused console-holder-device=none model=agree result=PASS
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=console-server
+@10/CAP@ event=refuse subject=3 op=device-invoke device=0:2.0 reason=no-device-capability
+@10/CAP@ event=read subject=3 slot=0 input=empty accepted=1
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=none
+@10/CAP@ event=refuse subject=2 op=console-write slot=0 reason=empty-slot model=refused
+@10/CAP@ event=refuse subject=2 op=send slot=0 reason=empty-slot model=refused
+@10/CAP@ event=refuse subject=2 op=console-read slot=0 reason=empty-slot model=refused
+@10/IPC@ event=run subject=2 address-space=2 context=initial canaries=exact observed=refused,refused,refused result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only,device
+@10/CAP@ event=refuse subject=1 op=console-write slot=0 reason=wrong-kind model=refused
+@10/DEVICE@ event=bind subject=1 device=0:2.0 image-bytes=413300 policy=admitted window=16384 dma=vtd result=PASS
+@10/DEVICE@ event=ready subject=1 vendor=1575 product=1 type-now
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=108 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=101 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=97 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=110 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=32 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=105 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=112 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=99 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=10 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/CONSOLE@ lean ipc
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/DEVICE@ event=end subject=1 status=0 code=0
+@10/FINAL@ status=PASS subjects=3 console-holder=3 device-holder=1 keys=9 deliveries=9 console-lines=1 console-bytes=9 refusals=5

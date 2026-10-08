@@ -48,6 +48,7 @@ import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
 import LeanOS.KernelTransition
+import LeanOS.KeyboardEcho
 import LeanOS.Refinement.CSubset
 import LeanOS.Refinement.BootTransitionC
 import LeanOS.LifetimeIssuer

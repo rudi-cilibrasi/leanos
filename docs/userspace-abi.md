@@ -78,6 +78,13 @@ ABI.
 | 60 | ipc-stream, device-service | 1 | next event (device-service: the next key from the bound device program) |
 | 61 | ipc-stream, device-service | 1 | end of stream (final record) |
 | 62 | three-subject | 2 | B's single run from its initial context reports its register canaries (RBX, RCX) |
+| 7 | keyboard-echo | 3 | C, the echo server, blocks for the next key on its receive-only endpoint capability (slot in RDX); B's attempt is refused |
+| 8 | keyboard-echo | 1 | A sends one key to C on its send-only endpoint capability (slot in RDX, RBX = key, RCX = 1); B's attempt is refused |
+| 60 | keyboard-echo | 1, 3 | next key from the bound device program, for the device-capability holder A only; C's attempt is refused (no device capability) |
+| 61 | keyboard-echo | 1 | A's final check of the key, delivery and console counts (final record) |
+| 62 | keyboard-echo | 2 | B reports its canaries and its three refused attempts |
+| 70 | keyboard-echo | 1, 2, 3 | console write of RBX's byte through the console capability in slot RDX (C only); A's and B's attempts are refused |
+| 71 | keyboard-echo | 1, 2, 3 | console read through the console capability in slot RDX (C only; poll only: 256 when empty) |
 | 70 | notify-reply | 1 | signal notification 20 with RBX bits (the script signals 5) |
 | 71 | notify-reply | 2 | wait on notification 20 (blocks until signalled) |
 | 72 | notify-reply | 1 | call endpoint 10 with RBX; creates a one-shot reply capability for the caller |
@@ -101,7 +108,11 @@ wrong subject, or with unexpected arguments stops the machine with a
 `LEANOS/3 FINAL status=FAIL reason=...` record (fail-stop). A few scenarios
 return scenario-specific words, which the subject's script checks: the
 capability-reuse stale replay returns 0, and the device-service "next key" call
-returns 0 at the end of the stream. The `0xff01`–`0xff06` words in
+returns 0 at the end of the stream. In the `console-server` and
+`keyboard-echo` images a refused capability request changes nothing and
+returns `1 | reason << 8` ([console-server.md](console-server.md)). The
+`keyboard-echo` image adds reason 7: a device request (60) from a subject
+without the device capability. The `0xff01`–`0xff06` words in
 `LeanOS/BoundaryVocabulary.lean` are a kernel-internal Lean↔C ABI, not a user
 ABI.
 

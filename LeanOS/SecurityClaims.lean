@@ -32,6 +32,7 @@ import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
 import LeanOS.ConsoleServer
+import LeanOS.KeyboardEcho
 
 /-! # Stable security-claim contract
 
@@ -3323,5 +3324,20 @@ theorem console_confidentiality (auth : ConsoleServer.Authority) (x : ConsoleSer
     ConsoleServer.observations x (ConsoleServer.run auth s script).2 =
       ConsoleServer.observations x (ConsoleServer.run auth { s with input := input } script).2 :=
   ConsoleServer.console_confidentiality auth x hx s hs input script
+
+/-- SC-DEVICE-CONSOLE-SEPARATION: in the composed console and device system
+under the keyboard-echo authority, a change to the console trace is an action
+of the console server, and a change to a device's state is an invocation by
+the keyboard client `a`; the device holder and the console holder are
+different subjects. -/
+theorem device_console_separation {σ : Type} (models : Nat → Wifi.Sim.Device σ)
+    (c : KeyboardEcho.Composed σ)
+    (hcaps : c.device.deviceCaps = KeyboardEcho.bootDeviceCaps) (action : KeyboardEcho.Action) :
+    ((KeyboardEcho.cstep models ConsoleServer.bootAuthority c action).console.output ≠
+        c.console.output → ∃ op, action = .console .server op) ∧
+      (∀ k, (KeyboardEcho.cstep models ConsoleServer.bootAuthority c action).device.devState k ≠
+        c.device.devState k →
+          ∃ fuel, action = .device (.invoke (KeyboardEcho.subjectId .a) fuel)) :=
+  KeyboardEcho.boot_causes_distinct models c hcaps action
 
 end LeanOS.SecurityClaims
