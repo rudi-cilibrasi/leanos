@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST = ROOT / "scripts/scenario-manifest.json"
 SCHEMA = "leanos-scenario-manifest-v1"
 NAME = re.compile(r"^[a-z][a-z0-9-]*$")
+NEGATIVE_STAGES = ("pre-assignment", "post-assignment")
 GRUB_CONFIGS = {"boot/grub.cfg", "boot/grub-double-fault.cfg", "boot/grub-nmi-cpl3.cfg"}
 PAGE_PLAN_FLAG = re.compile(r'^-DLEANOS_BOOT_PAGE_PLAN_HEADER="([a-z0-9.-]+)"$')
 
@@ -54,8 +55,13 @@ def negative_variant_rows(manifest: dict, scenario: str) -> list[dict[str, str]]
         raise ManifestError(f"scenario {scenario} requires nonempty negative_variants")
     seen = set()
     for row in variants:
-        if not isinstance(row, dict) or set(row) != {"fixture", "macro", "reason"}:
+        if not isinstance(row, dict) or not (
+                {"fixture", "macro", "reason"} <= set(row) <= {"fixture", "macro", "reason", "stage"}):
             raise ManifestError(f"scenario {scenario} has malformed negative variant")
+        # A post-assignment variant fails only after the assigned device's
+        # translation tables are live, so its log must show that stage passed.
+        if row.get("stage", "pre-assignment") not in NEGATIVE_STAGES:
+            raise ManifestError(f"scenario {scenario} has invalid negative variant stage")
         if (
             any(not isinstance(row[k], str) for k in row)
             or not NAME.fullmatch(row["fixture"])
@@ -408,7 +414,7 @@ def main() -> int:
     sub.add_parser("disassemblies", help="final-ELF disassembly outputs")
     sub.add_parser("entry-policies", help="entry-policy checks queued per final ELF")
     sub.add_parser("extended-state-policies", help="extended-state policy runs per final ELF")
-    variants = sub.add_parser("negative-variants", help="fixture, compiler macro and expected failure reason")
+    variants = sub.add_parser("negative-variants", help="fixture, compiler macro, expected failure reason and stage")
     variants.add_argument("scenario")
     expectations = sub.add_parser("expectations", help="scenarios whose expected transcript is a template")
     expectations.add_argument("scenario", nargs="?")
@@ -417,7 +423,8 @@ def main() -> int:
         manifest = load(args.manifest)
         if args.operation == "negative-variants":
             for row in negative_variant_rows(manifest, args.scenario):
-                print("\t".join(row[k] for k in ("fixture", "macro", "reason")))
+                print("\t".join(row[k] for k in ("fixture", "macro", "reason"))
+                      + "\t" + row.get("stage", "pre-assignment"))
         elif args.operation == "images":
             for row in image_rows(manifest):
                 print("\t".join(row[column] for column in COLUMNS))

@@ -120,9 +120,17 @@ rejection code.  The modeled transition above specifies the resulting state.
 def bootTransition (state command : UInt64) : UInt64 :=
   if state == 0 && command == 1 then 1 else 0
 
-/-- The fixed-width entry point agrees with the explicit model on valid state. -/
-theorem bootTransition_agrees (state : State) (command : UInt64)
-    (_hstate : WellFormed state) :
+/-- Rung 1 of the #470 ladder, over the whole input domain: the adapter
+accepts exactly the word pair `(0, 1)` and rejects every other pair, including
+state words that encode no model state (anything but 0 and 1). -/
+theorem bootTransition_spec (state command : UInt64) :
+    bootTransition state command = if state = 0 ∧ command = 1 then 1 else 0 := by
+  by_cases hs : state = 0 <;> by_cases hc : command = 1 <;> simp [bootTransition, hs, hc]
+
+/-- The fixed-width entry point agrees with the explicit model on every
+model state. Well-formedness is not needed: `encodeState` reads only the
+phase, and the adapter never reads the generation. -/
+theorem bootTransition_agrees (state : State) (command : UInt64) :
     bootTransition (encodeState state) command =
       encodeResult (transition state (decodeCommand command)).result := by
   cases state with
