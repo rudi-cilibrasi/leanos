@@ -24,7 +24,7 @@ timer-switch	check_selected_root_c
 syscall	console_capability_check
 syscall	console_decide
 syscall	console_object_flush
-syscall	console_object_read
+syscall	console_object_input_ready
 syscall	console_object_write
 syscall	console_refuse
 syscall	console_server_require_caller

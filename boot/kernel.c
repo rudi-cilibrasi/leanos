@@ -4500,10 +4500,12 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
 #define CONSOLE_LINE_MAX 64u
 enum console_refusal {
     CONSOLE_OK = 0, CONSOLE_BAD_SLOT = 1, CONSOLE_EMPTY_SLOT = 2,
-    CONSOLE_WRONG_KIND = 3, CONSOLE_MISSING_RIGHT = 4, CONSOLE_BAD_BYTE = 5
+    CONSOLE_WRONG_KIND = 3, CONSOLE_MISSING_RIGHT = 4, CONSOLE_BAD_BYTE = 5,
+    CONSOLE_INPUT_NOT_ADMITTED = 6
 };
 static const char *const console_refusal_names[] = {
-    "none", "bad-slot", "empty-slot", "wrong-kind", "missing-right", "bad-byte"
+    "none", "bad-slot", "empty-slot", "wrong-kind", "missing-right", "bad-byte",
+    "input-not-admitted"
 };
 
 struct console_capability {
@@ -4601,11 +4603,14 @@ static void console_object_write(uint8_t byte) {
     if (console_line_length == CONSOLE_LINE_MAX) console_object_flush();
 }
 
-/* The console object's only input path: one byte of COM1 input, or the
-   model's empty marker. */
-static uint64_t console_object_read(void) {
-    if ((in8(COM1 + 5) & 0x01u) == 0) return CONSOLE_READ_EMPTY;
-    return in8(COM1);
+/* The console object's only input path.  It polls the COM1 line status
+   (the reviewed DirectPortIO serial input, port 0x3fd) and answers the
+   model's empty marker when no byte is ready.  Consuming a byte would read
+   the receive register (input from 0x3f8), which DirectPortIO.portManifest
+   does not admit yet, so a ready byte is refused with a typed reason rather
+   than read. */
+static int console_object_input_ready(void) {
+    return (in8(COM1 + 5) & 0x01u) != 0;
 }
 
 static uint64_t console_table_grants(uint64_t subject, unsigned kind,
@@ -4667,13 +4672,14 @@ static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
                                 CAP_RIGHT_READ, &witness);
         if (reason != CONSOLE_OK)
             return console_refuse("console-read", arg2, reason, witness);
-        uint64_t value = console_object_read();
+        if (console_object_input_ready())
+            return console_refuse("console-read", arg2,
+                                  CONSOLE_INPUT_NOT_ADMITTED, witness);
         serial_puts(LEANOS_SERIAL_10_CAP " event=read subject=");
         serial_u64(current_subject);
         serial_puts(" slot="); serial_u64(arg2);
-        serial_puts(value == CONSOLE_READ_EMPTY ? " input=empty accepted=1\n"
-                                                : " input=byte accepted=1\n");
-        return value;
+        serial_puts(" input=empty accepted=1\n");
+        return CONSOLE_READ_EMPTY;
     }
     if (number == 8) {
         reason = console_decide(CONSOLE_OP_SEND, arg2, CAP_KIND_ENDPOINT,

@@ -5349,6 +5349,48 @@
     },
     {
       "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.boot_a_observations",
+      "display": "boot_a_observations",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.boot_b_refused",
+      "display": "boot_b_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.boot_output",
+      "display": "boot_output",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.boot_server_receives",
+      "display": "boot_server_receives",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.consoleAuthorize_accepts",
+      "display": "consoleAuthorize_accepts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.consoleAuthorize_agrees",
+      "display": "consoleAuthorize_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.consoleAuthorize_off_domain",
+      "display": "consoleAuthorize_off_domain",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
       "qualified": "LeanOS.ConsoleServer.console_confidentiality",
       "display": "console_confidentiality",
       "kind": "theorem"
@@ -5391,6 +5433,12 @@
     },
     {
       "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_of_not_permitted",
+      "display": "step_of_not_permitted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
       "qualified": "LeanOS.ConsoleServer.step_preserves_noQueuedFrom",
       "display": "step_preserves_noQueuedFrom",
       "kind": "theorem"
@@ -5405,6 +5453,18 @@
       "source": "LeanOS/ConsoleServer.lean",
       "qualified": "LeanOS.ConsoleServer.step_unprivileged_state",
       "display": "step_unprivileged_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_write_of_permitted",
+      "display": "step_write_of_permitted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.unprivileged_not_permitted",
+      "display": "unprivileged_not_permitted",
       "kind": "theorem"
     },
     {
@@ -14015,6 +14075,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_capability_transfer_boot_vectors_exact",
       "display": "hosted_capability_transfer_boot_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_console_authorize_vectors_exact",
+      "display": "hosted_console_authorize_vectors_exact",
       "kind": "theorem"
     },
     {

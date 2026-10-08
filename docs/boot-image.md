@@ -647,8 +647,11 @@ address spaces:
 3. A sends one word to endpoint 12.
 4. C is woken with exactly A's words.
 
-This is plumbing for issue #472's console server, not new authority. The
-console capability and the server loop are later slices.
+That scenario adds no authority. The `console-server` image builds the same
+three subjects (it defines `LEANOS_THREE_SUBJECT_SCENARIO` and
+`LEANOS_CONSOLE_SERVER_SCENARIO`) and adds the console capability, the server
+loop and one more switch path, in which C blocks again and A resumes. See
+[the console-server page](console-server.md).
 
 ### Assigned-EDU negative variants
 
