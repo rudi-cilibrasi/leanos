@@ -1,0 +1,27 @@
+@10/BOOT@ target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=enter subject=2 address-space=2 cpl=3 endpoint=10
+@10/IPC@ event=wait subject=2 notification=20 pending=0 blocked=1
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=signal subject=1 notification=20 bits=5 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=woke subject=2 notification=20 bits=5 pending=0
+@10/IPC@ event=receive subject=2 endpoint=10 blocked=1
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=call caller=1 endpoint=10 server=2 word=305441741 reply-slot=0 caller-generation=0
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1
+@10/IPC@ event=reply server=2 reply-slot=0 caller=1 word=305441742 accepted=1 consumed=1
+@10/IPC@ event=reply server=2 reply-slot=0 rejected=no-reply
+@10/IPC@ event=block subject=2 endpoint=10 round=done
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@10/IPC@ event=delivered subject=1 reply=305441742 exact=1
+@10/FINAL@ status=PASS signals=1 wakes=1 calls=1 replies=1 rejected-replies=1

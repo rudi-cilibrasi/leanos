@@ -28,6 +28,7 @@ import LeanOS.QotomMadtStreamRun
 import LeanOS.QotomBspTopology
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
+import LeanOS.NotifyReply
 import LeanOS.BlockingIPCContext
 import LeanOS.EndpointIPC
 import LeanOS.ExtendedState
