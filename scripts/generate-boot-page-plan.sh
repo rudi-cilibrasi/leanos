@@ -33,9 +33,11 @@ if [[ "${1:-}" == --stub ]]; then
     # Only the three-subject image (issue #472) links a third address space;
     # every other image preprocesses this placeholder away.
     echo '#ifdef LEANOS_THREE_SUBJECT_SCENARIO'
+    # A distinct placeholder pattern: identical read-only arrays may be
+    # folded by the compiler, which would shrink the prelink image.
     echo 'static const unsigned long long leanos_boot_plan_c[4096] = {'
     for ((page = 0; page < 4096; ++page)); do
-      echo "  (0x8000000000000013ULL + $((page * 4096))ULL),"
+      echo "  (0x8000000000000007ULL + $((page * 4096))ULL),"
     done
     echo '};'
     echo '#endif'
