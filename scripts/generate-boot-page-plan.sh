@@ -30,6 +30,17 @@ if [[ "${1:-}" == --stub ]]; then
       echo "  (0x8000000000000013ULL + $((page * 4096))ULL),"
     done
     echo '};'
+    # Only the three-subject image (issue #472) links a third address space;
+    # every other image preprocesses this placeholder away.
+    echo '#ifdef LEANOS_THREE_SUBJECT_SCENARIO'
+    # A distinct placeholder pattern: identical read-only arrays may be
+    # folded by the compiler, which would shrink the prelink image.
+    echo 'static const unsigned long long leanos_boot_plan_c[4096] = {'
+    for ((page = 0; page < 4096; ++page)); do
+      echo "  (0x8000000000000007ULL + $((page * 4096))ULL),"
+    done
+    echo '};'
+    echo '#endif'
     # VT-d placeholder: the pinned register/topology constants are
     # layout-independent and final; only the linker-derived table values are
     # placeholders, chosen in the same immediate-encoding class as real ones.
@@ -172,6 +183,15 @@ symbol_decimal() {
   printf '%d' "0x$hex"
 }
 
+# An image that links the third subject's tables (issue #472) ends the CPU
+# page-table block at C's tables instead of B's.
+third_subject=0
+if nm "$elf" | awk '$3 == "page_map_level_4_c" { found = 1 } END { exit !found }'; then
+  third_subject=1
+fi
+table_end_symbol=page_table_b_end
+[[ "$third_subject" == 0 ]] || table_end_symbol=page_table_c_end
+
 symbols=(
   __boot_image_start __boot_image_end
   __kernel_text_start __kernel_text_end
@@ -183,7 +203,7 @@ symbols=(
   __entry_stack_start __entry_stack_end
   page_map_level_4_a page_directory_pointer_a page_directory_a page_table_a
   page_map_level_4_b page_directory_pointer_b page_directory_b page_table_b
-  page_table_b_end boot_stack boot_stack_top
+  "$table_end_symbol" boot_stack boot_stack_top
   __user_a_text_start __user_a_text_end
   __user_a_stack_start __user_a_stack_end
   __user_b_text_start __user_b_text_end
@@ -195,11 +215,22 @@ args=()
 for name in "${symbols[@]}"; do args+=("$(symbol_decimal "$name")"); done
 args+=("$assigned_edu")
 args+=("$(symbol_decimal vtd_root_table)" "$(symbol_decimal vtd_remapping_table_end)")
+# Every image links C's section bounds; they are empty without a third subject.
+for name in __user_c_text_start __user_c_text_end \
+    __user_c_stack_start __user_c_stack_end; do
+  args+=("$(symbol_decimal "$name")")
+done
+if [[ "$third_subject" == 1 ]]; then
+  for name in page_map_level_4_c page_directory_pointer_c page_directory_c \
+      page_table_c; do
+    args+=("$(symbol_decimal "$name")")
+  done
+fi
 
 vtd_symbols=(
   vtd_root_table vtd_context_table vtd_second_level_root
   vtd_second_level_directory vtd_second_level_table vtd_remapping_table_end
-  page_map_level_4_a page_table_b_end
+  page_map_level_4_a "$table_end_symbol"
   vtd_assigned_guard_before vtd_assigned_read_buffer
   vtd_assigned_write_buffer vtd_assigned_guard_after
 )

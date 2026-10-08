@@ -31,6 +31,9 @@ import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
+import LeanOS.NotifyReply
+import LeanOS.Refinement.BootTransitionC
+import LeanOS.ConsoleServer
 
 /-! # Stable security-claim contract
 
@@ -3253,6 +3256,19 @@ theorem device_program_declared_confinement {σ : Type} (π : Wifi.Bytecode.Poli
       false :=
   DeviceProgramConfinement.run_declared_confined π p hpol hwin d s0 fuel init hinit
 
+/-- SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS: an admissible device program, run
+by the reference simulator from zeroed scratch on any device model whose bus
+address of scratch is fixed, leaves every field of its policy's descriptor
+map (for xHCI: DCBAA and scratchpad-array entries, the ERST entry,
+input-context dequeue pointers and TRB parameters) holding zero or a bus
+address inside scratch, in every reachable state. -/
+theorem device_program_descriptor_pointers {σ : Type} (π : Wifi.Bytecode.Policy)
+    (p : Wifi.Bytecode.Program) (hp : DeviceProgramConfinement.admissible p π = true)
+    (d : Wifi.Sim.Device σ) (base : UInt32) (hphys : ∀ s, (d.phys s 0).1 = base)
+    (s0 : σ) (fuel : Nat) :
+    Wifi.Sim.descOk π base (Wifi.Sim.run p d s0 fuel).2.mem = true :=
+  DeviceProgramConfinement.run_admissible_descriptors π p hp d base hphys s0 fuel
+
 /-- SC-DEVICE-CAPABILITY-CONFINEMENT: in the device-capability kernel
 service, no sequence of capability operations, grants, binds, invocations and
 revocations makes any device act outside its policy, and only an invocation by
@@ -3275,5 +3291,94 @@ theorem ipc_event_stream {s : BlockingIPC.State} {rc sc : Capability.Capability}
     BlockingIPC.keyStream s payloads =
       (s, payloads.map fun p => .delivered (BlockingIPC.bootEnvelope p)) :=
   BlockingIPC.keyStream_delivers h payloads
+
+/-- SC-NOTIFY-REPLY-NO-AMPLIFICATION: notifications, calls, replies, reply
+copies and terminations never change the capability state, and a reply
+capability appears only through `call`, naming exactly that caller at its
+current generation. -/
+theorem notify_reply_no_amplification (sys : NotifyReply.System)
+    (t : NotifyReply.Transition) (hcap : ∀ op, t ≠ .cap op) :
+    (NotifyReply.step sys t).1.caps = sys.caps ∧
+      ∀ server r rc, (NotifyReply.step sys t).1.replies server r = some rc →
+        sys.replies server r ≠ some rc →
+        ∃ slot, t = .call rc.caller slot ∧ rc.callerGeneration = sys.generation rc.caller :=
+  ⟨NotifyReply.non_cap_step_caps sys t hcap,
+    fun server r rc hnew hold => NotifyReply.reply_created_only_by_call sys t server r rc hnew hold⟩
+
+/-- SC-NOTIFY-REPLY-NO-STALE-REUSE: a reply whose caller terminated or moved
+to a new generation is rejected and changes nothing. -/
+theorem notify_reply_no_stale_reuse (sys : NotifyReply.System) (server : Capability.SubjectId)
+    (r : Nat) (rc : NotifyReply.ReplyCap) (word : UInt64)
+    (hreply : sys.replies server r = some rc)
+    (hstale : sys.alive rc.caller = false ∨ sys.generation rc.caller ≠ rc.callerGeneration) :
+    NotifyReply.step sys (.reply server r word) = (sys, .rejected .staleCaller) :=
+  NotifyReply.stale_reply_rejected sys server r rc word hreply hstale
+
+/-- SC-NOTIFY-REPLY-SINGLE-USE: an accepted reply consumes the reply
+capability; a second reply through it is rejected and changes nothing, and a
+reply capability is never handed to another subject. -/
+theorem notify_reply_single_use (sys : NotifyReply.System) (server : Capability.SubjectId)
+    (r : Nat) (word word' : UInt64)
+    (h : (NotifyReply.step sys (.reply server r word)).2 = .accepted) :
+    NotifyReply.step (NotifyReply.step sys (.reply server r word)).1 (.reply server r word') =
+        ((NotifyReply.step sys (.reply server r word)).1, .rejected .noReply) ∧
+      ∀ destination, NotifyReply.step sys (.copyReply server r destination) =
+        (sys, .rejected .notCopyable) :=
+  ⟨NotifyReply.reply_single_use sys server r word word' h,
+    fun destination => NotifyReply.copyReply_rejected sys server r destination⟩
+
+/-- SC-NOTIFY-REPLY-BUDGET: a transition changes another subject's reply
+slots only when it is a call on that subject's endpoint or that subject's own
+reply, and a call to an exhausted reply pool is a typed rejection without
+effect. -/
+theorem notify_reply_budget (sys : NotifyReply.System) (t : NotifyReply.Transition)
+    (other : Capability.SubjectId)
+    (hchanged : (NotifyReply.step sys t).1.replies other ≠ sys.replies other) :
+    (∃ client slot capability, t = .call client slot ∧
+        Capability.authorizeKind sys.caps client slot .endpoint = .ok capability ∧
+        sys.endpointServer capability.object = some other) ∨
+      (∃ r word, t = .reply other r word) :=
+  NotifyReply.replies_change_only_at_server sys t other hchanged
+
+/-- SC-BOOT-TRANSITION-AGREEMENT: the Lean adapter `bootTransition` computes the
+model's encoded result on every encoded model state. A Lean-level statement
+only; it says nothing about generated C. -/
+theorem boot_transition_agreement (state : KernelTransition.State) (command : UInt64) :
+    KernelTransition.bootTransition (KernelTransition.encodeState state) command =
+      KernelTransition.encodeResult
+        (KernelTransition.transition state (KernelTransition.decodeCommand command)).result :=
+  KernelTransition.bootTransition_agrees state command
+
+/-- SC-BOOT-TRANSITION-REFINEMENT: the C function `leanos_boot_transition`, as
+emitted by the pinned toolchain (the AST the build's drift check pins) and
+interpreted by the `Refinement.CSubset` semantics, refines `transition` under
+the encodings. ADR 0023 records the trusted subset meaning, extractor and
+calling convention. -/
+theorem boot_transition_refinement (state : KernelTransition.State) (command : UInt64) :
+    Refinement.CSubset.call Refinement.BootTransitionC.bootTransitionC
+        [KernelTransition.encodeState state, command] =
+      some (KernelTransition.encodeResult
+        (KernelTransition.transition state (KernelTransition.decodeCommand command)).result) :=
+  Refinement.BootTransitionC.bootTransitionC_refines_transition state command
+/-- SC-CONSOLE-INTEGRITY: a subject holding neither the console capability nor
+an endpoint capability that reaches the console server cannot change the
+console trace: two scripts that differ only in its actions produce equal
+console output. -/
+theorem console_integrity (auth : ConsoleServer.Authority) (x : ConsoleServer.Subject)
+    (hx : ConsoleServer.Unprivileged auth x) (s : ConsoleServer.State)
+    (first second : List (ConsoleServer.Subject × ConsoleServer.Op))
+    (hsame : ConsoleServer.erase x first = ConsoleServer.erase x second) :
+    (ConsoleServer.run auth s first).1.output = (ConsoleServer.run auth s second).1.output :=
+  ConsoleServer.console_integrity_pair auth x hx s first second hsame
+
+/-- SC-CONSOLE-CONFIDENTIALITY: such a subject observes one refusal per action
+of its own, so its observations do not depend on console input. -/
+theorem console_confidentiality (auth : ConsoleServer.Authority) (x : ConsoleServer.Subject)
+    (hx : ConsoleServer.Unprivileged auth x) (s : ConsoleServer.State)
+    (hs : ConsoleServer.NoQueuedFrom x s) (input : List Nat)
+    (script : List (ConsoleServer.Subject × ConsoleServer.Op)) :
+    ConsoleServer.observations x (ConsoleServer.run auth s script).2 =
+      ConsoleServer.observations x (ConsoleServer.run auth { s with input := input } script).2 :=
+  ConsoleServer.console_confidentiality auth x hx s hs input script
 
 end LeanOS.SecurityClaims

@@ -8,18 +8,24 @@ This is the authoritative, bounded input to the early-boot table constructor.
 It deliberately proves facts about accepted plan values, not about the linker,
 assembly writes, CR3, an x86 page walk, or QEMU.  Those boundaries must compare
 decoded live entries with `compile`.
+
+The image has a fixed set of subjects, not a dynamic count. Subjects A and B
+are always present. A third subject C (issue #472) is optional: its root and
+ancestor frames are `none` in every two-subject image and `some` only in an
+image that links C's tables. A two-subject input therefore compiles exactly as
+before, and an input that maps a leaf into an unconfigured space is rejected.
 -/
 namespace LeanOS.BootPageTablePlan
 
 open LeanOS.X86PageTable
 open LeanOS.BootReservation
 
-inductive Space where | subjectA | subjectB
+inductive Space where | subjectA | subjectB | subjectC
   deriving BEq, DecidableEq, Repr
 
 instance : Inhabited Space := ⟨.subjectA⟩
 
-inductive Owner where | supervisor | subjectA | subjectB
+inductive Owner where | supervisor | subjectA | subjectB | subjectC
   deriving BEq, DecidableEq, Repr
 
 instance : Inhabited Owner := ⟨.supervisor⟩
@@ -38,6 +44,8 @@ structure Region where
 structure Roots where
   subjectA : PhysicalFrame
   subjectB : PhysicalFrame
+  /-- The third subject's root; `none` in a two-subject image. -/
+  subjectC : Option PhysicalFrame := none
   deriving BEq, DecidableEq, Repr
 
 /-- The non-root frames for the boot constructor's eight-PT 16 MiB map. -/
@@ -50,6 +58,8 @@ structure AncestorFrames where
 structure AncestorPaths where
   subjectA : AncestorFrames
   subjectB : AncestorFrames
+  /-- The third subject's ancestors; `none` in a two-subject image. -/
+  subjectC : Option AncestorFrames := none
   deriving BEq, DecidableEq, Repr
 
 structure Input where
@@ -75,6 +85,7 @@ inductive Error where
   | duplicateLeaf | duplicateTableFrame | unreservedTableFrame | invalidTableFrame
   | missingRequiredRegion | unsafePhysicalAlias | missingValidatedReservation
   | tableManifestMismatch | mmioAliasesRam | unreservedRemappingFrame
+  | unconfiguredSpace
   deriving BEq, DecidableEq, Repr
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
@@ -89,6 +100,7 @@ def ownerMatches (region : Region) : Bool :=
   | .mmioWindow, .supervisor, _ | .remappingTables, .supervisor, _ => true
   | .userText, .subjectA, .subjectA | .userStack, .subjectA, .subjectA => true
   | .userText, .subjectB, .subjectB | .userStack, .subjectB, .subjectB => true
+  | .userText, .subjectC, .subjectC | .userStack, .subjectC, .subjectC => true
   | _, _, _ => false
 
 def compileRegion (region : Region) : Except Error (List CompiledLeaf) := do
@@ -120,6 +132,18 @@ def reservedAsPageTable (reservations : List Interval) (frame : PhysicalFrame) :
   reservations.any fun interval =>
     interval.identity == .pageTables && interval.contains frame
 
+/-- The optional third subject's root and ancestors satisfy `check`, with the
+same eight-PT shape as A and B; an absent third subject is vacuous. -/
+def thirdFramesSatisfy (input : Input) (check : PhysicalFrame → Bool) : Bool :=
+  (match input.roots.subjectC with
+   | none => true
+   | some root => check root) &&
+  (match input.ancestors.subjectC with
+   | none => true
+   | some frames =>
+       check frames.pdpt && check frames.pd &&
+         frames.pts.length == bootPtCount && frames.pts.all check)
+
 def tableFramesReserved (input : Input) : Bool :=
   match input.reservationResult with
   | none => false
@@ -134,6 +158,7 @@ def tableFramesReserved (input : Input) : Bool :=
       reservedAsPageTable reserved.intervals input.ancestors.subjectB.pd &&
       input.ancestors.subjectB.pts.length == bootPtCount &&
       input.ancestors.subjectB.pts.all (reservedAsPageTable reserved.intervals) &&
+      thirdFramesSatisfy input (reservedAsPageTable reserved.intervals) &&
       input.regions.all fun region => region.policy != .pageTables ||
         (List.range (region.byteLength / pageBytes)).all fun offset =>
           reservedAsPageTable reserved.intervals
@@ -148,14 +173,24 @@ def tableFramesRepresentable (input : Input) : Bool :=
     representableFrame input.ancestors.subjectB.pdpt &&
     representableFrame input.ancestors.subjectB.pd &&
     input.ancestors.subjectB.pts.length == bootPtCount &&
-    input.ancestors.subjectB.pts.all representableFrame
+    input.ancestors.subjectB.pts.all representableFrame &&
+    thirdFramesSatisfy input representableFrame
+
+/-- The third subject's frames, appended after A and B's so a two-subject
+layout is exactly the two-subject list. -/
+def thirdLayoutFrames (roots : Roots) (ancestors : AncestorPaths) : List PhysicalFrame :=
+  roots.subjectC.toList ++
+    match ancestors.subjectC with
+    | none => []
+    | some frames => [frames.pdpt, frames.pd] ++ frames.pts
 
 def layoutFrames (roots : Roots) (ancestors : AncestorPaths) : List PhysicalFrame :=
   [roots.subjectA, roots.subjectB,
    ancestors.subjectA.pdpt, ancestors.subjectA.pd] ++
    ancestors.subjectA.pts ++
    [ancestors.subjectB.pdpt, ancestors.subjectB.pd] ++
-   ancestors.subjectB.pts
+   ancestors.subjectB.pts ++
+   thirdLayoutFrames roots ancestors
 
 def tableFrames (input : Input) : List PhysicalFrame :=
   layoutFrames input.roots input.ancestors
@@ -165,14 +200,37 @@ or two descendants with each other, cannot describe the supported four-level tre
 def tableFramesDistinct (input : Input) : Bool :=
   (tableFrames input).Pairwise (· != ·)
 
+/-- The third subject is configured when its root is present.  Its root and
+ancestors must be present together (`thirdSubjectConsistent`). -/
+def Roots.hasThird (roots : Roots) : Bool := roots.subjectC.isSome
+
+def thirdSubjectConsistent (input : Input) : Bool :=
+  input.roots.subjectC.isSome == input.ancestors.subjectC.isSome
+
+/-- The address spaces this input configures: always A and B, plus C when the
+third subject's tables are present. -/
+def configuredSpaces (roots : Roots) : List Space :=
+  if roots.hasThird then [.subjectA, .subjectB, .subjectC] else [.subjectA, .subjectB]
+
+def spaceConfigured (roots : Roots) (space : Space) : Bool :=
+  (configuredSpaces roots).contains space
+
+/-- The third root differs from both A and B.  `tableFramesDistinct` implies
+this too; checking it first keeps the `equalRoots` diagnostic for roots. -/
+def thirdRootDistinct (roots : Roots) : Bool :=
+  match roots.subjectC with
+  | none => true
+  | some root => root != roots.subjectA && root != roots.subjectB
+
 def hasRegion (input : Input) (space : Space) (policy : PolicyRegion) (owner : Owner) : Bool :=
   input.regions.any fun region =>
     region.space == space && region.policy == policy && region.owner == owner
 
-/-- The Phase 2 plan is not an optional list: both roots must contain the
-reviewed supervisor classes and their subject-specific user text and stack. -/
+/-- The Phase 2 plan is not an optional list: every configured root must
+contain the reviewed supervisor classes and its subject-specific user text
+and stack. -/
 def requiredCoverage (input : Input) : Bool :=
-  [.subjectA, .subjectB].all fun space =>
+  (configuredSpaces input.roots).all fun space =>
     hasRegion input space .kernelText .supervisor &&
     hasRegion input space .kernelData .supervisor &&
     hasRegion input space .kernelStack .supervisor &&
@@ -182,6 +240,8 @@ def requiredCoverage (input : Input) : Bool :=
         hasRegion input space .userText .subjectA && hasRegion input space .userStack .subjectA
     | .subjectB =>
         hasRegion input space .userText .subjectB && hasRegion input space .userStack .subjectB
+    | .subjectC =>
+        hasRegion input space .userText .subjectC && hasRegion input space .userStack .subjectC
 
 def wxSafe (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry => !entry.leaf.writable || entry.leaf.noExecute
@@ -191,9 +251,10 @@ def ownershipSafe (leaves : List CompiledLeaf) : Bool :=
     (!entry.leaf.user && entry.owner == .supervisor) ||
     (entry.leaf.user &&
       ((entry.space == .subjectA && entry.owner == .subjectA) ||
-       (entry.space == .subjectB && entry.owner == .subjectB)))
+       (entry.space == .subjectB && entry.owner == .subjectB) ||
+       (entry.space == .subjectC && entry.owner == .subjectC)))
 
-/-- User-owned frames are not shared across the two subject views.  Supervisor
+/-- User-owned frames are not shared across the subject views.  Supervisor
 frames may intentionally be identical in both roots. -/
 def userViewsSeparated (leaves : List CompiledLeaf) : Bool :=
   leaves.Pairwise fun a b =>
@@ -223,7 +284,7 @@ otherwise valid reservation from being paired with unrelated `.pageTables`
 regions. -/
 def tableManifestMatches (input : Input) (leaves : List CompiledLeaf) : Bool :=
   let frames := tableFrames input
-  [.subjectA, .subjectB].all fun space =>
+  (configuredSpaces input.roots).all fun space =>
     let declared := leaves.filter fun entry =>
       entry.space == space && entry.policy == .pageTables
     declared.all (fun entry => entry.page == entry.leaf.frame && frames.contains entry.leaf.frame) &&
@@ -248,6 +309,11 @@ def remappingFramesReserved (input : Input) (leaves : List CompiledLeaf) : Bool 
       entry.policy != .remappingTables ||
         (entry.page == entry.leaf.frame &&
           BootReservation.reservedBy reserved.intervals entry.leaf.frame)
+
+/-- Every leaf belongs to an address space whose root the input supplies, so a
+two-subject image cannot carry third-subject leaves with no root behind them. -/
+def leavesConfigured (roots : Roots) (leaves : List CompiledLeaf) : Bool :=
+  leaves.all fun entry => spaceConfigured roots entry.space
 
 /-- Every emitted leaf is in the supported 4 KiB lower-half subset. -/
 def structurallySafe (leaves : List CompiledLeaf) : Bool :=
@@ -283,6 +349,8 @@ structure Plan where
   private roots : Roots
   private leaves : List CompiledLeaf
   private rootsDistinct : roots.subjectA ≠ roots.subjectB
+  private thirdRootFresh : thirdRootDistinct roots = true
+  private configured : leavesConfigured roots leaves = true
   private noDuplicates : noDuplicateLeaves leaves = true
   private wx : wxSafe leaves = true
   private ownership : ownershipSafe leaves = true
@@ -312,9 +380,20 @@ structure Plan where
 
 /-- Public, read-only projections used by return-policy consumers.  A `Plan`
 can only be constructed by `compile`, so these values retain its checks. -/
-def Plan.rootFrame (plan : Plan) : Space → PhysicalFrame
-  | .subjectA => plan.roots.subjectA
-  | .subjectB => plan.roots.subjectB
+def Plan.configuredRoot (plan : Plan) : Space → Option PhysicalFrame
+  | .subjectA => some plan.roots.subjectA
+  | .subjectB => some plan.roots.subjectB
+  | .subjectC => plan.roots.subjectC
+
+/-- Total root projection.  An unconfigured third space has no root; it
+projects to `physicalFrameLimit`, the first frame no live root can occupy
+(`tableFramesRepresentable`).  Consumers that may name the third space use
+`configuredRoot`; the decoded-root validator rejects an unconfigured space. -/
+def Plan.rootFrame (plan : Plan) (space : Space) : PhysicalFrame :=
+  (plan.configuredRoot space).getD physicalFrameLimit
+
+/-- Whether the accepted plan configures the third subject's address space. -/
+def Plan.hasThirdSubject (plan : Plan) : Bool := plan.roots.hasThird
 
 def Plan.hasPolicyLeaf (plan : Plan) (space : Space) (page : Nat)
     (policy : PolicyRegion) (owner : Owner) : Bool :=
@@ -334,13 +413,18 @@ def Plan.hasPolicyLeafAtFrame (plan : Plan) (space : Space) (page : Nat)
 def compile (input : Input) : Except Error Plan := do
   if !input.nxe then throw .missingNXE
   if input.reservationResult.isNone then throw .missingValidatedReservation
+  if !thirdSubjectConsistent input then throw .unconfiguredSpace
+  if !input.regions.all (fun region => spaceConfigured input.roots region.space) then
+    throw .unconfiguredSpace
   if hroot : input.roots.subjectA == input.roots.subjectB then throw .equalRoots else
+   if hthird : !thirdRootDistinct input.roots then throw .equalRoots else
     if hvalid : !tableFramesRepresentable input then throw .invalidTableFrame else
      if hunique : !tableFramesDistinct input then throw .duplicateTableFrame else
       if hreserved : !tableFramesReserved input then throw .unreservedTableFrame else
       let leaves <- input.regions.flatMapM compileRegion
       if !requiredCoverage input then throw .missingRequiredRegion
       if !tableManifestMatches input leaves then throw .tableManifestMismatch
+      if hconfigured : !leavesConfigured input.roots leaves then throw .unconfiguredSpace else
       if hduplicates : noDuplicateLeaves leaves then
         if hwx : wxSafe leaves then
           if !physicalAliasesSafe leaves then throw .unsafePhysicalAlias else
@@ -363,7 +447,12 @@ def compile (input : Input) : Except Error Plan := do
                           simpa using hvalid
                         have hframesUnique : tableFramesDistinct input = true := by
                           simpa using hunique
-                        pure ⟨input.roots, leaves, hroots, hduplicates, hwx, hownership, hseparated,
+                        have hthirdFresh : thirdRootDistinct input.roots = true := by
+                          simpa using hthird
+                        have hleavesConfigured : leavesConfigured input.roots leaves = true := by
+                          simpa using hconfigured
+                        pure ⟨input.roots, leaves, hroots, hthirdFresh, hleavesConfigured,
+                          hduplicates, hwx, hownership, hseparated,
                           tableFrames input, hliveTables,
                           hstructural, hrefines, hsupervisor, hattributes,
                           tableFramesReserved input, htables,
@@ -417,6 +506,31 @@ theorem accepted_policy_attributes input plan (_h : compile input = .ok plan) :
 theorem accepted_distinct_views input plan (_h : compile input = .ok plan) :
     plan.roots.subjectA ≠ plan.roots.subjectB := by
   exact plan.rootsDistinct
+
+/-- A configured third root is a separate map from both A and B. -/
+theorem accepted_third_root_distinct input plan (_h : compile input = .ok plan)
+    root (hroot : plan.roots.subjectC = some root) :
+    root ≠ plan.roots.subjectA ∧ root ≠ plan.roots.subjectB := by
+  have hfresh := plan.thirdRootFresh
+  simp only [thirdRootDistinct, hroot, Bool.and_eq_true, bne_iff_ne, ne_eq] at hfresh
+  exact hfresh
+
+/-- Every leaf of an accepted plan lies in an address space the input
+configured. -/
+theorem accepted_leaves_configured input plan (_h : compile input = .ok plan) :
+    leavesConfigured plan.roots plan.leaves = true := plan.configured
+
+/-- A plan accepted without a third root has no third-subject leaf. -/
+theorem accepted_two_subject_has_no_third_leaf input plan
+    (_h : compile input = .ok plan) (htwo : plan.roots.subjectC = none) :
+    plan.leaves.all (fun entry => entry.space != .subjectC) = true := by
+  have hconfigured := plan.configured
+  simp only [leavesConfigured, List.all_eq_true] at hconfigured ⊢
+  intro entry hmem
+  have hentry := hconfigured entry hmem
+  simp only [spaceConfigured, configuredSpaces, Roots.hasThird, htwo, Option.isSome_none,
+    Bool.false_eq_true, ↓reduceIte] at hentry
+  cases hspace : entry.space <;> rw [hspace] at hentry <;> revert hentry <;> decide
 
 theorem accepted_no_duplicate_leaf input plan (_h : compile input = .ok plan) :
     noDuplicateLeaves plan.leaves = true := plan.noDuplicates
@@ -476,9 +590,10 @@ inductive ReportError where
   | missingLeaf | unexpectedLeaf | mismatchedLeaf
   deriving BEq, DecidableEq, Repr
 
-def expectedRoot (plan : Plan) : Space → PhysicalFrame
-  | .subjectA => plan.roots.subjectA
-  | .subjectB => plan.roots.subjectB
+/-- The root a report for `space` must name; `none` for an unconfigured third
+space, which no report can match. -/
+def expectedRoot (plan : Plan) (space : Space) : Option PhysicalFrame :=
+  plan.configuredRoot space
 
 def legalDecodedAncestor (entry : DecodedAncestor) : Bool :=
   entry.present && entry.writable && entry.user && !entry.noExecute && !entry.hugePage &&
@@ -490,9 +605,10 @@ def decodedAncestorReserved (plan : Plan) (entry : DecodedAncestor) : Bool :=
   | none => false
   | some reserved => reservedAsPageTable reserved.intervals entry.nextFrame
 
-def expectedAncestorFrames (plan : Plan) : Space → AncestorFrames
-  | .subjectA => plan.compiledAncestors.subjectA
-  | .subjectB => plan.compiledAncestors.subjectB
+def expectedAncestorFrames (plan : Plan) : Space → Option AncestorFrames
+  | .subjectA => some plan.compiledAncestors.subjectA
+  | .subjectB => some plan.compiledAncestors.subjectB
+  | .subjectC => plan.compiledAncestors.subjectC
 
 def absentDecodedAncestor : DecodedAncestor :=
   { present := false, writable := false, user := false, noExecute := false,
@@ -515,10 +631,12 @@ def pdAncestorTable (frames : List PhysicalFrame) : List DecodedAncestor :=
 /-- Match every ancestor-table slot, not only the selected pointers. This binds
 the decoded pointer to its paging index and proves absence for all other slots. -/
 def ancestorTablesMatch (plan : Plan) (report : DecodedRoot) : Bool :=
-  let expected := expectedAncestorFrames plan report.space
-  report.pml4Entries == singletonAncestorTable expected.pdpt &&
-    report.pdptEntries == singletonAncestorTable expected.pd &&
-    report.pdEntries == pdAncestorTable expected.pts
+  match expectedAncestorFrames plan report.space with
+  | none => false
+  | some expected =>
+    report.pml4Entries == singletonAncestorTable expected.pdpt &&
+      report.pdptEntries == singletonAncestorTable expected.pd &&
+      report.pdEntries == pdAncestorTable expected.pts
 
 def decodedAncestorTableReserved (plan : Plan) (entries : List DecodedAncestor) : Bool :=
   entries.all fun entry => !entry.present || decodedAncestorReserved plan entry
@@ -544,7 +662,7 @@ Manifest omissions are deliberately absent zero entries, so neither an extra
 present mapping nor corruption in a later PT can hide outside the report. -/
 def validateDecodedRoot (plan : Plan) (report : DecodedRoot) :
     Except ReportError Unit := do
-  if report.selectedRoot != expectedRoot plan report.space then throw .wrongRoot
+  if expectedRoot plan report.space != some report.selectedRoot then throw .wrongRoot
   if !ancestorTablesMatch plan report then throw .wrongAncestor
   if !(decodedAncestorTableReserved plan report.pml4Entries &&
       decodedAncestorTableReserved plan report.pdptEntries &&
@@ -569,6 +687,15 @@ def validateDecodedPair (plan : Plan)
   if subjectA.space != .subjectA || subjectB.space != .subjectB then throw .wrongRoot
   validateDecodedRoot plan subjectA
   validateDecodedRoot plan subjectB
+
+/-- The three-subject form: one report per configured space.  A plan without
+a third root rejects every third report, so this cannot pass on a
+two-subject plan. -/
+def validateDecodedTriple (plan : Plan)
+    (subjectA subjectB subjectC : DecodedRoot) : Except ReportError Unit := do
+  if subjectC.space != .subjectC then throw .wrongRoot
+  validateDecodedPair plan subjectA subjectB
+  validateDecodedRoot plan subjectC
 
 /-! ## Executable positive and adversarial fixtures -/
 
@@ -806,7 +933,8 @@ def decodedReportWithAncestors (plan : Plan) (ancestors : AncestorPaths)
   let expected := match space with
     | .subjectA => ancestors.subjectA
     | .subjectB => ancestors.subjectB
-  { space, selectedRoot := expectedRoot plan space,
+    | .subjectC => ancestors.subjectC.getD ancestors.subjectA
+  { space, selectedRoot := plan.rootFrame space,
     pml4Entries := singletonAncestorTable expected.pdpt,
     pdptEntries := singletonAncestorTable expected.pd,
     pdEntries := pdAncestorTable expected.pts,
@@ -981,5 +1109,162 @@ def swappedUserLeavesCheck : Except ReportError Unit :=
         { reportB with leaves := reportB.leaves.filter (fun entry => !entry.leaf.user) ++ userA }
 
 example : reportRejectedAs swappedUserLeavesCheck .mismatchedLeaf = true := by native_decide
+
+/-! ## Three-subject fixtures (issue #472)
+
+The same sample with a third subject C: eleven more table frames (32 to 42)
+inside an enlarged page-table reservation, C's own supervisor view, and C's
+user text and stack on frames no other subject maps. -/
+
+def threeSubjectReservationManifest : List Reservation :=
+  sampleReservationManifest.map fun reservation =>
+    if reservation.identity == .loadedImage then
+      { reservation with length := 41 * pageBytes }
+    else if reservation.identity == .pageTables then
+      { reservation with length := 33 * pageBytes }
+    else reservation
+
+def threeSubjectReservationResult : Option BootReservation.Result :=
+  (initializeAllocator
+    (BootMemoryMap.mkHandoff [{ base := 0, length := 50 * pageBytes, kind := .usable }])
+    threeSubjectReservationManifest).toOption
+
+def threeSubjectRegions : List Region :=
+  (sampleRegions.map fun region =>
+    if region.policy == .pageTables then { region with byteLength := 33 * pageBytes }
+    else region) ++
+  [{ space := .subjectC, virtualStart := pageBytes, byteLength := pageBytes,
+     physicalStart := pageBytes, policy := .kernelText, owner := .supervisor },
+   { space := .subjectC, virtualStart := 2 * pageBytes, byteLength := pageBytes,
+     physicalStart := 2 * pageBytes, policy := .kernelData, owner := .supervisor },
+   { space := .subjectC, virtualStart := 3 * pageBytes, byteLength := pageBytes,
+     physicalStart := 3 * pageBytes, policy := .kernelStack, owner := .supervisor },
+   { space := .subjectC, virtualStart := 10 * pageBytes, byteLength := 33 * pageBytes,
+     physicalStart := 10 * pageBytes, policy := .pageTables, owner := .supervisor },
+   { space := .subjectC, virtualStart := 100 * pageBytes, byteLength := pageBytes,
+     physicalStart := 300 * pageBytes, policy := .userText, owner := .subjectC },
+   { space := .subjectC, virtualStart := 101 * pageBytes, byteLength := pageBytes,
+     physicalStart := 301 * pageBytes, policy := .userStack, owner := .subjectC }]
+
+def threeSubjectInput : Input :=
+  { roots := { subjectA := 10, subjectB := 11, subjectC := some 32 }, nxe := true,
+    ancestors :=
+      { subjectA := { pdpt := 12, pd := 13, pts := List.range 8 |>.map (14 + ·) },
+        subjectB := { pdpt := 22, pd := 23, pts := List.range 8 |>.map (24 + ·) },
+        subjectC := some { pdpt := 33, pd := 34, pts := List.range 8 |>.map (35 + ·) } },
+    regions := threeSubjectRegions, reservationResult := threeSubjectReservationResult }
+
+/-- Replace C's user leaves (text, stack) with `textFrame`/`stackFrame`. -/
+def threeSubjectWithUserFrames (textFrame stackFrame : Nat) : Input :=
+  { threeSubjectInput with regions := threeSubjectRegions.map fun region =>
+      if region.space == .subjectC && region.policy == .userText then
+        { region with physicalStart := textFrame * pageBytes }
+      else if region.space == .subjectC && region.policy == .userStack then
+        { region with physicalStart := stackFrame * pageBytes }
+      else region }
+
+example : (match compile threeSubjectInput with | .ok _ => true | .error _ => false) = true := by
+  native_decide
+/-- The accepted three-subject plan configures C and keeps its root apart. -/
+example : (match compile threeSubjectInput with
+    | .ok plan => plan.hasThirdSubject && plan.configuredRoot .subjectC == some 32
+    | .error _ => false) = true := by native_decide
+/-- A two-subject plan configures no third space. -/
+example : (match compile sampleInput with
+    | .ok plan => !plan.hasThirdSubject && plan.configuredRoot .subjectC == none
+    | .error _ => false) = true := by native_decide
+/-- A third root without third ancestors (or the reverse) is not a layout. -/
+example : rejectedAs { threeSubjectInput with
+    ancestors := { threeSubjectInput.ancestors with subjectC := none } }
+    .unconfiguredSpace = true := by native_decide
+example : rejectedAs { threeSubjectInput with
+    roots := { threeSubjectInput.roots with subjectC := none } }
+    .unconfiguredSpace = true := by native_decide
+/-- Third-subject leaves cannot ride along in a two-subject input. -/
+example : rejectedAs
+    { sampleInput with
+      regions := sampleRegions ++ threeSubjectRegions.filter fun region =>
+        region.space == .subjectC }
+    .unconfiguredSpace = true := by native_decide
+/-- The third root must differ from A's and B's. -/
+example : rejectedAs { threeSubjectInput with
+    roots := { threeSubjectInput.roots with subjectC := some 10 } }
+    .equalRoots = true := by native_decide
+example : rejectedAs { threeSubjectInput with
+    roots := { threeSubjectInput.roots with subjectC := some 11 } }
+    .equalRoots = true := by native_decide
+/-- A third ancestor may not reuse another subject's table frame. -/
+example : rejectedAs { threeSubjectInput with
+    ancestors := { threeSubjectInput.ancestors with
+      subjectC := some { pdpt := 33, pd := 24, pts := List.range 8 |>.map (35 + ·) } } }
+    .duplicateTableFrame = true := by native_decide
+/-- Third table frames outside the page-table reservation are rejected. -/
+example : rejectedAs { threeSubjectInput with reservationResult := sampleReservationResult }
+    .unreservedTableFrame = true := by native_decide
+/-- C must have its own user text and stack. -/
+example : rejectedAs { threeSubjectInput with regions := threeSubjectRegions.filter fun region =>
+    !(region.space == .subjectC && region.policy == .userStack) }
+    .missingRequiredRegion = true := by native_decide
+/-- A user page in C's space must be owned by C. -/
+example : rejectedAs { threeSubjectInput with regions := threeSubjectRegions.map fun region =>
+    if region.space == .subjectC && region.policy == .userText then
+      { region with owner := .subjectA }
+    else region }
+    .wrongOwner = true := by native_decide
+/-- C's user leaves cannot alias A's user frame, B's user frame, or a live
+table frame (here C's own root). -/
+example : rejectedAs (threeSubjectWithUserFrames 100 301) .unsafePhysicalAlias = true := by
+  native_decide
+example : rejectedAs (threeSubjectWithUserFrames 300 201) .unsafePhysicalAlias = true := by
+  native_decide
+example : rejectedAs (threeSubjectWithUserFrames 32 301) .unsafePhysicalAlias = true := by
+  native_decide
+/-- C's view must declare every live table frame, including A's and B's. -/
+example : rejectedAs { threeSubjectInput with regions := threeSubjectRegions.map fun region =>
+    if region.space == .subjectC && region.policy == .pageTables then
+      { region with byteLength := 22 * pageBytes }
+    else region }
+    .tableManifestMismatch = true := by native_decide
+
+def threeSubjectTripleCheck (mutateC : DecodedRoot → DecodedRoot) :
+    Except ReportError Unit :=
+  match compile threeSubjectInput with
+  | .error _ => .error .missingLeaf
+  | .ok plan => validateDecodedTriple plan (decodedReport plan .subjectA)
+      (decodedReport plan .subjectB) (mutateC (decodedReport plan .subjectC))
+
+example : reportAccepted (threeSubjectTripleCheck unchangedReport) = true := by native_decide
+example : reportRejectedAs (threeSubjectTripleCheck wrongRootReport) .wrongRoot = true := by
+  native_decide
+example : reportRejectedAs (threeSubjectTripleCheck wrongAncestorPointerReport)
+    .wrongAncestor = true := by native_decide
+example : reportRejectedAs (threeSubjectTripleCheck flippedUserReport)
+    .mismatchedLeaf = true := by native_decide
+example : reportRejectedAs
+    (threeSubjectTripleCheck fun report => { report with space := .subjectB })
+    .wrongRoot = true := by native_decide
+
+/-- A two-subject plan has no third root, so no third report validates. -/
+def twoSubjectThirdReportCheck : Except ReportError Unit :=
+  match compile sampleInput with
+  | .error _ => .error .missingLeaf
+  | .ok plan => validateDecodedRoot plan (decodedReport plan .subjectC)
+
+example : reportRejectedAs twoSubjectThirdReportCheck .wrongRoot = true := by native_decide
+
+/-- C's user leaves are absent from A's view: moving them there is caught. -/
+def threeSubjectLeakedUserLeavesCheck : Except ReportError Unit :=
+  match compile threeSubjectInput with
+  | .error _ => .error .missingLeaf
+  | .ok plan =>
+      let reportA := decodedReport plan .subjectA
+      let reportC := decodedReport plan .subjectC
+      let userC := reportC.leaves.filter fun entry => entry.leaf.user
+      validateDecodedTriple plan
+        { reportA with leaves := reportA.leaves.filter (fun entry => !entry.leaf.user) ++ userC }
+        (decodedReport plan .subjectB) reportC
+
+example : reportRejectedAs threeSubjectLeakedUserLeavesCheck .mismatchedLeaf = true := by
+  native_decide
 
 end LeanOS.BootPageTablePlan

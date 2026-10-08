@@ -22,7 +22,11 @@ address is its DMA address. The FreeBSD development runner offers no DMA;
 the keyboard program refuses to run there.
 
 The program is admitted under the xHCI confinement policy
-(`docs/device-program-confinement.md`), the only Qotom policy that admits DMA.
+(`docs/device-program-confinement.md`), which admits DMA into scratch: its
+address sinks (CRCR, DCBAAP, ERSTBA, ERDP) and its descriptor map (DCBAA,
+scratchpad array, ERST entry, input-context dequeue pointers and the TRB
+rings, `Xhci.descriptorMap`) only ever hold zero or scratch bus addresses
+([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
 
 ## QEMU
 

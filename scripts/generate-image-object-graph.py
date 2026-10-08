@@ -37,6 +37,8 @@ GENERATED_MODULES = (
     "CompositeDispatcher",
     "VTdBootPlan",
     "IOTLB",
+    "NotifyReply",
+    "UserCopyPolicy",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -54,6 +56,8 @@ FAULT_DISPATCH_PARTS = (
     "CompositeDispatcher",
     "VTdBootPlan",
     "IOTLB",
+    "NotifyReply",
+    "UserCopyPolicy",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"
