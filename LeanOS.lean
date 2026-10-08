@@ -54,6 +54,8 @@ import LeanOS.Refinement.BootTransitionC
 import LeanOS.LifetimeIssuer
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
+import LeanOS.ReplayUnwinding
+import LeanOS.CompositeObservation
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption
 import LeanOS.ResumableContext

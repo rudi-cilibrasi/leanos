@@ -400,6 +400,20 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
+if lake env lean tests/negative/SharedCapabilityConfidentiality.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: shared-capability composite confidentiality overclaim unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/SharedCapabilityConfidentiality.lean' "$negative_log" ||
+    ! grep -Fq 'type mismatch' "$negative_log" ||
+    ! grep -Fq 'isSilent 0 (Evidence.composite base 7) Evidence.sharedRevoke = true' \
+      "$negative_log"; then
+  echo "error: shared-capability fixture lacked the expected silence mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 rm -f "$negative_log"
 negative_log=""
 record_check_phase proof-integrity-and-negative-fixtures

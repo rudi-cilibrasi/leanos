@@ -15,6 +15,7 @@ import LeanOS.PrivilegeEntryStack
 import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
+import LeanOS.CompositeObservation
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -3153,6 +3154,28 @@ theorem scheduled_finite_trace_isolation observer left right leftSteps rightStep
       (ScheduledObservation.run observer right rightSteps).1 := by
   exact ScheduledObservation.finite_trace_lowEquiv observer left right leftSteps rightSteps
     hlow hevents
+
+/-- SC-COMPOSITE-OBSERVER-ISOLATION: over the authoritative composite state and
+`authoritativeGate`, every operation classified silent for an observer leaves
+its view (authority row, named objects, IPC observations, owned mappings, and
+the public scheduler choice) unchanged, and finite runs from low-equivalent
+states with equal observer event projections end low-equivalent. -/
+theorem composite_observer_isolation (observer : Nat) :
+    (∀ state operation, CompositeObservation.isSilent observer state operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate state operation).state state) ∧
+    (∀ left right leftOperations rightOperations,
+      CompositeObservation.LowEquiv observer left right →
+      CompositeObservation.projection observer left leftOperations =
+        CompositeObservation.projection observer right rightOperations →
+      CompositeObservation.LowEquiv observer
+        (CompositeObservation.run observer left leftOperations).1
+        (CompositeObservation.run observer right rightOperations).1) := by
+  exact ⟨fun state operation hsilent =>
+      CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
+    fun left right leftOperations rightOperations hlow hevents =>
+      CompositeObservation.finite_trace_lowEquiv observer left right leftOperations
+        rightOperations hlow hevents⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :

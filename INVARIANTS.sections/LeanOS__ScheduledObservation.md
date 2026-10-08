@@ -13,3 +13,6 @@ These theorems combine the scheduler — the part of the kernel that decides whi
 - `run_replays` — The same replay guarantee for a whole finite run: the observer's final view equals the starting view with the run's declared events replayed onto it one at a time.
 - `run_preserves_adapter` — Bookkeeping: the agreement between legacy fields and authoritative records survives any finite run of requests.
 - `finite_trace_lowEquiv` — The main isolation theorem: two finite runs that start indistinguishable to an observer and declare the same visible events (schedules, replies, deliveries, sharing, capability and resource outcomes) end indistinguishable to that observer, even when they differ in how many and which silent steps unrelated programs took along the way.
+- `run_eq_replayRun` — Bookkeeping: running requests through this model is literally the same as running them through the shared whole-run privacy recipe.
+- `replaySystem_replays` — This model satisfies the shared recipe's one-step replay guarantee.
+- `finite_trace_lowEquiv_of_replay` — The main isolation theorem again, now obtained as a special case of the shared whole-run privacy recipe rather than proved separately.
