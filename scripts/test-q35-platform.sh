@@ -244,6 +244,13 @@ grep -Eq 'source .*q35-platform\.sh' scripts/run-assigned-edu-negatives.sh &&
   exit 1
 }
 
+grep -Eq 'source .*q35-platform\.sh' scripts/run-device-service-rejection.sh &&
+  grep -Eq 'leanos_q35_device_service_command command ' \
+    scripts/run-device-service-rejection.sh || {
+  echo "error: device-service negatives bypass their versioned platform builder" >&2
+  exit 1
+}
+
 grep -Fq './scripts/run-assigned-edu-negatives.sh' .github/workflows/ci.yml &&
   grep -Fq './scripts/run-emulator-evidence.py bundle' .github/workflows/ci.yml &&
   grep -Fq 'path: build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar' \

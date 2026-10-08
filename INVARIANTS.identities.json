@@ -5324,6 +5324,78 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.bootAuthority_b_unprivileged",
+      "display": "bootAuthority_b_unprivileged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.console_confidentiality",
+      "display": "console_confidentiality",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.console_integrity",
+      "display": "console_integrity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.console_integrity_pair",
+      "display": "console_integrity_pair",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.demo_a_accepted",
+      "display": "demo_a_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.demo_b_refused",
+      "display": "demo_b_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.demo_output",
+      "display": "demo_output",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_observations_other",
+      "display": "step_observations_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_preserves_noQueuedFrom",
+      "display": "step_preserves_noQueuedFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_unprivileged_delivery",
+      "display": "step_unprivileged_delivery",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.step_unprivileged_state",
+      "display": "step_unprivileged_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ConsoleServer.lean",
+      "qualified": "LeanOS.ConsoleServer.unprivileged_observations",
+      "display": "unprivileged_observations",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/DMAQuarantine.lean",
       "qualified": "LeanOS.DMAQuarantine.accepted_accounts_every_manifest_entry",
       "display": "accepted_accounts_every_manifest_entry",
@@ -13575,6 +13647,12 @@
     },
     {
       "source": "LeanOS/KernelTransition.lean",
+      "qualified": "LeanOS.KernelTransition.bootTransition_spec",
+      "display": "bootTransition_spec",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KernelTransition.lean",
       "qualified": "LeanOS.KernelTransition.initialState_wellFormed",
       "display": "initialState_wellFormed",
       "kind": "theorem"
@@ -13796,6 +13874,66 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.call_exhausted_unchanged",
+      "display": "call_exhausted_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.copyReply_rejected",
+      "display": "copyReply_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.non_cap_step_caps",
+      "display": "non_cap_step_caps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.notifyReplyEvent_agrees",
+      "display": "notifyReplyEvent_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.notifyReplyEvent_unknown_zero",
+      "display": "notifyReplyEvent_unknown_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.replies_change_only_at_server",
+      "display": "replies_change_only_at_server",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.reply_created_only_by_call",
+      "display": "reply_created_only_by_call",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.reply_single_use",
+      "display": "reply_single_use",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.signal_without_send_rejected",
+      "display": "signal_without_send_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.stale_reply_rejected",
+      "display": "stale_reply_rejected",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/Observation.lean",
       "qualified": "LeanOS.Observation.View.ext",
       "display": "View.ext",
@@ -13953,6 +14091,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_boot_transition_class_vectors_exact",
+      "display": "hosted_boot_transition_class_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_budget_canonical_sequence",
       "display": "hosted_budget_canonical_sequence",
       "kind": "theorem"
@@ -14015,6 +14159,18 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_mixed_vectors_refine",
       "display": "hosted_mixed_vectors_refine",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_notify_reply_vectors_exact",
+      "display": "hosted_notify_reply_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_user_copy_policy_vectors_exact",
+      "display": "hosted_user_copy_policy_vectors_exact",
       "kind": "theorem"
     },
     {
@@ -14193,6 +14349,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.user_copy_policy_vectors_agree",
+      "display": "user_copy_policy_vectors_agree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.user_fault_class_corpus_shape",
       "display": "user_fault_class_corpus_shape",
       "kind": "theorem"
@@ -14315,6 +14477,12 @@
       "source": "LeanOS/PlatformAdmission.lean",
       "qualified": "LeanOS.PlatformAdmission.runtime_preserves_profile",
       "display": "runtime_preserves_profile",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/PostStateProjection.lean",
+      "qualified": "LeanOS.PostStateProjection.poststate_shape",
+      "display": "poststate_shape",
       "kind": "theorem"
     },
     {
@@ -16017,6 +16185,18 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_transition_agreement",
+      "display": "boot_transition_agreement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_transition_refinement",
+      "display": "boot_transition_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.capability_copy_no_authority_amplification",
       "display": "capability_copy_no_authority_amplification",
       "kind": "theorem"
@@ -16353,6 +16533,18 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.console_confidentiality",
+      "display": "console_confidentiality",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.console_integrity",
+      "display": "console_integrity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.device_capability_confinement",
       "display": "device_capability_confinement",
       "kind": "theorem"
@@ -16589,6 +16781,30 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.nmi_user_kernel_nonvacuous",
       "display": "nmi_user_kernel_nonvacuous",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_budget",
+      "display": "notify_reply_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_no_amplification",
+      "display": "notify_reply_no_amplification",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_no_stale_reuse",
+      "display": "notify_reply_no_stale_reuse",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_single_use",
+      "display": "notify_reply_single_use",
       "kind": "theorem"
     },
     {
@@ -16997,6 +17213,48 @@
       "source": "LeanOS/SerialProtocol.lean",
       "qualified": "LeanOS.SerialProtocol.records_nodup",
       "display": "records_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.copyBody_acSafe",
+      "display": "copyBody_acSafe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.copyBody_encoding",
+      "display": "copyBody_encoding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.copyBody_label_offsets",
+      "display": "copyBody_label_offsets",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_acSafe",
+      "display": "windows_acSafe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_access_inside",
+      "display": "windows_access_inside",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_fault_exit",
+      "display": "windows_fault_exit",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_ret_closed",
+      "display": "windows_ret_closed",
       "kind": "theorem"
     },
     {
@@ -17738,6 +17996,12 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/UserCopyPolicy.lean",
+      "qualified": "LeanOS.UserCopyPolicy.copyPolicy_agrees_grid",
+      "display": "copyPolicy_agrees_grid",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/UserCopyPrefix.lean",
       "qualified": "LeanOS.UserCopyPrefix.complete_agrees",
       "display": "complete_agrees",
@@ -17967,6 +18231,12 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_assignment_domain_bound",
+      "display": "accepted_assignment_domain_bound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.accepted_context_entries_absent",
       "display": "accepted_context_entries_absent",
       "kind": "theorem"
@@ -17985,8 +18255,26 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_grant_pages_bounded",
+      "display": "accepted_grant_pages_bounded",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_grant_translates",
+      "display": "accepted_grant_translates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.accepted_maps_no_frame",
       "display": "accepted_maps_no_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_requester_bound",
+      "display": "accepted_requester_bound",
       "kind": "theorem"
     },
     {
@@ -18021,8 +18309,44 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_table_frames_bounded",
+      "display": "accepted_table_frames_bounded",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_table_frames_distinct",
+      "display": "accepted_table_frames_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.accepted_tables_distinct",
       "display": "accepted_tables_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_translation_avoids_protected",
+      "display": "accepted_translation_avoids_protected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_translation_exact",
+      "display": "accepted_translation_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_translation_from_grant",
+      "display": "accepted_translation_from_grant",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.accepted_unbound_translates_nothing",
+      "display": "accepted_unbound_translates_nothing",
       "kind": "theorem"
     },
     {
@@ -18039,14 +18363,32 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.checks_pass",
+      "display": "checks_pass",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.compile_deterministic",
       "display": "compile_deterministic",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.compile_source",
+      "display": "compile_source",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.context_entry_encoding_injective",
       "display": "context_entry_encoding_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.context_word_decode",
+      "display": "context_word_decode",
       "kind": "theorem"
     },
     {
@@ -18059,6 +18401,18 @@
       "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.decode_encode_root",
       "display": "decode_encode_root",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.decode_secondLevelEntry",
+      "display": "decode_secondLevelEntry",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.decode_zero_secondLevel",
+      "display": "decode_zero_secondLevel",
       "kind": "theorem"
     },
     {
@@ -18099,6 +18453,42 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.grantChecks_pass",
+      "display": "grantChecks_pass",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.grantedPage_none_of_large",
+      "display": "grantedPage_none_of_large",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.grantedPage_some",
+      "display": "grantedPage_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.intersect_readWrite",
+      "display": "intersect_readWrite",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.pair_wordAt",
+      "display": "pair_wordAt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.pair_words_getElem?",
+      "display": "pair_words_getElem?",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.pair_words_length",
       "display": "pair_words_length",
       "kind": "theorem"
@@ -18117,8 +18507,20 @@
     },
     {
       "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.secondLevelPage_getElem?",
+      "display": "secondLevelPage_getElem?",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.stepTag_injective",
       "display": "stepTag_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.translation_grant",
+      "display": "translation_grant",
       "kind": "theorem"
     },
     {
@@ -18131,6 +18533,12 @@
       "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.validateActivation_deterministic",
       "display": "validateActivation_deterministic",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.walkSecondLevel_exact",
+      "display": "walkSecondLevel_exact",
       "kind": "theorem"
     },
     {

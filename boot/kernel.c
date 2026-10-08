@@ -2426,21 +2426,19 @@ enum copy_policy {
     COPY_WRONG_SUBJECT, COPY_UNMAPPED, COPY_READ_ONLY, COPY_STALE
 };
 
+/* The range check is generated from LeanOS.UserCopyPolicy (issue #478):
+   UserCopy.validate over subject A's boot mapping, with the text and stack
+   ranges taken from the linked symbols. The result codes are this enum's. */
+_Static_assert(sizeof(copy_buffer) == 16, "the generated policy bounds copies at 16 bytes");
 static enum copy_policy validate_copy(uint64_t subject, unsigned lifetime_current,
                                       uint64_t start, uint64_t length,
                                       unsigned write) {
-    uint64_t end;
-    if (subject != 1) return COPY_WRONG_SUBJECT;
-    if (!lifetime_current) return COPY_STALE;
-    if (length > sizeof(copy_buffer)) return COPY_TOO_LONG;
-    if (__builtin_add_overflow(start, length, &end)) return COPY_OVERFLOW;
-    if (start >= (1ull << 47) || end >= (1ull << 47)) return COPY_NONCANONICAL;
-    if (start >= (uint64_t)user_a_entry && start < (uint64_t)user_a_stack) {
-        return write ? COPY_READ_ONLY : COPY_UNMAPPED;
-    }
-    if (start < (uint64_t)user_a_stack || end > (uint64_t)user_a_stack_top)
-        return COPY_UNMAPPED;
-    return COPY_ALLOWED;
+    uint64_t flags = (subject << 8) | ((uint64_t)(lifetime_current != 0) << 1) |
+        (uint64_t)(write != 0);
+    uint64_t code = leanos_user_copy_policy(flags, start, length,
+        (uint64_t)user_a_entry, (uint64_t)user_a_stack, (uint64_t)user_a_stack_top);
+    if (code > COPY_STALE) fail("copy-policy-code");
+    return (enum copy_policy)code;
 }
 
 static unsigned ac_is_set(void) {
@@ -3455,6 +3453,19 @@ static __attribute__((noinline)) void device_service_assign(void) {
     serial_u64(DEVICE_SERVICE_CAPABILITIES);
     serial_puts(" command=2 memory=enabled bus-master=program"
         " stage=post-translation result=PASS\n");
+#if defined(LEANOS_DEVICE_SERVICE_UNPLANNED_BUS_MASTER_FIXTURE) || \
+    defined(LEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE)
+    /* Controlled negatives (#482): with the service tables live, the SATA
+       controller, a function outside the VT-d plan, regains memory decode and
+       bus mastering.  The outbound read-back must still reject it. */
+    pci_config_command(31, 2, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
+#ifdef LEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE
+    /* The boot record is forged to agree with the new Command word, so only
+       the plan-membership check can reject the function. */
+    q35_live_pci_snapshot.functions[4].command_after =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+#endif
+#endif
 }
 
 static int device_service_admitted(const struct wifi_target *target,
@@ -3800,6 +3811,19 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     serial_puts(" tables=generated-readback bar=4271898624 mmio-id=16777453"
         " command=6 memory=enabled bus-master=enabled"
         " stage=post-translation result=PASS\n");
+#if defined(LEANOS_ASSIGNED_EDU_UNPLANNED_BUS_MASTER_FIXTURE) || \
+    defined(LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE)
+    /* Controlled negatives (#482): with the assigned tables live, the SATA
+       controller, a function outside the VT-d plan, regains memory decode and
+       bus mastering.  The outbound read-back must still reject it. */
+    pci_config_command(31, 2, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
+#ifdef LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE
+    /* The boot record is forged to agree with the new Command word, so only
+       the plan-membership check can reject the function. */
+    q35_live_pci_snapshot.functions[4].command_after =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+#endif
+#endif
 #endif
 #ifdef LEANOS_DEVICE_SERVICE_SCENARIO
     device_service_assign();
@@ -4232,7 +4256,103 @@ static void ipc_stream_key_name(uint64_t key) {
     else serial_u64(key);
 }
 
-static uint64_t ipc_stream_syscall(uint64_t number, uint64_t arg0, uint64_t arg1) {
+/* The word subject A finds in RAX when boot.S resumes it after B blocks
+   (path 10): 0 for the ipc-stream send, the reply word in the
+   notification/reply scenario. */
+uint64_t ipc_resume_word;
+
+#ifdef LEANOS_NOTIFY_REPLY_SCENARIO
+/* Notification and reply capability (issue #471, LeanOS.NotifyReply). B waits
+   on notification 20 and blocks; A signals bits 5, which wakes B; B blocks to
+   receive on endpoint 10; A calls with a word, which wakes B holding the
+   kernel-created reply capability; B replies once (accepted, delivered to A
+   when it resumes) and a second reply is rejected (single use). Every edge
+   is checked against the generated witness `leanos_notify_reply_event`,
+   which `NotifyReply.notifyReplyEvent_agrees` ties to the model. The A/B
+   switches reuse the ipc-stream paths in boot.S. */
+#define NOTIFY_EDGE(index, operation, subject, expected, reason)               \
+    do {                                                                       \
+        if (leanos_notify_reply_event(0, (index), (operation), (subject)) !=   \
+            (expected))                                                        \
+            fail(reason);                                                      \
+    } while (0)
+static unsigned notify_step;
+static uint64_t notify_call_word, notify_reply_word;
+
+static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
+    if (number == 71 && current_subject == 2 && notify_step == 0) {
+        NOTIFY_EDGE(0, 2, 2, 2, "notify-wait-block");
+        notify_step = 1; ipc_stream_step = 1; ipc_stream_started = 1;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wait subject=2 notification=20 pending=0 blocked=1\n");
+        return 0xbeef;
+    }
+    if (number == 70 && current_subject == 1 && notify_step == 1) {
+        if (arg0 != 5) fail("notify-signal-bits");
+        NOTIFY_EDGE(1, 1, 1, 1, "notify-signal");
+        NOTIFY_EDGE(2, 2, 2, 0x105, "notify-wake");
+        notify_step = 2; ipc_stream_step = 3; current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=signal subject=1 notification=20 bits=5 accepted=1\n");
+        return 0xcafe;
+    }
+    if (number == 73 && current_subject == 2 && notify_step == 2) {
+        if (arg0 != 5) fail("notify-woken-bits");
+        ++ipc_stream_events;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=woke subject=2 notification=20 bits=5 pending=0\n");
+        return 0;
+    }
+    if (number == 74 && current_subject == 2 && notify_step == 2) {
+        notify_step = 3; ipc_stream_step = 1; current_subject = 1;
+        ipc_resume_word = 0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=receive subject=2 endpoint=10 blocked=1\n");
+        return 0xa55a;
+    }
+    if (number == 72 && current_subject == 1 && notify_step == 3) {
+        NOTIFY_EDGE(3, 3, 1, 0x200, "notify-call");
+        notify_call_word = arg0;
+        notify_step = 4; ipc_stream_step = 3; current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=call caller=1 endpoint=10 server=2 word=");
+        serial_u64(arg0);
+        serial_puts(" reply-slot=0 caller-generation=0\n");
+        return 0xcafe;
+    }
+    if (number == 75 && current_subject == 2 && notify_step == 4) {
+        if (arg0 != notify_call_word + 1) fail("notify-reply-word");
+        NOTIFY_EDGE(4, 4, 2, 1, "notify-reply");
+        notify_reply_word = arg0;
+        notify_step = 5; ++ipc_stream_events;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=reply server=2 reply-slot=0 caller=1 word=");
+        serial_u64(arg0);
+        serial_puts(" accepted=1 consumed=1\n");
+        return 0;
+    }
+    if (number == 75 && current_subject == 2 && notify_step == 5) {
+        NOTIFY_EDGE(5, 4, 2, 0x1007, "notify-double-reply");
+        notify_step = 6;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=reply server=2 reply-slot=0 rejected=no-reply\n");
+        return 0x1007;
+    }
+    if (number == 77 && current_subject == 2 && notify_step == 6) {
+        if (arg0 != 0x1007) fail("notify-double-reply-seen");
+        notify_step = 7; ipc_stream_step = 1; current_subject = 1;
+        ipc_resume_word = notify_reply_word;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 round=done\n");
+        return 0xa55a;
+    }
+    if (number == 76 && current_subject == 1 && notify_step == 7) {
+        if (arg0 != notify_reply_word) fail("notify-reply-delivery");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=delivered subject=1 reply=");
+        serial_u64(arg0);
+        serial_puts(" exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS signals=1 wakes=1 calls=1 replies=1 rejected-replies=1\n");
+        finish(0x10);
+    }
+    fail("notify-reply-sequence");
+}
+#endif
+
+static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint64_t arg0,
+        uint64_t arg1) {
     if (number == 7 && current_subject == 2 && ipc_stream_step == 0) {
         if (leanos_blocking_ipc_event(0, 1, 2) != IPC_EVENT_WORD(1, 1, 1, 1, 0))
             fail("ipc-stream-model-block");
@@ -4318,7 +4438,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
-#ifdef LEANOS_IPC_STREAM_SCENARIO
+#ifdef LEANOS_NOTIFY_REPLY_SCENARIO
+    (void)arg1; (void)arg2; (void)saved_flags;
+    return notify_reply_syscall(number, arg0);
+#elif defined(LEANOS_IPC_STREAM_SCENARIO)
     (void)arg2; (void)saved_flags;
     return ipc_stream_syscall(number, arg0, arg1);
 #endif

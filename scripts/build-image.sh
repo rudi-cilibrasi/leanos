@@ -599,7 +599,7 @@ lean_c_modules=(
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
-  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy
 )
 lean_c_signature="$build/generated-lean-c.sha256"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
@@ -630,6 +630,10 @@ fi
 record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
+# Issue #470: the emitted C of leanos_boot_transition must still be exactly
+# the AST that LeanOS.Refinement.BootTransitionC proves refines the model.
+python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
+  leanos_boot_transition LeanOS/Refinement/BootTransitionC.lean
 # The device-service image embeds the Lean xHCI keyboard program (issue
 # #449). leanos-wifi-gen refuses a program outside its target's admitted
 # policy; the header is rewritten only when the image bytes change.
@@ -1194,6 +1198,12 @@ LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
 fi
+# Handwritten assembly windows at the CPL boundary (issue #477): every
+# privileged window in boot.S has an inventory row with its size in this lane.
+if selected_final_enabled "$build/leanos.elf"; then
+  python3 scripts/check-asm-windows.py "$build/boot.o" "$build/leanos.elf" \
+    | tee "$build/asm-windows.txt"
+fi
 if selected_final_enabled "$build/leanos-device-service.elf"; then
 # The device-service image runs the device-program executor inside syscall 60
 # (issue #469). Its reviewed manifest covers every function reachable from
@@ -1584,6 +1594,29 @@ if grep -q $'^multivcpu-rejection\t' "$build/evidence-build-plan.tsv"; then
     "$build/leanos-${version}-x86_64-multivcpu-rejection.iso"
     "$build/leanos-multivcpu-rejection.elf"
   )
+fi
+# The SMAP copy windows are a Lean-defined instruction plan (issue #478): the
+# bytes at smap_copy_from/smap_copy_to and their internal labels must equal
+# the plan in every final ELF this lane built, and a copy of the canonical ELF
+# with clac replaced must fail the same check.
+lake exe leanos-smap-window > "$build/smap-window-plan.tsv"
+mapfile -t smap_window_elves < <(
+  find "$build" -maxdepth 1 -type f -name 'leanos*.elf' ! -name '*-prelink.elf' | sort
+)
+python3 scripts/check-smap-window.py "$build/smap-window-plan.tsv" \
+  "${smap_window_elves[@]}" | tee "$build/smap-window.txt"
+if [[ -f "$build/leanos.elf" ]]; then
+  smap_window_negative="$build/smap-window-negative.elf"
+  cp "$build/leanos.elf" "$smap_window_negative"
+  python3 scripts/check-smap-window.py --corrupt-clac "$build/smap-window-plan.tsv" \
+    "$smap_window_negative"
+  if python3 scripts/check-smap-window.py "$build/smap-window-plan.tsv" \
+      "$smap_window_negative" >"$smap_window_negative.log" 2>&1 ||
+      ! grep -q 'smap_copy_from bytes .* differ from the plan' "$smap_window_negative.log"; then
+    echo "error: SMAP window check accepted an ELF without clac" >&2
+    exit 1
+  fi
+  rm -f "$smap_window_negative"
 fi
 # Hash the artifacts selected by the manifest-driven packaging queue for both
 # full builds and shards. Never maintain a second full-build filename list.

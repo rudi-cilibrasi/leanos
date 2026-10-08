@@ -104,9 +104,10 @@ change:
    through the assigned-device window of the generated boot page-table plan,
    and enables memory decoding. The controller's only DMA authority is
    `VTdBootPlan.deviceServiceState`: one read/write grant of four model pages
-   that the generated requester-16 tables map at IOVA 16 KiB onto the first
-   four pages of the executor scratch (`deviceServiceState_shape`,
-   `deviceServiceTransfer_window`); the `qemu` layout of `LeanOS.Usb.Xhci`
+   that the requester-16 tables `VTdBootPlan.compile` produces map at IOVA
+   16 KiB onto the first four pages of the executor scratch
+   (`deviceServiceState_shape`, `deviceServiceTransfer_window`,
+   `accepted_translation_exact`); the `qemu` layout of `LeanOS.Usb.Xhci`
    keeps every DMA structure inside them. The program enables bus mastering
    only after resetting the controller: SeaBIOS leaves qemu-xhci running with
    rings in firmware memory, and the first run of the scenario showed VT-d

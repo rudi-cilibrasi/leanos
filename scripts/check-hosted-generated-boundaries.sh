@@ -117,6 +117,9 @@ while IFS= read -r source; do
   module="${source#LeanOS/}"
   module="${module%.lean}"
   [[ "$module" == BootAllocation ]] && continue
+  # Refinement proofs (issue #470) are named by build-image.sh's drift check
+  # but are never compiled into the image.
+  [[ "$module" == Refinement/* ]] && continue
   [[ -n "${manifest_modules[$module]+x}" ]] || {
     echo "error: boot-reachable generated module '$module' is absent from $manifest" >&2
     exit 1
