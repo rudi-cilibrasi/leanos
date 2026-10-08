@@ -62,11 +62,13 @@ def wordOk (π : Policy) (w : Word4) : Bool :=
 
 /-- A program is admissible under `π` when its target window fits the
 policy window, every instruction word passes `wordOk`, and — since values
-written to address sinks are only known at run time — a policy with address
-sinks is declared in the image, so the executor checks them. -/
+written to address sinks and descriptor fields are only known at run time — a
+policy with address sinks or a descriptor map is declared in the image, so the
+executor checks them; the descriptor map must be one the executor accepts. -/
 def admissible (p : Program) (π : Policy) : Bool :=
   p.effTarget.windowBytes.toNat ≤ π.window.toNat && p.words.toList.all (wordOk π) &&
-    (π.addrSinks.isEmpty || decide (p.policy = some π))
+    (((π.addrSinks.isEmpty && π.descriptors.isEmpty) || decide (p.policy = some π)) &&
+      π.descWf)
 
 /-- The first instruction index that `wordOk` rejects (diagnostics). -/
 def firstViolation (p : Program) (π : Policy) : Option Nat :=
@@ -118,6 +120,7 @@ theorem mmioOk_mono {w₁ w₂ off k : UInt32} (hw : w₁.toNat ≤ w₂.toNat)
 @[simp] theorem setReg_dev {σ} (m : Machine σ) (r v : UInt32) : (m.setReg r v).dev = m.dev := rfl
 @[simp] theorem setReg_stack {σ} (m : Machine σ) (r v : UInt32) :
     (m.setReg r v).stack = m.stack := rfl
+@[simp] theorem setReg_mem {σ} (m : Machine σ) (r v : UInt32) : (m.setReg r v).mem = m.mem := rfl
 @[simp] theorem Step.machine_next {σ} (m : Machine σ) : (Step.next m).machine = m := rfl
 @[simp] theorem Step.machine_stop {σ} (st) (m : Machine σ) : (Step.stop st m).machine = m := rfl
 @[simp] theorem Step.machine_ite {σ} (c : Prop) [Decidable c] (a b : Step σ) :
@@ -195,7 +198,8 @@ theorem run_confined {σ} (π : Policy) (p : Program) (hp : admissible p π = tr
   refine loop_flag π d p (fun m hm => ?_) fuel _ (by simp [hinit])
   unfold step
   split
-  · exact exec_confined π d p hp.1.1 hp.2 _ (hp.1.2 _ (Array.getElem_mem_toList ‹_›)) _ hm
+  · exact exec_confined π d p hp.1.1 (hp.2.1.imp And.left id) _
+      (hp.1.2 _ (Array.getElem_mem_toList ‹_›)) _ hm
   · simpa using hm
 
 /-- **Dynamic confinement.** Any program whose image declares `π` (with a
@@ -213,6 +217,81 @@ theorem run_declared_confined {σ} (π : Policy) (p : Program) (hpol : p.policy 
   split
   · exact exec_declared_confined π d p hpol hwin _ _ hm
   · simpa using hm
+
+/-! ## Descriptor pointers (issue #495)
+
+The descriptor map of a policy names the scratch fields a DMA controller
+reads as bus addresses. The simulator refuses any scratch store after which a
+field of the map would hold anything but zero or a bus address inside scratch
+(`descOk`), and FIFO input into the map. With a fixed bus address of scratch,
+the map therefore holds only scratch pointers in every reachable state. -/
+
+/-- One instruction of a program that declares `π` keeps every descriptor
+field a scratch pointer (or zero), whatever the instruction. -/
+theorem exec_descOk {σ} (π : Policy) (d : Device σ) (p : Program) (hpol : p.policy = some π)
+    (base : UInt32) (hphys : ∀ s, (d.phys s 0).1 = base)
+    (w : Word4) (m : Machine σ) (hm : descOk π base m.mem = true) :
+    descOk π base (exec p d w m).machine.mem = true := by
+  unfold exec
+  dsimp only
+  generalize w.op &&& 0xFF = b
+  split
+  all_goals (try simp_all)
+  all_goals (repeat' split)
+  all_goals (try simp_all)
+
+/-- Lift the descriptor invariant to whole runs. -/
+theorem loop_descOk {σ} (π : Policy) (d : Device σ) (p : Program) (hpol : p.policy = some π)
+    (base : UInt32) (hphys : ∀ s, (d.phys s 0).1 = base) :
+    ∀ fuel (m : Machine σ), descOk π base m.mem = true →
+      descOk π base (loop p d fuel m).2.mem = true
+  | 0, _, hm => hm
+  | fuel + 1, m, hm => by
+    have hs : descOk π base (step p d m).machine.mem = true := by
+      unfold step
+      split
+      · exact exec_descOk π d p hpol base hphys _ _ hm
+      · simpa using hm
+    simp only [loop]
+    split <;> rename_i heq <;> rw [heq] at hs
+    · exact loop_descOk π d p hpol base hphys fuel _ hs
+    · exact hs
+
+theorem get_zero (n i : Nat) : (ByteArray.mk (Array.replicate n 0)).get! i = 0 := by
+  simp only [ByteArray.get!]
+  rw [getElem!_def]
+  split
+  · rename_i h; simp only [Array.getElem?_replicate] at h; split at h <;> simp_all
+  · rfl
+
+theorem le32_zero (i : Nat) : le32 (ByteArray.mk (Array.replicate scratchBytes 0)) i = 0 := by
+  simp [le32, memLoad, get_zero]
+  rfl
+
+/-- Zeroed scratch, as every executor starts, satisfies any descriptor map. -/
+theorem descOk_zero (π : Policy) (base : UInt32) :
+    descOk π base (ByteArray.mk (Array.replicate scratchBytes 0)) = true := by
+  simp [descOk, le32_zero, ptrOk]
+
+/-- **Descriptor pointers.** A program whose image declares `π`, run by the
+simulator from zeroed scratch on any device model whose bus address of
+scratch is fixed, for any number of steps, leaves every field of `π`'s
+descriptor map holding zero or a bus address inside scratch. -/
+theorem run_declared_descriptors {σ} (π : Policy) (p : Program) (hpol : p.policy = some π)
+    (d : Device σ) (base : UInt32) (hphys : ∀ s, (d.phys s 0).1 = base) (s0 : σ) (fuel : Nat) :
+    descOk π base (run p d s0 fuel).2.mem = true :=
+  loop_descOk π d p hpol base hphys fuel _ (descOk_zero π base)
+
+/-- The same for every admissible program: one whose policy has a descriptor
+map must declare it. -/
+theorem run_admissible_descriptors {σ} (π : Policy) (p : Program) (hp : admissible p π = true)
+    (d : Device σ) (base : UInt32) (hphys : ∀ s, (d.phys s 0).1 = base) (s0 : σ) (fuel : Nat) :
+    descOk π base (run p d s0 fuel).2.mem = true := by
+  simp only [admissible, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
+    List.isEmpty_iff] at hp
+  rcases hp.2.1 with h | h
+  · simp [descOk, h.2]
+  · exact run_declared_descriptors π p h d base hphys s0 fuel
 
 /-- The return stack never exceeds the executor's 16 entries. -/
 theorem step_stack_bounded {σ} (p : Program) (d : Device σ) (m : Machine σ)
@@ -271,7 +350,11 @@ def qotomBcm43224Policy : Policy where
 Bus Master; DMA into scratch. The four registers from which the controller
 finds every DMA structure — CRCR (0x98), DCBAAP (0xB0), ERSTBA (0x2030)
 and ERDP (0x2038) with CAPLENGTH 0x80 and runtime base 0x2000 — are address
-sinks: they only ever receive bus addresses inside scratch. -/
+sinks: they only ever receive bus addresses inside scratch. The descriptor
+map is the driver's `LeanOS.Usb.Xhci.descriptorMap` for the Bay Trail layout:
+every pointer field the driver builds in scratch (DCBAA, scratchpad array,
+ERST entry, input-context dequeue pointers, command/EP0/interrupt TRB rings)
+only ever holds zero or a bus address inside scratch. -/
 def qotomXhciPolicy : Policy where
   window := 0x10000
   cfgRead := cfgBits [0x00, 0x04, 0xD4, 0xDC]
@@ -280,6 +363,14 @@ def qotomXhciPolicy : Policy where
   cmdSet := 0x6
   dma := true
   addrSinks := [0x98, 0xB0, 0x2030, 0x2038]
+  descriptors := [
+    { trb := false, start := 0x20000, count := 5, stride := 8 },    -- DCBAA
+    { trb := false, start := 0x20200, count := 16, stride := 8 },   -- scratchpad array
+    { trb := false, start := 0x20C00, count := 1, stride := 16 },   -- ERST entry
+    { trb := false, start := 0x21048, count := 31, stride := 32 },  -- input EP dequeue pointers
+    { trb := true, start := 0x20400, count := 64, stride := 16 },   -- command ring
+    { trb := true, start := 0x24000, count := 256, stride := 16 },  -- EP0 rings, 4 slots
+    { trb := true, start := 0x25000, count := 64, stride := 16 }]   -- interrupt IN ring
 
 /-- Intel AHCI at 00:13.0 (ABAR, 2 KiB): identity and command reads, no
 configuration writes, Memory Space and Bus Master (and clearing Bus Master
@@ -323,7 +414,8 @@ theorem qotomAhciPolicy_bits :
 /-- QEMU `qemu-xhci` at 00:02.0 in the q35 device lab (16 KiB BAR0):
 identity and command reads, no configuration writes, Memory Space and Bus
 Master, DMA into scratch; CRCR, DCBAAP, ERSTBA and ERDP in qemu-xhci's
-layout (CAPLENGTH 0x40, runtime base 0x1000) are address sinks. -/
+layout (CAPLENGTH 0x40, runtime base 0x1000) are address sinks, and the
+descriptor map is the driver's for qemu-xhci's layout (no scratchpads). -/
 def q35XhciPolicy : Policy where
   window := 0x4000
   cfgRead := cfgBits [0x00, 0x04]
@@ -332,8 +424,20 @@ def q35XhciPolicy : Policy where
   cmdSet := 0x6
   dma := true
   addrSinks := [0x58, 0x70, 0x1030, 0x1038]
+  descriptors := [
+    { trb := false, start := 0x0000, count := 5, stride := 8 },     -- DCBAA
+    { trb := false, start := 0x0C00, count := 1, stride := 16 },    -- ERST entry
+    { trb := false, start := 0x1048, count := 31, stride := 32 },   -- input EP dequeue pointers
+    { trb := true, start := 0x0400, count := 64, stride := 16 },    -- command ring
+    { trb := true, start := 0x2800, count := 256, stride := 16 },   -- EP0 rings, 4 slots
+    { trb := true, start := 0x3800, count := 64, stride := 16 }]    -- interrupt IN ring
 
 theorem q35XhciPolicy_sane : q35XhciPolicy.sane = true := by decide
+
+/-- Both xHCI descriptor maps are ones the executor accepts. -/
+theorem xhciPolicies_descWf :
+    qotomXhciPolicy.descWf = true ∧ q35XhciPolicy.descWf = true := by
+  decide
 
 theorem qotomBcm43224Policy_sane : qotomBcm43224Policy.sane = true := by decide
 theorem qotomXhciPolicy_sane : qotomXhciPolicy.sane = true := by decide

@@ -1,5 +1,6 @@
 import LeanOS.Observation
 import LeanOS.Scheduler
+import LeanOS.ReplayUnwinding
 
 /-!
 # Observer isolation for finite scheduled traces
@@ -355,6 +356,40 @@ theorem finite_trace_lowEquiv observer left right leftSteps rightSteps
   rw [run_replays observer left leftSteps, run_replays observer right rightSteps]
   simp only [projection] at hevents
   rw [_hlow, hevents]
+
+/-- The scheduled observation model is an instance of the shared replay
+unwinding structure (`LeanOS.ReplayUnwinding`). -/
+def replaySystem (observer : SubjectId) :
+    ReplayUnwinding.System State Step Event Observation.View where
+  observe := observe observer
+  execute state step :=
+    let outcome := executeOne observer state step
+    (outcome.state, outcome.event)
+  applyEvent := applyEvent
+
+theorem run_eq_replayRun observer state steps :
+    run observer state steps = ReplayUnwinding.run (replaySystem observer) state steps := by
+  induction steps generalizing state with
+  | nil => rfl
+  | cons step rest ih =>
+    simp only [run, ReplayUnwinding.run, ih]
+    rfl
+
+theorem replaySystem_replays observer :
+    ReplayUnwinding.Replays (replaySystem observer) :=
+  fun state step => executeOne_replays observer state step
+
+/-- `finite_trace_lowEquiv` re-derived as an instance of the shared replay
+unwinding theorem. -/
+theorem finite_trace_lowEquiv_of_replay observer left right leftSteps rightSteps
+    (hlow : LowEquiv observer left right)
+    (hevents : projection observer left leftSteps =
+      projection observer right rightSteps) :
+    LowEquiv observer (run observer left leftSteps).1 (run observer right rightSteps).1 := by
+  rw [run_eq_replayRun, run_eq_replayRun]
+  apply ReplayUnwinding.finite_trace_lowEquiv (replaySystem observer)
+    (replaySystem_replays observer) left right leftSteps rightSteps hlow
+  simpa [projection, ReplayUnwinding.projection, run_eq_replayRun] using hevents
 
 private def lifecycle (current : Option SubjectId) : SubjectLifecycle.State :=
   { capabilities := {

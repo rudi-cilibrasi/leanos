@@ -4,6 +4,8 @@ import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
 import LeanOS.CompositeDispatcher
+import LeanOS.ConsoleServer
+import LeanOS.PostStateProjection
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -52,11 +54,14 @@ import LeanOS.Refinement.BootTransitionC
 import LeanOS.LifetimeIssuer
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
+import LeanOS.ReplayUnwinding
+import LeanOS.CompositeObservation
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption
 import LeanOS.ResumableContext
 import LeanOS.Syscall
 import LeanOS.UserCopy
+import LeanOS.UserCopyPolicy
 import LeanOS.UserCopyWindow
 import LeanOS.StaleTranslation
 import LeanOS.SubjectLifecycle
@@ -94,3 +99,4 @@ import LeanOS.QotomPCIQuarantineObservation
 import LeanOS.QotomPCIQuarantineTransition
 
 import LeanOS.QotomBootstrapABI
+import LeanOS.SmapWindowPlan

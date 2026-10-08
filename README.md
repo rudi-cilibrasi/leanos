@@ -180,11 +180,13 @@ index current:
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `example-subject` | evidence | none (integration only) |
 | `three-subject` | evidence | none (integration only) |
+| `device-service-unplanned-bus-master` | evidence | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
+| `device-service-unplanned-recorded-command` | pr | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
 | `notify-reply` | evidence | SC-NOTIFY-REPLY-NO-AMPLIFICATION, SC-NOTIFY-REPLY-NO-STALE-REUSE, SC-NOTIFY-REPLY-SINGLE-USE, SC-NOTIFY-REPLY-BUDGET |
 <!-- scenario-index:end -->
 
 Before the main machine path, the normal images also replay the same bounded
-448-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+462-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -244,7 +246,9 @@ the evidence vocabulary and baseline boundary; later ADRs record each addition.
 One generated export has a proved refinement edge: the C the pinned
 toolchain emits for `leanos_boot_transition` computes the Lean adapter on
 every input, under a reviewed C-subset semantics with a build-time drift check
-([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md)). The edge stops at
+([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md), claim
+SC-BOOT-TRANSITION-REFINEMENT in [docs/security-claims.md](docs/security-claims.md)).
+The edge stops at
 the export: the compiler, linker, calling convention and every other export
 stay trusted.
 
@@ -252,11 +256,14 @@ The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
 boundary: they run in ring 0, and their confinement to a per-device policy is
 proved about the reference simulator while the C executor is tested against
 it ([ADR 0020](docs/adr/0020-device-program-executor-assurance.md)). On the
-Qotom J1900, which has no IOMMU, **where a DMA-capable device writes is an
-unproved assumption**: the xHCI controller's root address registers provably
-receive only addresses inside the executor's scratch, but the descriptors in
-scratch (TRBs, contexts, DCBAA and ERST entries) are trusted to hold only
-scratch addresses ([ADR 0021](docs/adr/0021-j1900-device-dma-destinations.md)).
+Qotom J1900, which has no IOMMU, **where a DMA-capable device writes is only
+partly proved**: the root address registers of the xHCI, AHCI and RTL8168
+programs provably receive only addresses inside the executor's scratch, and so
+do the xHCI descriptors in scratch (TRBs, input-context dequeue pointers,
+DCBAA, scratchpad and ERST entries), assuming the descriptor map matches the
+xHCI specification; the AHCI and RTL8168 descriptors are still trusted to hold
+only scratch addresses
+([ADR 0021](docs/adr/0021-j1900-device-dma-destinations.md)).
 
 ## Why LeanOS?
 
@@ -750,7 +757,13 @@ tarball per emulator shard for 14 days, including available diagnostics from
 failed runs. Image-producing lanes also retain the validated six-phase timing
 records described in [the boot-image guide](docs/boot-image.md), so issue #266
 performance work can compare measured phases without treating timing as a
-reproducibility input. Controlled negative fixtures ensure
+reproducibility input. The Lean lane records each rebuilt module's
+elaboration time and gates it against `scripts/proof-time-baseline.tsv`
+after normalizing for runner speed (`scripts/check-proof-time-budget.py`,
+issue #498): one of the fifteen slowest modules may not regress by more than
+35% and 15 seconds, and no other module may enter that set above 60 seconds.
+A PR raises the baseline only by editing it, with its `# reason:` line
+updated. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 

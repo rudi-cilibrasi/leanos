@@ -1,0 +1,86 @@
+# Blocking message passing inside the authoritative state
+
+These theorems cover message operations that can put a program to sleep until a partner arrives: receiving, sending, and cancelling a wait. They guarantee that the waiter queues, the saved snapshots of sleeping programs, and the scheduler always move together, and that every rejected request leaves the whole kernel state unchanged.
+
+- `bootRuntime_blockingRuntimeWellFormed` — The freshly booted kernel also starts with an empty, consistent message-waiting store built over the same scheduler as everything else.
+- `bootRuntime_deferredBlockingRuntimeWellFormed` — The freshly booted kernel has no waiting programs and no deferred cancellations at all.
+- `drainDeferredCancellation_dmaAuthority` — Draining a deferred cancellation can never alter either of the kernel's device-authority records; success touches only scheduling, lifecycle, snapshot, and cancellation records, and every denial changes nothing.
+- `drainDeferredCancellation_rejected_unchanged` — A rejected drain of a deferred cancellation leaves the whole kernel state exactly as it was.
+- `drainDeferredCancellation_drained_exact` — A successful drain restores exactly the retained snapshot, records the cancellation for that program, removes only that one deferred entry, and keeps every scheduler view identical.
+- `drainDeferredCancellation_reserves_capacities` — A successful drain proves there was room in both the ready queue and the snapshot bank, and the published state appends exactly that one program to the queue and that one snapshot to the bank.
+- `publishTerminatedBlockingSubject_rejected_unchanged` — When the kernel's records refuse a program's termination, nothing is published anywhere and the state is unchanged.
+- `publishTerminatedBlockingSubject_cleans_self` — When a program's termination is accepted, the very same published state holds neither a leftover message wait nor a leftover saved snapshot for the dead program.
+- `publishBlockingIPCContext_context` — Spelling out the definition: after publication, the combined waiting-store-and-snapshot record is exactly what was published.
+- `publishBlockingIPCContext_scheduler` — Spelling out the definition: publication installs the published store's scheduler as the composite scheduler.
+- `publishBlockingIPCContext_translationVirtual` — Bookkeeping: this publication leaves the memory view underneath the address-translation cache untouched.
+- `publishBlockingIPCContext_resumableScheduler` — Bookkeeping: the saved-snapshot bank sees the same published scheduler.
+- `publishBlockingIPCContext_virtualMemory` — Bookkeeping: this publication never changes the virtual-memory state.
+- `publishBlockingIPCContext_translationHalted` — Bookkeeping: this publication never flips the snapshot bank's halt flag.
+- `publishBlockingIPC_blockingIPC` — Spelling out the definition: publishing a message-waiting store installs exactly that store.
+- `publishBlockingIPC_scheduler` — Spelling out the definition: publishing a message-waiting store makes its scheduler the composite scheduler.
+- `publishBlockingIPC_waiters` — Bookkeeping: after publication, each channel's waiting queue is exactly the published one.
+- `publishBlockingIPC_waiterEndpoint` — Bookkeeping: after publication, each program's recorded wait channel is exactly the published one.
+- `publishBlockingIPC_completion` — Bookkeeping: after publication, each program's recorded delivery result is exactly the published one.
+- `publishBlockingIPC_coherent` — After publishing a message-waiting store, the store and every composite scheduler view name one and the same scheduler.
+- `publishBlockingIPCContext_coherent` — The same single-scheduler agreement holds after publishing the combined store-plus-snapshot record.
+- `publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed` — Publishing a waiting-store update that keeps the scheduler unchanged preserves the entire global runtime invariant; only transient return and copy permissions are closed.
+- `publishBlockingIPCContext_idleBlock_preserves_runtimeWellFormed` — When a program blocks and no other program is ready to run, publishing that idle handoff preserves the whole runtime invariant: the outgoing program is parked only in the waiting bank, existing snapshots stay put, and the active address translation is cleared.
+- `publishReleasedBlockingContext_restores_exact` — A successfully published release puts exactly the released program's saved snapshot back into the snapshot bank and installs exactly the intended waiting store.
+- `publishReleasedBlockingContext_preserves_bankStructure` — Publishing a released waiter can neither overflow the snapshot bank nor create two snapshots for the same program; the publisher's own finite checks guarantee both.
+- `publishReleasedBlockingContext_published_valid` — The snapshot installed by a successful release is valid against the scheduler and program records that the very same publication makes authoritative, not against stale pre-release records.
+- `publishReleasedBlockingContext_wake_preserves_runtimeWellFormed` — When the scheduler performs the standard wake, marking exactly the released program runnable and appending it to the ready queue, publishing the release preserves the entire runtime invariant.
+- `drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed` — The capacity-checked drain preserves the whole invariant including the deferred-cancellation classification: every typed denial changes nothing, and success moves exactly one quiet retained snapshot into the snapshot bank.
+- `publishReleasedBlockingContext_blockingCoherent` — After a successful release publication, the waiting store and every scheduler view still name one and the same scheduler.
+- `publishBlockingIPC_wake_coherent` — A published wake keeps the exact reserved message and marks the same receiver runnable in the scheduler that the rest of the kernel observes.
+- `dispatchBlockingIPC_rejection_atomic` — Every ordinary rejection of a blocking message operation changes absolutely nothing: callers see the exact pre-existing state until a genuine success replaces it.
+- `dispatchBlockingIPC_blocked_exact` — When a receive has to wait, the reply says so and the state published is exactly the one holding the new wait registration and scheduler choice.
+- `dispatchBlockingIPC_woke_exact` — An accepted send to a channel with waiters reports exactly the receiver at the head of the queue that the operation wakes, together with the matching published state.
+- `dispatchBlockingIPC_scheduler_coherent` — Every blocking message operation, success or typed rejection alike, leaves the waiting store's scheduler equal to the composite scheduler.
+- `blockingSavedContext_owner` — Spelling out the definition: a snapshot saved when a program blocks is owned by whichever program the kernel's execution latch says is current, never by an identity a caller supplies.
+- `blockingSavedContext_addressSpace` — Spelling out the definition: that saved snapshot's memory space is the one the execution latch says is active.
+- `restoreBlockingPeer_exact` — A completed handoff to a waiting peer restores exactly the program the scheduler selected, consumes its saved snapshot from the bank, and models the required page-table switch.
+- `restoreBlockingPeer_context_exact` — Bookkeeping: a completed peer handoff installs exactly the intended waiting store.
+- `restoreBlockingPeer_resumableContexts_exact` — The peer handoff removes exactly the selected program's snapshot from the bank and nothing else.
+- `restoreBlockingPeer_deferredExact` — Bookkeeping: the peer handoff never touches the deferred-cancellation records.
+- `restoreBlockingPeer_blockingCoherent` — After a successful peer handoff, the waiting store and every scheduler view still name one scheduler.
+- `restoreBlockingPeer_preserves_runtimeWellFormed` — Handing execution to the scheduler-selected peer preserves the whole runtime invariant: the outgoing caller holds no bank snapshot, the selected peer's snapshot is consumed, and the modeled translation cache switches to the exact program the scheduler made current.
+- `dispatchBlockingReceive_rejected_atomic` — Every rejection of a blocking receive, whether a bad handle, a bad snapshot transition, an unavailable peer switch, or a message denial, leaves the state exactly as it was.
+- `dispatchBlockingReceive_delivered_preserves_runtimeWellFormed` — A receive that finds a message ready consumes only an already-reserved delivery and preserves the whole runtime invariant.
+- `dispatchBlockingReceive_idle_block_preserves_runtimeWellFormed` — A receive that blocks when no other program is ready preserves the complete runtime invariant.
+- `dispatchBlockingReceive_selected_block_preserves_runtimeWellFormed` — A receive that blocks and immediately hands the processor to a ready peer preserves the whole runtime invariant: the peer's kernel-owned snapshot is consumed and the active translation switches to that same identity.
+- `dispatchBlockingReceive_preserves_blockingWellFormed` — Every outcome of a blocking receive keeps the waiting-store-and-snapshot record internally consistent.
+- `dispatchBlockingReceive_preserves_coherent` — Every outcome of a blocking receive keeps the waiting store and the composite scheduler in agreement.
+- `dispatchBlockingReceive_preserves_wellFormed` — Every outcome of a blocking receive preserves both the store's consistency and the scheduler agreement at once.
+- `dispatchBlockingReceive_blocked_uses_kernel_context` — When a receive blocks, the saved snapshot carries the caller's frame and registers, but its owner and memory space are chosen by the kernel's execution latch; no handle value can select another program's identity.
+- `dispatchBlockingSend_rejected_atomic` — Every rejection of a blocking send leaves the state exactly as it was.
+- `dispatchBlockingSend_preserves_wellFormed` — Every outcome of a blocking send keeps the waiting-store-and-snapshot record consistent and the scheduler views in agreement.
+- `dispatchBlockingSend_sent_preserves_runtimeWellFormed` — A send that merely deposits a message in a mailbox, waking no one, preserves the whole runtime invariant without changing the scheduler at all.
+- `dispatchBlockingSend_woke_exact` — A send that wakes a waiting receiver returns exactly the snapshot taken from that receiver's waiting slot, clears that slot, and places the snapshot in the resumable bank, all in one step.
+- `dispatchBlockingSend_woke_context_valid` — The snapshot exposed by a successful wake has passed the validity checks against the scheduler published in the very same state.
+- `dispatchBlockingSend_woke_preserves_runtimeWellFormed` — A successful wake preserves the whole runtime invariant: the receiver's saved snapshot moves from the waiting bank to the resumable bank at the same moment the scheduler marks it runnable.
+- `dispatchBlockingCancel_rejected_atomic` — Every rejection of a wait cancellation leaves the state exactly as it was.
+- `dispatchBlockingCancel_preserves_wellFormed` — Every outcome of a wait cancellation keeps the waiting-store-and-snapshot record consistent and the scheduler views in agreement.
+- `dispatchBlockingCancel_cancelled_exact` — A successful cancellation removes exactly the cancelled program's snapshot from the waiting bank and places exactly that snapshot in the resumable bank.
+- `dispatchBlockingCancel_cancelled_context_valid` — The snapshot restored by a cancellation is valid against the scheduler published atomically with it.
+- `dispatchBlockingCancel_cancelled_preserves_runtimeWellFormed` — A successful cancellation preserves the whole runtime invariant while the scheduler performs the standard wake for the cancelled program.
+- `dispatchBlockingCancel_cancelled_preserves_blockingRuntimeWellFormed` — A successful cancellation preserves both the runtime invariant and the exact agreement between recorded waits and saved snapshots.
+- `blockingGate_running_exact` — Spelling out the definition: while the kernel is running, the outer blocking gate performs exactly the requested operation and reports exactly its typed reply.
+- `restoreBlockingPeer_dmaAuthority` — Bookkeeping: a successful peer handoff never changes either device-authority record.
+- `publishReleasedBlockingContext_dmaAuthority` — Bookkeeping: a successful release publication never changes either device-authority record.
+- `blockingGate_dmaAuthority` — Every blocking receive, send, wake, or cancellation, whether success, denial, or gate rejection, keeps both device-authority records exactly as they were.
+- `blockingGate_completed_sound` — A completed blocking result proves the kernel was running and pins both the exact typed reply and the exact resulting state, so a rejection can never be dressed up as a successful block, delivery, wake, or cancellation.
+- `blockingGate_receive_delivered_preserves_runtimeWellFormed` — A delivery reported by the outer blocking gate preserves the whole runtime invariant, and the reply can only be paired with the exact delivery state.
+- `blockingGate_send_sent_preserves_runtimeWellFormed` — A mailbox-only send completed through the outer gate preserves the whole runtime invariant and is tied to its exact mutation.
+- `blockingGate_send_woke_context_valid` — A wake reported by the outer gate publishes a snapshot valid for the exact scheduler and program records in the paired state.
+- `blockingGate_send_woke_preserves_blockingRuntimeWellFormed` — A wake through the outer gate preserves both the runtime invariant and the wait/snapshot agreement, so the released snapshot cannot land in a scheduler view that disagrees with the waiting store.
+- `blockingGate_cancel_cancelled_context_valid` — A cancellation reported by the outer gate likewise binds its restored snapshot to the exact resulting state.
+- `blockingGate_cancel_cancelled_preserves_blockingRuntimeWellFormed` — A cancellation completed through the outer gate preserves the combined runtime and waiting invariant.
+- `blockingGate_mode_rejection_atomic` — When the outer gate rejects because the kernel is busy with an entry or already halted, the state is exactly unchanged.
+- `blockingGate_rejection_atomic` — Every ordinary blocking-gate denial, whether a stale handle, a bad snapshot transition, an unavailable peer switch, a restore failure, a message denial, an empty cancellation, or a busy latch, returns the identical state, and the gate itself does the classifying rather than trusting callers to.
+- `blockingGate_rejection_preserves_runtimeWellFormed` — Because every classified denial is literally the unchanged state, it preserves the whole runtime invariant with no possibility of drift.
+- `blockingGate_preserves_wellFormed` — Every block, wake, cancel, typed rejection, and latch rejection preserves the wait/snapshot agreement and its scheduler view.
+- `blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed` — A completed delivery preserves the whole combined invariant: global records, the waiting store, and the snapshot bank all remain well formed in one resulting state.
+- `blockingGate_receive_idle_block_preserves_blockingRuntimeWellFormed` — An accepted block with no peer selected preserves the combined invariant; observing that no program is current pins the claim to the idle path rather than a peer handoff.
+- `blockingGate_receive_selected_block_preserves_blockingRuntimeWellFormed` — An accepted block that immediately selects a peer preserves the same combined invariant, and the peer's identity is read from the resulting state, never taken as an input.
+- `blockingGate_receive_blocked_preserves_blockingRuntimeWellFormed` — Every successful block preserves the combined invariant whichever way it goes: either no program is current and the idle path applies, or the state names the restored peer.
+- `blockingGate_preserves_blockingRuntimeWellFormed` — The capstone of this group: the complete blocking gate preserves the combined runtime and wait/snapshot invariant for every operation and every possible result, with each success using its exact lemma and every denial being a literal no-op.
