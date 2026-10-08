@@ -126,6 +126,18 @@ extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
 extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
 extern uint64_t page_directory_b[], page_table_b[];
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+/* Third subject C (issue #472), linked only into the three-subject image. */
+extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
+extern char __user_c_text_start[], __user_c_text_end[];
+extern char __user_c_stack_start[], __user_c_stack_end[];
+extern uint64_t page_map_level_4_c[], page_directory_pointer_c[];
+extern uint64_t page_directory_c[], page_table_c[];
+extern uint64_t saved_context_c[];
+extern const uint64_t saved_context_owner_c;
+extern uint64_t saved_context_c_original_rip, saved_context_c_original_flags;
+extern uint64_t saved_context_c_original_rsp;
+#endif
 extern char __vtd_mmio_window_start[], __vtd_mmio_window_end[];
 extern char __edu_mmio_window_start[], __edu_mmio_window_end[];
 extern uint64_t vtd_root_table[], vtd_context_table[];
@@ -644,6 +656,9 @@ static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
     uint64_t guard_last = ((uint64_t)__df_ist_guard_end + PAGE_BYTES - 1u) / PAGE_BYTES;
     if (page >= guard_first && page < guard_last)
         return page * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+#endif
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    if (space == 3) return leanos_boot_plan_c[page];
 #endif
     return space == 1 ? leanos_boot_plan_a[page] : leanos_boot_plan_b[page];
 }
@@ -1387,6 +1402,12 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
         code_first = user_b_entry; code_last = user_b_stack;
         stack_first = user_b_stack; stack_last = user_b_stack_top;
         expected_cr3 = page_map_level_4_b;
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    } else if (current_subject == 3) {
+        code_first = user_c_entry; code_last = user_c_stack;
+        stack_first = user_c_stack; stack_last = user_c_stack_top;
+        expected_cr3 = page_map_level_4_c;
+#endif
     } else fail("user-return-subject");
     if (purpose < 1 || purpose > 3) fail("user-return-purpose");
     if (cs != 0x23 || ss != 0x1b) fail("user-return-selector");
@@ -2026,12 +2047,21 @@ static void copy_boot_decode_state(struct boot_decode_state *destination,
         words[query] = source->word[query];
 }
 
+/* The CPU page-table block and the embedded-user block each end after the
+   last linked subject: B in a two-subject image, C in the three-subject one. */
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+#define BOOT_LAST_PAGE_TABLE page_table_c
+#define BOOT_LAST_USER_STACK_END __user_c_stack_end
+#else
+#define BOOT_LAST_PAGE_TABLE page_table_b
+#define BOOT_LAST_USER_STACK_END __user_b_stack_end
+#endif
 #define BOOT_MANIFEST_ARGS(info_address, total) \
     0, 0x100000u, \
     (uint64_t)__boot_image_start, \
     (uint64_t)__boot_image_end - (uint64_t)__boot_image_start, \
     (uint64_t)page_map_level_4_a, \
-    (uint64_t)(page_table_b + BOOT_LEAF_COUNT) - (uint64_t)page_map_level_4_a, \
+    (uint64_t)(BOOT_LAST_PAGE_TABLE + BOOT_LEAF_COUNT) - (uint64_t)page_map_level_4_a, \
     (uint64_t)gdt64, sizeof(uint64_t) * 7u, \
     (uint64_t)boot_stack, (uint64_t)boot_stack_top - (uint64_t)boot_stack, \
     (uint64_t)__entry_stack_guard_start, \
@@ -2039,7 +2069,7 @@ static void copy_boot_decode_state(struct boot_decode_state *destination,
     (uint64_t)__entry_stack_start, \
     (uint64_t)__entry_stack_end - (uint64_t)__entry_stack_start, \
     (uint64_t)__user_a_text_start, \
-    (uint64_t)__user_b_stack_end - (uint64_t)__user_a_text_start, \
+    (uint64_t)BOOT_LAST_USER_STACK_END - (uint64_t)__user_a_text_start, \
     (uint64_t)(info_address), (uint64_t)(total)
 
 #define BOOT_BITMAP_ARGS(words) \
@@ -4432,12 +4462,135 @@ static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
 }
 #endif
 
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+/* Three ring-3 subjects (issue #472, slice 1).  Each subject runs in its own
+   address space from its own text and stack.  C, the receiver, blocks on
+   endpoint 12; B runs once from its kernel-owned initial context and reports
+   its canaries; A sends one two-word message to endpoint 12; C is woken with
+   exactly A's words and reports them.  Every switch saves the outgoing
+   subject's complete SAVE+iretq bank (boot.S) and checks the incoming root,
+   owners, and preserved continuations.  This slice adds no new authority:
+   the console capability and the server loop are later slices. */
+#define THREE_SUBJECT_ENDPOINT 12u
+#define THREE_SUBJECT_C_BLOCKED 0x3c01u
+#define THREE_SUBJECT_B_RAN 0x3c02u
+#define THREE_SUBJECT_A_SENT 0x3c03u
+static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
+    uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
+static void check_initial_b_frame(const volatile uint64_t *frame);
+static unsigned three_subject_step;  /* 0 C, 1 B, 2 A, 3 C woken */
+static uint64_t three_subject_sent0, three_subject_sent1;
+
+static void check_selected_root_c(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_c) fail("pt-root-c");
+    serial_puts(LEANOS_SERIAL_8_PAGING " root=C selected=1 result=PASS\n");
+}
+
+/* The third root is checked with the same complete walker as A and B,
+   against the third array the accepted Lean plan emitted. */
+static void check_boot_page_table_c(void) {
+    if (&page_map_level_4_c[0] == &page_map_level_4_a[0] ||
+        &page_map_level_4_c[0] == &page_map_level_4_b[0]) fail("pt-root-c-distinct");
+    if (!decoded_root_matches(3, page_map_level_4_c, page_directory_pointer_c,
+                              page_directory_c, page_table_c, 1)) fail("pt-decode-c");
+    serial_puts(LEANOS_SERIAL_8_PAGING " root=C selected=0 leaves=4096 policy=manifest result=PASS\n");
+}
+
+static void three_subject_require_root(const uint64_t *root) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)root) fail("three-subject-caller-root");
+}
+
+static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
+                                      uint64_t arg1, uint64_t arg2) {
+    if (number == 7 && current_subject == 3 && three_subject_step == 0) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != THREE_SUBJECT_ENDPOINT) fail("three-subject-receive-endpoint");
+        three_subject_step = 1;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
+        return THREE_SUBJECT_C_BLOCKED;
+    }
+    if (number == 62 && current_subject == 2 && three_subject_step == 1) {
+        three_subject_require_root(page_map_level_4_b);
+        if (arg0 != 0xc0dec0dec0dec0deull || arg1 != 0x51a7e51a7e51a7e5ull)
+            fail("three-subject-b-context");
+        three_subject_step = 2;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact result=PASS\n");
+        return THREE_SUBJECT_B_RAN;
+    }
+    if (number == 8 && current_subject == 1 && three_subject_step == 2) {
+        three_subject_require_root(page_map_level_4_a);
+        if (arg2 != THREE_SUBJECT_ENDPOINT) fail("three-subject-send-endpoint");
+        three_subject_sent0 = arg0;
+        three_subject_sent1 = arg1;
+        three_subject_step = 3;
+        current_subject = 3;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=12 payload0=");
+        serial_u64(arg0); serial_puts(" payload1="); serial_u64(arg1);
+        serial_puts(" receiver=3 accepted=1\n");
+        return THREE_SUBJECT_A_SENT;
+    }
+    if (number == 9 && current_subject == 3 && three_subject_step == 3) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg0 != three_subject_sent0 || arg1 != three_subject_sent1 || arg2 != 1)
+            fail("three-subject-payload");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=3 endpoint=12 sender=1 payload0=");
+        serial_u64(arg0); serial_puts(" payload1="); serial_u64(arg1);
+        serial_puts(" exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 address-spaces=3 blocks=1 deliveries=1\n");
+        finish(0x10);
+    }
+    fail("three-subject-sequence");
+}
+
+static void three_subject_switch(uint64_t *target, uint64_t target_owner,
+                                 uint64_t saved_owner) {
+    if (current_subject == 2 && three_subject_step == 1) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("three-subject-switch-b-owner");
+        check_initial_b_frame(target);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial\n");
+        return;
+    }
+    if (current_subject == 1 && three_subject_step == 2) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("three-subject-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3\n");
+        return;
+    }
+    if (current_subject == 3 && three_subject_step == 3) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 1) fail("three-subject-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1\n");
+        return;
+    }
+    fail("three-subject-switch");
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    (void)saved_flags;
+    return three_subject_syscall(number, arg0, arg1, arg2);
+#endif
 #ifdef LEANOS_NOTIFY_REPLY_SCENARIO
     (void)arg1; (void)arg2; (void)saved_flags;
     return notify_reply_syscall(number, arg0);
@@ -5174,6 +5327,10 @@ static uint64_t stack_marker(uint64_t stack_pointer) {
         stack_pointer <= (uint64_t)user_a_stack_top) return 1;
     if (stack_pointer >= (uint64_t)user_b_stack &&
         stack_pointer <= (uint64_t)user_b_stack_top) return 2;
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    if (stack_pointer >= (uint64_t)user_c_stack &&
+        stack_pointer <= (uint64_t)user_c_stack_top) return 3;
+#endif
     fail("context-stack");
 }
 
@@ -5213,6 +5370,10 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 }
 
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    three_subject_switch(target, target_owner, saved_owner);
+    return;
+#endif
 #ifdef LEANOS_IPC_STREAM_SCENARIO
     ipc_stream_switch(target, target_owner, saved_owner);
     return;
@@ -5990,6 +6151,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(integer_fault_probe_class == 1
         ? LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
         : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts(LEANOS_SERIAL_6_BOOT " target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
@@ -6162,6 +6325,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_selected_root_a();
     serial_puts(LEANOS_SERIAL_18_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+    check_boot_page_table_c();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12\n");
+    enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     enter_user(user_a_entry, user_a_stack_top);
 #else

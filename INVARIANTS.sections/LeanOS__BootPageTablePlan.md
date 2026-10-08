@@ -1,17 +1,20 @@
 # The boot page-table plan
 
-Page tables are the hardware maps that decide which memory each program can see and with what permissions. This file's theorems cover the plan for the page tables the kernel builds at boot: a plan value can only be produced by the checker itself, so each theorem about an accepted plan is a guarantee that no plan skipping that check can exist. Collectively they ensure the two user programs get genuinely separate views of memory, no page is ever writable and executable at once, and the memory holding the page tables themselves is never exposed or reallocated.
+Page tables are the hardware maps that decide which memory each program can see and with what permissions. This file's theorems cover the plan for the page tables the kernel builds at boot: a plan value can only be produced by the checker itself, so each theorem about an accepted plan is a guarantee that no plan skipping that check can exist. Collectively they ensure the user programs (two, or three in the three-subject image) get genuinely separate views of memory, no page is ever writable and executable at once, and the memory holding the page tables themselves is never exposed or reallocated.
 
 - `compile_deterministic` — Bookkeeping: compiling the same plan input twice always gives the same result.
 - `accepted_wx` — In an accepted plan, no page is ever both writable and executable.
 - `accepted_ownership` — Every page in an accepted plan belongs to the right owner: kernel pages are never user-accessible, and each user page belongs to the one program whose address space contains it.
 - `accepted_user_avoids_live_table_frames` — No user-accessible page in an accepted plan ever maps the physical memory that holds the live page tables themselves.
-- `accepted_distinct_user_views` — The two user programs never share a user-accessible piece of physical memory; their views are kept apart.
+- `accepted_distinct_user_views` — The user programs never share a user-accessible piece of physical memory; their views are kept apart.
 - `accepted_structurally_valid` — Every mapping in an accepted plan is well-formed: marked present, within the supported address range, and with no forbidden hardware bits set.
 - `accepted_refines_policy` — Every mapping's permission bits are exactly the ones the reviewed policy prescribes for its region class, so the compiler cannot invent its own encoding.
 - `accepted_supervisor_confinement` — Kernel regions — code, data, stacks, page tables, device windows, and DMA-remapping tables — are never accessible to user programs in an accepted plan.
 - `accepted_policy_attributes` — Each region class in an accepted plan carries exactly its reviewed permission profile; for example, kernel code is read-only and executable while kernel data and user stacks are writable but never executable.
 - `accepted_distinct_views` — The two address spaces of an accepted plan start from different physical frames, so they really are two separate maps.
+- `accepted_third_root_distinct` — When an accepted plan includes a third program's address space, that space starts from a physical frame different from both of the other two, so it is a separate map as well.
+- `accepted_leaves_configured` — Every mapping in an accepted plan belongs to an address space the plan actually set up; no mapping can sit in a third address space that has no page tables behind it.
+- `accepted_two_subject_has_no_third_leaf` — A plan accepted without a third address space contains no mapping for a third program at all.
 - `accepted_no_duplicate_leaf` — An accepted plan never maps the same page of the same address space twice.
 - `accepted_table_frames_reserved` — Every physical frame used for page tables in an accepted plan is covered by the reviewed page-table reservation, so the memory allocator can never hand it out to anyone else.
 - `accepted_table_frames_representable` — Every page-table frame in an accepted plan lies within the range the hardware mapping format can express.

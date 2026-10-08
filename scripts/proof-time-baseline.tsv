@@ -1,9 +1,9 @@
-# reason: initial baseline: normalized median of CI runs 36717553018, 36741706280, 37682266019, 37689177163
+# reason: raise BootPageTablePlan (third-subject plan proofs, #472 slice 1) and DeviceProgramConfinement (xHCI descriptor pointers, #495) to their measured normalized times in CI run of PR #523
 module	seconds
 LeanOS.FailStop	137.8
 LeanOS.CompositeDispatcher	121.8
 LeanOS.CapabilityTransfer	103.9
-LeanOS.BootPageTablePlan	78.4
+LeanOS.BootPageTablePlan	139.8
 LeanOS.FaultDispatch	74.3
 LeanOS.BootMemoryMapStreamPipeline	62.9
 LeanOS.IOMMU	59.4
@@ -12,7 +12,7 @@ LeanOS.BlockingIPC	44.4
 LeanOS.QotomMadtStream	41.9
 LeanOS.Interrupt	38.4
 LeanOS.InterruptEntry	37.0
-LeanOS.DeviceProgramConfinement	32.9
+LeanOS.DeviceProgramConfinement	54.4
 LeanOS.SecurityClaims	21.0
 LeanOS.Oracle	17.9
 LeanOS.PCIHeaderObservation	17.0

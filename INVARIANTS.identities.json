@@ -2067,6 +2067,12 @@
     },
     {
       "source": "LeanOS/BootPageTablePlan.lean",
+      "qualified": "LeanOS.BootPageTablePlan.accepted_leaves_configured",
+      "display": "accepted_leaves_configured",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootPageTablePlan.lean",
       "qualified": "LeanOS.BootPageTablePlan.accepted_mmio_confined",
       "display": "accepted_mmio_confined",
       "kind": "theorem"
@@ -2129,6 +2135,18 @@
       "source": "LeanOS/BootPageTablePlan.lean",
       "qualified": "LeanOS.BootPageTablePlan.accepted_table_frames_reserved",
       "display": "accepted_table_frames_reserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootPageTablePlan.lean",
+      "qualified": "LeanOS.BootPageTablePlan.accepted_third_root_distinct",
+      "display": "accepted_third_root_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BootPageTablePlan.lean",
+      "qualified": "LeanOS.BootPageTablePlan.accepted_two_subject_has_no_third_leaf",
+      "display": "accepted_two_subject_has_no_third_leaf",
       "kind": "theorem"
     },
     {

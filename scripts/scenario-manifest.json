@@ -211,6 +211,10 @@
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service.h\""
       ],
+      "kernel-three-subject": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
+      ],
       "kernel-device-service-unplanned-bus-master": [
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
@@ -478,6 +482,12 @@
         "source": "boot/boot.S",
         "definitions": [
           "-DLEANOS_IPC_STREAM_SCENARIO=1"
+        ]
+      },
+      "boot-three-subject": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1"
         ]
       },
       "boot-notify-reply": {
@@ -795,6 +805,14 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-device-service.h",
+        "plan_equal_to": null
+      },
+      "leanos-three-subject": {
+        "boot": "boot-three-subject",
+        "kernel": "kernel-three-subject",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-three-subject.h",
         "plan_equal_to": null
       },
       "leanos-device-service-unplanned-bus-master": {
@@ -1130,6 +1148,13 @@
           "key": "device-service"
         }
       },
+      "leanos-three-subject": {
+        "iso": "leanos-@VERSION@-x86_64-three-subject.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "three-subject"
+        }
+      },
       "leanos-device-service-unplanned-bus-master": {
         "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
         "grub": "boot/grub.cfg"
@@ -1410,6 +1435,13 @@
         "expected": "boot-page-plan-device-service.h",
         "final": "boot-page-plan-device-service.final.h",
         "description": "device-service"
+      },
+      {
+        "image": "leanos-three-subject",
+        "check": "validate",
+        "expected": "boot-page-plan-three-subject.h",
+        "final": "boot-page-plan-three-subject.final.h",
+        "description": "three-subject"
       },
       {
         "image": "leanos-device-service-unplanned-bus-master",
@@ -3084,6 +3116,30 @@
         "SC-DEVICE-CAPABILITY-CONFINEMENT"
       ],
       "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
+    },
+    "three-subject": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/three-subject.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-three-subject.iso",
+        "elf": "leanos-three-subject.elf",
+        "serial_log": "three-subject.serial.log",
+        "scenario": "three-subject",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Exercises a third ring-3 subject only: no security claim yet; the three-subject schedule is the kernel's fixed state machine, not a generated Scheduler/BlockingIPC witness, and the C kernel, boot.S, compiler and QEMU stay trusted"
     },
     "device-service-unplanned-bus-master": {
       "tier": "evidence",

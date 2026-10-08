@@ -16,6 +16,9 @@
 8	ipc-stream, device-service	1	send one event on endpoint 10
 9	canonical (blocking-ipc, preemption)	2	report the delivered payload
 9	ipc-stream, device-service	2	echo the delivered event
+7	three-subject	3	C blocks on endpoint 12
+8	three-subject	1	A sends one word on endpoint 12 (RBX, RCX = payload)
+9	three-subject	3	C reports the delivered word (final record)
 10	canonical (blocking-ipc, preemption)	2	capability reuse: use the initial handle
 11	canonical (blocking-ipc, preemption)	2	capability reuse: replay the stale handle (rejected)
 12	canonical (blocking-ipc, preemption)	2	capability reuse: use the fresh handle
@@ -49,6 +52,7 @@
 40	inflight-revocation	1, 2	in-flight revocation script step
 60	ipc-stream, device-service	1	next event (device-service: the next key from the bound device program)
 61	ipc-stream, device-service	1	end of stream (final record)
+62	three-subject	2	B's single run from its initial context reports its register canaries (RBX, RCX)
 70	notify-reply	1	signal notification 20 with RBX bits (the script signals 5)
 71	notify-reply	2	wait on notification 20 (blocks until signalled)
 72	notify-reply	1	call endpoint 10 with RBX; creates a one-shot reply capability for the caller

@@ -1151,7 +1151,20 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
         vtd_symbol_block = plan_script.split("vtd_symbols=(", 1)[1].split(
             "\n)", 1
         )[0]
-        symbols = sorted(set((symbol_block + vtd_symbol_block).split()))
+        # The plan script names its CPU table-block end through a variable
+        # (B's end, or C's when the image links a third subject) and reads
+        # C's section bounds outside the block; this fixture is two-subject.
+        symbols = sorted(
+            set((symbol_block + vtd_symbol_block).split())
+            - {'"$table_end_symbol"'}
+            | {
+                "page_table_b_end",
+                "__user_c_text_start",
+                "__user_c_text_end",
+                "__user_c_stack_start",
+                "__user_c_stack_end",
+            }
+        )
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

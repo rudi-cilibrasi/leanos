@@ -1229,7 +1229,8 @@ fi
 fi
 # Scenario images that reach CPL3 with their own syscall dispatch are gated
 # against their own reviewed manifests (#469, #503).
-for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget; do
+for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
+    three-subject; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \

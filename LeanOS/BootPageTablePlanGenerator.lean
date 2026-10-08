@@ -18,6 +18,14 @@ open LeanOS.X86PageTable
 open LeanOS.BootReservation
 open LeanOS.BootPageTablePlan
 
+/-- The third subject's linked page-table roots, present only when the ELF
+links them (issue #472). -/
+structure ThirdTables where
+  root : Nat
+  pdpt : Nat
+  pd : Nat
+  pt : Nat
+
 structure Layout where
   bootStart : Nat
   bootEnd : Nat
@@ -63,8 +71,20 @@ structure Layout where
   assignedDevice : Nat
   vtdTableStart : Nat
   vtdTableEnd : Nat
+  /-- The third subject's text and stack.  Every image links these symbols;
+  a two-subject image's ranges are empty. -/
+  userCTextStart : Nat
+  userCTextEnd : Nat
+  userCStackStart : Nat
+  userCStackEnd : Nat
+  /-- `some` exactly when the image links the third subject's tables. Then
+  `tableEnd` is the end of C's tables, after A's and B's. -/
+  third : Option ThirdTables
 
-def expectedArgumentCount : Nat := 42
+/-- A two-subject image passes the 42 original addresses plus C's four empty
+section bounds; a three-subject image also passes C's four table roots. -/
+def expectedArgumentCount : Nat := 46
+def threeSubjectArgumentCount : Nat := 50
 
 def parseNat (value : String) : Except String Nat :=
   match value.toNat? with
@@ -72,8 +92,8 @@ def parseNat (value : String) : Except String Nat :=
   | none => .error s!"invalid decimal address: {value}"
 
 def parseLayout (args : List String) : Except String Layout := do
-  if args.length != expectedArgumentCount then
-    throw s!"expected {expectedArgumentCount} decimal addresses, got {args.length}"
+  if args.length != expectedArgumentCount && args.length != threeSubjectArgumentCount then
+    throw s!"expected {expectedArgumentCount} or {threeSubjectArgumentCount} decimal addresses, got {args.length}"
   let values ← args.mapM parseNat
   let valueAt (index : Nat) := values[index]?.getD 0
   pure {
@@ -95,7 +115,12 @@ def parseLayout (args : List String) : Except String Layout := do
     vtdWindowStart := valueAt 35, vtdWindowEnd := valueAt 36,
     eduWindowStart := valueAt 37, eduWindowEnd := valueAt 38,
     assignedDevice := valueAt 39,
-    vtdTableStart := valueAt 40, vtdTableEnd := valueAt 41 }
+    vtdTableStart := valueAt 40, vtdTableEnd := valueAt 41,
+    userCTextStart := valueAt 42, userCTextEnd := valueAt 43,
+    userCStackStart := valueAt 44, userCStackEnd := valueAt 45,
+    third := if args.length == threeSubjectArgumentCount then
+        some { root := valueAt 46, pdpt := valueAt 47, pd := valueAt 48, pt := valueAt 49 }
+      else none }
 
 def firstPage (address : Nat) : Nat := address / pageBytes
 def endPage (address : Nat) : Nat := (address + pageBytes - 1) / pageBytes
@@ -123,8 +148,13 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
     some ⟨.userText, .subjectB⟩
   else if space == .subjectB && pageIn page layout.userBStackStart layout.userBStackEnd then
     some ⟨.userStack, .subjectB⟩
+  else if space == .subjectC && pageIn page layout.userCTextStart layout.userCTextEnd then
+    some ⟨.userText, .subjectC⟩
+  else if space == .subjectC && pageIn page layout.userCStackStart layout.userCStackEnd then
+    some ⟨.userStack, .subjectC⟩
   else if pageIn page layout.userATextStart layout.userAStackEnd ||
-      pageIn page layout.userBTextStart layout.userBStackEnd then none
+      pageIn page layout.userBTextStart layout.userBStackEnd ||
+      pageIn page layout.userCTextStart layout.userCStackEnd then none
   else if pageIn page layout.kernelTextStart layout.kernelTextEnd then
     some ⟨.kernelText, .supervisor⟩
   else if pageIn page layout.vtdWindowStart layout.vtdWindowEnd then
@@ -184,15 +214,20 @@ def reservationResult (layout : Layout) : Option BootReservation.Result :=
        length := pageBytes, lifetime := .bootstrap }]
   (initializeAllocator handoff manifest).toOption
 
+def ancestorsAt (pdpt pd pt : Nat) : AncestorFrames :=
+  AncestorFrames.mk (firstPage pdpt) (firstPage pd)
+    (List.range bootPtCount |>.map (firstPage pt + ·))
+
 def input (layout : Layout) : Input :=
-  { roots := Roots.mk (firstPage layout.rootA) (firstPage layout.rootB),
-    ancestors := AncestorPaths.mk
-      (AncestorFrames.mk (firstPage layout.pdptA) (firstPage layout.pdA)
-        (List.range bootPtCount |>.map (firstPage layout.ptA + ·)))
-      (AncestorFrames.mk (firstPage layout.pdptB) (firstPage layout.pdB)
-        (List.range bootPtCount |>.map (firstPage layout.ptB + ·))),
+  { roots := { subjectA := firstPage layout.rootA, subjectB := firstPage layout.rootB,
+               subjectC := layout.third.map (firstPage ·.root) },
+    ancestors :=
+      { subjectA := ancestorsAt layout.pdptA layout.pdA layout.ptA,
+        subjectB := ancestorsAt layout.pdptB layout.pdB layout.ptB,
+        subjectC := layout.third.map fun third => ancestorsAt third.pdpt third.pd third.pt },
     nxe := true,
-    regions := regionsFor layout .subjectA ++ regionsFor layout .subjectB,
+    regions := regionsFor layout .subjectA ++ regionsFor layout .subjectB ++
+      (if layout.third.isSome then regionsFor layout .subjectC else []),
     reservationResult := reservationResult layout }
 
 def bit (enabled : Bool) (value : Nat) : Nat := if enabled then value else 0
@@ -213,13 +248,23 @@ def emitArray (name : String) (entries : List Nat) : String :=
   "static const unsigned long long " ++ name ++ "[4096] = {\n" ++ body ++ "\n};"
 
 def emit (layout : Layout) : Except String String := do
+  -- A two-subject image links C's section bounds but no C text or stack.
+  if layout.third.isNone && (layout.userCTextStart != layout.userCStackEnd ||
+      layout.userCTextStart != layout.userCTextEnd ||
+      layout.userCStackStart != layout.userCStackEnd) then
+    throw "third-subject sections are linked without third-subject page tables"
   match compile (input layout) with
   | .error error => throw s!"canonical linked plan rejected: {repr error}"
   | .ok _ =>
     let pages := List.range supportedPathPages
+    let third :=
+      if layout.third.isSome then
+        emitArray "leanos_boot_plan_c" (pages.map (expectedEntry layout .subjectC)) ++ "\n"
+      else ""
     pure <| "/* Generated by the accepted LeanOS.BootPageTablePlan; do not edit. */\n" ++
       emitArray "leanos_boot_plan_a" (pages.map (expectedEntry layout .subjectA)) ++ "\n" ++
-      emitArray "leanos_boot_plan_b" (pages.map (expectedEntry layout .subjectB)) ++ "\n"
+      emitArray "leanos_boot_plan_b" (pages.map (expectedEntry layout .subjectB)) ++ "\n" ++
+      third
 
 end LeanOS.BootPageTablePlanGenerator
 
