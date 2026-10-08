@@ -1,0 +1,19 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/IPC@ event=subject subject=3 source=subjects/example entry=text-start stack=2048 result=PASS
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12
+@10/IPC@ event=send sender=3 endpoint=12 words=1 payload0=1398096458 queued=1
+@10/IPC@ event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial
+@10/IPC@ event=run subject=2 address-space=2 context=initial canaries=exact result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3
+@10/IPC@ event=receive receiver=1 endpoint=12 sender=3 words=1 payload0=1398096458 queued=0
+@10/IPC@ event=deliver receiver=1 endpoint=12 sender=3 words=1 payload0=1398096458 exact=1
+@10/FINAL@ status=PASS subjects=3 address-spaces=3 sends=1 deliveries=1 blocked-forever=3

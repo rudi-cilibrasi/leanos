@@ -180,6 +180,9 @@ check_phase="image-and-emulator-contracts"
 # Run the compiler-failure fixture once in the required proof lane, not in
 # every image-consuming QEMU shard. Keep it sequential with other build users.
 ./scripts/test-build-image.sh
+# The subject build rule (#484): the template and the example build, and every
+# privileged-instruction, fast-entry, libc and oversized fixture is rejected.
+./scripts/test-build-subject.sh
 
 ./scripts/test-run-malformed-handoff.sh
 

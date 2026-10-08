@@ -211,6 +211,11 @@
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service.h\""
       ],
+      "kernel-example-subject": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-example-subject.h\""
+      ],
       "kernel-three-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
@@ -467,11 +472,25 @@
           "-DLEANOS_IPC_STREAM_SCENARIO=1"
         ]
       },
+      "boot-example-subject": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
       "boot-three-subject": {
         "source": "boot/boot.S",
         "definitions": [
           "-DLEANOS_THREE_SUBJECT_SCENARIO=1"
         ]
+      }
+    },
+    "subjects": {
+      "subject-example": {
+        "source": "subjects/example",
+        "slot": "c"
       }
     },
     "images": {
@@ -781,6 +800,16 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-device-service.h",
+        "plan_equal_to": null
+      },
+      "leanos-example-subject": {
+        "boot": "boot-example-subject",
+        "kernel": "kernel-example-subject",
+        "extra_objects": [
+          "subject-example"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-example-subject.h",
         "plan_equal_to": null
       },
       "leanos-three-subject": {
@@ -1100,6 +1129,13 @@
           "key": "device-service"
         }
       },
+      "leanos-example-subject": {
+        "iso": "leanos-@VERSION@-x86_64-example-subject.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "example-subject"
+        }
+      },
       "leanos-three-subject": {
         "iso": "leanos-@VERSION@-x86_64-three-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1372,6 +1408,13 @@
         "expected": "boot-page-plan-device-service.h",
         "final": "boot-page-plan-device-service.final.h",
         "description": "device-service"
+      },
+      {
+        "image": "leanos-example-subject",
+        "check": "validate",
+        "expected": "boot-page-plan-example-subject.h",
+        "final": "boot-page-plan-example-subject.final.h",
+        "description": "example-subject"
       },
       {
         "image": "leanos-three-subject",
@@ -2738,6 +2781,28 @@
         "elf": "leanos-device-service.elf",
         "serial_log": "device-service.serial.log",
         "scenario": "device-service",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
+    },
+    "example-subject": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/example-subject.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-example-subject.iso",
+        "elf": "leanos-example-subject.elf",
+        "serial_log": "example-subject.serial.log",
+        "scenario": "example-subject",
         "mode": "-",
         "reason": "-"
       },

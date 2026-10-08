@@ -92,6 +92,21 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             or not all(isinstance(flag, str) and flag.startswith("-D") for flag in entry["definitions"])
         ):
             raise SystemExit(f"error: scenario manifest boot object {name!r} is malformed")
+    subjects = build.get("subjects", {})
+    if not isinstance(subjects, dict):
+        raise SystemExit("error: scenario manifest build.subjects must be an object")
+    for name, entry in subjects.items():
+        if (
+            not OBJECT_NAME.match(name)
+            or not name.startswith("subject-")
+            or name in build["boot_objects"]
+            or not isinstance(entry, dict)
+            or set(entry) != {"source", "slot"}
+            or not isinstance(entry["source"], str)
+            or not re.fullmatch(r"subjects/[a-z][a-z0-9-]*", entry["source"])
+            or entry["slot"] != "c"
+        ):
+            raise SystemExit(f"error: scenario manifest subject {name!r} is malformed")
     for section, required in (("images", {"boot", "kernel", "extra_objects", "final_link", "prelink_plan", "plan_equal_to"}), ("policy_fixtures", {"boot", "kernel", "extra_objects"})):
         for stem, entry in build[section].items():
             if not OBJECT_NAME.match(stem) or not stem.startswith("leanos") or not isinstance(entry, dict) or set(entry) != required:
@@ -101,7 +116,7 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             if entry["kernel"] not in build["kernel_objects"]:
                 raise SystemExit(f"error: image {stem} links unknown kernel object {entry['kernel']!r}")
             for extra in entry["extra_objects"]:
-                if extra not in build["boot_objects"]:
+                if extra not in build["boot_objects"] and extra not in build.get("subjects", {}):
                     raise SystemExit(f"error: image {stem} links unknown extra object {extra!r}")
             if section == "images" and (
                 not isinstance(entry["prelink_plan"], str)
@@ -194,12 +209,16 @@ def render_graph(
     source_root: Path,
     return_corruptions: list[tuple[str, int]] | None = None,
     tables: tuple[tuple, tuple, tuple, tuple, tuple] | None = None,
+    subjects: dict | None = None,
 ) -> str:
     return_corruptions = return_corruptions or []
     kernel_variants, assembly_variants, prelink_variants, final_link_variants, policy_fixture_variants = (
         tables
         if tables is not None
         else (KERNEL_VARIANTS, ASSEMBLY_VARIANTS, PRELINK_VARIANTS, FINAL_LINK_VARIANTS, POLICY_FIXTURE_VARIANTS)
+    )
+    subject_variants = tuple(
+        (subjects if subjects is not None else BUILD_MANIFEST.get("subjects", {})).items()
     )
     build = make_escape(str(build_dir))
     compile_flags = shell_join([*cflags, f"-I{lean_prefix / 'include'}"])
@@ -369,12 +388,49 @@ def render_graph(
                 f"\t$(IMAGE_CC) {assembly_flags} {arguments} -MMD -MP -MF {depfile} -c $< -o {target}",
             ]
         )
+    # Ring-3 subjects built from subjects/ (#484): each is compiled separately,
+    # checked against the subject assembly/ABI policy, and renamed to its slot
+    # by scripts/build-subject.sh; boot/linker.ld places it.
+    subject_objects = []
+    for name, entry in subject_variants:
+        target = f"{build}/{name}.o"
+        source_dir = source_root / entry["source"]
+        inputs = sorted(
+            path for path in source_dir.iterdir()
+            if path.is_file() and path.suffix in {".c", ".S", ".h"}
+        ) if source_dir.is_dir() else []
+        inputs += [
+            source_root / "subjects/runtime/entry.S",
+            source_root / "subjects/subject.ld",
+            source_root / "subjects/include/leanos/subject.h",
+            source_root / "scripts/build-subject.sh",
+            source_root / "scripts/check-subject-policy.py",
+        ]
+        builder = make_escape(str(source_root / "scripts/build-subject.sh"))
+        lines.extend(
+            [
+                f"{target}: " + " ".join(make_escape(str(path)) for path in inputs),
+                f"\t{builder} --cc $(IMAGE_CC) --slot {entry['slot']} --output $@ "
+                + make_escape(str(source_dir)),
+            ]
+        )
+        subject_objects.append(target)
+    lines.extend(
+        [
+            "",
+            ".PHONY: subject-objects",
+            "subject-objects: " + " ".join(subject_objects),
+        ]
+    )
     lines.extend(
         [
             "",
             ".PHONY: variant-assembly-objects",
             "variant-assembly-objects: "
-            + " ".join(f"{build}/{name}.o" for name, _, _ in assembly_variants),
+            + " ".join(
+                [f"{build}/{name}.o" for name, _, _ in assembly_variants]
+                + subject_objects
+            ),
             "",
             "-include "
             + " ".join(f"{build}/{name}.o.d" for name, _, _ in assembly_variants),
@@ -569,6 +625,7 @@ def main() -> None:
         for name in COMMON_LINK_OBJECTS:
             print(args.build_dir / (name + ".o"))
         return
+    manifest_build = load_build_manifest(args.manifest)
     graph = render_graph(
         args.build_dir,
         args.cc,
@@ -576,7 +633,8 @@ def main() -> None:
         args.lean_prefix,
         args.source_root,
         parse_return_corruptions(args.return_corruption),
-        tables=variant_tables(load_build_manifest(args.manifest)),
+        tables=variant_tables(manifest_build),
+        subjects=manifest_build.get("subjects", {}),
     )
     args.output.write_text(graph, encoding="utf-8")
 
