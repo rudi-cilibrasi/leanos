@@ -76,3 +76,13 @@ and covert channels. Trusted modeled caller identity must eventually be
 supplied by a separately justified kernel entry boundary. The Lean compiler,
 runtime, generated code, boot chain, emulator, and hardware remain outside
 these model-level proofs.
+
+## Notifications and reply capabilities
+
+Notifications (a word of signal bits; `signal` never blocks, `wait` takes the
+pending bits or blocks) and kernel-created, single-use reply capabilities for
+`call`/`reply` are modelled separately in `LeanOS/NotifyReply.lean` (issue #471), layered
+over this capability state. Their claims are
+SC-NOTIFY-REPLY-NO-AMPLIFICATION, -NO-STALE-REUSE, -SINGLE-USE and -BUDGET;
+the `notify-reply` QEMU scenario exercises them on the boot path, each edge
+checked against the generated `leanos_notify_reply_event` witness.
