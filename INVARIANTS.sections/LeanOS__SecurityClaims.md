@@ -159,5 +159,9 @@ This file is the kernel's master security contract: each theorem here independen
 - `device_program_declared_confinement` — The security-claim contract SC-DEVICE-PROGRAM-DECLARED-CONFINEMENT: any driver program whose image carries its fence is held inside it by the interpreter's run-time checks.
 - `device_capability_confinement` — The security-claim contract SC-DEVICE-CAPABILITY-CONFINEMENT: in the kernel's device service, no sequence of operations lets any device step outside its fence, and only a current holder of a device's permission can change that device.
 - `ipc_event_stream` — The security-claim contract SC-IPC-EVENT-STREAM: whenever one program waits to receive and another may send on the same meeting point, any sequence of messages is delivered exactly and in order, and the system returns to where it started.
+- `notify_reply_no_amplification` — Notifications and reply permissions never add to anyone's ordinary permissions, and a reply permission is created only by a call and names exactly that caller.
+- `notify_reply_no_stale_reuse` — A reply to a caller that has ended or whose identity has moved on is refused and changes nothing.
+- `notify_reply_single_use` — A reply permission answers once: a second answer is refused, and the permission can never be passed to another program.
+- `notify_reply_budget` — A program's reply slots change only through calls to its own endpoint or its own replies, so no other program can use them up or clear them.
 - `console_integrity` — The security-claim contract SC-CONSOLE-INTEGRITY: a program holding neither the console permission nor a connection to the console server cannot change what the console prints.
 - `console_confidentiality` — The security-claim contract SC-CONSOLE-CONFIDENTIALITY: such a program learns nothing about what was typed on the console.

@@ -37,6 +37,7 @@ GENERATED_MODULES = (
     "CompositeDispatcher",
     "VTdBootPlan",
     "IOTLB",
+    "NotifyReply",
     "ConsoleServer",
 )
 
@@ -55,6 +56,7 @@ FAULT_DISPATCH_PARTS = (
     "CompositeDispatcher",
     "VTdBootPlan",
     "IOTLB",
+    "NotifyReply",
     "ConsoleServer",
 )
 

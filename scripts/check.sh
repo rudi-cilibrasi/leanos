@@ -218,6 +218,8 @@ check_phase="image-and-emulator-contracts"
 ./scripts/test-run-bootstrap64-nmi.sh
 
 ./scripts/test-entry-stack-budget.sh
+python3 scripts/check-userspace-abi.py
+./scripts/test-scenario-claims.sh
 ./scripts/test-extract-generated-c.sh
 ./scripts/check-oracle-doc-counts.sh
 
@@ -306,7 +308,8 @@ fi
 for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
     CallerSuppliedCompositeContext TautologicalAuthoritativeContract \
     UniversalAuthoritativePreservation GenericCompositeSuccess \
-    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation; do
+    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation \
+    ReplyCapabilityAmplification CopyableReplyCapability; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

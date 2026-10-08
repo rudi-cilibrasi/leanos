@@ -24,6 +24,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_boot_phase_demo);
     REGISTER_BOUNDARY(leanos_blocking_ipc_demo);
     REGISTER_BOUNDARY(leanos_blocking_ipc_event);
+    REGISTER_BOUNDARY(leanos_notify_reply_event);
     REGISTER_BOUNDARY(leanos_console_authorize);
     REGISTER_BOUNDARY(leanos_capability_reuse_demo);
     REGISTER_BOUNDARY(leanos_extended_state_denial_demo);
