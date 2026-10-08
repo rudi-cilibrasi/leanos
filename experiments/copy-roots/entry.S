@@ -371,6 +371,24 @@ qotom_blocking_user_a_fault_recovered:
     mov $0x4f53, %rcx
     xor %rdx, %rdx
     int $0x80
+#ifdef LEANOS_QOTOM_IPC_DEVICE_STREAM
+    /* Device stream: ask the kernel-hosted keyboard program for a key
+       (60), send it to B over endpoint 10 (8), until the program ends (61). */
+1:
+    mov $60, %rax
+    int $0x80
+    test %rax, %rax
+    jz 2f
+    mov %rax, %rbx
+    mov $8, %rax
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    int $0x80
+    jmp 1b
+2:
+    mov $61, %rax
+    int $0x80
+#endif
     ud2
 qotom_blocking_user_a_failure:
     mov $3, %rax
@@ -460,6 +478,22 @@ qotom_blocking_user_b:
     mov $1, %rdx
     mov $9, %rax
     int $0x80
+#ifdef LEANOS_QOTOM_IPC_DEVICE_STREAM
+    /* Device stream: block on endpoint 10 (7), then echo each delivered
+       key back to the kernel (9). */
+1:
+    mov $7, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    int $0x80
+    mov %rbx, %rcx
+    mov %rax, %rbx
+    mov $1, %rdx
+    mov $9, %rax
+    int $0x80
+    jmp 1b
+#endif
     ud2
 qotom_blocking_user_b_failure:
     mov $3, %rax

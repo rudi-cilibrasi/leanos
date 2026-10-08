@@ -2,10 +2,9 @@
 
 ## Status
 
-Accepted, issue #449. Stage 1 (model and executor) and stage 2 (canonical
-kernel service and the exact QEMU scenario, `device-service`) are
-implemented; stage 3 (the Qotom capture) needs a person typing at the
-keyboard and is not yet done.
+Accepted, issue #449. All three stages are implemented: stage 1 (model and
+executor), stage 2 (canonical kernel service and the exact QEMU scenario,
+`device-service`), and stage 3 (the Qotom capture, below).
 
 ## Context
 
@@ -125,9 +124,14 @@ change:
    tables in both toolchain lanes (the Clang lane's global `-fno-jump-tables`,
    a scoped GCC pragma around the executor). Its configuration and PM-timer
    hooks are pinned in the direct-port audit (source sites and final-ELF
-   callers). The scenario image, like the other scenario images, is not yet
-   part of the final-ELF entry-stack call-graph gate, which covers the
-   canonical and extended-state images; that remains open.
+   callers). The device-service image is under the same final-ELF
+   entry-stack call-graph gate as the canonical image (#469):
+   `scripts/entry-stack-device-service-callgraph.tsv` reviews every function
+   reachable from the entry roots, the executor and its hooks included. The
+   syscall path, which runs the executor for syscall 60, needs 6456 bytes of
+   the 16 KiB guarded entry stack (margin 9928). The build also runs a
+   negative check: a manifest without `wifi_hook_delay_us` must fail and name
+   it. Any new edge, indirect call or larger frame fails the build.
 6. **The scenario.** Done: `device-service` (`LEANOS_DEVICE_SERVICE_SCENARIO`
    on top of the `ipc-stream` exchange). Subject 1, the holder of the one
    assigned device, invokes the driver with syscall 60; the kernel binds the
@@ -140,8 +144,18 @@ change:
    (`scripts/expectations/device-service.transcript`), including the VT-d
    assignment record.
 
-Stage 3 repeats the path on the Qotom with a real keyboard, which needs a
-person at the keyboard during the capture.
+Stage 3 repeats the path on the Qotom with a real keyboard. The lab builder's
+`--ipc-device-stream` extends the audited `qotom-blocking-ipc-v1` profile:
+after whole-platform admission the kernel binds the Bay Trail keyboard
+program for subject 1. Each "next key" syscall maps the xHCI BAR through
+borrowed leaves of the closed root and resumes the program in budgeted
+slices. Subject 1 sends each key to subject 2, which echoes it, and every
+edge is checked against `leanos_blocking_ipc_event`. The IPC audit pins the
+extended syscall traces. The [2026-10-07 observation](../../hardware/lab/observations/qotom-device-stream-20261007/README.md)
+captured 231 typed keys (`hello lean⏎` typed 21 times), all delivered and
+echoed, ending in `FINAL status=PASS events=231`. On the J1900 the
+controller's DMA is confined by the program's address-sink policy alone
+(ADR 0021).
 
 ## Consequences
 

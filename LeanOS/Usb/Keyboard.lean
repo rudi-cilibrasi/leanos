@@ -56,6 +56,8 @@ def ready : UInt32 := 0x2101
 def sessionEnd : UInt32 := 0x2102
 def notKeyboard : UInt32 := 0x2019
 def reports : UInt32 := 0x2103
+/-- Diagnostic: a non-empty raw report (first and second dwords). -/
+def rawReport : UInt32 := 0x2104
 end Tag
 
 namespace Fail
@@ -323,6 +325,52 @@ where
     emit (.jump top)
     place done
 
+/-- Probe root ports 1–6 for a boot keyboard attached directly (no hub, no
+transaction translator): address each connected non-hub device in context 1
+and accept the first with a boot-keyboard interface. The port of an already
+configured hub (`V.hubSlot` ≠ 0, at `V.rootPort`) is left alone. Jumps to
+`found`; falls through when none. -/
+def findKeyboardOnRoot (found : Nat) : ProgM Unit := do
+  ld 4 1 V.hubSlot
+  st 4 V.hubPortNo (.imm 0)
+  let noHub ← newLabel
+  emit (.branch .eq 1 (.imm 0) noHub)
+  ld 4 1 V.rootPort
+  st 4 V.hubPortNo (.reg 1)                          -- hub's root port to skip
+  place noHub
+  for p in [1:7] do
+    let port := p.toUInt32
+    let next ← newLabel
+    ld 4 1 V.hubPortNo
+    emit (.branch .eq 1 (.imm port) next)
+    resetRootPort port
+    emit (.branch .eq 0 (.imm 0) next)
+    shri 0 10                                        -- PORTSC speed (1 FS, 2 LS, 3 HS)
+    andi 0 0xF
+    mov 2 0
+    st 4 V.kbdSpeed (.reg 2)
+    st 4 V.kbdRoute (.imm 0)
+    st 4 V.kbdTt (.imm 0)
+    st 4 V.rootPort (.imm port)
+    li 1 0                                           -- route string
+    li 3 port
+    li 4 0                                           -- no TT
+    enableAndAddress 1 V.kbdSlot 1 2 3 4
+    getDeviceDescriptor 1 V.kbdSlot
+    ld 1 1 (dataBuf + 4)                             -- bDeviceClass
+    print Tag.device 1
+    let notKbd ← newLabel
+    emit (.branch .eq 1 (.imm 9) notKbd)
+    ld 4 1 (dataBuf + 8)
+    st 4 V.ids (.reg 1)
+    findKeyboardOnHub.findBootInterface
+    ld 4 1 V.epAddr
+    emit (.branch .ne 1 (.imm 0) found)
+    place notKbd
+    printImm Tag.notKeyboard port
+    disableSlot V.kbdSlot
+    place next
+
 /-! ## Keyboard setup and session -/
 
 /-- SET_CONFIGURATION, Configure Endpoint for the interrupt IN endpoint,
@@ -460,7 +508,8 @@ def decodeReport (tableOff : UInt32) (yieldKeys : Bool := false) : ProgM Unit :=
     st 1 (prevReport + i.toUInt32) (.reg 1)
 
 /-- Echo keys for `seconds` of controller time (MFINDEX, 125 µs units). -/
-def session (seconds : UInt32) (tableOff : UInt32) (yieldKeys : Bool := false) : ProgM Unit := do
+def session (seconds : UInt32) (tableOff : UInt32) (yieldKeys : Bool := false)
+    (trace : Bool := false) : ProgM Unit := do
   st 4 V.elapsed (.imm 0)
   st 4 V.keys (.imm 0)
   st 4 V.reports (.imm 0)
@@ -503,6 +552,16 @@ def session (seconds : UInt32) (tableOff : UInt32) (yieldKeys : Bool := false) :
   ld 4 1 V.reports
   addi 1 1
   st 4 V.reports (.reg 1)
+  if trace then
+    let quiet ← newLabel
+    ld 4 1 reportBuf
+    ld 4 2 (reportBuf + 4)
+    mov 3 1
+    emit (.alu .or 3 (.reg 2))
+    emit (.branch .eq 3 (.imm 0) quiet)
+    print Tag.rawReport 1
+    print Tag.rawReport 2
+    place quiet
   decodeReport tableOff yieldKeys
   armReport
   emit (.jump top)
@@ -513,23 +572,29 @@ def session (seconds : UInt32) (tableOff : UInt32) (yieldKeys : Bool := false) :
   print Tag.sessionEnd 1
 
 /-- The complete keyboard program: controller bring-up, enumeration through
-at most one hub, keyboard setup, and a `seconds`-long echo session. With
+at most one hub or directly on a root port, keyboard setup, and a `seconds`-long echo session. With
 `yieldKeys` each typed character is handed to the invoking subject by
 `yield` (the device-service form, ADR 0022) instead of being printed. -/
-def program (seconds : UInt32) (idle : UInt32 := 0) (yieldKeys : Bool := false) : ProgM Unit := do
+def program (seconds : UInt32) (idle : UInt32 := 0) (yieldKeys : Bool := false)
+    (trace : Bool := false) : ProgM Unit := do
   let tableOff ← addBlob "hid-us-ascii" tableBytes
   bringUp
   let hubFound ← newLabel
   let kbdFound ← newLabel
+  let rootSearch ← newLabel
   findHub hubFound
-  fail Fail.noKeyboard
+  emit (.jump rootSearch)
   place hubFound
   setupHub
   findKeyboardOnHub kbdFound
+  -- no keyboard behind the hub (or no hub): one plugged straight into a
+  -- root port
+  place rootSearch
+  findKeyboardOnRoot kbdFound
   fail Fail.noKeyboard
   place kbdFound
   setupKeyboard idle
-  session seconds tableOff yieldKeys
+  session seconds tableOff yieldKeys trace
   halt
 
 end LeanOS.Usb.Keyboard

@@ -30,6 +30,7 @@ import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
+import LeanOS.Refinement.BootTransitionC
 
 /-! # Stable security-claim contract
 
@@ -3252,5 +3253,26 @@ theorem ipc_event_stream {s : BlockingIPC.State} {rc sc : Capability.Capability}
     BlockingIPC.keyStream s payloads =
       (s, payloads.map fun p => .delivered (BlockingIPC.bootEnvelope p)) :=
   BlockingIPC.keyStream_delivers h payloads
+
+/-- SC-BOOT-TRANSITION-AGREEMENT: the Lean adapter `bootTransition` computes the
+model's encoded result on every encoded model state. A Lean-level statement
+only; it says nothing about generated C. -/
+theorem boot_transition_agreement (state : KernelTransition.State) (command : UInt64) :
+    KernelTransition.bootTransition (KernelTransition.encodeState state) command =
+      KernelTransition.encodeResult
+        (KernelTransition.transition state (KernelTransition.decodeCommand command)).result :=
+  KernelTransition.bootTransition_agrees state command
+
+/-- SC-BOOT-TRANSITION-REFINEMENT: the C function `leanos_boot_transition`, as
+emitted by the pinned toolchain (the AST the build's drift check pins) and
+interpreted by the `Refinement.CSubset` semantics, refines `transition` under
+the encodings. ADR 0023 records the trusted subset meaning, extractor and
+calling convention. -/
+theorem boot_transition_refinement (state : KernelTransition.State) (command : UInt64) :
+    Refinement.CSubset.call Refinement.BootTransitionC.bootTransitionC
+        [KernelTransition.encodeState state, command] =
+      some (KernelTransition.encodeResult
+        (KernelTransition.transition state (KernelTransition.decodeCommand command)).result) :=
+  Refinement.BootTransitionC.bootTransitionC_refines_transition state command
 
 end LeanOS.SecurityClaims

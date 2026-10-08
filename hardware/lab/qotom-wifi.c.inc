@@ -343,3 +343,87 @@ static void lab_wifi_run(void) {
     for (unsigned i = 0; i < lab_dev_program_count; ++i)
         lab_dev_program_run(lab_dev_programs[i], lab_dev_program_lengths[i]);
 }
+
+#ifdef LEANOS_QOTOM_IPC_DEVICE_STREAM
+/* Qotom device stream (issue #449 stage 3): the canonical Qotom blocking-IPC
+   profile hosts the bound program for ring-3 subject 1. Binding happens once,
+   after whole-platform admission; each invocation, from subject 1's "next
+   key" syscall, maps the device window through borrowed leaves of the root
+   the dispatcher runs on (the closed root), resumes the program in budgeted
+   slices until it yields one key or halts, and restores the leaves before
+   returning. */
+#ifndef LAB_SERVICE_BUDGET
+#define LAB_SERVICE_BUDGET 200000u
+#endif
+static struct wifi_vm lab_stream_vm;
+static uint64_t *lab_stream_leaf_table;
+static uint32_t lab_stream_bar, lab_stream_pages, lab_stream_ended;
+static uint64_t lab_stream_invocations;
+
+static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_table) {
+    uint32_t hdr = 0;
+    struct wifi_policy policy;
+    if (lab_dev_program_count != 1 ||
+        wifi_image_header(lab_dev_programs[0], lab_dev_program_lengths[0],
+                          &lab_dev_target, &policy, &hdr) ||
+        !lab_dev_policy_admitted(&lab_dev_target, &policy))
+        pre_admission_fail("qotom-stream-policy");
+    uint32_t id = wifi_hook_cfg_read32(0);
+    uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);
+    uint32_t bar1 = lab_dev_target.bar < 0x24u ? wifi_hook_cfg_read32(lab_dev_target.bar + 4u) : 0;
+    uint32_t type = bar0 & 0xfu;
+    uint32_t pages = (lab_dev_target.window + 4095u) / 4096u;
+    bar0 &= ~UINT32_C(0xf);
+    if (id != lab_dev_target.id || (type != 0 && !(type == 4 && bar1 == 0)) ||
+        pages == 0 || pages > LAB_DEV_MAX_PAGES ||
+        (bar0 & (lab_dev_target.window - 1u)) != 0 ||
+        bar0 < UINT32_C(0x80000000) || bar0 > UINT32_C(0xfec00000))
+        pre_admission_fail("qotom-stream-bar");
+    uintptr_t window = (uintptr_t)lab_dev_window;
+    for (unsigned i = 0; i < pages; ++i)
+        if ((leaf_table[window / 4096 + i] & ~UINT64_C(0x60)) !=
+            (((uint64_t)window + 4096u * i) | UINT64_C(0x8000000000000003)))
+            pre_admission_fail("qotom-stream-window");
+    if (wifi_start(&lab_stream_vm, lab_dev_programs[0], lab_dev_program_lengths[0]))
+        pre_admission_fail("qotom-stream-image");
+    lab_stream_leaf_table = leaf_table;
+    lab_stream_bar = bar0;
+    lab_stream_pages = pages;
+    serial_puts("LEANOS-LAB/1 SERVICE grant subject=1 device=0:20.0 bind=accepted policy=admitted\n");
+}
+
+/* One invocation for subject 1: 0 once the program has halted. */
+static __attribute__((noinline, unused)) uint64_t lab_stream_next_key(void) {
+    if (lab_stream_ended || !lab_stream_leaf_table) return 0;
+    uintptr_t window = (uintptr_t)lab_dev_window;
+    uint64_t *leaves = lab_stream_leaf_table;
+    for (unsigned i = 0; i < lab_stream_pages; ++i) {
+        lab_dev_saved_leaves[i] = leaves[window / 4096 + i];
+        leaves[window / 4096 + i] =
+            ((uint64_t)lab_stream_bar + 4096u * i) | UINT64_C(0x800000000000001b);
+        lab_wifi_invlpg(lab_dev_window + 4096 * i);
+    }
+    uint64_t key = 0;
+    for (;;) {
+        uint32_t code = 0;
+        int status = wifi_resume(&lab_stream_vm, 0,
+            lab_stream_vm.steps + LAB_SERVICE_BUDGET, &code);
+        ++lab_stream_invocations;
+        if (status == WIFI_YIELD) { key = code; break; }
+        if (status == WIFI_STEP_LIMIT && lab_stream_vm.steps < LAB_DEV_STEP_LIMIT)
+            continue;
+        lab_stream_ended = 1;
+        serial_puts("LEANOS-LAB/1 SERVICE end subject=1 status=");
+        serial_u64((uint64_t)status);
+        serial_puts(" code=0x");
+        lab_wifi_hex(code, 8);
+        serial_putc('\n');
+        break;
+    }
+    for (unsigned i = 0; i < lab_stream_pages; ++i) {
+        leaves[window / 4096 + i] = lab_dev_saved_leaves[i];
+        lab_wifi_invlpg(lab_dev_window + 4096 * i);
+    }
+    return key;
+}
+#endif
