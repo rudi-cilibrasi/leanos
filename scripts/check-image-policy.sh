@@ -316,8 +316,10 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 # 12 reviewed copies, plus 2 in the IPC-stream resume path (save B, restore
 # A; 20 qwords each, LEANOS_IPC_STREAM_SCENARIO only), plus 5 in the
 # three-subject switches (save C + install B, save B, save A + restore C;
-# LEANOS_THREE_SUBJECT_SCENARIO only).
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 19 ]] || {
+# LEANOS_THREE_SUBJECT_SCENARIO only), plus 4 in the fault-handler paths
+# (save A + install handler C on delivery, save C + restore B's saved
+# continuation; LEANOS_FAULT_HANDLER_SCENARIO only).
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 23 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S

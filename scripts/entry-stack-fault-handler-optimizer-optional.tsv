@@ -26,3 +26,13 @@ timer-switch	check_selected_root_c
 timer-switch	three_subject_switch
 syscall	fault_handler_syscall
 syscall	three_subject_require_root.part.0
+syscall	fault_handler_switch
+timer-switch	fault_handler_switch
+divide-error	fault_handler_divide_error
+divide-error	l_LeanOS_FaultHandler_faultHandlerRoute
+divide-error	check_selected_root_c
+divide-error	check_selected_root_a
+divide-error	check_selected_root_b
+divide-error	q35_manifest_entry
+syscall	l_LeanOS_FaultHandler_faultHandlerRoute
+divide-error	fault_handler_deliver_complete

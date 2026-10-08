@@ -931,7 +931,12 @@ check_contained_path() {
   }
   normalize="$(grep -n -m1 'call.*<authorize_interrupt_entry>' <<<"$dis" | cut -d: -f1)"
   operation="$(grep -n -m1 "call.*<${handler}>" <<<"$dis" | cut -d: -f1)"
-  restore="$(grep -n -m1 'jmp.*<integer_fault_restore_peer>' <<<"$dis" | cut -d: -f1)"
+  restore="$(grep -n -m1 'jmp.*<integer_fault_restore_peer>' <<<"$dis" | cut -d: -f1 || true)"
+  # The fault-handler image (#488) routes an accepted #DE delivery to its own
+  # reviewed restore, fault_handler_deliver, checked below.
+  if [[ -z "$restore" && "$vector" == 0 ]] && grep -Eq ' fault_handler_deliver$' <<<"$symbols"; then
+    restore="$(grep -n -m1 'jmp.*<fault_handler_deliver>' <<<"$dis" | cut -d: -f1)"
+  fi
   [[ -n "$cleanup" && -n "$normalize" && -n "$operation" && -n "$restore" &&
      "$cleanup" -lt "$normalize" && "$normalize" -lt "$operation" &&
      "$operation" -lt "$restore" ]] || {
@@ -951,6 +956,15 @@ grep -Eq 'call.*<complete_interrupt_entry>' <<<"$restore_dis" || {
 grep -Eq 'jmp.*<user_return_epilogue>' <<<"$restore_dis" || {
   echo "error: vector=0,3 path=restore violated=return-not-validated" >&2; exit 1;
 }
+if grep -Eq ' fault_handler_deliver$' <<<"$symbols"; then
+  deliver_dis="$(objdump -d --no-show-raw-insn --disassemble=fault_handler_deliver "$elf")"
+  grep -Eq 'call.*<fault_handler_deliver_complete>' <<<"$deliver_dis" &&
+    grep -Eq 'call.*<complete_interrupt_entry>' <<<"$deliver_dis" &&
+    grep -Eq 'jmp.*<user_return_epilogue>' <<<"$deliver_dis" || {
+    echo "error: vector=0 path=fault-handler-deliver violated=unchecked-or-unvalidated-return" >&2; exit 1;
+  }
+  echo "ENTRY-POLICY vector=0 target=fault_handler_deliver checked=fault_handler_deliver_complete return=validated result=PASS"
+fi
 
 # Source-ordering gate for the two contained integer-fault stubs: each must
 # clear AC before it normalizes through the shared manifest adapter, and it must
