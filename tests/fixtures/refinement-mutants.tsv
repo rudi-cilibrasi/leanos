@@ -1,0 +1,18 @@
+# id	export	kind	old	new	expected diagnostic
+# Refinement-ladder mutants (issue #475). `lean` mutates the export's Lean
+# body and replays its agreement theorems; `c` patches the emitted C and
+# replays the hosted oracle (and, for leanos_boot_transition, the rung-3
+# drift check); `claim` weakens a claim theorem's statement against the
+# pinned statement contract tests/RefinementStatements.lean.
+boot-lean-comparison	leanos_boot_transition	lean	state == 0 &&	state != 0 &&	error
+boot-lean-constant	leanos_boot_transition	lean	command == 1	command == 2	error
+boot-lean-and-or	leanos_boot_transition	lean	state == 0 && command == 1	state == 0 || command == 1	error
+boot-lean-dropped-branch	leanos_boot_transition	lean	then 1 else 0	then 1 else 1	error
+boot-c-comparison	leanos_boot_transition	c	if (v___x_573_ == 0)	if (v___x_573_ != 0)	oracle mismatch
+boot-c-constant	leanos_boot_transition	c	v___x_574_ = 1ULL;	v___x_574_ = 2ULL;	oracle mismatch
+boot-claim-weakened	leanos_boot_transition	claim	(state : KernelTransition.State) (command : UInt64) :\n    Refinement.CSubset.call	(state : KernelTransition.State) (command : UInt64) (_h : command = 1) :\n    Refinement.CSubset.call	error
+ipc-lean-comparison	leanos_blocking_ipc_event	lean	operation = 2 ∧ step = 1	operation = 2 ∧ step = 2	error
+ipc-lean-constant	leanos_blocking_ipc_event	lean	then 0x0001000200020404	then 0x0001000200020405	error
+ipc-lean-and-or	leanos_blocking_ipc_event	lean	operation = 1 ∧ step = 0 ∧ caller = 2	operation = 1 ∧ step = 0 ∨ caller = 2	error
+ipc-lean-dropped-branch	leanos_blocking_ipc_event	lean	  else 0\n	  else 1\n	error
+ipc-c-constant	leanos_blocking_ipc_event	c	= 281483566777348ULL;	= 281483566777349ULL;	oracle mismatch

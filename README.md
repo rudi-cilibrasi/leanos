@@ -104,7 +104,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-435-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+448-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -164,7 +164,9 @@ the evidence vocabulary and baseline boundary; later ADRs record each addition.
 One generated export has a proved refinement edge: the C the pinned
 toolchain emits for `leanos_boot_transition` computes the Lean adapter on
 every input, under a reviewed C-subset semantics with a build-time drift check
-([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md)). The edge stops at
+([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md), claim
+SC-BOOT-TRANSITION-REFINEMENT in [docs/security-claims.md](docs/security-claims.md)).
+The edge stops at
 the export: the compiler, linker, calling convention and every other export
 stay trusted.
 

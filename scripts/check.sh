@@ -148,6 +148,7 @@ python3 ./scripts/test-kvm-preflight.py
 
 if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-generated-boundaries.sh ordinary
+  ./scripts/check-refinement-mutants.sh
   python3 scripts/test-qotom-ecam-protected.py
   python3 scripts/test-qotom-native-inventory-capture.py
   python3 scripts/test-qotom-native-kernel-capture.py
@@ -307,7 +308,8 @@ fi
 for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
     CallerSuppliedCompositeContext TautologicalAuthoritativeContract \
     UniversalAuthoritativePreservation GenericCompositeSuccess \
-    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation; do
+    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation \
+    ReplyCapabilityAmplification CopyableReplyCapability; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

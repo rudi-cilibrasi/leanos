@@ -13748,6 +13748,66 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.call_exhausted_unchanged",
+      "display": "call_exhausted_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.copyReply_rejected",
+      "display": "copyReply_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.non_cap_step_caps",
+      "display": "non_cap_step_caps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.notifyReplyEvent_agrees",
+      "display": "notifyReplyEvent_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.notifyReplyEvent_unknown_zero",
+      "display": "notifyReplyEvent_unknown_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.replies_change_only_at_server",
+      "display": "replies_change_only_at_server",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.reply_created_only_by_call",
+      "display": "reply_created_only_by_call",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.reply_single_use",
+      "display": "reply_single_use",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.signal_without_send_rejected",
+      "display": "signal_without_send_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NotifyReply.lean",
+      "qualified": "LeanOS.NotifyReply.stale_reply_rejected",
+      "display": "stale_reply_rejected",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/Observation.lean",
       "qualified": "LeanOS.Observation.View.ext",
       "display": "View.ext",
@@ -13973,6 +14033,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_mixed_vectors_refine",
       "display": "hosted_mixed_vectors_refine",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_notify_reply_vectors_exact",
+      "display": "hosted_notify_reply_vectors_exact",
       "kind": "theorem"
     },
     {
@@ -15975,6 +16041,18 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_transition_agreement",
+      "display": "boot_transition_agreement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_transition_refinement",
+      "display": "boot_transition_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.capability_copy_no_authority_amplification",
       "display": "capability_copy_no_authority_amplification",
       "kind": "theorem"
@@ -16541,6 +16619,30 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.nmi_user_kernel_nonvacuous",
       "display": "nmi_user_kernel_nonvacuous",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_budget",
+      "display": "notify_reply_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_no_amplification",
+      "display": "notify_reply_no_amplification",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_no_stale_reuse",
+      "display": "notify_reply_no_stale_reuse",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.notify_reply_single_use",
+      "display": "notify_reply_single_use",
       "kind": "theorem"
     },
     {
