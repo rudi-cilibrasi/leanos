@@ -36,3 +36,4 @@ divide-error	check_selected_root_b
 divide-error	q35_manifest_entry
 syscall	l_LeanOS_FaultHandler_faultHandlerRoute
 divide-error	fault_handler_deliver_complete
+divide-error	check_fast_entry_control
