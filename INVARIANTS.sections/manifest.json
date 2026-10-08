@@ -58,6 +58,7 @@
     "LeanOS/KernelUserRoot.lean",
     "LeanOS/LifetimeIssuer.lean",
     "LeanOS/MemoryLifecycle.lean",
+    "LeanOS/NotifyReply.lean",
     "LeanOS/Observation.lean",
     "LeanOS/Oracle.lean",
     "LeanOS/PCIHeaderObservation.lean",

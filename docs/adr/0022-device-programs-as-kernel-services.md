@@ -124,9 +124,14 @@ change:
    tables in both toolchain lanes (the Clang lane's global `-fno-jump-tables`,
    a scoped GCC pragma around the executor). Its configuration and PM-timer
    hooks are pinned in the direct-port audit (source sites and final-ELF
-   callers). The scenario image, like the other scenario images, is not yet
-   part of the final-ELF entry-stack call-graph gate, which covers the
-   canonical and extended-state images; that remains open.
+   callers). The device-service image is under the same final-ELF
+   entry-stack call-graph gate as the canonical image (#469):
+   `scripts/entry-stack-device-service-callgraph.tsv` reviews every function
+   reachable from the entry roots, the executor and its hooks included. The
+   syscall path, which runs the executor for syscall 60, needs 6456 bytes of
+   the 16 KiB guarded entry stack (margin 9928). The build also runs a
+   negative check: a manifest without `wifi_hook_delay_us` must fail and name
+   it. Any new edge, indirect call or larger frame fails the build.
 6. **The scenario.** Done: `device-service` (`LEANOS_DEVICE_SERVICE_SCENARIO`
    on top of the `ipc-stream` exchange). Subject 1, the holder of the one
    assigned device, invokes the driver with syscall 60; the kernel binds the

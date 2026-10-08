@@ -4,6 +4,8 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 
 - `malformed_budget_state_is_wrong_version` — The frame-budget row whose state word carries the wrong interface version is answered with the exact wrong-version rejection code, so a version error can never be misread as a legitimate budget-continuity failure.
 - `corpus_shape` — The frozen corpus contains exactly 412 test rows.
+- `hosted_boot_transition_class_vectors_exact` — The sixteen test cases at rows 419 through 434 are exactly the grid of boundary inputs for the boot entry point, so the generated code is checked on every combination of the words 0, 1, 2 and the largest 64-bit value.
+- `hosted_notify_reply_vectors_exact` — The last thirteen test cases are exactly the notification and reply-permission cases, including the refused ones: signalling without permission, passing on a reply permission, answering a caller that has ended, and answering twice.
 - `hosted_mixed_vectors_exact` — Rows 314 through 336 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario edge set itself — not a second hand-maintained table that could drift out of step.
 - `hosted_budget_vectors_exact` — The 24 rows beginning at row 359 are exactly the frame-budget scenario's row list.
 - `hosted_iotlb_publication_vectors_exact` — The nine rows beginning at row 383 are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
