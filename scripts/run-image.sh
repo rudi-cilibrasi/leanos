@@ -46,6 +46,8 @@ elif [[ "$scenario" == ipc-stream ]]; then
   default_image="build/boot/leanos-${version}-x86_64-ipc-stream.iso"
 elif [[ "$scenario" == three-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-three-subject.iso"
+elif [[ "$scenario" == notify-reply ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-notify-reply.iso"
 elif [[ "$scenario" == device-service ]]; then
   device_service_scenario=1
   expectation_q35_topology=device-service
