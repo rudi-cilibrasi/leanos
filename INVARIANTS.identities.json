@@ -14199,6 +14199,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_user_copy_policy_vectors_exact",
+      "display": "hosted_user_copy_policy_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.interrupt_entry_adapter_agrees_with_model",
       "display": "interrupt_entry_adapter_agrees_with_model",
       "kind": "theorem"
@@ -14369,6 +14375,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.syscall_accept_agrees",
       "display": "syscall_accept_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.user_copy_policy_vectors_agree",
+      "display": "user_copy_policy_vectors_agree",
       "kind": "theorem"
     },
     {
@@ -17210,6 +17222,48 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.copyBody_acSafe",
+      "display": "copyBody_acSafe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.copyBody_encoding",
+      "display": "copyBody_encoding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.copyBody_label_offsets",
+      "display": "copyBody_label_offsets",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_acSafe",
+      "display": "windows_acSafe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_access_inside",
+      "display": "windows_access_inside",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_fault_exit",
+      "display": "windows_fault_exit",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SmapWindowPlan.lean",
+      "qualified": "LeanOS.SmapWindowPlan.windows_ret_closed",
+      "display": "windows_ret_closed",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/StaleTranslation.lean",
       "qualified": "LeanOS.StaleTranslation.accepted_destroy_space_absent",
       "display": "accepted_destroy_space_absent",
@@ -17945,6 +17999,12 @@
       "source": "LeanOS/UserCopyOperands.lean",
       "qualified": "LeanOS.UserCopyOperands.validated_offset_bound",
       "display": "validated_offset_bound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/UserCopyPolicy.lean",
+      "qualified": "LeanOS.UserCopyPolicy.copyPolicy_agrees_grid",
+      "display": "copyPolicy_agrees_grid",
       "kind": "theorem"
     },
     {

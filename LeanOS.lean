@@ -58,6 +58,7 @@ import LeanOS.ResumablePreemption
 import LeanOS.ResumableContext
 import LeanOS.Syscall
 import LeanOS.UserCopy
+import LeanOS.UserCopyPolicy
 import LeanOS.UserCopyWindow
 import LeanOS.StaleTranslation
 import LeanOS.SubjectLifecycle
@@ -95,3 +96,4 @@ import LeanOS.QotomPCIQuarantineObservation
 import LeanOS.QotomPCIQuarantineTransition
 
 import LeanOS.QotomBootstrapABI
+import LeanOS.SmapWindowPlan

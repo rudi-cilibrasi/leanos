@@ -220,6 +220,7 @@ check_phase="image-and-emulator-contracts"
 ./scripts/test-entry-stack-budget.sh
 python3 scripts/check-userspace-abi.py
 ./scripts/test-scenario-claims.sh
+./scripts/test-asm-windows.sh
 ./scripts/test-extract-generated-c.sh
 ./scripts/check-oracle-doc-counts.sh
 
@@ -331,6 +332,19 @@ fi
 if ! grep -Fq 'tests/negative/ConsoleCapabilityToSecondSubject.lean' "$negative_log" ||
     ! grep -Fq 'twoHolders.console ConsoleServer.Subject.b = false' "$negative_log"; then
   echo "error: second-console-holder fixture lacked its expected diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+# A SMAP copy window without clac (#478) reaches popfq and ret with the AC
+# window open, so the plan check rejects it.
+if lake env lean tests/negative/SmapWindowWithoutClac.lean >"$negative_log" 2>&1; then
+  echo "error: a SMAP window without clac passed the plan check" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/SmapWindowWithoutClac.lean' "$negative_log" ||
+    ! grep -Fq 'acSafe (copyBody.erase Instr.clac) = true' "$negative_log"; then
+  echo "error: SMAP window fixture lacked its expected diagnostic" >&2
   cat "$negative_log" >&2
   exit 1
 fi
