@@ -75,6 +75,7 @@ RUNNERS = {
     "bootstrap64-nmi",
     "double-fault-guard",
     "malformed-handoff",
+    "device-service-rejection",
 }
 RUNNER_RESULT_CLASSES = {
     "boot": "accepted-boot",
@@ -90,6 +91,7 @@ RUNNER_RESULT_CLASSES = {
     "bootstrap64-nmi": "fail-stop",
     "double-fault-guard": "controlled-rejection",
     "malformed-handoff": "controlled-rejection",
+    "device-service-rejection": "controlled-rejection",
 }
 REQUIRED_IOTLB_ORACLE_ROWS = (
     "iotlb.observe-filled",
@@ -773,6 +775,9 @@ def scenario_invocation(
     elif row["runner"] == "malformed-handoff":
         environment["LEANOS_HANDOFF_REJECTION_REASON"] = row["reason"]
         command = ["./scripts/run-malformed-handoff.sh", str(paths["image"])]
+    elif row["runner"] == "device-service-rejection":
+        environment["LEANOS_DEVICE_SERVICE_REJECTION_REASON"] = row["reason"]
+        command = ["./scripts/run-device-service-rejection.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
@@ -1523,6 +1528,7 @@ def check_workflows() -> None:
             "./scripts/run-bootstrap32-ud.sh",
             "./scripts/run-bootstrap64-nmi.sh",
             "./scripts/run-malformed-handoff.sh",
+            "./scripts/run-device-service-rejection.sh",
         ):
             bypass_job = next((job for job, run in step_runs if bypass in run), None)
             if bypass_job is not None:

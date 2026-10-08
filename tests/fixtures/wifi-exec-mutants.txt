@@ -8,12 +8,12 @@ if (at + 4 * n > WIFI_SCRATCH_BYTES)@if (at + 4 * n >= WIFI_SCRATCH_BYTES)
 case 7: r[a] = v >= 32 ? 0 : r[a] >> v;@case 7: r[a] = r[a] >> (v & 31);
 if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }@if (b >= WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
 if (pc >= n) { *code = pc; st = WIFI_BAD_PC; goto out; }@if (pc > n) { *code = pc; st = WIFI_BAD_PC; goto out; }
-POLICY(wifi_cfg_allowed(pol.cfg_read, b));@
+POLICY(wifi_cfg_allowed(pol->cfg_read, b));@
 (x == INT32_MIN && y == -1) ? 0 : (uint32_t)(x % y)@(uint32_t)(x % y)
 #define OFF(x, w) do { if ((x) > window - (w)@#define OFF(x, w) do { if ((x) >= window - (w)
 if (sp == WIFI_STACK_DEPTH)@if (sp == WIFI_STACK_DEPTH - 1)
 case 5: t = (int32_t)x >= (int32_t)v; break;@case 5: t = x >= v; break;
-POLICY(pol.dma);@POLICY(1);
+POLICY(pol->dma);@POLICY(1);
 case 9: v &= 31;@case 9: v &= 15;
 if (wifi_is_sink(p, off)) return v - base < WIFI_SCRATCH_BYTES;@if (wifi_is_sink(p, off)) return v - base <= WIFI_SCRATCH_BYTES;
 if (wifi_is_sink(p, off - 4u)) return v == 0;@if (wifi_is_sink(p, off - 4u)) return 1;
@@ -24,3 +24,10 @@ POLICY(NO_SINK(a));@
     vm->pc = pc;@    vm->pc = pc - (st == WIFI_YIELD);
 case 28: REG(a); OFF(b, 1); r[a] = WH_R8(b); break;@case 28: REG(a); OFF(b, 2); r[a] = WH_R8(b); break;
 OFF(a, 1); POLICY(NO_SINK(a)); WH_W8(a, (uint8_t)v); break; }@OFF(a, 1); WH_W8(a, (uint8_t)v); break; }
+if (t == 0 || t == 2) continue;@if (t == 0 || t == 2 || t == 3) continue;
+if (t == 0 || t == 2) continue;@if (t != 1 && t != 6) continue;
+if (hi != 0 || (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES)) return 0;@if (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES) return 0;
+if (hi != 0 || (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES)) return 0;@if (hi != 0 || lo - base >= WIFI_SCRATCH_BYTES) return 0;
+for (uint32_t i = 0; i < sub; ++i) S[at + i] = old[i];@
+if (base == 23) POLICY(!wifi_desc_touch(pol, at, 4 * n));@
+if (pol->present && wifi_desc_touch(pol, at, sub)) {@if (pol->present && wifi_desc_touch(pol, at + 1, sub - 1)) {
