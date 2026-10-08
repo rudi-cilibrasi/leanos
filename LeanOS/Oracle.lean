@@ -16,6 +16,9 @@ import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
 import LeanOS.NotifyReply
+import LeanOS.UserCopyPolicy
+import LeanOS.ConsoleServer
+import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
@@ -76,7 +79,10 @@ def adapters : List AdapterSpec := [
   adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6,
   adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3,
   adapter "NotifyReply.event" 21 "leanos_notify_reply_event" 4,
-  adapter "FaultHandler.route" 22 "leanos_fault_handler_route" 4]
+  adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6,
+  adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
+  adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
+  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -123,6 +129,23 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
 private def notifyReplyEvent (id : String) (script step operation subject : UInt64) : Vector :=
   { id, adapter := "NotifyReply.event", words := [script, step, operation, subject],
     expected := NotifyReply.notifyReplyEvent script step operation subject }
+
+/-- A user-copy range check. The expected word is `UserCopy.validate` on the
+boot mapping state (`UserCopyPolicy.model`), not the generated adapter. -/
+private def userCopy (id : String) (flags start length : UInt64) : Vector :=
+  let text := UserCopyPolicy.bootText
+  let stack := UserCopyPolicy.bootStack
+  let top := UserCopyPolicy.bootStackTop
+  { id, adapter := "UserCopy.policy", words := [flags, start, length, text, stack, top],
+    expected := UserCopyPolicy.model flags start length text stack top }
+
+private def consoleAuthorize (id : String) (subject operation : UInt64) : Vector :=
+  { id, adapter := "ConsoleServer.authorize", words := [subject, operation],
+    expected := ConsoleServer.consoleAuthorize subject operation }
+
+private def directoryResolve (id : String) (registered held : UInt64) : Vector :=
+  { id, adapter := "EndpointDirectory.resolve", words := [registered, held],
+    expected := EndpointDirectory.directoryResolve registered held }
 
 private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
   { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
@@ -434,6 +457,62 @@ def notifyReplyVectors : List Vector := [
   notifyReplyEvent "notify-reply.reply-after-termination" 1 4 4 2,
   notifyReplyEvent "notify-reply.off-script-step" 0 9 4 2,
   notifyReplyEvent "notify-reply.unknown-script" 2 0 2 2]
+
+/-- User-copy range checks (#478) on the boot layout: one text page at
+0x29a000 and two stack pages at 0x29b000. Flags: bit 0 write, bit 1 current
+lifetime, bits 8 and up the subject. -/
+def userCopyPolicyVectors : List Vector := [
+  userCopy "user-copy.zero-length" 0x102 0x29b000 0,
+  userCopy "user-copy.stack-read" 0x102 0x29b000 16,
+  userCopy "user-copy.stack-write" 0x103 0x29cff0 16,
+  userCopy "user-copy.stack-top-unmapped" 0x102 0x29d000 1,
+  userCopy "user-copy.straddles-stack-top" 0x102 0x29cff8 16,
+  userCopy "user-copy.text-read" 0x102 0x29a000 1,
+  userCopy "user-copy.text-write-read-only" 0x103 0x29a000 1,
+  userCopy "user-copy.text-into-stack-write" 0x103 0x29aff8 16,
+  userCopy "user-copy.too-long" 0x102 0x29b000 17,
+  userCopy "user-copy.overflow" 0x102 0xfffffffffffffff9 16,
+  userCopy "user-copy.end-at-2-pow-64" 0x102 0xfffffffffffffff8 8,
+  userCopy "user-copy.noncanonical" 0x102 0x800000000000 1,
+  userCopy "user-copy.wrong-subject" 0x202 0x29b000 1,
+  userCopy "user-copy.stale" 0x100 0x29b000 1]
+
+/-- Console-server authority decisions (#472): every subject (A 1, B 2,
+server C 3) against every operation (send 1, console write 2, console read 3,
+serve 4, receive 5), then codes outside the ABI. -/
+def consoleAuthorizeVectors : List Vector := [
+  consoleAuthorize "console-authorize.a-send" 1 1,
+  consoleAuthorize "console-authorize.a-write" 1 2,
+  consoleAuthorize "console-authorize.a-read" 1 3,
+  consoleAuthorize "console-authorize.a-serve" 1 4,
+  consoleAuthorize "console-authorize.a-receive" 1 5,
+  consoleAuthorize "console-authorize.b-send" 2 1,
+  consoleAuthorize "console-authorize.b-write" 2 2,
+  consoleAuthorize "console-authorize.b-read" 2 3,
+  consoleAuthorize "console-authorize.b-serve" 2 4,
+  consoleAuthorize "console-authorize.b-receive" 2 5,
+  consoleAuthorize "console-authorize.server-send" 3 1,
+  consoleAuthorize "console-authorize.server-write" 3 2,
+  consoleAuthorize "console-authorize.server-read" 3 3,
+  consoleAuthorize "console-authorize.server-serve" 3 4,
+  consoleAuthorize "console-authorize.server-receive" 3 5,
+  consoleAuthorize "console-authorize.unknown-subject" 4 2,
+  consoleAuthorize "console-authorize.zero-operation" 3 0,
+  consoleAuthorize "console-authorize.unknown-operation" 3 6,
+  consoleAuthorize "console-authorize.maximum-words" 0xffffffffffffffff
+    0xffffffffffffffff]
+
+/-- Endpoint-directory rights decisions (#485): an unregistered name, then a
+registered name over every endpoint-rights word (send 1, receive 2, grant 4,
+revoke 8), then words outside the four bits. -/
+def directoryResolveVectors : List Vector :=
+  [directoryResolve "directory-resolve.unregistered" 0 0,
+   directoryResolve "directory-resolve.unregistered-full-rights" 0 15] ++
+  (List.range 16).map (fun held =>
+    directoryResolve s!"directory-resolve.held-{held}" 1 held.toUInt64) ++
+  [directoryResolve "directory-resolve.held-out-of-range" 1 16,
+   directoryResolve "directory-resolve.maximum-words" 0xffffffffffffffff
+     0xffffffffffffffff]
 
 /-- Fault-handler routes (#488): the bound `#DE` delivery from A to C, the
 default for another class, a page fault, a busy handler, a fault from B and
@@ -805,9 +884,10 @@ def vectors : List Vector := [
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
-    bootTransitionClassVectors ++ notifyReplyVectors ++ faultHandlerVectors
+    bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
+    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors
 
-theorem corpus_shape : vectors.length = 459 := by decide
+theorem corpus_shape : vectors.length = 512 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -820,10 +900,35 @@ theorem hosted_notify_reply_vectors_exact :
     (vectors.drop 435).take notifyReplyVectors.length = notifyReplyVectors := by
   rfl
 
-/-- Oracle indices 448--458 are the fault-handler route corpus (#488). -/
-theorem hosted_fault_handler_vectors_exact :
-    vectors.drop 448 = faultHandlerVectors := by
+/-- Oracle indices 448--461 are the user-copy range checks (#478). -/
+theorem hosted_user_copy_policy_vectors_exact :
+    (vectors.drop 448).take userCopyPolicyVectors.length = userCopyPolicyVectors := by
   rfl
+
+/-- On every user-copy vector, the generated adapter's Lean definition gives
+the model's answer. -/
+theorem user_copy_policy_vectors_agree :
+    userCopyPolicyVectors.all (fun v => match v.words with
+      | [flags, start, length, text, stack, top] =>
+        UserCopyPolicy.copyPolicy flags start length text stack top == v.expected
+      | _ => false) = true := by
+  decide
+
+/-- Oracle indices 462--480 are the console-server authority corpus (#472). -/
+theorem hosted_console_authorize_vectors_exact :
+    (vectors.drop 462).take consoleAuthorizeVectors.length = consoleAuthorizeVectors := by
+  rfl
+
+/-- Oracle indices 481--500 are the endpoint-directory rights corpus (#485). -/
+theorem hosted_directory_resolve_vectors_exact :
+    (vectors.drop 481).take directoryResolveVectors.length = directoryResolveVectors := by
+  rfl
+
+/-- Oracle indices 501--511 are the fault-handler route corpus (#488). -/
+theorem hosted_fault_handler_vectors_exact :
+    vectors.drop 501 = faultHandlerVectors := by
+  rfl
+
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -850,7 +955,8 @@ the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
-      faultHandlerVectors := by
+        userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
+        faultHandlerVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

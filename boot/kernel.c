@@ -2456,21 +2456,19 @@ enum copy_policy {
     COPY_WRONG_SUBJECT, COPY_UNMAPPED, COPY_READ_ONLY, COPY_STALE
 };
 
+/* The range check is generated from LeanOS.UserCopyPolicy (issue #478):
+   UserCopy.validate over subject A's boot mapping, with the text and stack
+   ranges taken from the linked symbols. The result codes are this enum's. */
+_Static_assert(sizeof(copy_buffer) == 16, "the generated policy bounds copies at 16 bytes");
 static enum copy_policy validate_copy(uint64_t subject, unsigned lifetime_current,
                                       uint64_t start, uint64_t length,
                                       unsigned write) {
-    uint64_t end;
-    if (subject != 1) return COPY_WRONG_SUBJECT;
-    if (!lifetime_current) return COPY_STALE;
-    if (length > sizeof(copy_buffer)) return COPY_TOO_LONG;
-    if (__builtin_add_overflow(start, length, &end)) return COPY_OVERFLOW;
-    if (start >= (1ull << 47) || end >= (1ull << 47)) return COPY_NONCANONICAL;
-    if (start >= (uint64_t)user_a_entry && start < (uint64_t)user_a_stack) {
-        return write ? COPY_READ_ONLY : COPY_UNMAPPED;
-    }
-    if (start < (uint64_t)user_a_stack || end > (uint64_t)user_a_stack_top)
-        return COPY_UNMAPPED;
-    return COPY_ALLOWED;
+    uint64_t flags = (subject << 8) | ((uint64_t)(lifetime_current != 0) << 1) |
+        (uint64_t)(write != 0);
+    uint64_t code = leanos_user_copy_policy(flags, start, length,
+        (uint64_t)user_a_entry, (uint64_t)user_a_stack, (uint64_t)user_a_stack_top);
+    if (code > COPY_STALE) fail("copy-policy-code");
+    return (enum copy_policy)code;
 }
 
 static unsigned ac_is_set(void) {
@@ -4446,8 +4444,10 @@ static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
 static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
     uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
 static void check_initial_b_frame(const volatile uint64_t *frame);
+#if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
 static unsigned three_subject_step;  /* 0 C, 1 B, 2 A, 3 C woken */
 static uint64_t three_subject_sent0, three_subject_sent1;
+#endif
 
 static void check_selected_root_c(void) {
     uint64_t cr3;
@@ -4472,6 +4472,7 @@ static void three_subject_require_root(const uint64_t *root) {
     if ((cr3 & PTE_ADDRESS) != (uint64_t)root) fail("three-subject-caller-root");
 }
 
+#if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
 static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
                                       uint64_t arg1, uint64_t arg2) {
     if (number == 7 && current_subject == 3 && three_subject_step == 0) {
@@ -4547,6 +4548,803 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
     }
     fail("three-subject-switch");
 }
+#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+/* Console server (issue #472, slices 2 and 3; docs/console-server.md).
+   Design (a): the kernel keeps the UART and exposes one console object.  Its
+   write and read are syscalls 70 and 71, checked against a kernel-owned
+   capability table; the only holder of the console capability is C, the
+   server.  A holds one send-only endpoint capability to the server's
+   endpoint 12; B holds nothing.  Every request names a slot of the caller's
+   own table (RDX), so a subject can only exercise what its table grants.
+
+   The table is decided here and then checked against the generated Lean
+   witness `leanos_console_authorize` (ConsoleServer.consoleAuthorize, equal
+   to `permitted bootAuthority` by `consoleAuthorize_agrees`): a request the
+   table accepts but the model refuses is a fail-stop.  The table may refuse
+   more than the model (a wrong slot, a non-printable byte).
+
+   The console object's output is a separate stream on the same wire: it is
+   line-buffered and each line is emitted as one LEANOS/10 CONSOLE record, and
+   only printable bytes and newline are accepted, so a line-anchored reader
+   can tell the object's bytes from the kernel's own diagnostic records. */
+#define CONSOLE_SERVER_ENDPOINT 12u
+#define CONSOLE_SERVER_C_RESUME_A 0x3c04u
+#define CONSOLE_SYSCALL_WRITE 70u
+#define CONSOLE_SYSCALL_READ 71u
+#define CAP_KIND_EMPTY 0u
+#define CAP_KIND_ENDPOINT 1u
+#define CAP_KIND_CONSOLE 2u
+#define CAP_RIGHT_SEND 1u
+#define CAP_RIGHT_RECEIVE 2u
+#define CAP_RIGHT_WRITE 4u
+#define CAP_RIGHT_READ 8u
+#define CAP_SLOTS 2u
+/* ConsoleServer.opCode and the witness answers (acceptCode/refuseCode). */
+#define CONSOLE_OP_SEND 1u
+#define CONSOLE_OP_WRITE 2u
+#define CONSOLE_OP_READ 3u
+#define CONSOLE_OP_RECEIVE 5u
+#define CONSOLE_WITNESS_ACCEPT 1u
+#define CONSOLE_WITNESS_REFUSE 2u
+/* Result words returned to the caller: the model's delivery (accepted 0,
+   refused 1, empty read 256) with the typed refusal reason in bits 8..15. */
+#define CONSOLE_RESULT_ACCEPTED 0u
+#define CONSOLE_RESULT_REFUSED 1u
+#define CONSOLE_READ_EMPTY 256u
+#define CONSOLE_LINE_MAX 64u
+enum console_refusal {
+    CONSOLE_OK = 0, CONSOLE_BAD_SLOT = 1, CONSOLE_EMPTY_SLOT = 2,
+    CONSOLE_WRONG_KIND = 3, CONSOLE_MISSING_RIGHT = 4, CONSOLE_BAD_BYTE = 5,
+    CONSOLE_INPUT_NOT_ADMITTED = 6
+};
+static const char *const console_refusal_names[] = {
+    "none", "bad-slot", "empty-slot", "wrong-kind", "missing-right", "bad-byte",
+    "input-not-admitted"
+};
+
+struct console_capability {
+    uint8_t kind;
+    uint8_t rights;
+    uint16_t object;
+};
+
+/* Indexed by subject (1 A, 2 B, 3 C) and slot. */
+static const struct console_capability console_capabilities[4][CAP_SLOTS] = {
+    [1] = { { CAP_KIND_ENDPOINT, CAP_RIGHT_SEND, CONSOLE_SERVER_ENDPOINT } },
+    [3] = { { CAP_KIND_CONSOLE, CAP_RIGHT_WRITE | CAP_RIGHT_READ, 0 },
+            { CAP_KIND_ENDPOINT, CAP_RIGHT_RECEIVE, CONSOLE_SERVER_ENDPOINT } },
+};
+
+/* 0 C runs, 1 B runs, 2 A runs fresh, 3 C serves, 4 A resumed. */
+static unsigned console_phase;
+static unsigned console_server_waiting;
+static uint64_t console_sent0, console_sent1;
+static uint64_t console_blocks, console_deliveries, console_refusals;
+static uint64_t console_b_results, console_b_attempts;
+static char console_line[CONSOLE_LINE_MAX];
+static unsigned console_line_length;
+static uint64_t console_bytes, console_lines;
+
+static void console_server_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("console-subject");
+}
+
+static unsigned console_capability_check(uint64_t slot, unsigned kind,
+                                         unsigned right) {
+    if (slot >= CAP_SLOTS) return CONSOLE_BAD_SLOT;
+    const struct console_capability *cap =
+        &console_capabilities[current_subject][slot];
+    if (cap->kind == CAP_KIND_EMPTY) return CONSOLE_EMPTY_SLOT;
+    if (cap->kind != kind) return CONSOLE_WRONG_KIND;
+    if ((cap->rights & right) == 0) return CONSOLE_MISSING_RIGHT;
+    if (kind == CAP_KIND_ENDPOINT && cap->object != CONSOLE_SERVER_ENDPOINT)
+        fail("console-endpoint-object");
+    return CONSOLE_OK;
+}
+
+/* Decide from the table, then check against the model witness. */
+static unsigned console_decide(uint64_t operation, uint64_t slot, unsigned kind,
+                               unsigned right, uint64_t *witness) {
+    unsigned reason = console_capability_check(slot, kind, right);
+    *witness = leanos_console_authorize(current_subject, operation);
+    if (*witness != CONSOLE_WITNESS_ACCEPT && *witness != CONSOLE_WITNESS_REFUSE)
+        fail("console-model-domain");
+    if (reason == CONSOLE_OK && *witness != CONSOLE_WITNESS_ACCEPT)
+        fail("console-model-decision");
+    return reason;
+}
+
+static uint64_t console_refuse(const char *operation, uint64_t slot,
+                               unsigned reason, uint64_t witness) {
+    uint64_t result = CONSOLE_RESULT_REFUSED | ((uint64_t)reason << 8);
+    console_refusals++;
+    if (current_subject == 2) {
+        if (console_b_attempts >= 3) fail("console-b-attempts");
+        console_b_results |= result << (16u * console_b_attempts);
+        console_b_attempts++;
+    }
+    serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+    serial_u64(current_subject);
+    serial_puts(" op="); serial_puts(operation);
+    serial_puts(" slot="); serial_u64(slot);
+    serial_puts(" reason="); serial_puts(console_refusal_names[reason]);
+    serial_puts(witness == CONSOLE_WITNESS_REFUSE ? " model=refused\n"
+                                                  : " model=permitted\n");
+    return result;
+}
+
+static void console_object_flush(void) {
+    serial_puts(LEANOS_SERIAL_10_CONSOLE " ");
+    for (unsigned i = 0; i < console_line_length; ++i)
+        serial_putc(console_line[i]);
+    serial_putc('\n');
+    console_line_length = 0;
+    console_lines++;
+}
+
+/* The console object's only output path; reached only from an accepted
+   capability-checked write. */
+static void console_object_write(uint8_t byte) {
+    console_bytes++;
+    if (byte == '\n') {
+        console_object_flush();
+        return;
+    }
+    console_line[console_line_length++] = (char)byte;
+    if (console_line_length == CONSOLE_LINE_MAX) console_object_flush();
+}
+
+/* The console object's only input path.  It polls the COM1 line status
+   (the reviewed DirectPortIO serial input, port 0x3fd) and answers the
+   model's empty marker when no byte is ready.  Consuming a byte would read
+   the receive register (input from 0x3f8), which DirectPortIO.portManifest
+   does not admit yet, so a ready byte is refused with a typed reason rather
+   than read. */
+static int console_object_input_ready(void) {
+    return (in8(COM1 + 5) & 0x01u) != 0;
+}
+
+static uint64_t console_table_grants(uint64_t subject, unsigned kind,
+                                     unsigned right) {
+    for (unsigned slot = 0; slot < CAP_SLOTS; ++slot) {
+        const struct console_capability *cap =
+            &console_capabilities[subject][slot];
+        if (cap->kind == kind && (cap->rights & right) != 0) return 1;
+    }
+    return 0;
+}
+
+/* Before any subject runs: the table names exactly one console holder (C)
+   and one sender to the server (A), and for every subject and operation it
+   grants exactly what the model witness accepts. */
+static void console_server_install(void) {
+    uint64_t holders = 0, holder = 0, senders = 0, sender = 0;
+    static const uint64_t operations[4] = {
+        CONSOLE_OP_SEND, CONSOLE_OP_WRITE, CONSOLE_OP_READ, CONSOLE_OP_RECEIVE
+    };
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        const uint64_t grants[4] = {
+            console_table_grants(subject, CAP_KIND_ENDPOINT, CAP_RIGHT_SEND),
+            console_table_grants(subject, CAP_KIND_CONSOLE, CAP_RIGHT_WRITE),
+            console_table_grants(subject, CAP_KIND_CONSOLE, CAP_RIGHT_READ),
+            console_table_grants(subject, CAP_KIND_ENDPOINT, CAP_RIGHT_RECEIVE),
+        };
+        if (grants[1] || grants[2]) { holders++; holder = subject; }
+        if (grants[0]) { senders++; sender = subject; }
+        for (unsigned i = 0; i < 4; ++i) {
+            uint64_t expected = grants[i] ? CONSOLE_WITNESS_ACCEPT
+                                          : CONSOLE_WITNESS_REFUSE;
+            if (leanos_console_authorize(subject, operations[i]) != expected)
+                fail("console-model-authority");
+        }
+    }
+    if (holders != 1 || holder != 3 || senders != 1 || sender != 1)
+        fail("console-capability-install");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install console-holders=1 holder=3 server-senders=1 sender=1 model=agree result=PASS\n");
+}
+
+static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
+                                       uint64_t arg1, uint64_t arg2) {
+    uint64_t witness;
+    unsigned reason;
+    console_server_require_caller();
+    if (number == CONSOLE_SYSCALL_WRITE) {
+        reason = console_decide(CONSOLE_OP_WRITE, arg2, CAP_KIND_CONSOLE,
+                                CAP_RIGHT_WRITE, &witness);
+        if (reason == CONSOLE_OK && arg0 != '\n' && (arg0 < 0x20 || arg0 > 0x7e))
+            reason = CONSOLE_BAD_BYTE;
+        if (reason != CONSOLE_OK)
+            return console_refuse("console-write", arg2, reason, witness);
+        console_object_write((uint8_t)arg0);
+        return CONSOLE_RESULT_ACCEPTED;
+    }
+    if (number == CONSOLE_SYSCALL_READ) {
+        reason = console_decide(CONSOLE_OP_READ, arg2, CAP_KIND_CONSOLE,
+                                CAP_RIGHT_READ, &witness);
+        if (reason != CONSOLE_OK)
+            return console_refuse("console-read", arg2, reason, witness);
+        if (console_object_input_ready())
+            return console_refuse("console-read", arg2,
+                                  CONSOLE_INPUT_NOT_ADMITTED, witness);
+        serial_puts(LEANOS_SERIAL_10_CAP " event=read subject=");
+        serial_u64(current_subject);
+        serial_puts(" slot="); serial_u64(arg2);
+        serial_puts(" input=empty accepted=1\n");
+        return CONSOLE_READ_EMPTY;
+    }
+    if (number == 8) {
+        reason = console_decide(CONSOLE_OP_SEND, arg2, CAP_KIND_ENDPOINT,
+                                CAP_RIGHT_SEND, &witness);
+        if (reason != CONSOLE_OK)
+            return console_refuse("send", arg2, reason, witness);
+        /* Only A holds a send capability; the server must be waiting. */
+        if (current_subject != 1 || (console_phase != 2 && console_phase != 4) ||
+            !console_server_waiting)
+            fail("console-server-send-sequence");
+        console_sent0 = arg0;
+        console_sent1 = arg1;
+        console_server_waiting = 0;
+        console_deliveries++;
+        console_phase = 3;
+        current_subject = 3;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 slot=");
+        serial_u64(arg2);
+        serial_puts(" endpoint=12 payload0="); serial_u64(arg0);
+        serial_puts(" payload1="); serial_u64(arg1);
+        serial_puts(" receiver=3 accepted=1\n");
+        return THREE_SUBJECT_A_SENT;
+    }
+    if (number == 7) {
+        reason = console_decide(CONSOLE_OP_RECEIVE, arg2, CAP_KIND_ENDPOINT,
+                                CAP_RIGHT_RECEIVE, &witness);
+        if (reason != CONSOLE_OK)
+            return console_refuse("receive", arg2, reason, witness);
+        /* Only C holds the receive end; its queue is empty here because every
+           accepted send is delivered at once. */
+        if (current_subject != 3 || (console_phase != 0 && console_phase != 3) ||
+            console_server_waiting)
+            fail("console-server-receive-sequence");
+        console_server_waiting = 1;
+        console_blocks++;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 slot=");
+        serial_u64(arg2);
+        serial_puts(" endpoint=12 empty=1 result=PASS\n");
+        if (console_phase == 0) {
+            console_phase = 1;
+            current_subject = 2;
+            return THREE_SUBJECT_C_BLOCKED;
+        }
+        console_phase = 4;
+        current_subject = 1;
+        return CONSOLE_SERVER_C_RESUME_A;
+    }
+    if (number == 62 && current_subject == 2 && console_phase == 1) {
+        /* B reports its canaries and the three results it observed. */
+        if (arg0 != 0xc0dec0dec0dec0deull || arg1 != 0x51a7e51a7e51a7e5ull)
+            fail("console-server-b-context");
+        if (console_b_attempts != 3 || arg2 != console_b_results)
+            fail("console-server-b-observations");
+        console_phase = 2;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact observed=refused,refused,refused result=PASS\n");
+        return THREE_SUBJECT_B_RAN;
+    }
+    if (number == 61 && current_subject == 1 && console_phase == 4) {
+        if (console_deliveries != 2 || console_lines != 2 || console_bytes != 12 ||
+            console_refusals != 4 || console_blocks != 3 ||
+            console_line_length != 0 || !console_server_waiting)
+            fail("console-server-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 console-holder=3 console-lines=2 console-bytes=12 refusals=4 deliveries=2\n");
+        finish(0x10);
+    }
+    fail("console-server-sequence");
+}
+
+static void console_server_switch(uint64_t *target, uint64_t target_owner,
+                                  uint64_t saved_owner) {
+    if (current_subject == 2 && console_phase == 1) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("console-server-switch-b-owner");
+        check_initial_b_frame(target);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=none\n");
+        return;
+    }
+    if (current_subject == 1 && console_phase == 2) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("console-server-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only\n");
+        return;
+    }
+    if (current_subject == 3 && console_phase == 3) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 1) fail("console-server-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        /* SAVE layout: RAX at word 14, RBX 13, RCX 12. */
+        if (target[14] != console_sent0 || target[13] != console_sent1 ||
+            target[12] != 1)
+            fail("console-server-payload");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 payload=exact\n");
+        return;
+    }
+    if (current_subject == 1 && console_phase == 4) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 3) fail("console-server-resume-a-owner");
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        if (target[14] != CONSOLE_RESULT_ACCEPTED) fail("console-server-send-result");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1\n");
+        return;
+    }
+    fail("console-server-switch");
+}
+#else
+/* Endpoint directory (issue #485; docs/endpoint-directory.md).  C is the
+   directory subject, built from subjects/directory with the subject template
+   (#484) and linked into C's slot; B is a server and A a client, both in
+   boot.S.  Every request names a slot of the caller's own capability table
+   (RDX).  The table is kernel-owned and changes only by two copies, each
+   checked like Capability.copy (grant held, a nonempty rights subset, an
+   endpoint): B's registration delegates its endpoint 14 to the directory
+   with send and grant, and the directory's answer to A's call delegates that
+   capability on, attenuated by the directory itself.
+
+   The kernel checks every answer against the generated Lean witness
+   `leanos_directory_resolve` (EndpointDirectory.directoryResolve, equal to
+   the model's rights decision by `directoryResolve_agrees`).  To do so it
+   keeps a shadow of the registrations it routed: a name the shadow does not
+   hold must be answered with the typed miss and no capability, and a
+   registered name with exactly the witness's rights from exactly the
+   registered slot.  Any disagreement is a fail-stop. */
+extern char user_c_template_text[];
+#define DIRECTORY_REQUEST_ENDPOINT 12u
+#define DIRECTORY_SERVER_ENDPOINT 14u
+#define DIRECTORY_STACK_BYTES 2048u
+#define DIRECTORY_C_RESUME_A 0x3c04u
+#define DIRECTORY_A_SENT_B 0xcafeu
+#define DIRECTORY_SLOTS 4u
+#define DIRECTORY_NO_SLOT 0xffu
+#define DIRECTORY_KIND_EMPTY 0u
+#define DIRECTORY_KIND_ENDPOINT 1u
+/* EndpointDirectory.sendBit, receiveBit, grantBit, revokeBit. */
+#define DIRECTORY_RIGHT_SEND 1u
+#define DIRECTORY_RIGHT_RECEIVE 2u
+#define DIRECTORY_RIGHT_GRANT 4u
+#define DIRECTORY_RIGHT_REVOKE 8u
+#define DIRECTORY_RIGHTS_ALL 15u
+/* EndpointDirectory.unregisteredCode and deniedCode. */
+#define DIRECTORY_UNREGISTERED 0x100u
+#define DIRECTORY_DENIED 0x200u
+#define DIRECTORY_MESSAGE_CALL 1u
+#define DIRECTORY_MESSAGE_REGISTER 2u
+#define DIRECTORY_REFUSED 1u
+#define DIRECTORY_NAMES 4u
+enum directory_refusal {
+    DIRECTORY_OK = 0, DIRECTORY_BAD_SLOT = 1, DIRECTORY_EMPTY_SLOT = 2,
+    DIRECTORY_WRONG_KIND = 3, DIRECTORY_MISSING_RIGHT = 4,
+    DIRECTORY_RIGHTS_NOT_SUBSET = 5, DIRECTORY_FULL = 6, DIRECTORY_DUPLICATE = 7
+};
+static const char *const directory_refusal_names[] = {
+    "none", "bad-slot", "empty-slot", "wrong-kind", "missing-right",
+    "rights-not-subset", "full", "duplicate"
+};
+
+struct directory_capability {
+    uint8_t kind;
+    uint8_t rights;
+    uint16_t object;
+};
+
+/* Indexed by subject (1 A, 2 B, 3 C) and slot. */
+static struct directory_capability directory_caps[4][DIRECTORY_SLOTS];
+
+/* The kernel's shadow of the registrations it routed (name, directory slot). */
+static uint64_t directory_names[DIRECTORY_NAMES];
+static uint64_t directory_name_slots[DIRECTORY_NAMES];
+static uint64_t directory_name_count;
+
+/* 0 C runs, 1 B runs fresh, 2 A runs fresh, 3 C woken (registration),
+   4 A resumed (resolved), 5 C woken (call), 6 A resumed (miss), 7 B woken. */
+static unsigned directory_phase;
+static unsigned directory_c_waiting, directory_b_waiting;
+/* The message C's receive delivered last, and one queued call. */
+static uint64_t directory_message_word, directory_message_info;
+static uint64_t directory_pending_word, directory_pending_info;
+static unsigned directory_c_has_pending, directory_call_queued;
+static uint64_t directory_queued_name;
+/* The one-shot reply capability for A's call. */
+static unsigned directory_reply_pending;
+static uint64_t directory_reply_name, directory_answer;
+static uint64_t directory_sent_word;
+static uint64_t directory_registrations, directory_resolutions, directory_misses;
+static uint64_t directory_refusals, directory_deliveries;
+
+static void directory_put_rights(uint64_t rights) {
+    static const char *const names[4] = { "send", "receive", "grant", "revoke" };
+    unsigned printed = 0;
+    if (rights == 0) { serial_puts("none"); return; }
+    for (unsigned bit = 0; bit < 4; ++bit) {
+        if ((rights & (1u << bit)) == 0) continue;
+        if (printed++) serial_putc(',');
+        serial_puts(names[bit]);
+    }
+}
+
+static void directory_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("directory-subject");
+}
+
+/* The slot the build rule produced: entry and template marker at the first
+   text byte, a 2048-byte stack at the bottom of the one-page stack range. */
+static void check_directory_subject_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != DIRECTORY_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("directory-subject-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/directory entry=text-start stack=2048 result=PASS\n");
+}
+
+static unsigned directory_capability_check(uint64_t subject, uint64_t slot,
+                                           unsigned right) {
+    if (slot >= DIRECTORY_SLOTS) return DIRECTORY_BAD_SLOT;
+    const struct directory_capability *cap = &directory_caps[subject][slot];
+    if (cap->kind == DIRECTORY_KIND_EMPTY) return DIRECTORY_EMPTY_SLOT;
+    if (cap->kind != DIRECTORY_KIND_ENDPOINT) return DIRECTORY_WRONG_KIND;
+    if ((cap->rights & right) == 0) return DIRECTORY_MISSING_RIGHT;
+    return DIRECTORY_OK;
+}
+
+/* Capability.copy's checks for a delegation from `slot` of `subject` with
+   `rights`: an endpoint holding grant, and a nonempty subset of its rights. */
+static unsigned directory_copy_check(uint64_t subject, uint64_t slot,
+                                     uint64_t rights) {
+    unsigned reason = directory_capability_check(subject, slot, DIRECTORY_RIGHT_GRANT);
+    if (reason != DIRECTORY_OK) return reason;
+    if (rights == 0 || rights > DIRECTORY_RIGHTS_ALL ||
+        (rights & ~(uint64_t)directory_caps[subject][slot].rights) != 0)
+        return DIRECTORY_RIGHTS_NOT_SUBSET;
+    return DIRECTORY_OK;
+}
+
+static uint64_t directory_free_slot(uint64_t subject) {
+    for (uint64_t slot = 0; slot < DIRECTORY_SLOTS; ++slot)
+        if (directory_caps[subject][slot].kind == DIRECTORY_KIND_EMPTY) return slot;
+    return DIRECTORY_NO_SLOT;
+}
+
+static uint64_t directory_occupied(uint64_t subject) {
+    uint64_t count = 0;
+    for (uint64_t slot = 0; slot < DIRECTORY_SLOTS; ++slot)
+        if (directory_caps[subject][slot].kind != DIRECTORY_KIND_EMPTY) count++;
+    return count;
+}
+
+static uint64_t directory_refuse(const char *operation, uint64_t slot,
+                                 unsigned reason) {
+    directory_refusals++;
+    serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+    serial_u64(current_subject);
+    serial_puts(" op="); serial_puts(operation);
+    serial_puts(" slot="); serial_u64(slot);
+    serial_puts(" reason="); serial_puts(directory_refusal_names[reason]);
+    serial_putc('\n');
+    return DIRECTORY_REFUSED | ((uint64_t)reason << 8);
+}
+
+/* Before any subject runs: install the three tables, and check that for
+   every endpoint-rights word the witness answers send-only exactly when the
+   kernel's own copy check would let the directory offer send (send and
+   grant held), the denial otherwise, and the miss for an unregistered name. */
+static void directory_install(void) {
+    directory_caps[1][0] = (struct directory_capability){
+        DIRECTORY_KIND_ENDPOINT, DIRECTORY_RIGHT_SEND, DIRECTORY_REQUEST_ENDPOINT };
+    directory_caps[2][0] = (struct directory_capability){
+        DIRECTORY_KIND_ENDPOINT,
+        DIRECTORY_RIGHT_SEND | DIRECTORY_RIGHT_RECEIVE | DIRECTORY_RIGHT_GRANT,
+        DIRECTORY_SERVER_ENDPOINT };
+    directory_caps[3][0] = (struct directory_capability){
+        DIRECTORY_KIND_ENDPOINT, DIRECTORY_RIGHT_RECEIVE, DIRECTORY_REQUEST_ENDPOINT };
+    for (uint64_t held = 0; held <= DIRECTORY_RIGHTS_ALL; ++held) {
+        uint64_t sendable = (held & DIRECTORY_RIGHT_SEND) != 0 &&
+                            (held & DIRECTORY_RIGHT_GRANT) != 0;
+        uint64_t expected = sendable ? DIRECTORY_RIGHT_SEND : DIRECTORY_DENIED;
+        if (leanos_directory_resolve(1, held) != expected ||
+            leanos_directory_resolve(0, held) != DIRECTORY_UNREGISTERED)
+            fail("directory-model-rights");
+    }
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install client=endpoint-12:send server=endpoint-14:send,receive,grant directory=endpoint-12:receive rights-words=16 model=agree result=PASS\n");
+}
+
+static uint64_t directory_shadow_slot(uint64_t name) {
+    for (uint64_t i = 0; i < directory_name_count; ++i)
+        if (directory_names[i] == name) return directory_name_slots[i];
+    return DIRECTORY_NO_SLOT;
+}
+
+/* B delegates its endpoint capability to the directory under a name. */
+static uint64_t directory_register(uint64_t name, uint64_t rights, uint64_t slot) {
+    unsigned reason = directory_copy_check(2, slot, rights);
+    if (reason != DIRECTORY_OK) return directory_refuse("register", slot, reason);
+    if (directory_shadow_slot(name) != DIRECTORY_NO_SLOT)
+        return directory_refuse("register", slot, DIRECTORY_DUPLICATE);
+    uint64_t target = directory_free_slot(3);
+    if (target == DIRECTORY_NO_SLOT || directory_name_count >= DIRECTORY_NAMES)
+        return directory_refuse("register", slot, DIRECTORY_FULL);
+    if (current_subject != 2 || directory_phase != 1 || !directory_c_waiting)
+        fail("directory-register-sequence");
+    directory_caps[3][target] = (struct directory_capability){
+        DIRECTORY_KIND_ENDPOINT, (uint8_t)rights, directory_caps[2][slot].object };
+    directory_names[directory_name_count] = name;
+    directory_name_slots[directory_name_count] = target;
+    directory_name_count++;
+    directory_registrations++;
+    /* C is waiting on its request endpoint: the registration is its message. */
+    directory_c_waiting = 0;
+    directory_c_has_pending = 1;
+    directory_pending_word = name;
+    directory_pending_info = DIRECTORY_MESSAGE_REGISTER | target << 8 | rights << 16;
+    serial_puts(LEANOS_SERIAL_10_CAP " event=register subject=2 slot=");
+    serial_u64(slot);
+    serial_puts(" endpoint="); serial_u64(directory_caps[2][slot].object);
+    serial_puts(" held="); directory_put_rights(directory_caps[2][slot].rights);
+    serial_puts(" name="); serial_u64(name);
+    serial_puts(" delegated="); directory_put_rights(rights);
+    serial_puts(" directory-slot="); serial_u64(target);
+    serial_puts(" result=PASS\n");
+    return 0;
+}
+
+/* The directory answers the pending call, then waits for its next request. */
+static uint64_t directory_reply_receive(uint64_t source, uint64_t offered,
+                                        uint64_t slot) {
+    if (!directory_reply_pending) fail("directory-reply-capability");
+    uint64_t name = directory_reply_name;
+    uint64_t registered = directory_shadow_slot(name);
+    uint64_t witness;
+    if (source == DIRECTORY_NO_SLOT) {
+        if (offered != 0) fail("directory-reply-shape");
+        uint64_t before = directory_occupied(1);
+        witness = leanos_directory_resolve(registered != DIRECTORY_NO_SLOT,
+            registered != DIRECTORY_NO_SLOT ? directory_caps[3][registered].rights : 0);
+        if (registered != DIRECTORY_NO_SLOT || witness != DIRECTORY_UNREGISTERED)
+            fail("directory-model-miss");
+        if (directory_occupied(1) != before) fail("directory-miss-transfer");
+        directory_answer = DIRECTORY_UNREGISTERED;
+        directory_misses++;
+        serial_puts(LEANOS_SERIAL_10_CAP " event=resolve subject=3 caller=1 name=");
+        serial_u64(name);
+        serial_puts(" directory-slot=none offered=none witness=unregistered answer=miss transferred=0 result=PASS\n");
+    } else {
+        unsigned reason = directory_copy_check(3, source, offered);
+        if (reason != DIRECTORY_OK) return directory_refuse("reply", source, reason);
+        uint64_t held = directory_caps[3][source].rights;
+        witness = leanos_directory_resolve(registered != DIRECTORY_NO_SLOT, held);
+        if (registered != source || witness != offered)
+            fail("directory-model-decision");
+        uint64_t target = directory_free_slot(1);
+        if (target == DIRECTORY_NO_SLOT) return directory_refuse("reply", source, DIRECTORY_FULL);
+        directory_caps[1][target] = (struct directory_capability){
+            DIRECTORY_KIND_ENDPOINT, (uint8_t)offered, directory_caps[3][source].object };
+        directory_answer = target;
+        directory_resolutions++;
+        serial_puts(LEANOS_SERIAL_10_CAP " event=resolve subject=3 caller=1 name=");
+        serial_u64(name);
+        serial_puts(" directory-slot="); serial_u64(source);
+        serial_puts(" held="); directory_put_rights(held);
+        serial_puts(" offered="); directory_put_rights(offered);
+        serial_puts(" witness="); directory_put_rights(witness);
+        serial_puts(" endpoint="); serial_u64(directory_caps[1][target].object);
+        serial_puts(" client-slot="); serial_u64(target);
+        serial_puts(" result=PASS\n");
+    }
+    directory_reply_pending = 0;
+    /* Then the receive: no request is queued in this run, so C waits and the
+       caller resumes with its answer. */
+    unsigned receive = directory_capability_check(3, slot, DIRECTORY_RIGHT_RECEIVE);
+    if (receive != DIRECTORY_OK || directory_call_queued ||
+        (directory_phase != 3 && directory_phase != 5))
+        fail("directory-reply-receive-sequence");
+    directory_c_waiting = 1;
+    directory_phase = directory_phase == 3 ? 4 : 6;
+    current_subject = 1;
+    serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 slot=");
+    serial_u64(slot);
+    serial_puts(" endpoint=12 empty=1 result=PASS\n");
+    return DIRECTORY_C_RESUME_A;
+}
+
+static uint64_t directory_syscall(uint64_t number, uint64_t arg0,
+                                  uint64_t arg1, uint64_t arg2) {
+    unsigned reason;
+    directory_require_caller();
+    if (number == 7) {
+        reason = directory_capability_check(current_subject, arg2, DIRECTORY_RIGHT_RECEIVE);
+        if (reason != DIRECTORY_OK) return directory_refuse("receive", arg2, reason);
+        if (current_subject == 3 && directory_phase == 0) {
+            directory_c_waiting = 1;
+            directory_phase = 1;
+            current_subject = 2;
+            serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 slot=0 endpoint=12 empty=1 result=PASS\n");
+            return THREE_SUBJECT_C_BLOCKED;
+        }
+        if (current_subject == 3 && directory_phase == 3 && directory_call_queued) {
+            directory_call_queued = 0;
+            directory_message_word = directory_queued_name;
+            directory_message_info = DIRECTORY_MESSAGE_CALL;
+            serial_puts(LEANOS_SERIAL_10_IPC " event=receive subject=3 slot=0 endpoint=12 message=call sender=1 name=");
+            serial_u64(directory_queued_name);
+            serial_puts(" queued=0\n");
+            return directory_queued_name;
+        }
+        if (current_subject == 2 && directory_phase == 1 && !directory_c_waiting) {
+            directory_b_waiting = 1;
+            directory_phase = 2;
+            current_subject = 1;
+            serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 slot=0 endpoint=14 empty=1 result=PASS\n");
+            return THREE_SUBJECT_B_RAN;
+        }
+        fail("directory-receive-sequence");
+    }
+    if (number == 80) {
+        if (current_subject != 2) fail("directory-register-subject");
+        return directory_register(arg0, arg1, arg2);
+    }
+    if (number == 81) {
+        reason = directory_capability_check(current_subject, arg2, DIRECTORY_RIGHT_SEND);
+        if (reason != DIRECTORY_OK) return directory_refuse("call", arg2, reason);
+        if (current_subject != 1 || directory_caps[1][arg2].object != DIRECTORY_REQUEST_ENDPOINT ||
+            directory_reply_pending || directory_call_queued)
+            fail("directory-call-sequence");
+        directory_reply_pending = 1;
+        directory_reply_name = arg0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=call subject=1 slot=");
+        serial_u64(arg2);
+        serial_puts(" endpoint=12 name="); serial_u64(arg0);
+        serial_puts(" reply-capability=1");
+        if (directory_phase == 2 && directory_c_has_pending) {
+            /* C has the registration to take first; the call waits. */
+            directory_call_queued = 1;
+            directory_queued_name = arg0;
+            directory_message_word = directory_pending_word;
+            directory_message_info = directory_pending_info;
+            directory_c_has_pending = 0;
+            directory_phase = 3;
+            serial_puts(" queued=1\n");
+        } else if (directory_phase == 4 && directory_c_waiting) {
+            directory_c_waiting = 0;
+            directory_message_word = arg0;
+            directory_message_info = DIRECTORY_MESSAGE_CALL;
+            directory_phase = 5;
+            serial_puts(" receiver=3\n");
+        } else {
+            fail("directory-call-schedule");
+        }
+        current_subject = 3;
+        return THREE_SUBJECT_A_SENT;
+    }
+    if (number == 83) {
+        if (current_subject != 3 || (directory_phase != 3 && directory_phase != 5))
+            fail("directory-info-sequence");
+        return directory_message_info;
+    }
+    if (number == 82) {
+        if (current_subject != 3) fail("directory-reply-subject");
+        return directory_reply_receive(arg0, arg1, arg2);
+    }
+    if (number == 8) {
+        reason = directory_capability_check(current_subject, arg2, DIRECTORY_RIGHT_SEND);
+        if (reason != DIRECTORY_OK) return directory_refuse("send", arg2, reason);
+        if (current_subject != 1 || directory_phase != 6 || !directory_b_waiting ||
+            directory_caps[1][arg2].object != DIRECTORY_SERVER_ENDPOINT)
+            fail("directory-send-sequence");
+        directory_b_waiting = 0;
+        directory_sent_word = arg0;
+        directory_deliveries++;
+        directory_phase = 7;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 slot=");
+        serial_u64(arg2);
+        serial_puts(" endpoint=14 rights=send payload0="); serial_u64(arg0);
+        serial_puts(" receiver=2 accepted=1\n");
+        return DIRECTORY_A_SENT_B;
+    }
+    if (number == 9 && current_subject == 2 && directory_phase == 7) {
+        if (arg0 != directory_sent_word || arg1 != 0xc0dec0dec0dec0deull)
+            fail("directory-server-payload");
+        if (directory_registrations != 1 || directory_resolutions != 1 ||
+            directory_misses != 1 || directory_refusals != 1 ||
+            directory_deliveries != 1 || directory_occupied(1) != 2 ||
+            directory_caps[1][1].rights != DIRECTORY_RIGHT_SEND ||
+            directory_caps[1][1].object != DIRECTORY_SERVER_ENDPOINT)
+            fail("directory-count");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 slot=0 endpoint=14 sender=1 payload0=");
+        serial_u64(arg0);
+        serial_puts(" context=preserved exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 registrations=1 resolutions=1 misses=1 refusals=1 deliveries=1 client-rights=send\n");
+        finish(0x10);
+    }
+    fail("directory-sequence");
+}
+
+static void directory_switch(uint64_t *target, uint64_t target_owner,
+                             uint64_t saved_owner) {
+    if (current_subject == 2 && directory_phase == 1) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("directory-switch-b-owner");
+        check_initial_b_frame(target);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial role=server\n");
+        return;
+    }
+    if (current_subject == 1 && directory_phase == 2) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("directory-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=2 role=client\n");
+        return;
+    }
+    if (current_subject == 3 && (directory_phase == 3 || directory_phase == 5)) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 1) fail("directory-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        /* SAVE layout: RAX at word 14, RBX 13, RCX 12. */
+        target[14] = directory_message_word;
+        target[13] = 0;
+        target[12] = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 message=");
+        serial_puts(directory_message_info == DIRECTORY_MESSAGE_CALL ? "call" : "register");
+        serial_puts(" name="); serial_u64(directory_message_word);
+        serial_putc('\n');
+        return;
+    }
+    if (current_subject == 1 && (directory_phase == 4 || directory_phase == 6)) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 3) fail("directory-resume-a-owner");
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        target[14] = directory_answer;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1 answer=");
+        if (directory_answer == DIRECTORY_UNREGISTERED) serial_puts("miss");
+        else { serial_puts("slot-"); serial_u64(directory_answer); }
+        serial_putc('\n');
+        return;
+    }
+    if (current_subject == 2 && directory_phase == 7) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 1) fail("directory-switch-b-woken-owner");
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        target[14] = directory_sent_word;
+        target[13] = 0;
+        target[12] = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 woken=1 payload=exact\n");
+        return;
+    }
+    fail("directory-switch");
+}
+#endif
 #endif
 
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
@@ -4813,15 +5611,23 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
-#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    (void)saved_flags;
+    return console_server_syscall(number, arg0, arg1, arg2);
+#elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+    (void)saved_flags;
+    /* A plain call, not a (conditional) tail jump, so the entry-stack
+       gate's call graph sees the edge under every supported compiler. */
+    uint64_t directory_result = directory_syscall(number, arg0, arg1, arg2);
+    __asm__ volatile ("" : "+r"(directory_result));
+    return directory_result;
+#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     (void)saved_flags;
     return example_subject_syscall(number, arg0, arg1, arg2);
-#endif
-#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+#elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     (void)saved_flags;
     return fault_handler_syscall(number, arg0, arg1, arg2);
-#endif
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
 #endif
@@ -5604,11 +6410,16 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 }
 
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
-#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    console_server_switch(target, target_owner, saved_owner);
+    return;
+#elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+    directory_switch(target, target_owner, saved_owner);
+    return;
+#elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     fault_handler_switch(target, target_owner, saved_owner);
     return;
-#endif
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     three_subject_switch(target, target_owner, saved_owner);
     return;
 #endif
@@ -6392,6 +7203,10 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(integer_fault_probe_class == 1
         ? LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
         : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=console-server controls=wp,smep,smap\n");
+#elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=endpoint-directory controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
@@ -6578,6 +7393,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_selected_root_c();
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=14\n");
     enter_user(user_c_entry, user_c_stack_top);
+#elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+    check_boot_page_table_c();
+    check_directory_subject_slot();
+    directory_install();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=directory\n");
+    enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     check_boot_page_table_c();
     check_example_subject_slot();
@@ -6588,10 +7412,17 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     check_boot_page_table_c();
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    console_server_install();
+#endif
     current_subject = 3;
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=console-server\n");
+#else
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12\n");
+#endif
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     enter_user(user_a_entry, user_a_stack_top);

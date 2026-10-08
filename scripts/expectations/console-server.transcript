@@ -1,0 +1,35 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=console-server controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/CAP@ event=install console-holders=1 holder=3 server-senders=1 sender=1 model=agree result=PASS
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=console-server
+@10/CAP@ event=read subject=3 slot=0 input=empty accepted=1
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=none
+@10/CAP@ event=refuse subject=2 op=console-write slot=0 reason=empty-slot model=refused
+@10/CAP@ event=refuse subject=2 op=send slot=0 reason=empty-slot model=refused
+@10/CAP@ event=refuse subject=2 op=console-read slot=0 reason=empty-slot model=refused
+@10/IPC@ event=run subject=2 address-space=2 context=initial canaries=exact observed=refused,refused,refused result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only
+@10/CAP@ event=refuse subject=1 op=console-write slot=0 reason=wrong-kind model=refused
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=478560413032 payload1=5 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/CONSOLE@ hello
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=431316168567 payload1=5 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/CONSOLE@ world
+@10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
+@10/FINAL@ status=PASS subjects=3 console-holder=3 console-lines=2 console-bytes=12 refusals=4 deliveries=2

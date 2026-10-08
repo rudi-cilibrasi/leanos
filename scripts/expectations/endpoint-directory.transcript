@@ -1,0 +1,38 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=endpoint-directory controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/IPC@ event=subject subject=3 source=subjects/directory entry=text-start stack=2048 result=PASS
+@10/CAP@ event=install client=endpoint-12:send server=endpoint-14:send,receive,grant directory=endpoint-12:receive rights-words=16 model=agree result=PASS
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=directory
+@10/IPC@ event=block subject=3 slot=0 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial role=server
+@10/CAP@ event=register subject=2 slot=0 endpoint=14 held=send,receive,grant name=1162037327 delegated=send,grant directory-slot=1 result=PASS
+@10/IPC@ event=block subject=2 slot=0 endpoint=14 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2 role=client
+@10/IPC@ event=call subject=1 slot=0 endpoint=12 name=1162037327 reply-capability=1 queued=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 message=register name=1162037327
+@10/IPC@ event=receive subject=3 slot=0 endpoint=12 message=call sender=1 name=1162037327 queued=0
+@10/CAP@ event=resolve subject=3 caller=1 name=1162037327 directory-slot=1 held=send,grant offered=send witness=send endpoint=14 client-slot=1 result=PASS
+@10/IPC@ event=block subject=3 slot=0 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1 answer=slot-1
+@10/CAP@ event=refuse subject=1 op=receive slot=1 reason=missing-right
+@10/IPC@ event=call subject=1 slot=0 endpoint=12 name=1313820229 reply-capability=1 receiver=3
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 message=call name=1313820229
+@10/CAP@ event=resolve subject=3 caller=1 name=1313820229 directory-slot=none offered=none witness=unregistered answer=miss transferred=0 result=PASS
+@10/IPC@ event=block subject=3 slot=0 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1 answer=miss
+@10/IPC@ event=send sender=1 slot=1 endpoint=14 rights=send payload0=1196312912 receiver=2 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
+@10/IPC@ event=deliver receiver=2 slot=0 endpoint=14 sender=1 payload0=1196312912 context=preserved exact=1
+@10/FINAL@ status=PASS subjects=3 registrations=1 resolutions=1 misses=1 refusals=1 deliveries=1 client-rights=send

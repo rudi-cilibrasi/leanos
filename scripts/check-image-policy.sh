@@ -316,13 +316,26 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 # 12 reviewed copies, plus 2 in the IPC-stream resume path (save B, restore
 # A; 20 qwords each, LEANOS_IPC_STREAM_SCENARIO only), plus 5 in the
 # three-subject switches (save C + install B, save B, save A + restore C;
-# LEANOS_THREE_SUBJECT_SCENARIO only), plus 4 in the fault-handler paths
-# (save A + install handler C on delivery, save C + restore B's saved
-# continuation; LEANOS_FAULT_HANDLER_SCENARIO only).
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 23 ]] || {
+# LEANOS_THREE_SUBJECT_SCENARIO only), plus 2 in the console-server resume
+# path (save C, restore A; LEANOS_CONSOLE_SERVER_SCENARIO only), plus 4 in
+# the fault-handler paths (save A + install handler C on delivery, save C +
+# restore B's saved continuation; LEANOS_FAULT_HANDLER_SCENARIO only).
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 25 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
+# The console object (issue #472) has one emitter of its records, and in the
+# console-server image its capability table is read-only data.
+[[ "$(grep -Fc 'LEANOS_SERIAL_10_CONSOLE' boot/kernel.c)" -eq 1 ]] &&
+  sed -n '/^static void console_object_flush(void) {$/,/^}$/p' boot/kernel.c |
+    grep -Fq 'LEANOS_SERIAL_10_CONSOLE' || {
+  echo "error: console records must have exactly one emitter, console_object_flush" >&2; exit 1;
+}
+if grep -Eq '[[:space:]]console_capabilities$' <<<"$symbols"; then
+  grep -Eq '[[:space:]][rR][[:space:]]console_capabilities$' <<<"$symbols" || {
+    echo "error: console-server capability table is not read-only data" >&2; exit 1;
+  }
+fi
 frame_budget_switch="$(
   sed -n '/cmp \$0xfeed, %rax/,/^7:/p' boot/boot.S
 )"

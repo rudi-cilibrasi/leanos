@@ -647,12 +647,18 @@ address spaces:
 3. A sends one word to endpoint 12.
 4. C is woken with exactly A's words.
 
-This is plumbing for issue #472's console server, not new authority. The
-console capability and the server loop are later slices.
+That scenario adds no authority. The `console-server` image builds the same
+three subjects (it defines `LEANOS_THREE_SUBJECT_SCENARIO` and
+`LEANOS_CONSOLE_SERVER_SCENARIO`) and adds the console capability, the server
+loop and one more switch path, in which C blocks again and A resumes. See
+[the console-server page](console-server.md).
 
 C's code can also come from a separately built C subject instead of
 `boot.S`. The `example-subject` image does that with the subject template and
-build rule in [subjects.md](subjects.md) (#484).
+build rule in [subjects.md](subjects.md) (#484). The `endpoint-directory` image builds its C, the
+endpoint directory, the same way, and reuses the console-server switch path in
+which C blocks again and A resumes. See
+[the endpoint-directory page](endpoint-directory.md) (#485).
 
 ### Assigned-EDU negative variants
 

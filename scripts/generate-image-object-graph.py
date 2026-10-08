@@ -38,6 +38,9 @@ GENERATED_MODULES = (
     "VTdBootPlan",
     "IOTLB",
     "NotifyReply",
+    "UserCopyPolicy",
+    "ConsoleServer",
+    "EndpointDirectory",
     "FaultHandler",
 )
 
@@ -57,6 +60,9 @@ FAULT_DISPATCH_PARTS = (
     "VTdBootPlan",
     "IOTLB",
     "NotifyReply",
+    "UserCopyPolicy",
+    "ConsoleServer",
+    "EndpointDirectory",
     "FaultHandler",
 )
 

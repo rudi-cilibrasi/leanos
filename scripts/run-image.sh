@@ -48,10 +48,14 @@ elif [[ "$scenario" == example-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-example-subject.iso"
 elif [[ "$scenario" == fault-handler ]]; then
   default_image="build/boot/leanos-${version}-x86_64-fault-handler.iso"
+elif [[ "$scenario" == endpoint-directory ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-endpoint-directory.iso"
 elif [[ "$scenario" == three-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-three-subject.iso"
 elif [[ "$scenario" == notify-reply ]]; then
   default_image="build/boot/leanos-${version}-x86_64-notify-reply.iso"
+elif [[ "$scenario" == console-server ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-console-server.iso"
 elif [[ "$scenario" == device-service ]]; then
   device_service_scenario=1
   expectation_q35_topology=device-service

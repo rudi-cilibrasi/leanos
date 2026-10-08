@@ -299,7 +299,7 @@ The stable claims are `SC-FAULT-HANDLER-DEFAULT` and
 `tests/negative/FaultHandlerAuthorityAmplification.lean` shows the delivery
 claim cannot be weakened to give the handler the faulting subject's slots.
 
-The generated witness `leanos_fault_handler_route` (oracle adapter 22) is the
+The generated witness `leanos_fault_handler_route` (oracle adapter 25) is the
 allocation-free lowering for the `fault-handler` image's one binding, `#DE`
 from A (1) to C (3). Event 0 is a fault (vector, faulting subject, handler
 waiting) and answers the delivery word or 2, "take the image's default path";
