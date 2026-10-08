@@ -5440,7 +5440,11 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     return console_server_syscall(number, arg0, arg1, arg2);
 #elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
     (void)saved_flags;
-    return directory_syscall(number, arg0, arg1, arg2);
+    /* A plain call, not a (conditional) tail jump, so the entry-stack
+       gate's call graph sees the edge under every supported compiler. */
+    uint64_t directory_result = directory_syscall(number, arg0, arg1, arg2);
+    __asm__ volatile ("" : "+r"(directory_result));
+    return directory_result;
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     (void)saved_flags;
     return example_subject_syscall(number, arg0, arg1, arg2);
