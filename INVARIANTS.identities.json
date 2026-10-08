@@ -5342,6 +5342,240 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.Evidence.naive_named_subject_silence_unsound",
+      "display": "Evidence.naive_named_subject_silence_unsound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.Evidence.shared_capability_revocation_visible",
+      "display": "Evidence.shared_capability_revocation_visible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.capacity",
+      "display": "LowEquiv.capacity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.endpointReceive",
+      "display": "LowEquiv.endpointReceive",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.endpointSend",
+      "display": "LowEquiv.endpointSend",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.live",
+      "display": "LowEquiv.live",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.lookup",
+      "display": "LowEquiv.lookup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.lookupObject",
+      "display": "LowEquiv.lookupObject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.resolve",
+      "display": "LowEquiv.resolve",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.resolveCurrent",
+      "display": "LowEquiv.resolveCurrent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.slot",
+      "display": "LowEquiv.slot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.applyOperation_observe_of_untouched",
+      "display": "applyOperation_observe_of_untouched",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.applyOperation_silent_observe",
+      "display": "applyOperation_silent_observe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.authoritativeGate_silent_observe",
+      "display": "authoritativeGate_silent_observe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.copy_frame",
+      "display": "copy_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.endpointReceive_mailbox_other",
+      "display": "endpointReceive_mailbox_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.endpointSend_mailbox_other",
+      "display": "endpointSend_mailbox_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.finite_trace_lowEquiv",
+      "display": "finite_trace_lowEquiv",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.gate_state_cases",
+      "display": "gate_state_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.ipcCapabilitiesPublished_of_coherent",
+      "display": "ipcCapabilitiesPublished_of_coherent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.ipcDispatch_mailbox_other",
+      "display": "ipcDispatch_mailbox_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.ipc_output_consistent",
+      "display": "ipc_output_consistent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.isSilent_actor",
+      "display": "isSilent_actor",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.lookup_found_inRange",
+      "display": "lookup_found_inRange",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.map_frame",
+      "display": "map_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_dispatchIPC",
+      "display": "observe_dispatchIPC",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_eq_of",
+      "display": "observe_eq_of",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_eq_of_projections",
+      "display": "observe_eq_of_projections",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_installCopiedCapabilities",
+      "display": "observe_installCopiedCapabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_installIPC",
+      "display": "observe_installIPC",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_installVirtualMemory",
+      "display": "observe_installVirtualMemory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.resolveCurrent_ok_lookup",
+      "display": "resolveCurrent_ok_lookup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.revokeRuntimeSafe_frame",
+      "display": "revokeRuntimeSafe_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.row_getElem?",
+      "display": "row_getElem?",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.run_state",
+      "display": "run_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.silent_steps_lowEquiv",
+      "display": "silent_steps_lowEquiv",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.step_consistent_of_untouched",
+      "display": "step_consistent_of_untouched",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.system_replays",
+      "display": "system_replays",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.unmap_frame",
+      "display": "unmap_frame",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/DMAQuarantine.lean",
       "qualified": "LeanOS.DMAQuarantine.accepted_accounts_every_manifest_entry",
       "display": "accepted_accounts_every_manifest_entry",
@@ -15704,6 +15938,24 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.finite_trace_lowEquiv",
+      "display": "finite_trace_lowEquiv",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.replays_of_unwinding",
+      "display": "replays_of_unwinding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.run_replays",
+      "display": "run_replays",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/ResumablePreemption.lean",
       "qualified": "LeanOS.ResumablePreemption.accepted_tick_facts",
       "display": "accepted_tick_facts",
@@ -16041,6 +16293,12 @@
     },
     {
       "source": "LeanOS/ScheduledObservation.lean",
+      "qualified": "LeanOS.ScheduledObservation.finite_trace_lowEquiv_of_replay",
+      "display": "finite_trace_lowEquiv_of_replay",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ScheduledObservation.lean",
       "qualified": "LeanOS.ScheduledObservation.isSilent_iff",
       "display": "isSilent_iff",
       "kind": "theorem"
@@ -16055,6 +16313,18 @@
       "source": "LeanOS/ScheduledObservation.lean",
       "qualified": "LeanOS.ScheduledObservation.normalizedMappings_idem",
       "display": "normalizedMappings_idem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ScheduledObservation.lean",
+      "qualified": "LeanOS.ScheduledObservation.replaySystem_replays",
+      "display": "replaySystem_replays",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ScheduledObservation.lean",
+      "qualified": "LeanOS.ScheduledObservation.run_eq_replayRun",
+      "display": "run_eq_replayRun",
       "kind": "theorem"
     },
     {
@@ -16523,6 +16793,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.composite_nmi_then_deferred_trace_preserves",
       "display": "composite_nmi_then_deferred_trace_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.composite_observer_isolation",
+      "display": "composite_observer_isolation",
       "kind": "theorem"
     },
     {
