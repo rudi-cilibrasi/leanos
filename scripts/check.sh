@@ -219,6 +219,8 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-entry-stack-budget.sh
 ./scripts/test-asm-windows.sh
+./scripts/test-extract-generated-c.sh
+./scripts/check-oracle-doc-counts.sh
 
 ./scripts/test-entry-stack-layout.sh
 
@@ -305,7 +307,8 @@ fi
 for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
     CallerSuppliedCompositeContext TautologicalAuthoritativeContract \
     UniversalAuthoritativePreservation GenericCompositeSuccess \
-    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation; do
+    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation \
+    ReplyCapabilityAmplification CopyableReplyCapability; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
