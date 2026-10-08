@@ -428,25 +428,34 @@ def bootDirectorySubject : SubjectId := 3
 def bootServer : SubjectId := 2
 def bootClient : SubjectId := 1
 def bootEndpoint : ObjectId := 14
+def bootRequestEndpoint : ObjectId := 12
 def bootName : Name := 0x4543484f  -- "ECHO"
 def bootMissing : Name := 0x4e4f4e45  -- "NONE"
 
-/-- The boot authority: the server's root capability for endpoint 14 in its
-slot 0; two slots per subject. -/
+/-- The boot authority, four slots per subject as in the image's kernel
+table: the client's send-only capability for the directory's request
+endpoint 12 in its slot 0, the server's capability for endpoint 14 with send,
+receive and grant in its slot 0, and the directory's receive capability for
+endpoint 12 in its slot 0. -/
 def bootState : State :=
   installRoot
-    { subjects := fun s => s == 1 || s == 2 || s == 3
-      objects := fun o => o == bootEndpoint
-      kinds := fun o => if o == bootEndpoint then some .endpoint else none
-      slotCapacity := fun _ => 2
-      slots := fun _ _ => none }
-    bootServer 0 bootEndpoint .endpoint { send := true, receive := true, grant := true }
+    (installRoot
+      (installRoot
+        { subjects := fun s => s == 1 || s == 2 || s == 3
+          objects := fun o => o == bootEndpoint || o == bootRequestEndpoint
+          kinds := fun o =>
+            if o == bootEndpoint || o == bootRequestEndpoint then some .endpoint else none
+          slotCapacity := fun _ => 4
+          slots := fun _ _ => none }
+        bootClient 0 bootRequestEndpoint .endpoint { send := true })
+      bootServer 0 bootEndpoint .endpoint { send := true, receive := true, grant := true })
+    bootDirectorySubject 0 bootRequestEndpoint .endpoint { receive := true }
 
 def bootDirectory : Directory := { subject := bootDirectorySubject, entries := [] }
 
-/-- The server registers `bootName` into directory slot 0. -/
+/-- The server registers `bootName` into directory slot 1. -/
 def bootRegistered : State × Directory × Answer :=
-  register bootState bootDirectory bootServer 0 0 bootName
+  register bootState bootDirectory bootServer 0 1 bootName
 
 /-- The client resolves `bootName` into its slot 1. -/
 def bootResolved : State × Answer :=

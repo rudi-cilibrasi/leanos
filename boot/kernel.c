@@ -5069,7 +5069,7 @@ static void directory_install(void) {
             leanos_directory_resolve(0, held) != DIRECTORY_UNREGISTERED)
             fail("directory-model-rights");
     }
-    serial_puts(LEANOS_SERIAL_10_CAP " event=install client=1:send@12 server=2:send,receive,grant@14 directory=3:receive@12 rights-words=16 model=agree result=PASS\n");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install client=endpoint-12:send server=endpoint-14:send,receive,grant directory=endpoint-12:receive rights-words=16 model=agree result=PASS\n");
 }
 
 static uint64_t directory_shadow_slot(uint64_t name) {
