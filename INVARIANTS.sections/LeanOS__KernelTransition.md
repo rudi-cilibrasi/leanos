@@ -6,4 +6,5 @@ This file models the simplest possible version of the kernel: a machine that sta
 - `transition_deterministic` — Given the same state and the same command, the kernel's step always produces exactly the same outcome; there is no hidden randomness or choice.
 - `transition_preserves_wellFormed` — No matter what command arrives, stepping from a healthy state always lands in a healthy state.
 - `rejected_state_unchanged` — Whenever the kernel rejects a command, the state afterwards is exactly the state before; a refusal changes nothing.
-- `bootTransition_agrees` — The fixed-width numeric entry point actually called at boot gives, for every valid state and any command word, exactly the answer the explicit model prescribes.
+- `bootTransition_spec` — The fixed-width boot entry point accepts exactly one input pair (cold state word 0 with the initialize command 1) and rejects every other pair of words, including state words that stand for no valid state.
+- `bootTransition_agrees` — The fixed-width numeric entry point actually called at boot gives, for every model state and any command word, exactly the answer the explicit model prescribes.

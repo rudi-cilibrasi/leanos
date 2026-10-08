@@ -599,7 +599,7 @@ lean_c_modules=(
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
-  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply
 )
 lean_c_signature="$build/generated-lean-c.sha256"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
@@ -630,6 +630,10 @@ fi
 record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
+# Issue #470: the emitted C of leanos_boot_transition must still be exactly
+# the AST that LeanOS.Refinement.BootTransitionC proves refines the model.
+python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
+  leanos_boot_transition LeanOS/Refinement/BootTransitionC.lean
 # The device-service image embeds the Lean xHCI keyboard program (issue
 # #449). leanos-wifi-gen refuses a program outside its target's admitted
 # policy; the header is rewritten only when the image bytes change.
