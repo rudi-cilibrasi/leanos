@@ -167,3 +167,84 @@ like `serve`.
 - **A generic capability table.** The console table is specific to this
   scenario. Moving it into the kernel's general capability space comes with
   the subject template.
+
+## The keyboard-echo image (issue #493)
+
+The `keyboard-echo` image (`LEANOS_KEYBOARD_ECHO_SCENARIO`) shows that the
+device capability is not the console capability. It defines the
+console-server macros and `LEANOS_DEVICE_SERVICE_SCENARIO`, so it runs the
+console object and server above together with the device service of the
+`device-service` image (ADR 0022). It boots on the same q35 platform as
+`device-service`: `qemu-xhci`, a hub and a `usb-kbd`, with keys typed through
+QMP. Every other image, including `console-server` and `device-service`, is
+unchanged.
+
+In `device-service`, ring-3 subject 2 hands each key to syscall 9 and the
+kernel prints `@10/IPC@ ... echo=<key>`. That subject has no output
+authority. In `keyboard-echo` the kernel prints no echo of its own:
+
+| Subject | Device capability | Console table |
+| --- | --- | --- |
+| A (1), keyboard client | the assigned xHCI (0:2.0) | slot 0: endpoint 12, send only |
+| B (2) | none | empty |
+| C (3), echo server | none | slot 0: console; slot 1: endpoint 12, receive only |
+
+The run:
+
+1. The kernel checks the console table as in `console-server`. It then checks
+   the device capability table, a second read-only table indexed by subject.
+   That table must name exactly one device holder, A. The generated console
+   witness `leanos_console_authorize` must refuse that holder every console
+   operation, and no subject the witness lets write the console may hold a
+   device capability (`@10/CAP@ event=install-device ... model=agree`).
+2. C asks for a key (syscall 60). It holds no device capability, so the
+   request is refused without effect: `reason=no-device-capability`, result
+   `1 | 7 << 8`. C then reads the console (empty) and blocks on its receive.
+3. B makes the same three refused attempts as in `console-server`.
+4. A's direct console write through slot 0 is refused with `wrong-kind`.
+5. A asks for the next key (syscall 60). The kernel binds the embedded
+   `kbd-q35-service` program on first use, exactly as in `device-service`,
+   and resumes it in bounded slices until it yields a key.
+6. A sends the key, one byte with count 1, through slot 0. C is woken with
+   exactly A's words. It writes the byte through the console capability
+   (syscall 70) and blocks again, and A resumes. C adds no newline: the Enter
+   key is the newline, so the typed line `lean ipc` becomes one record,
+   `@10/CONSOLE@ lean ipc`.
+7. When the program ends the stream, A finishes. The kernel requires that
+   every key was delivered once and written once, that the line is complete,
+   and that there were five refusals. It then prints
+   `@10/FINAL@ status=PASS ... keys=9 deliveries=9 console-lines=1 console-bytes=9 refusals=5`.
+
+`scripts/expectations/keyboard-echo.transcript` is the exact transcript.
+The run reuses the console-server switch paths in `boot.S` and adds none.
+
+### What the keyboard-echo model proves
+
+`LeanOS/KeyboardEcho.lean` puts the `ConsoleServer` model and the
+`DeviceCapability` model side by side without changing either. Its claim is
+SC-DEVICE-CONSOLE-SEPARATION.
+
+| Theorem | Statement |
+| --- | --- |
+| `device_holder_not_console`, `console_holder_no_device` | Under the installed authority, the device holder holds no console capability, and the console holder holds no device capability. |
+| `composed_console_only_by_holder` | In the composed system, only an action of a console-capability holder changes the console trace. |
+| `composed_device_only_by_holder` | Only an invocation by a device-capability holder changes a device's state. This reuses `DeviceCapability.device_state_changes_only_by_holder`. |
+| `boot_causes_distinct` | Under the installed authority, a console byte is caused only by the server, and a device effect only by A. |
+| `server_no_device_effects` | The echo server is never granted the device, so each `bind` or `invoke` it attempts is denied and changes nothing. This reuses `DeviceCapability.ungranted_subject_no_device_effects`. |
+| `boot_output`, `boot_a_observations`, `boot_b_refused` | `KeyboardEcho.bootScript` is the booted run as a console-model script. Its console trace is exactly the typed keys. A's console write is refused and every key send is accepted. B observes three refusals. |
+
+### Keyboard-echo exclusions
+
+- **The device table is handwritten.** The kernel's device capability table
+  is checked at boot against the generated console witness. It is not
+  generated from `KeyboardEcho.bootDeviceCaps`, and there is no generated
+  device-authority export.
+- **The IPC is the console server's.** The key exchange uses the
+  console-server send and receive. It is not checked against the
+  `BlockingIPC` witness `leanos_blocking_ipc_event`, as `device-service` is.
+- **No refinement.** The run is one finite QEMU trace. The C kernel,
+  `boot.S`, the executor and the ring-3 code are not proved to implement
+  either model.
+- **`device-service` is unchanged.** Its transcript still shows the kernel's
+  `echo=` record. This image is the console path beside it, not a
+  replacement.

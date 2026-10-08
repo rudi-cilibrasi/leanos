@@ -407,6 +407,13 @@ boot_cpu_gate_end:
     movl $0x80000000, page_table_a+4(%eax)
     movl %edx, page_table_b(%eax)
     movl $0x80000000, page_table_b+4(%eax)
+#ifdef LEANOS_KEYBOARD_ECHO_SCENARIO
+    /* The keyboard-echo image (issue #493) assigns the xHCI in a
+       three-subject image; the generated plan maps the supervisor-only BAR
+       window in C as in A and B. */
+    movl %edx, page_table_c(%eax)
+    movl $0x80000000, page_table_c+4(%eax)
+#endif
     add $0x1000, %edx
     add $8, %eax
     dec %ecx
@@ -2043,7 +2050,36 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
-#if defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+#if defined(LEANOS_KEYBOARD_ECHO_SCENARIO)
+    /* Keyboard client (issue #493).  It holds the device capability for the
+       assigned keyboard and, in slot 0, a send-only endpoint capability to
+       the console server; it holds no console capability, so its direct
+       console write (70) is refused as the wrong kind (1 | 3 << 8).  It then
+       loops: the next key from the bound device program (60; 0 ends the
+       stream), sent to the server as one byte (RBX the key, RCX the count
+       1) through slot 0 (8), and finishes (61). */
+    mov $0x41, %ebx
+    xor %edx, %edx
+    mov $70, %eax
+    int $0x80
+    cmp $0x301, %rax
+    jne 9f
+1:  mov $60, %eax
+    int $0x80
+    test %rax, %rax
+    jz 2f
+    mov %rax, %rbx
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $8, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    jmp 1b
+2:  mov $61, %eax
+    int $0x80
+9:  ud2
+#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
     /* Console client.  Its only capability, slot 0, is a send-only endpoint
        capability to the server.  Naming it as a console (syscall 70) is
        refused as the wrong kind (result 1 | 3 << 8).  It then sends two
@@ -3133,7 +3169,44 @@ user_b_stack_top:
 .section .user.c.text,"ax",@progbits
 .global user_c_entry
 user_c_entry:
-#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+#if defined(LEANOS_KEYBOARD_ECHO_SCENARIO)
+    /* Echo server (issue #493).  Slot 0 is the console capability, slot 1
+       the receive end of endpoint 12; it holds no device capability, so its
+       device invocation (60) is refused (1 | 7 << 8).  It reads the console
+       once (71), then loops: a blocking receive (7) on slot 1; when woken
+       RAX holds the bytes, RBX their count (at most 8) and RCX the delivery
+       flag; it writes each byte, least significant first, to the console
+       (70).  It adds no newline: the key stream carries its own. */
+    mov $60, %eax
+    int $0x80
+    cmp $0x701, %rax
+    jne 9f
+    xor %edx, %edx
+    mov $71, %eax
+    int $0x80
+1:  mov $1, %edx
+    mov $7, %eax
+    int $0x80
+    cmp $1, %rcx
+    jne 9f
+    mov %rax, %r12
+    mov %rbx, %r13
+    cmp $8, %r13
+    jbe 2f
+    mov $8, %r13d
+2:  test %r13, %r13
+    jz 1b
+    movzbl %r12b, %ebx
+    xor %edx, %edx
+    mov $70, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    shr $8, %r12
+    dec %r13
+    jmp 2b
+9:  ud2
+#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
     /* Console server.  Slot 0 is the console capability, slot 1 the receive
        end of endpoint 12.  It reads the console once (71), then loops: a
        blocking receive (7) on slot 1; when woken RAX holds the word, RBX

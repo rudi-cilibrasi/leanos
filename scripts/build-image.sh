@@ -1241,6 +1241,15 @@ for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-b
       | tee "$build/entry-stack-$gated_scenario-final-elf.txt"
   fi
 done
+# The keyboard-echo image (issue #493) runs the device-program executor and
+# the console object on one syscall path, under its own reviewed manifest.
+if selected_final_enabled "$build/leanos-keyboard-echo.elf"; then
+  LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-keyboard-echo-callgraph.tsv \
+    LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-keyboard-echo-optimizer-optional.tsv \
+    LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-keyboard-echo-final-elf-edges.tsv" \
+    ./scripts/check-entry-stack-budget.sh "$build/leanos-keyboard-echo.elf" \
+    | tee "$build/entry-stack-keyboard-echo-final-elf.txt"
+fi
 if selected_final_enabled "$build/leanos-extended-state.elf"; then
 LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-extended-optimizer-optional.tsv \
