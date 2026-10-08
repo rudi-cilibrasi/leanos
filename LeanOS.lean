@@ -91,3 +91,4 @@ import LeanOS.QotomPCIQuarantineObservation
 import LeanOS.QotomPCIQuarantineTransition
 
 import LeanOS.QotomBootstrapABI
+import LeanOS.SmapWindowPlan

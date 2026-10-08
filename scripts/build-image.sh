@@ -1568,6 +1568,29 @@ if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
     "$build/boot-page-plan-assigned-edu.final.h"
   )
 fi
+# The SMAP copy windows are a Lean-defined instruction plan (issue #478): the
+# bytes at smap_copy_from/smap_copy_to and their internal labels must equal
+# the plan in every final ELF this lane built, and a copy of the canonical ELF
+# with clac replaced must fail the same check.
+lake exe leanos-smap-window > "$build/smap-window-plan.tsv"
+mapfile -t smap_window_elves < <(
+  find "$build" -maxdepth 1 -type f -name 'leanos*.elf' ! -name '*-prelink.elf' | sort
+)
+python3 scripts/check-smap-window.py "$build/smap-window-plan.tsv" \
+  "${smap_window_elves[@]}" | tee "$build/smap-window.txt"
+if [[ -f "$build/leanos.elf" ]]; then
+  smap_window_negative="$build/smap-window-negative.elf"
+  cp "$build/leanos.elf" "$smap_window_negative"
+  python3 scripts/check-smap-window.py --corrupt-clac "$build/smap-window-plan.tsv" \
+    "$smap_window_negative"
+  if python3 scripts/check-smap-window.py "$build/smap-window-plan.tsv" \
+      "$smap_window_negative" >"$smap_window_negative.log" 2>&1 ||
+      ! grep -q 'smap_copy_from bytes .* differ from the plan' "$smap_window_negative.log"; then
+    echo "error: SMAP window check accepted an ELF without clac" >&2
+    exit 1
+  fi
+  rm -f "$smap_window_negative"
+fi
 ((${#selected_checksum_paths[@]} > 0)) || {
   echo "error: selected evidence produced no checksum inputs" >&2
   exit 1

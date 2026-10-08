@@ -317,6 +317,19 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
   fi
 done
 
+# A SMAP copy window without clac (#478) reaches popfq and ret with the AC
+# window open, so the plan check rejects it.
+if lake env lean tests/negative/SmapWindowWithoutClac.lean >"$negative_log" 2>&1; then
+  echo "error: a SMAP window without clac passed the plan check" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/SmapWindowWithoutClac.lean' "$negative_log" ||
+    ! grep -Fq 'acSafe (copyBody.erase Instr.clac) = true' "$negative_log"; then
+  echo "error: SMAP window fixture lacked its expected diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 if lake env lean tests/negative/PageFaultAgreementWriteInstructionContainment.lean \
     >"$negative_log" 2>&1; then
   echo "error: impossible write/instruction page fault unexpectedly contained" >&2
