@@ -6,15 +6,29 @@ translation is enabled. It is a Lean model, a host-only generator, and a
 generated scalar activation boundary linked into every image. The boot image
 maps the unit's MMIO window, constructs the generated deny-all tables from
 scrubbed reserved frames, and enables translation in a fixed fail-closed
-order before CPL3; it does not enable an assigned device, and it establishes
-no refinement correspondence to generated C, boot assembly, QEMU, firmware,
-PCIe, or physical hardware.
+order before CPL3. Production images stay deny-all. Two dedicated images
+install one assigned grant each (see "Assigned images" below). None of this
+establishes a refinement correspondence to generated C, boot assembly, QEMU,
+firmware, PCIe, or physical hardware.
 
 This is the second issue in the IOMMU/device-assignment set. It consumes the
 static device-domain model `LeanOS.IOMMU` (see
 [iommu-confinement.md](iommu-confinement.md)) and produces a checked, still
-deny-all remapping base. Enabling an assigned device and dynamic revocation
-remain later issues.
+deny-all remapping base. Dynamic revocation remains a later issue.
+
+## Assigned images
+
+| Image | Requester | Model authority | Installed mapping | Evidence class |
+| --- | --- | --- | --- | --- |
+| q35 production (every scenario image) | none | `IOMMU.emptyState` (deny-all) | no context entry | Tested: guest read-back of the installed tables at activation and at every CPL3 gate |
+| `assigned-edu-inventory` | 16 (EDU, 00:02.0) | `VTdBootPlan.assignedEDUState`: one read-only and one write-only page | two directional leaves over linker-owned buffers | Tested: the same read-back, plus the scalar authority and fault exports and the guest's EDU transfer and fault records |
+| `device-service` | 16 (qemu-xhci, 00:02.0) | `VTdBootPlan.deviceServiceState` (`deviceServiceState_shape`, `deviceServiceTransfer_window`): one read/write grant of four model pages | four read/write leaves at IOVA 16 KiB over the executor scratch | Tested: the same read-back, and the exact `device-service` transcript |
+
+The model theorems constrain what the generator emits. That the installed
+tables match the emitted words is checked by the guest's read-back, which is
+tested evidence, not proof. The hardware's table walk, IOTLB behaviour and
+device obedience stay unproved. See the per-image-class statement in
+[security-claims.md](security-claims.md).
 
 ## Pinned unit configuration
 
