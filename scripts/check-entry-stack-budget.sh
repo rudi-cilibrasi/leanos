@@ -97,11 +97,15 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
     if [[ "${usage_kind[$function_name]}" != static ]]; then
       # The fixed scalar page-fault ABIs use stack-passed arguments on AMD64,
       # which GCC labels dynamic,bounded even though their reported bounds are
-      # exact and the generated paths perform no object allocation.
+      # exact and the generated paths perform no object allocation. The
+      # frame-budget publication check calls the seven-word
+      # leanos_boot_publish_authority export, whose seventh word is likewise
+      # pushed (issue #503).
       [[ "${usage_kind[$function_name]}" == dynamic,bounded &&
          ( "$function_name" == authorize_page_fault_snapshot ||
            "$function_name" == leanos_authorize_page_fault_snapshot ||
-           "$function_name" == leanos_page_fault_dispatch_transition ) ]] || {
+           "$function_name" == leanos_page_fault_dispatch_transition ||
+           "$function_name" == frame_budget_require_publication_authority ) ]] || {
         echo "error: path=$path function=$function_name stack-usage=${usage_kind[$function_name]}" >&2
         exit 1
       }
