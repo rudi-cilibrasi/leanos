@@ -165,3 +165,5 @@ This file is the kernel's master security contract: each theorem here independen
 - `notify_reply_budget` — A program's reply slots change only through calls to its own endpoint or its own replies, so no other program can use them up or clear them.
 - `console_integrity` — The security-claim contract SC-CONSOLE-INTEGRITY: a program holding neither the console permission nor a connection to the console server cannot change what the console prints.
 - `console_confidentiality` — The security-claim contract SC-CONSOLE-CONFIDENTIALITY: such a program learns nothing about what was typed on the console.
+- `endpoint_directory_no_amplification` — The security-claim contract SC-DIRECTORY-NO-AMPLIFICATION: a name directory that weakens its answers to at most "send" never gives any program more power than the directory itself held, and every permission it hands out is a copy of the one it holds under that name.
+- `endpoint_directory_miss_transfers_nothing` — The security-claim contract SC-DIRECTORY-MISS: asking a name directory for an unregistered name gets the "unregistered" answer, and any "not found" answer hands over nothing.

@@ -40,6 +40,7 @@ GENERATED_MODULES = (
     "NotifyReply",
     "UserCopyPolicy",
     "ConsoleServer",
+    "EndpointDirectory",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -60,6 +61,7 @@ FAULT_DISPATCH_PARTS = (
     "NotifyReply",
     "UserCopyPolicy",
     "ConsoleServer",
+    "EndpointDirectory",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"

@@ -18,6 +18,7 @@ import LeanOS.IOTLB
 import LeanOS.NotifyReply
 import LeanOS.UserCopyPolicy
 import LeanOS.ConsoleServer
+import LeanOS.EndpointDirectory
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -78,7 +79,8 @@ def adapters : List AdapterSpec := [
   adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3,
   adapter "NotifyReply.event" 21 "leanos_notify_reply_event" 4,
   adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6,
-  adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2]
+  adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
+  adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -138,6 +140,10 @@ private def userCopy (id : String) (flags start length : UInt64) : Vector :=
 private def consoleAuthorize (id : String) (subject operation : UInt64) : Vector :=
   { id, adapter := "ConsoleServer.authorize", words := [subject, operation],
     expected := ConsoleServer.consoleAuthorize subject operation }
+
+private def directoryResolve (id : String) (registered held : UInt64) : Vector :=
+  { id, adapter := "EndpointDirectory.resolve", words := [registered, held],
+    expected := EndpointDirectory.directoryResolve registered held }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -489,6 +495,18 @@ def consoleAuthorizeVectors : List Vector := [
   consoleAuthorize "console-authorize.unknown-operation" 3 6,
   consoleAuthorize "console-authorize.maximum-words" 0xffffffffffffffff
     0xffffffffffffffff]
+
+/-- Endpoint-directory rights decisions (#485): an unregistered name, then a
+registered name over every endpoint-rights word (send 1, receive 2, grant 4,
+revoke 8), then words outside the four bits. -/
+def directoryResolveVectors : List Vector :=
+  [directoryResolve "directory-resolve.unregistered" 0 0,
+   directoryResolve "directory-resolve.unregistered-full-rights" 0 15] ++
+  (List.range 16).map (fun held =>
+    directoryResolve s!"directory-resolve.held-{held}" 1 held.toUInt64) ++
+  [directoryResolve "directory-resolve.held-out-of-range" 1 16,
+   directoryResolve "directory-resolve.maximum-words" 0xffffffffffffffff
+     0xffffffffffffffff]
 
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
@@ -844,9 +862,9 @@ def vectors : List Vector := [
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
-    consoleAuthorizeVectors
+    consoleAuthorizeVectors ++ directoryResolveVectors
 
-theorem corpus_shape : vectors.length = 481 := by decide
+theorem corpus_shape : vectors.length = 501 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -875,7 +893,12 @@ theorem user_copy_policy_vectors_agree :
 
 /-- Oracle indices 462--480 are the console-server authority corpus (#472). -/
 theorem hosted_console_authorize_vectors_exact :
-    vectors.drop 462 = consoleAuthorizeVectors := by
+    (vectors.drop 462).take consoleAuthorizeVectors.length = consoleAuthorizeVectors := by
+  rfl
+
+/-- Oracle indices 481--500 are the endpoint-directory rights corpus (#485). -/
+theorem hosted_directory_resolve_vectors_exact :
+    vectors.drop 481 = directoryResolveVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -904,7 +927,7 @@ the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
-        userCopyPolicyVectors ++ consoleAuthorizeVectors := by
+        userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

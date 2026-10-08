@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The subject build rule (#484): the template and the example build into a
-# slot object, and every negative fixture under subjects/fixtures is rejected
-# at build time with the expected reason.
+# The subject build rule (#484): the template, the example and the endpoint
+# directory (#485) each build into a slot object, and every negative fixture
+# under subjects/fixtures is rejected at build time with the expected reason.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,7 +10,7 @@ cc="${LEANOS_CC:-gcc}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-for subject in template example; do
+for subject in template example directory; do
   ./scripts/build-subject.sh --cc "$cc" --slot c --output "$work/$subject.o" \
     "subjects/$subject"
   symbols="$(nm "$work/$subject.o")"
@@ -72,4 +72,4 @@ count="$(find subjects/fixtures -mindepth 1 -maxdepth 1 -type d | wc -l)"
   echo "error: subjects/fixtures has $count fixtures, the test covers $seen" >&2; exit 1;
 }
 
-printf 'build-subject\tPASS\tsubjects=2\tnegative-fixtures=%s\n' "$seen"
+printf 'build-subject\tPASS\tsubjects=3\tnegative-fixtures=%s\n' "$seen"

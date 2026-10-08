@@ -54,4 +54,33 @@ __attribute__((noreturn)) static inline void leanos_block_forever(uint64_t endpo
         (void)leanos_receive_word(endpoint);
 }
 
+/* The endpoint-directory image (#485, docs/endpoint-directory.md).  There the
+   last argument of receive is a slot of the subject's own capability table,
+   and a received message is described by leanos_message_info: its kind, and
+   for a registration the directory slot the kernel installed the delegated
+   capability in and that capability's rights (send 1, receive 2, grant 4,
+   revoke 8). */
+#define LEANOS_SYS_REPLY_RECEIVE 82u
+#define LEANOS_SYS_MESSAGE_INFO 83u
+#define LEANOS_MESSAGE_CALL 1u
+#define LEANOS_MESSAGE_REGISTER 2u
+#define LEANOS_NO_SLOT 0xffu
+#define LEANOS_MESSAGE_OP(info) ((info) & 0xffu)
+#define LEANOS_MESSAGE_SLOT(info) (((info) >> 8) & 0xffu)
+#define LEANOS_MESSAGE_RIGHTS(info) (((info) >> 16) & 0xffu)
+
+/* The kind (and registration details) of the message last received. */
+static inline uint64_t leanos_message_info(void) {
+    return leanos_syscall(LEANOS_SYS_MESSAGE_INFO, 0, 0, 0);
+}
+
+/* Answer the pending call through its reply capability with a copy of the
+   capability in `source`, attenuated to `offered` (LEANOS_NO_SLOT and 0 for
+   no capability), then block on the receive capability in `slot` until the
+   next message; its word comes back in RAX. */
+static inline uint64_t leanos_reply_receive(uint64_t source, uint64_t offered,
+                                            uint64_t slot) {
+    return leanos_syscall(LEANOS_SYS_REPLY_RECEIVE, source, offered, slot);
+}
+
 #endif

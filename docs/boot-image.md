@@ -655,7 +655,10 @@ loop and one more switch path, in which C blocks again and A resumes. See
 
 C's code can also come from a separately built C subject instead of
 `boot.S`. The `example-subject` image does that with the subject template and
-build rule in [subjects.md](subjects.md) (#484).
+build rule in [subjects.md](subjects.md) (#484). The `endpoint-directory` image builds its C, the
+endpoint directory, the same way, and reuses the console-server switch path in
+which C blocks again and A resumes. See
+[the endpoint-directory page](endpoint-directory.md) (#485).
 
 ### Assigned-EDU negative variants
 

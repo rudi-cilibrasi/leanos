@@ -34,6 +34,7 @@
     "LeanOS/DeviceProgramConfinement.lean",
     "LeanOS/DirectPortContainment.lean",
     "LeanOS/DirectPortIO.lean",
+    "LeanOS/EndpointDirectory.lean",
     "LeanOS/EndpointIPC.lean",
     "LeanOS/Example.lean",
     "LeanOS/ExtendedState.lean",

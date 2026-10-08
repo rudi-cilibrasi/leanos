@@ -339,6 +339,20 @@ if ! grep -Fq 'tests/negative/ConsoleCapabilityToSecondSubject.lean' "$negative_
   exit 1
 fi
 
+# An endpoint directory that hands out receive rights (#485) does not attenuate
+# to send-only, so the no-amplification claim cannot be instantiated for it.
+if lake env lean tests/negative/AmplifyingEndpointDirectory.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: directory no-amplification accepted a receive-granting directory" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/AmplifyingEndpointDirectory.lean' "$negative_log" ||
+    ! grep -Fq 'AttenuatesToSend sendAndReceive' "$negative_log"; then
+  echo "error: amplifying-directory fixture lacked its expected diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 # A SMAP copy window without clac (#478) reaches popfq and ret with the AC
 # window open, so the plan check rejects it.
 if lake env lean tests/negative/SmapWindowWithoutClac.lean >"$negative_log" 2>&1; then
