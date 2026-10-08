@@ -127,14 +127,19 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("kbd", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
-      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32 idle.toUInt32 false),
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32 idle.toUInt32 false false),
+   ("kbd-service", do
+      let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60
+      let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
+      let trace := (← IO.getEnv "LEANOS_KBD_TRACE").isSome
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32 idle.toUInt32 true trace),
    ("kbd-q35-service", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 10
-      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 0 true),
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 0 true false),
    ("kbd-q35", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 10
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
-      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 idle.toUInt32 false),
+      return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 idle.toUInt32 false false),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir

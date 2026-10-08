@@ -1,0 +1,20 @@
+{
+  "closed_root_return_audited": true,
+  "completed_returns_before_terminal": 2,
+  "ordinary_calls_after_close": 1,
+  "ordinary_saved_gprs": 15,
+  "page_fault_calls_after_close": 1,
+  "page_fault_saved_gprs": 15,
+  "recoverable_user_exception": 14,
+  "schema": "leanos-qotom-entry-integration-audit-v1",
+  "stac_clac_reachable": false,
+  "terminal_exception_vectors": [
+    2,
+    6,
+    8,
+    13
+  ],
+  "terminal_user_exception": 6,
+  "user_entries": 2,
+  "user_validated_gprs": 15
+}

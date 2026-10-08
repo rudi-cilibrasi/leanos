@@ -9,6 +9,32 @@
  */
 
 static uint64_t qotom_blocking_step;
+/* The lab harness hosting the stream is absent from the canonical
+   device-service kernel variant, which the same overlay also builds. */
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && !defined(LEANOS_DEVICE_SERVICE_SCENARIO)
+#define QOTOM_IPC_DEVICE_STREAM 1
+#endif
+#ifdef QOTOM_IPC_DEVICE_STREAM
+/* Device stream continuation (issue #449 stage 3): after the fixed first
+   exchange, subject 1 repeatedly asks the kernel-hosted keyboard program for
+   one key (syscall 60) and sends it over endpoint 10 (syscall 8); subject 2
+   blocks (7) and echoes each delivery (9). Every edge is checked against the
+   generated cyclic witness `leanos_blocking_ipc_event`, whose four edges
+   repeat by `BlockingIPC.keyCycle_returns`; syscall 61 ends the stream. */
+static void lab_stream_bind(uint64_t *leaf_table);
+static uint64_t lab_stream_next_key(void);
+#define QOTOM_STREAM_EVENT(event, phase, current, space, sender)               \
+    ((uint64_t)(event) + (uint64_t)(phase) * 0x100u +                        \
+     (uint64_t)(current) * 0x10000u + (uint64_t)(space) * 0x100000000ull +   \
+     (uint64_t)(sender) * 0x1000000000000ull)
+static uint64_t qotom_stream_sent0, qotom_stream_events;
+static void qotom_stream_key_name(uint64_t key) {
+    if (key == '\n') serial_puts("enter");
+    else if (key == ' ') serial_puts("space");
+    else if (key > 0x20 && key < 0x7f) serial_putc((char)key);
+    else serial_u64(key);
+}
+#endif
 static uint64_t qotom_capability_step;
 static uint64_t qotom_copy_step;
 static uint64_t qotom_saved_a[20];
@@ -253,9 +279,77 @@ static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
         if(got!=oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected)
             qotom_blocking_fail("qotom-blocking-model-delivery");
         serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
+#ifdef QOTOM_IPC_DEVICE_STREAM
+        qotom_blocking_step=5;
+        saved[14]=0;
+        saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        return (uint64_t)page_map_level_4_b;
+#else
         serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS blocks=1 wakes=1 deliveries=1\n");
         for(;;)__asm__ volatile("cli; hlt");
+#endif
     }
+#ifdef QOTOM_IPC_DEVICE_STREAM
+    if(current_subject==2 && number==7 && qotom_blocking_step==5) {
+        if(saved[13]!=0 || saved[12]!=0 || saved[11]!=0 ||
+           leanos_blocking_ipc_event(0,1,2)!=QOTOM_STREAM_EVENT(1,1,1,1,0))
+            qotom_blocking_fail("qotom-stream-block");
+        qotom_copy_frame(qotom_saved_b,saved);
+        qotom_copy_frame(saved,qotom_saved_a);
+        saved[14]=0;
+        qotom_blocking_step=6;
+        current_subject=1;
+        qotom_entry_subject_root=(uint64_t)page_map_level_4_a;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 round=");
+        serial_u64(qotom_stream_events);serial_putc('\n');
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=2\n");
+        return qotom_entry_subject_root;
+    }
+    if(current_subject==1 && number==60 && qotom_blocking_step==6) {
+        saved[14]=lab_stream_next_key();
+        saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        return (uint64_t)page_map_level_4_a;
+    }
+    if(current_subject==1 && number==8 && qotom_blocking_step==6) {
+        if(saved[13]==0 || saved[13]>0xff || saved[12]!=0 || saved[11]!=0 ||
+           leanos_blocking_ipc_event(1,2,1)!=QOTOM_STREAM_EVENT(2,2,1,1,0) ||
+           leanos_blocking_ipc_event(2,3,1)!=QOTOM_STREAM_EVENT(3,3,2,2,0))
+            qotom_blocking_fail("qotom-stream-send");
+        qotom_stream_sent0=saved[13];
+        qotom_copy_frame(qotom_saved_a,saved);
+        qotom_copy_frame(saved,qotom_saved_b);
+        saved[14]=qotom_stream_sent0;
+        saved[13]=0;
+        saved[12]=1;
+        qotom_blocking_step=7;
+        current_subject=2;
+        qotom_entry_subject_root=(uint64_t)page_map_level_4_b;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=10 payload0=");
+        serial_u64(qotom_stream_sent0);serial_puts(" payload1=0 accepted=1\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 woken=1\n");
+        return qotom_entry_subject_root;
+    }
+    if(current_subject==2 && number==9 && qotom_blocking_step==7) {
+        if(saved[13]!=qotom_stream_sent0 || saved[12]!=0 || saved[11]!=1 ||
+           leanos_blocking_ipc_event(3,4,2)!=QOTOM_STREAM_EVENT(4,4,2,2,1))
+            qotom_blocking_fail("qotom-stream-deliver");
+        ++qotom_stream_events;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 sender=1 exact=1 echo=");
+        qotom_stream_key_name(qotom_stream_sent0);serial_putc('\n');
+        qotom_blocking_step=5;
+        saved[14]=0;
+        saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        return (uint64_t)page_map_level_4_b;
+    }
+    if(current_subject==1 && number==61 && qotom_blocking_step==6) {
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS events=");
+        serial_u64(qotom_stream_events);
+        serial_puts(" blocks=");serial_u64(qotom_stream_events+2);
+        serial_puts(" deliveries=");serial_u64(qotom_stream_events+1);
+        serial_putc('\n');
+        for(;;)__asm__ volatile("cli; hlt");
+    }
+#endif
     qotom_blocking_fail("qotom-blocking-syscall-sequence");
 }
 
@@ -384,6 +478,9 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         pre_admission_fail("qotom-platform-profile");
     }
     serial_puts("LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=PASS cpl3-authority=1 vtd=not-applicable assigned-edu=not-applicable terminal=serial-final-halt\n");
+#ifdef QOTOM_IPC_DEVICE_STREAM
+    lab_stream_bind(qotom_closed_root.pt);
+#endif
     serial_puts("LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 subjects=2 interrupts=masked timer-gate=absent pic=masked copy-in=readonly-root copy-out=writable-root cpl3-authority=1\n");
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     qotom_entry_start((uint64_t)page_map_level_4_b,qotom_entry_closed_root,
