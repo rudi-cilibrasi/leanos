@@ -239,6 +239,13 @@
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_NOTIFY_REPLY_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-notify-reply.h\""
+      ],
+      "kernel-keyboard-echo": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-keyboard-echo.h\""
       ]
     },
     "boot_objects": {
@@ -534,6 +541,14 @@
         "definitions": [
           "-DLEANOS_IPC_STREAM_SCENARIO=1",
           "-DLEANOS_NOTIFY_REPLY_SCENARIO=1"
+        ]
+      },
+      "boot-keyboard-echo": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
+          "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1"
         ]
       }
     },
@@ -913,6 +928,14 @@
         "final_link": true,
         "prelink_plan": "boot-page-plan-notify-reply.h",
         "plan_equal_to": null
+      },
+      "leanos-keyboard-echo": {
+        "boot": "boot-keyboard-echo",
+        "kernel": "kernel-keyboard-echo",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-keyboard-echo.h",
+        "plan_equal_to": null
       }
     },
     "policy_fixtures": {
@@ -1264,6 +1287,13 @@
         "policy": {
           "key": "notify-reply"
         }
+      },
+      "leanos-keyboard-echo": {
+        "iso": "leanos-@VERSION@-x86_64-keyboard-echo.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "keyboard-echo"
+        }
       }
     },
     "plan_checks": [
@@ -1572,6 +1602,13 @@
         "expected": "boot-page-plan-notify-reply.h",
         "final": "boot-page-plan-notify-reply.final.h",
         "description": "notify-reply"
+      },
+      {
+        "image": "leanos-keyboard-echo",
+        "check": "validate",
+        "expected": "boot-page-plan-keyboard-echo.h",
+        "final": "boot-page-plan-keyboard-echo.final.h",
+        "description": "keyboard-echo"
       }
     ],
     "disassemblies": [
@@ -3365,6 +3402,34 @@
         "SC-NOTIFY-REPLY-BUDGET"
       ],
       "does_not_prove": "Not a refinement of the SC-NOTIFY-REPLY rows: one finite QEMU run whose kernel checks each step against the generated Lean witness; the C kernel, boot.S, compiler and QEMU stay trusted"
+    },
+    "keyboard-echo": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/keyboard-echo.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "120",
+        "image": "leanos-@VERSION@-x86_64-keyboard-echo.iso",
+        "elf": "leanos-keyboard-echo.elf",
+        "serial_log": "keyboard-echo.serial.log",
+        "scenario": "keyboard-echo",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DEVICE-CONSOLE-SEPARATION",
+        "SC-CONSOLE-INTEGRITY",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run with QMP-typed keys and no console input; the kernel checks console decisions and the device/console holder split against the generated console witness, but the device capability table is handwritten, and the C kernel, boot.S, the executor, compiler and QEMU stay trusted"
     }
   }
 }

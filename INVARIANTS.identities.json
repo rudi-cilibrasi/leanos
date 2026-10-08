@@ -14012,6 +14012,78 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.boot_a_observations",
+      "display": "boot_a_observations",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.boot_b_refused",
+      "display": "boot_b_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.boot_causes_distinct",
+      "display": "boot_causes_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.boot_output",
+      "display": "boot_output",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.composed_console_only_by_holder",
+      "display": "composed_console_only_by_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.composed_device_only_by_holder",
+      "display": "composed_device_only_by_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.console_holder_no_device",
+      "display": "console_holder_no_device",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.device_holder_not_console",
+      "display": "device_holder_not_console",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.device_holder_write_refused",
+      "display": "device_holder_write_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.run_output_without_console",
+      "display": "run_output_without_console",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.server_no_device_effects",
+      "display": "server_no_device_effects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.step_output_of_not_console",
+      "display": "step_output_of_not_console",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/LifetimeIssuer.lean",
       "qualified": "LeanOS.LifetimeIssuer.decode_encode",
       "display": "decode_encode",
@@ -16829,6 +16901,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.device_capability_confinement",
       "display": "device_capability_confinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.device_console_separation",
+      "display": "device_console_separation",
       "kind": "theorem"
     },
     {

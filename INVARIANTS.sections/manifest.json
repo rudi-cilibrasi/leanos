@@ -59,6 +59,7 @@
     "LeanOS/KernelRootReturn.lean",
     "LeanOS/KernelTransition.lean",
     "LeanOS/KernelUserRoot.lean",
+    "LeanOS/KeyboardEcho.lean",
     "LeanOS/LifetimeIssuer.lean",
     "LeanOS/MemoryLifecycle.lean",
     "LeanOS/NotifyReply.lean",
