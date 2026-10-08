@@ -74,6 +74,17 @@ SECTIONS
   __user_b_stack_start = .;
   .user_b_bss : { KEEP(*(.user.b.bss)) }
   __user_b_stack_end = .;
+  /* Third subject C (issue #472).  Only the three-subject image assembles
+     .user.c.*; every other image links these as empty ranges at the image
+     end, so its layout is unchanged. */
+  . = ALIGN(4K);
+  __user_c_text_start = .;
+  .user_c_text : { KEEP(*(.user.c.text)) }
+  __user_c_text_end = .;
+  . = ALIGN(4K);
+  __user_c_stack_start = .;
+  .user_c_bss : { KEEP(*(.user.c.bss)) }
+  __user_c_stack_end = .;
   . = ALIGN(4K);
   __boot_image_end = .;
   /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) }

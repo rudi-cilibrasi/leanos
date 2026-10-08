@@ -606,6 +606,50 @@ guard-mapped double-fault negative is a selected test-policy deviation: its one
 guard leaf is expected live by the variant checker but is not part of the normal
 accepted boot plan.
 
+### Third subject
+
+Issue #472 needs a third ring-3 subject for the console server. The image has
+a fixed subject set, not a dynamic count:
+
+- A and B are always present.
+- A third subject C exists only in the `three-subject` image, which defines
+  `LEANOS_THREE_SUBJECT_SCENARIO`.
+
+That image adds four things, all scenario-only:
+
+- C's text and stack sections;
+- C's root, ancestor, and leaf tables, which continue the CPU page-table
+  block after B's;
+- a saved context bank for C;
+- C's switch paths in `isr80`.
+
+Every other image links C's section bounds as empty ranges at the image end.
+`check-image-policy.sh` requires that, so those images keep their two-subject
+layout, objects, and transcripts.
+
+The plan model carries C as an optional third root and ancestor path:
+
+- An input with neither is a two-subject input and compiles as before.
+- An input with only one of them is rejected.
+- A leaf in an unconfigured space is rejected.
+- A third root equal to A's or B's is rejected.
+
+The generator detects C's tables in the prelinked ELF and passes four more
+addresses. It then emits a third array, `leanos_boot_plan_c`. The guest walker
+checks C's complete live hierarchy against that array before C first enters
+CPL3. The one `.pageTables` and `.embeddedUsers` reservations still cover
+every subject, because C's tables and sections extend the same contiguous
+blocks. The `three-subject` scenario runs the three subjects in their own
+address spaces:
+
+1. C blocks on endpoint 12.
+2. B runs once from its initial context.
+3. A sends one word to endpoint 12.
+4. C is woken with exactly A's words.
+
+This is plumbing for issue #472's console server, not new authority. The
+console capability and the server loop are later slices.
+
 ### Assigned-EDU negative variants
 
 The assigned-EDU scenario declares its extra boot fixtures in
@@ -616,6 +660,26 @@ any rows. Both consumers preserve declaration order. The image-family cache
 includes the manifest and query source, so changing a declaration invalidates
 the cached family. CI runs the suite whenever its parent assigned-EDU image is
 present; individual negative images remain mandatory to the runner.
+
+An entry may also carry `stage`. It is `pre-assignment` by default: the
+variant must fail before the assigned function is enabled, so its log has no
+passing `VTD-ASSIGN` record. A `post-assignment` variant (#482) must fail only
+after that record passed, which means only after the assigned translation
+tables are live. Two post-assignment variants turn on memory decode and bus
+mastering for the SATA controller, a function outside the VT-d plan, once the
+EDU grant is live:
+
+- `unplanned-bus-master` is rejected at the outbound CPL3 gate as
+  `dma-live-command`, because the Command word differs from the boot record.
+- `unplanned-recorded-command` also forges the boot record to agree with the
+  new Command word, so only the plan-membership check can reject it, as
+  `dma-live-assignment-command`.
+
+The `device-service` image has the same two fixtures, as the
+`device-service-unplanned-*` scenarios. Their `device-service-rejection`
+runner requires exactly one passing `VTD-ASSIGN` record and the exact terminal
+reason. With the plan-membership check removed, the recorded-command variant
+reaches CPL3 and binds the xHCI service with SATA bus mastering still enabled.
 
 This list describes executable boot variants. The separate `negative_evidence`
 field describes retained fixture-directory reports and may remain null when a

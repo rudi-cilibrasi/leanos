@@ -40,7 +40,11 @@ def main() -> None:
     manifest = json.loads((ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
     variants = manifest["scenarios"]["assigned-edu-inventory"]["negative_variants"]
     result = run(manifest, "negative-variants", "assigned-edu-inventory")
-    expected = "".join("\t".join(row[k] for k in ("fixture", "macro", "reason")) + "\n" for row in variants)
+    expected = "".join(
+        "\t".join(row[k] for k in ("fixture", "macro", "reason"))
+        + "\t" + row.get("stage", "pre-assignment") + "\n"
+        for row in variants
+    )
     if result.returncode or result.stdout != expected:
         raise AssertionError(f"negative variants query failed: {result}")
     for value, diagnostic in (
@@ -50,6 +54,8 @@ def main() -> None:
         ([dict(variants[0], macro="-DUNTRUSTED")], "invalid negative variant fields"),
         ([dict(variants[0], reason="bad\tfield")], "invalid negative variant fields"),
         ([variants[0], variants[0]], "repeats negative fixture"),
+        ([dict(variants[0], stage="post-cpl3")], "invalid negative variant stage"),
+        ([dict(variants[0], extra="x")], "malformed negative variant"),
     ):
         changed = json.loads(json.dumps(manifest))
         changed["scenarios"]["assigned-edu-inventory"]["negative_variants"] = value

@@ -92,6 +92,9 @@ jobs:
       - name: Test aggregate-check timing evidence contract
         run: python3 scripts/test-check-timing.py
 
+      - name: Test proof-time budget contract
+        run: python3 scripts/test-proof-time-budget.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
@@ -178,7 +181,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: aggregate-check-timing-${{ github.sha }}
-          path: build/ci/check-*.tsv
+          path: |
+            build/ci/check-*.tsv
+            build/ci/lean-module-times.tsv
           if-no-files-found: warn
           retention-days: 14
 
