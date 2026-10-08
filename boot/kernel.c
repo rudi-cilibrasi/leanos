@@ -4835,7 +4835,10 @@ static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
         serial_putc('\n');
         finish(0x10);
     }
-    return console_server_syscall(number, arg0, arg1, arg2);
+    /* A real call for the same reason as in syscall_handler. */
+    uint64_t result = console_server_syscall(number, arg0, arg1, arg2);
+    __asm__ volatile ("" ::: "memory");
+    return result;
 }
 #endif
 
@@ -4997,7 +5000,14 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
 #ifdef LEANOS_KEYBOARD_ECHO_SCENARIO
     (void)saved_flags;
-    return keyboard_echo_syscall(number, arg0, arg1, arg2);
+    {
+        /* A real call: Clang may otherwise lower this to a conditional tail
+           jump, which the entry-stack gate's call/jmp edge extraction does
+           not follow. */
+        uint64_t result = keyboard_echo_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" ::: "memory");
+        return result;
+    }
 #endif
 #ifdef LEANOS_CONSOLE_SERVER_SCENARIO
     (void)saved_flags;
