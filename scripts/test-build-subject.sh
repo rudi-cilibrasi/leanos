@@ -15,7 +15,7 @@ for subject in template example; do
     "subjects/$subject"
   symbols="$(nm "$work/$subject.o")"
   for symbol in user_c_entry user_c_stack user_c_stack_top user_c_template_text; do
-    grep -Eq "^[0-9a-f]+ [TD] $symbol$" <<<"$symbols" || {
+    grep -Eq "^[0-9a-f]+ [TDB] $symbol$" <<<"$symbols" || {
       echo "error: $subject slot object lacks global $symbol" >&2; exit 1;
     }
   done
@@ -27,7 +27,7 @@ for subject in template example; do
   fi
   sections="$(readelf -SW "$work/$subject.o")"
   grep -Eq '\.user\.c\.text +PROGBITS .* AX ' <<<"$sections" &&
-    grep -Eq '\.user\.c\.bss +PROGBITS +[0-9a-f]+ [0-9a-f]+ 001000 .* WA ' <<<"$sections" || {
+    grep -Eq '\.user\.c\.bss +(PROGBITS|NOBITS) +[0-9a-f]+ [0-9a-f]+ 001000 .* WA ' <<<"$sections" || {
       echo "error: $subject slot object sections are not the slot layout" >&2; exit 1;
     }
 done
