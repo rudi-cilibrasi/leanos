@@ -74,6 +74,14 @@ ABI.
 | 40 | inflight-revocation | 1, 2 | in-flight revocation script step |
 | 60 | ipc-stream, device-service | 1 | next event (device-service: the next key from the bound device program) |
 | 61 | ipc-stream, device-service | 1 | end of stream (final record) |
+| 70 | notify-reply | 1 | signal notification 20 with RBX bits (the script signals 5) |
+| 71 | notify-reply | 2 | wait on notification 20 (blocks until signalled) |
+| 72 | notify-reply | 1 | call endpoint 10 with RBX; creates a one-shot reply capability for the caller |
+| 73 | notify-reply | 2 | report the woken notification bits (RBX) |
+| 74 | notify-reply | 2 | receive on endpoint 10 (blocks until the call) |
+| 75 | notify-reply | 2 | reply through the one-shot reply capability with RBX; a second reply is rejected |
+| 76 | notify-reply | 1 | report the delivered reply word (final record) |
+| 77 | notify-reply | 2 | report the rejected second reply and block |
 <!-- syscall-table:end -->
 
 ## Errors
@@ -94,7 +102,11 @@ A subject's authority is its capability slots
 `addressSpace` and `endpoint`. The rights are `read`, `write`, `send`,
 `receive`, `grant` and `revoke`, restricted per kind by
 `Capability.rightsValid`. Device capabilities are a separate layer
-(`LeanOS.DeviceCapability`). A handle word is a 16-bit slot plus a 48-bit
+(`LeanOS.DeviceCapability`), and so are notifications and one-shot reply
+capabilities (`LeanOS.NotifyReply`, #471). A reply capability exists only
+between a `call` and its reply, names that caller's generation, and cannot be
+copied; the `notify-reply` image exercises syscalls 70–77 against that model's
+generated witness. A handle word is a 16-bit slot plus a 48-bit
 generation ([capability-handles.md](capability-handles.md)). A stale
 generation is rejected.
 
