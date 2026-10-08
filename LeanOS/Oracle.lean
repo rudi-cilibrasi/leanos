@@ -429,6 +429,17 @@ def notifyReplyVectors : List Vector := [
   notifyReplyEvent "notify-reply.off-script-step" 0 9 4 2,
   notifyReplyEvent "notify-reply.unknown-script" 2 0 2 2]
 
+/-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
+classification. Each argument ranges over the boundary words 0, 1, 2 and
+2^64 − 1, which cover its equivalence classes (the accepting word, the
+other model encoding, words that encode nothing, and the maximum word). -/
+def bootTransitionClassWords : List UInt64 := [0, 1, 2, 0xffffffffffffffff]
+
+def bootTransitionClassVectors : List Vector :=
+  bootTransitionClassWords.flatMap fun state =>
+    bootTransitionClassWords.map fun command =>
+      boot s!"boot.class.state-{state}.command-{command}" state command
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -770,13 +781,20 @@ def vectors : List Vector := [
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
-    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++ notifyReplyVectors
+    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
+    bootTransitionClassVectors ++ notifyReplyVectors
 
-theorem corpus_shape : vectors.length = 432 := by decide
+theorem corpus_shape : vectors.length = 448 := by decide
 
-/-- Oracle indices 419--431 are the notification/reply corpus (#471). -/
+/-- Oracle indices 419--434 are the boot-transition classification grid. -/
+theorem hosted_boot_transition_class_vectors_exact :
+    (vectors.drop 419).take bootTransitionClassVectors.length =
+      bootTransitionClassVectors := by
+  rfl
+
+/-- Oracle indices 435--447 are the notification/reply corpus (#471). -/
 theorem hosted_notify_reply_vectors_exact :
-    vectors.drop 419 = notifyReplyVectors := by
+    vectors.drop 435 = notifyReplyVectors := by
   rfl
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
@@ -803,7 +821,7 @@ canceled receipt denial, same-slot replacement, canceled-handle denial, and
 the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
-      blockingIpcEventVectors ++ notifyReplyVectors := by
+      blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :
