@@ -191,7 +191,56 @@ while read -r address _ symbol; do
   [[ $((16#$address)) -ge $((image_start)) && $((16#$address)) -lt $((image_end)) ]] || {
     echo "error: boot artifact $symbol lies outside boot image manifest" >&2; exit 1;
   }
-done < <(nm -n "$elf" | awk '$3 ~ /^(page_map_level_4_[ab]|page_table_[ab]|gdt64|idt|tss|entry_stack|user_[ab]_stack)$/ { print }')
+done < <(nm -n "$elf" | awk '$3 ~ /^(page_map_level_4_[abc]|page_table_[abc]|gdt64|idt|tss|entry_stack|user_[abc]_stack)$/ { print }')
+
+# Third subject C (issue #472).  Only the three-subject image links C's tables
+# and context; there C's sections, ranges, table storage, and context bank get
+# the same checks as A's and B's.  Every other image must link C's section
+# bounds as empty ranges at the image end, so its layout is the two-subject one.
+user_c_bounds=(__user_c_text_start __user_c_text_end __user_c_stack_start __user_c_stack_end)
+for symbol in "${user_c_bounds[@]}"; do
+  [[ -n "$(symbol_address "$symbol")" ]] || {
+    echo "error: image policy symbol missing: $symbol" >&2; exit 1;
+  }
+done
+if grep -Eq '[[:space:]]page_map_level_4_c$' <<<"$symbols"; then
+  [[ "$(flags .user_c_text)" == *A* && "$(flags .user_c_text)" == *X* &&
+     "$(flags .user_c_text)" != *W* &&
+     "$(flags .user_c_bss)" == *A* && "$(flags .user_c_bss)" == *W* &&
+     "$(flags .user_c_bss)" != *X* ]] || {
+    echo "error: third-subject text must be RX and its stack RW/NX" >&2; exit 1;
+  }
+  for symbol in page_map_level_4_c page_directory_pointer_c page_directory_c \
+      page_table_c page_table_c_end user_c_entry user_c_stack user_c_stack_top \
+      saved_context_c saved_context_owner_c saved_context_c_original_rip \
+      saved_context_c_original_flags saved_context_c_original_rsp; do
+    grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+      echo "error: third-subject policy symbol missing: $symbol" >&2; exit 1;
+    }
+  done
+  check_range __user_c_text_start __user_c_text_end
+  check_range __user_c_stack_start __user_c_stack_end
+  [[ $(($(symbol_address __user_c_text_start))) -ge $(($(symbol_address __user_b_stack_end))) &&
+     $(($(symbol_address __user_c_stack_end) - $(symbol_address __user_c_stack_start))) -eq 4096 ]] || {
+    echo "error: third-subject sections must follow B's and hold one U/S stack page" >&2; exit 1;
+  }
+  [[ $(($(symbol_address page_table_c_end) - $(symbol_address page_table_c))) -eq $((8 * 4096)) &&
+     $(($(symbol_address page_map_level_4_c))) -eq $(($(symbol_address page_table_b_end))) ]] || {
+    echo "error: third-subject tables must continue the contiguous CPU page-table block" >&2; exit 1;
+  }
+  [[ $(($(symbol_address saved_context_c) % 16)) -eq 0 ]] || {
+    echo "error: third-subject context bank is not 16-byte aligned" >&2; exit 1;
+  }
+else
+  for symbol in "${user_c_bounds[@]}"; do
+    [[ $(($(symbol_address "$symbol"))) -eq $((image_end)) ]] || {
+      echo "error: two-subject image links a non-empty third-subject range: $symbol" >&2; exit 1;
+    }
+  done
+  ! grep -Eq '[[:space:]](user_c_entry|saved_context_c|page_table_c)$' <<<"$symbols" || {
+    echo "error: two-subject image links third-subject state" >&2; exit 1;
+  }
+fi
 
 # These named instructions make ordering reviewable in both the ELF symbol table
 # and disassembly: WP is set in the final CR0 paging write, while SMEP is enabled
@@ -265,8 +314,10 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   exit 1
 }
 # 12 reviewed copies, plus 2 in the IPC-stream resume path (save B, restore
-# A; 20 qwords each, LEANOS_IPC_STREAM_SCENARIO only).
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 14 ]] || {
+# A; 20 qwords each, LEANOS_IPC_STREAM_SCENARIO only), plus 5 in the
+# three-subject switches (save C + install B, save B, save A + restore C;
+# LEANOS_THREE_SUBJECT_SCENARIO only).
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 19 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S

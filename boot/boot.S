@@ -227,6 +227,37 @@ boot_cpu_gate_end:
     or $7, %eax
     mov %eax, page_map_level_4_b
     movl $0, page_map_level_4_b + 4
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    /* Address space C (issue #472), assembled only into the three-subject
+       image, starts from the same supervisor-only identity map.  The shared
+       kernel-text, guard, and VT-d window edits below cover it too. */
+    mov $page_table_c, %edi
+    mov $3, %eax
+    mov $PAGE_ENTRY_COUNT, %ecx
+20:
+    mov %eax, (%edi)
+    movl $0x80000000, 4(%edi)
+    add $0x1000, %eax
+    add $8, %edi
+    loop 20b
+    mov $page_table_c, %eax
+    or $7, %eax
+    mov $PAGE_TABLE_COUNT, %ecx
+    mov $page_directory_c, %edi
+21:
+    mov %eax, (%edi)
+    movl $0, 4(%edi)
+    add $4096, %eax
+    add $8, %edi
+    loop 21b
+    mov $page_directory_c, %eax
+    or $7, %eax
+    mov %eax, page_directory_pointer_c
+    mov $page_directory_pointer_c, %eax
+    or $7, %eax
+    mov %eax, page_map_level_4_c
+    movl $0, page_map_level_4_c + 4
+#endif
 
     /* Instruction pages are read-only and executable.  All other leaves
        retain NX; only these two explicit pages receive U/S. */
@@ -242,6 +273,10 @@ boot_cpu_gate_end:
     andl $0x7fffffff, page_table_a+4(%eax)
     andl $~2, page_table_b(%eax)
     andl $0x7fffffff, page_table_b+4(%eax)
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    andl $~2, page_table_c(%eax)
+    andl $0x7fffffff, page_table_c+4(%eax)
+#endif
     add $8, %eax
     cmp %ecx, %eax
     jb 4b
@@ -307,6 +342,10 @@ boot_cpu_gate_end:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    movl $0, page_table_c(%eax)
+    movl $0, page_table_c+4(%eax)
+#endif
 #endif
 
     /* NMI has its own absent lower guard immediately below IST2. */
@@ -317,6 +356,10 @@ boot_cpu_gate_end:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    movl $0, page_table_c(%eax)
+    movl $0, page_table_c+4(%eax)
+#endif
 
     /* The linker-owned page immediately below the ordinary CPL3 entry stack
        is absent in every live address space. */
@@ -327,6 +370,10 @@ boot_cpu_gate_end:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    movl $0, page_table_c(%eax)
+    movl $0, page_table_c+4(%eax)
+#endif
 
     /* The VT-d MMIO window page maps the pinned remapping unit at 0xFED90000
        instead of identity RAM: present, writable, supervisor, no-execute in
@@ -338,6 +385,10 @@ boot_cpu_gate_end:
     movl $0x80000000, page_table_a+4(%eax)
     movl $0xFED90003, page_table_b(%eax)
     movl $0x80000000, page_table_b+4(%eax)
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    movl $0xFED90003, page_table_c(%eax)
+    movl $0x80000000, page_table_c+4(%eax)
+#endif
 
     /* The dedicated assigned images alone map their device's pinned BAR:
        q35 EDU's 4 KiB, or the device-service xHCI's 16 KiB.  The
@@ -361,6 +412,65 @@ boot_cpu_gate_end:
     dec %ecx
     jnz 8b
 9:
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    /* Only C's own text and stack receive U/S in C; A's and B's user pages
+       are absent there, and A and B omit C's user pages. */
+    mov $__user_c_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    orl $4, page_table_c(%eax)
+    andl $~2, page_table_c(%eax)
+    andl $0x7fffffff, page_table_c+4(%eax)
+    mov $__user_c_stack_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    orl $4, page_table_c(%eax)
+
+    /* C omits A's and B's user ranges. */
+    mov $__user_a_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_a_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+23:
+    movl $0, page_table_c(%eax)
+    movl $0, page_table_c+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 23b
+    mov $__user_b_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_b_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+24:
+    movl $0, page_table_c(%eax)
+    movl $0, page_table_c+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 24b
+
+    /* A and B omit C's user range. */
+    mov $__user_c_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_c_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+25:
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 25b
+#endif
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
        PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
        are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
@@ -537,6 +647,25 @@ page_directory_b:
 page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+/* The third subject's tables continue the same contiguous CPU page-table
+   block, so the one `.pageTables` reservation still covers every root. */
+.global page_map_level_4_c
+page_map_level_4_c:
+    .skip 4096
+.global page_directory_pointer_c
+page_directory_pointer_c:
+    .skip 4096
+.global page_directory_c
+page_directory_c:
+    .skip 4096
+.align 4096
+.global page_table_c
+page_table_c:
+    .skip 4096 * PAGE_TABLE_COUNT
+.global page_table_c_end
+page_table_c_end:
+#endif
 /* VT-d remapping tables: kernel-owned, deliberately outside the CPU
    page-table block so the generated VT-d plan can prove the frames are
    distinct, while the image reservation still excludes them from
@@ -1365,6 +1494,14 @@ isr80_cld:
     mov 136(%rsp), %r9
 #endif
     call syscall_handler
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    cmp $0x3c01, %rax
+    je 30f
+    cmp $0x3c02, %rax
+    je 31f
+    cmp $0x3c03, %rax
+    je 32f
+#endif
     cmp $0xbeef, %rax
     je 8f
     cmp $0xcafe, %rax
@@ -1481,6 +1618,91 @@ isr80_cld:
     mov $2, %esi
     jmp user_return_epilogue
 #endif
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+30: /* C blocked on endpoint 12: preserve its exact continuation, then
+       install B's complete kernel-owned initial context before CR3. */
+    mov %rsp, %rsi
+    lea saved_context_c(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_c+120(%rip), %rax
+    mov %rax, saved_context_c_original_rip(%rip)
+    mov saved_context_c+136(%rip), %rax
+    mov %rax, saved_context_c_original_flags(%rip)
+    mov saved_context_c+144(%rip), %rax
+    mov %rax, saved_context_c_original_rsp(%rip)
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+31: /* B reported from its initial context: preserve B, dispatch fresh A
+       from an all-zero register bank. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    movq $user_a_entry, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    movq $user_a_stack_top, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+32: /* A's send to endpoint 12 woke C: preserve A, restore C's blocked
+       continuation, and hand C exactly A's two payload words (saved RBX,
+       RCX) in RAX/RBX plus the delivery flag in RCX. */
+    mov %rsp, %rsi
+    lea saved_context_a(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_a+120(%rip), %rax
+    mov %rax, saved_context_a_original_rip(%rip)
+    mov saved_context_a+136(%rip), %rax
+    mov %rax, saved_context_a_original_flags(%rip)
+    mov saved_context_a+144(%rip), %rax
+    mov %rax, saved_context_a_original_rsp(%rip)
+    lea saved_context_c(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_a+104(%rip), %rax
+    mov %rax, 112(%rsp)
+    mov saved_context_a+96(%rip), %rax
+    mov %rax, 104(%rsp)
+    movq $1, 96(%rsp)
+    movq $page_map_level_4_c, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_c(%rip), %rsi
+    mov saved_context_owner_a(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+#endif
 .global isr14
 isr14:
 .global isr14_clac
@@ -1587,6 +1809,22 @@ saved_context_b_original_flags:
 .global saved_context_b_original_rsp
 saved_context_b_original_rsp:
     .skip 8
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+/* The third subject's resumable context, in the same SAVE+iretq layout. */
+.align 16
+.global saved_context_c
+saved_context_c:
+    .skip 160
+.global saved_context_c_original_rip
+saved_context_c_original_rip:
+    .skip 8
+.global saved_context_c_original_flags
+saved_context_c_original_flags:
+    .skip 8
+.global saved_context_c_original_rsp
+saved_context_c_original_rsp:
+    .skip 8
+#endif
 .section .rodata,"a",@progbits
 .align 8
 .global saved_context_owner_a
@@ -1595,6 +1833,11 @@ saved_context_owner_a:
 .global saved_context_owner_b
 saved_context_owner_b:
     .quad 2
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+.global saved_context_owner_c
+saved_context_owner_c:
+    .quad 3
+#endif
 .set B_INITIAL_RAX, 0x010001
 .set B_INITIAL_RBX, 0x020002
 .set B_INITIAL_RCX, 0x030003
@@ -1766,6 +2009,15 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    /* Sender subject: one two-word send to C's endpoint 12 (RDX). */
+    mov $0x4c45414e, %rbx
+    mov $3, %rcx
+    mov $12, %rdx
+    mov $8, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_IPC_STREAM_SCENARIO
     /* Driver subject: ask the source for the next event (0 = end) and send
        each one to B over endpoint 10. */
@@ -2227,6 +2479,15 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+    /* Bystander subject: report the two canaries of the kernel-owned initial
+       context it was dispatched from (syscall 62), in its own space. */
+    mov %r12, %rbx
+    mov %r13, %rcx
+    mov $62, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_IPC_STREAM_SCENARIO
     /* Echo subject: block on endpoint 10; when woken, RAX/RBX hold the two
        payload words; echo them back (syscall 9) and block again. */
@@ -2663,5 +2924,33 @@ user_b_stack:
     .skip 4096
 .global user_b_stack_top
 user_b_stack_top:
+
+#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+/* Third subject C (issue #472): its own text and one-page stack, linked
+   after B's and mapped only in address space C. */
+.section .user.c.text,"ax",@progbits
+.global user_c_entry
+user_c_entry:
+    /* Receiver subject: block on endpoint 12 (RDX).  When woken, RAX/RBX
+       hold the two payload words and RCX the delivery flag; report them
+       (syscall 9). */
+    mov $12, %rdx
+    mov $7, %rax
+    int $0x80
+    mov %rcx, %rdx
+    mov %rbx, %rcx
+    mov %rax, %rbx
+    mov $9, %rax
+    int $0x80
+    ud2
+
+.section .user.c.bss,"aw",@nobits
+.align 4096
+.global user_c_stack
+user_c_stack:
+    .skip 4096
+.global user_c_stack_top
+user_c_stack_top:
+#endif
 
 .section .note.GNU-stack,"",@progbits
