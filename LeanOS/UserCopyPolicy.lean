@@ -125,7 +125,7 @@ byte `index` if it is inside the range. -/
 /-- The first failing byte of `[start, start + length)` for `length ≤ 16`,
 unrolled so the generated C is straight-line `uint64_t` code: no recursion
 for the entry-stack gate and no `Nat` runtime calls in the boot image. -/
-def firstFailure (flags start length textStart stackStart stackTop : UInt64) : UInt64 :=
+@[inline] def firstFailure (flags start length textStart stackStart stackTop : UInt64) : UInt64 :=
   let step := scanStep flags start length textStart stackStart stackTop
   step (step (step (step (step (step (step (step (step (step (step (step (step (step
     (step (step allowed 0) 1) 2) 3) 4) 5) 6) 7) 8) 9) 10) 11) 12) 13) 14) 15
