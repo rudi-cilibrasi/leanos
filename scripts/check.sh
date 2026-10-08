@@ -219,6 +219,8 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-entry-stack-budget.sh
 ./scripts/test-asm-windows.sh
+./scripts/test-extract-generated-c.sh
+./scripts/check-oracle-doc-counts.sh
 
 ./scripts/test-entry-stack-layout.sh
 
