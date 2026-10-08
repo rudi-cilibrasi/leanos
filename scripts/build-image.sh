@@ -1595,17 +1595,6 @@ if grep -q $'^multivcpu-rejection\t' "$build/evidence-build-plan.tsv"; then
     "$build/leanos-multivcpu-rejection.elf"
   )
 fi
-# Hash the artifacts selected by the manifest-driven packaging queue for both
-# full builds and shards. Never maintain a second full-build filename list.
-selected_checksum_paths+=("$build/TOOLCHAIN_PROFILE.json")
-if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
-  selected_checksum_paths+=(
-    "$build/leanos-${version}-x86_64-assigned-edu.iso"
-    "$build/leanos-assigned-edu.elf"
-    "$build/leanos-assigned-edu.map"
-    "$build/boot-page-plan-assigned-edu.final.h"
-  )
-fi
 # The SMAP copy windows are a Lean-defined instruction plan (issue #478): the
 # bytes at smap_copy_from/smap_copy_to and their internal labels must equal
 # the plan in every final ELF this lane built, and a copy of the canonical ELF
@@ -1628,6 +1617,17 @@ if [[ -f "$build/leanos.elf" ]]; then
     exit 1
   fi
   rm -f "$smap_window_negative"
+fi
+# Hash the artifacts selected by the manifest-driven packaging queue for both
+# full builds and shards. Never maintain a second full-build filename list.
+selected_checksum_paths+=("$build/TOOLCHAIN_PROFILE.json")
+if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
+  selected_checksum_paths+=(
+    "$build/leanos-${version}-x86_64-assigned-edu.iso"
+    "$build/leanos-assigned-edu.elf"
+    "$build/leanos-assigned-edu.map"
+    "$build/boot-page-plan-assigned-edu.final.h"
+  )
 fi
 ((${#selected_checksum_paths[@]} > 0)) || {
   echo "error: selected evidence produced no checksum inputs" >&2
