@@ -1471,7 +1471,8 @@ isr80_cld:
     mov %rsp, %rdi
     mov $20, %ecx
     rep movsq
-    movq $0, 112(%rsp)
+    mov ipc_resume_word(%rip), %rax
+    mov %rax, 112(%rsp)
     movq $page_map_level_4_a, %rax
     mov %rax, %cr3
     mov %rsp, %rdi
@@ -1767,6 +1768,22 @@ integer_fault_restore_peer:
 .global user_a_entry
 user_a_entry:
 #ifdef LEANOS_IPC_STREAM_SCENARIO
+#ifdef LEANOS_NOTIFY_REPLY_SCENARIO
+    /* Client subject (issue #471): signal notification 20 with bits 5, then
+       call endpoint 10 with a word; the reply word comes back in RAX. */
+    mov $5, %rbx
+    xor %ecx, %ecx
+    mov $70, %rax
+    int $0x80
+    mov $0x1234abcd, %rbx
+    xor %ecx, %ecx
+    mov $72, %rax
+    int $0x80
+    mov %rax, %rbx
+    mov $76, %rax
+    int $0x80
+    ud2
+#else
     /* Driver subject: ask the source for the next event (0 = end) and send
        each one to B over endpoint 10. */
 1:  mov $60, %rax
@@ -1781,6 +1798,7 @@ user_a_entry:
 2:  mov $61, %rax
     int $0x80
     ud2
+#endif
 #endif
 #ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
     /* Fresh-owner probe: this is a real CPL3 load through A/page 7 after B's
@@ -2228,6 +2246,27 @@ page_fault_probe_class:
 .global user_b_entry
 user_b_entry:
 #ifdef LEANOS_IPC_STREAM_SCENARIO
+#ifdef LEANOS_NOTIFY_REPLY_SCENARIO
+    /* Server subject (issue #471): wait on notification 20 (blocks), report
+       the woken bits, receive on endpoint 10 (blocks), reply to the call
+       with word + 1, try a second reply (rejected), then block. */
+    mov $71, %rax
+    int $0x80
+    mov %rax, %rbx
+    mov $73, %rax
+    int $0x80
+    mov $74, %rax
+    int $0x80
+    lea 1(%rax), %rbx
+    mov $75, %rax
+    int $0x80
+    mov $75, %rax
+    int $0x80
+    mov %rax, %rbx
+    mov $77, %rax
+    int $0x80
+    ud2
+#else
     /* Echo subject: block on endpoint 10; when woken, RAX/RBX hold the two
        payload words; echo them back (syscall 9) and block again. */
 1:  mov $7, %rax
@@ -2237,6 +2276,7 @@ user_b_entry:
     mov $9, %rax
     int $0x80
     jmp 1b
+#endif
 #endif
 #ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
     /* Stale-translation probe: read the canary at the mutable mapping,
