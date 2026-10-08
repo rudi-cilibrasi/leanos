@@ -2426,21 +2426,19 @@ enum copy_policy {
     COPY_WRONG_SUBJECT, COPY_UNMAPPED, COPY_READ_ONLY, COPY_STALE
 };
 
+/* The range check is generated from LeanOS.UserCopyPolicy (issue #478):
+   UserCopy.validate over subject A's boot mapping, with the text and stack
+   ranges taken from the linked symbols. The result codes are this enum's. */
+_Static_assert(sizeof(copy_buffer) == 16, "the generated policy bounds copies at 16 bytes");
 static enum copy_policy validate_copy(uint64_t subject, unsigned lifetime_current,
                                       uint64_t start, uint64_t length,
                                       unsigned write) {
-    uint64_t end;
-    if (subject != 1) return COPY_WRONG_SUBJECT;
-    if (!lifetime_current) return COPY_STALE;
-    if (length > sizeof(copy_buffer)) return COPY_TOO_LONG;
-    if (__builtin_add_overflow(start, length, &end)) return COPY_OVERFLOW;
-    if (start >= (1ull << 47) || end >= (1ull << 47)) return COPY_NONCANONICAL;
-    if (start >= (uint64_t)user_a_entry && start < (uint64_t)user_a_stack) {
-        return write ? COPY_READ_ONLY : COPY_UNMAPPED;
-    }
-    if (start < (uint64_t)user_a_stack || end > (uint64_t)user_a_stack_top)
-        return COPY_UNMAPPED;
-    return COPY_ALLOWED;
+    uint64_t flags = (subject << 8) | ((uint64_t)(lifetime_current != 0) << 1) |
+        (uint64_t)(write != 0);
+    uint64_t code = leanos_user_copy_policy(flags, start, length,
+        (uint64_t)user_a_entry, (uint64_t)user_a_stack, (uint64_t)user_a_stack_top);
+    if (code > COPY_STALE) fail("copy-policy-code");
+    return (enum copy_policy)code;
 }
 
 static unsigned ac_is_set(void) {

@@ -17,6 +17,11 @@ root = "tests.PostStateMain"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-smap-window"
+root = "tests.SmapWindowMain"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-dma-corpus"
 root = "LeanOS.DMAQuarantineCorpus"
 moreLeanArgs = ["-DwarningAsError=true"]

@@ -184,7 +184,7 @@ index current:
 <!-- scenario-index:end -->
 
 Before the main machine path, the normal images also replay the same bounded
-448-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+462-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
