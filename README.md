@@ -178,6 +178,8 @@ index current:
 | `return-flags-iopl` | evidence | SC-USER-RETURN-FAILSTOP |
 | `ipc-stream` | evidence | SC-IPC-EVENT-STREAM |
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
+| `device-service-unplanned-bus-master` | evidence | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
+| `device-service-unplanned-recorded-command` | pr | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
 | `notify-reply` | evidence | SC-NOTIFY-REPLY-NO-AMPLIFICATION, SC-NOTIFY-REPLY-NO-STALE-REUSE, SC-NOTIFY-REPLY-SINGLE-USE, SC-NOTIFY-REPLY-BUDGET |
 <!-- scenario-index:end -->
 

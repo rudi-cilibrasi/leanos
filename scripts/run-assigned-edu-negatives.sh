@@ -31,7 +31,7 @@ done
 negative_rows="$(./scripts/scenario-manifest.py negative-variants assigned-edu-inventory)"
 mapfile -t specs <<< "$negative_rows"
 for spec in "${specs[@]}"; do
-  IFS=$'\t' read -r fixture _macro reason <<<"$spec"
+  IFS=$'\t' read -r fixture _macro reason stage <<<"$spec"
   image="build/boot/leanos-${version}-x86_64-assigned-edu-${fixture}.iso"
   log="build/boot/assigned-edu-${fixture}.serial.log"
   terminal="${LEANOS_SERIAL_3_FINAL} status=FAIL reason=${reason}"
@@ -50,12 +50,22 @@ for spec in "${specs[@]}"; do
     echo "failure_class=timeout: $fixture exceeded ${limit}s wall limit" >&2
     exit 1
   fi
+  # A pre-assignment variant must fail before the assigned function is
+  # enabled; a post-assignment variant (#482) must fail only after its
+  # translation tables are live and the assignment record passed.
+  assigned_passes="$(grep -Ec "^${LEANOS_SERIAL_21_VTD_ASSIGN} .*result=PASS" "$log" || true)"
+  case "$stage" in
+    pre-assignment) expected_assigned_passes=0 ;;
+    post-assignment) expected_assigned_passes=1 ;;
+    *) echo "error: $fixture has unknown negative stage '$stage'" >&2; exit 1 ;;
+  esac
   if [[ $status -ne 35 ]] ||
       [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]] ||
       [[ "$(grep -c "^${LEANOS_SERIAL_3_FINAL} " "$log")" -ne 1 ]] ||
-      grep -Eq "^${LEANOS_SERIAL_21_VTD_ASSIGN} .*result=PASS|^${LEANOS_SERIAL_10_FINAL} status=PASS" "$log"; then
-    echo "failure_class=controlled-negative: $fixture did not fail exactly at $reason" >&2
+      [[ "$assigned_passes" -ne "$expected_assigned_passes" ]] ||
+      grep -Eq "^${LEANOS_SERIAL_10_FINAL} status=PASS" "$log"; then
+    echo "failure_class=controlled-negative: $fixture did not fail exactly at $reason ($stage)" >&2
     exit 1
   fi
-  echo "LeanOS assigned-EDU negative passed: $fixture -> $reason"
+  echo "LeanOS assigned-EDU negative passed: $fixture -> $reason ($stage)"
 done
