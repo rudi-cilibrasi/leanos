@@ -1590,7 +1590,13 @@
         "mode": "-",
         "reason": "-"
       },
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-DMA-QUARANTINE",
+        "SC-PRIVILEGE-ENTRY-CONTROL",
+        "SC-USER-RETURN-CONFINEMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE, SC-PRIVILEGE-ENTRY-CONTROL, SC-USER-RETURN-CONFINEMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "multivcpu-rejection": {
       "tier": "pr",
@@ -1602,11 +1608,15 @@
         "serial_log": "multivcpu-rejection.serial.log",
         "scenario": "multivcpu-rejection",
         "mode": "-",
-        "reason": "topology-non-singleton"
+        "reason": "topology-madt-generated-entries"
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-SINGLE-CORE-BOOT-ADMISSION"
+      ],
+      "does_not_prove": "Not a refinement of SC-SINGLE-CORE-BOOT-ADMISSION: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "assigned-edu-inventory": {
       "tier": "pr",
@@ -1654,7 +1664,11 @@
           "macro": "LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE",
           "reason": "vtd-reuse-invalidation-omitted"
         }
-      ]
+      ],
+      "claims": [
+        "SC-DMA-QUARANTINE"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "malformed-handoff": {
       "tier": "pr",
@@ -1670,7 +1684,9 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Not a proof of any model claim: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "projection-authority-mutation": {
       "tier": "evidence",
@@ -1686,7 +1702,9 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Not a proof of any model claim: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "raw-selection-authority-mutation": {
       "tier": "evidence",
@@ -1702,7 +1720,9 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Not a proof of any model claim: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "entry-adversarial": {
       "release_artifacts": [
@@ -1721,7 +1741,11 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-PRIVILEGE-ENTRY-CONTROL"
+      ],
+      "does_not_prove": "Not a refinement of SC-PRIVILEGE-ENTRY-CONTROL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "preemption": {
       "release_artifacts": [
@@ -1743,7 +1767,9 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Not a proof of any model claim: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "frame-budget": {
       "negative_evidence": {
@@ -1765,7 +1791,11 @@
         "reason": "-"
       },
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-FRAME-BUDGET-ISOLATION"
+      ],
+      "does_not_prove": "Not a refinement of SC-FRAME-BUDGET-ISOLATION: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "capability-transfer": {
       "negative_evidence": {
@@ -1787,7 +1817,12 @@
         "reason": "-"
       },
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-COMPOSITE-TRANSFER-OFFER-WF",
+        "SC-COMPOSITE-TRANSFER-ACCEPT-WF"
+      ],
+      "does_not_prove": "Not a refinement of SC-COMPOSITE-TRANSFER-OFFER-WF, SC-COMPOSITE-TRANSFER-ACCEPT-WF: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "inflight-revocation": {
       "negative_evidence": {
@@ -1809,7 +1844,11 @@
         "reason": "-"
       },
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-COMPOSITE-INFLIGHT-REVOCATION"
+      ],
+      "does_not_prove": "Not a refinement of SC-COMPOSITE-INFLIGHT-REVOCATION: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fault-containment": {
       "release_artifacts": [
@@ -1842,7 +1881,12 @@
         "mode": "-",
         "reason": "-"
       },
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-USER-FAULT-CLASS-CONTAINMENT",
+        "SC-PAGE-FAULT-PROVENANCE"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fault-readonly-write": {
       "release_artifacts": [
@@ -1875,7 +1919,12 @@
         "mode": "-",
         "reason": "-"
       },
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-USER-FAULT-CLASS-CONTAINMENT",
+        "SC-PAGE-FAULT-PROVENANCE"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fault-nx-execute": {
       "release_artifacts": [
@@ -1908,7 +1957,12 @@
         "mode": "-",
         "reason": "-"
       },
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-USER-FAULT-CLASS-CONTAINMENT",
+        "SC-PAGE-FAULT-PROVENANCE"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fault-reserved-bit": {
       "family": "fault-integrity",
@@ -1932,7 +1986,12 @@
         "policy-report"
       ],
       "tier": "pr",
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-USER-FAULT-CLASS-CONTAINMENT",
+        "SC-PAGE-FAULT-PROVENANCE"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fault-walk-mismatch": {
       "family": "fault-integrity",
@@ -1956,7 +2015,12 @@
         "policy-report"
       ],
       "tier": "evidence",
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-USER-FAULT-CLASS-CONTAINMENT",
+        "SC-PAGE-FAULT-PROVENANCE"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "extended-state-denial": {
       "expectations": "scripts/expectations/extended-state.transcript",
@@ -1973,7 +2037,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-EXTENDED-STATE-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-EXTENDED-STATE-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "extended-state-denial-mmx": {
       "expectations": "scripts/expectations/extended-state-mmx.transcript",
@@ -1990,7 +2058,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-EXTENDED-STATE-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-EXTENDED-STATE-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "extended-state-denial-sse": {
       "expectations": "scripts/expectations/extended-state-sse.transcript",
@@ -2007,7 +2079,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-EXTENDED-STATE-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-EXTENDED-STATE-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "extended-state-denial-sse2": {
       "expectations": "scripts/expectations/extended-state-sse2.transcript",
@@ -2024,7 +2100,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-EXTENDED-STATE-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-EXTENDED-STATE-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "extended-state-denial-avx": {
       "expectations": "scripts/expectations/extended-state-avx.transcript",
@@ -2041,7 +2121,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-EXTENDED-STATE-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-EXTENDED-STATE-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fast-entry-syscall": {
       "family": "fast-entry",
@@ -2049,7 +2133,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-PRIVILEGE-ENTRY-CONTROL"
+      ],
+      "does_not_prove": "Not a refinement of SC-PRIVILEGE-ENTRY-CONTROL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "fast-entry-sysenter": {
       "family": "fast-entry",
@@ -2057,7 +2145,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-PRIVILEGE-ENTRY-CONTROL"
+      ],
+      "does_not_prove": "Not a refinement of SC-PRIVILEGE-ENTRY-CONTROL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "extended-state-peer-pke": {
       "tier": "pr",
@@ -2073,7 +2165,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-EXTENDED-STATE-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-EXTENDED-STATE-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-kernel-selector": {
       "tier": "pr",
@@ -2089,7 +2185,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-wrong-stack-selector": {
       "tier": "evidence",
@@ -2105,7 +2205,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-noncanonical-rip": {
       "tier": "evidence",
@@ -2121,7 +2225,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-noncanonical-rsp": {
       "tier": "evidence",
@@ -2137,7 +2245,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-outside-code": {
       "tier": "evidence",
@@ -2153,7 +2265,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-outside-stack": {
       "tier": "evidence",
@@ -2169,7 +2285,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-flags-ac": {
       "tier": "evidence",
@@ -2185,7 +2305,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-flags-df": {
       "tier": "evidence",
@@ -2201,7 +2325,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-stale-cr3": {
       "tier": "evidence",
@@ -2217,7 +2345,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-stale-context": {
       "tier": "evidence",
@@ -2233,7 +2365,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-post-validation-mutation": {
       "tier": "evidence",
@@ -2249,7 +2385,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-blocking-context-canary": {
       "tier": "evidence",
@@ -2265,7 +2405,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-capability-reuse-generation": {
       "tier": "evidence",
@@ -2281,7 +2425,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-sce-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2290,7 +2438,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-lstar-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2299,7 +2451,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-sysenter-eip-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2308,7 +2464,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-star-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2317,7 +2477,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-cstar-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2326,7 +2490,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-sfmask-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2335,7 +2503,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-sysenter-cs-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2344,7 +2516,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-fast-entry-sysenter-esp-relaxation": {
       "family": "fast-entry-relaxation",
@@ -2353,7 +2529,11 @@
       "tier": "evidence",
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-direct-port-bitmap-relaxation": {
       "tier": "evidence",
@@ -2369,7 +2549,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP",
+        "SC-DIRECT-PORT-USER-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP, SC-DIRECT-PORT-USER-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-direct-port-limit-relaxation": {
       "tier": "evidence",
@@ -2385,7 +2570,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP",
+        "SC-DIRECT-PORT-USER-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP, SC-DIRECT-PORT-USER-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-direct-port-granularity-relaxation": {
       "tier": "evidence",
@@ -2401,7 +2591,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP",
+        "SC-DIRECT-PORT-USER-DENIAL"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP, SC-DIRECT-PORT-USER-DENIAL: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-dma-bus-master-reenable": {
       "tier": "evidence",
@@ -2417,7 +2612,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP",
+        "SC-DMA-CONTROL-DRIFT-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP, SC-DMA-CONTROL-DRIFT-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-vtd-translation-disable": {
       "tier": "evidence",
@@ -2433,7 +2633,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "double-fault": {
       "release_artifacts": [
@@ -2451,7 +2655,11 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-PRIVILEGE-ENTRY-STACK"
+      ],
+      "does_not_prove": "Not a refinement of SC-PRIVILEGE-ENTRY-STACK: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "entry-stack-overflow": {
       "tier": "pr",
@@ -2467,7 +2675,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-PRIVILEGE-ENTRY-STACK"
+      ],
+      "does_not_prove": "Not a refinement of SC-PRIVILEGE-ENTRY-STACK: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "nmi-terminal": {
       "tier": "pr",
@@ -2483,7 +2695,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-NMI-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-NMI-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "nmi-terminal-cpl3": {
       "tier": "evidence",
@@ -2499,7 +2715,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-NMI-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-NMI-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "bootstrap32-ud": {
       "tier": "pr",
@@ -2515,7 +2735,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-BOOT-IDT-PHASE"
+      ],
+      "does_not_prove": "Not a refinement of SC-BOOT-IDT-PHASE: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "bootstrap64-nmi": {
       "tier": "pr",
@@ -2531,7 +2755,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-NMI-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-NMI-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "double-fault-guard-mapped": {
       "release_artifacts": [
@@ -2549,7 +2777,11 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-PRIVILEGE-ENTRY-STACK"
+      ],
+      "does_not_prove": "Not a refinement of SC-PRIVILEGE-ENTRY-STACK: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "direct-port-serial": {
       "expectations": "scripts/expectations/direct-port-serial.transcript",
@@ -2566,7 +2798,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DIRECT-PORT-USER-DENIAL",
+        "SC-DIRECT-PORT-CONTAINMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "direct-port-debug": {
       "expectations": "scripts/expectations/direct-port-debug.transcript",
@@ -2583,7 +2820,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DIRECT-PORT-USER-DENIAL",
+        "SC-DIRECT-PORT-CONTAINMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "direct-port-in": {
       "expectations": "scripts/expectations/direct-port-in.transcript",
@@ -2600,7 +2842,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DIRECT-PORT-USER-DENIAL",
+        "SC-DIRECT-PORT-CONTAINMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "direct-port-pic": {
       "expectations": "scripts/expectations/direct-port-pic.transcript",
@@ -2617,7 +2864,12 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DIRECT-PORT-USER-DENIAL",
+        "SC-DIRECT-PORT-CONTAINMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "divide-error": {
       "expectations": "scripts/expectations/divide-error.transcript",
@@ -2634,7 +2886,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-FAULT-SHARED-CONTAINMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-SHARED-CONTAINMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "breakpoint": {
       "expectations": "scripts/expectations/breakpoint.transcript",
@@ -2651,7 +2907,11 @@
       },
       "negative_evidence": null,
       "release_artifacts": [],
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-USER-FAULT-SHARED-CONTAINMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-FAULT-SHARED-CONTAINMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "stale-translation": {
       "reproducibility_artifacts": [
@@ -2675,7 +2935,11 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "release_artifacts": []
+      "release_artifacts": [],
+      "claims": [
+        "SC-STALE-TRANSLATION-INVALIDATION"
+      ],
+      "does_not_prove": "Not a refinement of SC-STALE-TRANSLATION-INVALIDATION: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "return-flags-iopl": {
       "tier": "evidence",
@@ -2700,7 +2964,11 @@
         "elf",
         "map"
       ],
-      "negative_evidence": null
+      "negative_evidence": null,
+      "claims": [
+        "SC-USER-RETURN-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-USER-RETURN-FAILSTOP: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "ipc-stream": {
       "release_artifacts": [
@@ -2722,7 +2990,11 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-IPC-EVENT-STREAM"
+      ],
+      "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "device-service": {
       "release_artifacts": [
@@ -2744,7 +3016,12 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-IPC-EVENT-STREAM",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
     "notify-reply": {
       "release_artifacts": [
@@ -2766,7 +3043,14 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-NOTIFY-REPLY-NO-AMPLIFICATION",
+        "SC-NOTIFY-REPLY-NO-STALE-REUSE",
+        "SC-NOTIFY-REPLY-SINGLE-USE",
+        "SC-NOTIFY-REPLY-BUDGET"
+      ],
+      "does_not_prove": "Not a refinement of the SC-NOTIFY-REPLY rows: one finite QEMU run whose kernel checks each step against the generated Lean witness; the C kernel, boot.S, compiler and QEMU stay trusted"
     }
   }
 }
