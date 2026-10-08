@@ -12,6 +12,11 @@ root = "LeanOS.Oracle"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-poststate"
+root = "tests.PostStateMain"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-smap-window"
 root = "tests.SmapWindowMain"
 moreLeanArgs = ["-DwarningAsError=true"]

@@ -163,3 +163,7 @@ This file is the kernel's master security contract: each theorem here independen
 - `notify_reply_no_stale_reuse` — A reply to a caller that has ended or whose identity has moved on is refused and changes nothing.
 - `notify_reply_single_use` — A reply permission answers once: a second answer is refused, and the permission can never be passed to another program.
 - `notify_reply_budget` — A program's reply slots change only through calls to its own endpoint or its own replies, so no other program can use them up or clear them.
+- `boot_transition_agreement` — The fixed-width boot entry point, as a Lean definition, gives the model's answer for every model state and command word; this is about the Lean code only.
+- `boot_transition_refinement` — The C code the pinned Lean toolchain actually emits for the boot entry point, read with a small reviewed meaning for the C constructs it uses, gives the model's answer for every model state and command word.
+- `console_integrity` — The security-claim contract SC-CONSOLE-INTEGRITY: a program holding neither the console permission nor a connection to the console server cannot change what the console prints.
+- `console_confidentiality` — The security-claim contract SC-CONSOLE-CONFIDENTIALITY: such a program learns nothing about what was typed on the console.

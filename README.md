@@ -103,6 +103,86 @@ partial log does not pass. The executable scenarios currently include:
 - a bounded suite of deliberately corrupted user-return images that must fail
   with their expected typed rejection before reaching CPL3.
 
+The complete list is generated from `scripts/scenario-manifest.json`. Each
+scenario also records the claims it gives tested evidence for and what it does
+not prove (`does_not_prove`), and `scripts/check-scenario-claims.py` keeps this
+index current:
+
+<!-- scenario-index:start -->
+| Scenario | Tier | Tested evidence for |
+| --- | --- | --- |
+| `blocking-ipc` | pr | SC-DMA-QUARANTINE, SC-PRIVILEGE-ENTRY-CONTROL, SC-USER-RETURN-CONFINEMENT |
+| `multivcpu-rejection` | pr | SC-SINGLE-CORE-BOOT-ADMISSION |
+| `assigned-edu-inventory` | pr | SC-DMA-QUARANTINE |
+| `malformed-handoff` | pr | none (integration only) |
+| `projection-authority-mutation` | evidence | none (integration only) |
+| `raw-selection-authority-mutation` | evidence | none (integration only) |
+| `entry-adversarial` | evidence | SC-PRIVILEGE-ENTRY-CONTROL |
+| `preemption` | evidence | none (integration only) |
+| `frame-budget` | evidence | SC-FRAME-BUDGET-ISOLATION |
+| `capability-transfer` | evidence | SC-COMPOSITE-TRANSFER-OFFER-WF, SC-COMPOSITE-TRANSFER-ACCEPT-WF |
+| `inflight-revocation` | evidence | SC-COMPOSITE-INFLIGHT-REVOCATION |
+| `fault-containment` | evidence | SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE |
+| `fault-readonly-write` | evidence | SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE |
+| `fault-nx-execute` | evidence | SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE |
+| `fault-reserved-bit` | pr | SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE |
+| `fault-walk-mismatch` | evidence | SC-USER-FAULT-CLASS-CONTAINMENT, SC-PAGE-FAULT-PROVENANCE |
+| `extended-state-denial` | evidence | SC-EXTENDED-STATE-DENIAL |
+| `extended-state-denial-mmx` | evidence | SC-EXTENDED-STATE-DENIAL |
+| `extended-state-denial-sse` | evidence | SC-EXTENDED-STATE-DENIAL |
+| `extended-state-denial-sse2` | evidence | SC-EXTENDED-STATE-DENIAL |
+| `extended-state-denial-avx` | evidence | SC-EXTENDED-STATE-DENIAL |
+| `fast-entry-syscall` | evidence | SC-PRIVILEGE-ENTRY-CONTROL |
+| `fast-entry-sysenter` | evidence | SC-PRIVILEGE-ENTRY-CONTROL |
+| `extended-state-peer-pke` | pr | SC-EXTENDED-STATE-DENIAL |
+| `return-kernel-selector` | pr | SC-USER-RETURN-FAILSTOP |
+| `return-wrong-stack-selector` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-noncanonical-rip` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-noncanonical-rsp` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-outside-code` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-outside-stack` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-flags-ac` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-flags-df` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-stale-cr3` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-stale-context` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-post-validation-mutation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-blocking-context-canary` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-capability-reuse-generation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-sce-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-lstar-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-sysenter-eip-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-star-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-cstar-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-sfmask-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-sysenter-cs-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-fast-entry-sysenter-esp-relaxation` | evidence | SC-USER-RETURN-FAILSTOP |
+| `return-direct-port-bitmap-relaxation` | evidence | SC-USER-RETURN-FAILSTOP, SC-DIRECT-PORT-USER-DENIAL |
+| `return-direct-port-limit-relaxation` | evidence | SC-USER-RETURN-FAILSTOP, SC-DIRECT-PORT-USER-DENIAL |
+| `return-direct-port-granularity-relaxation` | evidence | SC-USER-RETURN-FAILSTOP, SC-DIRECT-PORT-USER-DENIAL |
+| `return-dma-bus-master-reenable` | evidence | SC-USER-RETURN-FAILSTOP, SC-DMA-CONTROL-DRIFT-FAILSTOP |
+| `return-vtd-translation-disable` | evidence | SC-USER-RETURN-FAILSTOP |
+| `double-fault` | pr | SC-PRIVILEGE-ENTRY-STACK |
+| `entry-stack-overflow` | pr | SC-PRIVILEGE-ENTRY-STACK |
+| `nmi-terminal` | pr | SC-NMI-FAILSTOP |
+| `nmi-terminal-cpl3` | evidence | SC-NMI-FAILSTOP |
+| `bootstrap32-ud` | pr | SC-BOOT-IDT-PHASE |
+| `bootstrap64-nmi` | pr | SC-NMI-FAILSTOP |
+| `double-fault-guard-mapped` | pr | SC-PRIVILEGE-ENTRY-STACK |
+| `direct-port-serial` | evidence | SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT |
+| `direct-port-debug` | evidence | SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT |
+| `direct-port-in` | evidence | SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT |
+| `direct-port-pic` | evidence | SC-DIRECT-PORT-USER-DENIAL, SC-DIRECT-PORT-CONTAINMENT |
+| `divide-error` | evidence | SC-USER-FAULT-SHARED-CONTAINMENT |
+| `breakpoint` | evidence | SC-USER-FAULT-SHARED-CONTAINMENT |
+| `stale-translation` | evidence | SC-STALE-TRANSLATION-INVALIDATION |
+| `return-flags-iopl` | evidence | SC-USER-RETURN-FAILSTOP |
+| `ipc-stream` | evidence | SC-IPC-EVENT-STREAM |
+| `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
+| `device-service-unplanned-bus-master` | evidence | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
+| `device-service-unplanned-recorded-command` | pr | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
+| `notify-reply` | evidence | SC-NOTIFY-REPLY-NO-AMPLIFICATION, SC-NOTIFY-REPLY-NO-STALE-REUSE, SC-NOTIFY-REPLY-SINGLE-USE, SC-NOTIFY-REPLY-BUDGET |
+<!-- scenario-index:end -->
+
 Before the main machine path, the normal images also replay the same bounded
 462-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
@@ -164,7 +244,9 @@ the evidence vocabulary and baseline boundary; later ADRs record each addition.
 One generated export has a proved refinement edge: the C the pinned
 toolchain emits for `leanos_boot_transition` computes the Lean adapter on
 every input, under a reviewed C-subset semantics with a build-time drift check
-([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md)). The edge stops at
+([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md), claim
+SC-BOOT-TRANSITION-REFINEMENT in [docs/security-claims.md](docs/security-claims.md)).
+The edge stops at
 the export: the compiler, linker, calling convention and every other export
 stay trusted.
 
@@ -670,7 +752,13 @@ tarball per emulator shard for 14 days, including available diagnostics from
 failed runs. Image-producing lanes also retain the validated six-phase timing
 records described in [the boot-image guide](docs/boot-image.md), so issue #266
 performance work can compare measured phases without treating timing as a
-reproducibility input. Controlled negative fixtures ensure
+reproducibility input. The Lean lane records each rebuilt module's
+elaboration time and gates it against `scripts/proof-time-baseline.tsv`
+after normalizing for runner speed (`scripts/check-proof-time-budget.py`,
+issue #498): one of the fifteen slowest modules may not regress by more than
+35% and 15 seconds, and no other module may enter that set above 60 seconds.
+A PR raises the baseline only by editing it, with its `# reason:` line
+updated. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 

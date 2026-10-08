@@ -26,6 +26,14 @@ while IFS='|' read -r _ id declaration source model assumptions evidence exclusi
     [[ -n "$value" ]] || fail "$id has missing $field"
   done
   decl="$(printf '%s' "$declaration" | tr -d '` ' )"
+  # A refinement row must say in its own exclusions that the compiler, the
+  # runtime shim and the boot path stay outside the claim (issue #474).
+  if [[ "$evidence" == *efinement* ]]; then
+    for excluded in compiler shim "boot path"; do
+      [[ "$exclusions" == *"$excluded"* ]] ||
+        fail "$id refinement row omits the $excluded exclusion"
+    done
+  fi
   case "$evidence" in
     *Proved*)
       [[ "$decl" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
@@ -100,6 +108,7 @@ Duplicate.md|duplicate ID: SC-DUPLICATE
 UnknownTheorem.md|names unknown contract theorem: theorem_that_does_not_exist
 MissingEvidence.md|SC-MISSING-EVIDENCE has missing evidence
 ScriptAsProof.md|has invalid contract theorem name: scripts/check.sh
+RefinementWithoutCompiler.md|SC-REFINEMENT-NO-COMPILER refinement row omits the compiler exclusion
 EOF
 
   missing_row_log="$(mktemp)"

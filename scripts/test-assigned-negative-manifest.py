@@ -29,23 +29,34 @@ def main():
         subprocess.run([str(ROOT / "scripts/generate-oracle.sh"), str(oracle)],
                        cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
         shutil.copy2(oracle / "serial-protocol.sh", boot / "serial-protocol.sh")
-        final_record = subprocess.check_output(
-            ["bash", "-c", 'source "$1"; printf "%s" "$LEANOS_SERIAL_3_FINAL"',
+        final_record, assign_record = subprocess.check_output(
+            ["bash", "-c",
+             'source "$1"; printf "%s\\n%s" "$LEANOS_SERIAL_3_FINAL" "$LEANOS_SERIAL_21_VTD_ASSIGN"',
              "protocol", str(boot / "serial-protocol.sh")], text=True,
-        )
+        ).split("\n")
         for row in variants:
             (boot / f"leanos-0.1.0-x86_64-assigned-edu-{row['fixture']}.iso").touch()
         fake = root / "fake-qemu"
         reasons = {row["fixture"]: row["reason"] for row in variants}
+        # Post-assignment variants (#482) fail only after the assignment
+        # record passed; the fake guest omits it when told to.
+        assigned = {row["fixture"] for row in variants if row.get("stage") == "post-assignment"}
+        if not assigned:
+            raise AssertionError("manifest has no post-assignment negative variant")
         fake.write_text("""#!/usr/bin/env python3
 import sys
 from pathlib import Path
 args = sys.argv[1:]
 reasons = """ + repr(reasons) + """
 final_record = """ + repr(final_record) + """
+assign_record = """ + repr(assign_record) + """
+assigned = """ + repr(assigned) + """
 log = args[args.index('-serial') + 1].removeprefix('file:')
 fixture = next(k for k in reasons if any('assigned-edu-' + k + '.iso' in a for a in args))
-Path(log).write_text(final_record + ' status=FAIL reason=' + reasons[fixture] + '\\n')
+prefix = ''
+if fixture in assigned and not Path('omit-assign').exists():
+    prefix = assign_record + ' bdf=0:2.0 stage=post-translation result=PASS\\n'
+Path(log).write_text(prefix + final_record + ' status=FAIL reason=' + reasons[fixture] + '\\n')
 with open('invocations', 'a') as output:
     output.write(fixture + '\\n')
 sys.exit(35)
@@ -65,6 +76,12 @@ sys.exit(35)
         result = run()
         if result.returncode or calls.read_text().splitlines() != [r["fixture"] for r in variants]:
             raise AssertionError(f"manifest-only fixture was not executed in order: {result}")
+        calls.unlink()
+        (root / "omit-assign").touch()
+        result = run()
+        if result.returncode == 0 or "post-assignment" not in result.stderr:
+            raise AssertionError(f"post-assignment variant passed without live tables: {result}")
+        (root / "omit-assign").unlink()
         calls.unlink()
         variants[0]["reason"] = "bad\tfield"
         manifest_path.write_text(json.dumps(manifest))
