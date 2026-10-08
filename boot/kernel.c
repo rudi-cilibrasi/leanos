@@ -4254,7 +4254,103 @@ static void ipc_stream_key_name(uint64_t key) {
     else serial_u64(key);
 }
 
-static uint64_t ipc_stream_syscall(uint64_t number, uint64_t arg0, uint64_t arg1) {
+/* The word subject A finds in RAX when boot.S resumes it after B blocks
+   (path 10): 0 for the ipc-stream send, the reply word in the
+   notification/reply scenario. */
+uint64_t ipc_resume_word;
+
+#ifdef LEANOS_NOTIFY_REPLY_SCENARIO
+/* Notification and reply capability (issue #471, LeanOS.NotifyReply). B waits
+   on notification 20 and blocks; A signals bits 5, which wakes B; B blocks to
+   receive on endpoint 10; A calls with a word, which wakes B holding the
+   kernel-created reply capability; B replies once (accepted, delivered to A
+   when it resumes) and a second reply is rejected (single use). Every edge
+   is checked against the generated witness `leanos_notify_reply_event`,
+   which `NotifyReply.notifyReplyEvent_agrees` ties to the model. The A/B
+   switches reuse the ipc-stream paths in boot.S. */
+#define NOTIFY_EDGE(index, operation, subject, expected, reason)               \
+    do {                                                                       \
+        if (leanos_notify_reply_event(0, (index), (operation), (subject)) !=   \
+            (expected))                                                        \
+            fail(reason);                                                      \
+    } while (0)
+static unsigned notify_step;
+static uint64_t notify_call_word, notify_reply_word;
+
+static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
+    if (number == 71 && current_subject == 2 && notify_step == 0) {
+        NOTIFY_EDGE(0, 2, 2, 2, "notify-wait-block");
+        notify_step = 1; ipc_stream_step = 1; ipc_stream_started = 1;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wait subject=2 notification=20 pending=0 blocked=1\n");
+        return 0xbeef;
+    }
+    if (number == 70 && current_subject == 1 && notify_step == 1) {
+        if (arg0 != 5) fail("notify-signal-bits");
+        NOTIFY_EDGE(1, 1, 1, 1, "notify-signal");
+        NOTIFY_EDGE(2, 2, 2, 0x105, "notify-wake");
+        notify_step = 2; ipc_stream_step = 3; current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=signal subject=1 notification=20 bits=5 accepted=1\n");
+        return 0xcafe;
+    }
+    if (number == 73 && current_subject == 2 && notify_step == 2) {
+        if (arg0 != 5) fail("notify-woken-bits");
+        ++ipc_stream_events;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=woke subject=2 notification=20 bits=5 pending=0\n");
+        return 0;
+    }
+    if (number == 74 && current_subject == 2 && notify_step == 2) {
+        notify_step = 3; ipc_stream_step = 1; current_subject = 1;
+        ipc_resume_word = 0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=receive subject=2 endpoint=10 blocked=1\n");
+        return 0xa55a;
+    }
+    if (number == 72 && current_subject == 1 && notify_step == 3) {
+        NOTIFY_EDGE(3, 3, 1, 0x200, "notify-call");
+        notify_call_word = arg0;
+        notify_step = 4; ipc_stream_step = 3; current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=call caller=1 endpoint=10 server=2 word=");
+        serial_u64(arg0);
+        serial_puts(" reply-slot=0 caller-generation=0\n");
+        return 0xcafe;
+    }
+    if (number == 75 && current_subject == 2 && notify_step == 4) {
+        if (arg0 != notify_call_word + 1) fail("notify-reply-word");
+        NOTIFY_EDGE(4, 4, 2, 1, "notify-reply");
+        notify_reply_word = arg0;
+        notify_step = 5; ++ipc_stream_events;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=reply server=2 reply-slot=0 caller=1 word=");
+        serial_u64(arg0);
+        serial_puts(" accepted=1 consumed=1\n");
+        return 0;
+    }
+    if (number == 75 && current_subject == 2 && notify_step == 5) {
+        NOTIFY_EDGE(5, 4, 2, 0x1007, "notify-double-reply");
+        notify_step = 6;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=reply server=2 reply-slot=0 rejected=no-reply\n");
+        return 0x1007;
+    }
+    if (number == 77 && current_subject == 2 && notify_step == 6) {
+        if (arg0 != 0x1007) fail("notify-double-reply-seen");
+        notify_step = 7; ipc_stream_step = 1; current_subject = 1;
+        ipc_resume_word = notify_reply_word;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 round=done\n");
+        return 0xa55a;
+    }
+    if (number == 76 && current_subject == 1 && notify_step == 7) {
+        if (arg0 != notify_reply_word) fail("notify-reply-delivery");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=delivered subject=1 reply=");
+        serial_u64(arg0);
+        serial_puts(" exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS signals=1 wakes=1 calls=1 replies=1 rejected-replies=1\n");
+        finish(0x10);
+    }
+    fail("notify-reply-sequence");
+}
+#endif
+
+static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint64_t arg0,
+        uint64_t arg1) {
     if (number == 7 && current_subject == 2 && ipc_stream_step == 0) {
         if (leanos_blocking_ipc_event(0, 1, 2) != IPC_EVENT_WORD(1, 1, 1, 1, 0))
             fail("ipc-stream-model-block");
@@ -4549,7 +4645,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
 #endif
-#ifdef LEANOS_IPC_STREAM_SCENARIO
+#ifdef LEANOS_NOTIFY_REPLY_SCENARIO
+    (void)arg1; (void)arg2; (void)saved_flags;
+    return notify_reply_syscall(number, arg0);
+#elif defined(LEANOS_IPC_STREAM_SCENARIO)
     (void)arg2; (void)saved_flags;
     return ipc_stream_syscall(number, arg0, arg1);
 #endif
