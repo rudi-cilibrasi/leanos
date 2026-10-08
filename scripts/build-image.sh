@@ -749,6 +749,8 @@ compute_graph_make_input_signature() {
   {
     printf 'graph-tools:%s\0' "$graph_tool_signature"
     find "$repo_root/boot" "$repo_root/include" "$repo_root/hardware/wifi" \
+      "$repo_root/subjects" "$repo_root/scripts/build-subject.sh" \
+      "$repo_root/scripts/check-subject-policy.py" \
       -type f -print0 | sort -z |
       while IFS= read -r -d '' input; do
         sha256sum "$input"
@@ -1230,7 +1232,7 @@ fi
 # Scenario images that reach CPL3 with their own syscall dispatch are gated
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
-    three-subject; do
+    example-subject three-subject; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \
@@ -1297,6 +1299,32 @@ fi
 for key in "${policy_keys[@]}"; do
   cat "$policy_log_dir/$key.log"
 done
+# The final-ELF subject check (#484) must reject a privileged instruction in
+# a template-built slot even after linking: plant cli over the first byte of
+# the example subject's linked text and require the image-level check to fail.
+if selected_final_enabled "$build/leanos-example-subject.elf"; then
+  subject_negative_dir="$build/subject-policy-negative"
+  rm -rf "$subject_negative_dir"
+  mkdir -p "$subject_negative_dir"
+  objcopy -O binary --only-section=.user_c_text \
+    "$build/leanos-example-subject.elf" "$subject_negative_dir/text.bin"
+  printf '\xfa' | dd of="$subject_negative_dir/text.bin" bs=1 seek=0 \
+    conv=notrunc status=none
+  objcopy --update-section ".user_c_text=$subject_negative_dir/text.bin" \
+    "$build/leanos-example-subject.elf" "$subject_negative_dir/cli.elf"
+  if ./scripts/check-subject-policy.py elf "$subject_negative_dir/cli.elf" c \
+      >"$subject_negative_dir/cli.log" 2>&1; then
+    echo "error: final-ELF subject policy accepted a planted cli" >&2
+    exit 1
+  fi
+  grep -Fq '.user_c_text @0x' "$subject_negative_dir/cli.log" &&
+    grep -Fq 'cli' "$subject_negative_dir/cli.log" || {
+      cat "$subject_negative_dir/cli.log" >&2
+      echo "error: final-ELF subject policy rejected the planted cli for another reason" >&2
+      exit 1
+    }
+  echo "subject-policy final-elf negative=cli result=rejected"
+fi
 
 if selected_final_enabled "$build/leanos-frame-budget.elf"; then
   ./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"

@@ -4581,12 +4581,98 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
 }
 #endif
 
+#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
+/* The example subject (#484).  This image is the three-subject image except
+   that subject C is not assembled in boot.S: scripts/build-subject.sh builds
+   it from subjects/example with the subject template, checks it against the
+   subject policy, and the image links it into C's slot.  C sends one word on
+   endpoint 12, which the kernel holds in a one-word queue, and then blocks
+   forever on endpoint 13, which nobody sends to: there is no exit syscall.
+   B runs once from its initial context exactly as in three-subject; A,
+   dispatched fresh, receives the queued word on endpoint 12 and reports it.
+   C stays blocked with its continuation intact. */
+extern char user_c_template_text[];
+#define EXAMPLE_SUBJECT_ENDPOINT 12u
+#define EXAMPLE_SUBJECT_IDLE_ENDPOINT 13u
+#define EXAMPLE_SUBJECT_STACK_BYTES 2048u
+static unsigned example_subject_queue;  /* 0 empty, 1 C's word queued, 2 taken */
+static uint64_t example_subject_word;
+
+/* The slot the build rule produced: entry and template marker at the first
+   text byte, a 2048-byte stack at the bottom of the one-page stack range. */
+static void check_example_subject_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != EXAMPLE_SUBJECT_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("example-subject-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/example entry=text-start stack=2048 result=PASS\n");
+}
+
+static uint64_t example_subject_syscall(uint64_t number, uint64_t arg0,
+                                        uint64_t arg1, uint64_t arg2) {
+    if (number == 8 && current_subject == 3 && three_subject_step == 0 &&
+        example_subject_queue == 0) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != EXAMPLE_SUBJECT_ENDPOINT) fail("example-subject-send-endpoint");
+        if (arg1 != 0) fail("example-subject-send-words");
+        example_subject_word = arg0;
+        example_subject_queue = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=3 endpoint=12 words=1 payload0=");
+        serial_u64(arg0);
+        serial_puts(" queued=1\n");
+        return 0;
+    }
+    if (number == 7 && current_subject == 3 && three_subject_step == 0 &&
+        example_subject_queue == 1) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != EXAMPLE_SUBJECT_IDLE_ENDPOINT) fail("example-subject-block-endpoint");
+        three_subject_step = 1;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS\n");
+        return THREE_SUBJECT_C_BLOCKED;
+    }
+    /* B's single report is the three-subject step, unchanged. */
+    if (number == 62) return three_subject_syscall(number, arg0, arg1, arg2);
+    if (number == 7 && current_subject == 1 && three_subject_step == 2 &&
+        example_subject_queue == 1) {
+        three_subject_require_root(page_map_level_4_a);
+        if (arg2 != EXAMPLE_SUBJECT_ENDPOINT) fail("example-subject-receive-endpoint");
+        example_subject_queue = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=receive receiver=1 endpoint=12 sender=3 words=1 payload0=");
+        serial_u64(example_subject_word);
+        serial_puts(" queued=0\n");
+        return example_subject_word;
+    }
+    if (number == 9 && current_subject == 1 && three_subject_step == 2 &&
+        example_subject_queue == 2) {
+        three_subject_require_root(page_map_level_4_a);
+        if (arg0 != example_subject_word || arg1 != 0 ||
+            arg2 != EXAMPLE_SUBJECT_ENDPOINT) fail("example-subject-payload");
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=1 endpoint=12 sender=3 words=1 payload0=");
+        serial_u64(arg0);
+        serial_puts(" exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 address-spaces=3 sends=1 deliveries=1 blocked-forever=3\n");
+        finish(0x10);
+    }
+    fail("example-subject-sequence");
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
+    (void)saved_flags;
+    return example_subject_syscall(number, arg0, arg1, arg2);
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
@@ -6151,6 +6237,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(integer_fault_probe_class == 1
         ? LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
         : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -6325,6 +6413,14 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_selected_root_a();
     serial_puts(LEANOS_SERIAL_18_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
+    check_boot_page_table_c();
+    check_example_subject_slot();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12\n");
+    enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     check_boot_page_table_c();
     current_subject = 3;

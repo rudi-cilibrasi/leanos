@@ -650,6 +650,10 @@ address spaces:
 This is plumbing for issue #472's console server, not new authority. The
 console capability and the server loop are later slices.
 
+C's code can also come from a separately built C subject instead of
+`boot.S`. The `example-subject` image does that with the subject template and
+build rule in [subjects.md](subjects.md) (#484).
+
 ### Assigned-EDU negative variants
 
 The assigned-EDU scenario declares its extra boot fixtures in

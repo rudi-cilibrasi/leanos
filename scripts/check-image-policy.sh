@@ -460,4 +460,11 @@ expected_pre_restore='andq $0xfffffffffffbfbff,0x88(%rsp);mov %rsp,%rdi;call <va
   echo "error: raw iretq added outside classified return sites" >&2; exit 1;
 }
 
+# A subject built from subjects/ (#484) marks its slot with
+# user_<slot>_template_text.  Re-check the linked slot text in this final ELF
+# against the same instruction policy the build rule applied to the object.
+if grep -Eq '[[:space:]]user_c_template_text$' <<<"$symbols"; then
+  ./scripts/check-subject-policy.py elf "$elf" c
+fi
+
 echo "ELF sections, policy symbols, and constructed page-table policy passed"
