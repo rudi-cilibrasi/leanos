@@ -1501,6 +1501,10 @@ isr80_cld:
     je 31f
     cmp $0x3c03, %rax
     je 32f
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    cmp $0x3c04, %rax
+    je 33f
+#endif
 #endif
     cmp $0xbeef, %rax
     je 8f
@@ -1702,6 +1706,33 @@ isr80_cld:
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+33: /* The console server blocked again on endpoint 12: preserve C's exact
+       continuation and resume A after its send, which returns 0. */
+    mov %rsp, %rsi
+    lea saved_context_c(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_c+120(%rip), %rax
+    mov %rax, saved_context_c_original_rip(%rip)
+    mov saved_context_c+136(%rip), %rax
+    mov %rax, saved_context_c_original_flags(%rip)
+    mov saved_context_c+144(%rip), %rax
+    mov %rax, saved_context_c_original_rsp(%rip)
+    lea saved_context_a(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $0, 112(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+#endif
 #endif
 .global isr14
 isr14:
@@ -2009,7 +2040,36 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+#if defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+    /* Console client.  Its only capability, slot 0, is a send-only endpoint
+       capability to the server.  Naming it as a console (syscall 70) is
+       refused as the wrong kind (result 1 | 3 << 8).  It then sends two
+       words through it, each a string's bytes (RBX, least significant
+       first) and their count (RCX), and finishes (syscall 61). */
+    mov $0x41, %ebx
+    xor %edx, %edx
+    mov $70, %eax
+    int $0x80
+    cmp $0x301, %rax
+    jne 9f
+    movabs $0x6f6c6c6568, %rbx
+    mov $5, %ecx
+    xor %edx, %edx
+    mov $8, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    movabs $0x646c726f77, %rbx
+    mov $5, %ecx
+    xor %edx, %edx
+    mov $8, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    mov $61, %eax
+    int $0x80
+9:  ud2
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     /* Sender subject: one two-word send to C's endpoint 12 (RDX). */
     mov $0x4c45414e, %rbx
     mov $3, %rcx
@@ -2479,7 +2539,35 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+#if defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+    /* Subject without console authority: its capability table is empty.
+       It tries a console write (70), a send (8) and a console read (71)
+       through slot 0, packs the three results it observes into RDX (16 bits
+       each), and reports them with its initial-context canaries (62). */
+    mov $0x58, %ebx
+    xor %edx, %edx
+    mov $70, %eax
+    int $0x80
+    mov %rax, %r8
+    mov $0x42, %ebx
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $8, %eax
+    int $0x80
+    shl $16, %rax
+    or %rax, %r8
+    xor %edx, %edx
+    mov $71, %eax
+    int $0x80
+    shl $32, %rax
+    or %rax, %r8
+    mov %r12, %rbx
+    mov %r13, %rcx
+    mov %r8, %rdx
+    mov $62, %eax
+    int $0x80
+    ud2
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     /* Bystander subject: report the two canaries of the kernel-owned initial
        context it was dispatched from (syscall 62), in its own space. */
     mov %r12, %rbx
@@ -2931,6 +3019,45 @@ user_b_stack_top:
 .section .user.c.text,"ax",@progbits
 .global user_c_entry
 user_c_entry:
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    /* Console server.  Slot 0 is the console capability, slot 1 the receive
+       end of endpoint 12.  It reads the console once (71), then loops: a
+       blocking receive (7) on slot 1; when woken RAX holds the word, RBX
+       its byte count (at most 8) and RCX the delivery flag; it writes each
+       byte, least significant first, and a newline to the console (70). */
+    xor %edx, %edx
+    mov $71, %eax
+    int $0x80
+1:  mov $1, %edx
+    mov $7, %eax
+    int $0x80
+    cmp $1, %rcx
+    jne 9f
+    mov %rax, %r12
+    mov %rbx, %r13
+    cmp $8, %r13
+    jbe 2f
+    mov $8, %r13d
+2:  test %r13, %r13
+    jz 3f
+    movzbl %r12b, %ebx
+    xor %edx, %edx
+    mov $70, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    shr $8, %r12
+    dec %r13
+    jmp 2b
+3:  mov $10, %ebx
+    xor %edx, %edx
+    mov $70, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    jmp 1b
+9:  ud2
+#else
     /* Receiver subject: block on endpoint 12 (RDX).  When woken, RAX/RBX
        hold the two payload words and RCX the delivery flag; report them
        (syscall 9). */
@@ -2943,6 +3070,7 @@ user_c_entry:
     mov $9, %rax
     int $0x80
     ud2
+#endif
 
 .section .user.c.bss,"aw",@nobits
 .align 4096

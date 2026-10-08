@@ -15,6 +15,7 @@ import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
+import LeanOS.ConsoleServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -72,7 +73,8 @@ def adapters : List AdapterSpec := [
   adapter "Interrupt.pageFault" 17 "leanos_page_fault_demo" 5,
   adapter "CompositeDispatcher.stateful" 18 "leanos_composite_dispatch" 6,
   adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6,
-  adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3]
+  adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3,
+  adapter "ConsoleServer.authorize" 21 "leanos_console_authorize" 2]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -115,6 +117,10 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
     expected := if 10 ≤ operation then
       BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
     else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+
+private def consoleAuthorize (id : String) (subject operation : UInt64) : Vector :=
+  { id, adapter := "ConsoleServer.authorize", words := [subject, operation],
+    expected := ConsoleServer.consoleAuthorize subject operation }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -404,6 +410,31 @@ def blockingIpcEventVectors : List Vector := [
   blockingIPCEvent "blocking-ipc-event.wrong-caller" 1 2 2,
   blockingIPCEvent "blocking-ipc-event.wrong-step" 0 2 1,
   blockingIPCEvent "blocking-ipc-event.out-of-cycle" 4 1 2]
+
+/-- Console-server authority decisions (#472): every subject (A 1, B 2,
+server C 3) against every operation (send 1, console write 2, console read 3,
+serve 4, receive 5), then codes outside the ABI. -/
+def consoleAuthorizeVectors : List Vector := [
+  consoleAuthorize "console-authorize.a-send" 1 1,
+  consoleAuthorize "console-authorize.a-write" 1 2,
+  consoleAuthorize "console-authorize.a-read" 1 3,
+  consoleAuthorize "console-authorize.a-serve" 1 4,
+  consoleAuthorize "console-authorize.a-receive" 1 5,
+  consoleAuthorize "console-authorize.b-send" 2 1,
+  consoleAuthorize "console-authorize.b-write" 2 2,
+  consoleAuthorize "console-authorize.b-read" 2 3,
+  consoleAuthorize "console-authorize.b-serve" 2 4,
+  consoleAuthorize "console-authorize.b-receive" 2 5,
+  consoleAuthorize "console-authorize.server-send" 3 1,
+  consoleAuthorize "console-authorize.server-write" 3 2,
+  consoleAuthorize "console-authorize.server-read" 3 3,
+  consoleAuthorize "console-authorize.server-serve" 3 4,
+  consoleAuthorize "console-authorize.server-receive" 3 5,
+  consoleAuthorize "console-authorize.unknown-subject" 4 2,
+  consoleAuthorize "console-authorize.zero-operation" 3 0,
+  consoleAuthorize "console-authorize.unknown-operation" 3 6,
+  consoleAuthorize "console-authorize.maximum-words" 0xffffffffffffffff
+    0xffffffffffffffff]
 
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
@@ -758,13 +789,19 @@ def vectors : List Vector := [
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
-    bootTransitionClassVectors
+    bootTransitionClassVectors ++ consoleAuthorizeVectors
 
-theorem corpus_shape : vectors.length = 435 := by decide
+theorem corpus_shape : vectors.length = 454 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
-    vectors.drop 419 = bootTransitionClassVectors := by
+    (vectors.drop 419).take bootTransitionClassVectors.length =
+      bootTransitionClassVectors := by
+  rfl
+
+/-- Oracle indices 435--453 are the console-server authority corpus (#472). -/
+theorem hosted_console_authorize_vectors_exact :
+    vectors.drop 435 = consoleAuthorizeVectors := by
   rfl
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
@@ -791,7 +828,7 @@ canceled receipt denial, same-slot replacement, canceled-handle denial, and
 the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
-      blockingIpcEventVectors ++ bootTransitionClassVectors := by
+      blockingIpcEventVectors ++ bootTransitionClassVectors ++ consoleAuthorizeVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

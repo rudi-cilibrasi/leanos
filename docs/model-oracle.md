@@ -13,8 +13,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`,
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
-`CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`. Its stable
-435-vector order covers accepted calls,
+`CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`, and
+`ConsoleServer.consoleAuthorize`. Its stable
+454-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns

@@ -214,6 +214,11 @@
       "kernel-three-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
+      ],
+      "kernel-console-server": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-console-server.h\""
       ]
     },
     "boot_objects": {
@@ -471,6 +476,13 @@
         "source": "boot/boot.S",
         "definitions": [
           "-DLEANOS_THREE_SUBJECT_SCENARIO=1"
+        ]
+      },
+      "boot-console-server": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_CONSOLE_SERVER_SCENARIO=1"
         ]
       }
     },
@@ -790,6 +802,14 @@
         "final_link": true,
         "prelink_plan": "boot-page-plan-three-subject.h",
         "plan_equal_to": null
+      },
+      "leanos-console-server": {
+        "boot": "boot-console-server",
+        "kernel": "kernel-console-server",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-console-server.h",
+        "plan_equal_to": null
       }
     },
     "policy_fixtures": {
@@ -1106,6 +1126,13 @@
         "policy": {
           "key": "three-subject"
         }
+      },
+      "leanos-console-server": {
+        "iso": "leanos-@VERSION@-x86_64-console-server.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "console-server"
+        }
       }
     },
     "plan_checks": [
@@ -1379,6 +1406,13 @@
         "expected": "boot-page-plan-three-subject.h",
         "final": "boot-page-plan-three-subject.final.h",
         "description": "three-subject"
+      },
+      {
+        "image": "leanos-console-server",
+        "check": "validate",
+        "expected": "boot-page-plan-console-server.h",
+        "final": "boot-page-plan-console-server.final.h",
+        "description": "console-server"
       }
     ],
     "disassemblies": [
@@ -2760,6 +2794,28 @@
         "elf": "leanos-three-subject.elf",
         "serial_log": "three-subject.serial.log",
         "scenario": "three-subject",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": []
+    },
+    "console-server": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/console-server.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-console-server.iso",
+        "elf": "leanos-console-server.elf",
+        "serial_log": "console-server.serial.log",
+        "scenario": "console-server",
         "mode": "-",
         "reason": "-"
       },
