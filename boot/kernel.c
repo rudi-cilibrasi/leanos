@@ -3346,10 +3346,14 @@ static unsigned device_service_bound, device_service_ended;
 
 /* The widest policy the admitted function may declare (`q35XhciPolicy`):
    identity/command reads, no other configuration access, Memory Space and
-   Bus Master, DMA, and the CRCR, DCBAAP, ERSTBA and ERDP address sinks. */
+   Bus Master, DMA, the CRCR, DCBAAP, ERSTBA and ERDP address sinks, and the
+   driver's descriptor map (DCBAA, ERST entry, input-context dequeue
+   pointers, command/EP0/interrupt rings). */
 static const struct wifi_policy device_service_profile = {
     1, 1, 0x4000u, UINT64_C(0x3), 0, UINT32_C(0xffff0000), UINT32_C(0x6), 4,
-    { 0x58, 0x70, 0x1030, 0x1038 } };
+    { 0x58, 0x70, 0x1030, 0x1038 }, 6,
+        { { 0, 0x0000u, 5, 8 }, { 0, 0x0C00u, 1, 16 }, { 0, 0x1048u, 31, 32 },
+          { 1, 0x0400u, 64, 16 }, { 1, 0x2800u, 256, 16 }, { 1, 0x3800u, 64, 16 } } };
 
 static __attribute__((noinline, noipa)) void pci_config_write_dword(
         uint8_t device, uint8_t function, uint8_t offset, uint32_t value) {
@@ -3462,6 +3466,8 @@ static int device_service_admitted(const struct wifi_target *target,
         return 0;
     for (uint32_t k = 0; k < max->sink_count; ++k)
         if (!wifi_is_sink(policy, max->sinks[k])) return 0;
+    for (uint32_t k = 0; k < max->desc_count; ++k)
+        if (!wifi_has_desc(policy, &max->descs[k])) return 0;
     return policy->window <= max->window && policy->dma <= max->dma &&
         !(policy->cfg_read & ~max->cfg_read) &&
         !(policy->cfg_write & ~max->cfg_write) &&
@@ -3470,8 +3476,10 @@ static int device_service_admitted(const struct wifi_target *target,
 }
 
 static void device_service_bind(void) {
-    struct wifi_target target;
-    struct wifi_policy policy;
+    /* Static: the policy (with its descriptor map) stays off the syscall
+       entry stack, whose budget the final-ELF gate reviews. */
+    static struct wifi_target target;
+    static struct wifi_policy policy;
     uint32_t header = 0;
     if (wifi_image_header(device_service_program,
             (uint32_t)sizeof device_service_program, &target, &policy, &header))
