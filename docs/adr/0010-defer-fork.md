@@ -52,3 +52,71 @@ promises fork or ambiguous clone behavior.
 This ADR is a scope decision, not a proof that process duplication is safe or
 that the audited implementation refines a kernel binary. It adds no trusted
 code or trusted assumption.
+
+## Amendment (2026-10-07): readiness review for explicit spawn (issue #473)
+
+The readiness review the gate requires was carried out in issue #473 against
+`main` at the time of the 2026-10-07 roadmap. It covers **explicit spawn with
+an empty inheritance set** only; fork and clone stay excluded either way.
+
+### Gate status (2026-10-07)
+
+| Item | Status | Evidence or gap |
+| --- | --- | --- |
+| 1. One authoritative composite state | **Gap** | `FailStop.CompositeState` holds execution, scheduler, preemption, virtual memory, IPC, capabilities, `SubjectLifecycle`, resumable contexts, transfers, blocking IPC and its contexts, deferred cancels, direct-port I/O, DMA snapshots and invalidation publication. `BoundedLifecycle`'s never-reused issuers and the frame budgets (`FrameBudget`, reached through `FrameBudgetScenario.Runtime` and `CompositeDispatcher` tokens) live outside it. |
+| 2. Atomic creation, failure and exhaustion semantics | **Partial** | `BoundedLifecycle.createSubject` publishes a fresh identity atomically, with `createSubject_exhausted_unchanged` and `createSubject_rejected_unchanged`. No parent/child relation, inheritance, cleanup of a partly built child, or budget transfer has any semantics. |
+| 3. Enumerated inheritance set | **Met by this amendment** | See the set below. |
+| 4. Proof plan | **Gap** | The obligations are named below; none is proved for spawn. |
+| 5. Canonical executable encoding with adversarial tests | **Gap** | `CompositeDispatcher.Command.createSubjectOne` (tag 0x0101) is an oracle/boundary command, not a ring-3 syscall. No spawn encoding exists. |
+| 6. TCB and model-to-binary gap documented | **Met (unchanged)** | ADR 0001 and the README's trusted-boundary section; ADR 0023 records the first one-export refinement edge, which does not cover spawn. |
+
+### Spawn readiness decision
+
+The gate is **not met**. Spawn work may proceed only through #489 (explicit
+spawn), #490 (spawn resource accounting) and #491 (stale child authority).
+These gaps are explicit preconditions of #489, which may not add a ring-3
+spawn syscall until they are closed:
+
+1. Lifecycle issuers and frame budgets are folded into
+   `FailStop.CompositeState` (or reached from it by one authoritative
+   projection) so that spawn is one composite transition (gate item 1).
+2. Spawn has atomic semantics: every child component is built or none is,
+   exhaustion of identities, slots or budget is a typed rejection with the
+   state unchanged, and a failed spawn leaves no partial child (gate item 2).
+3. The proof plan below is discharged for the spawn transition (gate item 4).
+4. A canonical spawn encoding exists with adversarial oracle vectors for
+   partial failure, exhaustion, stale parent handles and isolation
+   (gate item 5).
+
+### Inheritance set for explicit spawn
+
+Nothing is inherited implicitly. The child receives exactly:
+
+- **one endpoint capability**, chosen by the parent, attenuated by
+  `Capability.copy` from a capability the parent holds with `grant`;
+- **a zero frame budget**; any frames come later through an explicit budget
+  transfer that #490 accounts for;
+- **a clean extended CPU state** (the reviewed reset value);
+- **no device authority** (`DeviceCapability.ungranted_subject_no_device_effects`
+  then applies to it);
+- **no pending IPC**: no queued sends, no waiter entries, no reply
+  capabilities;
+- **no fault state** and no fault-handler binding;
+- **a fresh, never-reused identity** from the lifecycle issuer, with its
+  parent recorded only as a parent/child relation, never as authority.
+
+### Proof plan for #489
+
+- Spawn preserves `Capability.WellFormed` and the composite invariants.
+- No authority amplification: the child's capability space is exactly the one
+  attenuated endpoint capability, and the parent's authority does not grow.
+- Confinement: the child can affect only what that capability reaches.
+- No stale references: a handle to a destroyed child fails, including across
+  slot reuse (#491).
+- Cleanup: terminating the child releases everything it was given.
+- Resource accounting: a parent cannot exceed its subject or frame budget by
+  spawning (#490).
+
+Process-creation proposals use the issue template
+`.github/ISSUE_TEMPLATE/process-creation.yml`, which requires the enumerated
+inheritance set and the proof plan before a model is accepted.

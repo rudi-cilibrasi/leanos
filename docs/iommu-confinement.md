@@ -1,9 +1,14 @@
 # Static IOMMU device-domain confinement
 
 `LeanOS.IOMMU` is the first finite assigned-device authority model. It is a
-Lean model only. It does not program Intel VT-d, construct remapping tables,
-invalidate an IOTLB, enable EDU DMA, or establish correspondence to generated
-C, QEMU, firmware, PCIe, or physical hardware.
+Lean model only. By itself it does not program Intel VT-d, construct
+remapping tables or invalidate an IOTLB. `LeanOS.VTdBootPlan` consumes its
+states to generate the q35 tables: deny-all for production images, and one
+assigned grant each for the `assigned-edu-inventory` and `device-service`
+images ([vtd-boot-plan.md](vtd-boot-plan.md#assigned-images)). That the
+installed tables match the generated words is tested by guest read-back. No
+correspondence to generated C, QEMU, firmware, PCIe, or physical hardware is
+proved.
 
 `LeanOS.VTdBootPlan` consumes accepted states of this model: its `compile`
 turns a deny-all state, or a state with one live assignment plus a reviewed

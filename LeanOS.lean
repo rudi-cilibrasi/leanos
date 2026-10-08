@@ -4,6 +4,7 @@ import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
 import LeanOS.CompositeDispatcher
+import LeanOS.ConsoleServer
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -28,6 +29,7 @@ import LeanOS.QotomMadtStreamRun
 import LeanOS.QotomBspTopology
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
+import LeanOS.NotifyReply
 import LeanOS.BlockingIPCContext
 import LeanOS.EndpointIPC
 import LeanOS.ExtendedState
@@ -46,6 +48,8 @@ import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
 import LeanOS.KernelTransition
+import LeanOS.Refinement.CSubset
+import LeanOS.Refinement.BootTransitionC
 import LeanOS.LifetimeIssuer
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
