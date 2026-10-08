@@ -1,0 +1,59 @@
+name: Process creation proposal
+description: Propose spawning or creating subjects. ADR 0010 governs this; fork and clone are excluded.
+title: "Process creation: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ADR 0010 (`docs/adr/0010-defer-fork.md`) gates every process-creation change.
+        Fork and any clone with implicit or underspecified inheritance are excluded.
+        A proposal is not accepted for modelling until every field below is complete.
+  - type: textarea
+    id: operation
+    attributes:
+      label: Operation
+      description: The creation operation, who may invoke it, and with which capability.
+    validations:
+      required: true
+  - type: textarea
+    id: inheritance
+    attributes:
+      label: Enumerated inheritance set (ADR 0010 gate item 3)
+      description: |
+        Every component the child receives, and every component reset to a fixed value:
+        capabilities (with rights), frame budget, extended CPU state, device authority,
+        pending IPC and reply capabilities, fault state, and resources owned by services.
+        Anything not listed is not inherited.
+    validations:
+      required: true
+  - type: textarea
+    id: proof-plan
+    attributes:
+      label: Proof plan (ADR 0010 gate item 4)
+      description: |
+        The theorems to prove: invariant preservation, confinement, no authority
+        amplification, stale references, cleanup, and resource accounting.
+    validations:
+      required: true
+  - type: textarea
+    id: atomicity
+    attributes:
+      label: Atomicity, failure and exhaustion (gate item 2)
+      description: What is built atomically, and the typed rejection that leaves the state unchanged on each failure.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Executable boundary and adversarial tests (gate item 5)
+      description: The canonical encoding and the oracle vectors for partial failure, rollback, cleanup and isolation.
+    validations:
+      required: true
+  - type: checkboxes
+    id: exclusions
+    attributes:
+      label: Exclusions
+      options:
+        - label: This proposal does not add fork or a clone with implicit inheritance.
+          required: true
