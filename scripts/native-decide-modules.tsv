@@ -24,7 +24,7 @@ LeanOS/DirectPortContainment.lean	bounded-model
 LeanOS/DirectPortIO.lean	bounded-model
 LeanOS/EndpointIPC.lean	bounded-model
 LeanOS/ExtendedState.lean	bounded-model
-LeanOS/FailStop.lean	bounded-model
+LeanOS/FailStop/Evidence.lean	bounded-model
 LeanOS/FaultDispatch.lean	bounded-model
 LeanOS/FrameBudget.lean	bounded-model
 LeanOS/FrameBudgetScenario.lean	bounded-model

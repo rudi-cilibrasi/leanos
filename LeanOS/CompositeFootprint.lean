@@ -98,4 +98,49 @@ theorem frames_trans (footprint : Footprint) (projection : Projection)
   intro untouched
   exact (second untouched).trans (first untouched)
 
+/-- Build a footprint from explicit read and write lists.  Every written
+projection is also read, so the `writesAreRead` obligation holds by
+construction and declarations only list what they observe in addition to
+what they change. -/
+def Footprint.ofLists (reads writes : List Projection) : Footprint where
+  reads := fun projection => decide (projection ∈ reads) || decide (projection ∈ writes)
+  writes := fun projection => decide (projection ∈ writes)
+  writesAreRead := by
+    intro projection written
+    simp only [decide_eq_true_eq] at written
+    simp [written]
+
+/-- A list-built footprint leaves exactly the unlisted projections untouched. -/
+theorem Footprint.ofLists_untouched (reads writes : List Projection)
+    (projection : Projection) :
+    Untouched (Footprint.ofLists reads writes) projection ↔ projection ∉ writes := by
+  simp [Untouched, Footprint.ofLists]
+
+/-- `small` writes no projection that `large` leaves untouched.  A transition
+framed by `small` is therefore also framed by `large`. -/
+def Footprint.WritesWithin (small large : Footprint) : Prop :=
+  ∀ projection, Untouched large projection → Untouched small projection
+
+/-- Frame obligations weaken to any footprint that writes at least as much. -/
+theorem frames_mono {small large : Footprint} (within : small.WritesWithin large)
+    (projection : Projection) {before after : α}
+    (framed : Frames small projection before after) :
+    Frames large projection before after := by
+  intro untouched
+  exact framed (within projection untouched)
+
+/-- List-built footprints are ordered by inclusion of their write lists.  The
+side condition is a closed Boolean computation on concrete lists. -/
+theorem Footprint.ofLists_writesWithin {smallReads smallWrites largeReads largeWrites :
+    List Projection}
+    (included : smallWrites.all (fun projection => decide (projection ∈ largeWrites)) = true) :
+    (Footprint.ofLists smallReads smallWrites).WritesWithin
+      (Footprint.ofLists largeReads largeWrites) := by
+  intro projection untouched
+  simp only [Untouched, Footprint.ofLists, decide_eq_false_iff_not] at untouched ⊢
+  intro written
+  have member := List.all_eq_true.1 included projection written
+  simp only [decide_eq_true_eq] at member
+  exact untouched member
+
 end LeanOS.CompositeFootprint

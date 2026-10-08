@@ -7,3 +7,6 @@ This vocabulary gives each authoritative composite-state projection a stable fin
 - `Footprint.untouched_not_written` — An untouched projection is not written, including the important case where an operation reads it without changing it.
 - `frames_of_eq` — Whenever a projection's before and after values are literally equal, its generic frame obligation is satisfied.
 - `frames_trans` — Projection frame obligations compose across two sequential steps, so preserving an untouched projection through each step also preserves it through their composition.
+- `Footprint.ofLists_untouched` — A footprint built from explicit read and write lists leaves a projection untouched exactly when that projection is not in its write list.
+- `frames_mono` — A frame guarantee proved for a footprint that writes less also holds for any footprint that writes at least as much, so a helper's narrow guarantee can be reused by an operation that declares a wider footprint.
+- `Footprint.ofLists_writesWithin` — If every projection in one write list also appears in another, the first list-built footprint writes nothing the second leaves untouched; the inclusion is checked by a simple computation on the concrete lists.
