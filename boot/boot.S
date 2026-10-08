@@ -2071,6 +2071,21 @@ user_a_entry:
     int $0x80
 9:  ud2
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
+    /* Receiver for the template-built example subject C (#484): take the
+       one word C queued on endpoint 12 (returned in RAX), then report it
+       (syscall 9) with the second word zero.  The three-subject sender
+       below is never reached in this image. */
+    mov $12, %rdx
+    mov $7, %rax
+    int $0x80
+    mov %rax, %rbx
+    xor %ecx, %ecx
+    mov $12, %rdx
+    mov $9, %rax
+    int $0x80
+    ud2
+#endif
     /* Sender subject: one two-word send to C's endpoint 12 (RDX). */
     mov $0x4c45414e, %rbx
     mov $3, %rcx
@@ -3053,7 +3068,10 @@ user_b_stack:
 .global user_b_stack_top
 user_b_stack_top:
 
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+/* An image that defines LEANOS_SUBJECT_C_OBJECT (example-subject) links C's
+   text and stack from a separately built subjects/ object instead
+   (scripts/build-subject.sh, docs/subjects.md, #484). */
+#if defined(LEANOS_THREE_SUBJECT_SCENARIO) && !defined(LEANOS_SUBJECT_C_OBJECT)
 /* Third subject C (issue #472): its own text and one-page stack, linked
    after B's and mapped only in address space C. */
 .section .user.c.text,"ax",@progbits

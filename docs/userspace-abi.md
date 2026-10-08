@@ -44,6 +44,10 @@ ABI.
 | 7 | three-subject | 3 | C blocks on endpoint 12 |
 | 8 | three-subject | 1 | A sends one word on endpoint 12 (RBX, RCX = payload) |
 | 9 | three-subject | 3 | C reports the delivered word (final record) |
+| 7 | example-subject | 1, 3 | C (built from subjects/example) blocks forever on endpoint 13; A receives C's word on endpoint 12 |
+| 8 | example-subject | 3 | C sends one word on endpoint 12 |
+| 9 | example-subject | 1 | A reports the delivered word (final record) |
+| 62 | example-subject | 2 | B's single run from its initial context, as in three-subject |
 | 10 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the initial handle |
 | 11 | canonical (blocking-ipc, preemption) | 2 | capability reuse: replay the stale handle (rejected) |
 | 12 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the fresh handle |

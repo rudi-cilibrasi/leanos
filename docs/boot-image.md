@@ -653,6 +653,10 @@ three subjects (it defines `LEANOS_THREE_SUBJECT_SCENARIO` and
 loop and one more switch path, in which C blocks again and A resumes. See
 [the console-server page](console-server.md).
 
+C's code can also come from a separately built C subject instead of
+`boot.S`. The `example-subject` image does that with the subject template and
+build rule in [subjects.md](subjects.md) (#484).
+
 ### Assigned-EDU negative variants
 
 The assigned-EDU scenario declares its extra boot fixtures in

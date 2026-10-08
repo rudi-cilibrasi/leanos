@@ -1246,6 +1246,35 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
         for module in MODULE.FAULT_DISPATCH_PARTS:
             self.assertIn(f"out/{module}.part.o", fault_rule)
 
+    def test_subject_objects_use_the_subject_build_rule(self) -> None:
+        graph = MODULE.render_graph(
+            Path("out"), "gcc", [], Path("/lean"), ROOT,
+            subjects={"subject-example": {"source": "subjects/example", "slot": "c"}},
+        )
+        lines = graph.splitlines()
+        index = next(
+            position for position, line in enumerate(lines)
+            if line.startswith("out/subject-example.o:")
+        )
+        rule, recipe = lines[index], lines[index + 1]
+        for prerequisite in ("subjects/example/main.c", "subjects/subject.ld",
+                             "subjects/runtime/entry.S",
+                             "scripts/build-subject.sh",
+                             "scripts/check-subject-policy.py"):
+            self.assertIn(str(ROOT / prerequisite), rule)
+        self.assertIn("scripts/build-subject.sh --cc $(IMAGE_CC) --slot c", recipe)
+        self.assertIn("out/subject-example.o", next(
+            line for line in lines if line.startswith("variant-assembly-objects:")))
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
+        bad = json.loads(json.dumps(manifest))
+        bad["build"]["subjects"]["subject-example"]["slot"] = "a"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(bad), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "subject 'subject-example' is malformed"):
+                MODULE.load_build_manifest(path)
+
     def test_cli_writes_deterministic_graph(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "objects.mk"
@@ -1282,6 +1311,13 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
                 "SECTIONS { . = 0x100000; .text : { *(.text*) } }\n",
                 encoding="utf-8",
             )
+            # Subject objects (#484) are built by the real build rule from
+            # the real subjects/ tree.
+            import shutil
+            shutil.copytree(ROOT / "subjects", source / "subjects")
+            (source / "scripts").mkdir()
+            for script in ("build-subject.sh", "check-subject-policy.py"):
+                shutil.copy2(ROOT / "scripts" / script, source / "scripts" / script)
             for index, module in enumerate(MODULE.GENERATED_MODULES):
                 (build / f"{module}.c").write_text(
                     f"int generated_module_{index}(void) {{ return {index}; }}\n",
