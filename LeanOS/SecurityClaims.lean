@@ -3233,6 +3233,19 @@ theorem device_program_declared_confinement {σ : Type} (π : Wifi.Bytecode.Poli
       false :=
   DeviceProgramConfinement.run_declared_confined π p hpol hwin d s0 fuel init hinit
 
+/-- SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS: an admissible device program, run
+by the reference simulator from zeroed scratch on any device model whose bus
+address of scratch is fixed, leaves every field of its policy's descriptor
+map (for xHCI: DCBAA and scratchpad-array entries, the ERST entry,
+input-context dequeue pointers and TRB parameters) holding zero or a bus
+address inside scratch, in every reachable state. -/
+theorem device_program_descriptor_pointers {σ : Type} (π : Wifi.Bytecode.Policy)
+    (p : Wifi.Bytecode.Program) (hp : DeviceProgramConfinement.admissible p π = true)
+    (d : Wifi.Sim.Device σ) (base : UInt32) (hphys : ∀ s, (d.phys s 0).1 = base)
+    (s0 : σ) (fuel : Nat) :
+    Wifi.Sim.descOk π base (Wifi.Sim.run p d s0 fuel).2.mem = true :=
+  DeviceProgramConfinement.run_admissible_descriptors π p hp d base hphys s0 fuel
+
 /-- SC-DEVICE-CAPABILITY-CONFINEMENT: in the device-capability kernel
 service, no sequence of capability operations, grants, binds, invocations and
 revocations makes any device act outside its policy, and only an invocation by

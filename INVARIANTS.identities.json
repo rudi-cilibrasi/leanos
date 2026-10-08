@@ -5709,6 +5709,12 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.descOk_zero",
+      "display": "descOk_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.exec_confined",
       "display": "exec_confined",
       "kind": "theorem"
@@ -5721,8 +5727,32 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.exec_descOk",
+      "display": "exec_descOk",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.get_zero",
+      "display": "get_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.iter_preserve",
       "display": "iter_preserve",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.le32_zero",
+      "display": "le32_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.loop_descOk",
+      "display": "loop_descOk",
       "kind": "theorem"
     },
     {
@@ -5799,6 +5829,12 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.run_admissible_descriptors",
+      "display": "run_admissible_descriptors",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.run_confined",
       "display": "run_confined",
       "kind": "theorem"
@@ -5807,6 +5843,12 @@
       "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.run_declared_confined",
       "display": "run_declared_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.run_declared_descriptors",
+      "display": "run_declared_descriptors",
       "kind": "theorem"
     },
     {
@@ -5829,6 +5871,12 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.setReg_mem",
+      "display": "setReg_mem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.setReg_stack",
       "display": "setReg_stack",
       "kind": "theorem"
@@ -5837,6 +5885,12 @@
       "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.step_stack_bounded",
       "display": "step_stack_bounded",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.xhciPolicies_descWf",
+      "display": "xhciPolicies_descWf",
       "kind": "theorem"
     },
     {
@@ -16499,6 +16553,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.device_program_declared_confinement",
       "display": "device_program_declared_confinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.device_program_descriptor_pointers",
+      "display": "device_program_descriptor_pointers",
       "kind": "theorem"
     },
     {

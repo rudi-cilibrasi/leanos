@@ -131,8 +131,18 @@ command -v objdump >/dev/null 2>&1 || { echo "error: missing required tool 'objd
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-nm -n "$elf" | awk 'NF >= 3 { print $3 }' | sort -u >"$tmp/symbols"
-objdump -d --no-show-raw-insn "$elf" | awk \
+# Absolute symbols (`.set` constants in boot.S) are not code, but objdump
+# labels a call target with any symbol at that address: if a function happens
+# to start at a constant's value, the edge would name the constant. Analyse a
+# copy without them.
+nm "$elf" | awk 'NF >= 3 && ($2 == "a" || $2 == "A") { print $3 }' | sort -u >"$tmp/absolute"
+if [[ -s "$tmp/absolute" ]]; then
+  objcopy --strip-symbols="$tmp/absolute" "$elf" "$tmp/analysed.elf"
+else
+  cp "$elf" "$tmp/analysed.elf"
+fi
+nm -n "$tmp/analysed.elf" | awk 'NF >= 3 { print $3 }' | sort -u >"$tmp/symbols"
+objdump -d --no-show-raw-insn "$tmp/analysed.elf" | awk \
     -v indirect="$tmp/indirect" -v pushes="$tmp/pushes" \
     -v assembly="$tmp/assembly" -v unsupported="$tmp/unsupported" \
     -v calls="$tmp/calls" '

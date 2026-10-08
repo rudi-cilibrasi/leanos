@@ -201,6 +201,49 @@ structure Target where
 def bcm43224Target : Target :=
   { bus := 2, dev := 0, fn := 0, id := 0x435314e4, windowBytes := 0x4000 }
 
+/-- A typed scratch region whose 64-bit fields a DMA controller reads as bus
+addresses (issue #495; ADR 0021). With `trb = false` the region is `count`
+pointer fields at `start + stride * i` (DCBAA, scratchpad array, ERST entry,
+endpoint-context dequeue pointers). With `trb = true` it is `count` 16-byte
+TRBs at `start + stride * i`; a TRB's parameter (bytes 0–7) is a pointer
+unless its type (control dword bits 10–15, `Descriptor.trbParamIsPtr`) is 0
+(reserved: never a valid TRB) or 2 (Setup Stage: the setup packet inline).
+That a layout's map names every pointer field the controller follows is an
+assumption about the controller's specification, not proved. -/
+structure Descriptor where
+  trb : Bool
+  start : UInt32
+  count : UInt32
+  stride : UInt32
+  deriving Repr, BEq, DecidableEq, Inhabited
+
+/-- The executor's limit on descriptors per policy. -/
+def maxDescriptors : Nat := 16
+
+/-- Bytes of one entry: a TRB or a 64-bit pointer. -/
+def Descriptor.size (d : Descriptor) : Nat := if d.trb then 16 else 8
+
+/-- Scratch offset of entry `i`. -/
+def Descriptor.addr (d : Descriptor) (i : Nat) : Nat := d.start.toNat + d.stride.toNat * i
+
+/-- One past the region's last byte. -/
+def Descriptor.limit (d : Descriptor) : Nat := d.addr (d.count.toNat - 1) + d.size
+
+/-- The executor accepts the descriptor: 1–4096 entries, all inside scratch. -/
+def Descriptor.wf (d : Descriptor) : Bool :=
+  1 ≤ d.count.toNat && d.count.toNat ≤ 4096 && d.limit ≤ scratchBytes
+
+/-- A TRB whose control dword is `ctl` carries a pointer parameter: every
+type except 0 (reserved) and 2 (Setup Stage, immediate data). -/
+def Descriptor.trbParamIsPtr (ctl : UInt32) : Bool :=
+  let t := (ctl >>> 10) &&& 0x3F
+  t != 0 && t != 2
+
+/-- A 64-bit pointer field (`lo`, `hi`) holds zero or a bus address inside
+scratch, given the bus address `base` of scratch byte 0. -/
+def ptrOk (base lo hi : UInt32) : Bool :=
+  hi == 0 && (lo == 0 || lo - base < scratchBytes.toUInt32)
+
 /-- Confinement policy of a device program (`LeanOS/DeviceProgramConfinement`).
 
 Configuration offsets are dword offsets below 0x100 (the header and the
@@ -214,7 +257,12 @@ dereferences as bus addresses (for xHCI: CRCR, DCBAAP, ERSTBA, ERDP). A
 program may write such a low dword only with `write32`/`write32At` and a
 value inside the executor's scratch (`value - phys(0) < scratchBytes`), and
 the high dword (`+ 4`) only with zero; any other write that touches a sink
-is a policy violation. -/
+is a policy violation.
+
+`descriptors` is the typed descriptor map: scratch regions whose pointer
+fields the device dereferences (`Descriptor`). Every scratch store must leave
+each of them holding zero or a bus address inside scratch
+(`LeanOS.Wifi.Sim.descOk`), and FIFO input into them is refused. -/
 structure Policy where
   window : UInt32
   cfgRead : UInt64
@@ -223,7 +271,16 @@ structure Policy where
   cmdSet : UInt32
   dma : Bool
   addrSinks : List UInt32 := []
+  descriptors : List Descriptor := []
   deriving Repr, BEq, DecidableEq
+
+/-- The executor accepts the descriptor map (image header check). -/
+def Policy.descWf (π : Policy) : Bool :=
+  π.descriptors.length ≤ maxDescriptors && π.descriptors.all Descriptor.wf
+
+/-- The `len` scratch bytes at `at_` overlap some descriptor region. -/
+def Policy.descTouch (π : Policy) (at_ len : Nat) : Bool :=
+  len != 0 && π.descriptors.any fun d => at_ < d.limit && d.start.toNat < at_ + len
 
 /-- Bitmap of the given configuration offsets (offsets ≥ 0x100 are dropped). -/
 def cfgBits (offs : List UInt32) : UInt64 :=
@@ -334,7 +391,9 @@ length; version 2 adds the target (bus << 16 | dev << 8 | fn, configuration
 identity dword, window bytes, BAR offset or 0 for 0x10); version 3 further adds the policy
 (flags with bit 0 = DMA, policy window, read bitmap low/high, write bitmap
 low/high, command clear mask, command set mask, address-sink count, then
-that many sink offsets); then 16-byte instructions, then the blob. -/
+that many sink offsets; with flags bit 1, a descriptor count and per
+descriptor kind (1 = TRB ring), start, count, stride); then 16-byte
+instructions, then the blob. -/
 
 def putU32 (b : ByteArray) (v : UInt32) : ByteArray :=
   b.push v.toUInt8 |>.push (v >>> 8).toUInt8 |>.push (v >>> 16).toUInt8 |>.push (v >>> 24).toUInt8
@@ -352,7 +411,7 @@ def Program.image (p : Program) : ByteArray := Id.run do
     b := putU32 b t.windowBytes
     b := putU32 b (if t.bar == 0x10 then 0 else t.bar)
   if let some π := p.policy then
-    b := putU32 b (if π.dma then 1 else 0)
+    b := putU32 b ((if π.dma then 1 else 0) ||| (if π.descriptors.isEmpty then 0 else 2))
     b := putU32 b π.window
     b := putU32 b π.cfgRead.toUInt32
     b := putU32 b (π.cfgRead >>> 32).toUInt32
@@ -362,6 +421,10 @@ def Program.image (p : Program) : ByteArray := Id.run do
     b := putU32 b π.cmdSet
     b := putU32 b π.addrSinks.length.toUInt32
     for o in π.addrSinks do b := putU32 b o
+    if !π.descriptors.isEmpty then
+      b := putU32 b π.descriptors.length.toUInt32
+      for d in π.descriptors do
+        b := putU32 (putU32 (putU32 (putU32 b (if d.trb then 1 else 0)) d.start) d.count) d.stride
   for w in p.words do
     b := putU32 (putU32 (putU32 (putU32 b w.op) w.a) w.b) w.c
   return b ++ p.blob
