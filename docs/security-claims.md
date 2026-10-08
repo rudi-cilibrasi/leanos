@@ -15,6 +15,17 @@ decidable computation is not replayed by kernel reduction. The repository-owned
 policy check inventories and classifies those source modules without treating
 the compiler as verified.
 
+## Device-read confidentiality by image class
+
+SC-IOMMU-READ-CONFIDENTIALITY is a statement about the finite IOMMU model. What
+it means for a booted image depends on the image class:
+
+| Image class | What device-read confidentiality means |
+| --- | --- |
+| All images | The model theorem only (SC-IOMMU-READ-CONFIDENTIALITY). |
+| q35 deny-all, `assigned-edu-inventory`, `device-service` | In addition, the guest's read-back of the installed VT-d tables against the generated words is tested evidence (SC-VTD-INSTALLED-TABLES). The hardware table walk, IOTLB and device obedience are not proved. |
+| Qotom J1900 (`vtd=not-applicable`) | Not applicable: there is no IOMMU, and DMA destinations are an assumption per ADR 0021. |
+
 <!-- claim-index:start -->
 | ID | Contract declaration | Source theorem | Model / transition | Assumptions | Evidence | Explicit exclusions |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -101,6 +112,7 @@ the compiler as verified.
 | SC-BOOT-TRANSITION-AGREEMENT | `boot_transition_agreement` | `KernelTransition.bootTransition_agrees` (whole domain: `bootTransition_spec`) | `KernelTransition.bootTransition` and `transition` | None: every model state, every command word | Proved | Generated C, the runtime shim, the compiler, the linker and the boot path: this is a statement about Lean definitions only |
 | SC-BOOT-TRANSITION-ORACLE | `bootTransitionClassVectors` | `Oracle.hosted_boot_transition_class_vectors_exact` pins the grid | Hosted generated C of `leanos_boot_transition` over {0, 1, 2, 2^64 − 1}² | The hosted compiler and sanitizer runtime | Tested by `scripts/check-hosted-generated-boundaries.sh` (ordinary and sanitized) | Finite grid only; not a proof; not the boot image's compilation |
 | SC-BOOT-TRANSITION-REFINEMENT | `boot_transition_refinement` | `Refinement.BootTransitionC.bootTransitionC_refines_transition` | The C function `leanos_boot_transition` as emitted by the pinned toolchain and interpreted by `Refinement.CSubset` refines `transition` under the encodings | The C-subset meaning, the extractor and the `uint64_t` calling convention (ADR 0023) | Proved (refinement) | Not the runtime shim, the C compiler, the linker, the boot path, QEMU, or any other export; generated-C execution outside the oracle is untested |
+| SC-VTD-INSTALLED-TABLES | `verify_vtd_state` | `VTdBootPlan.accepted_state_deny_all`, `deviceServiceState_shape`, the assigned-EDU projection checks | q35 images: the generated VT-d root, context and second-level tables, as installed and read back by the guest at activation and at every CPL3 gate | The pinned QEMU 8.2.2 `intel-iommu` configuration | Tested by `scripts/run-image.sh`, `scripts/run-assigned-edu.sh` and `scripts/check-vtd-mmio-policy.sh` | Not a proof: the hardware table walk, IOTLB caching, device obedience and the Qotom J1900 (no IOMMU) are excluded; refinement of the guest's C and assembly is not claimed |
 <!-- claim-index:end -->
 
 `SC-COMPOSITE-AUTHORITATIVE-COMPATIBLE-GATE` is the final published composite
