@@ -318,6 +318,20 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
   fi
 done
 
+# A second console holder (#472) is not unprivileged, so the integrity claim
+# cannot be instantiated for it.
+if lake env lean tests/negative/ConsoleCapabilityToSecondSubject.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: console integrity accepted a second console holder" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/ConsoleCapabilityToSecondSubject.lean' "$negative_log" ||
+    ! grep -Fq 'twoHolders.console ConsoleServer.Subject.b = false' "$negative_log"; then
+  echo "error: second-console-holder fixture lacked its expected diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 if lake env lean tests/negative/PageFaultAgreementWriteInstructionContainment.lean \
     >"$negative_log" 2>&1; then
   echo "error: impossible write/instruction page fault unexpectedly contained" >&2
