@@ -178,6 +178,7 @@ index current:
 | `return-flags-iopl` | evidence | SC-USER-RETURN-FAILSTOP |
 | `ipc-stream` | evidence | SC-IPC-EVENT-STREAM |
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
+| `example-subject` | evidence | none (integration only) |
 | `three-subject` | evidence | none (integration only) |
 | `notify-reply` | evidence | SC-NOTIFY-REPLY-NO-AMPLIFICATION, SC-NOTIFY-REPLY-NO-STALE-REUSE, SC-NOTIFY-REPLY-SINGLE-USE, SC-NOTIFY-REPLY-BUDGET |
 <!-- scenario-index:end -->

@@ -3118,7 +3118,9 @@
         "reason": "-"
       },
       "negative_evidence": null,
-      "reproducibility_artifacts": []
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Exercises the subject build rule only: the subject policy check is a host disassembly check, not a proof; the schedule is the kernel's fixed state machine, and the C kernel, boot.S, compiler, linker and QEMU stay trusted"
     },
     "three-subject": {
       "release_artifacts": [
