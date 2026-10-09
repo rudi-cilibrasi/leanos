@@ -1629,10 +1629,13 @@
       },
       {
         "image": "leanos-fault-handler",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-fault-handler.h",
         "final": "boot-page-plan-fault-handler.final.h",
-        "description": "fault-handler"
+        "description": "fault-handler",
+        "targets": [
+          "leanos-fault-handler"
+        ]
       },
       {
         "image": "leanos-three-subject",
