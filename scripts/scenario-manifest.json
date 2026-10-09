@@ -1448,10 +1448,15 @@
       },
       {
         "image": "leanos-fault-containment",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-fault-containment.h",
         "final": "boot-page-plan-fault-containment.final.h",
-        "description": "fault-containment"
+        "description": "fault-containment",
+        "targets": [
+          "leanos-fault-containment",
+          "leanos-fault-readonly-write",
+          "leanos-fault-nx-execute"
+        ]
       },
       {
         "image": "leanos-fault-readonly-write",
@@ -1534,10 +1539,13 @@
       },
       {
         "image": "leanos-entry-adversarial",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-entry-adversarial.h",
         "final": "boot-page-plan-entry-adversarial.final.h",
-        "description": "entry-adversarial"
+        "description": "entry-adversarial",
+        "targets": [
+          "leanos-entry-adversarial"
+        ]
       },
       {
         "image": "leanos-direct-port-serial",
