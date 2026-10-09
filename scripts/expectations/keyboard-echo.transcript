@@ -20,7 +20,7 @@
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only,device
 @10/CAP@ event=refuse subject=1 op=console-write slot=0 reason=wrong-kind model=refused
-@10/DEVICE@ event=bind subject=1 device=0:2.0 image-bytes=413300 policy=admitted window=16384 dma=vtd result=PASS
+@10/DEVICE@ event=bind subject=1 device=0:2.0 image-bytes=423624 policy=admitted window=16384 dma=vtd result=PASS
 @10/DEVICE@ event=ready subject=1 vendor=1575 product=1 type-now
 @10/IPC@ event=send sender=1 slot=0 endpoint=12 payload0=108 payload1=1 receiver=3 accepted=1
 @8/PAGING@ root=C selected=1 result=PASS
