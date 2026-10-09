@@ -4283,12 +4283,14 @@ static uint64_t ipc_stream_next_event(void) {
 #endif
 }
 
+#ifndef LEANOS_DEVICE_SERVICE_SCENARIO
 static void ipc_stream_key_name(uint64_t key) {
     if (key == '\n') serial_puts("enter");
     else if (key == ' ') serial_puts("space");
     else if (key > 0x20 && key < 0x7f) serial_putc((char)key);
     else serial_u64(key);
 }
+#endif
 
 /* The word subject A finds in RAX when boot.S resumes it after B blocks
    (path 10): 0 for the ipc-stream send, the reply word in the
@@ -4422,8 +4424,16 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
             fail("ipc-stream-payload");
         ipc_stream_step = 0;
         ipc_stream_events++;
+#ifdef LEANOS_DEVICE_SERVICE_SCENARIO
+        /* Issue #493: B holds no output authority, so the kernel records only
+           the checked delivery and prints no echo on B's behalf.  The key's
+           value is in the send record above; its echo through the console
+           capability is the keyboard-echo image. */
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 sender=1 exact=1\n");
+#else
         serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 sender=1 exact=1 echo=");
         ipc_stream_key_name(arg0); serial_putc('\n');
+#endif
         return 0;
     }
     if (number == 61 && current_subject == 1 && ipc_stream_step == 1) {
@@ -4797,36 +4807,89 @@ static void console_server_install(void) {
    prints no echo of its own.
 
    The device capability table is kernel-owned read-only data, like the
-   console table.  Before C first runs the kernel checks it against the
-   generated console witness `leanos_console_authorize`: the one device
-   holder is refused every console operation, and no subject the witness
-   lets write the console holds a device capability.  A device request
-   without the capability is refused without effect, as
-   `DeviceCapability.no_capability_no_effect` says the model does. */
+   console table.  It is backed by the generated Lean witness
+   `leanos_device_authorize` (KeyboardEcho.deviceAuthorize, equal to the
+   installed `bootDeviceCaps` by `deviceAuthorize_agrees`; `bootDeviceCaps`
+   is what one DeviceCapability.grant of the device to A installs).  Before C
+   first runs the kernel checks that the table grants, for every subject and
+   for the assigned device and another device index, exactly what that
+   witness accepts, and against the console witness `leanos_console_authorize`
+   that the one device holder is refused every console operation and no
+   subject the console witness lets write or read the console holds a device
+   capability.  Every device request is then decided from the table and
+   checked against the device witness; a disagreement is a fail-stop.  A
+   request without the capability is refused without effect, as
+   `DeviceCapability.no_capability_no_effect` says the model does.
+
+   The key exchange is also checked against the generated blocking-IPC
+   witness `leanos_blocking_ipc_event`, as the device-service image checks
+   its own.  The model's receiver role (subject 2 there) is played by C and
+   its sender by A.  Its four edges are: C blocks on endpoint 12 (0); A's
+   accepted send (1) and the dispatch of C it causes (2), checked together at
+   the send; and C's receipt of A's words (3), checked at C's first kernel
+   entry after it is woken, by which time console_server_switch has found
+   the words in C's registers exact. */
 #define KEYBOARD_ECHO_NO_DEVICE 7u
 #define KEYBOARD_ECHO_DEVICE_HOLDER 1u
+/* The model's device index of the assigned q35 xHCI at 0:2.0, and one other
+   index, which nobody holds. */
+#define KEYBOARD_ECHO_DEVICE 0u
+#define KEYBOARD_ECHO_OTHER_DEVICE 1u
+/* KeyboardEcho.deviceAuthorize answers ConsoleServer.acceptCode/refuseCode. */
+#define DEVICE_WITNESS_ACCEPT 1u
+#define DEVICE_WITNESS_REFUSE 2u
+/* BlockingIPC.blockingIpcEvent's roles and its four accepted edge words
+   (blockingIpcEvent_agrees_demo). */
+#define KEYBOARD_ECHO_MODEL_SENDER 1u
+#define KEYBOARD_ECHO_MODEL_RECEIVER 2u
+static const uint64_t keyboard_echo_ipc_words[4] = {
+    0x0000000100010101ull, 0x0000000100010202ull,
+    0x0000000200020303ull, 0x0001000200020404ull,
+};
 /* Indexed by subject: 1 when the subject holds the capability for the one
    assigned device, the q35 xHCI at 0:2.0. */
 static const uint8_t keyboard_echo_device_capabilities[4] = {
     [KEYBOARD_ECHO_DEVICE_HOLDER] = 1,
 };
 static uint64_t keyboard_echo_keys, keyboard_echo_device_refusals;
+static uint64_t keyboard_echo_ipc_step, keyboard_echo_ipc_edges;
+
+static uint64_t keyboard_echo_device_expected(uint64_t subject, uint64_t device) {
+    return keyboard_echo_device_capabilities[subject] && device == KEYBOARD_ECHO_DEVICE
+        ? DEVICE_WITNESS_ACCEPT : DEVICE_WITNESS_REFUSE;
+}
 
 static void keyboard_echo_install(void) {
     uint64_t holders = 0, holder = 0;
+    if (keyboard_echo_device_capabilities[0] != 0 ||
+        leanos_device_authorize(0, KEYBOARD_ECHO_DEVICE) != 0)
+        fail("keyboard-echo-device-subject-domain");
     for (uint64_t subject = 1; subject <= 3; ++subject) {
         uint64_t writes = leanos_console_authorize(subject, CONSOLE_OP_WRITE);
         uint64_t reads = leanos_console_authorize(subject, CONSOLE_OP_READ);
+        if (leanos_device_authorize(subject, KEYBOARD_ECHO_DEVICE) !=
+                keyboard_echo_device_expected(subject, KEYBOARD_ECHO_DEVICE) ||
+            leanos_device_authorize(subject, KEYBOARD_ECHO_OTHER_DEVICE) !=
+                keyboard_echo_device_expected(subject, KEYBOARD_ECHO_OTHER_DEVICE))
+            fail("keyboard-echo-device-model-authority");
         if (!keyboard_echo_device_capabilities[subject]) continue;
         holders++;
         holder = subject;
         if (writes != CONSOLE_WITNESS_REFUSE || reads != CONSOLE_WITNESS_REFUSE)
             fail("keyboard-echo-device-console-overlap");
     }
-    if (keyboard_echo_device_capabilities[0] != 0 || holders != 1 ||
-        holder != KEYBOARD_ECHO_DEVICE_HOLDER)
+    if (holders != 1 || holder != KEYBOARD_ECHO_DEVICE_HOLDER)
         fail("keyboard-echo-device-install");
     serial_puts(LEANOS_SERIAL_10_CAP " event=install-device device=0:2.0 device-holders=1 holder=1 holder-console=refused console-holder-device=none model=agree result=PASS\n");
+}
+
+/* One edge of the model's key exchange, taken by `caller` in its role. */
+static void keyboard_echo_ipc_edge(uint64_t caller) {
+    if (leanos_blocking_ipc_event(keyboard_echo_ipc_step, keyboard_echo_ipc_step + 1,
+                                  caller) != keyboard_echo_ipc_words[keyboard_echo_ipc_step])
+        fail("keyboard-echo-ipc-model");
+    keyboard_echo_ipc_step = (keyboard_echo_ipc_step + 1) & 3u;
+    keyboard_echo_ipc_edges++;
 }
 
 static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
@@ -4834,13 +4897,18 @@ static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
 
 static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
                                       uint64_t arg1, uint64_t arg2) {
+    if (current_subject == 3 && keyboard_echo_ipc_step == 3)
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_RECEIVER);
     if (number == 60) {
         console_server_require_caller();
+        if (leanos_device_authorize(current_subject, KEYBOARD_ECHO_DEVICE) !=
+            keyboard_echo_device_expected(current_subject, KEYBOARD_ECHO_DEVICE))
+            fail("keyboard-echo-device-model-decision");
         if (!keyboard_echo_device_capabilities[current_subject]) {
             keyboard_echo_device_refusals++;
             serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
             serial_u64(current_subject);
-            serial_puts(" op=device-invoke device=0:2.0 reason=no-device-capability\n");
+            serial_puts(" op=device-invoke device=0:2.0 reason=no-device-capability model=refused\n");
             return CONSOLE_RESULT_REFUSED | (KEYBOARD_ECHO_NO_DEVICE << 8);
         }
         /* Only A holds the device; the server must be waiting for its key. */
@@ -4857,7 +4925,9 @@ static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
             console_bytes != keyboard_echo_keys || console_lines == 0 ||
             console_refusals != 4 || keyboard_echo_device_refusals != 1 ||
             console_blocks != keyboard_echo_keys + 1 ||
-            console_line_length != 0 || !console_server_waiting)
+            console_line_length != 0 || !console_server_waiting ||
+            keyboard_echo_ipc_step != 1 ||
+            keyboard_echo_ipc_edges != 4 * keyboard_echo_keys + 1)
             fail("keyboard-echo-count");
         serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 console-holder=3 device-holder=1 keys=");
         serial_u64(keyboard_echo_keys);
@@ -4866,12 +4936,22 @@ static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" console-bytes="); serial_u64(console_bytes);
         serial_puts(" refusals=");
         serial_u64(console_refusals + keyboard_echo_device_refusals);
+        serial_puts(" ipc-edges="); serial_u64(keyboard_echo_ipc_edges);
         serial_putc('\n');
         finish(0x10);
     }
+    uint64_t caller = current_subject;
     /* A real call for the same reason as in syscall_handler. */
     uint64_t result = console_server_syscall(number, arg0, arg1, arg2);
     __asm__ volatile ("" ::: "memory");
+    if (number == 7 && caller == 3 &&
+        (result == THREE_SUBJECT_C_BLOCKED || result == CONSOLE_SERVER_C_RESUME_A)) {
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_RECEIVER);
+    } else if (number == 8 && caller == KEYBOARD_ECHO_DEVICE_HOLDER &&
+               result == THREE_SUBJECT_A_SENT) {
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_SENDER);
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_SENDER);
+    }
     return result;
 }
 #endif

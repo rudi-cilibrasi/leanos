@@ -170,6 +170,96 @@ theorem server_no_device_effects {σ} (models : Nat → Wifi.Sim.Device σ)
   DeviceCapability.ungranted_subject_no_device_effects models sys (subjectId .server) ts
     (by rw [hcaps]; decide) hg
 
+/-! ## The installed device authority and its generated witness
+
+The kernel's device capability table is checked at boot against
+`deviceAuthorize`, the allocation-free witness of `bootDeviceCaps` exported
+as `leanos_device_authorize`. `bootDeviceCaps` is what one
+`DeviceCapability.grant` of the admitted device to `a` installs
+(`boot_grant_installs`), and the witness answers exactly that table
+(`deviceAuthorize_agrees`). -/
+
+/-- From a system with no device capabilities and the admitted device `0`,
+the kernel's one grant of device `0` to `a` installs `bootDeviceCaps`. -/
+theorem boot_grant_installs {σ} (models : Nat → Wifi.Sim.Device σ)
+    (sys : DeviceCapability.System σ) (D : DeviceCapability.Device)
+    (hdev : sys.devices 0 = some D) (hnone : ∀ s, sys.deviceCaps s = none) :
+    (DeviceCapability.step models sys (.grant (subjectId .a) 0)).1.deviceCaps =
+      bootDeviceCaps := by
+  funext s
+  simp [DeviceCapability.step, hdev, bootDeviceCaps, hnone]
+
+/-- Allocation-free boot witness of `bootDeviceCaps`. For a subject code
+(`ConsoleServer.subjectCode`) and a device index it answers `acceptCode`
+when the subject holds that device's capability, `refuseCode` when it does
+not, and `0` for a subject code outside the ABI. The literals need no Lean
+runtime (ADR 0002); `deviceAuthorize_agrees` ties them to the model. -/
+@[export leanos_device_authorize]
+def deviceAuthorize (subject device : UInt64) : UInt64 :=
+  if subject == 0 || subject > 3 then 0
+  else if subject == 1 && device == 0 then 1
+  else 2
+
+/-- The witness answers exactly the installed device authority. -/
+theorem deviceAuthorize_agrees (who : Subject) (device : UInt64) :
+    deviceAuthorize (subjectCode who) device =
+      if bootDeviceCaps (subjectId who) = some ⟨device.toNat⟩ then acceptCode
+      else refuseCode := by
+  have hz : device.toNat = 0 ↔ device = 0 := by
+    constructor
+    · intro h; exact UInt64.toNat_inj.mp (by simpa using h)
+    · intro h; simp [h]
+  cases who <;>
+    simp [deviceAuthorize, bootDeviceCaps, subjectId, subjectCode, acceptCode, refuseCode,
+      eq_comm (a := 0), hz]
+
+/-- Subject codes outside the ABI get neither answer. -/
+theorem deviceAuthorize_off_domain (subject device : UInt64)
+    (h : subject = 0 ∨ 3 < subject) : deviceAuthorize subject device = 0 := by
+  unfold deviceAuthorize
+  rcases h with h | h
+  · simp [h]
+  · simp [h]
+
+/-- Only `a` is ever accepted, and only for device `0`. -/
+theorem deviceAuthorize_accepts (subject device : UInt64)
+    (h : deviceAuthorize subject device = acceptCode) : subject = 1 ∧ device = 0 := by
+  unfold deviceAuthorize acceptCode at h
+  split at h
+  · exact absurd h (by decide)
+  · split at h
+    · rename_i hs
+      simpa using hs
+    · exact absurd h (by decide)
+
+/-- The two generated witnesses keep the authorities apart: a subject the
+device witness accepts is refused console writes and reads by the console
+witness, and a subject the console witness lets write or read the console is
+refused every device. -/
+theorem witnesses_disjoint (who : Subject) (device : UInt64) :
+    (deviceAuthorize (subjectCode who) device = acceptCode →
+      consoleAuthorize (subjectCode who) (opCode (.write 0)) = refuseCode ∧
+        consoleAuthorize (subjectCode who) (opCode .read) = refuseCode) ∧
+    (consoleAuthorize (subjectCode who) (opCode (.write 0)) = acceptCode ∨
+        consoleAuthorize (subjectCode who) (opCode .read) = acceptCode →
+      deviceAuthorize (subjectCode who) device = refuseCode) := by
+  cases who <;>
+    simp [deviceAuthorize, consoleAuthorize, subjectCode, opCode, acceptCode, refuseCode]
+
+/-- A subject the witness refuses device `0` holds no device capability, so
+every `bind` or `invoke` it attempts under the installed authority is denied
+without effect (`DeviceCapability.no_capability_no_effect`). -/
+theorem deviceAuthorize_refused_no_effect {σ} (models : Nat → Wifi.Sim.Device σ)
+    (sys : DeviceCapability.System σ) (hcaps : sys.deviceCaps = bootDeviceCaps)
+    (who : Subject) (h : deviceAuthorize (subjectCode who) 0 = refuseCode) :
+    (∀ program, DeviceCapability.step models sys (.bind (subjectId who) program) =
+        (sys, .denied)) ∧
+    (∀ fuel, DeviceCapability.step models sys (.invoke (subjectId who) fuel) =
+        (sys, .denied)) := by
+  apply DeviceCapability.no_capability_no_effect
+  rw [hcaps]
+  cases who <;> simp_all [deviceAuthorize, bootDeviceCaps, subjectId, subjectCode, refuseCode]
+
 /-! ## The booted keyboard-echo run -/
 
 /-- The keys typed through QMP in the boot run: `lean ipc` and Enter. -/

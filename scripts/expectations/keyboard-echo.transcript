@@ -8,7 +8,7 @@
 @10/CAP@ event=install-device device=0:2.0 device-holders=1 holder=1 holder-console=refused console-holder-device=none model=agree result=PASS
 @8/PAGING@ root=C selected=1 result=PASS
 @10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=console-server
-@10/CAP@ event=refuse subject=3 op=device-invoke device=0:2.0 reason=no-device-capability
+@10/CAP@ event=refuse subject=3 op=device-invoke device=0:2.0 reason=no-device-capability model=refused
 @10/CAP@ event=read subject=3 slot=0 input=empty accepted=1
 @10/IPC@ event=block subject=3 slot=1 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=B selected=1 result=PASS
@@ -78,4 +78,4 @@
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1
 @10/DEVICE@ event=end subject=1 status=0 code=0
-@10/FINAL@ status=PASS subjects=3 console-holder=3 device-holder=1 keys=9 deliveries=9 console-lines=1 console-bytes=9 refusals=5
+@10/FINAL@ status=PASS subjects=3 console-holder=3 device-holder=1 keys=9 deliveries=9 console-lines=1 console-bytes=9 refusals=5 ipc-edges=37
