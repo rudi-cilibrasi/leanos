@@ -5739,6 +5739,372 @@ static void fault_handler_switch(uint64_t *target, uint64_t target_owner,
 }
 #endif
 
+#ifdef LEANOS_FRAME_SERVER_SCENARIO
+/* Frame server (#486, LeanOS.FrameServer; docs/frame-server.md).  This image
+   is the three-subject image with subject C built from subjects/frame-server
+   by the subject template.  C holds the pool capability over two reserved,
+   page-aligned frames; A (1) holds a budget capability of one frame and
+   B (2) one of two.  Allocation policy lives in C: on each request it picks
+   the client's answer (grant a named pool frame with named rights, refuse
+   with a typed reason, or revoke the client's budget capability) and hands
+   it to the kernel with syscall 91.
+
+   The kernel keeps only the mechanism: who holds which pool frame, the
+   budget limits, scrubbing and mapping.  It checks every decision against
+   the generated Lean witness `leanos_frame_server_check`
+   (FrameServer.frameServerCheck, equal to the model's check by
+   `frameServerCheck_agrees`) over its own words for the decision: op, the
+   named frame's view, the client's usage and limit, the requested rights and
+   the pool rights.  It chooses no frame, client, rights or reason itself, and
+   a decision the witness refuses stops the machine.  A grant scrubs the
+   whole frame before it maps it into the client's root; revocation unmaps
+   it and leaves the bytes, which the next grant scrubs.
+
+   The run: C blocks on endpoint 12; B runs once from its initial context
+   (the three-subject step); A is granted pool frame 0 and writes a canary,
+   is refused over budget (typed 0x100), and releases its budget, which C
+   answers by revoking it; B resumes, is granted the same frame, and reads
+   zero where A's canary was. */
+extern char user_c_template_text[];
+#define FRAME_SERVER_ENDPOINT 12u
+#define FRAME_SERVER_STACK_BYTES 2048u
+#define FRAME_SERVER_POOL_FRAMES 2u
+#define FRAME_SERVER_POOL_RIGHTS 3u          /* read 1 | write 2 */
+#define FRAME_SERVER_RESIDUE 0xffu
+#define FRAME_SERVER_CANARY 0xa5u
+#define FRAME_SERVER_C_RESUMES_A 0x3c05u
+#define FRAME_SERVER_B_WAKES_C 0x3c06u
+#define FRAME_SERVER_C_RESUMES_B 0x3c07u
+#define FRAME_SERVER_REQUEST_FRAME 1u
+#define FRAME_SERVER_REQUEST_RELEASE 2u
+/* FrameServer.opWord and encodeReply. */
+#define FRAME_SERVER_OP_GRANT 1u
+#define FRAME_SERVER_OP_REFUSE_BUDGET 2u
+#define FRAME_SERVER_OP_REFUSE_POOL 3u
+#define FRAME_SERVER_OP_RECLAIM 4u
+#define FRAME_SERVER_OP_REVOKE 5u
+#define FRAME_SERVER_GRANTED 1u
+#define FRAME_SERVER_REVOKED 5u
+#define FRAME_SERVER_BUDGET_EXHAUSTED 0x100u
+#define FRAME_SERVER_REJECTED 0xf00u
+#define FRAME_SERVER_USER_LEAF (PTE_PRESENT | PTE_WRITABLE | PTE_USER | PTE_NX)
+
+/* The pool: two reserved frames of the kernel image, page-aligned so that
+   each is exactly one leaf.  Their initial residue (0xff) stands for
+   whatever a frame held before; nothing is mapped to a client unscrubbed. */
+static uint8_t frame_server_pool[FRAME_SERVER_POOL_FRAMES][PAGE_BYTES]
+    __attribute__((aligned(PAGE_BYTES)));
+/* The mechanism: the holder (0 free) and rights of each pool frame, the
+   client root leaf a grant replaced, and each client's budget capability. */
+static uint64_t frame_server_holder[FRAME_SERVER_POOL_FRAMES];
+static uint64_t frame_server_rights[FRAME_SERVER_POOL_FRAMES];
+static uint64_t frame_server_saved_leaf[FRAME_SERVER_POOL_FRAMES];
+static uint64_t frame_server_limit[4];
+/* 0 C runs, 1 C blocked, 2 B ran, 3 C woken by A, 4 A granted, 5 C woken by
+   A, 6 A refused, 7 C woken by A's release, 8 B resumed, 9 C woken by B,
+   10 B granted. */
+static unsigned frame_server_step;
+static uint64_t frame_server_request, frame_server_client, frame_server_answer;
+static uint64_t frame_server_grants, frame_server_refusals, frame_server_revocations;
+
+static void frame_server_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("frame-server-subject");
+}
+
+static void check_frame_server_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != FRAME_SERVER_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("frame-server-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/frame-server entry=text-start stack=2048 result=PASS\n");
+}
+
+static uint64_t frame_server_page(uint64_t index) {
+    return (uint64_t)frame_server_pool[index] / PAGE_BYTES;
+}
+
+static uint64_t *frame_server_client_table(uint64_t client) {
+    if (client == 1) return page_table_a;
+    if (client == 2) return page_table_b;
+    fail("frame-server-client-table");
+}
+
+/* The number of pool frames `holder` holds (0: the free frames). */
+static uint64_t frame_server_usage(uint64_t holder) {
+    uint64_t usage = 0;
+    for (uint64_t i = 0; i < FRAME_SERVER_POOL_FRAMES; ++i)
+        if (frame_server_holder[i] == holder) usage++;
+    return usage;
+}
+
+/* FrameServer.frameView, or the free-frame bit of a pool-exhausted refusal. */
+static uint64_t frame_server_view(uint64_t op, uint64_t client, uint64_t index) {
+    if (op == FRAME_SERVER_OP_GRANT || op == FRAME_SERVER_OP_RECLAIM) {
+        if (index >= FRAME_SERVER_POOL_FRAMES) return 0;
+        if (frame_server_holder[index] == 0) return 1;
+        return frame_server_holder[index] == client ? 2 : 3;
+    }
+    if (op == FRAME_SERVER_OP_REFUSE_POOL)
+        return frame_server_usage(0) != 0 ? 1 : 0;
+    return 0;
+}
+
+/* Before any subject runs: install the budget capabilities, leave the
+   residue in both pool frames, require every pool leaf to be a
+   supervisor-only identity leaf in all three roots, and require the witness
+   to refuse each hostile decision a server could make (the words of
+   FrameServer.boot_hostile_refused). */
+static void frame_server_install(void) {
+    frame_server_limit[1] = 1;
+    frame_server_limit[2] = 2;
+    for (uint64_t i = 0; i < FRAME_SERVER_POOL_FRAMES; ++i) {
+        uint64_t page = frame_server_page(i);
+        if (((uint64_t)frame_server_pool[i] & (PAGE_BYTES - 1)) != 0 ||
+            page >= BOOT_LEAF_COUNT ||
+            (page_table_a[page] & (PTE_PRESENT | PTE_USER)) != PTE_PRESENT ||
+            (page_table_b[page] & (PTE_PRESENT | PTE_USER)) != PTE_PRESENT ||
+            (page_table_c[page] & (PTE_PRESENT | PTE_USER)) != PTE_PRESENT ||
+            (page_table_a[page] & PTE_ADDRESS) != page * PAGE_BYTES ||
+            (page_table_b[page] & PTE_ADDRESS) != page * PAGE_BYTES)
+            fail("frame-server-pool-leaf");
+        for (uint64_t b = 0; b < PAGE_BYTES; ++b)
+            frame_server_pool[i][b] = FRAME_SERVER_RESIDUE;
+    }
+    if (leanos_frame_server_check(1, 0, 0, 1, 3, 3) != 0xf02 ||
+        leanos_frame_server_check(1, 3, 0, 1, 3, 3) != 0xf03 ||
+        leanos_frame_server_check(1, 1, 0, 1, 4, 3) != 0xf04 ||
+        leanos_frame_server_check(1, 1, 0, 1, 0, 3) != 0xf04 ||
+        leanos_frame_server_check(1, 1, 1, 1, 3, 3) != 0xf05 ||
+        leanos_frame_server_check(2, 0, 0, 1, 0, 3) != 0xf07 ||
+        leanos_frame_server_check(4, 3, 0, 1, 0, 3) != 0xf06 ||
+        leanos_frame_server_check(0, 1, 0, 1, 3, 3) != 0xf08)
+        fail("frame-server-model-hostile");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install server=3 pool-frames=2 pool-rights=read,write budget-a=1 budget-b=2 residue=255 leaves=supervisor hostile-decisions=8 witness=refused result=PASS\n");
+}
+
+/* Scrub the whole frame, check it, and only then publish the client leaf. */
+static uint64_t frame_server_grant(uint64_t client, uint64_t index, uint64_t rights) {
+    uint64_t page = frame_server_page(index);
+    uint64_t *table = frame_server_client_table(client);
+    volatile uint8_t *frame = frame_server_pool[index];
+    for (uint64_t b = 0; b < PAGE_BYTES; ++b) frame[b] = 0;
+    for (uint64_t b = 0; b < PAGE_BYTES; ++b)
+        if (frame[b] != 0) fail("frame-server-scrub");
+    __asm__ volatile ("" ::: "memory");
+    if ((table[page] & PTE_USER) != 0 || rights != FRAME_SERVER_POOL_RIGHTS)
+        fail("frame-server-grant-leaf");
+    frame_server_saved_leaf[index] = table[page];
+    table[page] = page * PAGE_BYTES | FRAME_SERVER_USER_LEAF;
+    __asm__ volatile ("invlpg (%0)" : : "r"(page * PAGE_BYTES) : "memory");
+    frame_server_holder[index] = client;
+    frame_server_rights[index] = rights;
+    frame_server_grants++;
+    serial_puts(LEANOS_SERIAL_10_CAP " event=grant server=3 client=");
+    serial_u64(client);
+    serial_puts(" pool-frame="); serial_u64(index);
+    serial_puts(" rights=read,write usage="); serial_u64(frame_server_usage(client));
+    serial_puts(" budget="); serial_u64(frame_server_limit[client]);
+    serial_puts(" witness=granted scrubbed=4096 mapped=user,nx result=PASS\n");
+    return page * PAGE_BYTES;
+}
+
+/* Unmap every frame the client holds and zero its budget.  The bytes stay:
+   release does not scrub (FrameServer.release_preserves_bytes). */
+static void frame_server_revoke(uint64_t client) {
+    uint64_t *table = frame_server_client_table(client);
+    uint64_t retired = 0, first = 0, last = 0;
+    for (uint64_t i = 0; i < FRAME_SERVER_POOL_FRAMES; ++i) {
+        if (frame_server_holder[i] != client) continue;
+        uint64_t page = frame_server_page(i);
+        if ((table[page] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
+            (page * PAGE_BYTES | FRAME_SERVER_USER_LEAF))
+            fail("frame-server-revoke-leaf");
+        table[page] = frame_server_saved_leaf[i];
+        __asm__ volatile ("invlpg (%0)" : : "r"(page * PAGE_BYTES) : "memory");
+        frame_server_holder[i] = 0;
+        frame_server_rights[i] = 0;
+        first = frame_server_pool[i][0];
+        last = frame_server_pool[i][PAGE_BYTES - 1];
+        retired++;
+    }
+    frame_server_limit[client] = 0;
+    frame_server_revocations++;
+    if (retired != 1 || first != FRAME_SERVER_CANARY || last != FRAME_SERVER_CANARY ||
+        frame_server_usage(client) != 0)
+        fail("frame-server-revoke");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=revoke server=3 client=");
+    serial_u64(client);
+    serial_puts(" frames=1 budget=0 witness=revoked unmapped=1 residue-first=");
+    serial_u64(first);
+    serial_puts(" residue-last="); serial_u64(last);
+    serial_puts(" scrubbed=0 result=PASS\n");
+}
+
+/* C's decision for the pending request: checked by the witness, then
+   applied exactly as named.  C then blocks on endpoint 12 and the kernel
+   resumes the client the answer is for, or B once A has released. */
+static uint64_t frame_server_decide(uint64_t word, uint64_t client, uint64_t index) {
+    if (frame_server_step != 3 && frame_server_step != 5 && frame_server_step != 7 &&
+        frame_server_step != 9)
+        fail("frame-server-decision-sequence");
+    if (client != frame_server_client) fail("frame-server-decision-client");
+    uint64_t op = word & 0xffu, rights = word >> 8;
+    uint64_t usage = frame_server_usage(client);
+    uint64_t limit = frame_server_limit[client];
+    uint64_t view = frame_server_view(op, client, index);
+    uint64_t result = leanos_frame_server_check(op, view, usage, limit,
+        op == FRAME_SERVER_OP_GRANT ? rights : 0, FRAME_SERVER_POOL_RIGHTS);
+    if (result >= FRAME_SERVER_REJECTED) fail("frame-server-decision-refused");
+    if (op == FRAME_SERVER_OP_GRANT && result == FRAME_SERVER_GRANTED) {
+        frame_server_answer = frame_server_grant(client, index, rights);
+    } else if (op == FRAME_SERVER_OP_REFUSE_BUDGET &&
+               result == FRAME_SERVER_BUDGET_EXHAUSTED) {
+        frame_server_answer = FRAME_SERVER_BUDGET_EXHAUSTED;
+        frame_server_refusals++;
+        serial_puts(LEANOS_SERIAL_10_CAP " event=refuse server=3 client=");
+        serial_u64(client);
+        serial_puts(" reason=budget-exhausted usage="); serial_u64(usage);
+        serial_puts(" budget="); serial_u64(limit);
+        serial_puts(" free-frames="); serial_u64(frame_server_usage(0));
+        serial_puts(" witness=budget-exhausted answer=256 transferred=0 result=PASS\n");
+    } else if (op == FRAME_SERVER_OP_REVOKE && result == FRAME_SERVER_REVOKED) {
+        frame_server_revoke(client);
+        frame_server_answer = FRAME_SERVER_REVOKED;
+    } else {
+        fail("frame-server-decision-unexpected");
+    }
+    serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
+    if (frame_server_step == 7) {
+        frame_server_step = 8;
+        current_subject = 2;
+        return FRAME_SERVER_C_RESUMES_B;
+    }
+    frame_server_step = frame_server_step + 1;
+    current_subject = frame_server_client;
+    return frame_server_step == 10 ? FRAME_SERVER_C_RESUMES_B : FRAME_SERVER_C_RESUMES_A;
+}
+
+/* A client's request on endpoint 12 (syscall 90).  C receives the request
+   word with the kernel-attested client identity.  A release ends the
+   client: it never runs again. */
+static uint64_t frame_server_call(uint64_t request, uint64_t endpoint) {
+    if (endpoint != FRAME_SERVER_ENDPOINT ||
+        (request != FRAME_SERVER_REQUEST_FRAME && request != FRAME_SERVER_REQUEST_RELEASE))
+        fail("frame-server-request");
+    unsigned expected_step;
+    if (current_subject == 1)
+        expected_step = request == FRAME_SERVER_REQUEST_RELEASE ? 6u
+            : frame_server_step == 2 ? 2u : 4u;
+    else
+        expected_step = request == FRAME_SERVER_REQUEST_FRAME ? 8u : 0xffu;
+    if (frame_server_step != expected_step) fail("frame-server-request-sequence");
+    frame_server_request = request;
+    frame_server_client = current_subject;
+    serial_puts(LEANOS_SERIAL_10_IPC " event=call subject=");
+    serial_u64(current_subject);
+    serial_puts(request == FRAME_SERVER_REQUEST_FRAME
+        ? " endpoint=12 request=frame receiver=3\n"
+        : " endpoint=12 request=release receiver=3 blocked-forever=1\n");
+    frame_server_step++;
+    uint64_t sender = current_subject;
+    current_subject = 3;
+    return sender == 1 ? THREE_SUBJECT_A_SENT : FRAME_SERVER_B_WAKES_C;
+}
+
+static uint64_t frame_server_syscall(uint64_t number, uint64_t arg0,
+                                     uint64_t arg1, uint64_t arg2) {
+    frame_server_require_caller();
+    if (number == 7 && current_subject == 3 && frame_server_step == 0) {
+        if (arg2 != FRAME_SERVER_ENDPOINT) fail("frame-server-receive-endpoint");
+        frame_server_step = 1;
+        three_subject_step = 1;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 role=frame-server result=PASS\n");
+        return THREE_SUBJECT_C_BLOCKED;
+    }
+    if (number == 62 && current_subject == 2 && frame_server_step == 1) {
+        frame_server_step = 2;
+        return three_subject_syscall(number, arg0, arg1, arg2);
+    }
+    if (number == 90 && current_subject != 3)
+        return frame_server_call(arg0, arg2);
+    if (number == 91 && current_subject == 3) {
+        uint64_t next = frame_server_decide(arg0, arg1, arg2);
+        __asm__ volatile ("" : "+r"(next));
+        return next;
+    }
+    if (number == 93 && current_subject == 2 && frame_server_step == 10) {
+        if (arg2 != frame_server_page(0) * PAGE_BYTES || arg0 != 0 || arg1 != 0 ||
+            frame_server_holder[0] != 2 || frame_server_holder[1] != 0 ||
+            frame_server_limit[1] != 0 || frame_server_limit[2] != 2 ||
+            frame_server_grants != 2 || frame_server_refusals != 1 ||
+            frame_server_revocations != 1)
+            fail("frame-server-reuse");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=report subject=2 pool-frame=0 reused-from=1 first-byte=0 last-byte=0 zero=1 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 server=3 grants=2 refusals=1 revocations=1 reused=1 scrubbed=1 decisions-checked=4\n");
+        finish(0x10);
+    }
+    fail("frame-server-sequence");
+}
+
+static void frame_server_switch(uint64_t *target, uint64_t target_owner,
+                                uint64_t saved_owner) {
+    if (current_subject == 3 && (frame_server_step == 3 || frame_server_step == 5 ||
+                                 frame_server_step == 7 || frame_server_step == 9)) {
+        uint64_t sender = frame_server_step == 9 ? 2u : 1u;
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != sender) fail("frame-server-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        if (sender == 2)
+            check_original_frame(saved_context_b, saved_context_b_original_rip,
+                saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        else
+            check_original_frame(saved_context_a, saved_context_a_original_rip,
+                saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        /* SAVE layout: RAX at word 14, RBX 13, RCX 12.  The request word and
+           the kernel-attested client identity, not the client's registers. */
+        target[14] = frame_server_request;
+        target[13] = frame_server_client;
+        target[12] = 0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 request=");
+        serial_puts(frame_server_request == FRAME_SERVER_REQUEST_FRAME ? "frame" : "release");
+        serial_puts(" client="); serial_u64(frame_server_client);
+        serial_putc('\n');
+        return;
+    }
+    if (current_subject == 1 && (frame_server_step == 4 || frame_server_step == 6)) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 3) fail("frame-server-resume-a-owner");
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        target[14] = frame_server_answer;
+        serial_puts(frame_server_answer == FRAME_SERVER_BUDGET_EXHAUSTED
+            ? LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1 answer=budget-exhausted\n"
+            : LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1 answer=pool-frame-0\n");
+        return;
+    }
+    if (current_subject == 2 && (frame_server_step == 8 || frame_server_step == 10)) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("frame-server-resume-b-owner");
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        target[14] = frame_server_step == 10 ? frame_server_answer : 0;
+        serial_puts(frame_server_step == 10
+            ? LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 resumed=1 answer=pool-frame-0\n"
+            : LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 context=saved released-subject=1\n");
+        return;
+    }
+    three_subject_switch(target, target_owner, saved_owner);
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
@@ -5769,6 +6135,15 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     (void)saved_flags;
     return fault_handler_syscall(number, arg0, arg1, arg2);
+#elif defined(LEANOS_FRAME_SERVER_SCENARIO)
+    (void)saved_flags;
+    {
+        /* A real call, as for the endpoint directory: the entry-stack gate
+           must see the edge under every supported compiler. */
+        uint64_t frame_server_result = frame_server_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" : "+r"(frame_server_result));
+        return frame_server_result;
+    }
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     (void)saved_flags;
@@ -6565,6 +6940,9 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     fault_handler_switch(target, target_owner, saved_owner);
     return;
+#elif defined(LEANOS_FRAME_SERVER_SCENARIO)
+    frame_server_switch(target, target_owner, saved_owner);
+    return;
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     three_subject_switch(target, target_owner, saved_owner);
     return;
@@ -7359,6 +7737,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=fault-handler controls=wp,smep,smap\n");
+#elif defined(LEANOS_FRAME_SERVER_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=frame-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -7540,6 +7920,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=14\n");
+    enter_user(user_c_entry, user_c_stack_top);
+#elif defined(LEANOS_FRAME_SERVER_SCENARIO)
+    check_boot_page_table_c();
+    check_frame_server_slot();
+    frame_server_install();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=frame-server\n");
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
     check_boot_page_table_c();

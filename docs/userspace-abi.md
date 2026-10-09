@@ -53,6 +53,11 @@ ABI.
 | 63 | fault-handler | 2 | B continues from its saved context after A's fault was handled; reports its canaries (final record) |
 | 64 | fault-handler | 3 | C reports the fault record it received (RBX class word, RCX faulting subject, RDX address) |
 | 65 | fault-handler | 3 | C answers the fault: RBX decision (1 = terminate), RCX faulting subject, RDX endpoint 14 |
+| 7 | frame-server | 3 | C (built from subjects/frame-server) blocks on endpoint 12 for its first request; woken with the request (RAX) and the kernel-attested client (RBX) |
+| 62 | frame-server | 2 | B's first run from its initial context, as in three-subject |
+| 90 | frame-server | 1, 2 | request to the frame server on endpoint 12 (RDX): RBX 1 asks for a frame (answer: its page address, or the typed rejection 0x100), RBX 2 releases the client's budget (A only; A never runs again) |
+| 91 | frame-server | 3 | C's decision for the pending request, checked against the generated witness: RBX op (1 grant, 2 refuse over budget, 3 refuse pool exhausted, 5 revoke) with rights << 8, RCX client, RDX pool frame; C then blocks on endpoint 12 for the next request |
+| 93 | frame-server | 2 | B reports the first and last byte of its republished frame (RBX, RCX) and its address (RDX) (final record) |
 | 10 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the initial handle |
 | 11 | canonical (blocking-ipc, preemption) | 2 | capability reuse: replay the stale handle (rejected) |
 | 12 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the fresh handle |

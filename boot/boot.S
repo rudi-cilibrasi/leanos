@@ -1514,6 +1514,14 @@ isr80_cld:
     cmp $0x3c04, %rax
     je 33f
 #endif
+#ifdef LEANOS_FRAME_SERVER_SCENARIO
+    cmp $0x3c05, %rax
+    je 40f
+    cmp $0x3c06, %rax
+    je 41f
+    cmp $0x3c07, %rax
+    je 42f
+#endif
 #endif
     cmp $0xbeef, %rax
     je 8f
@@ -1689,6 +1697,84 @@ isr80_cld:
 #ifdef LEANOS_FAULT_HANDLER_SCENARIO
 33: /* Fault handler C replied and blocked forever: preserve C, then restore
        B's saved continuation (B resumes after its first report). */
+    mov %rsp, %rsi
+    lea saved_context_c(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_c+120(%rip), %rax
+    mov %rax, saved_context_c_original_rip(%rip)
+    mov saved_context_c+136(%rip), %rax
+    mov %rax, saved_context_c_original_flags(%rip)
+    mov saved_context_c+144(%rip), %rax
+    mov %rax, saved_context_c_original_rsp(%rip)
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+#endif
+#ifdef LEANOS_FRAME_SERVER_SCENARIO
+40: /* Frame server (#486): C decided A's request and blocked again on
+       endpoint 12.  Preserve C's exact continuation and resume A; the
+       kernel sets A's answer in switch_complete. */
+    mov %rsp, %rsi
+    lea saved_context_c(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_c+120(%rip), %rax
+    mov %rax, saved_context_c_original_rip(%rip)
+    mov saved_context_c+136(%rip), %rax
+    mov %rax, saved_context_c_original_flags(%rip)
+    mov saved_context_c+144(%rip), %rax
+    mov %rax, saved_context_c_original_rsp(%rip)
+    lea saved_context_a(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $0, 112(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+41: /* B's request to endpoint 12 woke C: preserve B's exact continuation
+       and restore C's blocked one; the kernel hands C the request word and
+       B's identity in switch_complete. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
+    lea saved_context_c(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_c, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_c(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+42: /* C decided and blocked again: preserve C and restore B's saved
+       continuation (after its first report, or after its request); the
+       kernel sets B's answer in switch_complete. */
     mov %rsp, %rsi
     lea saved_context_c(%rip), %rdi
     mov $20, %ecx
@@ -2236,6 +2322,44 @@ user_a_entry:
 user_a_fault_handler_divide:
     div %ecx
     ud2
+#endif
+#ifdef LEANOS_FRAME_SERVER_SCENARIO
+    /* Client A (#486): its budget capability allows one frame.  It asks the
+       frame server for a frame (syscall 90, request 1, endpoint 12); the
+       answer is the page address of the granted pool frame.  It writes the
+       canary 0xa5 to the frame's first and last byte and reads both back.
+       Its second request is over its budget: the typed rejection 0x100.  It
+       then releases its budget (request 2, RCX the frame) and never runs
+       again; the server answers by revoking it. */
+    mov $1, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $90, %eax
+    int $0x80
+    test %rax, %rax
+    jz 9f
+    test $0xfff, %eax
+    jnz 9f
+    mov %rax, %r12
+    movb $0xa5, (%r12)
+    movb $0xa5, 4095(%r12)
+    cmpb $0xa5, (%r12)
+    jne 9f
+    cmpb $0xa5, 4095(%r12)
+    jne 9f
+    mov $1, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $90, %eax
+    int $0x80
+    cmp $0x100, %rax
+    jne 9f
+    mov $2, %ebx
+    mov %r12, %rcx
+    mov $12, %edx
+    mov $90, %eax
+    int $0x80
+9:  ud2
 #endif
     /* Sender subject: one two-word send to C's endpoint 12 (RDX). */
     mov $0x4c45414e, %rbx
@@ -2787,6 +2911,28 @@ user_b_entry:
     mov %r13, %rcx
     mov $63, %rax
     int $0x80
+#endif
+#ifdef LEANOS_FRAME_SERVER_SCENARIO
+    /* Client B (#486): its budget capability allows two frames.  Resumed
+       after A released its budget, it asks the frame server for a frame
+       (syscall 90); the answer is the page A used, republished.  It reads
+       the first and last byte, which the kernel scrubbed before mapping, and
+       reports them with the address (syscall 93). */
+    mov $1, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $90, %eax
+    int $0x80
+    test %rax, %rax
+    jz 9f
+    test $0xfff, %eax
+    jnz 9f
+    mov %rax, %rdx
+    movzbl (%rdx), %ebx
+    movzbl 4095(%rdx), %ecx
+    mov $93, %eax
+    int $0x80
+9:
 #endif
     ud2
 #endif

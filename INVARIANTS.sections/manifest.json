@@ -61,6 +61,7 @@
     "LeanOS/FrameBudget.lean",
     "LeanOS/FrameBudgetScenario.lean",
     "LeanOS/FrameScrub.lean",
+    "LeanOS/FrameServer.lean",
     "LeanOS/IOMMU.lean",
     "LeanOS/IOTLB.lean",
     "LeanOS/IPCSyscall.lean",

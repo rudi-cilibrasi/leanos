@@ -20,6 +20,7 @@ import LeanOS.UserCopyPolicy
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
+import LeanOS.FrameServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -82,7 +83,8 @@ def adapters : List AdapterSpec := [
   adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6,
   adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
-  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4]
+  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
+  adapter "FrameServer.check" 26 "leanos_frame_server_check" 6]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -150,6 +152,11 @@ private def directoryResolve (id : String) (registered held : UInt64) : Vector :
 private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
   { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
     expected := FaultHandler.faultHandlerRoute event vector subject word }
+
+private def frameServerCheck (id : String) (op view usage limit requested held : UInt64) :
+    Vector :=
+  { id, adapter := "FrameServer.check", words := [op, view, usage, limit, requested, held],
+    expected := FrameServer.frameServerCheck op view usage limit requested held }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -531,6 +538,31 @@ def faultHandlerVectors : List Vector := [
   faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
   faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
 
+/-- Frame-server decision checks (#486): the image's four decisions (grant
+to A, A's over-budget refusal, A's revocation, the republished grant to B),
+then every rejection of a hostile decision (outside the pool, frame in use,
+amplified or empty rights, over budget, untruthful refusals, reclaim of a
+frame the client does not hold), an accepted reclaim and pool-exhausted
+refusal, an unknown op, and maximum words. -/
+def frameServerVectors : List Vector := [
+  frameServerCheck "frame-server.grant-a" 1 1 0 1 3 3,
+  frameServerCheck "frame-server.refuse-a-over-budget" 2 0 1 1 0 3,
+  frameServerCheck "frame-server.revoke-a" 5 0 1 1 0 3,
+  frameServerCheck "frame-server.grant-b-republished" 1 1 0 2 3 3,
+  frameServerCheck "frame-server.grant-outside-pool" 1 0 0 1 3 3,
+  frameServerCheck "frame-server.grant-frame-in-use" 1 3 0 1 3 3,
+  frameServerCheck "frame-server.grant-amplified-rights" 1 1 0 1 4 3,
+  frameServerCheck "frame-server.grant-empty-rights" 1 1 0 1 0 3,
+  frameServerCheck "frame-server.grant-over-budget" 1 1 1 1 3 3,
+  frameServerCheck "frame-server.refuse-within-budget" 2 0 0 1 0 3,
+  frameServerCheck "frame-server.refuse-pool-with-free-frame" 3 1 0 1 0 3,
+  frameServerCheck "frame-server.refuse-pool-exhausted" 3 0 0 1 0 3,
+  frameServerCheck "frame-server.reclaim-held" 4 2 1 1 0 3,
+  frameServerCheck "frame-server.reclaim-not-holder" 4 3 0 1 0 3,
+  frameServerCheck "frame-server.unknown-op" 0 1 0 1 3 3,
+  frameServerCheck "frame-server.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
+
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
 2^64 − 1, which cover its equivalence classes (the accepting word, the
@@ -885,9 +917,10 @@ def vectors : List Vector := [
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
-    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors
+    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
+    frameServerVectors
 
-theorem corpus_shape : vectors.length = 512 := by decide
+theorem corpus_shape : vectors.length = 528 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -926,7 +959,12 @@ theorem hosted_directory_resolve_vectors_exact :
 
 /-- Oracle indices 501--511 are the fault-handler route corpus (#488). -/
 theorem hosted_fault_handler_vectors_exact :
-    vectors.drop 501 = faultHandlerVectors := by
+    (vectors.drop 501).take faultHandlerVectors.length = faultHandlerVectors := by
+  rfl
+
+/-- Oracle indices 512--527 are the frame-server decision-check corpus (#486). -/
+theorem hosted_frame_server_vectors_exact :
+    vectors.drop 512 = frameServerVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -956,7 +994,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors := by
+        faultHandlerVectors ++ frameServerVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :
