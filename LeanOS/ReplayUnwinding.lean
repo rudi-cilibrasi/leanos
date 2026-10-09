@@ -19,6 +19,11 @@ The conclusion `finite_trace_lowEquiv` is termination-insensitive finite-trace
 noninterference: from low-equivalent initial states, runs whose observer event
 projections are equal end in low-equivalent states, even when the runs contain
 different numbers and choices of silent steps.
+
+`ReplaysOn` relativizes the obligation to an invariant that every step
+preserves (`Preserves`).  `finite_trace_lowEquiv_on` then needs the invariant
+only of the two initial states; the unconditional `Replays` is the special
+case of the trivial invariant (`replaysOn_true`).
 -/
 namespace LeanOS.ReplayUnwinding
 
@@ -87,6 +92,76 @@ theorem finite_trace_lowEquiv (hreplays : Replays system) (left right : State)
     LowEquiv system (run system left leftSteps).1 (run system right rightSteps).1 := by
   unfold LowEquiv at *
   rw [run_replays system hreplays left leftSteps, run_replays system hreplays right rightSteps]
+  simp only [projection] at hevents
+  rw [hlow, hevents]
+
+/-! ## Unwinding relative to a trace invariant -/
+
+/-- Every step preserves `invariant`. -/
+def Preserves (invariant : State → Prop) : Prop :=
+  ∀ state step, invariant state → invariant (system.execute state step).1
+
+/-- The one-step unwinding obligation, required only of states satisfying
+`invariant`. -/
+def ReplaysOn (invariant : State → Prop) : Prop :=
+  ∀ state step, invariant state → system.observe (system.execute state step).1 =
+    replay system (system.observe state) (system.execute state step).2.toList
+
+theorem replaysOn_true (hreplays : Replays system) :
+    ReplaysOn system fun _ => True :=
+  fun state step _ => hreplays state step
+
+/-- Invariant-relative local respect and output-determined step consistency
+discharge `ReplaysOn`. -/
+theorem replaysOn_of_unwinding (invariant : State → Prop)
+    (silent_unchanged : ∀ state step, invariant state →
+      (system.execute state step).2 = none →
+      system.observe (system.execute state step).1 = system.observe state)
+    (visible_replays : ∀ state step event, invariant state →
+      (system.execute state step).2 = some event →
+      system.observe (system.execute state step).1 =
+        system.applyEvent (system.observe state) event) :
+    ReplaysOn system invariant := by
+  intro state step hinvariant
+  cases hevent : (system.execute state step).2 with
+  | none => simpa [replay, hevent] using silent_unchanged state step hinvariant hevent
+  | some event =>
+      simpa [replay, hevent] using visible_replays state step event hinvariant hevent
+
+theorem run_preserves {invariant : State → Prop} (hpreserves : Preserves system invariant)
+    (state : State) (steps : List Step) (hstate : invariant state) :
+    invariant (run system state steps).1 := by
+  induction steps generalizing state with
+  | nil => exact hstate
+  | cons step rest ih => exact ih _ (hpreserves state step hstate)
+
+theorem run_replays_on {invariant : State → Prop} (hreplays : ReplaysOn system invariant)
+    (hpreserves : Preserves system invariant) (state : State) (steps : List Step)
+    (hstate : invariant state) :
+    system.observe (run system state steps).1 =
+      replay system (system.observe state) (run system state steps).2 := by
+  induction steps generalizing state with
+  | nil => simp [run, replay]
+  | cons step rest ih =>
+    simp only [run]
+    rw [ih (system.execute state step).1 (hpreserves state step hstate),
+      hreplays state step hstate]
+    simp [replay, List.foldl_append]
+
+/-- **Finite-trace noninterference relative to a trace invariant.**  As
+`finite_trace_lowEquiv`, but the unwinding obligation is needed only on states
+satisfying an invariant that every step preserves, and the invariant is
+assumed only of the two initial states. -/
+theorem finite_trace_lowEquiv_on {invariant : State → Prop}
+    (hreplays : ReplaysOn system invariant) (hpreserves : Preserves system invariant)
+    (left right : State) (leftSteps rightSteps : List Step)
+    (hleft : invariant left) (hright : invariant right)
+    (hlow : LowEquiv system left right)
+    (hevents : projection system left leftSteps = projection system right rightSteps) :
+    LowEquiv system (run system left leftSteps).1 (run system right rightSteps).1 := by
+  unfold LowEquiv at *
+  rw [run_replays_on system hreplays hpreserves left leftSteps hleft,
+    run_replays_on system hreplays hpreserves right rightSteps hright]
   simp only [projection] at hevents
   rw [hlow, hevents]
 
