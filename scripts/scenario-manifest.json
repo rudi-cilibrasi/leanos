@@ -1531,10 +1531,13 @@
       },
       {
         "image": "leanos-keyboard-echo",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-keyboard-echo.h",
         "final": "boot-page-plan-keyboard-echo.final.h",
-        "description": "keyboard-echo"
+        "description": "keyboard-echo",
+        "targets": [
+          "leanos-keyboard-echo"
+        ]
       },
       {
         "image": "leanos-example-subject",
