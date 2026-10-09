@@ -5755,7 +5755,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         __asm__ volatile ("" ::: "memory");
         return result;
     }
-#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+#endif
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
     (void)saved_flags;
     return console_server_syscall(number, arg0, arg1, arg2);
 #elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
@@ -5765,13 +5766,14 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     uint64_t directory_result = directory_syscall(number, arg0, arg1, arg2);
     __asm__ volatile ("" : "+r"(directory_result));
     return directory_result;
-#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
-    (void)saved_flags;
-    return example_subject_syscall(number, arg0, arg1, arg2);
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     (void)saved_flags;
     return fault_handler_syscall(number, arg0, arg1, arg2);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
+    (void)saved_flags;
+    return example_subject_syscall(number, arg0, arg1, arg2);
+#endif
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
 #endif
