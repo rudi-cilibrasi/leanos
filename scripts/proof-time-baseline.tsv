@@ -1,4 +1,4 @@
-# reason: raise BootPageTablePlan (third-subject plan proofs, #472 slice 1) and DeviceProgramConfinement (xHCI descriptor pointers, #495) to their measured normalized times in CI run of PR #523
+# reason: add the generated device-program executor modules (LeanOS.Wifi.ExecRefinement: the step equals Sim.step, #494; LeanOS.Wifi.Exec; LeanOS.DeviceProgramExecutor) at their measured times normalized to this baseline
 module	seconds
 LeanOS.FailStop	137.8
 LeanOS.CompositeDispatcher	121.8
@@ -12,6 +12,7 @@ LeanOS.BlockingIPC	44.4
 LeanOS.QotomMadtStream	41.9
 LeanOS.Interrupt	38.4
 LeanOS.InterruptEntry	37.0
+LeanOS.Wifi.ExecRefinement	30.0
 LeanOS.DeviceProgramConfinement	54.4
 LeanOS.SecurityClaims	21.0
 LeanOS.Oracle	17.9
@@ -45,6 +46,7 @@ LeanOS.BoundaryVocabulary	3.9
 LeanOS.CapabilityHandle	3.6
 LeanOS.PlatformAdmission	3.6
 LeanOS.FrameBudget	3.6
+LeanOS.Wifi.Exec	4.0
 LeanOS.Wifi.Bytecode	3.3
 LeanOS.BootInterruptPhase	3.3
 LeanOS.UserCopyAliases	2.9
@@ -157,3 +159,4 @@ LeanOS.UserCopyBinding	0.3
 LeanOS.NegativeFixtures.Example	0.3
 LeanOS	0.3
 LeanOS.NegativeFixtures.WrappingIssuerReuse	0.3
+LeanOS.DeviceProgramExecutor	0.5

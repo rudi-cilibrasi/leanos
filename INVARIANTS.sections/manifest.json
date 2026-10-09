@@ -33,6 +33,7 @@
     "LeanOS/DMAQuarantineCorpus.lean",
     "LeanOS/DeviceCapability.lean",
     "LeanOS/DeviceProgramConfinement.lean",
+    "LeanOS/DeviceProgramExecutor.lean",
     "LeanOS/DirectPortContainment.lean",
     "LeanOS/DirectPortIO.lean",
     "LeanOS/EndpointDirectory.lean",

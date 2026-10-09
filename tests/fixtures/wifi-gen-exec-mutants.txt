@@ -1,0 +1,17 @@
+// One mutant per line, "original@mutated": the first occurrence of `original`
+// in hardware/wifi/wifi-gen-exec.h is replaced (scripts/check-device-programs.sh).
+// Each seeded hook bug must change the generated executor's summary of some
+// fuzzed program: the differential still covers the trusted hook primitives.
+if (r < 16) wifi_gen_vm->r[r] = v;@if (r < 15) wifi_gen_vm->r[r] = v;
+v |= (uint32_t)S[(uint64_t)at + i] << ((8 * i) % 32);@v |= (uint32_t)S[(uint64_t)at + i] << (8 * (i % 2));
+S[(uint64_t)at + i] = (uint8_t)(v >> ((8 * i) % 32));@S[(uint64_t)at + i] = (uint8_t)v;
+return wifi_gen_vm->sp >= WIFI_STACK_DEPTH; }@return wifi_gen_vm->sp > WIFI_STACK_DEPTH; }
+wifi_gen_vm->stack[wifi_gen_vm->sp++] = wifi_gen_vm->pc;@wifi_gen_vm->stack[wifi_gen_vm->sp++] = wifi_gen_vm->pc + 1;
+if (wifi_gen_vm->sp) wifi_gen_vm->pc = wifi_gen_vm->stack[--wifi_gen_vm->sp];@if (wifi_gen_vm->sp) wifi_gen_vm->pc = wifi_gen_vm->stack[wifi_gen_vm->sp - 1];
+return i < wifi_gen_vm->pol.sink_count ? wifi_gen_vm->pol.sinks[i] : 0;@return wifi_gen_vm->pol.sinks[0];
+return k < wifi_gen_vm->pol.desc_count ? wifi_gen_vm->pol.descs[k].start : 0;@return k < wifi_gen_vm->pol.desc_count ? wifi_gen_vm->pol.descs[k].start + 8 : 0;
+uint32_t wifi_gen_pol_dma(uint64_t t) { (void)t; return wifi_gen_vm->pol.dma; }@uint32_t wifi_gen_pol_dma(uint64_t t) { (void)t; return 1; }
+WH_CW32(off, (WH_CR32(off) & ~clr) | set); return 0;@WH_CW32(off, WH_CR32(off) | set); return 0;
+uint64_t wifi_gen_phys_base(uint64_t t) { (void)t; WG_HOOKS; return WH_PHYS(0); }@uint64_t wifi_gen_phys_base(uint64_t t) { (void)t; WG_HOOKS; return WH_PHYS(4); }
+else *code = vm->pc - 1;@else *code = vm->pc;
+uint64_t wifi_gen_pc_ok(uint64_t t) { (void)t; return wifi_gen_vm->pc < wifi_gen_vm->n; }@uint64_t wifi_gen_pc_ok(uint64_t t) { (void)t; return wifi_gen_vm->pc <= wifi_gen_vm->n; }

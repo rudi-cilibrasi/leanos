@@ -6,6 +6,10 @@
 # computation-only cross-check program and on random programs (differential
 # fuzzing, issue #451). The fuzzer's power is itself checked: every mutant of
 # wifi-exec.h in tests/fixtures/wifi-exec-mutants.txt must be caught.
+# The generated executor (issue #494: the compiled LeanOS.Wifi.Exec.step,
+# proved equal to Sim.step) runs the same corpus and must agree with both
+# (scripts/check-generated-executor-host.sh), which also checks its
+# freestanding boot shape.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,10 +60,13 @@ if ! cmp -s "$out/fuzz/expected.txt" "$out/fuzz/c.txt"; then
 fi
 echo "device programs: $fuzz_count fuzzed programs agree (seed $fuzz_seed)"
 
+# Generated executor vs handwritten executor vs Sim on the same corpus.
+LEANOS_DEVICE_PROGRAM_CORPUS="$out/fuzz" ./scripts/check-generated-executor-host.sh
+
 # Mutation self-test: each seeded executor bug (first occurrence of the
 # pattern) must change some summary line or crash the runner.
 mkdir -p "$out/mutant"
-cp hardware/wifi/fuzz-runner.c "$out/mutant/"
+cp hardware/wifi/fuzz-runner.c hardware/wifi/fuzz-model.h "$out/mutant/"
 killed=0
 total=0
 while IFS='@' read -r original mutated; do
@@ -82,3 +89,41 @@ PY
   killed=$((killed + 1))
 done < tests/fixtures/wifi-exec-mutants.txt
 echo "device programs: fuzzing caught $killed/$total executor mutants"
+
+# Hook mutation self-test (issue #494): each seeded bug in a C hook of the
+# generated executor (tests/fixtures/wifi-gen-exec-mutants.txt) must change
+# some summary line, so the differential still covers the trusted hooks.
+prefix="$(lake env lean --print-prefix)"
+gmut="$out/gen-mutant"
+mkdir -p "$gmut/hardware/wifi" "$gmut/tests"
+cp hardware/wifi/wifi-exec.h hardware/wifi/fuzz-model.h "$gmut/hardware/wifi/"
+cp tests/device-program-exec-host.c "$gmut/tests/"
+printf 'void leanos_register_boundary_target(const char *n, void *a);\n%s\n' \
+  'void leanos_register_boundary_target(const char *n, void *a) { (void)n; (void)a; }' \
+  >"$gmut/register.c"
+cc -std=c11 -O2 -w -ffunction-sections -fdata-sections -I"$prefix/include" \
+  -c .lake/build/ir/LeanOS/Wifi/Exec.c -o "$gmut/exec.o"
+cc -std=c11 -O2 -w -c "$gmut/register.c" -o "$gmut/register.o"
+gkilled=0
+gtotal=0
+while IFS='@' read -r original mutated; do
+  [[ "$original" == '//'* ]] && continue
+  gtotal=$((gtotal + 1))
+  python3 - "$original" "$mutated" "$gmut/hardware/wifi/wifi-gen-exec.h" <<'PY'
+import sys
+source = open('hardware/wifi/wifi-gen-exec.h').read()
+original, mutated, target = sys.argv[1:4]
+if original not in source:
+    sys.exit(f'error: mutant pattern no longer occurs in wifi-gen-exec.h: {original}')
+open(target, 'w').write(source.replace(original, mutated, 1))  # first occurrence
+PY
+  cc -std=c11 -O2 -w -ffunction-sections -fdata-sections -Ibuild/boundary-abi \
+    -c "$gmut/tests/device-program-exec-host.c" -o "$gmut/host.o"
+  cc -Wl,--gc-sections "$gmut/host.o" "$gmut/register.o" "$gmut/exec.o" -o "$gmut/host"
+  if LEANOS_DEVICE_PROGRAM_CORPUS="$out/fuzz" timeout 120 "$gmut/host" >/dev/null 2>&1; then
+    echo "error: the generated-executor differential missed hook mutant $gtotal: $original -> $mutated" >&2
+    exit 1
+  fi
+  gkilled=$((gkilled + 1))
+done < tests/fixtures/wifi-gen-exec-mutants.txt
+echo "device programs: the generated-executor differential caught $gkilled/$gtotal hook mutants"
