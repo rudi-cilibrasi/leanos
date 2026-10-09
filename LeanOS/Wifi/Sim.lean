@@ -88,6 +88,15 @@ def memStore (mem : ByteArray) (at_ w : Nat) (v : UInt32) : ByteArray := Id.run 
 
 def le32 (b : ByteArray) (i : Nat) : UInt32 := memLoad b i 4
 
+/-- Every field of `π`'s descriptor map in `mem` holds zero or a bus address
+inside scratch (`ptrOk`), given the bus address `base` of scratch byte 0; a
+TRB's parameter is checked only when its type makes it a pointer. -/
+def descOk (π : Policy) (base : UInt32) (mem : ByteArray) : Bool :=
+  π.descriptors.all fun d => (List.range d.count.toNat).all fun i =>
+    let a := d.addr i
+    (d.trb && !Descriptor.trbParamIsPtr (le32 mem (a + 12))) ||
+      ptrOk base (le32 mem a) (le32 mem (a + 4))
+
 /-- `iter f i n a` applies `f i`, `f (i+1)`, …, `f (i+n-1)` to `a` in order
 (tail recursive; the executor's bounded inner loops). -/
 def iter {α} (f : Nat → α → α) : Nat → Nat → α → α
@@ -146,6 +155,13 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
   let sinkW (off v : UInt32) := match p.policy with
     | some π => π.sinkOk (d.phys m.dev 0).1 off v | none => true
   let sinkT (off : UInt32) := match p.policy with | some π => π.sinkTouch off | none => false
+  -- Descriptor map: scratch after a store must keep every pointer field in
+  -- scratch (the C executor re-checks only stores that touch a region, which
+  -- is equivalent while the map holds); FIFO input never lands in a region.
+  let descW (mem : ByteArray) := match p.policy with
+    | some π => descOk π (d.phys m.dev 0).1 mem | none => true
+  let descT (at_ len : Nat) := match p.policy with
+    | some π => π.descTouch at_ len | none => false
   match w.op &&& 0xFF with
   | 0 => .stop .halt m
   | 1 => .stop (.fail w.a) m
@@ -246,16 +262,21 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if regBad w.a || srcBad w.c then bad "bad-opcode" else
     let at_ := (m.reg w.a).toNat + w.b.toNat
     if at_ + sub.toNat > scratchBytes || (sub != 1 && sub != 2 && sub != 4) then bad "bad-mem"
-    else .next { m with mem := memStore m.mem at_ sub.toNat (val w.c) }
+    else
+      let mem := memStore m.mem at_ sub.toNat (val w.c)
+      if !descW mem then bad "policy" else .next { m with mem }
   | 23 =>
     if regBad w.b || regBad w.c then bad "bad-opcode" else
     if !mmioOk window w.a 4 then bad "bad-offset" else
     let base := (m.reg w.b).toNat
     let cnt := (m.reg w.c).toNat
     if base + 4 * cnt > scratchBytes then bad "bad-mem" else
+    if descT base (4 * cnt) then bad "policy" else
     let r := iter (fun i (acc : ByteArray × σ) =>
         let (v, s') := d.read32 acc.2 w.a
         (memStore acc.1 (base + 4 * i) 4 v, s')) 0 cnt (m.mem, m.dev)
+    -- Outside every region the map is unchanged; re-checked for the proof.
+    if !descW r.1 then bad "policy" else
     .next { m with mem := r.1, dev := r.2 }
   | 24 =>
     if regBad w.b || regBad w.c then bad "bad-opcode" else

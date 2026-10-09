@@ -34,35 +34,44 @@ static const struct lab_dev_profile lab_dev_profiles[] = {
 #ifdef LAB_Q35_DEVICE_LAB
     /* QEMU q35 device lab: qemu-xhci at 00:02.0 (16 KiB), identity/command
        reads, MEM+BM, DMA; sinks CRCR, DCBAAP, ERSTBA, ERDP in qemu-xhci's
-       layout. Mirrors `q35XhciPolicy`. */
+       layout, and the driver's descriptor map. Mirrors `q35XhciPolicy`. */
     { 0, 2, 0, UINT32_C(0x000d1b36),
       { 1, 1, 0x4000u, UINT64_C(0x3), 0, UINT32_C(0xffff0000), UINT32_C(0x6), 4,
-        { 0x58, 0x70, 0x1030, 0x1038 } } },
+        { 0x58, 0x70, 0x1030, 0x1038 }, 6,
+        { { 0, 0x0000u, 5, 8 }, { 0, 0x0C00u, 1, 16 }, { 0, 0x1048u, 31, 32 },
+          { 1, 0x0400u, 64, 16 }, { 1, 0x2800u, 256, 16 }, { 1, 0x3800u, 64, 16 } } } },
 #endif
     /* BCM43224 at 02:00.0: identity/command reads, the two BAR0 core windows,
        Memory Space set and Bus Master cleared (PIO only), no DMA. */
     { 2, 0, 0, UINT32_C(0x435314e4),
       { 1, 0, 0x4000u, UINT64_C(0x3), (UINT64_C(1) << (0x80 / 4)) | (UINT64_C(1) << (0xAC / 4)),
-        UINT32_C(0xffff0004), UINT32_C(0x2), 0, { 0 } } },
+        UINT32_C(0xffff0004), UINT32_C(0x2), 0, { 0 }, 0, { { 0, 0, 0, 0 } } } },
     /* xHCI at 00:14.0: identity/command and port-routing mask reads, port
        routing writes, Memory Space and Bus Master, DMA into scratch; the
-       CRCR, DCBAAP, ERSTBA and ERDP address registers are sinks. */
+       CRCR, DCBAAP, ERSTBA and ERDP address registers are sinks; the
+       descriptor map (DCBAA, scratchpad array, ERST entry, input-context
+       dequeue pointers, command/EP0/interrupt rings) mirrors
+       `qotomXhciPolicy`. */
     { 0, 20, 0, UINT32_C(0x0f358086),
       { 1, 1, 0x10000u, UINT64_C(0x3) | (UINT64_C(1) << (0xD4 / 4)) | (UINT64_C(1) << (0xDC / 4)),
         (UINT64_C(1) << (0xD0 / 4)) | (UINT64_C(1) << (0xD8 / 4)),
-        UINT32_C(0xffff0000), UINT32_C(0x6), 4, { 0x98, 0xB0, 0x2030, 0x2038 } } },
+        UINT32_C(0xffff0000), UINT32_C(0x6), 4, { 0x98, 0xB0, 0x2030, 0x2038 }, 7,
+        { { 0, 0x20000u, 5, 8 }, { 0, 0x20200u, 16, 8 }, { 0, 0x20C00u, 1, 16 },
+          { 0, 0x21048u, 31, 32 }, { 1, 0x20400u, 64, 16 }, { 1, 0x24000u, 256, 16 },
+          { 1, 0x25000u, 64, 16 } } } },
     /* AHCI at 00:13.0 (ABAR, 2 KiB): identity/command reads, no configuration
        writes, Memory Space and Bus Master, DMA into scratch; port 1 PxCLB and
        PxFB are sinks. Mirrors `qotomAhciPolicy`. */
     { 0, 19, 0, UINT32_C(0x0f238086),
-      { 1, 1, 0x800u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 2, { 0x180, 0x188 } } },
+      { 1, 1, 0x800u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 2, { 0x180, 0x188 },
+        0, { { 0, 0, 0, 0 } } } },
     /* RTL8168E-VL at 01:00.0 (BAR2, 4 KiB): identity/command reads, no
        configuration writes, Memory Space and Bus Master, DMA into scratch;
        the ring bases and the tally dump address are sinks. Mirrors
        `qotomRtl8168Policy`. */
     { 1, 0, 0, UINT32_C(0x816810ec),
       { 1, 1, 0x1000u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 4,
-        { 0x10, 0x20, 0x28, 0xE4 } } },
+        { 0x10, 0x20, 0x28, 0xE4 }, 0, { { 0, 0, 0, 0 } } } },
 };
 
 /* The declared policy is present and no wider than the target's profile. */
@@ -76,6 +85,10 @@ static int lab_dev_policy_admitted(const struct wifi_target *t, const struct wif
         /* Address sinks restrict: the image must declare every profile sink. */
         for (uint32_t k = 0; k < q->max.sink_count; ++k)
             if (!wifi_is_sink(p, q->max.sinks[k]))
+                return 0;
+        /* So does the descriptor map: every profile region is declared. */
+        for (uint32_t k = 0; k < q->max.desc_count; ++k)
+            if (!wifi_has_desc(p, &q->max.descs[k]))
                 return 0;
         return p->window <= q->max.window && (p->dma <= q->max.dma) &&
                !(p->cfg_read & ~q->max.cfg_read) && !(p->cfg_write & ~q->max.cfg_write) &&

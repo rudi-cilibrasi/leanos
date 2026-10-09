@@ -44,6 +44,8 @@ elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
 elif [[ "$scenario" == ipc-stream ]]; then
   default_image="build/boot/leanos-${version}-x86_64-ipc-stream.iso"
+elif [[ "$scenario" == example-subject ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-example-subject.iso"
 elif [[ "$scenario" == three-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-three-subject.iso"
 elif [[ "$scenario" == notify-reply ]]; then

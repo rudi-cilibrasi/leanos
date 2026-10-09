@@ -76,6 +76,87 @@ halt. A negative theorem
 exhibits why the previous action-only fatal result was insufficient: its
 unchanged state could immediately accept a valid syscall return.
 
+## Module layout
+
+`import LeanOS.FailStop` still provides the whole model under the
+`LeanOS.FailStop` namespace with unchanged declaration names, but the source is
+split by subsystem into `LeanOS/FailStop/*.lean` (issue #499). The modules
+form one import chain, in this order:
+
+| Module | Contents |
+| --- | --- |
+| `Latch` | Execution latch, ordinary and NMI entry, user-return transaction |
+| `Composite` | `CompositeState`, its named projections, `RuntimeWellFormed`, boot runtime |
+| `BlockingIPC` | Blocking receive, send, cancel, and the typed blocking gate |
+| `Operations` | Publication helpers, `Operation`, `applyOperation` |
+| `Footprint` | `Operation.footprint`, helper frame lemmas, `applyOperation_frames` |
+| `Gate` | `operationReply`, the ordinary `gate`, DMA control observation |
+| `IPC` | Accepted user-return, IPC, and sealed-transfer slices |
+| `Capabilities` | Capability copy, revocation, and subject creation slices |
+| `Memory` | Map, unmap, protect slices, and `runOperations` |
+| `OperationRegistry` | Per-operation runtime-preservation registry |
+| `Scheduler` | Termination cleanup and scheduler families |
+| `Faults` | Resumable preemption and interrupt preservation |
+| `DeferredBlocking` | Runtime trace inventory and deferred blocking invariant |
+| `AuthoritativeGate` | `authoritativeGate`, its footprints, invalidation publication |
+| `AuthoritativeTraces` | Blocking slices, admissibility, and authoritative traces |
+| `Evidence` | Executable regressions and the dispatcher's initial states |
+
+No module exceeds about 3,400 lines. Helpers that a later module uses are
+public declarations in the same namespace; the remaining helpers stay private
+to their module.
+
+## Footprints and the frame rule
+
+Every typed `Operation` declares a footprint using the
+`LeanOS.CompositeFootprint` vocabulary: the projections of `CompositeState` it
+reads and the subset it may write (`Operation.footprint`). The blocking
+operations (`CompositeBlockingOperation.footprint`) and the deferred drain
+complete the declaration for every `AuthoritativeOperation`. Footprints are
+built with `Footprint.ofLists`, so writes are reads by construction. Named
+groups such as `publicationProjections`, `cleanupProjections`, and
+`mappingProjections` name the projections that one publication helper
+republishes together.
+
+The frame rule `applyOperation_frames` proves that every projection outside
+an operation's write set is literally unchanged. `gate_frames`,
+`blockingGate_frames`, and `authoritativeGate_frames` extend it to every gate
+outcome, including busy and halted stutters. The proof is assembled from one
+frame lemma per publication helper, such as `installLifecycle_frames` and
+`installTransfers_frames`. Each helper lemma is discharged by the
+`composite_frame` tactic, which case-splits the finite projection vocabulary,
+so the per-operation proof never names a projection.
+
+Theorems about projections that an operation does not write are lifted rather
+than re-proved:
+
+- `applyOperation_project_untouched` reads one untouched projection.
+- `applyOperation_preserves_of_dependsOn` and `gate_preserves_of_dependsOn`
+  preserve any predicate that depends only on untouched projections
+  (`CompositeState.DependsOn`).
+- `applyOperation_directPortIO`, `applyOperation_dmaAccepted`,
+  `applyOperation_dmaObserved`, `gate_preserves_dmaQuarantined`,
+  `authoritativeGate_dmaAuthority`, and the invalidation-publication retention
+  lemmas are now corollaries of the frame rule.
+
+To add a projection:
+
+1. Add the field to `CompositeState`, the constructor to
+   `CompositeFootprint.Projection`, and one case each to
+   `CompositeProjectionType` and `CompositeState.project`.
+2. Add the projection to the write list of each operation that changes it.
+   For every other operation, the helper frame lemmas re-check the new case by
+   unfolding, and `applyOperation_frames` is unchanged.
+3. State theorems about the new projection with
+   `applyOperation_preserves_of_dependsOn` instead of re-proving the
+   whole-state preservation theorems.
+
+The read sets are declared but not yet machine-checked. A read-independence
+theorem, saying that two states that agree on an operation's reads produce
+results that agree on its writes, is future work. The `CompositeFootprint`
+vocabulary already requires writes to be reads, so it can be added without
+changing any declaration.
+
 ## Diagnostic and trusted boundary
 
 Boot-only WP/SMEP recovery remains a pre-runtime diagnostic behavior outside

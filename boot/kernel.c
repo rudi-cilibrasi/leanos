@@ -3378,10 +3378,14 @@ static unsigned device_service_bound, device_service_ended;
 
 /* The widest policy the admitted function may declare (`q35XhciPolicy`):
    identity/command reads, no other configuration access, Memory Space and
-   Bus Master, DMA, and the CRCR, DCBAAP, ERSTBA and ERDP address sinks. */
+   Bus Master, DMA, the CRCR, DCBAAP, ERSTBA and ERDP address sinks, and the
+   driver's descriptor map (DCBAA, ERST entry, input-context dequeue
+   pointers, command/EP0/interrupt rings). */
 static const struct wifi_policy device_service_profile = {
     1, 1, 0x4000u, UINT64_C(0x3), 0, UINT32_C(0xffff0000), UINT32_C(0x6), 4,
-    { 0x58, 0x70, 0x1030, 0x1038 } };
+    { 0x58, 0x70, 0x1030, 0x1038 }, 6,
+        { { 0, 0x0000u, 5, 8 }, { 0, 0x0C00u, 1, 16 }, { 0, 0x1048u, 31, 32 },
+          { 1, 0x0400u, 64, 16 }, { 1, 0x2800u, 256, 16 }, { 1, 0x3800u, 64, 16 } } };
 
 static __attribute__((noinline, noipa)) void pci_config_write_dword(
         uint8_t device, uint8_t function, uint8_t offset, uint32_t value) {
@@ -3483,6 +3487,19 @@ static __attribute__((noinline)) void device_service_assign(void) {
     serial_u64(DEVICE_SERVICE_CAPABILITIES);
     serial_puts(" command=2 memory=enabled bus-master=program"
         " stage=post-translation result=PASS\n");
+#if defined(LEANOS_DEVICE_SERVICE_UNPLANNED_BUS_MASTER_FIXTURE) || \
+    defined(LEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE)
+    /* Controlled negatives (#482): with the service tables live, the SATA
+       controller, a function outside the VT-d plan, regains memory decode and
+       bus mastering.  The outbound read-back must still reject it. */
+    pci_config_command(31, 2, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
+#ifdef LEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE
+    /* The boot record is forged to agree with the new Command word, so only
+       the plan-membership check can reject the function. */
+    q35_live_pci_snapshot.functions[4].command_after =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+#endif
+#endif
 }
 
 static int device_service_admitted(const struct wifi_target *target,
@@ -3494,6 +3511,8 @@ static int device_service_admitted(const struct wifi_target *target,
         return 0;
     for (uint32_t k = 0; k < max->sink_count; ++k)
         if (!wifi_is_sink(policy, max->sinks[k])) return 0;
+    for (uint32_t k = 0; k < max->desc_count; ++k)
+        if (!wifi_has_desc(policy, &max->descs[k])) return 0;
     return policy->window <= max->window && policy->dma <= max->dma &&
         !(policy->cfg_read & ~max->cfg_read) &&
         !(policy->cfg_write & ~max->cfg_write) &&
@@ -3502,8 +3521,10 @@ static int device_service_admitted(const struct wifi_target *target,
 }
 
 static void device_service_bind(void) {
-    struct wifi_target target;
-    struct wifi_policy policy;
+    /* Static: the policy (with its descriptor map) stays off the syscall
+       entry stack, whose budget the final-ELF gate reviews. */
+    static struct wifi_target target;
+    static struct wifi_policy policy;
     uint32_t header = 0;
     if (wifi_image_header(device_service_program,
             (uint32_t)sizeof device_service_program, &target, &policy, &header))
@@ -3824,6 +3845,19 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     serial_puts(" tables=generated-readback bar=4271898624 mmio-id=16777453"
         " command=6 memory=enabled bus-master=enabled"
         " stage=post-translation result=PASS\n");
+#if defined(LEANOS_ASSIGNED_EDU_UNPLANNED_BUS_MASTER_FIXTURE) || \
+    defined(LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE)
+    /* Controlled negatives (#482): with the assigned tables live, the SATA
+       controller, a function outside the VT-d plan, regains memory decode and
+       bus mastering.  The outbound read-back must still reject it. */
+    pci_config_command(31, 2, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
+#ifdef LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE
+    /* The boot record is forged to agree with the new Command word, so only
+       the plan-membership check can reject the function. */
+    q35_live_pci_snapshot.functions[4].command_after =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+#endif
+#endif
 #endif
 #ifdef LEANOS_DEVICE_SERVICE_SCENARIO
     device_service_assign();
@@ -4992,6 +5026,88 @@ static void console_server_switch(uint64_t *target, uint64_t target_owner,
 #endif
 #endif
 
+#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
+/* The example subject (#484).  This image is the three-subject image except
+   that subject C is not assembled in boot.S: scripts/build-subject.sh builds
+   it from subjects/example with the subject template, checks it against the
+   subject policy, and the image links it into C's slot.  C sends one word on
+   endpoint 12, which the kernel holds in a one-word queue, and then blocks
+   forever on endpoint 13, which nobody sends to: there is no exit syscall.
+   B runs once from its initial context exactly as in three-subject; A,
+   dispatched fresh, receives the queued word on endpoint 12 and reports it.
+   C stays blocked with its continuation intact. */
+extern char user_c_template_text[];
+#define EXAMPLE_SUBJECT_ENDPOINT 12u
+#define EXAMPLE_SUBJECT_IDLE_ENDPOINT 13u
+#define EXAMPLE_SUBJECT_STACK_BYTES 2048u
+static unsigned example_subject_queue;  /* 0 empty, 1 C's word queued, 2 taken */
+static uint64_t example_subject_word;
+
+/* The slot the build rule produced: entry and template marker at the first
+   text byte, a 2048-byte stack at the bottom of the one-page stack range. */
+static void check_example_subject_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != EXAMPLE_SUBJECT_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("example-subject-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/example entry=text-start stack=2048 result=PASS\n");
+}
+
+static uint64_t example_subject_syscall(uint64_t number, uint64_t arg0,
+                                        uint64_t arg1, uint64_t arg2) {
+    if (number == 8 && current_subject == 3 && three_subject_step == 0 &&
+        example_subject_queue == 0) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != EXAMPLE_SUBJECT_ENDPOINT) fail("example-subject-send-endpoint");
+        if (arg1 != 0) fail("example-subject-send-words");
+        example_subject_word = arg0;
+        example_subject_queue = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=3 endpoint=12 words=1 payload0=");
+        serial_u64(arg0);
+        serial_puts(" queued=1\n");
+        return 0;
+    }
+    if (number == 7 && current_subject == 3 && three_subject_step == 0 &&
+        example_subject_queue == 1) {
+        three_subject_require_root(page_map_level_4_c);
+        if (arg2 != EXAMPLE_SUBJECT_IDLE_ENDPOINT) fail("example-subject-block-endpoint");
+        three_subject_step = 1;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS\n");
+        return THREE_SUBJECT_C_BLOCKED;
+    }
+    /* B's single report is the three-subject step, unchanged. */
+    if (number == 62) return three_subject_syscall(number, arg0, arg1, arg2);
+    if (number == 7 && current_subject == 1 && three_subject_step == 2 &&
+        example_subject_queue == 1) {
+        three_subject_require_root(page_map_level_4_a);
+        if (arg2 != EXAMPLE_SUBJECT_ENDPOINT) fail("example-subject-receive-endpoint");
+        example_subject_queue = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=receive receiver=1 endpoint=12 sender=3 words=1 payload0=");
+        serial_u64(example_subject_word);
+        serial_puts(" queued=0\n");
+        return example_subject_word;
+    }
+    if (number == 9 && current_subject == 1 && three_subject_step == 2 &&
+        example_subject_queue == 2) {
+        three_subject_require_root(page_map_level_4_a);
+        if (arg0 != example_subject_word || arg1 != 0 ||
+            arg2 != EXAMPLE_SUBJECT_ENDPOINT) fail("example-subject-payload");
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=1 endpoint=12 sender=3 words=1 payload0=");
+        serial_u64(arg0);
+        serial_puts(" exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 address-spaces=3 sends=1 deliveries=1 blocked-forever=3\n");
+        finish(0x10);
+    }
+    fail("example-subject-sequence");
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
@@ -5008,10 +5124,12 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         __asm__ volatile ("" ::: "memory");
         return result;
     }
-#endif
-#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
     (void)saved_flags;
     return console_server_syscall(number, arg0, arg1, arg2);
+#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
+    (void)saved_flags;
+    return example_subject_syscall(number, arg0, arg1, arg2);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
@@ -6583,6 +6701,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=keyboard-echo controls=wp,smep,smap\n");
 #elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=console-server controls=wp,smep,smap\n");
+#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -6757,6 +6877,14 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_selected_root_a();
     serial_puts(LEANOS_SERIAL_18_ENTER " subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
+    check_boot_page_table_c();
+    check_example_subject_slot();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12\n");
+    enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     check_boot_page_table_c();
 #ifdef LEANOS_CONSOLE_SERVER_SCENARIO

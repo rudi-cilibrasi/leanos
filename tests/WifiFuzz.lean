@@ -187,6 +187,56 @@ def gadget (win : Nat) (sinks : List UInt32) : GenM (Array Word4) := do
     if op == 8 || op == 10 then pure #[movW r 0, ⟨op, q, r, off⟩]
     else pure #[movW r 0, ⟨op ||| 0x100, r, off, junk⟩]
 
+/-- A descriptor the executor accepts (`Descriptor.wf`): low in scratch, where
+random stores land, or flush with its end. -/
+def genDescriptor : GenM Descriptor := do
+  let trb ← chance 50
+  let size := if trb then 16 else 8
+  let stride ← if trb then pick #[16, 32] else pick #[8, 16, 32]
+  let count := 1 + (← below 8)
+  let span := stride * (count - 1) + size
+  let start ← match ← below 4 with
+    | 0 => pure 0
+    | 1 => pure (scratchBytes - span)
+    | 2 => pure (← below 1024)            -- possibly misaligned
+    | _ => pure ((← below 1024) * 4)
+  return { trb, start := start.toUInt32, count := count.toUInt32, stride := stride.toUInt32 }
+
+/-- Stores and FIFO input aimed at a descriptor entry: in-scratch, edge and
+forged pointers, high dwords, TRB types with and without a pointer parameter,
+partial stores and register-based addresses. -/
+def descGadget (win : Nat) (descs : List Descriptor) : GenM (Array Word4) := do
+  let d ← pick descs.toArray
+  let a := (d.addr (← below d.count.toNat)).toUInt32
+  let r := (← below 16).toUInt32
+  let q := ((r.toNat + 1 + (← below 15)) % 16).toUInt32
+  let S := scratchBytes
+  let junk ← rand
+  let st (w : UInt32) (off v : UInt32) : Word4 := ⟨(22 : UInt32) ||| (0x100 : UInt32) ||| (w <<< (16 : UInt32)), q, off, v⟩
+  match ← below 7 with
+  | 0 => do  -- the bus address of a scratch byte (at the edges too) as the low dword
+    let off ← pick #[0, 0x100, (S - 1).toUInt32, S.toUInt32]
+    pure #[movW q 0, ⟨25, r, off, 0⟩, ⟨(22 : UInt32) ||| ((4 : UInt32) <<< 16), q, a, r⟩]
+  | 1 => do  -- immediate low or high dword: zero, scratch edges, forged
+    let v ← pick #[0, 1, 0x01000000, 0x0103FFFF, 0x01040000, 0x00FFFFFF, junk]
+    pure #[movW q 0, st 4 (a + 4 * (← below 2).toUInt32) v]
+  | 2 => do  -- a TRB control dword: reserved, Normal, Setup, Data, Link, any type
+    let t : UInt32 ← pick #[0, 1, 2, 3, 6, 0x3F, (← below 64).toUInt32]
+    pure #[movW q 0, st 4 (a + 12) ((t <<< 10) ||| (← below 2).toUInt32)]
+  | 3 => do  -- a partial store anywhere in the entry
+    let w : UInt32 ← pick #[1, 2]
+    pure #[movW q 0, st w (a + (← below 16).toUInt32) junk]
+  | 4 => do  -- a forged parameter, then a pointer-typed control dword
+    pure #[movW q 0, st 4 a (← pick #[0x00100000, junk]), st 4 (a + 12) ((3 : UInt32) <<< 10)]
+  | 5 => do  -- FIFO input ending just before, at or inside the entry
+    let k : UInt32 ← pick #[0, 1, 2]
+    let at_ := (a.toNat + (← below 3) - 4 * k.toNat - 1 + 4).toUInt32
+    let fifoOff := ((← below (win / 4)) * 4).toUInt32
+    pure #[movW r at_, movW q k, ⟨23, fifoOff, r, q⟩]
+  | _ => do  -- register base plus offset straddling the entry start
+    let back := (← below 8).toUInt32
+    pure #[movW q (a - back), ⟨(22 : UInt32) ||| (0x100 : UInt32) ||| ((4 : UInt32) <<< (16 : UInt32)), q, back, junk⟩]
+
 def genPolicy (win : Nat) : GenM Policy := do
   let nSinks ← below 4
   let mut sinks : List UInt32 := []
@@ -194,7 +244,11 @@ def genPolicy (win : Nat) : GenM Policy := do
     let base : UInt32 ← pick #[0, 8, 0x10, 0x98, 0xB0]
     let far ← below (win / 8)
     sinks := sinks ++ [base + (if ← chance 20 then (far * 8).toUInt32 else 0)]
+  let mut descs : List Descriptor := []
+  if ← chance 50 then
+    for _ in [0:1 + (← below 3)] do descs := descs ++ [← genDescriptor]
   return { addrSinks := sinks
+           descriptors := descs
            window := ← pick #[0x4000, 0x10000]
            cfgRead := (((← rand).toUInt64 <<< 32) ||| (← rand).toUInt64)
            cfgWrite := (((← rand).toUInt64 <<< 32) ||| (← rand).toUInt64)
@@ -213,6 +267,7 @@ def genProgram : GenM Program := do
     -- The executor rejects a target window wider than the policy window.
     policy := some { π with window := max π.window win.toUInt32 }
   let sinks := (policy.map (·.addrSinks)).getD []
+  let descs := (policy.map (·.descriptors)).getD []
   let blobLen := (← below 16) * 4
   let bytes ← (List.range blobLen).toArray.mapM fun _ => do return (← rand).toUInt8
   let blob := ByteArray.mk bytes
@@ -221,7 +276,8 @@ def genProgram : GenM Program := do
   let n := pre.size + body
   let mut words := pre
   for _ in [0:body] do
-    if ← chance 12 then words := words ++ (← gadget win sinks)
+    if !descs.isEmpty && (← chance 8) then words := words ++ (← descGadget win descs)
+    else if ← chance 12 then words := words ++ (← gadget win sinks)
     else words := words.push (← genWord n win blobLen)
   return { words, blob, sections := #[], target, policy }
 
