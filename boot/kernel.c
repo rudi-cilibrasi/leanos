@@ -3352,18 +3352,20 @@ static unsigned vtd_journal_steps;
    only if its declared target and policy lie inside the admitted profile
    (`q35XhciPolicy`, proved sane in LeanOS/DeviceProgramConfinement.lean);
    the executor enforces that policy on every effect. Each invocation resumes
-   it for a bounded number of steps until it yields one key. */
+   it for a bounded number of steps until it yields one key.
+
+   The executor is generated (issue #494, ADR 0020): each step is
+   `leanos_device_program_step`, the compiled `LeanOS.Wifi.Exec.step`, which
+   `LeanOS.Wifi.ExecRefinement.step_eq` proves equal to `Sim.step`, so the
+   confinement theorems (`run_declared_confined_generated`, ...) are about
+   the code that runs here. wifi-gen-exec.h supplies its named hook
+   primitives over the executor state, in the direct-hook configuration, and
+   the step loop `wifi_gen_resume`; its dispatch is a tree of `<` tests, so
+   it has no jump table for the entry-stack gate to reject. */
 #define WIFI_HOOKS_DIRECT 1
-/* The executor's interpreter `switch` must stay free of jump tables: the
-   entry-stack gate rejects indirect edges (the Clang lane already passes
-   -fno-jump-tables for the whole image). */
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC push_options
-#pragma GCC optimize ("no-jump-tables")
-#endif
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
-#include "../hardware/wifi/wifi-exec.h"
+#include "../hardware/wifi/wifi-gen-exec.h"
 #pragma GCC diagnostic pop
 #include "device-service-program.h"
 
@@ -3558,7 +3560,7 @@ static uint64_t device_service_next_key(void) {
     if (device_service_ended) return 0;
     for (;;) {
         uint32_t code = 0;
-        int status = wifi_resume(&device_service_vm, 0,
+        int status = wifi_gen_resume(&device_service_vm, 0,
             device_service_vm.steps + DEVICE_SERVICE_BUDGET, &code);
         device_service_observe_command();
         if (status == WIFI_YIELD) return code;
@@ -3575,9 +3577,6 @@ static uint64_t device_service_next_key(void) {
         return 0;
     }
 }
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC pop_options
-#endif
 #endif
 
 static void vtd_journal_record(uint64_t tag) {

@@ -1,8 +1,7 @@
 /* The deterministic device model of the differential fuzzer (tests/WifiFuzz.lean
    `model`) and the per-image summary line both executors must print.
-   Shared by fuzz-runner.c (handwritten executor) and
-   tests/device-program-exec-host.c (generated executor). Include after
-   wifi-exec.h. */
+   Shared by fuzz-runner.c and tests/device-program-exec-host.c, both of
+   which run the generated executor. Include after wifi-gen-exec.h. */
 #ifndef LEANOS_WIFI_FUZZ_MODEL_H
 #define LEANOS_WIFI_FUZZ_MODEL_H
 

@@ -600,7 +600,17 @@ lean_c_modules=(
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer
+  WifiExec
 )
+# Generated C file name -> Lean source. WifiExec is the device-program
+# executor step (LeanOS/Wifi/Exec.lean, issue #494) that the device-service
+# kernels run.
+lean_c_source() {
+  case "$1" in
+    WifiExec) printf '%s\n' LeanOS/Wifi/Exec.lean ;;
+    *) printf 'LeanOS/%s.lean\n' "$1" ;;
+  esac
+}
 lean_c_signature="$build/generated-lean-c.sha256"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
 reuse_lean_c=1
@@ -616,7 +626,7 @@ if ((reuse_lean_c == 0)); then
   lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
   trap 'rm -rf "$lean_c_stage"' EXIT
   for module in "${lean_c_modules[@]}"; do
-    generate_lean_c "LeanOS/$module.lean" "$build/$module.c"
+    generate_lean_c "$(lean_c_source "$module")" "$build/$module.c"
     record_bootstrap_phase "lean-c-$module" generated
   done
   printf '%s\n' "$current_lean_c_signature" > "$lean_c_signature"

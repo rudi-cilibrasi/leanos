@@ -129,8 +129,8 @@ implemented, as the design option 1 sketched: a Lean step function over an
 * **Descriptor map.** A scratch store that touches a declared region is
   checked against the scratch it *would* produce: the scan reads words
   through an overlay of the pending store, so the store happens only after
-  the policy accepts it (the handwritten executor stores, checks and
-  restores). Stores and FIFO input outside every region are not re-scanned;
+  the policy accepts it (the deleted handwritten executor stored, checked
+  and restored). Stores and FIFO input outside every region are not re-scanned;
   the frame lemma `ExecRefinement.descOk_frame` shows this agrees with
   `Sim`'s full re-check on every machine whose map already holds only
   scratch pointers, which every run maintains (`loop_descOk`).

@@ -1,9 +1,15 @@
-/* Runtime-free executor for Lean-authored WiFi device programs.
+/* Image format, executor state and device hooks for Lean-authored device
+   programs.
 
    The instruction set and its encoding are defined by
-   LeanOS/Wifi/Bytecode.lean; this file only performs the effect that each
-   instruction names. It is shared by the FreeBSD userland development runner
-   and the LeanOS lab kernel, which supply the effect hooks below. */
+   LeanOS/Wifi/Bytecode.lean. This file parses an image (`wifi_image_header`,
+   `wifi_start`) and declares the executor state and the device-effect hooks;
+   it no longer contains an interpreter. Instructions are executed by the
+   generated executor of wifi-gen-exec.h: `leanos_device_program_step`, the
+   compiled `LeanOS.Wifi.Exec.step`, proved equal to `Sim.step` (issue #494,
+   ADR 0020). It is shared by the FreeBSD userland development runner, the
+   hosted fuzz and cross-check runners, the LeanOS lab kernel and the
+   device-service kernel, which supply the effect hooks below. */
 #ifndef LEANOS_WIFI_EXEC_H
 #define LEANOS_WIFI_EXEC_H
 
@@ -84,14 +90,6 @@ static inline uint64_t wifi_desc_limit(const struct wifi_desc *d) {
     return (uint64_t)d->start + (uint64_t)d->stride * (d->count - 1u) + (d->trb ? 16u : 8u);
 }
 
-/* Policy.descTouch: the len scratch bytes at `at` overlap a region. */
-static inline int wifi_desc_touch(const struct wifi_policy *p, uint64_t at, uint64_t len) {
-    if (!len) return 0;
-    for (uint32_t i = 0; i < p->desc_count; ++i)
-        if (at < wifi_desc_limit(&p->descs[i]) && p->descs[i].start < at + len) return 1;
-    return 0;
-}
-
 /* The policy declares descriptor `d` (lab profile admission). */
 static inline int wifi_has_desc(const struct wifi_policy *p, const struct wifi_desc *d) {
     for (uint32_t i = 0; i < p->desc_count; ++i)
@@ -100,54 +98,10 @@ static inline int wifi_has_desc(const struct wifi_policy *p, const struct wifi_d
     return 0;
 }
 
-static inline uint32_t wifi_scratch32(const volatile uint8_t *S, uint64_t at) {
-    return (uint32_t)S[at] | ((uint32_t)S[at + 1] << 8) |
-           ((uint32_t)S[at + 2] << 16) | ((uint32_t)S[at + 3] << 24);
-}
-
-/* Sim.descOk over scratch `S`; base is the bus address of scratch byte 0. A
-   TRB of type 0 (reserved) or 2 (Setup Stage, immediate data) carries no
-   pointer. */
-static int wifi_desc_ok(const struct wifi_policy *p, uint32_t base, const volatile uint8_t *S) {
-    for (uint32_t k = 0; k < p->desc_count; ++k) {
-        const struct wifi_desc *d = &p->descs[k];
-        for (uint32_t i = 0; i < d->count; ++i) {
-            uint64_t a = (uint64_t)d->start + (uint64_t)d->stride * i;
-            if (d->trb) {
-                uint32_t t = (wifi_scratch32(S, a + 12) >> 10) & 0x3fu;
-                if (t == 0 || t == 2) continue;
-            }
-            uint32_t lo = wifi_scratch32(S, a), hi = wifi_scratch32(S, a + 4);
-            if (hi != 0 || (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES)) return 0;
-        }
-    }
-    return 1;
-}
-
 static inline int wifi_is_sink(const struct wifi_policy *p, uint32_t off) {
     for (uint32_t i = 0; i < p->sink_count; ++i)
         if (p->sinks[i] == off) return 1;
     return 0;
-}
-
-/* Policy.sinkTouch: `off` lies in some sink's 8 bytes. */
-static inline int wifi_sink_touch(const struct wifi_policy *p, uint32_t off) {
-    for (uint32_t i = 0; i < p->sink_count; ++i)
-        if (off - p->sinks[i] < 8u) return 1;
-    return 0;
-}
-
-/* Policy.sinkOk: base is the bus address of scratch byte 0. */
-static inline int wifi_sink_ok(const struct wifi_policy *p, uint32_t base,
-                               uint32_t off, uint32_t v) {
-    if (!wifi_sink_touch(p, off)) return 1;
-    if (wifi_is_sink(p, off)) return v - base < WIFI_SCRATCH_BYTES;
-    if (wifi_is_sink(p, off - 4u)) return v == 0;
-    return 0;
-}
-
-static inline int wifi_cfg_allowed(uint64_t bits, uint32_t off) {
-    return off < 0x100u && !(off & 3u) && ((bits >> (off / 4u)) & 1u);
 }
 
 /* With WIFI_HOOKS_DIRECT the executor calls fixed hook functions by name
@@ -265,9 +219,10 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
 }
 
 /* Resumable executor state. `wifi_start` parses an image and zeroes the
-   registers and scratch; `wifi_resume` runs until the program halts, fails,
-   faults, yields (opcode 27) or the step count reaches `step_limit`. After a
-   yield, the next resume continues with the following instruction. */
+   registers and scratch; `wifi_gen_resume` (wifi-gen-exec.h) runs until the
+   program halts, fails, faults, yields (opcode 27) or the step count reaches
+   `step_limit`. After a yield, the next resume continues with the following
+   instruction. */
 struct wifi_vm {
     const uint8_t *code_base, *blob;
     uint32_t n, blob_len, window;
@@ -294,201 +249,6 @@ static int wifi_start(struct wifi_vm *vm, const uint8_t *image, uint32_t image_l
     volatile uint8_t *const S = wifi_scratch;
     for (uint32_t i = 0; i < WIFI_SCRATCH_BYTES; ++i) S[i] = 0;
     return 0;
-}
-
-/* Run a started program. `code` receives the fail code, the yielded value or
-   the offending pc; `step_limit` bounds the total steps since `wifi_start`.
-   Every check mirrors `exec` in LeanOS/Wifi/Sim.lean, in the same order. */
-static int wifi_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
-                       uint64_t step_limit, uint32_t *code) {
-    const uint32_t window = vm->window, n = vm->n, blob_len = vm->blob_len;
-    const uint8_t *const code_base = vm->code_base, *const blob = vm->blob;
-    const struct wifi_policy *const pol = &vm->pol;
-    volatile uint8_t *const S = wifi_scratch;
-    uint32_t *const r = vm->r, *const stack = vm->stack;
-    uint32_t sp = vm->sp, pc = vm->pc;
-    int st;
-#ifdef WIFI_HOOKS_DIRECT
-    (void)h;
-#endif
-    while (vm->steps < step_limit) {
-        vm->steps++;
-        if (pc >= n) { *code = pc; st = WIFI_BAD_PC; goto out; }
-        const uint8_t *in = code_base + (uint64_t)pc * 16;
-        uint32_t op = wifi_le32(in), a = wifi_le32(in + 4);
-        uint32_t b = wifi_le32(in + 8), c = wifi_le32(in + 12);
-        uint32_t base = op & 0xffu, imm = op & 0x100u, sub = op >> 16;
-        pc++;
-#define REG(x) do { if ((x) > 15) { *code = pc - 1; st = WIFI_BAD_OPCODE; goto out; } } while (0)
-#define OFF(x, w) do { if ((x) > window - (w) || ((x) & ((w) - 1))) { *code = pc - 1; st = WIFI_BAD_OFFSET; goto out; } } while (0)
-#define POLICY(ok) do { if (pol->present && !(ok)) { *code = pc - 1; st = WIFI_POLICY; goto out; } } while (0)
-#define SINK_OK(o, v) wifi_sink_ok(pol, WH_PHYS(0), (o), (v))
-#define NO_SINK(o) (!wifi_sink_touch(pol, (o)))
-        switch (base) {
-        case 0: *code = 0; { st = WIFI_HALT; goto out; }
-        case 1: *code = a; { st = WIFI_FAIL; goto out; }
-        case 2: REG(a); if (b > 0xffc || (b & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
-            POLICY(wifi_cfg_allowed(pol->cfg_read, b));
-            r[a] = WH_CR32(b); break;
-        case 3: { uint32_t v = imm ? b : (b < 16 ? r[b] : 0);
-            if (!imm) REG(b);
-            if (a > 0xffc || (a & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
-            POLICY(wifi_cfg_allowed(pol->cfg_write, a));
-            WH_CW32(a, v); break; }
-        case 4: REG(a); OFF(b, 4); r[a] = WH_R32(b); break;
-        case 5: REG(a); OFF(b, 2); r[a] = WH_R16(b); break;
-        case 6: case 7: { if (!imm) REG(b);
-            uint32_t v = imm ? b : r[b];
-            if (base == 6) { OFF(a, 4); POLICY(SINK_OK(a, v)); WH_W32(a, v); }
-            else { OFF(a, 2); POLICY(NO_SINK(a)); WH_W16(a, (uint16_t)v); }
-            break; }
-        case 8: case 10: { REG(a); REG(b); uint32_t off = r[b] + c;
-            if (base == 8) { OFF(off, 4); r[a] = WH_R32(off); }
-            else { OFF(off, 2); r[a] = WH_R16(off); }
-            break; }
-        case 9: case 11: { REG(a); if (!imm) REG(c);
-            uint32_t off = r[a] + b, v = imm ? c : r[c];
-            if (base == 9) { OFF(off, 4); POLICY(SINK_OK(off, v)); WH_W32(off, v); }
-            else { OFF(off, 2); POLICY(NO_SINK(off)); WH_W16(off, (uint16_t)v); }
-            break; }
-        case 12: { REG(a); if (!imm) REG(b);
-            uint32_t v = imm ? b : r[b];
-            switch (sub) {
-            case 0: r[a] = v; break;
-            case 1: r[a] += v; break;
-            case 2: r[a] -= v; break;
-            case 3: r[a] &= v; break;
-            case 4: r[a] |= v; break;
-            case 5: r[a] ^= v; break;
-            case 6: r[a] = v >= 32 ? 0 : r[a] << v; break;
-            case 7: r[a] = v >= 32 ? 0 : r[a] >> v; break;
-            case 8: r[a] *= v; break;
-            case 9: v &= 31; r[a] = v ? (r[a] << v) | (r[a] >> (32 - v)) : r[a]; break;
-            case 10: r[a] = v ? r[a] / v : 0; break;
-            case 11: { int32_t x = (int32_t)r[a], y = (int32_t)v;
-                r[a] = (y == 0) ? 0 : (x == INT32_MIN && y == -1) ? (uint32_t)x : (uint32_t)(x / y);
-                break; }
-            case 12: r[a] = v ? r[a] % v : r[a]; break;
-            case 13: { int32_t x = (int32_t)r[a], y = (int32_t)v;
-                r[a] = (y == 0) ? (uint32_t)x : (x == INT32_MIN && y == -1) ? 0 : (uint32_t)(x % y);
-                break; }
-            case 14: { uint32_t k = v >= 31 ? 31 : v;
-                r[a] = (r[a] & 0x80000000u) ? ~((~r[a]) >> k) : r[a] >> k; break; }
-            default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }
-            }
-            break; }
-        case 13: { REG(a); if (!imm) REG(b);
-            uint32_t v = imm ? b : r[b], x = r[a];
-            int t;
-            switch (sub) {
-            case 0: t = x == v; break;
-            case 1: t = x != v; break;
-            case 2: t = x < v; break;
-            case 3: t = x >= v; break;
-            case 4: t = (int32_t)x < (int32_t)v; break;
-            case 5: t = (int32_t)x >= (int32_t)v; break;
-            default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }
-            }
-            if (t) pc = c;
-            break; }
-        case 14: pc = a; break;
-        case 15: WH_DELAY(a); break;
-        case 16: { if (!imm) REG(b); WH_PRINT(a, imm ? b : r[b]); break; }
-        case 17: { if (b > blob_len || c > (blob_len - b) / 4 || (b & 3)) {
-                *code = pc - 1; { st = WIFI_BAD_BLOB; goto out; } }
-            OFF(a, 4);
-            POLICY(NO_SINK(a));
-            for (uint32_t i = 0; i < c; ++i)
-                WH_W32(a, wifi_le32(blob + b + 4 * i));
-            break; }
-        case 18: { REG(a); REG(b);
-            uint64_t off = (uint64_t)c + (uint64_t)r[b] * 4;
-            if ((c & 3) || off + 4 > blob_len) { *code = pc - 1; { st = WIFI_BAD_BLOB; goto out; } }
-            r[a] = wifi_le32(blob + off); break; }
-        case 19: if (sp == WIFI_STACK_DEPTH) { *code = pc - 1; { st = WIFI_STACK; goto out; } }
-            stack[sp++] = pc; pc = a; break;
-        case 20: if (sp == 0) { *code = pc - 1; { st = WIFI_STACK; goto out; } }
-            pc = stack[--sp]; break;
-        case 21: { REG(a); REG(b);
-            uint64_t at = (uint64_t)r[b] + c;
-            if (at + sub > WIFI_SCRATCH_BYTES || (sub != 1 && sub != 2 && sub != 4)) {
-                *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
-            uint32_t v = 0;
-            for (uint32_t i = 0; i < sub; ++i) v |= (uint32_t)S[at + i] << (8 * i);
-            r[a] = v; break; }
-        case 22: { REG(a); if (!imm) REG(c);
-            uint64_t at = (uint64_t)r[a] + b;
-            uint32_t v = imm ? c : r[c];
-            if (at + sub > WIFI_SCRATCH_BYTES || (sub != 1 && sub != 2 && sub != 4)) {
-                *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
-            /* A store outside every region leaves the map as it was. */
-            if (pol->present && wifi_desc_touch(pol, at, sub)) {
-                uint8_t old[4];
-                for (uint32_t i = 0; i < sub; ++i) old[i] = S[at + i];
-                for (uint32_t i = 0; i < sub; ++i) S[at + i] = (uint8_t)(v >> (8 * i));
-                if (!wifi_desc_ok(pol, WH_PHYS(0), S)) {
-                    for (uint32_t i = 0; i < sub; ++i) S[at + i] = old[i];
-                    *code = pc - 1; { st = WIFI_POLICY; goto out; }
-                }
-                break;
-            }
-            for (uint32_t i = 0; i < sub; ++i) S[at + i] = (uint8_t)(v >> (8 * i));
-            break; }
-        case 23: case 24: { REG(b); REG(c); OFF(a, 4);
-            if (base == 24) POLICY(NO_SINK(a));
-            uint64_t at = r[b], n = r[c];
-            if (at + 4 * n > WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
-            if (base == 23) POLICY(!wifi_desc_touch(pol, at, 4 * n));
-            for (uint64_t i = 0; i < n; ++i) {
-                volatile uint8_t *p = S + at + 4 * i;
-                if (base == 23) {
-                    uint32_t v = WH_R32(a);
-                    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
-                    p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
-                } else {
-                    WH_W32(a, (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-                              ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24));
-                }
-            }
-            break; }
-        case 25: REG(a);
-            if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
-            POLICY(pol->dma);
-            r[a] = WH_PHYS(b); break;
-        case 26: if (a > 0xffc || (a & 3)) { *code = pc - 1; { st = WIFI_BAD_OFFSET; goto out; } }
-            POLICY(a == 4 && !(b & ~pol->cmd_clear) && !(c & ~pol->cmd_set));
-            WH_CW32(a, (WH_CR32(a) & ~b) | c); break;
-        case 28: REG(a); OFF(b, 1); r[a] = WH_R8(b); break;
-        case 29: { if (!imm) REG(b);
-            uint32_t v = imm ? b : r[b];
-            OFF(a, 1); POLICY(NO_SINK(a)); WH_W8(a, (uint8_t)v); break; }
-        case 27: { if (!imm) REG(a);
-            *code = imm ? a : r[a]; st = WIFI_YIELD; goto out; }
-        default: *code = pc - 1; { st = WIFI_BAD_OPCODE; goto out; }
-        }
-#undef REG
-#undef OFF
-#undef POLICY
-#undef SINK_OK
-#undef NO_SINK
-    }
-    *code = pc;
-    st = WIFI_STEP_LIMIT;
-out:
-    vm->sp = sp;
-    vm->pc = pc;
-    return st;
-}
-
-/* Start and run `image` to completion (programs that never yield); a yield
-   ends the run with WIFI_YIELD. */
-static inline int wifi_exec(const uint8_t *image, uint32_t image_len,
-                            const struct wifi_hooks *h, uint64_t max_steps,
-                            uint32_t *code) {
-    static struct wifi_vm vm;
-    if (wifi_start(&vm, image, image_len))
-        return WIFI_BAD_IMAGE;
-    return wifi_resume(&vm, h, max_steps, code);
 }
 
 #endif

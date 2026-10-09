@@ -4,7 +4,8 @@ LeanOS drives the Qotom's Intel Bay Trail xHCI controller (PCI 8086:0f35,
 00:14.0) with a Lean-authored device program and reads a USB boot-protocol
 keyboard. Like the WiFi driver ([wifi-driver.md](wifi-driver.md)), the driver
 is written in the instruction-set DSL of `LeanOS/Wifi/Bytecode.lean` and runs
-on the runtime-free executor `hardware/wifi/wifi-exec.h`.
+on the runtime-free generated executor (`LeanOS/Wifi/Exec.lean`, with the
+hooks of `hardware/wifi/wifi-gen-exec.h`).
 
 | Module | Contents |
 | --- | --- |

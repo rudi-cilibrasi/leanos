@@ -44,6 +44,7 @@ GENERATED_MODULES = (
     "FaultHandler",
     "KeyboardEcho",
     "TimerServer",
+    "WifiExec",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -68,6 +69,7 @@ FAULT_DISPATCH_PARTS = (
     "FaultHandler",
     "KeyboardEcho",
     "TimerServer",
+    "WifiExec",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"
