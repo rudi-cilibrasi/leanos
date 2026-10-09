@@ -30,6 +30,7 @@ import LeanOS.DeviceProgramConfinement
 import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.FaultHandler
+import LeanOS.TimerServer
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -3521,5 +3522,76 @@ theorem device_console_separation {σ : Type} (models : Nat → Wifi.Sim.Device 
         c.device.devState k →
           ∃ fuel, action = .device (.invoke (KeyboardEcho.subjectId .a) fuel)) :=
   KeyboardEcho.boot_causes_distinct models c hcaps action
+
+/-- SC-TIMER-CAPABILITY: the PIT alarm is armed only by an accepted arm from
+the timer-capability holder with a count in `1 .. 65535`; an arm from any
+other subject is refused without effect; the expiry interrupt is delivered
+only to the holder and touches nothing but the alarm and the holder's expiry
+notification (no authority, server state, client wake, tick count or
+preemption deadline); no other subject ever has pending expiry bits; and no
+operation, the server's included, changes the kernel's preemption deadline,
+so the programmed count is never later than it. -/
+theorem timer_capability_confinement :
+    (∀ (sys : TimerServer.System) (op : TimerServer.Op) (count : Nat),
+      (TimerServer.step sys op).1.pit.alarm = some count →
+        sys.pit.alarm = some count ∨
+          ∃ actor, op = .arm actor count ∧ sys.auth.timerHolder = some actor ∧
+            TimerServer.InBound count = true) ∧
+    (∀ (sys : TimerServer.System) (actor : TimerServer.SubjectId) (count : Nat),
+      sys.auth.timerHolder ≠ some actor →
+        TimerServer.step sys (.arm actor count) = (sys, .refused .noTimerCapability)) ∧
+    (∀ (sys : TimerServer.System) (holder : TimerServer.SubjectId),
+      (TimerServer.step sys .expire).2 = .delivered holder →
+        sys.auth.timerHolder = some holder) ∧
+    (∀ sys : TimerServer.System,
+      let next := (TimerServer.step sys .expire).1
+      next.auth = sys.auth ∧ next.pit.preemption = sys.pit.preemption ∧
+        next.server.queue = sys.server.queue ∧
+        next.server.outstanding = sys.server.outstanding ∧
+        next.wakes = sys.wakes ∧ next.ticks = sys.ticks ∧
+        (∀ s, sys.auth.timerHolder ≠ some s → next.expiries s = sys.expiries s)) ∧
+    (∀ (sys : TimerServer.System) (op : TimerServer.Op), TimerServer.ExpiryBound sys →
+      TimerServer.ExpiryBound (TimerServer.step sys op).1) ∧
+    (∀ (sys : TimerServer.System) (op : TimerServer.Op),
+      (TimerServer.step sys op).1.pit.preemption = sys.pit.preemption) ∧
+    (∀ (pit : TimerServer.Pit) (p : Nat), pit.preemption = some p →
+      ∃ q, pit.programmed = some q ∧ q ≤ p) :=
+  ⟨TimerServer.alarm_set_only_by_holder, TimerServer.arm_non_holder_unchanged,
+   fun sys holder h => (TimerServer.expire_delivered_to_holder sys holder h).1,
+   TimerServer.expire_footprint, TimerServer.step_preserves_expiryBound,
+   TimerServer.preemption_unchanged, TimerServer.programmed_le_preemption⟩
+
+/-- SC-TIMER-SERVER-POLICY: a request from a subject without the endpoint to
+the timer server is refused without effect, so every queued alarm (the only
+thing the server arms) belongs to an endpoint holder; a request outside the
+bound or over the client's quota is refused without effect; no client's
+outstanding alarm count ever exceeds the quota; and a client's wake bits rise
+only when the timer-capability holder collects an expiry for that client's
+alarm. -/
+theorem timer_server_alarm_policy :
+    (∀ (sys : TimerServer.System) (client : TimerServer.SubjectId) (count : Nat),
+      sys.auth.reachesServer client = false →
+        TimerServer.step sys (.request client count) = (sys, .refused .noEndpoint)) ∧
+    (∀ (sys : TimerServer.System) (op : TimerServer.Op), TimerServer.QueueFromSenders sys →
+      TimerServer.QueueFromSenders (TimerServer.step sys op).1) ∧
+    (∀ (sys : TimerServer.System) (client : TimerServer.SubjectId) (count : Nat),
+      TimerServer.InBound count = false →
+        (TimerServer.step sys (.request client count)).1 = sys) ∧
+    (∀ (sys : TimerServer.System) (client : TimerServer.SubjectId) (count : Nat),
+      sys.auth.reachesServer client = true → TimerServer.InBound count = true →
+        sys.server.quota ≤ sys.server.outstanding client →
+          TimerServer.step sys (.request client count) = (sys, .refused .quotaExceeded)) ∧
+    (∀ (sys : TimerServer.System) (op : TimerServer.Op), TimerServer.WithinQuota sys →
+      TimerServer.WithinQuota (TimerServer.step sys op).1) ∧
+    (∀ (sys : TimerServer.System) (op : TimerServer.Op) (client : TimerServer.SubjectId),
+      sys.wakes client < (TimerServer.step sys op).1.wakes client →
+        ∃ actor count rest, op = .collect actor ∧ sys.auth.timerHolder = some actor ∧
+          sys.expiries actor ≠ 0 ∧ sys.server.queue = (client, count) :: rest) :=
+  ⟨TimerServer.request_without_endpoint_unchanged,
+   TimerServer.step_preserves_queueFromSenders,
+   fun sys client count h => (TimerServer.request_out_of_bound_unchanged sys client count h).1,
+   TimerServer.request_over_quota_refused,
+   TimerServer.step_preserves_withinQuota,
+   TimerServer.wake_only_by_holder⟩
 
 end LeanOS.SecurityClaims

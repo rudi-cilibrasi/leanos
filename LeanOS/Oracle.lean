@@ -20,6 +20,7 @@ import LeanOS.UserCopyPolicy
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
+import LeanOS.TimerServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -82,7 +83,8 @@ def adapters : List AdapterSpec := [
   adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6,
   adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
-  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4]
+  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
+  adapter "TimerServer.decide" 26 "leanos_timer_server_decide" 3]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -150,6 +152,10 @@ private def directoryResolve (id : String) (registered held : UInt64) : Vector :
 private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
   { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
     expected := FaultHandler.faultHandlerRoute event vector subject word }
+
+private def timerServerDecide (id : String) (event subject word : UInt64) : Vector :=
+  { id, adapter := "TimerServer.decide", words := [event, subject, word],
+    expected := TimerServer.timerServerDecide event subject word }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -531,6 +537,28 @@ def faultHandlerVectors : List Vector := [
   faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
   faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
 
+/-- Timer-server kernel decisions (#487): C's arm at and around the bound,
+arms from A and B, sends to the server from each subject, the expiry with and
+without an armed alarm, C's wake of A and refused wakes, and an unknown
+event. -/
+def timerServerVectors : List Vector := [
+  timerServerDecide "timer-server.arm-holder-max" 0 3 65535,
+  timerServerDecide "timer-server.arm-holder-min" 0 3 1,
+  timerServerDecide "timer-server.arm-holder-zero" 0 3 0,
+  timerServerDecide "timer-server.arm-holder-over" 0 3 65536,
+  timerServerDecide "timer-server.arm-holder-maximum-word" 0 3 0xffffffffffffffff,
+  timerServerDecide "timer-server.arm-client" 0 1 1000,
+  timerServerDecide "timer-server.arm-other" 0 2 1000,
+  timerServerDecide "timer-server.send-client" 1 1 0,
+  timerServerDecide "timer-server.send-other" 1 2 0,
+  timerServerDecide "timer-server.send-server" 1 3 0,
+  timerServerDecide "timer-server.expire-armed" 2 0 1,
+  timerServerDecide "timer-server.expire-idle" 2 0 0,
+  timerServerDecide "timer-server.wake-holder" 3 3 1,
+  timerServerDecide "timer-server.wake-other-signaller" 3 2 1,
+  timerServerDecide "timer-server.wake-other-client" 3 3 2,
+  timerServerDecide "timer-server.unknown-event" 4 3 1]
+
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
 2^64 − 1, which cover its equivalence classes (the accepting word, the
@@ -885,9 +913,10 @@ def vectors : List Vector := [
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
-    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors
+    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
+    timerServerVectors
 
-theorem corpus_shape : vectors.length = 512 := by decide
+theorem corpus_shape : vectors.length = 528 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -926,7 +955,12 @@ theorem hosted_directory_resolve_vectors_exact :
 
 /-- Oracle indices 501--511 are the fault-handler route corpus (#488). -/
 theorem hosted_fault_handler_vectors_exact :
-    vectors.drop 501 = faultHandlerVectors := by
+    (vectors.drop 501).take faultHandlerVectors.length = faultHandlerVectors := by
+  rfl
+
+/-- Oracle indices 512--527 are the timer-server decision corpus (#487). -/
+theorem hosted_timer_server_vectors_exact :
+    vectors.drop 512 = timerServerVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -956,7 +990,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors := by
+        faultHandlerVectors ++ timerServerVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

@@ -29,6 +29,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_console_authorize);
     REGISTER_BOUNDARY(leanos_directory_resolve);
     REGISTER_BOUNDARY(leanos_fault_handler_route);
+    REGISTER_BOUNDARY(leanos_timer_server_decide);
     REGISTER_BOUNDARY(leanos_capability_reuse_demo);
     REGISTER_BOUNDARY(leanos_extended_state_denial_demo);
     REGISTER_BOUNDARY(leanos_privilege_entry_control_demo);

@@ -15069,6 +15069,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_timer_server_vectors_exact",
+      "display": "hosted_timer_server_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_user_copy_policy_vectors_exact",
       "display": "hosted_user_copy_policy_vectors_exact",
       "kind": "theorem"
@@ -18081,6 +18087,18 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.timer_capability_confinement",
+      "display": "timer_capability_confinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.timer_server_alarm_policy",
+      "display": "timer_server_alarm_policy",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.user_fault_class_containment",
       "display": "user_fault_class_containment",
       "kind": "theorem"
@@ -18695,6 +18713,156 @@
       "source": "LeanOS/TLB.lean",
       "qualified": "LeanOS.TLB.unmap_revokes_before_return",
       "display": "unmap_revokes_before_return",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.alarm_set_only_by_holder",
+      "display": "alarm_set_only_by_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.arm_accepted",
+      "display": "arm_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.arm_non_holder_unchanged",
+      "display": "arm_non_holder_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.arm_out_of_bound_unchanged",
+      "display": "arm_out_of_bound_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.bootSystem_invariants",
+      "display": "bootSystem_invariants",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.boot_run",
+      "display": "boot_run",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.expire_delivered_to_holder",
+      "display": "expire_delivered_to_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.expire_footprint",
+      "display": "expire_footprint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.expiry_only_to_holder",
+      "display": "expiry_only_to_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.kernelSend_refused_iff",
+      "display": "kernelSend_refused_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.preemption_unchanged",
+      "display": "preemption_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.programmed_le_preemption",
+      "display": "programmed_le_preemption",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.request_out_of_bound_unchanged",
+      "display": "request_out_of_bound_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.request_over_quota_refused",
+      "display": "request_over_quota_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.request_without_endpoint_unchanged",
+      "display": "request_without_endpoint_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.step_preserves_auth",
+      "display": "step_preserves_auth",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.step_preserves_expiryBound",
+      "display": "step_preserves_expiryBound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.step_preserves_queueFromSenders",
+      "display": "step_preserves_queueFromSenders",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.step_preserves_withinQuota",
+      "display": "step_preserves_withinQuota",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.tick_footprint",
+      "display": "tick_footprint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.tick_independent_of_alarm",
+      "display": "tick_independent_of_alarm",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.timerServerDecide_agrees",
+      "display": "timerServerDecide_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.timerServerDecide_arm_accepts",
+      "display": "timerServerDecide_arm_accepts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.timerServerDecide_send_accepts",
+      "display": "timerServerDecide_send_accepts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimerServer.lean",
+      "qualified": "LeanOS.TimerServer.wake_only_by_holder",
+      "display": "wake_only_by_holder",
       "kind": "theorem"
     },
     {

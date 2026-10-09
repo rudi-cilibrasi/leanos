@@ -113,6 +113,7 @@
     "LeanOS/SubjectLifecycle.lean",
     "LeanOS/Syscall.lean",
     "LeanOS/TLB.lean",
+    "LeanOS/TimerServer.lean",
     "LeanOS/UserCopy.lean",
     "LeanOS/UserCopyAliases.lean",
     "LeanOS/UserCopyBinding.lean",

@@ -662,7 +662,12 @@ C's code can also come from a separately built C subject instead of
 build rule in [subjects.md](subjects.md) (#484). The `endpoint-directory` image builds its C, the
 endpoint directory, the same way, and reuses the console-server switch path in
 which C blocks again and A resumes. See
-[the endpoint-directory page](endpoint-directory.md) (#485).
+[the endpoint-directory page](endpoint-directory.md) (#485). The
+`timer-server` image builds its C, the timer server, the same way, and adds
+its own switch paths: C replies and A resumes, A waits and B's saved
+continuation resumes, and the PIT alarm's interrupt saves B and wakes C. It is
+the only image other than `preemption` that unmasks IRQ0. See
+[the timer-server page](timer-server.md) (#487).
 
 ### Assigned-EDU negative variants
 
