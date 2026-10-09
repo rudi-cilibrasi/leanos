@@ -1,0 +1,30 @@
+# The ordinary kernel gate: exact replies and atomic rejections
+
+Every ordinary public operation passes through one gate that checks the fail-stop latch, runs the operation, and reports a typed reply. These theorems guarantee that each reply describes what really happened, that busy, halted, and classified rejections leave the entire kernel state unchanged, and that device controls and device-access authority survive every gate step.
+
+- `applyNmi_preserves_runtimeWellFormed` — A stepping-stone fact used by the gate proofs: handling an emergency interrupt preserves the whole runtime invariant while latching the halt on both the execution side and the snapshot-bank side.
+- `interrupt_contained_synchronizes_lifecycle` — When a program's fault is contained, both scheduler views receive the post-termination records in the same step, so neither can schedule from the pre-termination past.
+- `interrupt_contained_cleans_faulting_subject` — Containing a faulting program publishes its complete removal at once: every duplicated record marks it dead, the scheduler and snapshot bank hold nothing selectable for it, and its message wait and saved snapshot are removed together.
+- `ipc_receive_preserves_sealed_transfer` — A plain data receive can never consume a message that carries a sealed permission transfer: the reply points the caller to the transfer operation instead, and every record stays byte-for-byte unchanged.
+- `resumePreempt_halted_latches` — When a resumable preemption entry proves fatal, the snapshot bank's halt flag and the execution halt latch are set in the same transition, so the kernel can never appear to be running while its snapshot bank is terminal.
+- `resumePreempt_synchronizes_current_context` — After an accepted save-select-restore switch, the scheduler-selected program is the one and only execution caller and active memory space; incoming frames and registers cannot leave the latch pointing at the preempted victim.
+- `CompositeState.dmaQuarantined_dependsOn` — Whether device memory access is quarantined depends only on the accepted device-access authority and the live device-control observation.
+- `gate_frames` — The frame rule holds for every outcome of the ordinary kernel gate: an accepted operation changes nothing outside its footprint, and busy or halted rejections change nothing at all.
+- `gate_preserves_of_dependsOn` — Any property that depends only on parts of the kernel state an operation does not write survives every outcome of the ordinary kernel gate.
+- `observeDMAControl_continued_unchanged` — A live device-control check that matches the boot-approved snapshot changes nothing at all and keeps the invariant, including its device-quarantine part.
+- `observeDMAControl_invalid_exact_fatal` — A device-control snapshot that fails validation has exactly one outcome: record the observed snapshot for diagnosis and latch the halt with the invalid-control reason.
+- `observeDMAControl_changed_exact_fatal` — A snapshot that validates but differs from the boot-approved one is equally fatal; drift in live device controls can never pass as an ordinary continuation.
+- `gate_directPortIO` — Every path through the public gate, whether busy, halted, accepted, or rejected, keeps the hardware-port controls and device state exactly as they were.
+- `gate_dmaAuthority` — No path through the public gate can replace the accepted device authority or the current control observation.
+- `gate_preserves_dmaQuarantined` — Every ordinary public step preserves the device-quarantine part of the invariant.
+- `gate_running_exact` — While running, the public gate performs exactly the requested operation and reports exactly its typed reply, nothing more and nothing less.
+- `gate_mode_rejection_atomicity` — A busy or already-halted gate rejection returns the identical composite state, including the exact transfer trace and snapshot bank.
+- `gate_completed_sound` — Any completed result proves the latch was running (or that the operation was the special emergency-interrupt entry) and pins both the exact typed reply and the exact resulting state, so no rejection can masquerade as another operation's success and no caller can pair its own chosen state with an authoritative reply.
+- `gate_subsystem_rejection_atomicity` — Every typed nonfatal rejection from any subsystem leaves the composite state exactly as it was; a newly added rejection kind gains this guarantee only when its branch explicitly returns the unchanged state.
+- `gate_subsystem_rejection_preserves_runtimeWellFormed` — Because those rejections return the literal pre-state, they preserve the whole runtime invariant uniformly across system-call, message, transfer, permission, mapping, lifecycle, and scheduler errors.
+- `classified_rejection_is_subsystem` — A stepping-stone fact: whenever the public reply classifier labels a reply an ordinary rejection, a genuine subsystem rejection of the matching shape really occurred.
+- `gate_classified_rejection_atomicity` — The public reply classifier alone suffices for atomicity: callers need not construct any extra evidence, because every classified rejection returns the literal pre-state.
+- `gate_classified_rejection_global_atomicity` — Classified rejection is a no-op even when the latch is busy or already halted, since those modes reject before the subsystem is ever invoked.
+- `gate_classified_rejection_preserves_runtimeWellFormed` — A classified rejection therefore also preserves the complete invariant, byte for byte.
+- `gate_resumePreempt_rejected_atomic` — Every ordinary resumable-preemption error surfaces its exact typed reply and changes nothing; only the distinguished fatal-entry error is excluded, since it belongs to the absorbing halt class.
+- `gate_selectUserReturn_preserves_runtimeWellFormed` — Selecting return policy through the gate preserves the whole invariant: while running it changes only the execution portion and arms permission only after the live-plan check, while busy and halted modes change nothing.

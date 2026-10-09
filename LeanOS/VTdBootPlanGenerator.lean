@@ -4,13 +4,16 @@ import LeanOS.VTdBootPlan
 # Linked VT-d boot-plan generator
 
 This host-only executable receives the final-ELF remapping-table symbol
-addresses plus the CPU page-table layout, constructs the same finite
-`VTdBootPlan.Input` those symbols represent over the accepted deny-all
-device-domain state, requires `VTdBootPlan.compile` to accept it, and emits the
-canonical root/context table words and pinned register constants consumed by
-the guest constructor.  The linker, symbol extraction, generated header,
-C/assembly table writes, VT-d MMIO programming, and hardware page walk remain
-trusted build and integration boundaries rather than proved refinement steps.
+addresses plus the CPU page-table layout, constructs the finite
+`VTdBootPlan.Input` values those symbols represent (the deny-all state, the
+assigned-EDU state, and, for a device-service image, the device-service state,
+each with its reviewed platform binding), requires `VTdBootPlan.compile` to
+accept every one, and emits the compiled root, context, and second-level table
+words plus the pinned register constants consumed by the guest constructor.
+Every table word in the generated header is `compile` output.  The linker,
+symbol extraction, generated header, C/assembly table writes, VT-d MMIO
+programming, and hardware page walk remain trusted build and integration
+boundaries rather than proved refinement steps.
 -/
 namespace LeanOS.VTdBootPlanGenerator
 
@@ -104,8 +107,8 @@ def input (layout : Layout) : Input :=
     cpuTableFrames := cpuTableFrames layout
     reservationResult := reservationResult layout }
 
-/-- The assigned-EDU table storage is not part of the deny-all plan yet, but
-its exact linker-owned frame layout is already a checked generator input. -/
+/-- The linker-owned second-level table storage the assigned and
+device-service plans bind: three pages directly after the context table. -/
 def assignedTableLayoutValid (layout : Layout) : Bool :=
   layout.rootTableStart % pageBytes == 0 &&
     layout.contextTableStart == layout.rootTableStart + pageBytes &&
@@ -155,9 +158,6 @@ def assignedScenarioAuthorityValid : Bool :=
 
 example : assignedScenarioAuthorityValid = true := by native_decide
 
-def permissionBits (permission : IOMMU.Permission) : Nat :=
-  (if permission.read then 1 else 0) + (if permission.write then 2 else 0)
-
 /-! The finite IOMMU model uses 16-byte pages so proofs stay executable. The
 assigned image scales each model page to one hardware 4 KiB page. Model device
 zero remains the authoritative assignment; this reviewed platform projection
@@ -168,46 +168,34 @@ def assignedEduRequester : Nat := 2 * 8
 def hardwareIova (modelIova : Nat) : Nat :=
   (modelIova / IOMMU.pageSize) * pageBytes
 
-def assignedContextEntries (layout : Layout) : List ContextEntry :=
-  (List.range contextEntryCount).map fun requester =>
-    if requester == assignedEduRequester then
-      { present := true
-        domain := assignedScenarioState.core.assignments.head!.domain.slot
-        addressWidth := addressWidthEncoding
-        secondLevelFrame := frameOf layout.secondLevelRootStart }
-    else absentContextEntry
+/-- The reviewed binding of the assigned scenario onto the linked layout: the
+assigned function's requester, the linked second-level table frames, and the
+hardware frame that holds model page 0 of the scenario's model frame. -/
+def assignedBinding (layout : Layout) (modelFrame hardwareFrame : Nat) : GrantBinding :=
+  { requester := assignedEduRequester
+    secondLevelRootFrame := frameOf layout.secondLevelRootStart
+    secondLevelDirectoryFrame := frameOf layout.secondLevelDirectoryStart
+    secondLevelTableFrame := frameOf layout.secondLevelTableStart
+    frameBases := [(modelFrame, hardwareFrame)] }
 
-def assignedContextTableWords (layout : Layout) : List Nat :=
-  (assignedContextEntries layout).flatMap fun entry =>
-    [contextEntryLow entry, contextEntryHigh entry]
+/-- The assigned-EDU plan input: both model pages of frame 0 land on the
+linked read and write buffers, which `assignedBufferLayoutValid` places on
+consecutive pages. -/
+def assignedInput (layout : Layout) : Input :=
+  { input layout with
+    state := assignedScenarioState
+    grantBinding := some (assignedBinding layout
+      assignedScenarioState.core.mappings.head!.frame.frame
+      (frameOf layout.assignedReadBufferStart)) }
 
-def singleEntryPage (index value : Nat) : List Nat :=
-  (List.range 512).map fun candidate => if candidate == index then value else 0
-
-def assignedSecondLevelRootWords (layout : Layout) : List Nat :=
-  singleEntryPage 0 (layout.secondLevelDirectoryStart + 3)
-
-def assignedSecondLevelDirectoryWords (layout : Layout) : List Nat :=
-  singleEntryPage 0 (layout.secondLevelTableStart + 3)
-
-def assignedSecondLevelTableWords (layout : Layout) : List Nat :=
-  let readMapping := assignedScenarioState.core.mappings.head!
-  let writeMapping := assignedScenarioState.core.mappings.tail.head!
-  (List.range 512).map fun index =>
-    if index == hardwareIova readMapping.iova / pageBytes then
-      layout.assignedReadBufferStart + permissionBits readMapping.permission
-    else if index == hardwareIova writeMapping.iova / pageBytes then
-      layout.assignedWriteBufferStart + permissionBits writeMapping.permission
-    else 0
-
-def assignedHardwareProjectionValid (layout : Layout) : Bool :=
+def assignedHardwareProjectionValid (layout : Layout) (plan : Plan) : Bool :=
   assignedBufferLayoutValid layout && assignedEduRequester == 16 &&
     hardwareIova assignedScenarioState.core.mappings.head!.iova == 0 &&
     hardwareIova assignedScenarioState.core.mappings.tail.head!.iova == pageBytes &&
-    (assignedContextTableWords layout).length == 512 &&
-    (assignedSecondLevelRootWords layout).length == 512 &&
-    (assignedSecondLevelDirectoryWords layout).length == 512 &&
-    (assignedSecondLevelTableWords layout).length == 512 &&
+    (contextTableWords plan).length == 512 &&
+    plan.secondLevelRootWords.length == 512 &&
+    plan.secondLevelDirectoryWords.length == 512 &&
+    plan.secondLevelTableWords.length == 512 &&
     validateAssignedEDUProjection assignedProjectionVersion assignedEDUTopologyVersion
       (UInt64.ofNat assignedScenarioState.core.assignments.head!.device)
       (UInt64.ofNat assignedScenarioState.core.assignments.head!.source)
@@ -262,17 +250,20 @@ def serviceAuthorityValid : Bool :=
     validateDeviceServiceTransfer 0 1 0 1 1 == 4 &&
     validateDeviceServiceTransfer 0 1 (serviceMapping.iova + serviceMapping.length) 1 1 == 4
 
-/-- The first hardware page of the window: IOVA 16 KiB, leaf index 4. -/
-def serviceFirstPage : Nat := hardwareIova serviceMapping.iova / pageBytes
-
 example : serviceAuthorityValid = true := by native_decide
 
-def serviceSecondLevelTableWords (dmaStart : Nat) : List Nat :=
-  (List.range 512).map fun index =>
-    if serviceFirstPage ≤ index && index < serviceFirstPage + servicePages then
-      dmaStart + (index - serviceFirstPage) * pageBytes +
-        permissionBits serviceMapping.permission
-    else 0
+/-- The device-service plan input: the window's model frame lands at the
+start of the executor scratch. -/
+def serviceInput (layout : Layout) (dmaStart : Nat) : Input :=
+  { input layout with
+    state := deviceServiceState
+    grantBinding := some (assignedBinding layout serviceMapping.frame.frame
+      (frameOf dmaStart)) }
+
+def compileOrThrow (label : String) (planInput : Input) : Except String Plan :=
+  match compile planInput with
+  | .error error => throw s!"{label} VT-d plan rejected: {repr error}"
+  | .ok plan => pure plan
 
 /-- The window is page-aligned kernel memory clear of both table families. -/
 def serviceLayoutValid (layout : Layout) (dmaStart : Nat) : Bool :=
@@ -290,26 +281,27 @@ def emitService (layout : Layout) : Except String (List String) :=
       throw "device-service model authority is not the reviewed read/write window"
     if !serviceLayoutValid layout dmaStart then
       throw "device-service DMA window is not page-aligned kernel memory clear of the tables"
+    let plan ← compileOrThrow "device-service" (serviceInput layout dmaStart)
     pure
       [emitConstant "LEANOS_VTD_SERVICE_TOPOLOGY" deviceServiceTopologyVersion.toNat,
        emitConstant "LEANOS_VTD_SERVICE_DMA_FRAME" (frameOf dmaStart),
        emitConstant "LEANOS_VTD_SERVICE_DMA_PAGES" servicePages,
        emitConstant "LEANOS_VTD_SERVICE_IOVA" (hardwareIova serviceMapping.iova),
-       emitArray "leanos_vtd_service_second_level_table"
-         (serviceSecondLevelTableWords dmaStart)]
+       emitArray "leanos_vtd_service_second_level_table" plan.secondLevelTableWords]
 
 def emit (layout : Layout) : Except String String := do
   if !assignedTableLayoutValid layout then
     throw "linked VT-d assigned-table reservation is not contiguous and page-aligned"
   if !assignedScenarioAuthorityValid then
     throw "assigned EDU model authority is not the reviewed read/write projection"
-  if !assignedHardwareProjectionValid layout then
+  let assigned ← compileOrThrow "assigned EDU" (assignedInput layout)
+  if !assignedHardwareProjectionValid layout assigned then
     throw "assigned EDU hardware tables do not match the reviewed model projection"
   let service ← emitService layout
-  match compile (input layout) with
-  | .error error => throw s!"canonical linked VT-d plan rejected: {repr error}"
-  | .ok plan =>
-    pure <| String.intercalate "\n"
+  let plan ← compileOrThrow "canonical linked" (input layout)
+  if rootTableWords assigned != rootTableWords plan then
+    throw "assigned and deny-all VT-d plans disagree on the root table"
+  pure <| String.intercalate "\n"
       (["/* Generated by the accepted LeanOS.VTdBootPlan; do not edit. */",
        emitConstant "LEANOS_VTD_MMIO_BASE" mmioBase,
        emitConstant "LEANOS_VTD_PLAN_VERSION" planVersion.toNat,
@@ -380,14 +372,12 @@ def emit (layout : Layout) : Except String String := do
        emitConstant "LEANOS_VTD_CANONICAL_JOURNAL" canonicalJournalWord,
        emitArray "leanos_vtd_root_table" (rootTableWords plan),
        emitArray "leanos_vtd_context_table" (contextTableWords plan),
-       emitArray "leanos_vtd_assigned_context_table"
-         (assignedContextTableWords layout),
-       emitArray "leanos_vtd_assigned_second_level_root"
-         (assignedSecondLevelRootWords layout),
+       emitArray "leanos_vtd_assigned_context_table" (contextTableWords assigned),
+       emitArray "leanos_vtd_assigned_second_level_root" assigned.secondLevelRootWords,
        emitArray "leanos_vtd_assigned_second_level_directory"
-         (assignedSecondLevelDirectoryWords layout),
+         assigned.secondLevelDirectoryWords,
        emitArray "leanos_vtd_assigned_second_level_table"
-         (assignedSecondLevelTableWords layout)] ++ service) ++ "\n"
+         assigned.secondLevelTableWords] ++ service) ++ "\n"
 
 end LeanOS.VTdBootPlanGenerator
 

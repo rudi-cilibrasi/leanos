@@ -202,4 +202,106 @@ is false
 example : admissible (one .halt xhciTarget) qotomXhciPolicy = true := by
   decide
 
+/-! ## Descriptor pointers (issue #495) -/
+
+/-- The xHCI policies' descriptor maps are exactly the driver's, per layout. -/
+example : qotomXhciPolicy.descriptors =
+    @LeanOS.Usb.Xhci.descriptorMap LeanOS.Usb.Xhci.bayTrail := by
+  decide
+
+example : q35XhciPolicy.descriptors =
+    @LeanOS.Usb.Xhci.descriptorMap LeanOS.Usb.Xhci.qemu := by
+  decide
+
+section XhciFragments
+open LeanOS.Usb.Xhci
+attribute [local instance] LeanOS.Usb.Xhci.qemu
+
+/-- A fragment written with the xHCI driver's own builders, generated for
+qemu-xhci and declaring `q35XhciPolicy`, as the generator emits it. -/
+private def xhciFrag (body : ProgM Unit) : Program :=
+  match build (do body; halt) with
+  | .ok p => { p with target := some target, policy := some q35XhciPolicy }
+  | .error _ => { words := #[], blob := .empty, sections := #[] }
+
+private def fragStatus (body : ProgM Unit) : Sim.Status :=
+  (Sim.run (xhciFrag body) Sim.Device.none () 2000).1
+
+private def addressDevice (ptr : Operand) : ProgM Unit := do
+  ringInit commandRing
+  enqueue commandRing ptr (.imm 0) (.imm 0) (.imm ((11 : UInt32) <<< 10))
+
+/- The driver's Address Device command, its Input Context pointer from
+`physAddr`, is accepted. -/
+#guard fragStatus (do emit (.physAddr 6 inputCtx); addressDevice (.reg 6)) == .halt
+
+/- The mutant: the same command with a forged Input Context pointer (1 MiB,
+outside scratch) in the TRB parameter stops with a policy violation before the
+TRB can be handed to the controller. -/
+#guard fragStatus (addressDevice (.imm 0x00100000)) == .error "policy"
+
+/- A forged data buffer in a Normal TRB on the interrupt ring, and a Data
+Stage TRB whose high dword would move its buffer above 4 GiB. -/
+#guard fragStatus (do
+  ringInit (transferRing 5 intRing)
+  enqueue (transferRing 5 intRing) (.imm 0x00100000) (.imm 0) (.imm 8)
+    (.imm ((1 : UInt32) <<< 10))) == .error "policy"
+#guard fragStatus (do
+  ringInit (ep0Ring 0)
+  emit (.physAddr 6 dataBuf)
+  enqueue (ep0Ring 0) (.reg 6) (.imm 1) (.imm 18) (.imm ((3 : UInt32) <<< 10))) ==
+  .error "policy"
+
+/- A Setup Stage TRB carries its 8-byte setup packet inline: any value is
+accepted there, and a Status Stage TRB with a zero parameter too. -/
+#guard fragStatus (do
+  ringInit (ep0Ring 0)
+  enqueue (ep0Ring 0) (.imm 0x01000680) (.imm 0x00120000) (.imm 8)
+    (.imm (((2 : UInt32) <<< 10) ||| 0x40))
+  enqueue (ep0Ring 0) (.imm 0) (.imm 0) (.imm 0) (.imm ((4 : UInt32) <<< 10))) == .halt
+
+/- Rewriting the parameter of a TRB already typed as a pointer TRB is checked
+too: handing over a valid Data Stage TRB and then overwriting its buffer. -/
+#guard fragStatus (do
+  ringInit (ep0Ring 0)
+  emit (.physAddr 6 dataBuf)
+  enqueue (ep0Ring 0) (.reg 6) (.imm 0) (.imm 18) (.imm ((3 : UInt32) <<< 10))
+  st 4 ep0RingBase (.imm 0x00100000)) == .error "policy"
+
+/- Forged DCBAA, ERST and endpoint-context dequeue pointers; a byte store that
+moves a valid pointer out of scratch; FIFO input into a ring. -/
+#guard fragStatus (st 4 (dcbaa + 8) (.imm 0x00100000)) == .error "policy"
+#guard fragStatus (st 4 erst (.imm 0x00100000)) == .error "policy"
+#guard fragStatus (st 4 (ictx 2 2) (.imm 0x00100001)) == .error "policy"
+#guard fragStatus (do storePhys64 dcbaa 0; st 1 (dcbaa + 2) (.imm 0x10)) == .error "policy"
+#guard fragStatus (do li 1 cmdRing; li 2 4; emit (.fifoIn 0 1 2)) == .error "policy"
+
+/- The driver's own descriptor stores — scratch pointers, flag bits in the
+low byte (DCS) and zeros — are accepted. -/
+#guard fragStatus (do
+  storePhys64 dcbaa 0x100
+  storePhys64 erst evRing
+  st 4 (erst + 8) (.imm ringTrbs)
+  emit (.physAddr 0 (ep0Ring 0).base); ori 0 1; st 4 (ictx 2 2) (.reg 0)
+  st 4 (ictx 2 3) (.imm 0)
+  clearInput) == .halt
+
+end XhciFragments
+
+/- A policy with a descriptor map admits a program only if its image declares
+that policy, so the executor checks the map. -/
+/--
+error: Tactic `decide` proved that the proposition
+  admissible (one Instr.halt xhciTarget)
+      { window := 65536, cfgRead := 0, cfgWrite := 0, cmdClear := 0, cmdSet := 0, dma := true,
+        descriptors := [{ trb := true, start := 1024, count := 64, stride := 16 }] } =
+    true
+is false
+-/
+#guard_msgs in
+example : admissible (one .halt xhciTarget)
+    { window := 0x10000, cfgRead := 0, cfgWrite := 0, cmdClear := 0, cmdSet := 0, dma := true,
+      descriptors := [{ trb := true, start := 0x400, count := 64, stride := 16 }] } = true := by
+  decide
+
 end LeanOS.NegativeFixtures.DeviceProgramConfinement
