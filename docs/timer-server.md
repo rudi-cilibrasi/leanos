@@ -90,7 +90,7 @@ APIC timer or TSC is involved.
 
 ## The generated witness
 
-`timerServerDecide` (`leanos_timer_server_decide`, oracle adapter 26) is the
+`timerServerDecide` (`leanos_timer_server_decide`, oracle adapter 27) is the
 allocation-free lowering of the kernel's decisions on the boot authority.
 `timerServerDecide_agrees` ties it to `step` on the boot system.
 

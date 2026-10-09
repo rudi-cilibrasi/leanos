@@ -20,6 +20,7 @@ import LeanOS.UserCopyPolicy
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
+import LeanOS.KeyboardEcho
 import LeanOS.TimerServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
@@ -84,7 +85,8 @@ def adapters : List AdapterSpec := [
   adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
   adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
-  adapter "TimerServer.decide" 26 "leanos_timer_server_decide" 3]
+  adapter "KeyboardEcho.deviceAuthorize" 26 "leanos_device_authorize" 2,
+  adapter "TimerServer.decide" 27 "leanos_timer_server_decide" 3]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -152,6 +154,10 @@ private def directoryResolve (id : String) (registered held : UInt64) : Vector :
 private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
   { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
     expected := FaultHandler.faultHandlerRoute event vector subject word }
+
+private def deviceAuthorize (id : String) (subject device : UInt64) : Vector :=
+  { id, adapter := "KeyboardEcho.deviceAuthorize", words := [subject, device],
+    expected := KeyboardEcho.deviceAuthorize subject device }
 
 private def timerServerDecide (id : String) (event subject word : UInt64) : Vector :=
   { id, adapter := "TimerServer.decide", words := [event, subject, word],
@@ -537,6 +543,16 @@ def faultHandlerVectors : List Vector := [
   faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
   faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
 
+/-- Keyboard-echo device authority (#493): every subject code 0--4 against the
+assigned device 0 and another device 1, then the holder against the maximum
+device word and the maximum words. -/
+def deviceAuthorizeVectors : List Vector :=
+  ((List.range 5).flatMap fun subject => (List.range 2).map fun device =>
+    deviceAuthorize s!"device-authorize.subject-{subject}-device-{device}"
+      subject.toUInt64 device.toUInt64) ++
+  [deviceAuthorize "device-authorize.holder-maximum-device" 1 0xffffffffffffffff,
+   deviceAuthorize "device-authorize.maximum-words" 0xffffffffffffffff 0xffffffffffffffff]
+
 /-- Timer-server kernel decisions (#487): C's arm at and around the bound,
 arms from A and B, sends to the server from each subject, the expiry with and
 without an armed alarm, C's wake of A and refused wakes, and an unknown
@@ -914,9 +930,9 @@ def vectors : List Vector := [
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
     consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
-    timerServerVectors
+    deviceAuthorizeVectors ++ timerServerVectors
 
-theorem corpus_shape : vectors.length = 528 := by decide
+theorem corpus_shape : vectors.length = 540 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -958,9 +974,15 @@ theorem hosted_fault_handler_vectors_exact :
     (vectors.drop 501).take faultHandlerVectors.length = faultHandlerVectors := by
   rfl
 
-/-- Oracle indices 512--527 are the timer-server decision corpus (#487). -/
+/-- Oracle indices 512--523 are the keyboard-echo device-authority corpus
+(#493). -/
+theorem hosted_device_authorize_vectors_exact :
+    (vectors.drop 512).take deviceAuthorizeVectors.length = deviceAuthorizeVectors := by
+  rfl
+
+/-- Oracle indices 524--539 are the timer-server decision corpus (#487). -/
 theorem hosted_timer_server_vectors_exact :
-    vectors.drop 512 = timerServerVectors := by
+    vectors.drop 524 = timerServerVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -990,7 +1012,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors ++ timerServerVectors := by
+        faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

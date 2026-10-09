@@ -34,3 +34,5 @@ timer-switch	console_server_switch
 syscall	device_service_next_key
 syscall	wifi_hook_print
 syscall	keyboard_echo_syscall
+syscall	keyboard_echo_ipc_edge
+syscall	keyboard_echo_device_expected

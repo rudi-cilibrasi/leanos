@@ -40,7 +40,7 @@ ABI.
 | 8 | canonical (blocking-ipc, preemption) | 1 | send on endpoint 10 (RBX, RCX = payload) |
 | 8 | ipc-stream, device-service | 1 | send one event on endpoint 10 |
 | 9 | canonical (blocking-ipc, preemption) | 2 | report the delivered payload |
-| 9 | ipc-stream, device-service | 2 | echo the delivered event |
+| 9 | ipc-stream, device-service | 2 | report the delivered event; the kernel checks it equals what A sent (ipc-stream also echoes it, device-service does not) |
 | 7 | three-subject | 3 | C blocks on endpoint 12 |
 | 8 | three-subject | 1 | A sends one word on endpoint 12 (RBX, RCX = payload) |
 | 9 | three-subject | 3 | C reports the delivered word (final record) |
