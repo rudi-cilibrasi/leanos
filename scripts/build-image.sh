@@ -105,6 +105,7 @@ require_tool make "install Ubuntu package make=4.3-4.1build2"
 require_tool sha256sum "install Ubuntu package coreutils=9.4-3ubuntu6.3"
 require_tool ld "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool nm "install Ubuntu package binutils=2.42-4ubuntu2.10"
+require_tool objcopy "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool grub-file "install Ubuntu package grub-common=2.12-1ubuntu7.3"
 require_tool grub-mkrescue "install Ubuntu package grub-common=2.12-1ubuntu7.3"
 require_tool grub-mkimage "install Ubuntu package grub-common=2.12-1ubuntu7.3"
@@ -1555,13 +1556,21 @@ printf '%s\n' "$source_revision" > "$build/SOURCE_REVISION"
 ./scripts/build-efi-grub.sh binary "$build/BOOTX64.EFI" boot/grub-efi-iso.cfg
 ./scripts/build-efi-grub.sh esp-image "$build/efi.img" "$build/BOOTX64.EFI"
 declare -A selected_iso_root_lookup=()
+# Stage the kernel without DWARF.  GRUB's Multiboot2 loader copies every
+# non-allocated section into memory for the ELF-sections tag; under OVMF
+# with the pinned 128 MiB q35 guest, a Clang kernel carrying ~24 MB of debug
+# sections makes GRUB x86_64-efi fault before the kernel entry.  Policy
+# checks and symbolization keep using the debug ELF in build/boot.
+stage_kernel_elf() {
+  objcopy --strip-debug "$1" "$2"
+}
 stage_selected_image() {
   local elf="$1"
   local staging_root="$2"
   local grub_config="$3"
   selected_final_enabled "$elf" || return 0
   selected_iso_root_lookup["$staging_root"]="$elf"
-  cp "$elf" "$staging_root/boot/leanos.elf"
+  stage_kernel_elf "$elf" "$staging_root/boot/leanos.elf"
   cp "$grub_config" "$staging_root/boot/grub/grub.cfg"
   cp "$build/efi.img" "$staging_root/efi.img"
   cp "$build/SOURCE_REVISION" "$staging_root/boot/SOURCE_REVISION"
@@ -1578,7 +1587,7 @@ for spec in "${return_corruptions[@]}"; do
   return_elf="$build/leanos-return-${fixture}.elf"
   selected_final_enabled "$return_elf" || continue
   mkdir -p "$fixture_root/boot/grub"
-  cp "$return_elf" "$fixture_root/boot/leanos.elf"
+  stage_kernel_elf "$return_elf" "$fixture_root/boot/leanos.elf"
   cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
   cp "$build/efi.img" "$fixture_root/efi.img"
   cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
