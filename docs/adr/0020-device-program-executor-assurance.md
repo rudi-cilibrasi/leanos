@@ -3,8 +3,9 @@
 ## Status
 
 Accepted. Resolves the research question in issue #451. Amended by
-issue #494 (below): option 1 is implemented, and the assurance argument for
-the generated executor no longer rests on fuzzing.
+issue #494 (below): option 1 is implemented, the booted executor is the
+generated one (the handwritten interpreter is deleted), and the assurance
+argument no longer rests on fuzzing.
 
 ## Context
 
@@ -156,36 +157,72 @@ implemented, as the design option 1 sketched: a Lean step function over an
   access. No refinement proof of the generated C is claimed (refinement
   ladder).
 
+### The booted executor is generated
+
+The handwritten interpreter is deleted. Every kernel that runs device
+programs executes them with `leanos_device_program_step`:
+
+* `LeanOS/Wifi/Exec.lean` is generated into every image's C
+  (`WifiExec` in `build-image.sh` and `generate-image-object-graph.py`,
+  combined into `FaultDispatch.o`); section GC keeps it only where it is
+  called.
+* The device-service section of `boot/kernel.c` (the `device-service`
+  image, its `unplanned-*` fixtures and `keyboard-echo`) includes
+  `wifi-gen-exec.h` with direct hooks and resumes the program with
+  `wifi_gen_resume`. The Qotom lab kernel splices the same header, and the
+  hosted runners (`host-runner.c`, `fuzz-runner.c`, the FreeBSD
+  `fbsd-runner.c`) link the generated step.
+* `wifi-exec.h` keeps only the image format, `wifi_image_header`,
+  `wifi_start`, the executor state and the device-hook interface.
+* The entry-stack manifests of `device-service` and `keyboard-echo` review
+  the new syscall-path contributors: the generated step, its specialized
+  loops (optimizer-optional, since a compiler may inline them) and the 43
+  `wifi_gen_*` hooks. The generated dispatcher and its descriptor-map scan
+  pass a seventh scalar argument on the stack, which GCC reports as
+  `dynamic,bounded`; `check-entry-stack-budget.sh` admits exactly these two
+  by name, as it does the page-fault ABIs.
+
+The confinement theorems for the generated executor
+(`run_confined_generated`, `run_declared_confined_generated`,
+`run_declared_descriptors_generated`) are therefore about the code that runs
+under the canonical kernel, up to the compilers and the hooks named above.
+
 ### Fuzzing is now a regression test
 
-`scripts/check-device-programs.sh` runs the fuzz corpus through all three
-executors — `Sim`, the handwritten `wifi-exec.h` and the generated one
-(`scripts/check-generated-executor-host.sh`, the hosted generated boundary
-`device-program-step`) — and requires identical summaries. During the
-transition this diffs the generated executor against the handwritten one;
-once the handwritten interpreter is deleted, the corpus stays as a regression
-test. Its power over the trusted part is checked too: each hook mutant in
-`tests/fixtures/wifi-gen-exec-mutants.txt` must be caught. The same script
-links the generated step freestanding with the boot code-generation flags
-and requires no undefined symbol and no indirect branch.
+`scripts/check-device-programs.sh` runs the fuzz corpus through `Sim` and the
+generated executor (`fuzz-runner.c`, and the hosted generated boundary
+`device-program-step` of `scripts/check-generated-executor-host.sh`) and
+requires identical summaries. It is a regression test of the compiler path
+and of the handwritten C that remains, not the assurance argument. Its power
+over that C is checked: each mutant in `tests/fixtures/wifi-exec-mutants.txt`
+(the image parser and `wifi_start`) and in
+`tests/fixtures/wifi-gen-exec-mutants.txt` (the hooks and the step loop)
+must change some summary. The same script links the generated step
+freestanding with the boot code-generation flags and requires no undefined
+symbol and no indirect branch.
 
 ### Evidence for the generated executor
 
-* 3,000 fuzzed programs (seed 451): `Sim`, `wifi-exec.h` and the generated
-  executor agree; 13 of 13 hook mutants and 31 of 31 executor mutants are
-  caught. The hosted boundary also passes under ASan/UBSan.
+* 3,000 fuzzed programs (seed 451): `Sim` and the generated executor agree;
+  16 of 16 parser mutants and 27 of 27 hook and step-loop mutants are
+  caught. (Before the deletion, the same corpus also agreed with the
+  handwritten interpreter, and 31 of 31 of its mutants were caught.) The
+  hosted boundary also passes under ASan/UBSan.
 * The freestanding link of `leanos_device_program_step` with the C hooks
   (`-nostdlib --gc-sections`, `-ffreestanding -mgeneral-regs-only`) has no
   undefined symbol, and none of its 13 generated functions contains an
   indirect branch (GCC 13).
-
-### Remaining
-
-The booted `device-service` image still runs `wifi_resume` of `wifi-exec.h`;
-switching it to `wifi_gen_resume` is the next step (issue #494): add
-`LeanOS/Wifi/Exec.lean` to the image's generated C (`build-image.sh`,
-`generate-image-object-graph.py`), include `wifi-gen-exec.h` in the
-device-service kernel and call `wifi_gen_resume`, review the new syscall
-call-graph rows of the entry-stack gate in both compiler lanes, and record
-the `device-service`, `keyboard-echo` and `console-server` evidence. Until
-then the booted executor's agreement with `Sim` remains tested, as above.
+* The `device-service`, `device-service-unplanned-recorded-command`,
+  `keyboard-echo`, `console-server` and `blocking-ipc` scenarios pass under
+  QEMU with the generated executor, and both compiler lanes (GCC 13 and the
+  Clang 18 reference lane) pass the entry-stack gate: the `device-service`
+  syscall path's final-ELF total is 9,360 bytes of 16,384 under GCC
+  (6,328 before) and 9,544 under Clang.
+* Cost: the generated step calls a hook, out of line, for every register,
+  pc and scratch access, and threads a token through each. On a hosted
+  ALU/load/store/branch loop it is about 3x slower per step than the deleted
+  interpreter (about 45 ns against 14 ns, GCC -O2). Under QEMU (TCG, the
+  `device-service` scenario with keys typed over QMP; three alternating runs
+  each against the pre-switch image on the same host) the whole scenario
+  took 50-58 s against 44-46 s, well inside its 120 s timeout;
+  `keyboard-echo` took 43-49 s against 43-44 s, within run-to-run noise.
