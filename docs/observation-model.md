@@ -99,10 +99,16 @@ contains:
   row (`Capability.capabilitySpace`, including object, kind, rights, and
   generation of each capability); for every capability in that row, the
   named object's liveness and kind, its endpoint mailbox, its pending sealed
-  transfer, its blocking mailbox, and its blocking waiter queue;
+  transfer, its blocking mailbox, its blocking waiter queue, and its frame
+  backing (whether it is bound to a frame the allocator still records as its
+  own);
 - S's IPC observations: the messages above, the endpoint S waits on, and S's
   blocking completion (the delivered sender and reply words); and
-- the mappings of every address space S owns.
+- which address spaces S owns, and their mappings.
+
+Frame backing and space ownership are exactly what S's own `map` reads
+beyond its capability. They are in the view so that step and output
+consistency hold for S's own memory operations.
 
 **Unwinding conditions.**
 
@@ -111,36 +117,108 @@ contains:
   `nmi`, `selectUserReturn`, `userReturn`, or `restart`, whose declared
   footprints write no projection the view reads (proved with the footprint
   frame rule); `capabilityCopy` to a destination other than S;
-  `capabilityRevoke` of a victim other than S; `map` or `unmap`, which may
-  only change spaces the actor owns; or data-only `ipc` whose resolved
-  endpoint S's row does not name. `authoritativeGate_silent_observe` proves
-  that each silent step leaves S's view unchanged, including busy and halted
-  stutters.
+  `capabilityRevoke` of a victim other than S; `map`, `unmap`, or a memory
+  `syscall`, which may only change spaces the actor owns; or data-only `ipc`
+  whose resolved endpoint S's row does not name.
+  `authoritativeGate_silent_observe` proves that each silent step leaves S's
+  view unchanged, including busy and halted stutters.
+- *Local respect under a trace invariant*
+  (`LeanOS.CompositeUnwinding`): `AuthoritativeRuntimeWellFormed` is preserved
+  by every authoritative operation, so it can be threaded through a trace
+  (`ReplayUnwinding.finite_trace_lowEquiv_on`). Under it,
+  `isSilentCoherent` also classifies as silent, for another actor:
+  - `protect` (coherence makes the TLB's virtual-memory copy the published
+    one);
+  - `createSubject` of a subject other than S (coherence makes the published
+    capability store the lifecycle's);
+  - blocking `send` to an endpoint S does not name and on which S does not
+    wait;
+  - blocking `receive` on an endpoint S does not name that does not block
+    (the caller has a reserved completion or the mailbox holds a message),
+    since blocking changes the public scheduler choice;
+  - blocking `cancel` of a subject other than S that waits on no endpoint S
+    names.
+
+  `authoritativeGate_silentCoherent_observe` proves local respect for all of
+  them, using frame lemmas over the raw blocking store.
 - *Step consistency*: `step_consistent_of_untouched` proves that an operation
   whose footprint misses the view's projections preserves low equivalence
   whoever performs it, S included. `silent_steps_lowEquiv` covers paired
-  silent steps. Every other step is visible: its event carries S's resulting
-  view, so equal events give equal views.
+  silent steps. For S's own operations, `CompositeUnwinding.own_step_consistent`
+  assumes two runtime-well-formed, low-equivalent states in which S is
+  scheduled and the fail-stop latch is in the same mode (`OwnStep`). Under
+  those premises it proves step consistency for `ipc`, `map`, `unmap`,
+  `protect`, `syscall`, `capabilityRevoke`, `capabilityCopy` to another
+  subject, `createSubject` of another subject, and the frame-rule families.
+  Every other step is visible: its event carries S's resulting view, so equal
+  events give equal views.
 - *Output consistency*: a visible event is S's view (plus the gate result when
-  S is the actor). `ipc_output_consistent` proves the substantive case: S's
-  own data-only IPC call gets the same reply in two low-equivalent coherent
-  states, including the delivered sender and words.
+  S is the actor). `CompositeUnwinding.own_output_consistent` proves that,
+  under the same premises, the gate returns equal results for S's `ipc`,
+  `map`, `unmap`, `protect`, `syscall` (including access checks),
+  `capabilityCopy` into S's own row, `capabilityRevoke` of S's own slot, and
+  `restart`. `ipc_output_consistent` is the IPC case, including the delivered
+  sender and words.
 
-**Conclusion.** `CompositeObservation.finite_trace_lowEquiv`, restated as
-SC-COMPOSITE-OBSERVER-ISOLATION: two finite runs from S-low-equivalent states
-with equal S-event projections end S-low-equivalent.
+**Conclusion.** `CompositeObservation.finite_trace_lowEquiv` and its
+invariant-relative form `CompositeUnwinding.finite_trace_lowEquiv_coherent`:
+two finite runs from S-low-equivalent states with equal S-event projections
+end S-low-equivalent. These theorems assume equal projections. For runs in
+which only S acts, `CompositeUnwinding.own_run_noninterference` concludes the
+equality instead of assuming it. Step and output consistency compose, so the
+same finite run of S's operations that are in both families:
 
-**Scope and channels.** Every blocking operation, every deferred drain, and
-every other ordinary operation is visible, which makes it part of the
-compared projection rather than a claimed absence. The claim is
-termination-insensitive and excludes timing, caches, device reads, and
-refinement to the generated C or the binary. The executable evidence shows
-these channels explicitly:
+- returns the same gate result at every step; and
+- ends S-low-equivalent.
 
-- a capability shared with S by derivation: subtree revocation by
-  another subject clears S's derived capability, although the operation names
-  neither S nor its slots (`Evidence.shared_capability_revocation_visible`,
-  and the negative fixture `tests/negative/SharedCapabilityConfidentiality.lean`);
-- the global capability-identity counter: a silent delegation between other
-  subjects changes the generation of a later delegation to S, so the two
-  runs' projections differ (`Evidence.handleIdentities`).
+SC-COMPOSITE-OBSERVER-ISOLATION restates all of these together with the
+unwinding conditions and the channel theorems.
+
+**Channels stated as theorems.** Where step or output consistency fails, the
+model has a real channel. Each failure is proved on the canonical
+runtime-well-formed dispatcher seed (`FailStop.compositeDispatcherInitial`),
+paired with the state after S's own delegation to another subject. That
+delegation leaves S's view unchanged, so the pair satisfies every `OwnStep`
+premise.
+
+- **The global capability-identity counter breaks step consistency.**
+  `Capability.copy` takes the new capability's identity, which is its handle
+  generation, from the global `nextIdentity`. S's own delegation into its own
+  row therefore yields distinguishable rows
+  (`Channels.identity_counter_step_inconsistent`).
+  - The channel cannot be closed by abstracting identities in the view: S
+    must present the exact generation in every later handle word, and handle
+    resolution checks it.
+  - The executable witness `Evidence.identity_counter_projection_witness`
+    shows the same effect through a silent delegation between two other
+    subjects.
+  - Transfer offer and accept allocate identities the same way, so they are
+    excluded for the same reason.
+  - The negative fixture `tests/negative/IdentityCounterStepConsistency.lean`
+    shows that the step-consistency theorem cannot be instantiated for S's
+    delegation into its own row.
+- **A delegation's destination breaks output consistency.** The reply to S's
+  delegation to another subject reveals whether the destination slot is
+  occupied, and by the same check whether that subject is live
+  (`Channels.copy_destination_output_inconsistent`).
+
+**Scope and remaining exclusions.** The following are visible, which makes
+them part of the compared projection rather than a claimed absence. No step
+or output consistency is claimed for them:
+
+- deferred drains;
+- the remaining blocking operations, including S's own: the reply depends on
+  the global ready-queue capacity, and a block changes the scheduled
+  subject;
+- subtree revocation: the derivation tree reaches capabilities of other
+  subjects;
+- subject termination;
+- interrupts and preemption;
+- scheduler operations: the scheduler's choice is a public input.
+
+The claim is termination-insensitive and excludes timing, caches, device
+reads, and refinement to the generated C or the binary. The executable
+evidence also shows the shared-capability channel: subtree revocation by
+another subject clears S's derived capability, although the operation names
+neither S nor its slots (`Evidence.shared_capability_revocation_visible`, and
+the negative fixture `tests/negative/SharedCapabilityConfidentiality.lean`).
