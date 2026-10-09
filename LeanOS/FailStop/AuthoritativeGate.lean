@@ -376,26 +376,22 @@ accepted and rejected outcomes alike. -/
 theorem InvalidationOperation.apply_frames (state : CompositeState)
     (operation : InvalidationOperation) :
     CompositeState.Frames operation.footprint state (operation.apply state).state := by
-  cases operation <;>
-    simp only [InvalidationOperation.apply, InvalidationOperation.footprint,
-      authoritativePrepareUnmap, authoritativePrepareCurrentUnmap,
-      authoritativePrepareProtect, authoritativePrepareRelease,
-      authoritativePrepareDestroy, authoritativePrepareSwitch,
-      authoritativeAcknowledgeUnmap, authoritativeAcknowledgeProtect,
-      authoritativeAcknowledgeRelease, authoritativeAcknowledgeDestroy,
-      authoritativeAcknowledgeSwitch]
-  case acknowledgeCurrentUnmap ack =>
-    unfold authoritativeAcknowledgeCurrentUnmap
-    by_cases accepted : (authoritativeAcknowledgeUnmap state ack).accepted = true
-    · simp only [accepted, ↓reduceIte]
-      exact installAcknowledgedInvalidation_frames _ _
-    · simp only [accepted, ↓reduceIte]
-      exact (authoritativeAcknowledgeInvalidation_frames _ _ _).mono (by footprint_within)
-  all_goals first
-    | exact authoritativePrepareInvalidation_frames _ _ _
-    | exact (authoritativePrepareInvalidation_frames _ _ _).mono (by footprint_within)
-    | exact authoritativeAcknowledgeInvalidation_frames _ _ _
-    | exact authoritativePublishReuse_frames _
+  cases operation with
+  | prepareUnmap _ _ _ | prepareProtect _ _ _ _ | prepareRelease _ _ | prepareDestroy _ _
+  | prepareSwitch _ => exact authoritativePrepareInvalidation_frames _ _ _
+  | prepareCurrentUnmap _ =>
+      exact (authoritativePrepareInvalidation_frames _ _ _).mono (by footprint_within)
+  | acknowledgeUnmap _ | acknowledgeProtect _ | acknowledgeRelease _ | acknowledgeDestroy _
+  | acknowledgeSwitch _ => exact authoritativeAcknowledgeInvalidation_frames _ _ _
+  | publishReuse => exact authoritativePublishReuse_frames _
+  | acknowledgeCurrentUnmap ack =>
+      simp only [InvalidationOperation.apply, InvalidationOperation.footprint,
+        authoritativeAcknowledgeCurrentUnmap]
+      by_cases accepted : (authoritativeAcknowledgeUnmap state ack).accepted = true
+      · simp only [accepted, ↓reduceIte]
+        exact installAcknowledgedInvalidation_frames _ _
+      · simp only [accepted, ↓reduceIte]
+        exact (authoritativeAcknowledgeInvalidation_frames _ _ _).mono (by footprint_within)
 
 /-- No invalidation-publication entry point writes the direct-port or DMA
 authority. -/
@@ -477,18 +473,17 @@ theorem InvalidationOperation.apply_reads (left right : CompositeState)
         dsimp only
         repeat' split
         all_goals rfl
-  all_goals first
-    | (simp only [InvalidationOperation.apply, authoritativeAcknowledgeUnmap,
-          authoritativeAcknowledgeProtect, authoritativeAcknowledgeRelease,
-          authoritativeAcknowledgeDestroy, authoritativeAcknowledgeSwitch]
-       exact authoritativeAcknowledgeInvalidation_reads _ _ _ _ agree)
-    | (cases left; cases right
-       agree_subst agree
-       clear agree
-       refine ⟨rfl, rfl, ?_⟩
-       intro projection written
-       cases projection <;> (try exact absurd written Bool.false_ne_true)
-       all_goals rfl)
+  case acknowledgeUnmap ack | acknowledgeProtect ack | acknowledgeRelease ack
+      | acknowledgeDestroy ack | acknowledgeSwitch ack =>
+    exact authoritativeAcknowledgeInvalidation_reads _ _ _ _ agree
+  all_goals
+    cases left; cases right
+    agree_subst agree
+    clear agree
+    refine ⟨rfl, rfl, ?_⟩
+    intro projection written
+    cases projection <;> (try exact absurd written Bool.false_ne_true)
+    all_goals rfl
 
 /-- Every invalidation-publication entry point other than the active
 current-unmap completion writes only the publication projection.  It
