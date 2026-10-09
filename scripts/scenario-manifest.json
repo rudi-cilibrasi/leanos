@@ -1585,10 +1585,13 @@
       },
       {
         "image": "leanos-endpoint-directory",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-endpoint-directory.h",
         "final": "boot-page-plan-endpoint-directory.final.h",
-        "description": "endpoint-directory"
+        "description": "endpoint-directory",
+        "targets": [
+          "leanos-endpoint-directory"
+        ]
       },
       {
         "image": "leanos-three-subject",
