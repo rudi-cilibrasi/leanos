@@ -103,6 +103,13 @@ ABI.
 | 62 | console-server | 2 | B reports its canaries and its three refused attempts |
 | 70 | console-server | 1, 2, 3 | console write of RBX's byte through the console capability in slot RDX; refused without it |
 | 71 | console-server | 1, 2, 3 | console read through the console capability in slot RDX (poll only: 256 when empty); refused without it |
+| 7 | endpoint-directory | 1, 2, 3 | receive through the receive capability in slot RDX: C on its request endpoint 12, B on its endpoint 14; A's attempt through its send-only slot is refused |
+| 8 | endpoint-directory | 1 | A sends RBX through the resolved send-only capability in slot RDX, waking B |
+| 9 | endpoint-directory | 2 | B reports the delivered word and its preserved R12 canary (final record) |
+| 80 | endpoint-directory | 2 | register: delegate the capability in slot RDX, attenuated to rights RCX, to the directory under the name RBX |
+| 81 | endpoint-directory | 1 | call the directory through slot RDX with the name RBX; the answer is the installed slot or the typed miss 0x100 |
+| 82 | endpoint-directory | 3 | reply through the one-shot reply capability with a copy of slot RBX attenuated to rights RCX (0xff and 0 for none), then receive through slot RDX |
+| 83 | endpoint-directory | 3 | describe the last received message: its kind and, for a registration, the directory slot and rights |
 <!-- syscall-table:end -->
 
 ## Errors
@@ -133,7 +140,10 @@ between a `call` and its reply, names that caller's generation, and cannot be
 copied; the `notify-reply` image exercises syscalls 70–77 against that model's
 generated witness. A handle word is a 16-bit slot plus a 48-bit
 generation ([capability-handles.md](capability-handles.md)). A stale
-generation is rejected.
+generation is rejected. The `endpoint-directory` image (#485) names
+endpoint capabilities by a slot of the caller's own table and resolves a
+64-bit name to a send-only copy through a ring-3 directory
+([endpoint-directory.md](endpoint-directory.md)).
 
 ## What does not exist
 

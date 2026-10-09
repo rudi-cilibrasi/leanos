@@ -34,6 +34,7 @@ import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
 import LeanOS.Refinement.BootTransitionC
 import LeanOS.ConsoleServer
+import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
 
 /-! # Stable security-claim contract
@@ -3381,6 +3382,60 @@ theorem console_confidentiality (auth : ConsoleServer.Authority) (x : ConsoleSer
     ConsoleServer.observations x (ConsoleServer.run auth s script).2 =
       ConsoleServer.observations x (ConsoleServer.run auth { s with input := input } script).2 :=
   ConsoleServer.console_confidentiality auth x hx s hs input script
+
+/-- SC-DIRECTORY-NO-AMPLIFICATION: when an endpoint directory resolves a name
+with a policy that offers at most send, every authority any subject has
+afterwards either existed before, or is the client's send right over an
+endpoint on which the directory itself held send and grant; and a resolved
+name delivers, in the client's slot, a capability for the same endpoint the
+directory holds under that name, with rights a subset of both the directory's
+rights and send-only. -/
+theorem endpoint_directory_no_amplification (offered : Capability.Rights)
+    (hoffered : EndpointDirectory.AttenuatesToSend offered) (st : Capability.State)
+    (d : EndpointDirectory.Directory) (client : Capability.SubjectId)
+    (clientSlot : Capability.SlotId) (name : EndpointDirectory.Name) :
+    (∀ candidate object right,
+      Capability.HasAuthority
+          (EndpointDirectory.resolveWith offered st d client clientSlot name).1
+          candidate object right →
+        Capability.HasAuthority st candidate object right ∨
+          (candidate = client ∧ right = .send ∧
+            Capability.HasAuthority st d.subject object .send ∧
+            Capability.HasAuthority st d.subject object .grant)) ∧
+    (∀ slot,
+      (EndpointDirectory.resolveWith offered st d client clientSlot name).2 = .resolved slot →
+        ∃ heldSlot held delivered,
+          EndpointDirectory.slotOf d name = some heldSlot ∧
+          st.slots d.subject heldSlot = some held ∧
+          (EndpointDirectory.resolveWith offered st d client clientSlot name).1.slots
+            client clientSlot = some delivered ∧
+          delivered.object = held.object ∧ held.kind = .endpoint ∧
+          Capability.rightsSubset delivered.rights held.rights = true ∧
+          Capability.rightsSubset delivered.rights EndpointDirectory.sendOnly = true) :=
+  ⟨fun candidate object right hauthority =>
+    EndpointDirectory.resolve_no_amplification offered hoffered st d client clientSlot name
+      candidate object right hauthority,
+   fun slot hresolved => by
+    obtain ⟨_, heldSlot, held, delivered, hslot, hheld, hdelivered, hobject, _, hkind, _,
+        hsend, hsubset, _⟩ :=
+      EndpointDirectory.resolve_resolved_held offered hoffered st d client clientSlot name slot
+        hresolved
+    exact ⟨heldSlot, held, delivered, hslot, hheld, hdelivered, hobject, hkind, hsubset,
+      hsend⟩⟩
+
+/-- SC-DIRECTORY-MISS: an unregistered name is the typed miss `unregistered`
+with the capability state unchanged, and every miss transfers nothing. -/
+theorem endpoint_directory_miss_transfers_nothing (offered : Capability.Rights)
+    (st : Capability.State) (d : EndpointDirectory.Directory)
+    (client : Capability.SubjectId) (clientSlot : Capability.SlotId)
+    (name : EndpointDirectory.Name) :
+    (EndpointDirectory.slotOf d name = none →
+      EndpointDirectory.resolveWith offered st d client clientSlot name =
+        (st, .miss .unregistered)) ∧
+    (∀ m, (EndpointDirectory.resolveWith offered st d client clientSlot name).2 = .miss m →
+      (EndpointDirectory.resolveWith offered st d client clientSlot name).1 = st) :=
+  ⟨EndpointDirectory.resolve_unregistered offered st d client clientSlot name,
+   fun m h => EndpointDirectory.resolve_miss_unchanged offered st d client clientSlot name m h⟩
 
 /-- SC-DEVICE-CONSOLE-SEPARATION: in the composed console and device system
 under the keyboard-echo authority, a change to the console trace is an action

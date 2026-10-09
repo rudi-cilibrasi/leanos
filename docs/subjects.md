@@ -16,6 +16,7 @@ the image at build time, like every other byte of it.
 | --- | --- |
 | `subjects/template/` | The template: copy it to start a subject |
 | `subjects/example/` | The example subject booted by the `example-subject` image |
+| `subjects/directory/` | The endpoint directory booted by the `endpoint-directory` image ([endpoint-directory.md](endpoint-directory.md), #485) |
 | `subjects/runtime/entry.S` | The entry stub linked first into every subject |
 | `subjects/include/leanos/subject.h` | The only kernel interface: `int $0x80` wrappers |
 | `subjects/subject.ld` | The one linker script, used with `ld -r` |
@@ -88,9 +89,9 @@ one subject:
    becomes local, so nothing in a subject can collide with or bind to a
    kernel symbol.
 
-`scripts/test-build-subject.sh` runs from `check.sh`. It builds the template
-and the example, and requires every fixture in `subjects/fixtures/` to be
-rejected for its reason. The fixtures cover `cli`, `wrmsr`, `stac`, port I/O,
+`scripts/test-build-subject.sh` runs from `check.sh`. It builds the template,
+the example and the directory, and requires every fixture in
+`subjects/fixtures/` to be rejected for its reason. The fixtures cover `cli`, `wrmsr`, `stac`, port I/O,
 `syscall`, `int $0x81`, CR3, SSE, a libc call and oversized data.
 
 `scripts/generate-image-object-graph.py` turns each `build.subjects` entry in

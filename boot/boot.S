@@ -1508,7 +1508,7 @@ isr80_cld:
     je 31f
     cmp $0x3c03, %rax
     je 32f
-#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+#if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
     cmp $0x3c04, %rax
     je 33f
 #endif
@@ -1714,9 +1714,11 @@ isr80_cld:
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
-#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
-33: /* The console server blocked again on endpoint 12: preserve C's exact
-       continuation and resume A after its send, which returns 0. */
+#if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+33: /* The console server or the endpoint directory blocked again on
+       endpoint 12: preserve C's exact continuation and resume A, whose
+       result word the kernel sets in switch_complete (0 for the console
+       server's send). */
     mov %rsp, %rsi
     lea saved_context_c(%rip), %rdi
     mov $20, %ecx
@@ -2104,6 +2106,38 @@ user_a_entry:
     test %rax, %rax
     jnz 9f
     mov $61, %eax
+    int $0x80
+9:  ud2
+#elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+    /* Directory client (#485).  Its only capability, slot 0, is a send-only
+       endpoint capability to the directory.  It resolves "ECHO" (syscall 81,
+       a call with a one-shot reply capability): the answer is the slot the
+       kernel installed the directory's send-only copy in (1).  A receive
+       through that slot is refused (missing right: 1 | 4 << 8).  It resolves
+       "NONE": the typed miss 0x100.  Then it sends "PING" through the
+       resolved capability, which wakes the server. */
+    mov $0x4543484f, %ebx
+    xor %edx, %edx
+    mov $81, %eax
+    int $0x80
+    cmp $1, %rax
+    jne 9f
+    mov %rax, %r12
+    mov %r12, %rdx
+    mov $7, %eax
+    int $0x80
+    cmp $0x401, %rax
+    jne 9f
+    mov $0x4e4f4e45, %ebx
+    xor %edx, %edx
+    mov $81, %eax
+    int $0x80
+    cmp $0x100, %rax
+    jne 9f
+    mov $0x474e4950, %ebx
+    xor %ecx, %ecx
+    mov %r12, %rdx
+    mov $8, %eax
     int $0x80
 9:  ud2
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
@@ -2636,6 +2670,28 @@ user_b_entry:
     mov $62, %eax
     int $0x80
     ud2
+#elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+    /* Directory server (#485).  Slot 0 holds endpoint 14 with send, receive
+       and grant.  It registers it under "ECHO" (syscall 80), delegating send
+       and grant to the directory, then receives on it (blocks).  Woken with
+       the client's word in RAX, it reports the word and its initial-context
+       canary R12, which must have survived the block (syscall 9). */
+    mov $0x4543484f, %ebx
+    mov $5, %ecx
+    xor %edx, %edx
+    mov $80, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    xor %edx, %edx
+    mov $7, %eax
+    int $0x80
+    mov %rax, %rbx
+    mov %r12, %rcx
+    xor %edx, %edx
+    mov $9, %eax
+    int $0x80
+9:  ud2
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     /* Bystander subject: report the two canaries of the kernel-owned initial
        context it was dispatched from (syscall 62), in its own space. */
