@@ -4602,7 +4602,7 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
    more than the model (a wrong slot, a non-printable byte).
 
    The console object's output is a separate stream on the same wire: it is
-   line-buffered and each line is emitted as one LEANOS/10 CONSOLE record, and
+   line-buffered and each line is emitted as one console record (see console_object_flush), and
    only printable bytes and newline are accepted, so a line-anchored reader
    can tell the object's bytes from the kernel's own diagnostic records. */
 #define CONSOLE_SERVER_ENDPOINT 12u
