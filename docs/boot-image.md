@@ -423,8 +423,12 @@ A plan validation compares an image's linker-resolved plan with its expected
 header. Convergence feeds the resolved plan through declared graph targets,
 with at most three relinks. `expected_full` retains a stronger full-evidence
 comparison when PR shards need the image's own prelink plan. Frame-budget and
-stale-translation use the common convergence path; reserved-bit and walk-mismatch
-declare their tier-specific expectations in the same list. Entry policies name
+stale-translation use the common convergence path; walk-mismatch declares its
+tier-specific expectation in the same list. Reserved-bit converges on its own plan and
+is no longer compared with the fault-containment plan: under Clang its kernel
+text is 0x90 bytes longer than that image's and, since the keyboard-echo
+device witness joined every image, ends past a page boundary that the
+fault-containment image's does not reach, so the two plans cannot be equal. Entry policies name
 the report and optional environment pair, and extended-state policies name
 the checked variant. The query rejects unpackaged images, unknown check kinds,
 missing or non-graph convergence targets, invalid alternate expectations,

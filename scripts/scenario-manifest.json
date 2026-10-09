@@ -673,7 +673,7 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-fault-reserved-bit.h",
-        "plan_equal_to": "leanos-fault-containment"
+        "plan_equal_to": null
       },
       "leanos-fault-walk-mismatch": {
         "boot": "boot-fault-walk-mismatch",
@@ -1559,11 +1559,13 @@
       },
       {
         "image": "leanos-fault-reserved-bit",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-fault-reserved-bit.h",
         "final": "boot-page-plan-fault-reserved-bit.final.h",
         "description": "fault-reserved-bit",
-        "expected_full": "boot-page-plan-fault-containment.h"
+        "targets": [
+          "leanos-fault-reserved-bit"
+        ]
       },
       {
         "image": "leanos-fault-walk-mismatch",
