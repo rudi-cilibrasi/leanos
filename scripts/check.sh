@@ -294,6 +294,22 @@ grep -En \
 trusted_scan_status=$?
 set -e
 
+# The generated device-program executor's C hooks (#494, ADR 0020) are the
+# only reviewed trusted declarations: drop exactly those lines, require every
+# allowlisted row to still exist, and fail on anything else.
+trusted_allowlist=scripts/trusted-declarations.tsv
+while IFS=$'\t' read -r allowed_file allowed_symbol; do
+  [[ -n "$allowed_file" && "${allowed_file:0:1}" != "#" ]] || continue
+  grep -Eq "^${allowed_file}:[0-9]+:@\[extern \"${allowed_symbol}\"\] opaque " "$trusted_scan_log" || {
+    echo "error: stale trusted-declaration allowlist row: $allowed_file $allowed_symbol" >&2
+    exit 1
+  }
+  grep -Ev "^${allowed_file}:[0-9]+:@\[extern \"${allowed_symbol}\"\] opaque " "$trusted_scan_log" \
+    >"$trusted_scan_log.next" || true
+  mv "$trusted_scan_log.next" "$trusted_scan_log"
+done <"$trusted_allowlist"
+[[ -s "$trusted_scan_log" ]] || trusted_scan_status=1
+
 if [[ "$trusted_scan_status" == 0 ]]; then
   cat "$trusted_scan_log"
   rm -f "$trusted_scan_log"

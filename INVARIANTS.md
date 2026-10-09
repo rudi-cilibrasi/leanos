@@ -1200,6 +1200,16 @@ LeanOS drives its WiFi card and USB keyboard controller with small programs writ
 - `qotomBcm43224Policy_bits` — The WiFi fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.
 - `qotomXhciPolicy_bits` — The USB controller fence's configuration settings are exactly the ones the lab kernel's own table lists, bit for bit.
 
+## The driver interpreter is generated from its proved model (`LeanOS/DeviceProgramExecutor.lean`)
+
+The small interpreter that runs LeanOS's Lean-written hardware drivers now also exists in a second form: its instruction-by-instruction behaviour is written once in Lean against a short list of named primitive operations (read a register, store to scratch memory, touch a device register, and so on), and the C code that runs is produced from that Lean text by the compiler. These theorems show that this Lean definition, with each primitive given its intended meaning, behaves exactly like the reference model of the interpreter that the fence theorems are about, so the fence guarantees carry over to the code that is actually compiled. What is still taken on trust is that the compilers translate faithfully and that each named primitive written in C does what its Lean meaning says; a test run on thousands of random programs checks the latter.
+
+- `generated_step_eq` — On every interpreter state a program can actually reach, one step of the generated interpreter gives exactly the same result as one step of the reference model.
+- `generated_run_eq` — A whole run of the generated interpreter, from a fresh start and for any number of steps, ends exactly where the reference model's run ends, provided the scratch area's physical address stays fixed.
+- `generated_run_confined` — A program accepted by the fence check, run by the generated interpreter, never asks the hardware for anything outside its fence, on any device and for any number of steps.
+- `generated_run_declared_confined` — Any program whose image carries a fence is held inside that fence by the generated interpreter's own run-time checks.
+- `generated_run_declared_descriptors` — Under the generated interpreter, every address slot named in a program's declared memory map only ever holds zero or an address inside the program's own scratch area.
+
 ## What happens to a program that touches a hardware port (`LeanOS/DirectPortContainment.lean`)
 
 These theorems join two earlier stories into one: the port policy that denies a user program any direct access to hardware ports, and the fault handler that cleans up after a program that misbehaves. Together they show the full consequence of a program poking at a port: the poke is refused with every device untouched, the offending program is permanently retired with all its memory reclaimed, and a peer program is handed the processor instead. Nothing the attacker controls, not the port number, the value, or any of its saved registers, has any influence over what happens next or who runs next.

@@ -11,6 +11,9 @@ import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
 import LeanOS.DeviceProgramConfinement
+import LeanOS.Wifi.Exec
+import LeanOS.Wifi.ExecRefinement
+import LeanOS.DeviceProgramExecutor
 import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.BootMemoryMap
