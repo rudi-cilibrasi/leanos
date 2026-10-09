@@ -111,7 +111,10 @@ implemented, as the design option 1 sketched: a Lean step function over an
   therefore neither reorder, merge nor drop hook calls: their order in C is
   their order in Lean. Hooks on immutable image data are plain functions.
 * **Generated C.** At `τ := UInt64` the hooks are `@[extern]` C functions
-  (`wifi_gen_*`), and `leanos_device_program_step` is the compiled step,
+  (`wifi_gen_*`), the repository's only reviewed trusted Lean declarations:
+  each is a row of `scripts/trusted-declarations.tsv`, and `check.sh` rejects
+  any other `@[extern]`/axiom and any stale row. `leanos_device_program_step`
+  is the compiled step,
   specialized to them: allocation-free fixed-width C, inner loops compiled as
   `goto` loops, constants inline (`compiler.extract_closed` off, so no module
   initializer is needed). Opcode, ALU and branch dispatch are balanced trees
