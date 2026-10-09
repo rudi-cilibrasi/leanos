@@ -211,6 +211,13 @@
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service.h\""
       ],
+      "kernel-keyboard-echo": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-keyboard-echo.h\""
+      ],
       "kernel-example-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
@@ -230,17 +237,22 @@
         "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-console-server.h\""
       ],
+      "kernel-device-service-unplanned-bus-master": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_UNPLANNED_BUS_MASTER_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service-unplanned-bus-master.h\""
+      ],
+      "kernel-device-service-unplanned-recorded-command": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service-unplanned-recorded-command.h\""
+      ],
       "kernel-notify-reply": [
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_NOTIFY_REPLY_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-notify-reply.h\""
-      ],
-      "kernel-keyboard-echo": [
-        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
-        "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
-        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
-        "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1",
-        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-keyboard-echo.h\""
       ]
     },
     "boot_objects": {
@@ -494,6 +506,14 @@
           "-DLEANOS_IPC_STREAM_SCENARIO=1"
         ]
       },
+      "boot-keyboard-echo": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
+          "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1"
+        ]
+      },
       "boot-example-subject": {
         "source": "boot/boot.S",
         "definitions": [
@@ -528,14 +548,6 @@
         "definitions": [
           "-DLEANOS_IPC_STREAM_SCENARIO=1",
           "-DLEANOS_NOTIFY_REPLY_SCENARIO=1"
-        ]
-      },
-      "boot-keyboard-echo": {
-        "source": "boot/boot.S",
-        "definitions": [
-          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
-          "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
-          "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1"
         ]
       }
     },
@@ -858,6 +870,14 @@
         "prelink_plan": "boot-page-plan-device-service.h",
         "plan_equal_to": null
       },
+      "leanos-keyboard-echo": {
+        "boot": "boot-keyboard-echo",
+        "kernel": "kernel-keyboard-echo",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-keyboard-echo.h",
+        "plan_equal_to": null
+      },
       "leanos-example-subject": {
         "boot": "boot-example-subject",
         "kernel": "kernel-example-subject",
@@ -894,20 +914,28 @@
         "prelink_plan": "boot-page-plan-console-server.h",
         "plan_equal_to": null
       },
+      "leanos-device-service-unplanned-bus-master": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service-unplanned-bus-master",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service-unplanned-bus-master.h",
+        "plan_equal_to": null
+      },
+      "leanos-device-service-unplanned-recorded-command": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service-unplanned-recorded-command",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service-unplanned-recorded-command.h",
+        "plan_equal_to": null
+      },
       "leanos-notify-reply": {
         "boot": "boot-notify-reply",
         "kernel": "kernel-notify-reply",
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-notify-reply.h",
-        "plan_equal_to": null
-      },
-      "leanos-keyboard-echo": {
-        "boot": "boot-keyboard-echo",
-        "kernel": "kernel-keyboard-echo",
-        "extra_objects": [],
-        "final_link": true,
-        "prelink_plan": "boot-page-plan-keyboard-echo.h",
         "plan_equal_to": null
       }
     },
@@ -1219,6 +1247,13 @@
           "key": "device-service"
         }
       },
+      "leanos-keyboard-echo": {
+        "iso": "leanos-@VERSION@-x86_64-keyboard-echo.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "keyboard-echo"
+        }
+      },
       "leanos-example-subject": {
         "iso": "leanos-@VERSION@-x86_64-example-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1247,18 +1282,19 @@
           "key": "console-server"
         }
       },
+      "leanos-device-service-unplanned-bus-master": {
+        "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
+        "grub": "boot/grub.cfg"
+      },
+      "leanos-device-service-unplanned-recorded-command": {
+        "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-recorded-command.iso",
+        "grub": "boot/grub.cfg"
+      },
       "leanos-notify-reply": {
         "iso": "leanos-@VERSION@-x86_64-notify-reply.iso",
         "grub": "boot/grub.cfg",
         "policy": {
           "key": "notify-reply"
-        }
-      },
-      "leanos-keyboard-echo": {
-        "iso": "leanos-@VERSION@-x86_64-keyboard-echo.iso",
-        "grub": "boot/grub.cfg",
-        "policy": {
-          "key": "keyboard-echo"
         }
       }
     },
@@ -1528,6 +1564,13 @@
         "description": "device-service"
       },
       {
+        "image": "leanos-keyboard-echo",
+        "check": "validate",
+        "expected": "boot-page-plan-keyboard-echo.h",
+        "final": "boot-page-plan-keyboard-echo.final.h",
+        "description": "keyboard-echo"
+      },
+      {
         "image": "leanos-example-subject",
         "check": "validate",
         "expected": "boot-page-plan-example-subject.h",
@@ -1556,18 +1599,25 @@
         "description": "console-server"
       },
       {
+        "image": "leanos-device-service-unplanned-bus-master",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service-unplanned-bus-master.h",
+        "final": "boot-page-plan-device-service-unplanned-bus-master.final.h",
+        "description": "device-service-unplanned-bus-master"
+      },
+      {
+        "image": "leanos-device-service-unplanned-recorded-command",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service-unplanned-recorded-command.h",
+        "final": "boot-page-plan-device-service-unplanned-recorded-command.final.h",
+        "description": "device-service-unplanned-recorded-command"
+      },
+      {
         "image": "leanos-notify-reply",
         "check": "validate",
         "expected": "boot-page-plan-notify-reply.h",
         "final": "boot-page-plan-notify-reply.final.h",
         "description": "notify-reply"
-      },
-      {
-        "image": "leanos-keyboard-echo",
-        "check": "validate",
-        "expected": "boot-page-plan-keyboard-echo.h",
-        "final": "boot-page-plan-keyboard-echo.final.h",
-        "description": "keyboard-echo"
       }
     ],
     "disassemblies": [
@@ -1850,6 +1900,18 @@
           "fixture": "omit-reuse-invalidation",
           "macro": "LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE",
           "reason": "vtd-reuse-invalidation-omitted"
+        },
+        {
+          "fixture": "unplanned-bus-master",
+          "macro": "LEANOS_ASSIGNED_EDU_UNPLANNED_BUS_MASTER_FIXTURE",
+          "reason": "dma-live-command",
+          "stage": "post-assignment"
+        },
+        {
+          "fixture": "unplanned-recorded-command",
+          "macro": "LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE",
+          "reason": "dma-live-assignment-command",
+          "stage": "post-assignment"
         }
       ],
       "claims": [
@@ -3210,6 +3272,34 @@
       ],
       "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
+    "keyboard-echo": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/keyboard-echo.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "120",
+        "image": "leanos-@VERSION@-x86_64-keyboard-echo.iso",
+        "elf": "leanos-keyboard-echo.elf",
+        "serial_log": "keyboard-echo.serial.log",
+        "scenario": "keyboard-echo",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DEVICE-CONSOLE-SEPARATION",
+        "SC-CONSOLE-INTEGRITY",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run with QMP-typed keys and no console input; the kernel checks console decisions and the device/console holder split against the generated console witness, but the device capability table is handwritten, and the C kernel, boot.S, the executor, compiler and QEMU stay trusted"
+    },
     "example-subject": {
       "release_artifacts": [
         "iso",
@@ -3312,6 +3402,48 @@
       ],
       "does_not_prove": "Not a refinement of SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY: one finite QEMU run with no console input; the kernel checks each authority decision against the generated Lean witness, but the C kernel, boot.S, compiler and QEMU stay trusted"
     },
+    "device-service-unplanned-bus-master": {
+      "tier": "evidence",
+      "row": {
+        "runner": "device-service-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
+        "elf": "leanos-device-service-unplanned-bus-master.elf",
+        "serial_log": "device-service-unplanned-bus-master.serial.log",
+        "scenario": "device-service-unplanned-bus-master",
+        "mode": "-",
+        "reason": "dma-live-command"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DMA-QUARANTINE",
+        "SC-DMA-CONTROL-DRIFT-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP: one finite QEMU run of a controlled negative; that an unplanned function could not issue DMA through VT-d is not exercised; the generated C, compiler, boot assembly and QEMU stay trusted"
+    },
+    "device-service-unplanned-recorded-command": {
+      "tier": "pr",
+      "row": {
+        "runner": "device-service-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-device-service-unplanned-recorded-command.iso",
+        "elf": "leanos-device-service-unplanned-recorded-command.elf",
+        "serial_log": "device-service-unplanned-recorded-command.serial.log",
+        "scenario": "device-service-unplanned-recorded-command",
+        "mode": "-",
+        "reason": "dma-live-assignment-command"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DMA-QUARANTINE",
+        "SC-DMA-CONTROL-DRIFT-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP: one finite QEMU run of a controlled negative; that an unplanned function could not issue DMA through VT-d is not exercised; the generated C, compiler, boot assembly and QEMU stay trusted"
+    },
     "notify-reply": {
       "release_artifacts": [
         "iso",
@@ -3340,34 +3472,6 @@
         "SC-NOTIFY-REPLY-BUDGET"
       ],
       "does_not_prove": "Not a refinement of the SC-NOTIFY-REPLY rows: one finite QEMU run whose kernel checks each step against the generated Lean witness; the C kernel, boot.S, compiler and QEMU stay trusted"
-    },
-    "keyboard-echo": {
-      "release_artifacts": [
-        "iso",
-        "elf",
-        "map",
-        "serial-log"
-      ],
-      "expectations": "scripts/expectations/keyboard-echo.transcript",
-      "tier": "evidence",
-      "row": {
-        "runner": "boot",
-        "timeout": "120",
-        "image": "leanos-@VERSION@-x86_64-keyboard-echo.iso",
-        "elf": "leanos-keyboard-echo.elf",
-        "serial_log": "keyboard-echo.serial.log",
-        "scenario": "keyboard-echo",
-        "mode": "-",
-        "reason": "-"
-      },
-      "negative_evidence": null,
-      "reproducibility_artifacts": [],
-      "claims": [
-        "SC-DEVICE-CONSOLE-SEPARATION",
-        "SC-CONSOLE-INTEGRITY",
-        "SC-DEVICE-CAPABILITY-CONFINEMENT"
-      ],
-      "does_not_prove": "Not a refinement of SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run with QMP-typed keys and no console input; the kernel checks console decisions and the device/console holder split against the generated console witness, but the device capability table is handwritten, and the C kernel, boot.S, the executor, compiler and QEMU stay trusted"
     }
   }
 }

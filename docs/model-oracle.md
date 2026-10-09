@@ -422,6 +422,42 @@ The scalar selector establishes the named model's accepted fresh-object
 allocation and old-page absence; C sequencing and QEMU do not prove that the
 binary refines that model.
 
+## Post-state corpus (hosted only)
+
+The corpus above compares reply words. A reply word says that an allocation
+was accepted, but not which bytes the published frame holds. A copy or revoke
+vector likewise checks the reply, not the capability table left behind.
+Issue #476 adds a second, hosted-only corpus that compares post-state projections.
+`LeanOS/PostStateProjection.lean` defines it; `lake exe leanos-poststate` emits
+it, `scripts/render-poststate-header.awk` renders it, and the `poststate` row of
+`scripts/hosted-generated-boundaries.tsv` runs it.
+
+| Export | Projection |
+| --- | --- |
+| `leanos_frame_scrub_projection(state, frame)` | FNV-1a over all 4096 bytes of the frame in bits 0-31, and bit 32 set exactly when some byte is not zero. A value below 2^32 states that the frame is all zero. |
+| `leanos_frame_budget_capability_row(state, subject, slot)` | One row of the frame-budget scenario's capability table: present bit, identity (the generation a handle is checked against), rights, kind and object |
+| `leanos_mixed_capability_row(state, subject, slot)` | The same row encoding over the complete authoritative state behind a composite mixed edge |
+
+The 18 vectors (`poststate_shape`) follow frame 100 through the frame-budget
+scenario: allocated and written dirty, released dirty when A terminates, and
+republished to B. The republished frame must read as all zero, while the
+released one keeps its dirty byte. They also follow the transferred capability
+through revocation and the fresh copy into the same slot, whose identity must
+be new.
+
+The projections materialize model states, which allocates, so they link with
+the Lean runtime (Lake IR of the module's import closure). They are not in the
+boot corpus, and no boot image calls them. Two fixtures must fail with named
+diagnostics:
+
+- `LEANOS_FIXTURE_POSTSTATE_UNSCRUBBED_REALLOCATION` projects the republished
+  frame from the released, unscrubbed state.
+- `LEANOS_FIXTURE_POSTSTATE_STALE_GENERATION` keeps the revoked capability's
+  identity in the fresh copy's row.
+
+As with the reply corpus, the comparison is differential testing of the
+generated C, not a proof about it.
+
 Run the complete local evidence path with:
 
 ```sh

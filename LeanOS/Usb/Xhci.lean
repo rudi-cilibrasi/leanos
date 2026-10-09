@@ -260,7 +260,12 @@ def ringInit (r : Ring) : ProgM Unit := do
 
 /-- Enqueue one TRB: parameter (p0, p1), status, control (without the cycle
 bit, which the ring supplies). Register operands are first copied to r10–r13
-so callers may pass any of r0–r9. Uses r1–r5, r9–r13. -/
+so callers may pass any of r0–r9. Uses r1–r5, r9–r13.
+
+The slot's control dword is first reset to type 0 with the stale cycle bit
+(still not the consumer's), so while the parameter is rewritten the slot is
+never a TRB whose type makes its parameter a pointer (the descriptor map's
+invariant, `LeanOS.Wifi.Sim.descOk`); the final control store hands it over. -/
 def enqueue (r : Ring) (p0 p1 status control : Operand) : ProgM Unit := do
   let save (o : Operand) (k : Reg) : ProgM Operand := match o with
     | .reg x => do mov k x; pure (.reg k)
@@ -273,6 +278,9 @@ def enqueue (r : Ring) (p0 p1 status control : Operand) : ProgM Unit := do
   ld 4 2 r.cycleV
   mov 3 1
   shli 3 4                                 -- byte offset of the TRB
+  mov 4 2
+  emit (.alu .xor 4 (.imm 1))
+  emit (.memStore 4 3 (r.base + 12) (.reg 4))   -- type 0, stale cycle
   emit (.memStore 4 3 r.base p0)
   emit (.memStore 4 3 (r.base + 4) p1)
   emit (.memStore 4 3 (r.base + 8) status)
@@ -295,6 +303,30 @@ def enqueue (r : Ring) (p0 p1 status control : Operand) : ProgM Unit := do
   st 4 r.cycleV (.reg 2)
   place noWrap
   st 4 r.enqV (.reg 1)
+
+/-! ## Descriptor map
+
+The scratch fields this driver hands the controller as bus addresses, besides
+the root registers (CRCR, DCBAAP, ERSTBA, ERDP, the policy's address sinks):
+the DCBAA (MaxSlotsEn + 1 entries: the scratchpad array, then each slot's
+output context), the scratchpad array, the ERST entry's segment base, the TR
+Dequeue Pointer of every endpoint context in the input context (contexts
+2–32), and every TRB of the command ring, the EP0 transfer rings and the
+keyboard's interrupt ring (a TRB's parameter is a pointer unless the TRB type
+says otherwise, `Descriptor.trbParamIsPtr`). The event ring and the output
+contexts are written by the controller, not the driver. That this map lists
+every pointer field the controller follows (xHCI 1.1 §6.1–§6.4) is an
+assumption about the specification. -/
+
+def descriptorMap : List Descriptor :=
+  [{ trb := false, start := dcbaa, count := maxSlots + 1, stride := 8 }] ++
+  (if Layout.scratchpads = 0 then [] else
+    [{ trb := false, start := spArray, count := (Layout.scratchpads : Nat).toUInt32, stride := 8 }]) ++
+  [{ trb := false, start := erst, count := 1, stride := 16 },
+   { trb := false, start := inputCtx + 2 * 32 + 8, count := 31, stride := 32 },
+   { trb := true, start := cmdRing, count := ringTrbs, stride := 16 },
+   { trb := true, start := ep0RingBase, count := maxSlots * ringTrbs, stride := 16 },
+   { trb := true, start := intRing, count := ringTrbs, stride := 16 }]
 
 /-! ## Event ring -/
 

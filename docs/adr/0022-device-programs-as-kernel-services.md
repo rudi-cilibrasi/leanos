@@ -53,8 +53,9 @@ Adopt **(a)** now, keeping (b) as the long-term shape.
 subject's behalf, instead of the lab kernel's pre-subject call. Relative to
 the lab kernel this *adds* mediation: a subject without the capability cannot
 cause device effects, and each invocation is budgeted. The executor's
-agreement with the model remains tested (ADR 0020), and DMA through
-descriptors remains assumed on the J1900 (ADR 0021). Moving to (b) would
+agreement with the model remains tested (ADR 0020), and on the J1900 DMA
+through xHCI descriptors is confined by the policy's descriptor map, under an
+assumption about the xHCI specification (ADR 0021). Moving to (b) would
 remove the executor from ring 0 entirely, at the price of MMIO mapping,
 interrupt forwarding and DMA-buffer management for ring 3.
 
@@ -113,9 +114,10 @@ change:
    through the assigned-device window of the generated boot page-table plan,
    and enables memory decoding. The controller's only DMA authority is
    `VTdBootPlan.deviceServiceState`: one read/write grant of four model pages
-   that the generated requester-16 tables map at IOVA 16 KiB onto the first
-   four pages of the executor scratch (`deviceServiceState_shape`,
-   `deviceServiceTransfer_window`); the `qemu` layout of `LeanOS.Usb.Xhci`
+   that the requester-16 tables `VTdBootPlan.compile` produces map at IOVA
+   16 KiB onto the first four pages of the executor scratch
+   (`deviceServiceState_shape`, `deviceServiceTransfer_window`,
+   `accepted_translation_exact`); the `qemu` layout of `LeanOS.Usb.Xhci`
    keeps every DMA structure inside them. The program enables bus mastering
    only after resetting the controller: SeaBIOS leaves qemu-xhci running with
    rings in firmware memory, and the first run of the scenario showed VT-d
@@ -164,8 +166,8 @@ edge is checked against `leanos_blocking_ipc_event`. The IPC audit pins the
 extended syscall traces. The [2026-10-07 observation](../../hardware/lab/observations/qotom-device-stream-20261007/README.md)
 captured 231 typed keys (`hello lean⏎` typed 21 times), all delivered and
 echoed, ending in `FINAL status=PASS events=231`. On the J1900 the
-controller's DMA is confined by the program's address-sink policy alone
-(ADR 0021).
+controller's DMA is confined by the program's address sinks and
+descriptor map alone (ADR 0021).
 
 ## Consequences
 

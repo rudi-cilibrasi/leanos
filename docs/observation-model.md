@@ -80,3 +80,67 @@ composes this vocabulary with `LeanOS.Scheduler`, derives accepted actor
 context from its authoritative current subject/address space, and lifts the
 scoped result to paired finite prefixes with matching declared public-event
 projections and silent-step stuttering.
+
+## Composite-state unwinding
+
+`LeanOS.CompositeObservation` lifts the same unwinding structure from these
+separate models to the authoritative `FailStop.CompositeState`, executed
+through the published `FailStop.authoritativeGate`. The scheduled model and
+the composite model are both instances of `LeanOS.ReplayUnwinding`, which
+states the replay obligation and the finite-trace theorem once;
+`ScheduledObservation.finite_trace_lowEquiv_of_replay` re-derives the
+scheduled theorem from it.
+
+**Low equivalence.** For an observing subject `S`, `CompositeObservation.observe`
+contains:
+
+- the public scheduler choice (`lifecycle.current`);
+- S's authority: its liveness, slot capacity, and complete finite capability
+  row (`Capability.capabilitySpace`, including object, kind, rights, and
+  generation of each capability); for every capability in that row, the
+  named object's liveness and kind, its endpoint mailbox, its pending sealed
+  transfer, its blocking mailbox, and its blocking waiter queue;
+- S's IPC observations: the messages above, the endpoint S waits on, and S's
+  blocking completion (the delivered sender and reply words); and
+- the mappings of every address space S owns.
+
+**Unwinding conditions.**
+
+- *Local respect*: `isSilent S state op` is a decidable classification. It
+  holds only when another subject is the actor and the operation is one of:
+  `nmi`, `selectUserReturn`, `userReturn`, or `restart`, whose declared
+  footprints write no projection the view reads (proved with the footprint
+  frame rule); `capabilityCopy` to a destination other than S;
+  `capabilityRevoke` of a victim other than S; `map` or `unmap`, which may
+  only change spaces the actor owns; or data-only `ipc` whose resolved
+  endpoint S's row does not name. `authoritativeGate_silent_observe` proves
+  that each silent step leaves S's view unchanged, including busy and halted
+  stutters.
+- *Step consistency*: `step_consistent_of_untouched` proves that an operation
+  whose footprint misses the view's projections preserves low equivalence
+  whoever performs it, S included. `silent_steps_lowEquiv` covers paired
+  silent steps. Every other step is visible: its event carries S's resulting
+  view, so equal events give equal views.
+- *Output consistency*: a visible event is S's view (plus the gate result when
+  S is the actor). `ipc_output_consistent` proves the substantive case: S's
+  own data-only IPC call gets the same reply in two low-equivalent coherent
+  states, including the delivered sender and words.
+
+**Conclusion.** `CompositeObservation.finite_trace_lowEquiv`, restated as
+SC-COMPOSITE-OBSERVER-ISOLATION: two finite runs from S-low-equivalent states
+with equal S-event projections end S-low-equivalent.
+
+**Scope and channels.** Every blocking operation, every deferred drain, and
+every other ordinary operation is visible, which makes it part of the
+compared projection rather than a claimed absence. The claim is
+termination-insensitive and excludes timing, caches, device reads, and
+refinement to the generated C or the binary. The executable evidence shows
+these channels explicitly:
+
+- a capability shared with S by derivation: subtree revocation by
+  another subject clears S's derived capability, although the operation names
+  neither S nor its slots (`Evidence.shared_capability_revocation_visible`,
+  and the negative fixture `tests/negative/SharedCapabilityConfidentiality.lean`);
+- the global capability-identity counter: a silent delegation between other
+  subjects changes the generation of a later delegation to S, so the two
+  runs' projections differ (`Evidence.handleIdentities`).
