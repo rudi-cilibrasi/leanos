@@ -45,7 +45,13 @@ record_check_phase() {
 ./scripts/test-native-decide-policy.sh
 ./scripts/check-native-decide-policy.py
 
-lake build
+# Lake prints each rebuilt module's elaboration time only without ANSI output;
+# the proof-time budget (#498) records and gates those times.
+lean_build_log="${LEANOS_LEAN_BUILD_LOG:-build/ci/lean-build.log}"
+mkdir -p "$(dirname "$lean_build_log")"
+lake build --no-ansi 2>&1 | tee "$lean_build_log"
+python3 scripts/check-proof-time-budget.py "$lean_build_log" \
+  --record "$(dirname "$lean_build_log")/lean-module-times.tsv"
 python3 scripts/test-qotom-bsp-capture.py
 python3 scripts/test-qotom-bsp-capture.py --native
 python3 scripts/test-qotom-bootstrap-binding.py
@@ -148,6 +154,7 @@ python3 ./scripts/test-kvm-preflight.py
 
 if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-generated-boundaries.sh ordinary
+  ./scripts/check-refinement-mutants.sh
   python3 scripts/test-qotom-ecam-protected.py
   python3 scripts/test-qotom-native-inventory-capture.py
   python3 scripts/test-qotom-native-kernel-capture.py
@@ -180,6 +187,9 @@ check_phase="image-and-emulator-contracts"
 # Run the compiler-failure fixture once in the required proof lane, not in
 # every image-consuming QEMU shard. Keep it sequential with other build users.
 ./scripts/test-build-image.sh
+# The subject build rule (#484): the template and the example build, and every
+# privileged-instruction, fast-entry, libc and oversized fixture is rejected.
+./scripts/test-build-subject.sh
 
 ./scripts/test-run-malformed-handoff.sh
 
@@ -190,6 +200,7 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-run-extended-state-image.sh
 ./scripts/test-run-extended-state-peer-pke.sh
+./scripts/test-run-device-service-rejection.sh
 
 ./scripts/test-run-fast-entry-image.sh
 
@@ -218,6 +229,9 @@ check_phase="image-and-emulator-contracts"
 ./scripts/test-run-bootstrap64-nmi.sh
 
 ./scripts/test-entry-stack-budget.sh
+./scripts/test-asm-windows.sh
+python3 scripts/check-userspace-abi.py
+./scripts/test-scenario-claims.sh
 python3 scripts/check-userspace-abi.py
 ./scripts/test-scenario-claims.sh
 ./scripts/test-asm-windows.sh
@@ -248,6 +262,8 @@ python3 scripts/hardware-evidence.py verify hardware/observations/qotom-20260909
 ./scripts/test-build-timing.py
 
 python3 scripts/test-check-timing.py
+
+python3 scripts/test-proof-time-budget.py
 
 ./scripts/test-image-bundle.sh
 
@@ -386,6 +402,20 @@ if ! grep -Fq 'has type' "$negative_log" ||
     ! grep -Fq 'observedByte := 0 } ≠ { observedByte := 1' "$negative_log" ||
     ! grep -Fq 'observedByte := 0 } = { observedByte := 1' "$negative_log"; then
   echo "error: DMA confidentiality fixture lacked the expected semantic mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/SharedCapabilityConfidentiality.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: shared-capability composite confidentiality overclaim unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/SharedCapabilityConfidentiality.lean' "$negative_log" ||
+    ! grep -Fq 'type mismatch' "$negative_log" ||
+    ! grep -Fq 'isSilent 0 (Evidence.composite base 7) Evidence.sharedRevoke = true' \
+      "$negative_log"; then
+  echo "error: shared-capability fixture lacked the expected silence mismatch" >&2
   cat "$negative_log" >&2
   exit 1
 fi

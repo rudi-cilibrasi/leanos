@@ -211,6 +211,11 @@
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service.h\""
       ],
+      "kernel-example-subject": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-example-subject.h\""
+      ],
       "kernel-three-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
@@ -219,6 +224,18 @@
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-console-server.h\""
+      ],
+      "kernel-device-service-unplanned-bus-master": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_UNPLANNED_BUS_MASTER_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service-unplanned-bus-master.h\""
+      ],
+      "kernel-device-service-unplanned-recorded-command": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_UNPLANNED_RECORDED_COMMAND_FIXTURE=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-device-service-unplanned-recorded-command.h\""
       ],
       "kernel-notify-reply": [
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
@@ -477,6 +494,14 @@
           "-DLEANOS_IPC_STREAM_SCENARIO=1"
         ]
       },
+      "boot-example-subject": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
       "boot-three-subject": {
         "source": "boot/boot.S",
         "definitions": [
@@ -496,6 +521,12 @@
           "-DLEANOS_IPC_STREAM_SCENARIO=1",
           "-DLEANOS_NOTIFY_REPLY_SCENARIO=1"
         ]
+      }
+    },
+    "subjects": {
+      "subject-example": {
+        "source": "subjects/example",
+        "slot": "c"
       }
     },
     "images": {
@@ -807,6 +838,16 @@
         "prelink_plan": "boot-page-plan-device-service.h",
         "plan_equal_to": null
       },
+      "leanos-example-subject": {
+        "boot": "boot-example-subject",
+        "kernel": "kernel-example-subject",
+        "extra_objects": [
+          "subject-example"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-example-subject.h",
+        "plan_equal_to": null
+      },
       "leanos-three-subject": {
         "boot": "boot-three-subject",
         "kernel": "kernel-three-subject",
@@ -821,6 +862,22 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-console-server.h",
+        "plan_equal_to": null
+      },
+      "leanos-device-service-unplanned-bus-master": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service-unplanned-bus-master",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service-unplanned-bus-master.h",
+        "plan_equal_to": null
+      },
+      "leanos-device-service-unplanned-recorded-command": {
+        "boot": "boot-device-service",
+        "kernel": "kernel-device-service-unplanned-recorded-command",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-device-service-unplanned-recorded-command.h",
         "plan_equal_to": null
       },
       "leanos-notify-reply": {
@@ -1140,6 +1197,13 @@
           "key": "device-service"
         }
       },
+      "leanos-example-subject": {
+        "iso": "leanos-@VERSION@-x86_64-example-subject.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "example-subject"
+        }
+      },
       "leanos-three-subject": {
         "iso": "leanos-@VERSION@-x86_64-three-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1153,6 +1217,14 @@
         "policy": {
           "key": "console-server"
         }
+      },
+      "leanos-device-service-unplanned-bus-master": {
+        "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
+        "grub": "boot/grub.cfg"
+      },
+      "leanos-device-service-unplanned-recorded-command": {
+        "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-recorded-command.iso",
+        "grub": "boot/grub.cfg"
       },
       "leanos-notify-reply": {
         "iso": "leanos-@VERSION@-x86_64-notify-reply.iso",
@@ -1428,6 +1500,13 @@
         "description": "device-service"
       },
       {
+        "image": "leanos-example-subject",
+        "check": "validate",
+        "expected": "boot-page-plan-example-subject.h",
+        "final": "boot-page-plan-example-subject.final.h",
+        "description": "example-subject"
+      },
+      {
         "image": "leanos-three-subject",
         "check": "validate",
         "expected": "boot-page-plan-three-subject.h",
@@ -1440,6 +1519,20 @@
         "expected": "boot-page-plan-console-server.h",
         "final": "boot-page-plan-console-server.final.h",
         "description": "console-server"
+      },
+      {
+        "image": "leanos-device-service-unplanned-bus-master",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service-unplanned-bus-master.h",
+        "final": "boot-page-plan-device-service-unplanned-bus-master.final.h",
+        "description": "device-service-unplanned-bus-master"
+      },
+      {
+        "image": "leanos-device-service-unplanned-recorded-command",
+        "check": "validate",
+        "expected": "boot-page-plan-device-service-unplanned-recorded-command.h",
+        "final": "boot-page-plan-device-service-unplanned-recorded-command.final.h",
+        "description": "device-service-unplanned-recorded-command"
       },
       {
         "image": "leanos-notify-reply",
@@ -1729,6 +1822,18 @@
           "fixture": "omit-reuse-invalidation",
           "macro": "LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE",
           "reason": "vtd-reuse-invalidation-omitted"
+        },
+        {
+          "fixture": "unplanned-bus-master",
+          "macro": "LEANOS_ASSIGNED_EDU_UNPLANNED_BUS_MASTER_FIXTURE",
+          "reason": "dma-live-command",
+          "stage": "post-assignment"
+        },
+        {
+          "fixture": "unplanned-recorded-command",
+          "macro": "LEANOS_ASSIGNED_EDU_UNPLANNED_RECORDED_COMMAND_FIXTURE",
+          "reason": "dma-live-assignment-command",
+          "stage": "post-assignment"
         }
       ],
       "claims": [
@@ -3089,6 +3194,30 @@
       ],
       "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run; the generated C, runtime shim, compiler, boot assembly and QEMU stay trusted"
     },
+    "example-subject": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/example-subject.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-example-subject.iso",
+        "elf": "leanos-example-subject.elf",
+        "serial_log": "example-subject.serial.log",
+        "scenario": "example-subject",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [],
+      "does_not_prove": "Exercises the subject build rule only: the subject policy check is a host disassembly check, not a proof; the schedule is the kernel's fixed state machine, and the C kernel, boot.S, compiler, linker and QEMU stay trusted"
+    },
     "three-subject": {
       "release_artifacts": [
         "iso",
@@ -3139,6 +3268,48 @@
         "SC-CONSOLE-CONFIDENTIALITY"
       ],
       "does_not_prove": "Not a refinement of SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY: one finite QEMU run with no console input; the kernel checks each authority decision against the generated Lean witness, but the C kernel, boot.S, compiler and QEMU stay trusted"
+    },
+    "device-service-unplanned-bus-master": {
+      "tier": "evidence",
+      "row": {
+        "runner": "device-service-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
+        "elf": "leanos-device-service-unplanned-bus-master.elf",
+        "serial_log": "device-service-unplanned-bus-master.serial.log",
+        "scenario": "device-service-unplanned-bus-master",
+        "mode": "-",
+        "reason": "dma-live-command"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DMA-QUARANTINE",
+        "SC-DMA-CONTROL-DRIFT-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP: one finite QEMU run of a controlled negative; that an unplanned function could not issue DMA through VT-d is not exercised; the generated C, compiler, boot assembly and QEMU stay trusted"
+    },
+    "device-service-unplanned-recorded-command": {
+      "tier": "pr",
+      "row": {
+        "runner": "device-service-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-device-service-unplanned-recorded-command.iso",
+        "elf": "leanos-device-service-unplanned-recorded-command.elf",
+        "serial_log": "device-service-unplanned-recorded-command.serial.log",
+        "scenario": "device-service-unplanned-recorded-command",
+        "mode": "-",
+        "reason": "dma-live-assignment-command"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DMA-QUARANTINE",
+        "SC-DMA-CONTROL-DRIFT-FAILSTOP"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP: one finite QEMU run of a controlled negative; that an unplanned function could not issue DMA through VT-d is not exercised; the generated C, compiler, boot assembly and QEMU stay trusted"
     },
     "notify-reply": {
       "release_artifacts": [

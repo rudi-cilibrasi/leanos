@@ -5,8 +5,9 @@ INVARIANTS.md explains, for a non-technical reader, every theorem that the
 default Lean build proves (all of them, and only them).  This script keeps that
 promise machine-checked:
 
-  extract   Parse LeanOS.lean and LeanOS/*.lean and list every `theorem`
-            declaration (JSON on stdout or --json PATH).
+  extract   Parse LeanOS.lean, LeanOS/*.lean, and the split fail-stop model in
+            LeanOS/FailStop/*.lean and list every `theorem` declaration (JSON
+            on stdout or --json PATH).
   generate  Call a language model (OpenAI or Anthropic API) with the prompt in
             scripts/invariants-prompt.md to write one per-file section at a
             time into --sections-dir, then assemble INVARIANTS.md.
@@ -83,6 +84,10 @@ SNIPPET_LINES = 30
 def source_files():
     files = [REPO_ROOT / "LeanOS.lean"]
     files.extend(sorted((REPO_ROOT / "LeanOS").glob("*.lean")))
+    # The fail-stop composite model is split by subsystem (issue #499); its
+    # modules are part of the default build and are indexed like top-level
+    # LeanOS modules.
+    files.extend(sorted((REPO_ROOT / "LeanOS" / "FailStop").glob("*.lean")))
     return files
 
 

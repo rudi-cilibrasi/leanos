@@ -173,8 +173,9 @@ The assigned-image projection scales each 16-byte model page to one 4 KiB
 hardware page and binds model device zero to the platform-owned EDU requester
 index for `00:02.0`. Four linker-owned pages provide an unmapped guard, a
 read-only DMA source, a write-only DMA destination, and a second unmapped
-guard. The generator emits a context entry plus the three-level table words
-that reach only those two middle pages. The dedicated assigned image validates
+guard. `VTdBootPlan.compile` produces the context entry plus the three-level
+table words that reach only those two middle pages (`accepted_translation_exact`
+in [vtd-boot-plan.md](vtd-boot-plan.md)), and the generator emits them. The dedicated assigned image validates
 that complete shape, copies the generated context and second-level words into
 the live linker-owned tables, publishes and validates VT-d translation, and
 only then verifies EDU's pinned BAR and identity before setting PCI Command to
