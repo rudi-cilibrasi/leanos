@@ -28,6 +28,7 @@
     "LeanOS/CompositeDispatcher.lean",
     "LeanOS/CompositeFootprint.lean",
     "LeanOS/CompositeObservation.lean",
+    "LeanOS/CompositeUnwinding.lean",
     "LeanOS/ConsoleServer.lean",
     "LeanOS/DMAQuarantine.lean",
     "LeanOS/DMAQuarantineCorpus.lean",

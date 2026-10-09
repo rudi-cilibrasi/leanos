@@ -16,6 +16,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.CompositeObservation
+import LeanOS.CompositeUnwinding
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -3161,10 +3162,20 @@ theorem scheduled_finite_trace_isolation observer left right leftSteps rightStep
     hlow hevents
 
 /-- SC-COMPOSITE-OBSERVER-ISOLATION: over the authoritative composite state and
-`authoritativeGate`, every operation classified silent for an observer leaves
-its view (authority row, named objects, IPC observations, owned mappings, and
-the public scheduler choice) unchanged, and finite runs from low-equivalent
-states with equal observer event projections end low-equivalent. -/
+`authoritativeGate`, (1) every operation classified silent for an observer
+leaves its view (authority row, named objects, IPC observations, owned spaces
+and mappings, and the public scheduler choice) unchanged, and (2) finite runs
+from low-equivalent states with equal observer event projections end
+low-equivalent.  Given the preserved `AuthoritativeRuntimeWellFormed`
+invariant, (3) the coherent families (`protect`, `createSubject`, blocking
+send/receive/cancel away from the observer) are also silent and (4) the
+trace theorem holds with them silent.  For the scheduled observer, (5) its
+own operations in `ownStepConsistent` are step consistent and (6) those in
+`ownOutputConsistent` are output consistent, and (7) the two compose: a run
+of its operations in both families returns equal results and ends
+low-equivalent.  (8) The two excluded channels are real: the global
+capability-identity counter breaks step consistency and a delegation's
+destination breaks output consistency. -/
 theorem composite_observer_isolation (observer : Nat) :
     (∀ state operation, CompositeObservation.isSilent observer state operation = true →
       CompositeObservation.LowEquiv observer
@@ -3175,12 +3186,68 @@ theorem composite_observer_isolation (observer : Nat) :
         CompositeObservation.projection observer right rightOperations →
       CompositeObservation.LowEquiv observer
         (CompositeObservation.run observer left leftOperations).1
-        (CompositeObservation.run observer right rightOperations).1) := by
-  exact ⟨fun state operation hsilent =>
+        (CompositeObservation.run observer right rightOperations).1) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeUnwinding.isSilentCoherent observer state operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate state operation).state state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer left right →
+      CompositeUnwinding.projectionCoherent observer left leftOperations =
+        CompositeUnwinding.projectionCoherent observer right rightOperations →
+      CompositeObservation.LowEquiv observer
+        (CompositeUnwinding.runCoherent observer left leftOperations).1
+        (CompositeUnwinding.runCoherent observer right rightOperations).1) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeUnwinding.ownStepConsistent observer operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate left (.ordinary operation)).state
+        (FailStop.authoritativeGate right (.ordinary operation)).state) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeUnwinding.ownOutputConsistent observer operation = true →
+      (FailStop.authoritativeGate left (.ordinary operation)).result =
+        (FailStop.authoritativeGate right (.ordinary operation)).result) ∧
+    (∀ left right operations, CompositeUnwinding.OwnStep observer left right →
+      (∀ operation, operation ∈ operations →
+        CompositeUnwinding.ownTraceFamily observer operation = true) →
+      (CompositeUnwinding.ownRun left operations).2 =
+          (CompositeUnwinding.ownRun right operations).2 ∧
+        CompositeObservation.LowEquiv observer (CompositeUnwinding.ownRun left operations).1
+          (CompositeUnwinding.ownRun right operations).1) ∧
+    (∀ plan,
+      (CompositeUnwinding.OwnStep 2 (CompositeUnwinding.Channels.seed plan)
+          (CompositeUnwinding.Channels.shifted plan) ∧
+        ¬ CompositeObservation.LowEquiv 2
+          (FailStop.authoritativeGate (CompositeUnwinding.Channels.seed plan)
+            (.ordinary CompositeUnwinding.Channels.delegateToSelf)).state
+          (FailStop.authoritativeGate (CompositeUnwinding.Channels.shifted plan)
+            (.ordinary CompositeUnwinding.Channels.delegateToSelf)).state) ∧
+      (FailStop.authoritativeGate (CompositeUnwinding.Channels.seed plan)
+          (.ordinary CompositeUnwinding.Channels.delegateToOther)).result ≠
+        (FailStop.authoritativeGate (CompositeUnwinding.Channels.shifted plan)
+          (.ordinary CompositeUnwinding.Channels.delegateToOther)).result) := by
+  refine ⟨fun state operation hsilent =>
       CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
     fun left right leftOperations rightOperations hlow hevents =>
       CompositeObservation.finite_trace_lowEquiv observer left right leftOperations
-        rightOperations hlow hevents⟩
+        rightOperations hlow hevents,
+    fun state operation hstate hsilent =>
+      CompositeUnwinding.authoritativeGate_silentCoherent_observe observer state operation
+        hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeUnwinding.finite_trace_lowEquiv_coherent observer left right leftOperations
+        rightOperations hleft hright hlow hevents,
+    fun left right operation h hfamily =>
+      CompositeUnwinding.own_step_consistent h operation hfamily,
+    fun left right operation h hfamily =>
+      CompositeUnwinding.own_output_consistent h operation hfamily,
+    fun left right operations h hfamily =>
+      CompositeUnwinding.own_run_noninterference h operations hfamily,
+    fun plan =>
+      ⟨CompositeUnwinding.Channels.identity_counter_step_inconsistent plan,
+        (CompositeUnwinding.Channels.copy_destination_output_inconsistent plan).2⟩⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :
