@@ -6224,6 +6224,36 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/DeviceProgramExecutor.lean",
+      "qualified": "LeanOS.DeviceProgramExecutor.generated_run_confined",
+      "display": "generated_run_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramExecutor.lean",
+      "qualified": "LeanOS.DeviceProgramExecutor.generated_run_declared_confined",
+      "display": "generated_run_declared_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramExecutor.lean",
+      "qualified": "LeanOS.DeviceProgramExecutor.generated_run_declared_descriptors",
+      "display": "generated_run_declared_descriptors",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramExecutor.lean",
+      "qualified": "LeanOS.DeviceProgramExecutor.generated_run_eq",
+      "display": "generated_run_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramExecutor.lean",
+      "qualified": "LeanOS.DeviceProgramExecutor.generated_step_eq",
+      "display": "generated_step_eq",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/DirectPortContainment.lean",
       "qualified": "LeanOS.DirectPortContainment.attacker_registers_cannot_relabel",
       "display": "attacker_registers_cannot_relabel",
