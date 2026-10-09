@@ -5361,6 +5361,12 @@
     },
     {
       "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.Evidence.identity_counter_projection_witness",
+      "display": "Evidence.identity_counter_projection_witness",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
       "qualified": "LeanOS.CompositeObservation.Evidence.naive_named_subject_silence_unsound",
       "display": "Evidence.naive_named_subject_silence_unsound",
       "kind": "theorem"
@@ -5409,6 +5415,30 @@
     },
     {
       "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.namedView",
+      "display": "LowEquiv.namedView",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.namesEq",
+      "display": "LowEquiv.namesEq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.ownedMappings",
+      "display": "LowEquiv.ownedMappings",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.ownsIff",
+      "display": "LowEquiv.ownsIff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
       "qualified": "LeanOS.CompositeObservation.LowEquiv.resolve",
       "display": "LowEquiv.resolve",
       "kind": "theorem"
@@ -5417,6 +5447,18 @@
       "source": "LeanOS/CompositeObservation.lean",
       "qualified": "LeanOS.CompositeObservation.LowEquiv.resolveCurrent",
       "display": "LowEquiv.resolveCurrent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.rowEq",
+      "display": "LowEquiv.rowEq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.LowEquiv.scheduled",
+      "display": "LowEquiv.scheduled",
       "kind": "theorem"
     },
     {
@@ -5547,6 +5589,12 @@
     },
     {
       "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.observe_selectLiveReturnAuthority",
+      "display": "observe_selectLiveReturnAuthority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
       "qualified": "LeanOS.CompositeObservation.resolveCurrent_ok_lookup",
       "display": "resolveCurrent_ok_lookup",
       "kind": "theorem"
@@ -5583,6 +5631,12 @@
     },
     {
       "source": "LeanOS/CompositeObservation.lean",
+      "qualified": "LeanOS.CompositeObservation.syscallDispatch_frame",
+      "display": "syscallDispatch_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeObservation.lean",
       "qualified": "LeanOS.CompositeObservation.system_replays",
       "display": "system_replays",
       "kind": "theorem"
@@ -5591,6 +5645,558 @@
       "source": "LeanOS/CompositeObservation.lean",
       "qualified": "LeanOS.CompositeObservation.unmap_frame",
       "display": "unmap_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.copy_destination_output_inconsistent",
+      "display": "Channels.copy_destination_output_inconsistent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.identity_counter_step_inconsistent",
+      "display": "Channels.identity_counter_step_inconsistent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.seed_delegateToOther_result",
+      "display": "Channels.seed_delegateToOther_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.seed_delegateToSelf_identities",
+      "display": "Channels.seed_delegateToSelf_identities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.seed_ownStep_shifted",
+      "display": "Channels.seed_ownStep_shifted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.seed_wellFormed",
+      "display": "Channels.seed_wellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.shifted_delegateToOther_result",
+      "display": "Channels.shifted_delegateToOther_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.Channels.shifted_delegateToSelf_identities",
+      "display": "Channels.shifted_delegateToSelf_identities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.endpointLookup",
+      "display": "OwnStep.endpointLookup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.endpointObject",
+      "display": "OwnStep.endpointObject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.endpointResolve",
+      "display": "OwnStep.endpointResolve",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.leftActor",
+      "display": "OwnStep.leftActor",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.lookup",
+      "display": "OwnStep.lookup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.lookupView",
+      "display": "OwnStep.lookupView",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.namedMailbox",
+      "display": "OwnStep.namedMailbox",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.next",
+      "display": "OwnStep.next",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.rightActor",
+      "display": "OwnStep.rightActor",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.OwnStep.rightCurrent",
+      "display": "OwnStep.rightCurrent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.actor_of_current",
+      "display": "actor_of_current",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.applyOperation_silentCoherent_observe",
+      "display": "applyOperation_silentCoherent_observe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.authoritativeGate_result_of_reply",
+      "display": "authoritativeGate_result_of_reply",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.authoritativeGate_silentCoherent_observe",
+      "display": "authoritativeGate_silentCoherent_observe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.backing_installVirtualMemory",
+      "display": "backing_installVirtualMemory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.blockingCancel_frame",
+      "display": "blockingCancel_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.blockingCoherent_of",
+      "display": "blockingCoherent_of",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.blockingCurrent_eq",
+      "display": "blockingCurrent_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.blockingReceive_frame",
+      "display": "blockingReceive_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.blockingSend_frame",
+      "display": "blockingSend_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.blockingTarget_of_resolve",
+      "display": "blockingTarget_of_resolve",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.cancelSubjectTyped_cancelled_state",
+      "display": "cancelSubjectTyped_cancelled_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.capabilities_eq_lifecycle",
+      "display": "capabilities_eq_lifecycle",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.capabilitySpace_clear_self",
+      "display": "capabilitySpace_clear_self",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.coherent_of",
+      "display": "coherent_of",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.copy_self_congr",
+      "display": "copy_self_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.create_frame",
+      "display": "create_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.dispatchIPC_lifecycle_execution",
+      "display": "dispatchIPC_lifecycle_execution",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.endpointReceive_mailbox_congr",
+      "display": "endpointReceive_mailbox_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.endpointSend_mailbox_congr",
+      "display": "endpointSend_mailbox_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.finite_trace_lowEquiv_coherent",
+      "display": "finite_trace_lowEquiv_coherent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.gate_state_pair",
+      "display": "gate_state_pair",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.isSilentCoherent_actor",
+      "display": "isSilentCoherent_actor",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.isSilentCoherent_of_isSilent",
+      "display": "isSilentCoherent_of_isSilent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_gate_of_apply",
+      "display": "lowEquiv_gate_of_apply",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_installCopiedCapabilities",
+      "display": "lowEquiv_installCopiedCapabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_installIPC",
+      "display": "lowEquiv_installIPC",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_installVirtualMemory",
+      "display": "lowEquiv_installVirtualMemory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_mapping_step",
+      "display": "lowEquiv_mapping_step",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_of_unchanged",
+      "display": "lowEquiv_of_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.lowEquiv_selectLiveReturnAuthority",
+      "display": "lowEquiv_selectLiveReturnAuthority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.map_congr",
+      "display": "map_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.map_other",
+      "display": "map_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.memoryCapabilities_eq",
+      "display": "memoryCapabilities_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.names_of_lookup",
+      "display": "names_of_lookup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.names_of_mapping",
+      "display": "names_of_mapping",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_apply_copy_other",
+      "display": "observe_apply_copy_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_apply_create_other",
+      "display": "observe_apply_create_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_apply_revoke_other",
+      "display": "observe_apply_revoke_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_dispatchBlockingCancel",
+      "display": "observe_dispatchBlockingCancel",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_dispatchBlockingReceive",
+      "display": "observe_dispatchBlockingReceive",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_dispatchBlockingSend",
+      "display": "observe_dispatchBlockingSend",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_installCopiedCapabilities_eq",
+      "display": "observe_installCopiedCapabilities_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_installCreatedSubject",
+      "display": "observe_installCreatedSubject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_installIPC_eq",
+      "display": "observe_installIPC_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_installVirtualMemory_eq",
+      "display": "observe_installVirtualMemory_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.observe_publishBlockingIPCContext",
+      "display": "observe_publishBlockingIPCContext",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.ownTraceFamily_preserves",
+      "display": "ownTraceFamily_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_output_consistent",
+      "display": "own_output_consistent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_output_syscall_access",
+      "display": "own_output_syscall_access",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_run_noninterference",
+      "display": "own_run_noninterference",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_consistent",
+      "display": "own_step_consistent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_dispatchIPC",
+      "display": "own_step_dispatchIPC",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_ipc",
+      "display": "own_step_ipc",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_map",
+      "display": "own_step_map",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_protect",
+      "display": "own_step_protect",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_revoke",
+      "display": "own_step_revoke",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_syscall",
+      "display": "own_step_syscall",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.own_step_unmap",
+      "display": "own_step_unmap",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.owner_current",
+      "display": "owner_current",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.protect_congr",
+      "display": "protect_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.protect_frame",
+      "display": "protect_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.protect_other",
+      "display": "protect_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.publishReleasedBlockingContext_observe",
+      "display": "publishReleasedBlockingContext_observe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.revokeRuntimeSafe_accepted_state",
+      "display": "revokeRuntimeSafe_accepted_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.revokeRuntimeSafe_self_congr",
+      "display": "revokeRuntimeSafe_self_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.runCoherent_state",
+      "display": "runCoherent_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.selectLiveReturnAuthority_lifecycle",
+      "display": "selectLiveReturnAuthority_lifecycle",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.systemCoherent_preserves",
+      "display": "systemCoherent_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.systemCoherent_replaysOn",
+      "display": "systemCoherent_replaysOn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.translateError_congr",
+      "display": "translateError_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.translations_eq",
+      "display": "translations_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.unmap_congr",
+      "display": "unmap_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeUnwinding.lean",
+      "qualified": "LeanOS.CompositeUnwinding.unmap_other",
+      "display": "unmap_other",
       "kind": "theorem"
     },
     {
@@ -16659,14 +17265,44 @@
     },
     {
       "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.finite_trace_lowEquiv_on",
+      "display": "finite_trace_lowEquiv_on",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.replaysOn_of_unwinding",
+      "display": "replaysOn_of_unwinding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.replaysOn_true",
+      "display": "replaysOn_true",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
       "qualified": "LeanOS.ReplayUnwinding.replays_of_unwinding",
       "display": "replays_of_unwinding",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.run_preserves",
+      "display": "run_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
       "qualified": "LeanOS.ReplayUnwinding.run_replays",
       "display": "run_replays",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ReplayUnwinding.lean",
+      "qualified": "LeanOS.ReplayUnwinding.run_replays_on",
+      "display": "run_replays_on",
       "kind": "theorem"
     },
     {

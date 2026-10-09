@@ -451,6 +451,19 @@ if ! grep -Fq 'tests/negative/SharedCapabilityConfidentiality.lean' "$negative_l
   exit 1
 fi
 
+if lake env lean tests/negative/IdentityCounterStepConsistency.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: identity-counter step-consistency overclaim unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/IdentityCounterStepConsistency.lean' "$negative_log" ||
+    ! grep -Fq 'type mismatch' "$negative_log" ||
+    ! grep -Fq 'ownStepConsistent 2 Channels.delegateToSelf = true' "$negative_log"; then
+  echo "error: identity-counter fixture lacked the expected family mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 rm -f "$negative_log"
 negative_log=""
 record_check_phase proof-integrity-and-negative-fixtures
