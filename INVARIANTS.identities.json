@@ -11571,6 +11571,12 @@
     },
     {
       "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_view_words",
+      "display": "boot_view_words",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
       "qualified": "LeanOS.FrameServer.boot_written_a",
       "display": "boot_written_a",
       "kind": "theorem"
@@ -11631,6 +11637,18 @@
     },
     {
       "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.frameServerView_agrees",
+      "display": "frameServerView_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.frameServerView_pool",
+      "display": "frameServerView_pool",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
       "qualified": "LeanOS.FrameServer.grant_cases",
       "display": "grant_cases",
       "kind": "theorem"
@@ -11669,6 +11687,12 @@
       "source": "LeanOS/FrameServer.lean",
       "qualified": "LeanOS.FrameServer.no_amplification",
       "display": "no_amplification",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.ofNat_inj",
+      "display": "ofNat_inj",
       "kind": "theorem"
     },
     {
@@ -15209,6 +15233,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_frame_server_vectors_exact",
       "display": "hosted_frame_server_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_frame_server_view_vectors_exact",
+      "display": "hosted_frame_server_view_vectors_exact",
       "kind": "theorem"
     },
     {

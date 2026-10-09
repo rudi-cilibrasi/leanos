@@ -828,6 +828,101 @@ theorem frameServerCheck_agrees (sys : System) (d : Decision)
       show frameServerCheck 5 0 _ _ 0 sys.poolRights = _
       simp only [decide, hc]; rfl
 
+/-- Allocation-free boot witness of `decisionView` over the kernel's raw
+words, so that the view the kernel hands `frameServerCheck` is generated too.
+The pool is the frames `0 .. poolSize - 1`; `holder` is the named frame's
+holder (0 when free; client identities are nonzero); `free` is the number of
+free pool frames.  For a grant or reclaim (op 1 or 4) the answer is
+`frameView`; for a pool-exhausted refusal (op 3) it is 1 when some frame is
+free; otherwise 0. -/
+@[export leanos_frame_server_view]
+def frameServerView (op index poolSize holder client free : UInt64) : UInt64 :=
+  if op == 1 || op == 4 then
+    if poolSize ≤ index then 0
+    else if holder == 0 then 1
+    else if holder == client then 2
+    else 3
+  else if op == 3 then
+    if free == 0 then 0 else 1
+  else 0
+
+/-- The kernel's holder word for a frame: 0 when free, else the holder. -/
+def holderWord (sys : System) (frame : FrameId) : UInt64 :=
+  match sys.grant frame with
+  | none => 0
+  | some g => UInt64.ofNat g.client
+
+theorem ofNat_inj {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64)
+    (h : UInt64.ofNat a = UInt64.ofNat b) : a = b := by
+  have := congrArg UInt64.toNat h
+  rwa [UInt64.toNat_ofNat_of_lt' ha, UInt64.toNat_ofNat_of_lt' hb] at this
+
+/-- For a pool of the frames `0 .. n - 1`, holder identities that are nonzero and below
+2^64, and a client below 2^64, the generated view over the kernel's words is the model's `frameView`
+for a grant or a reclaim. -/
+theorem frameServerView_agrees (sys : System) (n client frame : Nat) (op : UInt64)
+    (hop : op = 1 ∨ op = 4) (hpool : sys.pool = List.range n) (hn : n < 2 ^ 64)
+    (hframe : frame < 2 ^ 64) (hclientRange : client < 2 ^ 64)
+    (hholders : ∀ g, sys.grant frame = some g → g.client ≠ 0 ∧ g.client < 2 ^ 64)
+    (free : UInt64) :
+    frameServerView op (UInt64.ofNat frame) (UInt64.ofNat n) (holderWord sys frame)
+        (UInt64.ofNat client) free = frameView sys client frame := by
+  have hsel : (op == 1 || op == 4) = true := by
+    rcases hop with h | h <;> simp [h]
+  simp only [frameServerView, hsel, ite_true]
+  by_cases hin : frame < n
+  · have hmem : frame ∈ sys.pool := by simp [hpool, hin]
+    have hle : ¬ (UInt64.ofNat n ≤ UInt64.ofNat frame) := by
+      rw [ofNat_le_iff hn hframe]; omega
+    simp only [hle, ite_false, frameView, hmem, not_true_eq_false, ite_false]
+    rcases grant_cases sys frame with ⟨g, hg⟩ | hg
+    · obtain ⟨hgz, hgr⟩ := hholders g hg
+      have hw : holderWord sys frame = UInt64.ofNat g.client := by simp [holderWord, hg]
+      have hnz : (UInt64.ofNat g.client == 0) = false := by
+        cases h : (UInt64.ofNat g.client == 0)
+        · rfl
+        · have h0 : UInt64.ofNat g.client = UInt64.ofNat 0 := by simpa using h
+          exact absurd (ofNat_inj hgr (by decide) h0) hgz
+      rw [hw, hg]
+      simp only [hnz, Bool.false_eq_true, ite_false]
+      by_cases hc : g.client = client
+      · simp [hc]
+      · have hne : (UInt64.ofNat g.client == UInt64.ofNat client) = false := by
+          cases h : (UInt64.ofNat g.client == UInt64.ofNat client)
+          · rfl
+          · exact absurd (ofNat_inj hgr hclientRange (by simpa using h)) hc
+        simp [hne, hc]
+    · have hw : holderWord sys frame = 0 := by simp [holderWord, hg]
+      rw [hw, hg]
+      simp
+  · have hmem : frame ∉ sys.pool := by simp [hpool, hin]
+    have hle : UInt64.ofNat n ≤ UInt64.ofNat frame := by
+      rw [ofNat_le_iff hn hframe]; omega
+    simp [hle, frameView, hmem]
+
+/-- For a pool-exhausted refusal, the generated view is the model's
+free-frame bit whenever `free` is the number of free pool frames. -/
+theorem frameServerView_pool (sys : System) (client : SubjectId) (n index poolSize holder : UInt64)
+    (hfree : n = 0 ↔ hasFree sys = false) :
+    frameServerView 3 index poolSize holder (UInt64.ofNat client) n =
+      decisionView sys (.refuse client .poolExhausted) := by
+  simp only [frameServerView, decisionView]
+  by_cases hn : n = 0
+  · have := hfree.mp hn
+    simp [hn, this]
+  · have : hasFree sys = true := by
+      cases h : hasFree sys
+      · exact absurd (hfree.mpr h) hn
+      · rfl
+    simp [hn, this]
+
+theorem boot_view_words :
+    frameServerView 1 0 2 0 1 2 = 1 ∧ frameServerView 1 0 2 0 2 1 = 1 ∧
+      frameServerView 1 2 2 0 1 2 = 0 ∧ frameServerView 1 1 2 2 1 1 = 3 ∧
+      frameServerView 4 0 2 1 1 1 = 2 ∧ frameServerView 3 0 2 0 1 0 = 0 ∧
+      frameServerView 2 0 2 1 1 1 = 0 ∧ frameServerView 5 0 2 1 1 1 = 0 := by
+  decide
+
 /-- A decision from anyone but the server is refused without effect; the
 boot image accepts the decision syscall only from the server subject. -/
 theorem decide_not_server sys caller d (h : caller ≠ sys.server) :

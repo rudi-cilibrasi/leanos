@@ -34,3 +34,7 @@ Instead of the kernel deciding who gets memory, one ordinary program, the frame 
 - `boot_revoke_a` — In the demonstrated run, taking away the first program's budget leaves it with no page and a budget of zero, while the page still holds its marker.
 - `boot_grant_b` — In the demonstrated run, the second program, with a larger budget, is handed the same page and reads zero where the first program's marker was, and the first program can no longer read it.
 - `boot_hostile_refused` — The numeric checker refuses every hostile decision the running kernel tests at start-up: a page outside the pool, a page already in use, too many or no permissions, a request over budget, a false refusal, taking back a page the program does not hold, and an unknown decision.
+- `ofNat_inj` — Bookkeeping: two small numbers that are equal as machine words are equal as numbers.
+- `frameServerView_agrees` — The small numeric function the running kernel uses to describe a page to the checker (outside the pool, free, held by this program, or held by another) gives exactly the model's description, whatever the state.
+- `frameServerView_pool` — For a "no free page" refusal, that function reports a free page exactly when the model has one.
+- `boot_view_words` — The page descriptions the running kernel computes in the demonstrated run, and at start-up, are the expected ones.

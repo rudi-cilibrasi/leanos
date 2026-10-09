@@ -109,6 +109,18 @@ the server, the witness over those words equals the model's encoded reply.
 The model oracle replays it as adapter `FrameServer.check` (id 26) over 16
 vectors, `hosted_frame_server_vectors_exact`.
 
+The view itself also comes from generated code:
+`frameServerView op index poolSize holder client free` is the export
+`leanos_frame_server_view`. Its inputs are the kernel's raw words: the
+frame's holder (0 when free) and the number of free frames.
+
+- `frameServerView_agrees` proves that, for a grant or a reclaim, it equals
+  `frameView` for a pool of the frames `0 .. n - 1`.
+- `frameServerView_pool` proves the same for the pool-exhausted bit.
+
+The oracle replays it as adapter `FrameServer.view` (id 27) over 8 vectors,
+`hosted_frame_server_view_vectors_exact`.
+
 ## The frame-server image
 
 The `frame-server` scenario is the `three-subject` image with three
@@ -194,8 +206,8 @@ python3 scripts/run-emulator-evidence.py run --scenario frame-server --output fr
 
 - **No refinement.** The QEMU run is one finite trace. The witness check
   covers the decision only. The kernel's scrub loop, its leaf writes and
-  `invlpg`, and the words it hands the witness (view, usage, limit) are
-  hand-written C, and are tested, not proved. `boot.S`, the subject build
+  `invlpg`, and the raw words it hands the two witnesses (holder, usage,
+  limit, free count) are hand-written C, and are tested, not proved. `boot.S`, the subject build
   rule and the ring-3 server are not proved to implement the model.
 - **A fixed pool and fixed budgets.** There is no dynamic pool, no second
   server, and no budget transfer or minting after boot. The pool frames are

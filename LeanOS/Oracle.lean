@@ -84,7 +84,8 @@ def adapters : List AdapterSpec := [
   adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
   adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
-  adapter "FrameServer.check" 26 "leanos_frame_server_check" 6]
+  adapter "FrameServer.check" 26 "leanos_frame_server_check" 6,
+  adapter "FrameServer.view" 27 "leanos_frame_server_view" 6]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -157,6 +158,11 @@ private def frameServerCheck (id : String) (op view usage limit requested held :
     Vector :=
   { id, adapter := "FrameServer.check", words := [op, view, usage, limit, requested, held],
     expected := FrameServer.frameServerCheck op view usage limit requested held }
+
+private def frameServerView (id : String) (op index poolSize holder client free : UInt64) :
+    Vector :=
+  { id, adapter := "FrameServer.view", words := [op, index, poolSize, holder, client, free],
+    expected := FrameServer.frameServerView op index poolSize holder client free }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -563,6 +569,20 @@ def frameServerVectors : List Vector := [
   frameServerCheck "frame-server.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
 
+/-- Frame-server view words (#486): a free pool frame for A and for B, a frame
+outside the pool, a frame held by another client, a frame held by the
+client, the pool-exhausted bit, ops without a frame, and maximum words. -/
+def frameServerViewVectors : List Vector := [
+  frameServerView "frame-server-view.free-for-a" 1 0 2 0 1 2,
+  frameServerView "frame-server-view.free-for-b" 1 0 2 0 2 1,
+  frameServerView "frame-server-view.outside-pool" 1 2 2 0 1 2,
+  frameServerView "frame-server-view.held-by-other" 1 1 2 2 1 1,
+  frameServerView "frame-server-view.held-by-client" 4 0 2 1 1 1,
+  frameServerView "frame-server-view.pool-exhausted" 3 0 2 0 1 0,
+  frameServerView "frame-server-view.refuse-budget" 2 0 2 1 1 1,
+  frameServerView "frame-server-view.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
+
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
 2^64 − 1, which cover its equivalence classes (the accepting word, the
@@ -918,9 +938,9 @@ def vectors : List Vector := [
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
     consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
-    frameServerVectors
+    frameServerVectors ++ frameServerViewVectors
 
-theorem corpus_shape : vectors.length = 528 := by decide
+theorem corpus_shape : vectors.length = 536 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -964,7 +984,12 @@ theorem hosted_fault_handler_vectors_exact :
 
 /-- Oracle indices 512--527 are the frame-server decision-check corpus (#486). -/
 theorem hosted_frame_server_vectors_exact :
-    vectors.drop 512 = frameServerVectors := by
+    (vectors.drop 512).take frameServerVectors.length = frameServerVectors := by
+  rfl
+
+/-- Oracle indices 528--535 are the frame-server view corpus (#486). -/
+theorem hosted_frame_server_view_vectors_exact :
+    vectors.drop 528 = frameServerViewVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -994,7 +1019,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors ++ frameServerVectors := by
+        faultHandlerVectors ++ frameServerVectors ++ frameServerViewVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

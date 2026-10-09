@@ -5843,16 +5843,13 @@ static uint64_t frame_server_usage(uint64_t holder) {
     return usage;
 }
 
-/* FrameServer.frameView, or the free-frame bit of a pool-exhausted refusal. */
+/* The named frame's view (FrameServer.decisionView) comes from the generated
+   witness `leanos_frame_server_view` over the kernel's raw words: the pool
+   size, the frame's holder (0 free), the client and the free-frame count. */
 static uint64_t frame_server_view(uint64_t op, uint64_t client, uint64_t index) {
-    if (op == FRAME_SERVER_OP_GRANT || op == FRAME_SERVER_OP_RECLAIM) {
-        if (index >= FRAME_SERVER_POOL_FRAMES) return 0;
-        if (frame_server_holder[index] == 0) return 1;
-        return frame_server_holder[index] == client ? 2 : 3;
-    }
-    if (op == FRAME_SERVER_OP_REFUSE_POOL)
-        return frame_server_usage(0) != 0 ? 1 : 0;
-    return 0;
+    uint64_t holder = index < FRAME_SERVER_POOL_FRAMES ? frame_server_holder[index] : 0;
+    return leanos_frame_server_view(op, index, FRAME_SERVER_POOL_FRAMES, holder, client,
+                                    frame_server_usage(0));
 }
 
 /* Before any subject runs: install the budget capabilities, leave the
@@ -5883,7 +5880,9 @@ static void frame_server_install(void) {
         leanos_frame_server_check(1, 1, 1, 1, 3, 3) != 0xf05 ||
         leanos_frame_server_check(2, 0, 0, 1, 0, 3) != 0xf07 ||
         leanos_frame_server_check(4, 3, 0, 1, 0, 3) != 0xf06 ||
-        leanos_frame_server_check(0, 1, 0, 1, 3, 3) != 0xf08)
+        leanos_frame_server_check(0, 1, 0, 1, 3, 3) != 0xf08 ||
+        leanos_frame_server_view(1, FRAME_SERVER_POOL_FRAMES, FRAME_SERVER_POOL_FRAMES, 0, 1, 2) != 0 ||
+        leanos_frame_server_view(1, 1, FRAME_SERVER_POOL_FRAMES, 2, 1, 1) != 3)
         fail("frame-server-model-hostile");
     serial_puts(LEANOS_SERIAL_10_CAP " event=install server=3 pool-frames=2 pool-rights=read,write budget-a=1 budget-b=2 residue=255 leaves=supervisor hostile-decisions=8 witness=refused result=PASS\n");
 }
