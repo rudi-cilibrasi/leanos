@@ -5017,10 +5017,11 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 #ifdef LEANOS_CONSOLE_SERVER_SCENARIO
     (void)saved_flags;
     return console_server_syscall(number, arg0, arg1, arg2);
-#elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+#ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     (void)saved_flags;
     return example_subject_syscall(number, arg0, arg1, arg2);
-#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+#endif
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
 #endif
