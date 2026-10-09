@@ -106,7 +106,7 @@ The answer is the encoded reply:
 
 `frameServerCheck_agrees` proves that, for every system and every decision of
 the server, the witness over those words equals the model's encoded reply.
-The model oracle replays it as adapter `FrameServer.check` (id 26) over 16
+The model oracle replays it as adapter `FrameServer.check` (id 28) over 16
 vectors, `hosted_frame_server_vectors_exact`.
 
 The view itself also comes from generated code:
@@ -118,7 +118,7 @@ frame's holder (0 when free) and the number of free frames.
   `frameView` for a pool of the frames `0 .. n - 1`.
 - `frameServerView_pool` proves the same for the pool-exhausted bit.
 
-The oracle replays it as adapter `FrameServer.view` (id 27) over 8 vectors,
+The oracle replays it as adapter `FrameServer.view` (id 29) over 8 vectors,
 `hosted_frame_server_view_vectors_exact`.
 
 ## The frame-server image

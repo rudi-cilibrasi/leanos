@@ -40,7 +40,7 @@ ABI.
 | 8 | canonical (blocking-ipc, preemption) | 1 | send on endpoint 10 (RBX, RCX = payload) |
 | 8 | ipc-stream, device-service | 1 | send one event on endpoint 10 |
 | 9 | canonical (blocking-ipc, preemption) | 2 | report the delivered payload |
-| 9 | ipc-stream, device-service | 2 | echo the delivered event |
+| 9 | ipc-stream, device-service | 2 | report the delivered event; the kernel checks it equals what A sent (ipc-stream also echoes it, device-service does not) |
 | 7 | three-subject | 3 | C blocks on endpoint 12 |
 | 8 | three-subject | 1 | A sends one word on endpoint 12 (RBX, RCX = payload) |
 | 9 | three-subject | 3 | C reports the delivered word (final record) |
@@ -53,6 +53,14 @@ ABI.
 | 63 | fault-handler | 2 | B continues from its saved context after A's fault was handled; reports its canaries (final record) |
 | 64 | fault-handler | 3 | C reports the fault record it received (RBX class word, RCX faulting subject, RDX address) |
 | 65 | fault-handler | 3 | C answers the fault: RBX decision (1 = terminate), RCX faulting subject, RDX endpoint 14 |
+| 7 | timer-server | 3 | C (built from subjects/timer-server) blocks receiving on endpoint 12; woken with RAX count or expiry bits, RBX word, RCX sender (0 = kernel expiry) |
+| 8 | timer-server | 1, 2 | call the timer server on endpoint 12 (RBX count); A is resumed with the server's reply word; refused without the endpoint capability (0x302) |
+| 62 | timer-server | 2 | B reports its canaries and its two refusals (RDX, 16 bits each), then spins with interrupts enabled |
+| 90 | timer-server | 1, 2, 3 | arm the one-shot PIT for RBX counts through the timer capability (1 accepted; 0x102 no timer capability; 0x202 outside 1..65535) |
+| 91 | timer-server | 3 | C replies RBX to the calling client and blocks receiving on endpoint 12 (RDX) |
+| 92 | timer-server | 3 | C signals client RBX's wake notification (RDX 13) with bits RCX |
+| 93 | timer-server | 1 | A waits on its wake notification 13 (RDX); resumed with its wake bits |
+| 94 | timer-server | 1 | A reports the server's three replies (RBX, 16 bits each) and its wake bits (RCX) (final record) |
 | 7 | frame-server | 3 | C (built from subjects/frame-server) blocks on endpoint 12 for its first request; woken with the request (RAX) and the kernel-attested client (RBX) |
 | 62 | frame-server | 2 | B's first run from its initial context, as in three-subject |
 | 90 | frame-server | 1, 2 | request to the frame server on endpoint 12 (RDX): RBX 1 asks for a frame (answer: its page address, or the typed rejection 0x100), RBX 2 releases the client's budget (A only; A never runs again) |

@@ -17,6 +17,7 @@ the image at build time, like every other byte of it.
 | `subjects/template/` | The template: copy it to start a subject |
 | `subjects/example/` | The example subject booted by the `example-subject` image |
 | `subjects/fault-handler/` | The fault handler subject booted by the `fault-handler` image ([fault dispatch](fault-dispatch.md#fault-handler-subject)) |
+| `subjects/timer-server/` | The timer server booted by the `timer-server` image ([timer-server.md](timer-server.md), #487) |
 | `subjects/directory/` | The endpoint directory booted by the `endpoint-directory` image ([endpoint-directory.md](endpoint-directory.md), #485) |
 | `subjects/frame-server/` | The frame server booted by the `frame-server` image ([frame-server.md](frame-server.md), #486) |
 | `subjects/runtime/entry.S` | The entry stub linked first into every subject |

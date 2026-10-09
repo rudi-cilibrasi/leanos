@@ -319,10 +319,12 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 # LEANOS_THREE_SUBJECT_SCENARIO only), plus 2 in the console-server resume
 # path (save C, restore A; LEANOS_CONSOLE_SERVER_SCENARIO only), plus 4 in
 # the fault-handler paths (save A + install handler C on delivery, save C +
-# restore B's saved continuation; LEANOS_FAULT_HANDLER_SCENARIO only), plus 6
-# in the frame-server switches (save C + restore A, save B + restore C, save
+# restore B's saved continuation; LEANOS_FAULT_HANDLER_SCENARIO only), plus
+# 6 in the timer-server paths (save C + resume A, save A + resume B, and the
+# alarm's save B + wake C in isr32; LEANOS_TIMER_SERVER_SCENARIO only), plus
+# 6 in the frame-server switches (save C + restore A, save B + restore C, save
 # C + restore B; LEANOS_FRAME_SERVER_SCENARIO only).
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 31 ]] || {
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 37 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S

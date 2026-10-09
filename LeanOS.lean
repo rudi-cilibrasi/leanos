@@ -50,6 +50,7 @@ import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
 import LeanOS.FaultHandler
+import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.KernelTransition
 import LeanOS.KeyboardEcho

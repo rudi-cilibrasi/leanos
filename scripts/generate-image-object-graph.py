@@ -42,6 +42,8 @@ GENERATED_MODULES = (
     "ConsoleServer",
     "EndpointDirectory",
     "FaultHandler",
+    "KeyboardEcho",
+    "TimerServer",
     "FrameServer",
 )
 
@@ -65,6 +67,8 @@ FAULT_DISPATCH_PARTS = (
     "ConsoleServer",
     "EndpointDirectory",
     "FaultHandler",
+    "KeyboardEcho",
+    "TimerServer",
     "FrameServer",
 )
 

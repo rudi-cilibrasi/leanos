@@ -20,6 +20,8 @@ import LeanOS.UserCopyPolicy
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
+import LeanOS.KeyboardEcho
+import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
@@ -84,8 +86,10 @@ def adapters : List AdapterSpec := [
   adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
   adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
-  adapter "FrameServer.check" 26 "leanos_frame_server_check" 6,
-  adapter "FrameServer.view" 27 "leanos_frame_server_view" 6]
+  adapter "KeyboardEcho.deviceAuthorize" 26 "leanos_device_authorize" 2,
+  adapter "TimerServer.decide" 27 "leanos_timer_server_decide" 3,
+  adapter "FrameServer.check" 28 "leanos_frame_server_check" 6,
+  adapter "FrameServer.view" 29 "leanos_frame_server_view" 6]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -154,6 +158,13 @@ private def faultHandlerRoute (id : String) (event vector subject word : UInt64)
   { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
     expected := FaultHandler.faultHandlerRoute event vector subject word }
 
+private def deviceAuthorize (id : String) (subject device : UInt64) : Vector :=
+  { id, adapter := "KeyboardEcho.deviceAuthorize", words := [subject, device],
+    expected := KeyboardEcho.deviceAuthorize subject device }
+
+private def timerServerDecide (id : String) (event subject word : UInt64) : Vector :=
+  { id, adapter := "TimerServer.decide", words := [event, subject, word],
+    expected := TimerServer.timerServerDecide event subject word }
 private def frameServerCheck (id : String) (op view usage limit requested held : UInt64) :
     Vector :=
   { id, adapter := "FrameServer.check", words := [op, view, usage, limit, requested, held],
@@ -544,6 +555,37 @@ def faultHandlerVectors : List Vector := [
   faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
   faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
 
+/-- Keyboard-echo device authority (#493): every subject code 0--4 against the
+assigned device 0 and another device 1, then the holder against the maximum
+device word and the maximum words. -/
+def deviceAuthorizeVectors : List Vector :=
+  ((List.range 5).flatMap fun subject => (List.range 2).map fun device =>
+    deviceAuthorize s!"device-authorize.subject-{subject}-device-{device}"
+      subject.toUInt64 device.toUInt64) ++
+  [deviceAuthorize "device-authorize.holder-maximum-device" 1 0xffffffffffffffff,
+   deviceAuthorize "device-authorize.maximum-words" 0xffffffffffffffff 0xffffffffffffffff]
+
+/-- Timer-server kernel decisions (#487): C's arm at and around the bound,
+arms from A and B, sends to the server from each subject, the expiry with and
+without an armed alarm, C's wake of A and refused wakes, and an unknown
+event. -/
+def timerServerVectors : List Vector := [
+  timerServerDecide "timer-server.arm-holder-max" 0 3 65535,
+  timerServerDecide "timer-server.arm-holder-min" 0 3 1,
+  timerServerDecide "timer-server.arm-holder-zero" 0 3 0,
+  timerServerDecide "timer-server.arm-holder-over" 0 3 65536,
+  timerServerDecide "timer-server.arm-holder-maximum-word" 0 3 0xffffffffffffffff,
+  timerServerDecide "timer-server.arm-client" 0 1 1000,
+  timerServerDecide "timer-server.arm-other" 0 2 1000,
+  timerServerDecide "timer-server.send-client" 1 1 0,
+  timerServerDecide "timer-server.send-other" 1 2 0,
+  timerServerDecide "timer-server.send-server" 1 3 0,
+  timerServerDecide "timer-server.expire-armed" 2 0 1,
+  timerServerDecide "timer-server.expire-idle" 2 0 0,
+  timerServerDecide "timer-server.wake-holder" 3 3 1,
+  timerServerDecide "timer-server.wake-other-signaller" 3 2 1,
+  timerServerDecide "timer-server.wake-other-client" 3 3 2,
+  timerServerDecide "timer-server.unknown-event" 4 3 1]
 /-- Frame-server decision checks (#486): the image's four decisions (grant
 to A, A's over-budget refusal, A's revocation, the republished grant to B),
 then every rejection of a hostile decision (outside the pool, frame in use,
@@ -938,9 +980,10 @@ def vectors : List Vector := [
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
     consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
-    frameServerVectors ++ frameServerViewVectors
+    deviceAuthorizeVectors ++ timerServerVectors ++ frameServerVectors ++
+    frameServerViewVectors
 
-theorem corpus_shape : vectors.length = 536 := by decide
+theorem corpus_shape : vectors.length = 564 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -982,14 +1025,25 @@ theorem hosted_fault_handler_vectors_exact :
     (vectors.drop 501).take faultHandlerVectors.length = faultHandlerVectors := by
   rfl
 
-/-- Oracle indices 512--527 are the frame-server decision-check corpus (#486). -/
-theorem hosted_frame_server_vectors_exact :
-    (vectors.drop 512).take frameServerVectors.length = frameServerVectors := by
+/-- Oracle indices 512--523 are the keyboard-echo device-authority corpus
+(#493). -/
+theorem hosted_device_authorize_vectors_exact :
+    (vectors.drop 512).take deviceAuthorizeVectors.length = deviceAuthorizeVectors := by
   rfl
 
-/-- Oracle indices 528--535 are the frame-server view corpus (#486). -/
+/-- Oracle indices 524--539 are the timer-server decision corpus (#487). -/
+theorem hosted_timer_server_vectors_exact :
+    (vectors.drop 524).take timerServerVectors.length = timerServerVectors := by
+  rfl
+
+/-- Oracle indices 540--555 are the frame-server decision-check corpus (#486). -/
+theorem hosted_frame_server_vectors_exact :
+    (vectors.drop 540).take frameServerVectors.length = frameServerVectors := by
+  rfl
+
+/-- Oracle indices 556--563 are the frame-server view corpus (#486). -/
 theorem hosted_frame_server_view_vectors_exact :
-    vectors.drop 528 = frameServerViewVectors := by
+    vectors.drop 556 = frameServerViewVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -1019,7 +1073,8 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors ++ frameServerVectors ++ frameServerViewVectors := by
+        faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
+          frameServerVectors ++ frameServerViewVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

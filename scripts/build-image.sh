@@ -599,7 +599,7 @@ lean_c_modules=(
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
-  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler FrameServer
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer
 )
 lean_c_signature="$build/generated-lean-c.sha256"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
@@ -1232,7 +1232,7 @@ fi
 # Scenario images that reach CPL3 with their own syscall dispatch are gated
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
-    example-subject fault-handler frame-server three-subject console-server endpoint-directory; do
+    example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \

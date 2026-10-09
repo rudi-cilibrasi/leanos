@@ -4283,12 +4283,14 @@ static uint64_t ipc_stream_next_event(void) {
 #endif
 }
 
+#ifndef LEANOS_DEVICE_SERVICE_SCENARIO
 static void ipc_stream_key_name(uint64_t key) {
     if (key == '\n') serial_puts("enter");
     else if (key == ' ') serial_puts("space");
     else if (key > 0x20 && key < 0x7f) serial_putc((char)key);
     else serial_u64(key);
 }
+#endif
 
 /* The word subject A finds in RAX when boot.S resumes it after B blocks
    (path 10): 0 for the ipc-stream send, the reply word in the
@@ -4422,8 +4424,16 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
             fail("ipc-stream-payload");
         ipc_stream_step = 0;
         ipc_stream_events++;
+#ifdef LEANOS_DEVICE_SERVICE_SCENARIO
+        /* Issue #493: B holds no output authority, so the kernel records only
+           the checked delivery and prints no echo on B's behalf.  The key's
+           value is in the send record above; its echo through the console
+           capability is the keyboard-echo image. */
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 sender=1 exact=1\n");
+#else
         serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 sender=1 exact=1 echo=");
         ipc_stream_key_name(arg0); serial_putc('\n');
+#endif
         return 0;
     }
     if (number == 61 && current_subject == 1 && ipc_stream_step == 1) {
@@ -4797,36 +4807,89 @@ static void console_server_install(void) {
    prints no echo of its own.
 
    The device capability table is kernel-owned read-only data, like the
-   console table.  Before C first runs the kernel checks it against the
-   generated console witness `leanos_console_authorize`: the one device
-   holder is refused every console operation, and no subject the witness
-   lets write the console holds a device capability.  A device request
-   without the capability is refused without effect, as
-   `DeviceCapability.no_capability_no_effect` says the model does. */
+   console table.  It is backed by the generated Lean witness
+   `leanos_device_authorize` (KeyboardEcho.deviceAuthorize, equal to the
+   installed `bootDeviceCaps` by `deviceAuthorize_agrees`; `bootDeviceCaps`
+   is what one DeviceCapability.grant of the device to A installs).  Before C
+   first runs the kernel checks that the table grants, for every subject and
+   for the assigned device and another device index, exactly what that
+   witness accepts, and against the console witness `leanos_console_authorize`
+   that the one device holder is refused every console operation and no
+   subject the console witness lets write or read the console holds a device
+   capability.  Every device request is then decided from the table and
+   checked against the device witness; a disagreement is a fail-stop.  A
+   request without the capability is refused without effect, as
+   `DeviceCapability.no_capability_no_effect` says the model does.
+
+   The key exchange is also checked against the generated blocking-IPC
+   witness `leanos_blocking_ipc_event`, as the device-service image checks
+   its own.  The model's receiver role (subject 2 there) is played by C and
+   its sender by A.  Its four edges are: C blocks on endpoint 12 (0); A's
+   accepted send (1) and the dispatch of C it causes (2), checked together at
+   the send; and C's receipt of A's words (3), checked at C's first kernel
+   entry after it is woken, by which time console_server_switch has found
+   the words in C's registers exact. */
 #define KEYBOARD_ECHO_NO_DEVICE 7u
 #define KEYBOARD_ECHO_DEVICE_HOLDER 1u
+/* The model's device index of the assigned q35 xHCI at 0:2.0, and one other
+   index, which nobody holds. */
+#define KEYBOARD_ECHO_DEVICE 0u
+#define KEYBOARD_ECHO_OTHER_DEVICE 1u
+/* KeyboardEcho.deviceAuthorize answers ConsoleServer.acceptCode/refuseCode. */
+#define DEVICE_WITNESS_ACCEPT 1u
+#define DEVICE_WITNESS_REFUSE 2u
+/* BlockingIPC.blockingIpcEvent's roles and its four accepted edge words
+   (blockingIpcEvent_agrees_demo). */
+#define KEYBOARD_ECHO_MODEL_SENDER 1u
+#define KEYBOARD_ECHO_MODEL_RECEIVER 2u
+static const uint64_t keyboard_echo_ipc_words[4] = {
+    0x0000000100010101ull, 0x0000000100010202ull,
+    0x0000000200020303ull, 0x0001000200020404ull,
+};
 /* Indexed by subject: 1 when the subject holds the capability for the one
    assigned device, the q35 xHCI at 0:2.0. */
 static const uint8_t keyboard_echo_device_capabilities[4] = {
     [KEYBOARD_ECHO_DEVICE_HOLDER] = 1,
 };
 static uint64_t keyboard_echo_keys, keyboard_echo_device_refusals;
+static uint64_t keyboard_echo_ipc_step, keyboard_echo_ipc_edges;
+
+static uint64_t keyboard_echo_device_expected(uint64_t subject, uint64_t device) {
+    return keyboard_echo_device_capabilities[subject] && device == KEYBOARD_ECHO_DEVICE
+        ? DEVICE_WITNESS_ACCEPT : DEVICE_WITNESS_REFUSE;
+}
 
 static void keyboard_echo_install(void) {
     uint64_t holders = 0, holder = 0;
+    if (keyboard_echo_device_capabilities[0] != 0 ||
+        leanos_device_authorize(0, KEYBOARD_ECHO_DEVICE) != 0)
+        fail("keyboard-echo-device-subject-domain");
     for (uint64_t subject = 1; subject <= 3; ++subject) {
         uint64_t writes = leanos_console_authorize(subject, CONSOLE_OP_WRITE);
         uint64_t reads = leanos_console_authorize(subject, CONSOLE_OP_READ);
+        if (leanos_device_authorize(subject, KEYBOARD_ECHO_DEVICE) !=
+                keyboard_echo_device_expected(subject, KEYBOARD_ECHO_DEVICE) ||
+            leanos_device_authorize(subject, KEYBOARD_ECHO_OTHER_DEVICE) !=
+                keyboard_echo_device_expected(subject, KEYBOARD_ECHO_OTHER_DEVICE))
+            fail("keyboard-echo-device-model-authority");
         if (!keyboard_echo_device_capabilities[subject]) continue;
         holders++;
         holder = subject;
         if (writes != CONSOLE_WITNESS_REFUSE || reads != CONSOLE_WITNESS_REFUSE)
             fail("keyboard-echo-device-console-overlap");
     }
-    if (keyboard_echo_device_capabilities[0] != 0 || holders != 1 ||
-        holder != KEYBOARD_ECHO_DEVICE_HOLDER)
+    if (holders != 1 || holder != KEYBOARD_ECHO_DEVICE_HOLDER)
         fail("keyboard-echo-device-install");
     serial_puts(LEANOS_SERIAL_10_CAP " event=install-device device=0:2.0 device-holders=1 holder=1 holder-console=refused console-holder-device=none model=agree result=PASS\n");
+}
+
+/* One edge of the model's key exchange, taken by `caller` in its role. */
+static void keyboard_echo_ipc_edge(uint64_t caller) {
+    if (leanos_blocking_ipc_event(keyboard_echo_ipc_step, keyboard_echo_ipc_step + 1,
+                                  caller) != keyboard_echo_ipc_words[keyboard_echo_ipc_step])
+        fail("keyboard-echo-ipc-model");
+    keyboard_echo_ipc_step = (keyboard_echo_ipc_step + 1) & 3u;
+    keyboard_echo_ipc_edges++;
 }
 
 static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
@@ -4834,13 +4897,18 @@ static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
 
 static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
                                       uint64_t arg1, uint64_t arg2) {
+    if (current_subject == 3 && keyboard_echo_ipc_step == 3)
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_RECEIVER);
     if (number == 60) {
         console_server_require_caller();
+        if (leanos_device_authorize(current_subject, KEYBOARD_ECHO_DEVICE) !=
+            keyboard_echo_device_expected(current_subject, KEYBOARD_ECHO_DEVICE))
+            fail("keyboard-echo-device-model-decision");
         if (!keyboard_echo_device_capabilities[current_subject]) {
             keyboard_echo_device_refusals++;
             serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
             serial_u64(current_subject);
-            serial_puts(" op=device-invoke device=0:2.0 reason=no-device-capability\n");
+            serial_puts(" op=device-invoke device=0:2.0 reason=no-device-capability model=refused\n");
             return CONSOLE_RESULT_REFUSED | (KEYBOARD_ECHO_NO_DEVICE << 8);
         }
         /* Only A holds the device; the server must be waiting for its key. */
@@ -4857,7 +4925,9 @@ static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
             console_bytes != keyboard_echo_keys || console_lines == 0 ||
             console_refusals != 4 || keyboard_echo_device_refusals != 1 ||
             console_blocks != keyboard_echo_keys + 1 ||
-            console_line_length != 0 || !console_server_waiting)
+            console_line_length != 0 || !console_server_waiting ||
+            keyboard_echo_ipc_step != 1 ||
+            keyboard_echo_ipc_edges != 4 * keyboard_echo_keys + 1)
             fail("keyboard-echo-count");
         serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 console-holder=3 device-holder=1 keys=");
         serial_u64(keyboard_echo_keys);
@@ -4866,12 +4936,22 @@ static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" console-bytes="); serial_u64(console_bytes);
         serial_puts(" refusals=");
         serial_u64(console_refusals + keyboard_echo_device_refusals);
+        serial_puts(" ipc-edges="); serial_u64(keyboard_echo_ipc_edges);
         serial_putc('\n');
         finish(0x10);
     }
+    uint64_t caller = current_subject;
     /* A real call for the same reason as in syscall_handler. */
     uint64_t result = console_server_syscall(number, arg0, arg1, arg2);
     __asm__ volatile ("" ::: "memory");
+    if (number == 7 && caller == 3 &&
+        (result == THREE_SUBJECT_C_BLOCKED || result == CONSOLE_SERVER_C_RESUME_A)) {
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_RECEIVER);
+    } else if (number == 8 && caller == KEYBOARD_ECHO_DEVICE_HOLDER &&
+               result == THREE_SUBJECT_A_SENT) {
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_SENDER);
+        keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_SENDER);
+    }
     return result;
 }
 #endif
@@ -5739,6 +5819,346 @@ static void fault_handler_switch(uint64_t *target, uint64_t target_owner,
 }
 #endif
 
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+/* Timer server (#487, LeanOS.TimerServer; docs/timer-server.md).  This image
+   is the three-subject image with subject C built from subjects/timer-server
+   by the subject template.  The kernel keeps the PIT and its interrupt; the
+   alarm policy is C's.
+
+   The capability table is kernel-owned read-only data, checked at boot
+   against the generated witness `leanos_timer_server_decide`
+   (TimerServer.timerServerDecide, tied to the model by
+   timerServerDecide_agrees): C alone holds the timer capability (syscall 90
+   arms the one-shot PIT with a count in 1..65535) and the send right to A's
+   wake notification 13; A alone holds the send-only endpoint capability to
+   the server's endpoint 12.  B holds nothing.
+
+   Script: C blocks receiving on 12; B's arm and send are refused and it
+   reports (62), then spins with interrupts enabled; A, dispatched fresh,
+   calls the server three times (8): a count outside the bound (C refuses),
+   65535 (C accepts and arms the PIT through its capability), and a second
+   alarm (C refuses: quota one).  Each reply resumes A (91).  A waits on its
+   wake notification (93) and B's saved continuation runs.  The PIT
+   interrupt arrives while B spins: the kernel masks the line, acknowledges
+   it, asks the witness, clears the alarm and wakes C's receive with the
+   expiry bits (RCX 0: from the kernel).  C wakes A (92) and blocks; A
+   resumes with its wake bits and reports (94). */
+extern char user_c_template_text[];
+#define TIMER_SERVER_ENDPOINT 12u
+#define TIMER_SERVER_WAKE 13u
+#define TIMER_SERVER_STACK_BYTES 2048u
+#define TIMER_SERVER_C_RESUMES_A 0x3c04u
+#define TIMER_SERVER_A_WAITS 0x3c05u
+#define TIMER_SERVER_EXPIRY_TO_C 4u
+/* TimerServer.timerServerDecide events and answers (kernelCode). */
+#define TIMER_EVENT_ARM 0u
+#define TIMER_EVENT_SEND 1u
+#define TIMER_EVENT_EXPIRE 2u
+#define TIMER_EVENT_WAKE 3u
+#define TIMER_ACCEPT 1u
+#define TIMER_REFUSE_NO_TIMER 0x102u
+#define TIMER_REFUSE_BOUND 0x202u
+#define TIMER_REFUSE_NO_ENDPOINT 0x302u
+#define TIMER_REFUSE_NOT_HOLDER 0x502u
+#define TIMER_DELIVER_TO_C 0x304u
+#define TIMER_MAX_COUNT 65535u
+/* The server's reply words (subjects/timer-server/main.c): accepted 1,
+   refused out of bound 0x202, refused over quota 0x402. */
+#define TIMER_REPLY_REFUSED_QUOTA 0x402u
+#define TIMER_EXPIRY_BITS 1u
+#define TIMER_WAKE_BITS 1u
+
+struct timer_server_capability {
+    uint8_t timer;        /* arm the one-shot PIT */
+    uint8_t server_send;  /* send-only endpoint 12 */
+    uint8_t wake_send;    /* signal A's wake notification 13 */
+};
+
+/* Indexed by subject (1 A, 2 B, 3 C). */
+static const struct timer_server_capability timer_server_capabilities[4] = {
+    [1] = { .server_send = 1 },
+    [3] = { .timer = 1, .wake_send = 1 },
+};
+
+/* 0 C runs, 1 B runs, 2 A runs, 3 C serves a request, 4 A waits and B
+   spins, 5 C holds the expiry, 6 A resumed with its wake bits. */
+static unsigned timer_server_step;
+static uint64_t timer_server_request, timer_server_a_result;
+static uint64_t timer_server_alarm, timer_server_armed_count;
+static uint64_t timer_server_requests, timer_server_replies[3];
+static uint64_t timer_server_refusals, timer_server_wake_pending;
+
+static void timer_server_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("timer-server-subject");
+}
+
+static void check_timer_server_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != TIMER_SERVER_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("timer-server-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/timer-server entry=text-start stack=2048 result=PASS\n");
+}
+
+/* Before any subject runs: the table names exactly one timer holder (C) and
+   one sender to the server (A), and for every subject it grants exactly
+   what the witness accepts. */
+static void timer_server_install(void) {
+    uint64_t holders = 0, holder = 0, senders = 0, sender = 0;
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        const struct timer_server_capability *cap = &timer_server_capabilities[subject];
+        if (cap->timer) { holders++; holder = subject; }
+        if (cap->server_send) { senders++; sender = subject; }
+        if (leanos_timer_server_decide(TIMER_EVENT_ARM, subject, 1000) !=
+                (cap->timer ? TIMER_ACCEPT : TIMER_REFUSE_NO_TIMER) ||
+            leanos_timer_server_decide(TIMER_EVENT_SEND, subject, 0) !=
+                (cap->server_send ? TIMER_ACCEPT : TIMER_REFUSE_NO_ENDPOINT) ||
+            leanos_timer_server_decide(TIMER_EVENT_WAKE, subject, 1) !=
+                (cap->wake_send ? TIMER_ACCEPT : TIMER_REFUSE_NOT_HOLDER))
+            fail("timer-server-model-authority");
+    }
+    /* The bound: 0 and 65536 are refused even to the holder. */
+    if (holders != 1 || holder != 3 || senders != 1 || sender != 1 ||
+        leanos_timer_server_decide(TIMER_EVENT_ARM, 3, 0) != TIMER_REFUSE_BOUND ||
+        leanos_timer_server_decide(TIMER_EVENT_ARM, 3, TIMER_MAX_COUNT + 1u) !=
+            TIMER_REFUSE_BOUND)
+        fail("timer-server-capability-install");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install timer-holders=1 holder=3 server-senders=1 sender=1 wake-signallers=1 bound=1..65535 model=agree result=PASS\n");
+}
+
+static uint64_t timer_server_refuse(const char *operation, uint64_t word) {
+    timer_server_refusals++;
+    serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+    serial_u64(current_subject);
+    serial_puts(" op="); serial_puts(operation);
+    serial_puts(word == TIMER_REFUSE_NO_TIMER ? " reason=no-timer-capability"
+                : word == TIMER_REFUSE_BOUND ? " reason=out-of-bound"
+                : " reason=no-endpoint");
+    serial_puts(" model=refused\n");
+    return word;
+}
+
+/* The kernel's half of the PIT: channel 0 in mode 0 (interrupt on terminal
+   count) with the accepted count, then the legacy PIC remapped so IRQ0
+   arrives on vector 32 with every other line masked.  The PIT is programmed
+   first: mode 0 holds OUT low until terminal count, and the PIC
+   initialization that follows clears any edge latched before it, so the
+   only IRQ0 is this alarm's.  The PIC/PIT bridge is trusted (ADR 0005). */
+static void timer_server_program_pit(uint64_t count) {
+    out8(0x43, 0x30);
+    out8(0x40, (uint8_t)(count & 0xffu));
+    out8(0x40, (uint8_t)(count >> 8));
+    out8(0x20, 0x11); out8(0xa0, 0x11);
+    out8(0x21, 0x20); out8(0xa1, 0x28);
+    out8(0x21, 0x04); out8(0xa1, 0x02);
+    out8(0x21, 0x01); out8(0xa1, 0x01);
+    out8(0x21, 0xfe); out8(0xa1, 0xff);
+}
+
+static uint64_t timer_server_arm(uint64_t count) {
+    uint64_t word = leanos_timer_server_decide(TIMER_EVENT_ARM, current_subject, count);
+    if (!timer_server_capabilities[current_subject].timer) {
+        if (word != TIMER_REFUSE_NO_TIMER) fail("timer-server-model-arm");
+        return timer_server_refuse("timer-arm", word);
+    }
+    if (count == 0 || count > TIMER_MAX_COUNT) {
+        if (word != TIMER_REFUSE_BOUND) fail("timer-server-model-bound");
+        return timer_server_refuse("timer-arm", word);
+    }
+    if (word != TIMER_ACCEPT) fail("timer-server-model-arm");
+    /* One alarm at a time, armed while C serves a request. */
+    if (current_subject != 3 || timer_server_step != 3 || timer_server_alarm)
+        fail("timer-server-arm-sequence");
+    timer_server_alarm = 1;
+    timer_server_armed_count = count;
+    timer_server_program_pit(count);
+    serial_puts(LEANOS_SERIAL_10_CAP " event=arm subject=3 capability=timer count=");
+    serial_u64(count);
+    serial_puts(" source=pit mode=one-shot vector=32 accepted=1\n");
+    return TIMER_ACCEPT;
+}
+
+static uint64_t timer_server_send(uint64_t arg0, uint64_t arg1, uint64_t arg2) {
+    uint64_t word = leanos_timer_server_decide(TIMER_EVENT_SEND, current_subject, 0);
+    if (!timer_server_capabilities[current_subject].server_send) {
+        if (word != TIMER_REFUSE_NO_ENDPOINT) fail("timer-server-model-send");
+        return timer_server_refuse("send", word);
+    }
+    if (word != TIMER_ACCEPT) fail("timer-server-model-send");
+    /* Only A holds the endpoint; the server must be waiting on it. */
+    if (arg2 != TIMER_SERVER_ENDPOINT || current_subject != 1 ||
+        timer_server_step != 2 || timer_server_requests >= 3)
+        fail("timer-server-send-sequence");
+    timer_server_request = arg0;
+    timer_server_step = 3;
+    current_subject = 3;
+    serial_puts(LEANOS_SERIAL_10_IPC " event=call sender=1 endpoint=12 count=");
+    serial_u64(arg0);
+    serial_puts(" word1="); serial_u64(arg1);
+    serial_puts(" receiver=3 accepted=1\n");
+    return THREE_SUBJECT_A_SENT;
+}
+
+static uint64_t timer_server_syscall(uint64_t number, uint64_t arg0,
+                                     uint64_t arg1, uint64_t arg2) {
+    timer_server_require_caller();
+    if (number == 90) return timer_server_arm(arg0);
+    if (number == 8) return timer_server_send(arg0, arg1, arg2);
+    if ((number == 7 && current_subject == 3 && timer_server_step == 0) ||
+        (number == 62 && current_subject == 2 && timer_server_step == 1)) {
+        if (number == 62 &&
+            (timer_server_refusals != 2 ||
+             arg2 != (TIMER_REFUSE_NO_TIMER | (uint64_t)TIMER_REFUSE_NO_ENDPOINT << 16)))
+            fail("timer-server-b-observations");
+        timer_server_step++;
+        /* A real call: the three-subject steps (C blocks on 12, B reports). */
+        uint64_t result = three_subject_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" ::: "memory");
+        return result;
+    }
+    if (number == 91 && current_subject == 3 &&
+        timer_server_step == 3) {
+        if (arg2 != TIMER_SERVER_ENDPOINT) fail("timer-server-reply-endpoint");
+        timer_server_replies[timer_server_requests++] = arg0;
+        timer_server_a_result = arg0;
+        timer_server_step = 2;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=reply server=3 client=1 count=");
+        serial_u64(timer_server_request);
+        serial_puts(arg0 == TIMER_ACCEPT ? " decision=accepted"
+                    : arg0 == TIMER_REFUSE_BOUND ? " decision=refused-bound"
+                    : arg0 == TIMER_REPLY_REFUSED_QUOTA ? " decision=refused-quota"
+                    : " decision=other");
+        serial_puts(" policy=ring3\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
+        return TIMER_SERVER_C_RESUMES_A;
+    }
+    if (number == 93 && current_subject == 1 && timer_server_step == 2) {
+        if (arg2 != TIMER_SERVER_WAKE || timer_server_requests != 3 ||
+            !timer_server_alarm || timer_server_wake_pending)
+            fail("timer-server-wait");
+        timer_server_step = 4;
+        current_subject = 2;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wait subject=1 notification=13 pending=0 blocked=1\n");
+        return TIMER_SERVER_A_WAITS;
+    }
+    if (number == 92 && current_subject == 3) {
+        uint64_t word = leanos_timer_server_decide(TIMER_EVENT_WAKE, current_subject, arg0);
+        if (word != TIMER_ACCEPT || !timer_server_capabilities[current_subject].wake_send ||
+            timer_server_step != 5 || arg0 != 1 || arg1 != TIMER_WAKE_BITS ||
+            arg2 != TIMER_SERVER_WAKE)
+            fail("timer-server-wake");
+        timer_server_wake_pending = arg1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wake signaller=3 client=1 notification=13 bits=1 model=accepted\n");
+        return 0;
+    }
+    if (number == 7 && current_subject == 3 && timer_server_step == 5) {
+        if (arg2 != TIMER_SERVER_ENDPOINT || timer_server_wake_pending != TIMER_WAKE_BITS)
+            fail("timer-server-block");
+        timer_server_a_result = timer_server_wake_pending;
+        timer_server_wake_pending = 0;
+        timer_server_step = 6;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
+        return TIMER_SERVER_C_RESUMES_A;
+    }
+    if (number == 94 && current_subject == 1 && timer_server_step == 6) {
+        uint64_t replies = timer_server_replies[0] | timer_server_replies[1] << 16 |
+                           timer_server_replies[2] << 32;
+        if (arg0 != replies || timer_server_replies[0] != TIMER_REFUSE_BOUND ||
+            timer_server_replies[1] != TIMER_ACCEPT ||
+            timer_server_replies[2] != TIMER_REPLY_REFUSED_QUOTA ||
+            arg1 != TIMER_WAKE_BITS || timer_server_alarm || timer_server_refusals != 2)
+            fail("timer-server-final");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=report subject=1 replies=refused-bound,accepted,refused-quota wake-bits=1 exact=1\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 timer-holder=3 alarms=1 expiries=1 wakes=1 kernel-refusals=2 server-refusals=2\n");
+        finish(0x10);
+    }
+    fail("timer-server-sequence");
+}
+
+/* The PIT interrupt, reached from timer_handler after it masked IRQ0 and
+   acknowledged it.  The only accepted expiry is the armed alarm's, taken
+   while B spins with A and C blocked; it is delivered to the holder alone. */
+static uint64_t timer_server_expiry(uint64_t saved_cs) {
+    if ((saved_cs & 3u) != 3u) fail("timer-origin");
+    uint64_t word = leanos_timer_server_decide(TIMER_EVENT_EXPIRE, current_subject,
+                                               timer_server_alarm);
+    if (word != TIMER_DELIVER_TO_C || current_subject != 2 || timer_server_step != 4)
+        fail("timer-server-expiry-context");
+    timer_server_alarm = 0;
+    timer_server_step = 5;
+    current_subject = 3;
+    serial_puts(LEANOS_SERIAL_10_IPC " event=expire vector=32 source=pit mode=one-shot count=");
+    serial_u64(timer_server_armed_count);
+    serial_puts(" origin=cpl3 interrupted=2 line=masked eoi=1 holder=3 notification=bound bits=1 model=delivered\n");
+    return TIMER_SERVER_EXPIRY_TO_C;
+}
+
+static void timer_server_switch(uint64_t *target, uint64_t target_owner,
+                                uint64_t saved_owner) {
+    /* SAVE layout: RAX at word 14, RBX 13, RCX 12. */
+    if (current_subject == 3 && timer_server_step == 3) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 1) fail("timer-server-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        if (target[14] != timer_server_request || target[13] != 0 || target[12] != 1)
+            fail("timer-server-request-words");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 message=request sender=1 words=exact\n");
+        return;
+    }
+    if (current_subject == 1 && timer_server_step == 2 && timer_server_requests == 0) {
+        /* A's first, fresh dispatch after B ran: the three-subject step. */
+        three_subject_switch(target, target_owner, saved_owner);
+        return;
+    }
+    if (current_subject == 1 && (timer_server_step == 2 || timer_server_step == 6)) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 3) fail("timer-server-switch-a-owner");
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        target[14] = timer_server_a_result;
+        serial_puts(timer_server_step == 2
+            ? LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1 result=reply\n"
+            : LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1 result=wake-bits\n");
+        return;
+    }
+    if (current_subject == 2 && timer_server_step == 4) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 1) fail("timer-server-switch-b-owner");
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        if ((target[17] & 0x200u) == 0) fail("timer-server-b-interrupts");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 context=saved interrupts=enabled blocked=1,3\n");
+        return;
+    }
+    if (current_subject == 3 && timer_server_step == 5) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 2) fail("timer-server-switch-expiry-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        target[14] = TIMER_EXPIRY_BITS;
+        target[13] = 0;
+        target[12] = 0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 message=expiry sender=kernel bits=1\n");
+        return;
+    }
+    if (current_subject == 2 && timer_server_step == 1) {
+        /* B's dispatch from its initial context: the three-subject step. */
+        three_subject_switch(target, target_owner, saved_owner);
+        return;
+    }
+    fail("timer-server-switch");
+}
+#endif
+
 #ifdef LEANOS_FRAME_SERVER_SCENARIO
 /* Frame server (#486, LeanOS.FrameServer; docs/frame-server.md).  This image
    is the three-subject image with subject C built from subjects/frame-server
@@ -6134,6 +6554,12 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     (void)saved_flags;
     return fault_handler_syscall(number, arg0, arg1, arg2);
+#elif defined(LEANOS_TIMER_SERVER_SCENARIO)
+    (void)saved_flags;
+    /* A real call for the same reason as the directory's. */
+    uint64_t timer_server_result = timer_server_syscall(number, arg0, arg1, arg2);
+    __asm__ volatile ("" : "+r"(timer_server_result));
+    return timer_server_result;
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
     (void)saved_flags;
     {
@@ -6858,6 +7284,13 @@ uint64_t timer_handler(uint64_t saved_cs) {
        protocol.  The PIC/PIT bridge is trusted and documented in ADR 0005. */
     out8(0x21, 0xff);
     out8(0x20, 0x20);
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+    /* The timer-server image has no preemption tick: the only IRQ0 is the
+       server's alarm (LeanOS.TimerServer). */
+    uint64_t timer_server_route = timer_server_expiry(saved_cs);
+    __asm__ volatile ("" : "+r"(timer_server_route));
+    return timer_server_route;
+#else
     uint64_t queued;
     if ((saved_cs & 3u) != 3u) fail("timer-origin");
     if (current_subject == 1 && preemption_step == 1 && timer_accepted == 0)
@@ -6880,6 +7313,7 @@ uint64_t timer_handler(uint64_t saved_cs) {
     current_subject = next_subject;
     preemption_step = next_subject == 2 ? 2 : 5;
     return next_subject;
+#endif
 }
 
 static uint64_t stack_marker(uint64_t stack_pointer) {
@@ -6938,6 +7372,9 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
     return;
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     fault_handler_switch(target, target_owner, saved_owner);
+    return;
+#elif defined(LEANOS_TIMER_SERVER_SCENARIO)
+    timer_server_switch(target, target_owner, saved_owner);
     return;
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
     frame_server_switch(target, target_owner, saved_owner);
@@ -7736,6 +8173,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=fault-handler controls=wp,smep,smap\n");
+#elif defined(LEANOS_TIMER_SERVER_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=timer-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=frame-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
@@ -7919,6 +8358,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=14\n");
+    enter_user(user_c_entry, user_c_stack_top);
+#elif defined(LEANOS_TIMER_SERVER_SCENARIO)
+    check_boot_page_table_c();
+    check_timer_server_slot();
+    timer_server_install();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=timer-server\n");
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
     check_boot_page_table_c();
