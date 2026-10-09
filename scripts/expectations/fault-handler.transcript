@@ -1,0 +1,27 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=fault-handler controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/IPC@ event=subject subject=3 source=subjects/fault-handler entry=text-start stack=2048 result=PASS
+@10/IPC@ event=binding class=divide-error vector=0 faulting=1 handler=3 endpoint=14 fixed=boot
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=14
+@10/IPC@ event=block subject=3 endpoint=14 empty=1 role=fault-handler result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial
+@10/IPC@ event=run subject=2 address-space=2 context=initial canaries=exact result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3
+@10/IPC@ event=fault vector=0 class=divide-error origin=cpl3 subject=1 address-space=1 saved-rip=faulting-instruction route=deliver handler=3
+@10/IPC@ event=suspend subject=1 runnable=0 current=0 queued=0 resumed=0
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=deliver handler=3 endpoint=14 words=4 class=divide-error faulting=1 address=divide-instruction error=0 other-words=0
+@10/IPC@ event=report handler=3 class-word=1 faulting=1 address=divide-instruction exact=1
+@10/IPC@ event=reply handler=3 decision=terminate route=terminate subject=1 live=0 runnable=0 resumable=0 result=PASS
+@10/IPC@ event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 context=saved retired-subject=1
+@10/IPC@ event=continue subject=2 address-space=2 context=saved canaries=exact result=PASS
+@10/FINAL@ status=PASS subjects=3 faults=1 delivered=1 handler=3 decision=terminate resumed-a=0 survivor=2 blocked-forever=3

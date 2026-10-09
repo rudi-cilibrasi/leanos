@@ -16,6 +16,7 @@ the image at build time, like every other byte of it.
 | --- | --- |
 | `subjects/template/` | The template: copy it to start a subject |
 | `subjects/example/` | The example subject booted by the `example-subject` image |
+| `subjects/fault-handler/` | The fault handler subject booted by the `fault-handler` image ([fault dispatch](fault-dispatch.md#fault-handler-subject)) |
 | `subjects/directory/` | The endpoint directory booted by the `endpoint-directory` image ([endpoint-directory.md](endpoint-directory.md), #485) |
 | `subjects/runtime/entry.S` | The entry stub linked first into every subject |
 | `subjects/include/leanos/subject.h` | The only kernel interface: `int $0x80` wrappers |

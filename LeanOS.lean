@@ -52,6 +52,7 @@ import LeanOS.FrameBudgetScenario
 import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
+import LeanOS.FaultHandler
 import LeanOS.KernelTransition
 import LeanOS.KeyboardEcho
 import LeanOS.Refinement.CSubset

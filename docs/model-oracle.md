@@ -16,7 +16,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`, and
 `ConsoleServer.consoleAuthorize` and
 `EndpointDirectory.directoryResolve`. Its stable
-501-vector order covers accepted calls,
+512-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns

@@ -23,6 +23,11 @@
 8	example-subject	3	C sends one word on endpoint 12
 9	example-subject	1	A reports the delivered word (final record)
 62	example-subject	2	B's single run from its initial context, as in three-subject
+7	fault-handler	3	C (built from subjects/fault-handler) blocks on fault endpoint 14 for its record, then forever on endpoint 13
+62	fault-handler	2	B's first run from its initial context, as in three-subject
+63	fault-handler	2	B continues from its saved context after A's fault was handled; reports its canaries (final record)
+64	fault-handler	3	C reports the fault record it received (RBX class word, RCX faulting subject, RDX address)
+65	fault-handler	3	C answers the fault: RBX decision (1 = terminate), RCX faulting subject, RDX endpoint 14
 10	canonical (blocking-ipc, preemption)	2	capability reuse: use the initial handle
 11	canonical (blocking-ipc, preemption)	2	capability reuse: replay the stale handle (rejected)
 12	canonical (blocking-ipc, preemption)	2	capability reuse: use the fresh handle

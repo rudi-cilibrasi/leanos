@@ -228,6 +228,11 @@
         "-DLEANOS_ENDPOINT_DIRECTORY_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-endpoint-directory.h\""
       ],
+      "kernel-fault-handler": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_FAULT_HANDLER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-handler.h\""
+      ],
       "kernel-three-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
@@ -530,6 +535,14 @@
           "-DLEANOS_SUBJECT_C_OBJECT=1"
         ]
       },
+      "boot-fault-handler": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_FAULT_HANDLER_SCENARIO=1",
+          "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
       "boot-three-subject": {
         "source": "boot/boot.S",
         "definitions": [
@@ -558,6 +571,10 @@
       },
       "subject-directory": {
         "source": "subjects/directory",
+        "slot": "c"
+      },
+      "subject-fault-handler": {
+        "source": "subjects/fault-handler",
         "slot": "c"
       }
     },
@@ -896,6 +913,16 @@
         ],
         "final_link": true,
         "prelink_plan": "boot-page-plan-endpoint-directory.h",
+        "plan_equal_to": null
+      },
+      "leanos-fault-handler": {
+        "boot": "boot-fault-handler",
+        "kernel": "kernel-fault-handler",
+        "extra_objects": [
+          "subject-fault-handler"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-fault-handler.h",
         "plan_equal_to": null
       },
       "leanos-three-subject": {
@@ -1268,6 +1295,13 @@
           "key": "endpoint-directory"
         }
       },
+      "leanos-fault-handler": {
+        "iso": "leanos-@VERSION@-x86_64-fault-handler.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "fault-handler"
+        }
+      },
       "leanos-three-subject": {
         "iso": "leanos-@VERSION@-x86_64-three-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1591,6 +1625,16 @@
         "description": "endpoint-directory",
         "targets": [
           "leanos-endpoint-directory"
+        ]
+      },
+      {
+        "image": "leanos-fault-handler",
+        "check": "converge",
+        "expected": "boot-page-plan-fault-handler.h",
+        "final": "boot-page-plan-fault-handler.final.h",
+        "description": "fault-handler",
+        "targets": [
+          "leanos-fault-handler"
         ]
       },
       {
@@ -3365,6 +3409,27 @@
         "SC-DIRECTORY-MISS"
       ],
       "does_not_prove": "Not a refinement of SC-DIRECTORY-NO-AMPLIFICATION, SC-DIRECTORY-MISS: one finite QEMU run whose kernel checks each directory answer against the generated Lean witness; the C kernel, boot.S, the subject build rule, compiler and QEMU stay trusted"
+    },
+    "fault-handler": {
+      "expectations": "scripts/expectations/fault-handler.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-handler.iso",
+        "elf": "leanos-fault-handler.elf",
+        "serial_log": "fault-handler.serial.log",
+        "scenario": "fault-handler",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-FAULT-HANDLER-DELIVERY"
+      ],
+      "does_not_prove": "Not a refinement of SC-FAULT-HANDLER-DELIVERY: one finite QEMU run of a fixed boot binding (#DE from A to C); the generated witness is a fixed-width lowering, and the C kernel, boot.S, compiler, linker and QEMU stay trusted"
     },
     "three-subject": {
       "release_artifacts": [
