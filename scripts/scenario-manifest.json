@@ -1538,24 +1538,33 @@
       },
       {
         "image": "leanos-example-subject",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-example-subject.h",
         "final": "boot-page-plan-example-subject.final.h",
-        "description": "example-subject"
+        "description": "example-subject",
+        "targets": [
+          "leanos-example-subject"
+        ]
       },
       {
         "image": "leanos-three-subject",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-three-subject.h",
         "final": "boot-page-plan-three-subject.final.h",
-        "description": "three-subject"
+        "description": "three-subject",
+        "targets": [
+          "leanos-three-subject"
+        ]
       },
       {
         "image": "leanos-console-server",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-console-server.h",
         "final": "boot-page-plan-console-server.final.h",
-        "description": "console-server"
+        "description": "console-server",
+        "targets": [
+          "leanos-console-server"
+        ]
       },
       {
         "image": "leanos-device-service-unplanned-bus-master",
