@@ -1,0 +1,47 @@
+# Reviewed trusted Lean declarations (issue #494): the C hook primitives of the
+# generated device-program executor, named in ADR 0020. One row per
+# @[extern] declaration: source file, then the C symbol. check.sh accepts
+# exactly these lines and fails on any other trusted declaration or a stale row.
+LeanOS/Wifi/Exec.lean	wifi_gen_value
+LeanOS/Wifi/Exec.lean	wifi_gen_window
+LeanOS/Wifi/Exec.lean	wifi_gen_blob_len
+LeanOS/Wifi/Exec.lean	wifi_gen_blob_word
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_present
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_dma
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_cfg_read
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_cfg_write
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_cmd_clear
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_cmd_set
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_sinks
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_sink
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_descs
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_desc_trb
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_desc_start
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_desc_count
+LeanOS/Wifi/Exec.lean	wifi_gen_pol_desc_stride
+LeanOS/Wifi/Exec.lean	wifi_gen_pc_ok
+LeanOS/Wifi/Exec.lean	wifi_gen_fetch
+LeanOS/Wifi/Exec.lean	wifi_gen_advance
+LeanOS/Wifi/Exec.lean	wifi_gen_jump
+LeanOS/Wifi/Exec.lean	wifi_gen_stack_full
+LeanOS/Wifi/Exec.lean	wifi_gen_stack_empty
+LeanOS/Wifi/Exec.lean	wifi_gen_call
+LeanOS/Wifi/Exec.lean	wifi_gen_ret
+LeanOS/Wifi/Exec.lean	wifi_gen_reg_get
+LeanOS/Wifi/Exec.lean	wifi_gen_reg_set
+LeanOS/Wifi/Exec.lean	wifi_gen_mem_load
+LeanOS/Wifi/Exec.lean	wifi_gen_mem_store
+LeanOS/Wifi/Exec.lean	wifi_gen_mmio_read32
+LeanOS/Wifi/Exec.lean	wifi_gen_mmio_read16
+LeanOS/Wifi/Exec.lean	wifi_gen_mmio_read8
+LeanOS/Wifi/Exec.lean	wifi_gen_mmio_write32
+LeanOS/Wifi/Exec.lean	wifi_gen_mmio_write16
+LeanOS/Wifi/Exec.lean	wifi_gen_mmio_write8
+LeanOS/Wifi/Exec.lean	wifi_gen_cfg_read
+LeanOS/Wifi/Exec.lean	wifi_gen_cfg_write
+LeanOS/Wifi/Exec.lean	wifi_gen_cfg_update
+LeanOS/Wifi/Exec.lean	wifi_gen_phys
+LeanOS/Wifi/Exec.lean	wifi_gen_phys_base
+LeanOS/Wifi/Exec.lean	wifi_gen_delay
+LeanOS/Wifi/Exec.lean	wifi_gen_print
+LeanOS/Wifi/Exec.lean	wifi_gen_done
