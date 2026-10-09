@@ -180,13 +180,14 @@ index current:
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `example-subject` | evidence | none (integration only) |
 | `three-subject` | evidence | none (integration only) |
+| `console-server` | evidence | SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY |
 | `device-service-unplanned-bus-master` | evidence | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
 | `device-service-unplanned-recorded-command` | pr | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
 | `notify-reply` | evidence | SC-NOTIFY-REPLY-NO-AMPLIFICATION, SC-NOTIFY-REPLY-NO-STALE-REUSE, SC-NOTIFY-REPLY-SINGLE-USE, SC-NOTIFY-REPLY-BUDGET |
 <!-- scenario-index:end -->
 
 Before the main machine path, the normal images also replay the same bounded
-462-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+481-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.

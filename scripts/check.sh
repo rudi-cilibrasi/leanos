@@ -232,6 +232,9 @@ check_phase="image-and-emulator-contracts"
 ./scripts/test-asm-windows.sh
 python3 scripts/check-userspace-abi.py
 ./scripts/test-scenario-claims.sh
+python3 scripts/check-userspace-abi.py
+./scripts/test-scenario-claims.sh
+./scripts/test-asm-windows.sh
 ./scripts/test-extract-generated-c.sh
 ./scripts/check-oracle-doc-counts.sh
 

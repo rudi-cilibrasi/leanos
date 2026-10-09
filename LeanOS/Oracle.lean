@@ -17,6 +17,7 @@ import LeanOS.CompositeDispatcher
 import LeanOS.IOTLB
 import LeanOS.NotifyReply
 import LeanOS.UserCopyPolicy
+import LeanOS.ConsoleServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -76,7 +77,8 @@ def adapters : List AdapterSpec := [
   adapter "IOTLB.scalar" 19 "leanos_iotlb_publication_demo" 6,
   adapter "BlockingIPC.event" 20 "leanos_blocking_ipc_event" 3,
   adapter "NotifyReply.event" 21 "leanos_notify_reply_event" 4,
-  adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6]
+  adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6,
+  adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -132,6 +134,10 @@ private def userCopy (id : String) (flags start length : UInt64) : Vector :=
   let top := UserCopyPolicy.bootStackTop
   { id, adapter := "UserCopy.policy", words := [flags, start, length, text, stack, top],
     expected := UserCopyPolicy.model flags start length text stack top }
+
+private def consoleAuthorize (id : String) (subject operation : UInt64) : Vector :=
+  { id, adapter := "ConsoleServer.authorize", words := [subject, operation],
+    expected := ConsoleServer.consoleAuthorize subject operation }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -458,6 +464,31 @@ def userCopyPolicyVectors : List Vector := [
   userCopy "user-copy.noncanonical" 0x102 0x800000000000 1,
   userCopy "user-copy.wrong-subject" 0x202 0x29b000 1,
   userCopy "user-copy.stale" 0x100 0x29b000 1]
+
+/-- Console-server authority decisions (#472): every subject (A 1, B 2,
+server C 3) against every operation (send 1, console write 2, console read 3,
+serve 4, receive 5), then codes outside the ABI. -/
+def consoleAuthorizeVectors : List Vector := [
+  consoleAuthorize "console-authorize.a-send" 1 1,
+  consoleAuthorize "console-authorize.a-write" 1 2,
+  consoleAuthorize "console-authorize.a-read" 1 3,
+  consoleAuthorize "console-authorize.a-serve" 1 4,
+  consoleAuthorize "console-authorize.a-receive" 1 5,
+  consoleAuthorize "console-authorize.b-send" 2 1,
+  consoleAuthorize "console-authorize.b-write" 2 2,
+  consoleAuthorize "console-authorize.b-read" 2 3,
+  consoleAuthorize "console-authorize.b-serve" 2 4,
+  consoleAuthorize "console-authorize.b-receive" 2 5,
+  consoleAuthorize "console-authorize.server-send" 3 1,
+  consoleAuthorize "console-authorize.server-write" 3 2,
+  consoleAuthorize "console-authorize.server-read" 3 3,
+  consoleAuthorize "console-authorize.server-serve" 3 4,
+  consoleAuthorize "console-authorize.server-receive" 3 5,
+  consoleAuthorize "console-authorize.unknown-subject" 4 2,
+  consoleAuthorize "console-authorize.zero-operation" 3 0,
+  consoleAuthorize "console-authorize.unknown-operation" 3 6,
+  consoleAuthorize "console-authorize.maximum-words" 0xffffffffffffffff
+    0xffffffffffffffff]
 
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
@@ -812,9 +843,10 @@ def vectors : List Vector := [
     budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
-    bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors
+    bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
+    consoleAuthorizeVectors
 
-theorem corpus_shape : vectors.length = 462 := by decide
+theorem corpus_shape : vectors.length = 481 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -829,7 +861,7 @@ theorem hosted_notify_reply_vectors_exact :
 
 /-- Oracle indices 448--461 are the user-copy range checks (#478). -/
 theorem hosted_user_copy_policy_vectors_exact :
-    vectors.drop 448 = userCopyPolicyVectors := by
+    (vectors.drop 448).take userCopyPolicyVectors.length = userCopyPolicyVectors := by
   rfl
 
 /-- On every user-copy vector, the generated adapter's Lean definition gives
@@ -840,6 +872,12 @@ theorem user_copy_policy_vectors_agree :
         UserCopyPolicy.copyPolicy flags start length text stack top == v.expected
       | _ => false) = true := by
   decide
+
+/-- Oracle indices 462--480 are the console-server authority corpus (#472). -/
+theorem hosted_console_authorize_vectors_exact :
+    vectors.drop 462 = consoleAuthorizeVectors := by
+  rfl
+
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -866,7 +904,7 @@ the fresh-handle send. -/
 theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
-        userCopyPolicyVectors := by
+        userCopyPolicyVectors ++ consoleAuthorizeVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

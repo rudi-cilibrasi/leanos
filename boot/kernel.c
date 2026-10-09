@@ -4478,8 +4478,10 @@ static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
 static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
     uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
 static void check_initial_b_frame(const volatile uint64_t *frame);
+#ifndef LEANOS_CONSOLE_SERVER_SCENARIO
 static unsigned three_subject_step;  /* 0 C, 1 B, 2 A, 3 C woken */
 static uint64_t three_subject_sent0, three_subject_sent1;
+#endif
 
 static void check_selected_root_c(void) {
     uint64_t cr3;
@@ -4504,6 +4506,7 @@ static void three_subject_require_root(const uint64_t *root) {
     if ((cr3 & PTE_ADDRESS) != (uint64_t)root) fail("three-subject-caller-root");
 }
 
+#ifndef LEANOS_CONSOLE_SERVER_SCENARIO
 static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
                                       uint64_t arg1, uint64_t arg2) {
     if (number == 7 && current_subject == 3 && three_subject_step == 0) {
@@ -4579,6 +4582,348 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
     }
     fail("three-subject-switch");
 }
+#else
+/* Console server (issue #472, slices 2 and 3; docs/console-server.md).
+   Design (a): the kernel keeps the UART and exposes one console object.  Its
+   write and read are syscalls 70 and 71, checked against a kernel-owned
+   capability table; the only holder of the console capability is C, the
+   server.  A holds one send-only endpoint capability to the server's
+   endpoint 12; B holds nothing.  Every request names a slot of the caller's
+   own table (RDX), so a subject can only exercise what its table grants.
+
+   The table is decided here and then checked against the generated Lean
+   witness `leanos_console_authorize` (ConsoleServer.consoleAuthorize, equal
+   to `permitted bootAuthority` by `consoleAuthorize_agrees`): a request the
+   table accepts but the model refuses is a fail-stop.  The table may refuse
+   more than the model (a wrong slot, a non-printable byte).
+
+   The console object's output is a separate stream on the same wire: it is
+   line-buffered and each line is emitted as one console record (see console_object_flush), and
+   only printable bytes and newline are accepted, so a line-anchored reader
+   can tell the object's bytes from the kernel's own diagnostic records. */
+#define CONSOLE_SERVER_ENDPOINT 12u
+#define CONSOLE_SERVER_C_RESUME_A 0x3c04u
+#define CONSOLE_SYSCALL_WRITE 70u
+#define CONSOLE_SYSCALL_READ 71u
+#define CAP_KIND_EMPTY 0u
+#define CAP_KIND_ENDPOINT 1u
+#define CAP_KIND_CONSOLE 2u
+#define CAP_RIGHT_SEND 1u
+#define CAP_RIGHT_RECEIVE 2u
+#define CAP_RIGHT_WRITE 4u
+#define CAP_RIGHT_READ 8u
+#define CAP_SLOTS 2u
+/* ConsoleServer.opCode and the witness answers (acceptCode/refuseCode). */
+#define CONSOLE_OP_SEND 1u
+#define CONSOLE_OP_WRITE 2u
+#define CONSOLE_OP_READ 3u
+#define CONSOLE_OP_RECEIVE 5u
+#define CONSOLE_WITNESS_ACCEPT 1u
+#define CONSOLE_WITNESS_REFUSE 2u
+/* Result words returned to the caller: the model's delivery (accepted 0,
+   refused 1, empty read 256) with the typed refusal reason in bits 8..15. */
+#define CONSOLE_RESULT_ACCEPTED 0u
+#define CONSOLE_RESULT_REFUSED 1u
+#define CONSOLE_READ_EMPTY 256u
+#define CONSOLE_LINE_MAX 64u
+enum console_refusal {
+    CONSOLE_OK = 0, CONSOLE_BAD_SLOT = 1, CONSOLE_EMPTY_SLOT = 2,
+    CONSOLE_WRONG_KIND = 3, CONSOLE_MISSING_RIGHT = 4, CONSOLE_BAD_BYTE = 5,
+    CONSOLE_INPUT_NOT_ADMITTED = 6
+};
+static const char *const console_refusal_names[] = {
+    "none", "bad-slot", "empty-slot", "wrong-kind", "missing-right", "bad-byte",
+    "input-not-admitted"
+};
+
+struct console_capability {
+    uint8_t kind;
+    uint8_t rights;
+    uint16_t object;
+};
+
+/* Indexed by subject (1 A, 2 B, 3 C) and slot. */
+static const struct console_capability console_capabilities[4][CAP_SLOTS] = {
+    [1] = { { CAP_KIND_ENDPOINT, CAP_RIGHT_SEND, CONSOLE_SERVER_ENDPOINT } },
+    [3] = { { CAP_KIND_CONSOLE, CAP_RIGHT_WRITE | CAP_RIGHT_READ, 0 },
+            { CAP_KIND_ENDPOINT, CAP_RIGHT_RECEIVE, CONSOLE_SERVER_ENDPOINT } },
+};
+
+/* 0 C runs, 1 B runs, 2 A runs fresh, 3 C serves, 4 A resumed. */
+static unsigned console_phase;
+static unsigned console_server_waiting;
+static uint64_t console_sent0, console_sent1;
+static uint64_t console_blocks, console_deliveries, console_refusals;
+static uint64_t console_b_results, console_b_attempts;
+static char console_line[CONSOLE_LINE_MAX];
+static unsigned console_line_length;
+static uint64_t console_bytes, console_lines;
+
+static void console_server_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("console-subject");
+}
+
+static unsigned console_capability_check(uint64_t slot, unsigned kind,
+                                         unsigned right) {
+    if (slot >= CAP_SLOTS) return CONSOLE_BAD_SLOT;
+    const struct console_capability *cap =
+        &console_capabilities[current_subject][slot];
+    if (cap->kind == CAP_KIND_EMPTY) return CONSOLE_EMPTY_SLOT;
+    if (cap->kind != kind) return CONSOLE_WRONG_KIND;
+    if ((cap->rights & right) == 0) return CONSOLE_MISSING_RIGHT;
+    if (kind == CAP_KIND_ENDPOINT && cap->object != CONSOLE_SERVER_ENDPOINT)
+        fail("console-endpoint-object");
+    return CONSOLE_OK;
+}
+
+/* Decide from the table, then check against the model witness. */
+static unsigned console_decide(uint64_t operation, uint64_t slot, unsigned kind,
+                               unsigned right, uint64_t *witness) {
+    unsigned reason = console_capability_check(slot, kind, right);
+    *witness = leanos_console_authorize(current_subject, operation);
+    if (*witness != CONSOLE_WITNESS_ACCEPT && *witness != CONSOLE_WITNESS_REFUSE)
+        fail("console-model-domain");
+    if (reason == CONSOLE_OK && *witness != CONSOLE_WITNESS_ACCEPT)
+        fail("console-model-decision");
+    return reason;
+}
+
+static uint64_t console_refuse(const char *operation, uint64_t slot,
+                               unsigned reason, uint64_t witness) {
+    uint64_t result = CONSOLE_RESULT_REFUSED | ((uint64_t)reason << 8);
+    console_refusals++;
+    if (current_subject == 2) {
+        if (console_b_attempts >= 3) fail("console-b-attempts");
+        console_b_results |= result << (16u * console_b_attempts);
+        console_b_attempts++;
+    }
+    serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+    serial_u64(current_subject);
+    serial_puts(" op="); serial_puts(operation);
+    serial_puts(" slot="); serial_u64(slot);
+    serial_puts(" reason="); serial_puts(console_refusal_names[reason]);
+    serial_puts(witness == CONSOLE_WITNESS_REFUSE ? " model=refused\n"
+                                                  : " model=permitted\n");
+    return result;
+}
+
+static void console_object_flush(void) {
+    serial_puts(LEANOS_SERIAL_10_CONSOLE " ");
+    for (unsigned i = 0; i < console_line_length; ++i)
+        serial_putc(console_line[i]);
+    serial_putc('\n');
+    console_line_length = 0;
+    console_lines++;
+}
+
+/* The console object's only output path; reached only from an accepted
+   capability-checked write. */
+static void console_object_write(uint8_t byte) {
+    console_bytes++;
+    if (byte == '\n') {
+        console_object_flush();
+        return;
+    }
+    console_line[console_line_length++] = (char)byte;
+    if (console_line_length == CONSOLE_LINE_MAX) console_object_flush();
+}
+
+/* The console object's only input path.  It polls the COM1 line status
+   (the reviewed DirectPortIO serial input, port 0x3fd) and answers the
+   model's empty marker when no byte is ready.  Consuming a byte would read
+   the receive register (input from 0x3f8), which DirectPortIO.portManifest
+   does not admit yet, so a ready byte is refused with a typed reason rather
+   than read. */
+static int console_object_input_ready(void) {
+    return (in8(COM1 + 5) & 0x01u) != 0;
+}
+
+static uint64_t console_table_grants(uint64_t subject, unsigned kind,
+                                     unsigned right) {
+    for (unsigned slot = 0; slot < CAP_SLOTS; ++slot) {
+        const struct console_capability *cap =
+            &console_capabilities[subject][slot];
+        if (cap->kind == kind && (cap->rights & right) != 0) return 1;
+    }
+    return 0;
+}
+
+/* Before any subject runs: the table names exactly one console holder (C)
+   and one sender to the server (A), and for every subject and operation it
+   grants exactly what the model witness accepts. */
+static void console_server_install(void) {
+    uint64_t holders = 0, holder = 0, senders = 0, sender = 0;
+    static const uint64_t operations[4] = {
+        CONSOLE_OP_SEND, CONSOLE_OP_WRITE, CONSOLE_OP_READ, CONSOLE_OP_RECEIVE
+    };
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        const uint64_t grants[4] = {
+            console_table_grants(subject, CAP_KIND_ENDPOINT, CAP_RIGHT_SEND),
+            console_table_grants(subject, CAP_KIND_CONSOLE, CAP_RIGHT_WRITE),
+            console_table_grants(subject, CAP_KIND_CONSOLE, CAP_RIGHT_READ),
+            console_table_grants(subject, CAP_KIND_ENDPOINT, CAP_RIGHT_RECEIVE),
+        };
+        if (grants[1] || grants[2]) { holders++; holder = subject; }
+        if (grants[0]) { senders++; sender = subject; }
+        for (unsigned i = 0; i < 4; ++i) {
+            uint64_t expected = grants[i] ? CONSOLE_WITNESS_ACCEPT
+                                          : CONSOLE_WITNESS_REFUSE;
+            if (leanos_console_authorize(subject, operations[i]) != expected)
+                fail("console-model-authority");
+        }
+    }
+    if (holders != 1 || holder != 3 || senders != 1 || sender != 1)
+        fail("console-capability-install");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install console-holders=1 holder=3 server-senders=1 sender=1 model=agree result=PASS\n");
+}
+
+static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
+                                       uint64_t arg1, uint64_t arg2) {
+    uint64_t witness;
+    unsigned reason;
+    console_server_require_caller();
+    if (number == CONSOLE_SYSCALL_WRITE) {
+        reason = console_decide(CONSOLE_OP_WRITE, arg2, CAP_KIND_CONSOLE,
+                                CAP_RIGHT_WRITE, &witness);
+        if (reason == CONSOLE_OK && arg0 != '\n' && (arg0 < 0x20 || arg0 > 0x7e))
+            reason = CONSOLE_BAD_BYTE;
+        if (reason != CONSOLE_OK)
+            return console_refuse("console-write", arg2, reason, witness);
+        console_object_write((uint8_t)arg0);
+        return CONSOLE_RESULT_ACCEPTED;
+    }
+    if (number == CONSOLE_SYSCALL_READ) {
+        reason = console_decide(CONSOLE_OP_READ, arg2, CAP_KIND_CONSOLE,
+                                CAP_RIGHT_READ, &witness);
+        if (reason != CONSOLE_OK)
+            return console_refuse("console-read", arg2, reason, witness);
+        if (console_object_input_ready())
+            return console_refuse("console-read", arg2,
+                                  CONSOLE_INPUT_NOT_ADMITTED, witness);
+        serial_puts(LEANOS_SERIAL_10_CAP " event=read subject=");
+        serial_u64(current_subject);
+        serial_puts(" slot="); serial_u64(arg2);
+        serial_puts(" input=empty accepted=1\n");
+        return CONSOLE_READ_EMPTY;
+    }
+    if (number == 8) {
+        reason = console_decide(CONSOLE_OP_SEND, arg2, CAP_KIND_ENDPOINT,
+                                CAP_RIGHT_SEND, &witness);
+        if (reason != CONSOLE_OK)
+            return console_refuse("send", arg2, reason, witness);
+        /* Only A holds a send capability; the server must be waiting. */
+        if (current_subject != 1 || (console_phase != 2 && console_phase != 4) ||
+            !console_server_waiting)
+            fail("console-server-send-sequence");
+        console_sent0 = arg0;
+        console_sent1 = arg1;
+        console_server_waiting = 0;
+        console_deliveries++;
+        console_phase = 3;
+        current_subject = 3;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 slot=");
+        serial_u64(arg2);
+        serial_puts(" endpoint=12 payload0="); serial_u64(arg0);
+        serial_puts(" payload1="); serial_u64(arg1);
+        serial_puts(" receiver=3 accepted=1\n");
+        return THREE_SUBJECT_A_SENT;
+    }
+    if (number == 7) {
+        reason = console_decide(CONSOLE_OP_RECEIVE, arg2, CAP_KIND_ENDPOINT,
+                                CAP_RIGHT_RECEIVE, &witness);
+        if (reason != CONSOLE_OK)
+            return console_refuse("receive", arg2, reason, witness);
+        /* Only C holds the receive end; its queue is empty here because every
+           accepted send is delivered at once. */
+        if (current_subject != 3 || (console_phase != 0 && console_phase != 3) ||
+            console_server_waiting)
+            fail("console-server-receive-sequence");
+        console_server_waiting = 1;
+        console_blocks++;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 slot=");
+        serial_u64(arg2);
+        serial_puts(" endpoint=12 empty=1 result=PASS\n");
+        if (console_phase == 0) {
+            console_phase = 1;
+            current_subject = 2;
+            return THREE_SUBJECT_C_BLOCKED;
+        }
+        console_phase = 4;
+        current_subject = 1;
+        return CONSOLE_SERVER_C_RESUME_A;
+    }
+    if (number == 62 && current_subject == 2 && console_phase == 1) {
+        /* B reports its canaries and the three results it observed. */
+        if (arg0 != 0xc0dec0dec0dec0deull || arg1 != 0x51a7e51a7e51a7e5ull)
+            fail("console-server-b-context");
+        if (console_b_attempts != 3 || arg2 != console_b_results)
+            fail("console-server-b-observations");
+        console_phase = 2;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact observed=refused,refused,refused result=PASS\n");
+        return THREE_SUBJECT_B_RAN;
+    }
+    if (number == 61 && current_subject == 1 && console_phase == 4) {
+        if (console_deliveries != 2 || console_lines != 2 || console_bytes != 12 ||
+            console_refusals != 4 || console_blocks != 3 ||
+            console_line_length != 0 || !console_server_waiting)
+            fail("console-server-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 console-holder=3 console-lines=2 console-bytes=12 refusals=4 deliveries=2\n");
+        finish(0x10);
+    }
+    fail("console-server-sequence");
+}
+
+static void console_server_switch(uint64_t *target, uint64_t target_owner,
+                                  uint64_t saved_owner) {
+    if (current_subject == 2 && console_phase == 1) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("console-server-switch-b-owner");
+        check_initial_b_frame(target);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=none\n");
+        return;
+    }
+    if (current_subject == 1 && console_phase == 2) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("console-server-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only\n");
+        return;
+    }
+    if (current_subject == 3 && console_phase == 3) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 1) fail("console-server-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        /* SAVE layout: RAX at word 14, RBX 13, RCX 12. */
+        if (target[14] != console_sent0 || target[13] != console_sent1 ||
+            target[12] != 1)
+            fail("console-server-payload");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 payload=exact\n");
+        return;
+    }
+    if (current_subject == 1 && console_phase == 4) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 3) fail("console-server-resume-a-owner");
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        if (target[14] != CONSOLE_RESULT_ACCEPTED) fail("console-server-send-result");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 resumed=1\n");
+        return;
+    }
+    fail("console-server-switch");
+}
+#endif
 #endif
 
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
@@ -4669,11 +5014,14 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    (void)saved_flags;
+    return console_server_syscall(number, arg0, arg1, arg2);
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     (void)saved_flags;
     return example_subject_syscall(number, arg0, arg1, arg2);
 #endif
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
     (void)saved_flags;
     return three_subject_syscall(number, arg0, arg1, arg2);
 #endif
@@ -5456,7 +5804,10 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 }
 
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
-#ifdef LEANOS_THREE_SUBJECT_SCENARIO
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    console_server_switch(target, target_owner, saved_owner);
+    return;
+#elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     three_subject_switch(target, target_owner, saved_owner);
     return;
 #endif
@@ -6237,6 +6588,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(integer_fault_probe_class == 1
         ? LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
         : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=console-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
@@ -6423,10 +6776,17 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     check_boot_page_table_c();
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    console_server_install();
+#endif
     current_subject = 3;
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=console-server\n");
+#else
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12\n");
+#endif
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     enter_user(user_a_entry, user_a_stack_top);

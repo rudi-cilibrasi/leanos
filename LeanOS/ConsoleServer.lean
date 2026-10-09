@@ -54,12 +54,16 @@ def Unprivileged (auth : Authority) (x : Subject) : Prop :=
   auth.console x = false ∧ auth.reachesServer x = false
 
 /-- Subject operations. `serve` is the server's blocking receive on its
-endpoint followed by a console write of the received word. -/
+endpoint followed by a console write of the received word. `receive` is the
+receive alone: the booted server receives a word and then writes its bytes
+with separate `write`s. The endpoint's receive right goes with the console
+capability here, because the server holds both. -/
 inductive Op where
   | send (word : Nat)
   | write (byte : Nat)
   | read
   | serve
+  | receive
   deriving DecidableEq, Repr
 
 /-- Console and endpoint state. Observations are not part of it: they are
@@ -103,6 +107,12 @@ def step (auth : Authority) (s : State) (who : Subject) : Op → State × List (
       | (sender, word) :: rest =>
         ({ s with queue := rest, output := s.output ++ [word] },
           [(who, word), (sender, accepted)])
+    else (s, [(who, refused)])
+  | .receive =>
+    if auth.console who then
+      match s.queue with
+      | [] => (s, [(who, empty)])
+      | (_, word) :: rest => ({ s with queue := rest }, [(who, word)])
     else (s, [(who, refused)])
 
 /-- Run a script of (subject, operation) actions, collecting deliveries. -/
@@ -191,6 +201,14 @@ theorem step_preserves_noQueuedFrom (auth : Authority) (x : Subject)
         · rename_i sender word rest hqueue
           exact hs entry (by rw [hqueue]; exact List.mem_cons_of_mem _ hentry)
       · exact hs entry hentry
+    | receive =>
+      simp only [step] at hentry
+      split at hentry
+      · split at hentry
+        · exact hs entry hentry
+        · rename_i sender word rest hqueue
+          exact hs entry (by rw [hqueue]; exact List.mem_cons_of_mem _ hentry)
+      · exact hs entry hentry
 
 theorem step_observations_other (auth : Authority) (x : Subject) (s : State)
     (who : Subject) (op : Op) (hwho : who ≠ x) (hs : NoQueuedFrom x s) :
@@ -211,6 +229,10 @@ theorem step_observations_other (auth : Authority) (x : Subject) (s : State)
         have hsender : sender ≠ x := hs (sender, word) (by rw [hqueue]; simp)
         have hsender' : (sender == x) = false := by simpa using hsender
         simp [observations, hne, hsender']
+    · simp [observations, hne]
+  | receive =>
+    simp only [step]; split
+    · split <;> simp [observations, hne]
     · simp [observations, hne]
 
 /-- What an unprivileged subject observes is exactly one refusal per action
@@ -264,6 +286,160 @@ theorem demo_b_refused :
 
 theorem demo_a_accepted :
     observations .a (run bootAuthority initial demoScript).2 = [accepted, accepted] := by
+  decide
+
+/-! ## The booted console server (#472 slices 2 and 3)
+
+The `console-server` boot image installs `bootAuthority` as a kernel
+capability table: the server's slot 0 is the console object (write and read)
+and its slot 1 the receive end of endpoint 12; `a`'s slot 0 is a send-only
+endpoint capability to endpoint 12; `b` has no capabilities. The kernel
+decides each console and endpoint request from that table and then checks
+the decision against `consoleAuthorize`, the generated witness of
+`permitted bootAuthority`. A table that granted more than the model would be
+caught on the first accepted request outside it; this is a boot-run check,
+not a refinement proof. -/
+
+/-- Whether `auth` lets `who` perform `op`: the console capability for the
+console operations (and the endpoint receive that goes with it), an endpoint
+capability that reaches the server for `send`. -/
+def permitted (auth : Authority) (who : Subject) : Op → Bool
+  | .send _ => auth.reachesServer who
+  | .write _ => auth.console who
+  | .read => auth.console who
+  | .serve => auth.console who
+  | .receive => auth.console who
+
+/-- A request that is not permitted is refused without effect. -/
+theorem step_of_not_permitted (auth : Authority) (s : State) (who : Subject) (op : Op)
+    (h : permitted auth who op = false) : step auth s who op = (s, [(who, refused)]) := by
+  cases op <;> simp_all [step, permitted]
+
+/-- A permitted console write appends exactly its byte to the trace. -/
+theorem step_write_of_permitted (auth : Authority) (s : State) (who : Subject) (byte : Nat)
+    (h : permitted auth who (.write byte) = true) :
+    step auth s who (.write byte) = ({ s with output := s.output ++ [byte] }, [(who, accepted)]) := by
+  simp_all [step, permitted]
+
+/-- An unprivileged subject is permitted nothing. -/
+theorem unprivileged_not_permitted (auth : Authority) (x : Subject) (hx : Unprivileged auth x)
+    (op : Op) : permitted auth x op = false := by
+  obtain ⟨hc, hr⟩ := hx
+  cases op <;> simp [permitted, hc, hr]
+
+/-- Boot ABI codes for subjects (A = 1, B = 2, server C = 3) and operations
+(send 1, console write 2, console read 3, serve 4, receive 5). -/
+def subjectCode : Subject → UInt64
+  | .a => 1
+  | .b => 2
+  | .server => 3
+
+def opCode : Op → UInt64
+  | .send _ => 1
+  | .write _ => 2
+  | .read => 3
+  | .serve => 4
+  | .receive => 5
+
+/-- Witness answers: 1 accept, 2 refuse, 0 outside the ABI. -/
+def acceptCode : UInt64 := 1
+def refuseCode : UInt64 := 2
+
+/-- Allocation-free boot witness of `permitted bootAuthority`. The literals
+need no Lean runtime (ADR 0002); `consoleAuthorize_agrees` ties them to the
+model. -/
+@[export leanos_console_authorize]
+def consoleAuthorize (subject operation : UInt64) : UInt64 :=
+  if operation == 0 || operation > 5 then 0
+  else if subject == 3 then (if operation == 1 then 2 else 1)
+  else if subject == 1 then (if operation == 1 then 1 else 2)
+  else if subject == 2 then 2
+  else 0
+
+/-- The witness is exactly the model's authority decision for every subject
+and operation. -/
+theorem consoleAuthorize_agrees (who : Subject) (op : Op) :
+    consoleAuthorize (subjectCode who) (opCode op) =
+      if permitted bootAuthority who op then acceptCode else refuseCode := by
+  cases who <;> cases op <;> rfl
+
+/-- Codes outside the ABI get neither answer. -/
+theorem consoleAuthorize_off_domain (subject operation : UInt64)
+    (h : operation = 0 ∨ 5 < operation ∨
+      (subject ≠ 1 ∧ subject ≠ 2 ∧ subject ≠ 3)) :
+    consoleAuthorize subject operation = 0 := by
+  unfold consoleAuthorize
+  rcases h with h | h | ⟨h1, h2, h3⟩
+  · simp [h]
+  · simp [h]
+  · simp [h1, h2, h3]
+
+/-- Only the server is ever answered "accept" for a console operation, and
+only `a` for a send. -/
+theorem consoleAuthorize_accepts (subject operation : UInt64)
+    (h : consoleAuthorize subject operation = acceptCode) :
+    (subject = 3 ∧ operation ≠ 1) ∨ (subject = 1 ∧ operation = 1) := by
+  unfold consoleAuthorize acceptCode at h
+  split at h
+  · exact absurd h (by decide)
+  · split at h
+    · rename_i hs
+      split at h
+      · exact absurd h (by decide)
+      · rename_i hop
+        exact Or.inl ⟨by simpa using hs, by simpa using hop⟩
+    · split at h
+      · rename_i _ hs
+        split at h
+        · rename_i hop
+          exact Or.inr ⟨by simpa using hs, by simpa using hop⟩
+        · exact absurd h (by decide)
+      · split at h <;> exact absurd h (by decide)
+
+/-- The words `a` sends in the boot run: the bytes of `hello` and `world`,
+least significant byte first, as the server writes them. -/
+def bootHello : Nat := 0x6f6c6c6568
+def bootWorld : Nat := 0x646c726f77
+
+/-- The console-server boot run as a model script: the server reads the
+console (no input) and blocks; `b` tries a console write, a send and a
+console read; `a` tries a console write and then sends two words; after each
+the server receives the word, writes its five bytes and a newline, and
+blocks again. -/
+def bootScript : List (Subject × Op) :=
+  [(.server, .read), (.server, .receive),
+   (.b, .write 88), (.b, .send 66), (.b, .read),
+   (.a, .write 65), (.a, .send bootHello),
+   (.server, .receive),
+   (.server, .write 104), (.server, .write 101), (.server, .write 108),
+   (.server, .write 108), (.server, .write 111), (.server, .write 10),
+   (.server, .receive),
+   (.a, .send bootWorld),
+   (.server, .receive),
+   (.server, .write 119), (.server, .write 111), (.server, .write 114),
+   (.server, .write 108), (.server, .write 100), (.server, .write 10),
+   (.server, .receive)]
+
+/-- The boot run's console trace is `hello\nworld\n`. -/
+theorem boot_output : (run bootAuthority initial bootScript).1.output =
+    [104, 101, 108, 108, 111, 10, 119, 111, 114, 108, 100, 10] := by
+  decide
+
+/-- `b` observes three refusals, one per attempt. -/
+theorem boot_b_refused :
+    observations .b (run bootAuthority initial bootScript).2 = [refused, refused, refused] := by
+  decide
+
+/-- `a` observes its console write refused and both sends accepted. -/
+theorem boot_a_observations :
+    observations .a (run bootAuthority initial bootScript).2 = [refused, accepted, accepted] := by
+  decide
+
+/-- The server observes an empty console read, then each delivered word
+between empty receives. -/
+theorem boot_server_receives :
+    (observations .server (run bootAuthority initial bootScript).2).filter (· ≠ accepted) =
+      [empty, empty, bootHello, empty, bootWorld, empty] := by
   decide
 
 end LeanOS.ConsoleServer

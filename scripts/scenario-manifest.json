@@ -220,6 +220,11 @@
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
       ],
+      "kernel-console-server": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-console-server.h\""
+      ],
       "kernel-device-service-unplanned-bus-master": [
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
@@ -501,6 +506,13 @@
         "source": "boot/boot.S",
         "definitions": [
           "-DLEANOS_THREE_SUBJECT_SCENARIO=1"
+        ]
+      },
+      "boot-console-server": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_CONSOLE_SERVER_SCENARIO=1"
         ]
       },
       "boot-notify-reply": {
@@ -842,6 +854,14 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-three-subject.h",
+        "plan_equal_to": null
+      },
+      "leanos-console-server": {
+        "boot": "boot-console-server",
+        "kernel": "kernel-console-server",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-console-server.h",
         "plan_equal_to": null
       },
       "leanos-device-service-unplanned-bus-master": {
@@ -1191,6 +1211,13 @@
           "key": "three-subject"
         }
       },
+      "leanos-console-server": {
+        "iso": "leanos-@VERSION@-x86_64-console-server.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "console-server"
+        }
+      },
       "leanos-device-service-unplanned-bus-master": {
         "iso": "leanos-@VERSION@-x86_64-device-service-unplanned-bus-master.iso",
         "grub": "boot/grub.cfg"
@@ -1474,17 +1501,33 @@
       },
       {
         "image": "leanos-example-subject",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-example-subject.h",
         "final": "boot-page-plan-example-subject.final.h",
-        "description": "example-subject"
+        "description": "example-subject",
+        "targets": [
+          "leanos-example-subject"
+        ]
       },
       {
         "image": "leanos-three-subject",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-three-subject.h",
         "final": "boot-page-plan-three-subject.final.h",
-        "description": "three-subject"
+        "description": "three-subject",
+        "targets": [
+          "leanos-three-subject"
+        ]
+      },
+      {
+        "image": "leanos-console-server",
+        "check": "converge",
+        "expected": "boot-page-plan-console-server.h",
+        "final": "boot-page-plan-console-server.final.h",
+        "description": "console-server",
+        "targets": [
+          "leanos-console-server"
+        ]
       },
       {
         "image": "leanos-device-service-unplanned-bus-master",
@@ -3207,6 +3250,33 @@
       "reproducibility_artifacts": [],
       "claims": [],
       "does_not_prove": "Exercises a third ring-3 subject only: no security claim yet; the three-subject schedule is the kernel's fixed state machine, not a generated Scheduler/BlockingIPC witness, and the C kernel, boot.S, compiler and QEMU stay trusted"
+    },
+    "console-server": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/console-server.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-console-server.iso",
+        "elf": "leanos-console-server.elf",
+        "serial_log": "console-server.serial.log",
+        "scenario": "console-server",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-CONSOLE-INTEGRITY",
+        "SC-CONSOLE-CONFIDENTIALITY"
+      ],
+      "does_not_prove": "Not a refinement of SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY: one finite QEMU run with no console input; the kernel checks each authority decision against the generated Lean witness, but the C kernel, boot.S, compiler and QEMU stay trusted"
     },
     "device-service-unplanned-bus-master": {
       "tier": "evidence",

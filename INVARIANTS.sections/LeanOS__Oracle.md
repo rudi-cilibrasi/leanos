@@ -6,8 +6,9 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `corpus_shape` — The frozen corpus contains exactly 412 test rows.
 - `hosted_boot_transition_class_vectors_exact` — The sixteen test cases at rows 419 through 434 are exactly the grid of boundary inputs for the boot entry point, so the generated code is checked on every combination of the words 0, 1, 2 and the largest 64-bit value.
 - `hosted_notify_reply_vectors_exact` — The thirteen test cases at rows 435 through 447 are exactly the notification and reply-permission cases, including the refused ones: signalling without permission, passing on a reply permission, answering a caller that has ended, and answering twice.
-- `hosted_user_copy_policy_vectors_exact` — The last fourteen test cases are exactly the user-memory range checks, covering every accepted and refused outcome on the first program's text and stack.
+- `hosted_user_copy_policy_vectors_exact` — The fourteen test cases at rows 448 through 461 are exactly the user-memory range checks, covering every accepted and refused outcome on the first program's text and stack.
 - `user_copy_policy_vectors_agree` — On every one of those fourteen cases, the check the running kernel uses gives the answer the model computes.
+- `hosted_console_authorize_vectors_exact` — The last nineteen test cases, rows 462 through 480, are exactly the console-server permission checks: each of the three programs asking for each of the five console and endpoint operations, then requests that name an unknown program or operation.
 - `hosted_mixed_vectors_exact` — Rows 314 through 336 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario edge set itself — not a second hand-maintained table that could drift out of step.
 - `hosted_budget_vectors_exact` — The 24 rows beginning at row 359 are exactly the frame-budget scenario's row list.
 - `hosted_iotlb_publication_vectors_exact` — The nine rows beginning at row 383 are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
@@ -68,7 +69,7 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `page_fault_smep_mutation_attested` — Changing only the control that stops the kernel executing user memory likewise changes the accepted answer.
 - `page_fault_smap_mutation_attested` — Changing only the control that stops the kernel reading user memory likewise changes the accepted answer.
 - `page_fault_authority_mutations_attested` — All seven facts combined: no authority-bearing input to the page-fault adapter can be dropped without visibly changing the accepted answer.
-- `hosted_inFlight_revocation_vectors_exact` — The final fourteen oracle records are, by definition, the eleven-edge in-flight revocation trace followed by its three hostile records, not a second hand-written table.
+- `hosted_inFlight_revocation_vectors_exact` — The oracle records from row 398 on are, by definition, the eleven-edge in-flight revocation trace and its three hostile records, followed by the blocking-IPC, boot-transition and console-server records, not a second hand-written table.
 - `hosted_inFlight_revocation_vectors_refine` — Every in-flight revocation record is backed by the step-by-step refinement of the authoritative gate.
 - `composite_inFlight_revocation_trace_agrees` — The expected control word of each in-flight revocation record is exactly the typed reply selector for that step.
 - `composite_inFlight_revocation_values_zero` — No in-flight revocation record publishes a value word: the cancelled child never becomes a returned handle.

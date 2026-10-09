@@ -39,6 +39,7 @@ GENERATED_MODULES = (
     "IOTLB",
     "NotifyReply",
     "UserCopyPolicy",
+    "ConsoleServer",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -58,6 +59,7 @@ FAULT_DISPATCH_PARTS = (
     "IOTLB",
     "NotifyReply",
     "UserCopyPolicy",
+    "ConsoleServer",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"

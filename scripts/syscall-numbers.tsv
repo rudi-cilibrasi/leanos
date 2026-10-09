@@ -65,3 +65,9 @@
 75	notify-reply	2	reply through the one-shot reply capability with RBX; a second reply is rejected
 76	notify-reply	1	report the delivered reply word (final record)
 77	notify-reply	2	report the rejected second reply and block
+7	console-server	3	C blocks on its receive-only endpoint capability (slot in RDX); B's attempt is refused
+8	console-server	1	A sends on its send-only endpoint capability (slot in RDX, RBX = payload); B's attempt is refused
+61	console-server	1	A's final check of the console counts (final record)
+62	console-server	2	B reports its canaries and its three refused attempts
+70	console-server	1, 2, 3	console write of RBX's byte through the console capability in slot RDX; refused without it
+71	console-server	1, 2, 3	console read through the console capability in slot RDX (poll only: 256 when empty); refused without it

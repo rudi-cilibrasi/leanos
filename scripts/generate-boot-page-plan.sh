@@ -30,7 +30,8 @@ if [[ "${1:-}" == --stub ]]; then
       echo "  (0x8000000000000013ULL + $((page * 4096))ULL),"
     done
     echo '};'
-    # Only the three-subject image (issue #472) links a third address space;
+    # Only the three-subject images (issue #472: three-subject, console-server)
+    # link a third address space;
     # every other image preprocesses this placeholder away.
     echo '#ifdef LEANOS_THREE_SUBJECT_SCENARIO'
     # A distinct placeholder pattern: identical read-only arrays may be
