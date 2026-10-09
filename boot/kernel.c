@@ -5124,7 +5124,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         __asm__ volatile ("" ::: "memory");
         return result;
     }
-#elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
+#endif
+#ifdef LEANOS_CONSOLE_SERVER_SCENARIO
     (void)saved_flags;
     return console_server_syscall(number, arg0, arg1, arg2);
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
