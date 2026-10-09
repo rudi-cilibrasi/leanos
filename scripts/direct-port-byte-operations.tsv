@@ -19,3 +19,9 @@ arm_timer	out8	0xa0	DirectPortIO.pic	1
 arm_timer	out8	0xa1	DirectPortIO.pic	4
 arm_timer	out8	0x40	DirectPortIO.pit	2
 arm_timer	out8	0x43	DirectPortIO.pit	1
+timer_server_program_pit	out8	0x43	DirectPortIO.pit	1
+timer_server_program_pit	out8	0x40	DirectPortIO.pit	2
+timer_server_program_pit	out8	0x20	DirectPortIO.pic	1
+timer_server_program_pit	out8	0x21	DirectPortIO.pic	4
+timer_server_program_pit	out8	0xa0	DirectPortIO.pic	1
+timer_server_program_pit	out8	0xa1	DirectPortIO.pic	4

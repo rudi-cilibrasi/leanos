@@ -28,6 +28,14 @@
 63	fault-handler	2	B continues from its saved context after A's fault was handled; reports its canaries (final record)
 64	fault-handler	3	C reports the fault record it received (RBX class word, RCX faulting subject, RDX address)
 65	fault-handler	3	C answers the fault: RBX decision (1 = terminate), RCX faulting subject, RDX endpoint 14
+7	timer-server	3	C (built from subjects/timer-server) blocks receiving on endpoint 12; woken with RAX count or expiry bits, RBX word, RCX sender (0 = kernel expiry)
+8	timer-server	1, 2	call the timer server on endpoint 12 (RBX count); A is resumed with the server's reply word; refused without the endpoint capability (0x302)
+62	timer-server	2	B reports its canaries and its two refusals (RDX, 16 bits each), then spins with interrupts enabled
+90	timer-server	1, 2, 3	arm the one-shot PIT for RBX counts through the timer capability (1 accepted; 0x102 no timer capability; 0x202 outside 1..65535)
+91	timer-server	3	C replies RBX to the calling client and blocks receiving on endpoint 12 (RDX)
+92	timer-server	3	C signals client RBX's wake notification (RDX 13) with bits RCX
+93	timer-server	1	A waits on its wake notification 13 (RDX); resumed with its wake bits
+94	timer-server	1	A reports the server's three replies (RBX, 16 bits each) and its wake bits (RCX) (final record)
 10	canonical (blocking-ipc, preemption)	2	capability reuse: use the initial handle
 11	canonical (blocking-ipc, preemption)	2	capability reuse: replay the stale handle (rejected)
 12	canonical (blocking-ipc, preemption)	2	capability reuse: use the fresh handle

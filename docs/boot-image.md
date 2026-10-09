@@ -428,7 +428,14 @@ tier-specific expectation in the same list. Reserved-bit converges on its own pl
 is no longer compared with the fault-containment plan: under Clang its kernel
 text is 0x90 bytes longer than that image's and, since the keyboard-echo
 device witness joined every image, ends past a page boundary that the
-fault-containment image's does not reach, so the two plans cannot be equal. Entry policies name
+fault-containment image's does not reach, so the two plans cannot be equal.
+Fault-containment converges too, relinking the read-only-write and NX-execute
+images that share its kernel object and plan: under Clang its final kernel
+text, 0x60 bytes longer than the stub-plan prelink, crosses that page boundary
+once the device and timer-server witnesses are both linked in. The two
+siblings and walk-mismatch's full-tier check then compare against the
+converged plan. Entry-adversarial converges on its own plan for the same
+reason (0x11efc6 to 0x11f026 under Clang). Entry policies name
 the report and optional environment pair, and extended-state policies name
 the checked variant. The query rejects unpackaged images, unknown check kinds,
 missing or non-graph convergence targets, invalid alternate expectations,
@@ -666,7 +673,12 @@ C's code can also come from a separately built C subject instead of
 build rule in [subjects.md](subjects.md) (#484). The `endpoint-directory` image builds its C, the
 endpoint directory, the same way, and reuses the console-server switch path in
 which C blocks again and A resumes. See
-[the endpoint-directory page](endpoint-directory.md) (#485).
+[the endpoint-directory page](endpoint-directory.md) (#485). The
+`timer-server` image builds its C, the timer server, the same way, and adds
+its own switch paths: C replies and A resumes, A waits and B's saved
+continuation resumes, and the PIT alarm's interrupt saves B and wakes C. It is
+the only image other than `preemption` that unmasks IRQ0. See
+[the timer-server page](timer-server.md) (#487).
 
 ### Assigned-EDU negative variants
 

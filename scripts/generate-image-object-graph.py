@@ -43,6 +43,7 @@ GENERATED_MODULES = (
     "EndpointDirectory",
     "FaultHandler",
     "KeyboardEcho",
+    "TimerServer",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -66,6 +67,7 @@ FAULT_DISPATCH_PARTS = (
     "EndpointDirectory",
     "FaultHandler",
     "KeyboardEcho",
+    "TimerServer",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"

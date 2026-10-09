@@ -1514,6 +1514,12 @@ isr80_cld:
     cmp $0x3c04, %rax
     je 33f
 #endif
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+    cmp $0x3c04, %rax
+    je 34f
+    cmp $0x3c05, %rax
+    je 35f
+#endif
 #endif
     cmp $0xbeef, %rax
     je 8f
@@ -1708,6 +1714,58 @@ isr80_cld:
     mov %rsp, %rdi
     mov saved_context_owner_b(%rip), %rsi
     mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+#endif
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+34: /* Timer server C replied (or woke A) and blocked on endpoint 12:
+       preserve C's exact continuation and resume A, whose result word (the
+       server's reply or A's wake bits) switch_complete sets. */
+    mov %rsp, %rsi
+    lea saved_context_c(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_c+120(%rip), %rax
+    mov %rax, saved_context_c_original_rip(%rip)
+    mov saved_context_c+136(%rip), %rax
+    mov %rax, saved_context_c_original_flags(%rip)
+    mov saved_context_c+144(%rip), %rax
+    mov %rax, saved_context_c_original_rsp(%rip)
+    lea saved_context_a(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+35: /* A waits on its wake notification: preserve A's exact continuation
+       and resume B's saved continuation (B spins with interrupts enabled
+       until the alarm's interrupt). */
+    mov %rsp, %rsi
+    lea saved_context_a(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_a+120(%rip), %rax
+    mov %rax, saved_context_a_original_rip(%rip)
+    mov saved_context_a+136(%rip), %rax
+    mov %rax, saved_context_a_original_flags(%rip)
+    mov saved_context_a+144(%rip), %rax
+    mov %rax, saved_context_a_original_rsp(%rip)
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_a(%rip), %rdx
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
@@ -1943,6 +2001,10 @@ isr32_cld:
     NORMALIZE_ENTRY 32, 0, 144
     mov 128(%rsp), %rdi
     call timer_handler
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+    cmp $4, %rax
+    je 4f
+#endif
     cmp $2, %rax
     je 1f
     cmp $1, %rax
@@ -1992,6 +2054,30 @@ isr32_cld:
     call switch_complete
     mov $3, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+4:  /* The timer server's alarm expired while B spun: preserve B's exact
+       continuation and wake C's blocked receive; switch_complete hands C
+       the expiry bits (RAX) from the kernel (RCX 0). */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
+    lea saved_context_c(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_c, %rax
+    mov %rax, %cr3
+    mov saved_context_owner_c(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
+    jmp 3b
+#endif
 
 /* The only boot-reachable CPL3 return. validate_user_return receives the exact
    immutable register/frame tuple at RSP; after acceptance this block performs
@@ -2223,6 +2309,45 @@ user_a_entry:
     xor %ecx, %ecx
     mov $12, %rdx
     mov $9, %rax
+    int $0x80
+    ud2
+#endif
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+    /* Timer client (#487).  It holds the send-only endpoint capability to
+       the timer server's endpoint 12 and the receive end of its wake
+       notification 13.  It calls the server (8; RBX the count, the server's
+       reply word back in RAX) for 65536 counts (outside the bound), 65535
+       (accepted and armed), and 100 (over its quota of one), then waits on
+       its wake notification (93) and reports the three replies (RBX, 16 bits
+       each) and its wake bits (RCX) (94). */
+    mov $65536, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $8, %eax
+    int $0x80
+    mov %rax, %r12
+    mov $65535, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $8, %eax
+    int $0x80
+    mov %rax, %r13
+    mov $100, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $8, %eax
+    int $0x80
+    mov %rax, %r14
+    mov $13, %edx
+    mov $93, %eax
+    int $0x80
+    mov %rax, %rcx
+    shl $16, %r13
+    shl $32, %r14
+    mov %r12, %rbx
+    or %r13, %rbx
+    or %r14, %rbx
+    mov $94, %eax
     int $0x80
     ud2
 #endif
@@ -2774,6 +2899,33 @@ user_b_entry:
     int $0x80
 9:  ud2
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+#ifdef LEANOS_TIMER_SERVER_SCENARIO
+    /* Subject without timer authority (#487): its arm (90) is refused for
+       want of the timer capability (0x102) and its send to the server's
+       endpoint (8) for want of the endpoint (0x302).  It reports both
+       results (RDX, 16 bits each) with its canaries (62), then spins with
+       interrupts enabled: the alarm interrupts it. */
+    mov $1000, %ebx
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $90, %eax
+    int $0x80
+    mov %rax, %r8
+    mov $1000, %ebx
+    xor %ecx, %ecx
+    mov $12, %edx
+    mov $8, %eax
+    int $0x80
+    shl $16, %rax
+    or %rax, %r8
+    mov %r12, %rbx
+    mov %r13, %rcx
+    mov %r8, %rdx
+    mov $62, %eax
+    int $0x80
+1:  pause
+    jmp 1b
+#endif
     /* Bystander subject: report the two canaries of the kernel-owned initial
        context it was dispatched from (syscall 62), in its own space. */
     mov %r12, %rbx

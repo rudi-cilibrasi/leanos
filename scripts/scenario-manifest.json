@@ -233,6 +233,11 @@
         "-DLEANOS_FAULT_HANDLER_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-handler.h\""
       ],
+      "kernel-timer-server": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_TIMER_SERVER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-timer-server.h\""
+      ],
       "kernel-three-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-three-subject.h\""
@@ -543,6 +548,14 @@
           "-DLEANOS_SUBJECT_C_OBJECT=1"
         ]
       },
+      "boot-timer-server": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_TIMER_SERVER_SCENARIO=1",
+          "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
       "boot-three-subject": {
         "source": "boot/boot.S",
         "definitions": [
@@ -575,6 +588,10 @@
       },
       "subject-fault-handler": {
         "source": "subjects/fault-handler",
+        "slot": "c"
+      },
+      "subject-timer-server": {
+        "source": "subjects/timer-server",
         "slot": "c"
       }
     },
@@ -923,6 +940,16 @@
         ],
         "final_link": true,
         "prelink_plan": "boot-page-plan-fault-handler.h",
+        "plan_equal_to": null
+      },
+      "leanos-timer-server": {
+        "boot": "boot-timer-server",
+        "kernel": "kernel-timer-server",
+        "extra_objects": [
+          "subject-timer-server"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-timer-server.h",
         "plan_equal_to": null
       },
       "leanos-three-subject": {
@@ -1302,6 +1329,13 @@
           "key": "fault-handler"
         }
       },
+      "leanos-timer-server": {
+        "iso": "leanos-@VERSION@-x86_64-timer-server.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "timer-server"
+        }
+      },
       "leanos-three-subject": {
         "iso": "leanos-@VERSION@-x86_64-three-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1414,10 +1448,15 @@
       },
       {
         "image": "leanos-fault-containment",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-fault-containment.h",
         "final": "boot-page-plan-fault-containment.final.h",
-        "description": "fault-containment"
+        "description": "fault-containment",
+        "targets": [
+          "leanos-fault-containment",
+          "leanos-fault-readonly-write",
+          "leanos-fault-nx-execute"
+        ]
       },
       {
         "image": "leanos-fault-readonly-write",
@@ -1500,10 +1539,13 @@
       },
       {
         "image": "leanos-entry-adversarial",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-entry-adversarial.h",
         "final": "boot-page-plan-entry-adversarial.final.h",
-        "description": "entry-adversarial"
+        "description": "entry-adversarial",
+        "targets": [
+          "leanos-entry-adversarial"
+        ]
       },
       {
         "image": "leanos-direct-port-serial",
@@ -1637,6 +1679,16 @@
         "description": "fault-handler",
         "targets": [
           "leanos-fault-handler"
+        ]
+      },
+      {
+        "image": "leanos-timer-server",
+        "check": "converge",
+        "expected": "boot-page-plan-timer-server.h",
+        "final": "boot-page-plan-timer-server.final.h",
+        "description": "timer-server",
+        "targets": [
+          "leanos-timer-server"
         ]
       },
       {
@@ -3433,6 +3485,28 @@
         "SC-FAULT-HANDLER-DELIVERY"
       ],
       "does_not_prove": "Not a refinement of SC-FAULT-HANDLER-DELIVERY: one finite QEMU run of a fixed boot binding (#DE from A to C); the generated witness is a fixed-width lowering, and the C kernel, boot.S, compiler, linker and QEMU stay trusted"
+    },
+    "timer-server": {
+      "expectations": "scripts/expectations/timer-server.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-timer-server.iso",
+        "elf": "leanos-timer-server.elf",
+        "serial_log": "timer-server.serial.log",
+        "scenario": "timer-server",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-TIMER-CAPABILITY",
+        "SC-TIMER-SERVER-POLICY"
+      ],
+      "does_not_prove": "Not a refinement of SC-TIMER-CAPABILITY, SC-TIMER-SERVER-POLICY: one finite QEMU run of a fixed boot authority (C holds the timer capability, A the endpoint to C); the kernel checks its own decisions against the generated witness, while the server's policy is ring-3 code checked only through A's report; no claim about real-time accuracy, latency or timing channels; the C kernel, boot.S, the PIC/PIT bridge, compiler and QEMU stay trusted"
     },
     "three-subject": {
       "release_artifacts": [

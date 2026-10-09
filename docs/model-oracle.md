@@ -15,9 +15,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`, and
 `ConsoleServer.consoleAuthorize`,
-`EndpointDirectory.directoryResolve`, `FaultHandler.faultHandlerRoute` and
-`KeyboardEcho.deviceAuthorize`. Its stable
-524-vector order covers accepted calls,
+`EndpointDirectory.directoryResolve`, `FaultHandler.faultHandlerRoute`,
+`KeyboardEcho.deviceAuthorize` and `TimerServer.timerServerDecide`. Its stable
+540-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
