@@ -93,8 +93,18 @@ change:
    oracle-replayed on the host), and the serial transcript is exact.
 2. **An echo target.** The early text console is disabled before quarantine
    and before any ring-3 entry, because quarantine may remove VGA decode.
-   Either keep the aperture mapped and decoded for the scenario, or echo on
-   the serial console and record that choice.
+   In `device-service` the echo subject has no output authority: it hands
+   each key to syscall 9 and the kernel prints `@10/IPC@ ... echo=<key>`.
+   *Resolved by issue #493:* the echo target is the console object of the
+   console server (issue #472, [console-server.md](../console-server.md)).
+   The `keyboard-echo` image runs this device service inside the
+   console-server image. Subject 1 holds the device capability but no
+   console capability. It sends each key to the console server, subject 3,
+   which writes it through the console capability, so the echo reaches the
+   wire only as `@10/CONSOLE@` records. Subject 3's own device invocation is
+   refused. `LeanOS/KeyboardEcho.lean` proves the separation in the composed
+   model (claim SC-DEVICE-CONSOLE-SEPARATION). The `device-service` image is
+   unchanged.
 3. **A q35 xHCI platform variant.** Done. `leanos_q35_device_service_command`
    appends `qemu-xhci` at 00:02.0, a hub and a `usb-kbd` to the unchanged
    production construction (topology `0001000800020004`, validated like the

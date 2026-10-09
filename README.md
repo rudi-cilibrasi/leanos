@@ -178,6 +178,7 @@ index current:
 | `return-flags-iopl` | evidence | SC-USER-RETURN-FAILSTOP |
 | `ipc-stream` | evidence | SC-IPC-EVENT-STREAM |
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
+| `keyboard-echo` | evidence | SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `example-subject` | evidence | none (integration only) |
 | `three-subject` | evidence | none (integration only) |
 | `console-server` | evidence | SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY |

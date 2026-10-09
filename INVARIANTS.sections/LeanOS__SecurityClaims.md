@@ -169,3 +169,4 @@ This file is the kernel's master security contract: each theorem here independen
 - `boot_transition_refinement` — The C code the pinned Lean toolchain actually emits for the boot entry point, read with a small reviewed meaning for the C constructs it uses, gives the model's answer for every model state and command word.
 - `console_integrity` — The security-claim contract SC-CONSOLE-INTEGRITY: a program holding neither the console permission nor a connection to the console server cannot change what the console prints.
 - `console_confidentiality` — The security-claim contract SC-CONSOLE-CONFIDENTIALITY: such a program learns nothing about what was typed on the console.
+- `device_console_separation` — The security-claim contract SC-DEVICE-CONSOLE-SEPARATION: in the keyboard-echo image's permission layout, only the console server can make the console print and only the keyboard program can make the keyboard device do anything, and these are different programs.

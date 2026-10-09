@@ -126,6 +126,10 @@ extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
 extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
 extern uint64_t page_directory_b[], page_table_b[];
+#if defined(LEANOS_KEYBOARD_ECHO_SCENARIO) && \
+    !(defined(LEANOS_CONSOLE_SERVER_SCENARIO) && defined(LEANOS_DEVICE_SERVICE_SCENARIO))
+#error "the keyboard-echo image combines the console-server and device-service images"
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 /* Third subject C (issue #472), linked only into the three-subject image. */
 extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
@@ -4780,6 +4784,98 @@ static void console_server_install(void) {
     serial_puts(LEANOS_SERIAL_10_CAP " event=install console-holders=1 holder=3 server-senders=1 sender=1 model=agree result=PASS\n");
 }
 
+#ifdef LEANOS_KEYBOARD_ECHO_SCENARIO
+/* Keyboard echo (issue #493; docs/console-server.md).  The keyboard-echo
+   image runs the device service of the device-service image (issue #449)
+   inside the console-server image: A is the keyboard client, C the console
+   server, B holds nothing.  A holds the device capability for the assigned
+   xHCI and its send-only endpoint capability to the server, but no console
+   capability; C holds the console capability but no device capability.  Each
+   key the bound device program yields to A (syscall 60) is sent to C over
+   endpoint 12 and written by C through the console capability (syscall 70),
+   so the echo reaches the wire only as console-object output: the kernel
+   prints no echo of its own.
+
+   The device capability table is kernel-owned read-only data, like the
+   console table.  Before C first runs the kernel checks it against the
+   generated console witness `leanos_console_authorize`: the one device
+   holder is refused every console operation, and no subject the witness
+   lets write the console holds a device capability.  A device request
+   without the capability is refused without effect, as
+   `DeviceCapability.no_capability_no_effect` says the model does. */
+#define KEYBOARD_ECHO_NO_DEVICE 7u
+#define KEYBOARD_ECHO_DEVICE_HOLDER 1u
+/* Indexed by subject: 1 when the subject holds the capability for the one
+   assigned device, the q35 xHCI at 0:2.0. */
+static const uint8_t keyboard_echo_device_capabilities[4] = {
+    [KEYBOARD_ECHO_DEVICE_HOLDER] = 1,
+};
+static uint64_t keyboard_echo_keys, keyboard_echo_device_refusals;
+
+static void keyboard_echo_install(void) {
+    uint64_t holders = 0, holder = 0;
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        uint64_t writes = leanos_console_authorize(subject, CONSOLE_OP_WRITE);
+        uint64_t reads = leanos_console_authorize(subject, CONSOLE_OP_READ);
+        if (!keyboard_echo_device_capabilities[subject]) continue;
+        holders++;
+        holder = subject;
+        if (writes != CONSOLE_WITNESS_REFUSE || reads != CONSOLE_WITNESS_REFUSE)
+            fail("keyboard-echo-device-console-overlap");
+    }
+    if (keyboard_echo_device_capabilities[0] != 0 || holders != 1 ||
+        holder != KEYBOARD_ECHO_DEVICE_HOLDER)
+        fail("keyboard-echo-device-install");
+    serial_puts(LEANOS_SERIAL_10_CAP " event=install-device device=0:2.0 device-holders=1 holder=1 holder-console=refused console-holder-device=none model=agree result=PASS\n");
+}
+
+static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
+                                       uint64_t arg1, uint64_t arg2);
+
+static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
+                                      uint64_t arg1, uint64_t arg2) {
+    if (number == 60) {
+        console_server_require_caller();
+        if (!keyboard_echo_device_capabilities[current_subject]) {
+            keyboard_echo_device_refusals++;
+            serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+            serial_u64(current_subject);
+            serial_puts(" op=device-invoke device=0:2.0 reason=no-device-capability\n");
+            return CONSOLE_RESULT_REFUSED | (KEYBOARD_ECHO_NO_DEVICE << 8);
+        }
+        /* Only A holds the device; the server must be waiting for its key. */
+        if (current_subject != KEYBOARD_ECHO_DEVICE_HOLDER ||
+            (console_phase != 2 && console_phase != 4) || !console_server_waiting)
+            fail("keyboard-echo-device-sequence");
+        uint64_t key = device_service_next_key();
+        if (key != 0) keyboard_echo_keys++;
+        return key;
+    }
+    if (number == 61 && current_subject == 1 && console_phase == 4) {
+        three_subject_require_root(page_map_level_4_a);
+        if (keyboard_echo_keys == 0 || console_deliveries != keyboard_echo_keys ||
+            console_bytes != keyboard_echo_keys || console_lines == 0 ||
+            console_refusals != 4 || keyboard_echo_device_refusals != 1 ||
+            console_blocks != keyboard_echo_keys + 1 ||
+            console_line_length != 0 || !console_server_waiting)
+            fail("keyboard-echo-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 console-holder=3 device-holder=1 keys=");
+        serial_u64(keyboard_echo_keys);
+        serial_puts(" deliveries="); serial_u64(console_deliveries);
+        serial_puts(" console-lines="); serial_u64(console_lines);
+        serial_puts(" console-bytes="); serial_u64(console_bytes);
+        serial_puts(" refusals=");
+        serial_u64(console_refusals + keyboard_echo_device_refusals);
+        serial_putc('\n');
+        finish(0x10);
+    }
+    /* A real call for the same reason as in syscall_handler. */
+    uint64_t result = console_server_syscall(number, arg0, arg1, arg2);
+    __asm__ volatile ("" ::: "memory");
+    return result;
+}
+#endif
+
 static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
                                        uint64_t arg1, uint64_t arg2) {
     uint64_t witness;
@@ -4895,7 +4991,11 @@ static void console_server_switch(uint64_t *target, uint64_t target_owner,
             saved_context_b_original_flags, saved_context_b_original_rsp, 2);
         check_original_frame(saved_context_c, saved_context_c_original_rip,
             saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+#ifdef LEANOS_KEYBOARD_ECHO_SCENARIO
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only,device\n");
+#else
         serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=send-only\n");
+#endif
         return;
     }
     if (current_subject == 3 && console_phase == 3) {
@@ -5014,6 +5114,17 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_KEYBOARD_ECHO_SCENARIO
+    (void)saved_flags;
+    {
+        /* A real call: Clang may otherwise lower this to a conditional tail
+           jump, which the entry-stack gate's call/jmp edge extraction does
+           not follow. */
+        uint64_t result = keyboard_echo_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" ::: "memory");
+        return result;
+    }
+#endif
 #ifdef LEANOS_CONSOLE_SERVER_SCENARIO
     (void)saved_flags;
     return console_server_syscall(number, arg0, arg1, arg2);
@@ -6588,6 +6699,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(integer_fault_probe_class == 1
         ? LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
         : LEANOS_SERIAL_18_BOOT " target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_KEYBOARD_ECHO_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=keyboard-echo controls=wp,smep,smap\n");
 #elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=console-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
@@ -6778,6 +6891,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_boot_page_table_c();
 #ifdef LEANOS_CONSOLE_SERVER_SCENARIO
     console_server_install();
+#endif
+#ifdef LEANOS_KEYBOARD_ECHO_SCENARIO
+    keyboard_echo_install();
 #endif
     current_subject = 3;
     activate_user_address_space(page_map_level_4_c);

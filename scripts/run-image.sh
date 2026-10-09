@@ -56,6 +56,11 @@ elif [[ "$scenario" == device-service ]]; then
   device_service_scenario=1
   expectation_q35_topology=device-service
   default_image="build/boot/leanos-${version}-x86_64-device-service.iso"
+elif [[ "$scenario" == keyboard-echo ]]; then
+  # The keyboard-echo image (issue #493) runs on the device-service platform.
+  device_service_scenario=1
+  expectation_q35_topology=device-service
+  default_image="build/boot/leanos-${version}-x86_64-keyboard-echo.iso"
 elif [[ "$scenario" == stale-translation-denial ]]; then
   stale_translation_scenario=1
   default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"
