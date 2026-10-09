@@ -182,8 +182,8 @@ index current:
 | `example-subject` | evidence | none (integration only) |
 | `endpoint-directory` | evidence | SC-DIRECTORY-NO-AMPLIFICATION, SC-DIRECTORY-MISS |
 | `fault-handler` | evidence | SC-FAULT-HANDLER-DELIVERY |
-| `timer-server` | evidence | SC-TIMER-CAPABILITY, SC-TIMER-SERVER-POLICY |
 | `frame-server` | evidence | SC-FRAME-SERVER-BUDGET, SC-FRAME-SERVER-SCRUB, SC-FRAME-SERVER-CHECK |
+| `timer-server` | evidence | SC-TIMER-CAPABILITY, SC-TIMER-SERVER-POLICY |
 | `three-subject` | evidence | none (integration only) |
 | `console-server` | evidence | SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY |
 | `device-service-unplanned-bus-master` | evidence | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
