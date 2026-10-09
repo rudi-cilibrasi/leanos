@@ -20,6 +20,7 @@ import LeanOS.UserCopyPolicy
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
+import LeanOS.KeyboardEcho
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -82,7 +83,8 @@ def adapters : List AdapterSpec := [
   adapter "UserCopy.policy" 22 "leanos_user_copy_policy" 6,
   adapter "ConsoleServer.authorize" 23 "leanos_console_authorize" 2,
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
-  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4]
+  adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
+  adapter "KeyboardEcho.deviceAuthorize" 26 "leanos_device_authorize" 2]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -150,6 +152,10 @@ private def directoryResolve (id : String) (registered held : UInt64) : Vector :
 private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
   { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
     expected := FaultHandler.faultHandlerRoute event vector subject word }
+
+private def deviceAuthorize (id : String) (subject device : UInt64) : Vector :=
+  { id, adapter := "KeyboardEcho.deviceAuthorize", words := [subject, device],
+    expected := KeyboardEcho.deviceAuthorize subject device }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -531,6 +537,16 @@ def faultHandlerVectors : List Vector := [
   faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
   faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
 
+/-- Keyboard-echo device authority (#493): every subject code 0--4 against the
+assigned device 0 and another device 1, then the holder against the maximum
+device word and the maximum words. -/
+def deviceAuthorizeVectors : List Vector :=
+  ((List.range 5).flatMap fun subject => (List.range 2).map fun device =>
+    deviceAuthorize s!"device-authorize.subject-{subject}-device-{device}"
+      subject.toUInt64 device.toUInt64) ++
+  [deviceAuthorize "device-authorize.holder-maximum-device" 1 0xffffffffffffffff,
+   deviceAuthorize "device-authorize.maximum-words" 0xffffffffffffffff 0xffffffffffffffff]
+
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
 2^64 − 1, which cover its equivalence classes (the accepting word, the
@@ -885,9 +901,10 @@ def vectors : List Vector := [
     inFlightRevocationVectors ++
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
-    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors
+    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
+    deviceAuthorizeVectors
 
-theorem corpus_shape : vectors.length = 512 := by decide
+theorem corpus_shape : vectors.length = 524 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -926,7 +943,13 @@ theorem hosted_directory_resolve_vectors_exact :
 
 /-- Oracle indices 501--511 are the fault-handler route corpus (#488). -/
 theorem hosted_fault_handler_vectors_exact :
-    vectors.drop 501 = faultHandlerVectors := by
+    (vectors.drop 501).take faultHandlerVectors.length = faultHandlerVectors := by
+  rfl
+
+/-- Oracle indices 512--523 are the keyboard-echo device-authority corpus
+(#493). -/
+theorem hosted_device_authorize_vectors_exact :
+    vectors.drop 512 = deviceAuthorizeVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -956,7 +979,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors := by
+        faultHandlerVectors ++ deviceAuthorizeVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

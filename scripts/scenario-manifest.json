@@ -3355,9 +3355,10 @@
       "claims": [
         "SC-DEVICE-CONSOLE-SEPARATION",
         "SC-CONSOLE-INTEGRITY",
-        "SC-DEVICE-CAPABILITY-CONFINEMENT"
+        "SC-DEVICE-CAPABILITY-CONFINEMENT",
+        "SC-IPC-EVENT-STREAM"
       ],
-      "does_not_prove": "Not a refinement of SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run with QMP-typed keys and no console input; the kernel checks console decisions and the device/console holder split against the generated console witness, but the device capability table is handwritten, and the C kernel, boot.S, the executor, compiler and QEMU stay trusted"
+      "does_not_prove": "Not a refinement of SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run with QMP-typed keys and no console input; the kernel checks its console and device capability tables and each decision against the generated witnesses leanos_console_authorize and leanos_device_authorize, and each key exchange against leanos_blocking_ipc_event with C mapped to the model's receiver on endpoint 10, but the tables are kernel-owned data checked against the witnesses rather than derived from the models, and the C kernel, boot.S, the executor, compiler and QEMU stay trusted"
     },
     "example-subject": {
       "release_artifacts": [

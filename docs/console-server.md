@@ -176,12 +176,12 @@ console-server macros and `LEANOS_DEVICE_SERVICE_SCENARIO`, so it runs the
 console object and server above together with the device service of the
 `device-service` image (ADR 0022). It boots on the same q35 platform as
 `device-service`: `qemu-xhci`, a hub and a `usb-kbd`, with keys typed through
-QMP. Every other image, including `console-server` and `device-service`, is
-unchanged.
+QMP. Every other image except `device-service` is unchanged; see
+[The device-service baseline](#the-device-service-baseline) for what changed
+there.
 
-In `device-service`, ring-3 subject 2 hands each key to syscall 9 and the
-kernel prints `@10/IPC@ ... echo=<key>`. That subject has no output
-authority. In `keyboard-echo` the kernel prints no echo of its own:
+`keyboard-echo` is the echo path for typed keys. Ring 3 echoes each key
+through the console capability, and the kernel prints no echo of its own:
 
 | Subject | Device capability | Console table |
 | --- | --- | --- |
@@ -192,13 +192,22 @@ authority. In `keyboard-echo` the kernel prints no echo of its own:
 The run:
 
 1. The kernel checks the console table as in `console-server`. It then checks
-   the device capability table, a second read-only table indexed by subject.
-   That table must name exactly one device holder, A. The generated console
-   witness `leanos_console_authorize` must refuse that holder every console
-   operation, and no subject the witness lets write the console may hold a
-   device capability (`@10/CAP@ event=install-device ... model=agree`).
-2. C asks for a key (syscall 60). It holds no device capability, so the
-   request is refused without effect: `reason=no-device-capability`, result
+   the device capability table, a second read-only table indexed by subject,
+   against two generated witnesses:
+   - For every subject, the table grants the assigned device (model index 0)
+     exactly when the device witness `leanos_device_authorize` accepts, and
+     grants device index 1 to nobody, as the witness says. Subject code 0 is
+     outside the witness's domain.
+   - The table names exactly one device holder, A. The console witness
+     `leanos_console_authorize` refuses that holder every console operation,
+     and no subject the console witness lets write or read the console holds
+     a device capability.
+
+   The record is `@10/CAP@ event=install-device ... model=agree`.
+2. C asks for a key (syscall 60). Every device request is decided from the
+   table and checked against `leanos_device_authorize`; a disagreement is a
+   fail-stop. C holds no device capability, so the request is refused
+   without effect: `reason=no-device-capability model=refused`, result
    `1 | 7 << 8`. C then reads the console (empty) and blocks on its receive.
 3. B makes the same three refused attempts as in `console-server`.
 4. A's direct console write through slot 0 is refused with `wrong-kind`.
@@ -212,8 +221,25 @@ The run:
    `@10/CONSOLE@ lean ipc`.
 7. When the program ends the stream, A finishes. The kernel requires that
    every key was delivered once and written once, that the line is complete,
-   and that there were five refusals. It then prints
-   `@10/FINAL@ status=PASS ... keys=9 deliveries=9 console-lines=1 console-bytes=9 refusals=5`.
+   that there were five refusals, and that the blocking-IPC witness accepted
+   `4 × keys + 1` edges. It then prints
+   `@10/FINAL@ status=PASS ... keys=9 deliveries=9 console-lines=1 console-bytes=9 refusals=5 ipc-edges=37`.
+
+The key exchange is checked against the generated blocking-IPC witness
+`leanos_blocking_ipc_event`, as `device-service` checks its own. C plays the
+model's receiver (subject 2 there) and A its sender. Each key takes the four
+edges of `BlockingIPC.keyCycle`:
+
+| Edge | Model operation | Checked when |
+| --- | --- | --- |
+| 0 | the receiver blocks | C's receive on endpoint 12 is accepted |
+| 1, 2 | the sender sends; the receiver is dispatched | A's send through slot 0 is accepted |
+| 3 | the receiver receives the words | C's first kernel entry after it is woken; the switch has already found the words in C's registers exact |
+
+C's first block opens the stream, so a run of `k` keys takes `4k + 1` edges
+and ends at edge 1. By `BlockingIPC.keyCycle_returns` the same four edges
+repeat for every key, and by `keyCycle_delivers` each payload is delivered
+exactly.
 
 `scripts/expectations/keyboard-echo.transcript` is the exact transcript.
 The run reuses the console-server switch paths in `boot.S` and adds none.
@@ -231,20 +257,46 @@ SC-DEVICE-CONSOLE-SEPARATION.
 | `composed_device_only_by_holder` | Only an invocation by a device-capability holder changes a device's state. This reuses `DeviceCapability.device_state_changes_only_by_holder`. |
 | `boot_causes_distinct` | Under the installed authority, a console byte is caused only by the server, and a device effect only by A. |
 | `server_no_device_effects` | The echo server is never granted the device, so each `bind` or `invoke` it attempts is denied and changes nothing. This reuses `DeviceCapability.ungranted_subject_no_device_effects`. |
+| `boot_grant_installs` | `bootDeviceCaps` is what one `DeviceCapability.grant` of the admitted device to A installs, from a system with no device capabilities. |
+| `deviceAuthorize_agrees`, `deviceAuthorize_accepts`, `deviceAuthorize_off_domain` | The exported witness `deviceAuthorize` (`leanos_device_authorize`) answers accept exactly when `bootDeviceCaps` grants that subject that device, accepts only A for device 0, and answers 0 for subject codes outside the ABI. |
+| `witnesses_disjoint` | The device witness and the console witness keep the authorities apart: a subject the device witness accepts is refused console writes and reads, and a subject the console witness lets write or read is refused every device. |
+| `deviceAuthorize_refused_no_effect` | A subject the witness refuses device 0 gets every `bind` and `invoke` denied without effect. This reuses `DeviceCapability.no_capability_no_effect`. |
 | `boot_output`, `boot_a_observations`, `boot_b_refused` | `KeyboardEcho.bootScript` is the booted run as a console-model script. Its console trace is exactly the typed keys. A's console write is refused and every key send is accepted. B observes three refusals. |
 
 ### Keyboard-echo exclusions
 
-- **The device table is handwritten.** The kernel's device capability table
-  is checked at boot against the generated console witness. It is not
-  generated from `KeyboardEcho.bootDeviceCaps`, and there is no generated
-  device-authority export.
-- **The IPC is the console server's.** The key exchange uses the
-  console-server send and receive. It is not checked against the
-  `BlockingIPC` witness `leanos_blocking_ipc_event`, as `device-service` is.
+- **The device table is checked, not derived.** The kernel's device
+  capability table is still kernel-owned rodata. The generated witness
+  `leanos_device_authorize` backs it: the table must agree with the witness
+  for every subject at boot and on every device request. A table that
+  disagreed would be a fail-stop, not a different authority.
+- **The IPC check is a role mapping.** The blocking-IPC witness models two
+  subjects. The kernel maps C to the model's receiver and A to its sender,
+  and the model's receive edge is checked at C's next kernel entry, because
+  the console server delivers the words in C's registers at the switch
+  instead of through a receive syscall.
 - **No refinement.** The run is one finite QEMU trace. The C kernel,
   `boot.S`, the executor and the ring-3 code are not proved to implement
   either model.
-- **`device-service` is unchanged.** Its transcript still shows the kernel's
-  `echo=` record. This image is the console path beside it, not a
-  replacement.
+
+### The device-service baseline
+
+`device-service` stays the baseline evidence for the device service of
+ADR 0022 stage 2. It is the two-subject image with the VT-d window, the
+DMA/VT-d snapshot gates and the policy-negative fixtures. Its subject 2 still
+blocks with syscall 7 and passes each key to syscall 9, and the kernel still
+checks every edge against `leanos_blocking_ipc_event` and checks that B
+reports exactly A's words.
+
+Subject 2 holds no output authority, and the kernel no longer prints an echo
+on its behalf. The delivery record is now
+`@10/IPC@ event=deliver receiver=2 sender=1 exact=1`, without `echo=<key>`.
+The key's value is still recorded, as `payload0=` in the kernel's send
+record. The echo of typed keys is the `keyboard-echo` image, where it reaches
+the wire only as console-object output written by the console holder.
+
+This is a change to `device-service` only. The `ipc-stream` image, whose
+events come from a fixed in-kernel source and not from a device, keeps its
+`echo=` record. The Qotom lab's own device stream
+(`hardware/lab/qotom-blocking-ipc-integration.c.inc`, built only without
+`LEANOS_DEVICE_SERVICE_SCENARIO`) is also unchanged.

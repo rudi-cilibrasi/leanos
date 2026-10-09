@@ -93,8 +93,8 @@ change:
    oracle-replayed on the host), and the serial transcript is exact.
 2. **An echo target.** The early text console is disabled before quarantine
    and before any ring-3 entry, because quarantine may remove VGA decode.
-   In `device-service` the echo subject has no output authority: it hands
-   each key to syscall 9 and the kernel prints `@10/IPC@ ... echo=<key>`.
+   The echo subject of `device-service` has no output authority: it hands
+   each key to syscall 9.
    *Resolved by issue #493:* the echo target is the console object of the
    console server (issue #472, [console-server.md](../console-server.md)).
    The `keyboard-echo` image runs this device service inside the
@@ -103,8 +103,14 @@ change:
    which writes it through the console capability, so the echo reaches the
    wire only as `@10/CONSOLE@` records. Subject 3's own device invocation is
    refused. `LeanOS/KeyboardEcho.lean` proves the separation in the composed
-   model (claim SC-DEVICE-CONSOLE-SEPARATION). The `device-service` image is
-   unchanged.
+   model (claim SC-DEVICE-CONSOLE-SEPARATION). The kernel checks its device
+   capability table against the generated witness `leanos_device_authorize`
+   (`KeyboardEcho.deviceAuthorize_agrees`) and each key exchange against
+   `leanos_blocking_ipc_event`, with subject 3 in the model's receiver role.
+   `device-service` stays the two-subject baseline of this stage, with the
+   VT-d window and the DMA/VT-d gates. Its kernel no longer prints the key
+   on subject 2's behalf: the delivery record carries no `echo=` field, and
+   the key's value stays in the send record's `payload0=`.
 3. **A q35 xHCI platform variant.** Done. `leanos_q35_device_service_command`
    appends `qemu-xhci` at 00:02.0, a hub and a `usb-kbd` to the unchanged
    production construction (topology `0001000800020004`, validated like the

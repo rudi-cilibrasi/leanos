@@ -14559,6 +14559,12 @@
     },
     {
       "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.boot_grant_installs",
+      "display": "boot_grant_installs",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
       "qualified": "LeanOS.KeyboardEcho.boot_output",
       "display": "boot_output",
       "kind": "theorem"
@@ -14579,6 +14585,30 @@
       "source": "LeanOS/KeyboardEcho.lean",
       "qualified": "LeanOS.KeyboardEcho.console_holder_no_device",
       "display": "console_holder_no_device",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.deviceAuthorize_accepts",
+      "display": "deviceAuthorize_accepts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.deviceAuthorize_agrees",
+      "display": "deviceAuthorize_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.deviceAuthorize_off_domain",
+      "display": "deviceAuthorize_off_domain",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.deviceAuthorize_refused_no_effect",
+      "display": "deviceAuthorize_refused_no_effect",
       "kind": "theorem"
     },
     {
@@ -14609,6 +14639,12 @@
       "source": "LeanOS/KeyboardEcho.lean",
       "qualified": "LeanOS.KeyboardEcho.step_output_of_not_console",
       "display": "step_output_of_not_console",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/KeyboardEcho.lean",
+      "qualified": "LeanOS.KeyboardEcho.witnesses_disjoint",
+      "display": "witnesses_disjoint",
       "kind": "theorem"
     },
     {
@@ -14999,6 +15035,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_console_authorize_vectors_exact",
       "display": "hosted_console_authorize_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_device_authorize_vectors_exact",
+      "display": "hosted_device_authorize_vectors_exact",
       "kind": "theorem"
     },
     {
