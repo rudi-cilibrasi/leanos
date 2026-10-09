@@ -233,6 +233,11 @@
         "-DLEANOS_FAULT_HANDLER_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-fault-handler.h\""
       ],
+      "kernel-frame-server": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_FRAME_SERVER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-frame-server.h\""
+      ],
       "kernel-timer-server": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_TIMER_SERVER_SCENARIO=1",
@@ -548,6 +553,14 @@
           "-DLEANOS_SUBJECT_C_OBJECT=1"
         ]
       },
+      "boot-frame-server": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_FRAME_SERVER_SCENARIO=1",
+          "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
       "boot-timer-server": {
         "source": "boot/boot.S",
         "definitions": [
@@ -588,6 +601,10 @@
       },
       "subject-fault-handler": {
         "source": "subjects/fault-handler",
+        "slot": "c"
+      },
+      "subject-frame-server": {
+        "source": "subjects/frame-server",
         "slot": "c"
       },
       "subject-timer-server": {
@@ -940,6 +957,16 @@
         ],
         "final_link": true,
         "prelink_plan": "boot-page-plan-fault-handler.h",
+        "plan_equal_to": null
+      },
+      "leanos-frame-server": {
+        "boot": "boot-frame-server",
+        "kernel": "kernel-frame-server",
+        "extra_objects": [
+          "subject-frame-server"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-frame-server.h",
         "plan_equal_to": null
       },
       "leanos-timer-server": {
@@ -1329,6 +1356,13 @@
           "key": "fault-handler"
         }
       },
+      "leanos-frame-server": {
+        "iso": "leanos-@VERSION@-x86_64-frame-server.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "frame-server"
+        }
+      },
       "leanos-timer-server": {
         "iso": "leanos-@VERSION@-x86_64-timer-server.iso",
         "grub": "boot/grub.cfg",
@@ -1689,6 +1723,16 @@
         "description": "timer-server",
         "targets": [
           "leanos-timer-server"
+        ]
+      },
+      {
+        "image": "leanos-frame-server",
+        "check": "converge",
+        "expected": "boot-page-plan-frame-server.h",
+        "final": "boot-page-plan-frame-server.final.h",
+        "description": "frame-server",
+        "targets": [
+          "leanos-frame-server"
         ]
       },
       {
@@ -3485,6 +3529,29 @@
         "SC-FAULT-HANDLER-DELIVERY"
       ],
       "does_not_prove": "Not a refinement of SC-FAULT-HANDLER-DELIVERY: one finite QEMU run of a fixed boot binding (#DE from A to C); the generated witness is a fixed-width lowering, and the C kernel, boot.S, compiler, linker and QEMU stay trusted"
+    },
+    "frame-server": {
+      "expectations": "scripts/expectations/frame-server.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-frame-server.iso",
+        "elf": "leanos-frame-server.elf",
+        "serial_log": "frame-server.serial.log",
+        "scenario": "frame-server",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-FRAME-SERVER-BUDGET",
+        "SC-FRAME-SERVER-SCRUB",
+        "SC-FRAME-SERVER-CHECK"
+      ],
+      "does_not_prove": "Not a refinement of SC-FRAME-SERVER-BUDGET, SC-FRAME-SERVER-SCRUB, SC-FRAME-SERVER-CHECK: one finite QEMU run of a two-frame pool and two fixed budgets whose kernel checks each server decision against the generated Lean witness; the C kernel's mapping and scrub, boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
     },
     "timer-server": {
       "expectations": "scripts/expectations/timer-server.transcript",

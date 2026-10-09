@@ -11570,6 +11570,222 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_grant_a",
+      "display": "boot_grant_a",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_grant_b",
+      "display": "boot_grant_b",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_hostile_refused",
+      "display": "boot_hostile_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_refuse_a",
+      "display": "boot_refuse_a",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_revoke_a",
+      "display": "boot_revoke_a",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_view_words",
+      "display": "boot_view_words",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.boot_written_a",
+      "display": "boot_written_a",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.budget_respected",
+      "display": "budget_respected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.check_server",
+      "display": "check_server",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.countP_update",
+      "display": "countP_update",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.decide_accepted_effect",
+      "display": "decide_accepted_effect",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.decide_not_server",
+      "display": "decide_not_server",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.decide_preserves_authority",
+      "display": "decide_preserves_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.decide_rejected_unchanged",
+      "display": "decide_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.effect_revoke_grant",
+      "display": "effect_revoke_grant",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.frameServerCheck_agrees",
+      "display": "frameServerCheck_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.frameServerView_agrees",
+      "display": "frameServerView_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.frameServerView_pool",
+      "display": "frameServerView_pool",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.grant_cases",
+      "display": "grant_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.grant_publishes_scrubbed",
+      "display": "grant_publishes_scrubbed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.granted_exact",
+      "display": "granted_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.holds_reclaim",
+      "display": "holds_reclaim",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.holds_revoke",
+      "display": "holds_revoke",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.kernel_only_checks",
+      "display": "kernel_only_checks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.no_amplification",
+      "display": "no_amplification",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.ofNat_inj",
+      "display": "ofNat_inj",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.ofNat_le_iff",
+      "display": "ofNat_le_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.ofNat_lt_iff",
+      "display": "ofNat_lt_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.read_unwritten_zero",
+      "display": "read_unwritten_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.refused_truthful",
+      "display": "refused_truthful",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.release_preserves_bytes",
+      "display": "release_preserves_bytes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.revoke_retires",
+      "display": "revoke_retires",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.serverPolicy_accepted",
+      "display": "serverPolicy_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.step_preserves_invariant",
+      "display": "step_preserves_invariant",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.usage_grant",
+      "display": "usage_grant",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameServer.lean",
+      "qualified": "LeanOS.FrameServer.usage_le_of_subset",
+      "display": "usage_le_of_subset",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/IOMMU.lean",
       "qualified": "LeanOS.IOMMU.AuthoritativeMemoryOutcome.invariant",
       "display": "AuthoritativeMemoryOutcome.invariant",
@@ -15087,6 +15303,18 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_frame_server_vectors_exact",
+      "display": "hosted_frame_server_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_frame_server_view_vectors_exact",
+      "display": "hosted_frame_server_view_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_inFlight_revocation_vectors_exact",
       "display": "hosted_inFlight_revocation_vectors_exact",
       "kind": "theorem"
@@ -17729,6 +17957,24 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.frame_ownership_exclusive",
       "display": "frame_ownership_exclusive",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_server_budget",
+      "display": "frame_server_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_server_kernel_checks",
+      "display": "frame_server_kernel_checks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_server_scrub",
+      "display": "frame_server_scrub",
       "kind": "theorem"
     },
     {

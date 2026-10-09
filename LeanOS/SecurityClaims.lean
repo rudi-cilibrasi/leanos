@@ -31,6 +31,7 @@ import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.FaultHandler
 import LeanOS.TimerServer
+import LeanOS.FrameServer
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -3507,6 +3508,105 @@ theorem fault_handler_delivery (sys : FaultHandler.System) (entry : InterruptEnt
     exact ⟨hdead, hready, hcontext,
       fun holder slot capability hslot =>
         FaultHandler.reply_no_amplification next subject .terminate holder slot capability hslot⟩
+
+/-- SC-FRAME-SERVER-BUDGET: with allocation policy in a ring-3 frame server,
+no client ever holds more pool frames than its budget capability allows,
+whatever the server decides and whatever any client writes; and no step gives
+anyone more authority: the server, its pool and its pool rights never change,
+no budget ever grows, and every grant is of a pool frame with rights inside the
+pool rights. -/
+theorem frame_server_budget (sys : FrameServer.System) (op : FrameServer.Op)
+    (hinv : FrameServer.Invariant sys) :
+    FrameServer.Invariant (FrameServer.step sys op) ∧
+      (∀ client, FrameServer.usage (FrameServer.step sys op) client ≤
+        (FrameServer.step sys op).limit client) ∧
+      (FrameServer.step sys op).server = sys.server ∧
+      (FrameServer.step sys op).pool = sys.pool ∧
+      (FrameServer.step sys op).poolRights = sys.poolRights ∧
+      (∀ client, (FrameServer.step sys op).limit client ≤ sys.limit client) ∧
+      FrameServer.Confined (FrameServer.step sys op) := by
+  obtain ⟨hserver, hpool, hrights, hlimit, hconf⟩ := FrameServer.no_amplification sys op hinv
+  exact ⟨FrameServer.step_preserves_invariant sys op hinv,
+    FrameServer.budget_respected sys op hinv, hserver, hpool, hrights, hlimit, hconf⟩
+
+/-- SC-FRAME-SERVER-SCRUB: a frame the server grants is completely scrubbed
+before the client can see it, whatever it held (in particular a frame released
+or revoked from another client, whose bytes release leaves in place); revoking
+a client's budget capability retires every frame it held; and in every
+invariant state a client reading a held frame it has not written reads zero. -/
+theorem frame_server_scrub (sys : FrameServer.System) (caller client : Capability.SubjectId)
+    (frame : FrameAllocator.FrameId) (rights : UInt64) :
+    ((FrameServer.decide sys caller (.grant client frame rights)).2 = .granted client frame →
+      (∀ offset, offset < FrameScrub.frameBytes →
+        (FrameServer.decide sys caller (.grant client frame rights)).1.bytes frame offset =
+          FrameScrub.initialByte) ∧
+      (rights &&& FrameServer.readBit ≠ 0 → ∀ offset, offset < FrameScrub.frameBytes →
+        FrameServer.read (FrameServer.decide sys caller (.grant client frame rights)).1
+          client frame offset = some FrameScrub.initialByte)) ∧
+    (FrameServer.decide sys caller (.reclaim client frame)).1.bytes = sys.bytes ∧
+    (FrameServer.decide sys caller (.revoke client)).1.bytes = sys.bytes ∧
+    ((FrameServer.decide sys caller (.revoke client)).2 = .revoked client →
+      (FrameServer.decide sys caller (.revoke client)).1.limit client = 0 ∧
+      ∀ held, FrameServer.holds (FrameServer.decide sys caller (.revoke client)).1 client held =
+        false) ∧
+    (FrameServer.Invariant sys → ∀ reader held offset g value,
+      sys.grant held = some g → sys.written held = false → offset < FrameScrub.frameBytes →
+      FrameServer.read sys reader held offset = some value → value = FrameScrub.initialByte) := by
+  refine ⟨fun h => ⟨?_, fun hread offset hoffset =>
+      FrameServer.grant_publishes_scrubbed sys caller client frame rights h hread offset hoffset⟩,
+    (FrameServer.release_preserves_bytes sys caller client frame).1,
+    (FrameServer.release_preserves_bytes sys caller client frame).2,
+    FrameServer.revoke_retires sys caller client,
+    fun hinv reader held offset g value hg hw hoffset hread =>
+      FrameServer.read_unwritten_zero sys hinv reader held offset g hg hw hoffset value hread⟩
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, hbytes⟩ :=
+    FrameServer.granted_exact sys caller client frame rights client frame h
+  exact hbytes
+
+/-- SC-FRAME-SERVER-CHECK: the kernel's role is reduced to checking the
+server's decisions.  Every decision is either refused without effect or
+applied exactly as the server named it (the kernel chooses no client, frame,
+rights or reason); a decision from any subject but the server is refused; an
+accepted grant names a free pool frame, rights inside the pool rights and a
+client below its limit; a typed refusal is true; the honest server policy is
+never overridden; and the boot witness `frameServerCheck` answers exactly the
+model's encoded reply. -/
+theorem frame_server_kernel_checks (sys : FrameServer.System) (caller : Capability.SubjectId)
+    (d : FrameServer.Decision) :
+    ((∃ reason, FrameServer.check sys caller d = some reason ∧
+        FrameServer.decide sys caller d = (sys, .rejected reason)) ∨
+      (FrameServer.check sys caller d = none ∧
+        FrameServer.decide sys caller d = (FrameServer.effect sys d, FrameServer.replyOf d))) ∧
+    (caller ≠ sys.server → FrameServer.decide sys caller d = (sys, .rejected .notServer)) ∧
+    (∀ client frame rights, d = .grant client frame rights →
+      (FrameServer.decide sys caller d).2 = .granted client frame →
+      caller = sys.server ∧ frame ∈ sys.pool ∧ sys.grant frame = none ∧
+        FrameServer.rightsSubset rights sys.poolRights = true ∧
+        FrameServer.usage sys client < sys.limit client) ∧
+    (∀ client reason, d = .refuse client reason →
+      (FrameServer.decide sys caller d).2 = .refused client reason →
+      (reason = .budgetExhausted → sys.limit client ≤ FrameServer.usage sys client) ∧
+      (reason = .poolExhausted → FrameServer.hasFree sys = false)) ∧
+    (sys.poolRights ≠ 0 → ∀ client,
+      FrameServer.check sys sys.server (FrameServer.serverPolicy sys client) = none) ∧
+    (FrameServer.usage sys d.client < 2 ^ 64 → sys.limit d.client < 2 ^ 64 →
+      FrameServer.frameServerCheck (FrameServer.opWord d) (FrameServer.decisionView sys d)
+          (UInt64.ofNat (FrameServer.usage sys d.client)) (UInt64.ofNat (sys.limit d.client))
+          (FrameServer.requestedWord d) sys.poolRights =
+        FrameServer.encodeReply (FrameServer.decide sys sys.server d).2) := by
+  refine ⟨FrameServer.kernel_only_checks sys caller d,
+    FrameServer.decide_not_server sys caller d, ?_, ?_,
+    fun hrights client => FrameServer.serverPolicy_accepted sys client hrights,
+    FrameServer.frameServerCheck_agrees sys d⟩
+  · intro client frame rights hd h
+    subst hd
+    obtain ⟨_, _, hs, hp, hfree, hr, hu, _⟩ :=
+      FrameServer.granted_exact sys caller client frame rights client frame h
+    exact ⟨hs, hp, hfree, hr, hu⟩
+  · intro client reason hd h
+    subst hd
+    obtain ⟨_, _, _, hb, hp⟩ := FrameServer.refused_truthful sys caller client reason client reason h
+    exact ⟨hb, hp⟩
 
 /-- SC-DEVICE-CONSOLE-SEPARATION: in the composed console and device system
 under the keyboard-echo authority, a change to the console trace is an action

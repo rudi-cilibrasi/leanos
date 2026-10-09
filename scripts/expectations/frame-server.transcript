@@ -1,0 +1,46 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=frame-server controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/IPC@ event=subject subject=3 source=subjects/frame-server entry=text-start stack=2048 result=PASS
+@10/CAP@ event=install server=3 pool-frames=2 pool-rights=read,write budget-a=1 budget-b=2 residue=255 leaves=supervisor hostile-decisions=8 witness=refused result=PASS
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=frame-server
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 role=frame-server result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial
+@10/IPC@ event=run subject=2 address-space=2 context=initial canaries=exact result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3
+@10/IPC@ event=call subject=1 endpoint=12 request=frame receiver=3
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 request=frame client=1
+@10/CAP@ event=grant server=3 client=1 pool-frame=0 rights=read,write usage=1 budget=1 witness=granted scrubbed=4096 mapped=user,nx result=PASS
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1 answer=pool-frame-0
+@10/IPC@ event=call subject=1 endpoint=12 request=frame receiver=3
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 request=frame client=1
+@10/CAP@ event=refuse server=3 client=1 reason=budget-exhausted usage=1 budget=1 free-frames=1 witness=budget-exhausted answer=256 transferred=0 result=PASS
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1 answer=budget-exhausted
+@10/IPC@ event=call subject=1 endpoint=12 request=release receiver=3 blocked-forever=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 request=release client=1
+@10/CAP@ event=revoke server=3 client=1 frames=1 budget=0 witness=revoked unmapped=1 residue-first=165 residue-last=165 scrubbed=0 result=PASS
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 context=saved released-subject=1
+@10/IPC@ event=call subject=2 endpoint=12 request=frame receiver=3
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 request=frame client=2
+@10/CAP@ event=grant server=3 client=2 pool-frame=0 rights=read,write usage=1 budget=2 witness=granted scrubbed=4096 mapped=user,nx result=PASS
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 resumed=1 answer=pool-frame-0
+@10/IPC@ event=report subject=2 pool-frame=0 reused-from=1 first-byte=0 last-byte=0 zero=1 result=PASS
+@10/FINAL@ status=PASS subjects=3 server=3 grants=2 refusals=1 revocations=1 reused=1 scrubbed=1 decisions-checked=4

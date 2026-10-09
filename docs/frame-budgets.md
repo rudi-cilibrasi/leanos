@@ -88,6 +88,15 @@ timing availability, production OOM policy, and the following emulator scenario
 are excluded. The existing compiler/runtime/boot/hardware TCB boundary remains
 unchanged.
 
+## Allocation policy in a ring-3 server
+
+The `frame-budget` scenario allocates in the kernel. Issue #486 moves the
+policy out: [frame-server.md](frame-server.md) describes
+`LeanOS.FrameServer`, in which a ring-3 frame server holds the pool
+capability, clients hold budget capabilities to it, and the kernel only checks
+the server's decisions. Its grant scrubs with the same `FrameScrub.scrubFrame`
+used here, and its release leaves the bytes like `FrameScrub.release`.
+
 ## Generated and QEMU vertical slice
 
 `LeanOS.FrameBudgetScenario` adds a fixed eight-edge sequence to the existing
