@@ -1508,7 +1508,9 @@ isr80_cld:
     je 31f
     cmp $0x3c03, %rax
     je 32f
-#if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+#if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || \
+    defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) || \
+    defined(LEANOS_FAULT_HANDLER_SCENARIO)
     cmp $0x3c04, %rax
     je 33f
 #endif
@@ -1684,6 +1686,32 @@ isr80_cld:
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+33: /* Fault handler C replied and blocked forever: preserve C, then restore
+       B's saved continuation (B resumes after its first report). */
+    mov %rsp, %rsi
+    lea saved_context_c(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_c+120(%rip), %rax
+    mov %rax, saved_context_c_original_rip(%rip)
+    mov saved_context_c+136(%rip), %rax
+    mov %rax, saved_context_c_original_flags(%rip)
+    mov saved_context_c+144(%rip), %rax
+    mov %rax, saved_context_c_original_rsp(%rip)
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_c(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+#endif
 32: /* A's send to endpoint 12 woke C: preserve A, restore C's blocked
        continuation, and hand C exactly A's two payload words (saved RBX,
        RCX) in RAX/RBX plus the delivery flag in RCX. */
@@ -2020,7 +2048,11 @@ isr0:
     mov 120(%rsp), %rdi
     mov 128(%rsp), %rsi
     call divide_error_handler
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+    jmp fault_handler_deliver
+#else
     jmp integer_fault_restore_peer
+#endif
 .global isr3
 isr3:
     clac
@@ -2046,6 +2078,44 @@ integer_fault_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+/* Fault handler image (#488): divide_error_handler accepted the generated
+   delivery route.  Suspend A by preserving its exact frame (it is never
+   restored), install handler C's blocked continuation, and hand C exactly
+   the typed record words in RAX/RBX/RCX/RDX; every other register is C's
+   own. */
+.global fault_handler_deliver
+fault_handler_deliver:
+    mov %rsp, %rsi
+    lea saved_context_a(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_a+120(%rip), %rax
+    mov %rax, saved_context_a_original_rip(%rip)
+    mov saved_context_a+136(%rip), %rax
+    mov %rax, saved_context_a_original_flags(%rip)
+    mov saved_context_a+144(%rip), %rax
+    mov %rax, saved_context_a_original_rsp(%rip)
+    lea saved_context_c(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    mov fault_handler_record(%rip), %rax
+    mov %rax, 112(%rsp)
+    mov fault_handler_record+8(%rip), %rax
+    mov %rax, 104(%rsp)
+    mov fault_handler_record+16(%rip), %rax
+    mov %rax, 96(%rsp)
+    mov fault_handler_record+24(%rip), %rax
+    mov %rax, 88(%rsp)
+    movq $page_map_level_4_c, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    call fault_handler_deliver_complete
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+#endif
 
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
@@ -2154,6 +2224,17 @@ user_a_entry:
     mov $12, %rdx
     mov $9, %rax
     int $0x80
+    ud2
+#endif
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+    /* Faulting subject (#488): a real integer divide by a zero divisor; the
+       processor delivers #DE with the saved RIP naming this instruction. */
+    xor %edx, %edx
+    mov $1, %eax
+    xor %ecx, %ecx
+.global user_a_fault_handler_divide
+user_a_fault_handler_divide:
+    div %ecx
     ud2
 #endif
     /* Sender subject: one two-word send to C's endpoint 12 (RDX). */
@@ -2699,6 +2780,14 @@ user_b_entry:
     mov %r13, %rcx
     mov $62, %rax
     int $0x80
+#ifdef LEANOS_FAULT_HANDLER_SCENARIO
+    /* Fault handler image (#488): B continues from its saved continuation
+       after the handler terminated A, and reports its canaries again. */
+    mov %r12, %rbx
+    mov %r13, %rcx
+    mov $63, %rax
+    int $0x80
+#endif
     ud2
 #endif
 #ifdef LEANOS_IPC_STREAM_SCENARIO

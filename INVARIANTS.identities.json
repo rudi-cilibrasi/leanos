@@ -11096,6 +11096,138 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.boundFor_some",
+      "display": "boundFor_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.delivered_exact",
+      "display": "delivered_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.delivered_no_amplification",
+      "display": "delivered_no_amplification",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.faultHandlerRoute_agrees",
+      "display": "faultHandlerRoute_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.fault_default_or_delivered",
+      "display": "fault_default_or_delivered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.fault_preserves_binding",
+      "display": "fault_preserves_binding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.receive_core",
+      "display": "receive_core",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.receive_preserves_binding",
+      "display": "receive_preserves_binding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.received_only_by_handler",
+      "display": "received_only_by_handler",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.received_own_inbox",
+      "display": "received_own_inbox",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.record_fields_only",
+      "display": "record_fields_only",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.reply_no_amplification",
+      "display": "reply_no_amplification",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.reply_other_rejected",
+      "display": "reply_other_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.reply_preserves_binding",
+      "display": "reply_preserves_binding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.reply_terminates",
+      "display": "reply_terminates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.step_preserves_binding",
+      "display": "step_preserves_binding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.step_preserves_inboxBound",
+      "display": "step_preserves_inboxBound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.unbound_class_is_default",
+      "display": "unbound_class_is_default",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.unbound_is_default",
+      "display": "unbound_is_default",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.unbound_witness_is_containment",
+      "display": "unbound_witness_is_containment",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.witness_delivery",
+      "display": "witness_delivery",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FaultHandler.lean",
+      "qualified": "LeanOS.FaultHandler.witness_terminate",
+      "display": "witness_terminate",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FrameAllocator.lean",
       "qualified": "LeanOS.FrameAllocator.allocated_is_owned",
       "display": "allocated_is_owned",
@@ -14877,6 +15009,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_fault_handler_vectors_exact",
+      "display": "hosted_fault_handler_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_inFlight_revocation_vectors_exact",
       "display": "hosted_inFlight_revocation_vectors_exact",
       "kind": "theorem"
@@ -17495,6 +17633,18 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.fault_dispatch_success_nonresumption",
       "display": "fault_dispatch_success_nonresumption",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.fault_handler_default",
+      "display": "fault_handler_default",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.fault_handler_delivery",
+      "display": "fault_handler_delivery",
       "kind": "theorem"
     },
     {
