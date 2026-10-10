@@ -65,6 +65,7 @@ import LeanOS.Observation
 import LeanOS.ReplayUnwinding
 import LeanOS.CompositeObservation
 import LeanOS.CompositeUnwinding
+import LeanOS.SpawnOracle
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption
 import LeanOS.ResumableContext

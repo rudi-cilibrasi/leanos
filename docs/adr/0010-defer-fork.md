@@ -82,6 +82,17 @@ an empty inheritance set** only; fork and clone stay excluded either way.
 | --- | --- | --- |
 | 1. One authoritative composite state | **Partial (model obligations discharged)** | The resource invariant is now proved for every composite step. `authoritativeGate_historyAgrees` and `authoritativeGate_preserves_resourceRuntimeWellFormed` cover every authoritative step other than caller-identity creation, with no premise beyond the combined invariant: interrupt cleanup, `syscall`, `resumePreempt`, `protect`, both terminations, every scheduler step, the blocking operations, and the deferred drain. Termination keeps both issuers, the whole subject history, and every subject's frame usage and limit (`authoritativeGate_termination_accounts`, `authoritativeGate_budget_exact`). Every invalidation entry point but the current-unmap completion keeps the invariant (`InvalidationOperation.apply_preserves_resourceRuntimeWellFormed`). The current-unmap completion needs `CurrentUnmapAdmissible`, which the prepare-then-acknowledge path provides (`currentUnmapAdmissible_of_prepared`). The caller-identity `Operation.createSubject k` is unchanged and keeps the invariant exactly when `0 < k` and `k` is below the subject counter (`authoritativeGate_createSubject_preserves_resourceRuntimeWellFormed`, `authoritativeGate_createSubject_requires_bound`). `CompositeStep` now covers every public transition, and `composite_resource_trace` proves that along every trace of admissible steps the combined invariant holds, no identity is created twice by either path (`issued_never_recreated` for terminated identities), and every subject's budget is exactly conserved. **Remaining, all at the executable boundary or in allocation semantics:** `CompositeDispatcher`'s `createSubjectOne` still runs caller-identity creation from a state whose counter does not cover the identity, and its frame-budget tokens still denote `FrameBudgetScenario.Runtime`. The composite has no budget-charged allocation or release; that is #490. |
 
+### Gate status update (2026-10-10, issue #489)
+
+| Item | Status | Evidence or gap |
+| --- | --- | --- |
+| 2. Atomic creation, failure and exhaustion semantics | **Partial (spawn met in the model)** | `spawn` is one composite transition (`LeanOS.FailStop.Spawn`). It builds the child on candidate states and commits nothing unless every stage succeeds. Every failure point returns a typed `SpawnError` with the pre-state (`spawn_rejected_unchanged`): missing or stale spawn capability (`spawn_missing_right`, `spawn_stale_spawn_capability`), subject identities exhausted (`spawn_identity_exhausted`), slot table too small (`spawn_slot_table_full`), object identities exhausted (`spawn_address_space_exhausted`), address-space creation rejected, and a stale, malformed, wrong-kind, or ungrantable endpoint (`spawn_stale_endpoint_rejected`). A busy or halted latch rejects with the state unchanged (`spawnGate_unchanged_of_not_running`). The parent/child relation is recorded (`spawn_registry`). **Remaining:** budget transfer and subject-budget exhaustion (#490); cleanup of a terminated child's spawn record (#491). |
+| 4. Proof plan | **Partial** | Discharged for the spawn transition: invariant preservation, including `Capability.WellFormed` and the composite and resource invariants (`spawnGate_preserves_resourceRuntimeWellFormed`, built on `installCreatedAddressSpace_preserves_authoritativeRuntimeWellFormed`); inheritance-set exactness (`spawn_child_capabilities`, `spawn_child_authority`); no authority amplification for the parent or any other subject (`spawn_no_authority_amplification`, `spawn_parent_unchanged`); fresh identity (`spawn_fresh_identity`); the empty start (`spawn_child_starts_empty`); and the whole-trace resource theorem with spawn steps (`spawn_resource_trace`). **Not discharged:** confinement of the child over later steps as a spawn-specific theorem (it follows only from the general capability-model results), stale child references across slot reuse (#491), cleanup on child termination, and spawn resource accounting against a parent budget (#490). |
+| 5. Canonical executable encoding with adversarial tests | **Partial (hosted Lean oracle only)** | `LeanOS.SpawnOracle` defines the canonical command (tag `0x7001`; `decodeSpawn_encodeSpawn`, `encodeSpawn_decodeSpawn`), injective result codes (`decodeSpawnErrorCode_spawnErrorCode`), and adversarial vectors on the dispatcher's seed for every failure point, both issuer exhaustions, stale and malformed parent handles, a re-granted spawn capability, isolation, the child presenting the parent's handle, and never-reuse after termination (`spawn_vectors_pass`). `NegativeFixtures/SpawnIdentityRollback` forgets to roll back the identity and fails. **Not done:** the command is not in the generated boot dispatcher or its C exports (`boot_dispatcher_rejects_spawn_tag`), and there is no QEMU scenario. |
+
+Items 1, 2, 4, and 5 all remain partial, so the ring-3 spawn syscall stays
+gated.
+
 ### Spawn readiness decision
 
 The gate is **not met**. Spawn work may proceed only through #489 (explicit
@@ -117,6 +128,9 @@ Nothing is inherited implicitly. The child receives exactly:
 - **a fresh, never-reused identity** from the lifecycle issuer, with its
   parent recorded only as a parent/child relation, never as authority.
 
+The 2026-10-10 amendment below adds the root capability of the child's own
+new, empty address space, which the address-space invariant requires.
+
 ### Proof plan for #489
 
 - Spawn preserves `Capability.WellFormed` and the composite invariants.
@@ -132,3 +146,53 @@ Nothing is inherited implicitly. The child receives exactly:
 Process-creation proposals use the issue template
 `.github/ISSUE_TEMPLATE/process-creation.yml`, which requires the enumerated
 inheritance set and the proof plan before a model is accepted.
+
+## Amendment (2026-10-10): the spawn capability and the child's address space (issue #489)
+
+### Decision: a new capability kind, not a rights bit
+
+The spawn capability is a capability kind of its own, `SpawnCapability`,
+held in the composite projection `CompositeState.spawn` (`SpawnRegistry`),
+beside the generic slot registry. This follows ADR 0022, which layers device
+capabilities over `Capability.State` the same way. The kernel grants and
+revokes it (`SpawnOperation.grantAuthority`, `revokeAuthority`); subjects
+cannot copy, transfer, or derive it. Each grant has a never-reused
+`generation`, and a spawn presents that generation word, so a revoked and
+re-granted spawn capability rejects the old word.
+
+A rights bit was rejected. None of the three object kinds (`memory`,
+`addressSpace`, `endpoint`) denotes the authority to create subjects, so the
+bit would have no natural object. Adding a field to `Capability.Rights` would
+also change `rightsSubset`, every rights literal, every delegation proof, and
+the generated C of every boot module that handles capabilities. A new
+`ObjectKind` was rejected for the same blast radius and because it would need
+a kernel object with its own lifetime. A separate kind keeps spawn authority
+out of delegation entirely, which is what #490 needs to attach a per-parent
+subject budget to it later.
+
+### Clarification of the inheritance set: the address-space root
+
+The 2026-10-07 inheritance set gives the child "one endpoint capability" and
+nothing else. The composite cannot also give the child an owned address
+space under that wording: `VirtualMapping.LifecycleWellFormed` requires the
+owner of every live address space to hold `revoke` over it. The child
+therefore also receives the root capability of **its own new, empty address
+space** (rights `{grant, revoke}`, exactly what `VirtualMapping.createAddressSpace`
+installs). Over every object that existed before the spawn, the child's
+authority is exactly the granted endpoint with the requested rights
+(`spawn_child_authority`). This changes the enumerated set, so a reviewer
+must accept it before #489 is closed.
+
+### What the model does not yet give the child
+
+- **A schedulable address space.** The scheduler admits a subject only when
+  it owns the address space whose identifier equals its subject identifier.
+  The child's address space comes from the object issuer, which is a
+  different counter. The child is also not runnable, and no code is loaded.
+  Admission belongs with the loader issue.
+- **Extended CPU state, device authority, and fault-handler binding.** These
+  live in models outside `CompositeState` (`ExtendedState`,
+  `DeviceCapability`, `FaultHandler`). The child has no saved context of any
+  kind, so its first context will be the reviewed reset value. The composite
+  device projections are unchanged by spawn, and the child holds no device
+  capability because it holds no capability other than the two above.

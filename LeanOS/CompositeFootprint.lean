@@ -32,6 +32,8 @@ inductive Projection where
   | frameBudgets
   /-- Frame contents and per-lifetime write flags of the scrub model. -/
   | scrub
+  /-- Kernel-granted spawn capabilities and the parent/child record (#489). -/
+  | spawn
   deriving DecidableEq, Repr
 
 /-- The complete finite vocabulary, in `CompositeState` declaration order. -/
@@ -39,7 +41,7 @@ def Projection.all : List Projection :=
   [ .execution, .scheduler, .preemption, .virtualMemory, .ipc
   , .capabilities, .lifecycle, .resumable, .transfers, .blockingIPC
   , .blockingContexts, .deferredCancels, .directPortIO, .dmaAccepted
-  , .dmaObserved, .invalidationPublication, .issuers, .frameBudgets, .scrub ]
+  , .dmaObserved, .invalidationPublication, .issuers, .frameBudgets, .scrub, .spawn ]
 
 /-- Every projection name occurs in the explicit finite vocabulary. -/
 theorem Projection.mem_all (projection : Projection) :
