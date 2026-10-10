@@ -1,33 +1,22 @@
 // One mutant per line, "original@mutated": the first occurrence of `original`
 // in hardware/wifi/wifi-exec.h is replaced (scripts/check-device-programs.sh).
-uint32_t k = v >= 31 ? 31 : v;@uint32_t k = v >= 30 ? 30 : v;
-if (at + sub > WIFI_SCRATCH_BYTES@if (at + sub >= WIFI_SCRATCH_BYTES
-(x == INT32_MIN && y == -1) ? (uint32_t)x@(x == INT32_MIN && y == -1) ? 0
-|| (b & 3)) {@) {
-if (at + 4 * n > WIFI_SCRATCH_BYTES)@if (at + 4 * n >= WIFI_SCRATCH_BYTES)
-case 7: r[a] = v >= 32 ? 0 : r[a] >> v;@case 7: r[a] = r[a] >> (v & 31);
-if (b > WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }@if (b >= WIFI_SCRATCH_BYTES) { *code = pc - 1; { st = WIFI_BAD_MEM; goto out; } }
-if (pc >= n) { *code = pc; st = WIFI_BAD_PC; goto out; }@if (pc > n) { *code = pc; st = WIFI_BAD_PC; goto out; }
-POLICY(wifi_cfg_allowed(pol->cfg_read, b));@
-(x == INT32_MIN && y == -1) ? 0 : (uint32_t)(x % y)@(uint32_t)(x % y)
-#define OFF(x, w) do { if ((x) > window - (w)@#define OFF(x, w) do { if ((x) >= window - (w)
-if (sp == WIFI_STACK_DEPTH)@if (sp == WIFI_STACK_DEPTH - 1)
-case 5: t = (int32_t)x >= (int32_t)v; break;@case 5: t = x >= v; break;
-POLICY(pol->dma);@POLICY(1);
-case 9: v &= 31;@case 9: v &= 15;
-if (wifi_is_sink(p, off)) return v - base < WIFI_SCRATCH_BYTES;@if (wifi_is_sink(p, off)) return v - base <= WIFI_SCRATCH_BYTES;
-if (wifi_is_sink(p, off - 4u)) return v == 0;@if (wifi_is_sink(p, off - 4u)) return 1;
-if (off - p->sinks[i] < 8u) return 1;@if (off - p->sinks[i] < 4u) return 1;
-if (base == 24) POLICY(NO_SINK(a));@
-POLICY(NO_SINK(a));@
-*code = imm ? a : r[a]; st = WIFI_YIELD; goto out; }@*code = a; st = WIFI_YIELD; goto out; }
-    vm->pc = pc;@    vm->pc = pc - (st == WIFI_YIELD);
-case 28: REG(a); OFF(b, 1); r[a] = WH_R8(b); break;@case 28: REG(a); OFF(b, 2); r[a] = WH_R8(b); break;
-OFF(a, 1); POLICY(NO_SINK(a)); WH_W8(a, (uint8_t)v); break; }@OFF(a, 1); WH_W8(a, (uint8_t)v); break; }
-if (t == 0 || t == 2) continue;@if (t == 0 || t == 2 || t == 3) continue;
-if (t == 0 || t == 2) continue;@if (t != 1 && t != 6) continue;
-if (hi != 0 || (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES)) return 0;@if (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES) return 0;
-if (hi != 0 || (lo != 0 && lo - base >= WIFI_SCRATCH_BYTES)) return 0;@if (hi != 0 || lo - base >= WIFI_SCRATCH_BYTES) return 0;
-for (uint32_t i = 0; i < sub; ++i) S[at + i] = old[i];@
-if (base == 23) POLICY(!wifi_desc_touch(pol, at, 4 * n));@
-if (pol->present && wifi_desc_touch(pol, at, sub)) {@if (pol->present && wifi_desc_touch(pol, at + 1, sub - 1)) {
+// The interpreter is generated (issue #494); these seed bugs in the
+// handwritten image parser and wifi_start, which feed it the program, window,
+// blob and declared policy, and must each change the generated executor's
+// summary of some fuzzed program.
+t->id = 0x435314e4u; t->window = WIFI_WINDOW_BYTES;@t->id = 0x435314e4u; t->window = 0x8000u;
+t->window = wifi_le32(image + 24);@t->window = WIFI_WINDOW_MAX;
+pol->dma = flags & 1u;@pol->dma = 1;
+pol->cfg_read = wifi_le32(image + 40) | ((uint64_t)wifi_le32(image + 44) << 32);@pol->cfg_read = wifi_le32(image + 40);
+pol->cfg_write = wifi_le32(image + 48) | ((uint64_t)wifi_le32(image + 52) << 32);@pol->cfg_write = wifi_le32(image + 40) | ((uint64_t)wifi_le32(image + 44) << 32);
+pol->cmd_clear = wifi_le32(image + 56);@pol->cmd_clear = 0;
+pol->cmd_set = wifi_le32(image + 60);@pol->cmd_set = 0;
+pol->sinks[i] = wifi_le32(image + 68 + 4 * i);@pol->sinks[i] = wifi_le32(image + 68);
+d->trb = wifi_le32(e); d->start = wifi_le32(e + 4);@d->trb = 0; d->start = wifi_le32(e + 4);
+d->count = wifi_le32(e + 8); d->stride = wifi_le32(e + 12);@d->count = 1; d->stride = wifi_le32(e + 12);
+pol->present = 1;@pol->present = 0;
+vm->blob = vm->code_base + (uint64_t)n * 16;@vm->blob = vm->code_base + (uint64_t)n * 16 + 4;
+for (unsigned i = 0; i < 16; ++i) vm->r[i] = 0;@for (unsigned i = 0; i < 15; ++i) vm->r[i] = 0;
+vm->sp = 0; vm->pc = 0; vm->steps = 0;@vm->pc = 0; vm->steps = 0;
+vm->sp = 0; vm->pc = 0; vm->steps = 0;@vm->sp = 0; vm->pc = 0;
+for (uint32_t i = 0; i < WIFI_SCRATCH_BYTES; ++i) S[i] = 0;@for (uint32_t i = 0; i < 4096; ++i) S[i] = 0;

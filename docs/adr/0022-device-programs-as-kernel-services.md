@@ -35,8 +35,8 @@ Adopt **(a)** now, keeping (b) as the long-term shape.
   then *invoke* it for a bounded number of steps. Programs are resumable: the
   new `yield` instruction (opcode 27) suspends the program and hands one
   value — for the keyboard, one key — to the invoking subject, and the next
-  invocation continues after it (`wifi_start`/`wifi_resume` in
-  `hardware/wifi/wifi-exec.h`, `Sim.resume`). Budgets bound each invocation,
+  invocation continues after it (`wifi_start` in `hardware/wifi/wifi-exec.h`,
+  `wifi_gen_resume` in `hardware/wifi/wifi-gen-exec.h`, `Sim.resume`). Budgets bound each invocation,
   so the driver cannot hold the CPU indefinitely.
 * The model (`LeanOS/DeviceCapability.lean`) layers device capabilities,
   bound programs and suspended machines over an unmodified
@@ -174,6 +174,68 @@ captured 231 typed keys (`hello lean⏎` typed 21 times), all delivered and
 echoed, ending in `FINAL status=PASS events=231`. On the J1900 the
 controller's DMA is confined by the program's address sinks and
 descriptor map alone (ADR 0021).
+
+## Second device: AHCI read-only, one sector (issue #496)
+
+The `ahci-service` image repeats the pattern for a second device, q35's
+built-in ICH9 AHCI at 00:1f.2, with the Lean program
+`LeanOS.Storage.AhciRead` ([storage-ahci.md](../storage-ahci.md)). It reads
+one sector at a fixed LBA of a generated fixed disk behind port 1 and yields
+its 128 dwords; subject 1 sends each over the same verified blocking IPC to
+ring-3 subject 2, and the exact transcript
+(`scripts/expectations/ahci-service.transcript`) carries every dword and the
+sector's FNV-1a digest, which `scripts/generate-ahci-service-disk.py
+--check-transcript` ties to the generator. What stayed the same: the
+generated executor and its hooks, the budgeted resumable invocation on
+syscall 60, binding only an image whose declared target and policy lie inside
+the kernel's profile (`q35AhciPolicy`), the confinement and descriptor
+theorems (now with an AHCI descriptor map, ADR 0021), a VT-d grant generated
+from a Lean model state (`VTdBootPlan.ahciServiceState`: one read/write page
+at IOVA 16 KiB over the scratch, requester 250), and the IPC exchange checked
+edge by edge against `leanos_blocking_ipc_event`.
+
+No new executor architecture was needed. What had to change, and why:
+
+* **Assignment of a production function.** The xHCI is an extra function the
+  device-service manifest admits as assigned from the start. The AHCI is
+  part of the production inventory (it holds the boot CD), so the image keeps
+  the production manifest and its generated snapshot check unchanged (the
+  AHCI is quarantined unassigned at Command=0) and assigns it only after VT-d
+  translation is enabled. The live CPL3 gates of every device-service image
+  therefore read the *live* assignment bit instead of the manifest's; for
+  the xHCI images the two are equal.
+* **A second requester.** The xHCI shares EDU's requester 16, so its images
+  install the assigned context table. `leanos-vtd-plan` now takes the
+  service's reviewed assignment (`serviceOf`: 1 xHCI, 2 AHCI, selected by the
+  image's `leanos_service_device` symbol), binds it to that service's
+  requester, emits `leanos_vtd_service_context_table`, and refuses a service
+  plan whose upper tables differ from the assigned ones. The AHCI image
+  installs that context table.
+* **Holder check.** The two-subject `device-service` image authorizes
+  syscall 60 by subject and step only. The AHCI image also checks every
+  invocation against the generated device witness `leanos_device_authorize`
+  (`KeyboardEcho.deviceAuthorize`: only subject 1 holds device 0), and
+  subject 2's one attempt is refused by the same witness before it first
+  blocks.
+* **Framing.** A key is never zero, but a sector dword may be, and zero ends
+  the stream. The AHCI image returns each dword with its sequence number
+  (from 1) in the high half of syscall 60's result; subject 1 sends them as
+  the two payload words and the kernel checks the sequence at delivery.
+* **Window granularity.** The handwritten image parser
+  (`wifi_image_header`) accepted target windows only in 2 KiB units. The
+  AHCI policy's window is the host control registers and ports 0 and 1
+  (512 bytes), so that ports 2–5, whose command-list and FIS bases are not
+  address sinks, are out of reach; the parser now accepts 512-byte units.
+  The Lean side (`admissible`, `Sim`) never had the restriction.
+* **Release and scrub.** The keyboard program's scratch is not scrubbed when
+  it ends. When the AHCI program halts (with Bus Master already cleared) the
+  kernel releases the function: it requires Command=Memory, writes
+  Command=0, unassigns it for the live gates, zeroes the whole 256 KiB
+  scratch and reads it back. The VT-d grant is a static generated plan and
+  stays installed; revoking it needs a second plan.
+
+The scratch is still the static `wifi_scratch` array, not frames charged to
+the holder's budget (issue #449's item 2), for both devices.
 
 ## Consequences
 

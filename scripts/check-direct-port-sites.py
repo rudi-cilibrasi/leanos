@@ -298,6 +298,11 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
         command_callers.add("device_service_assign")
         dword_callers |= {"device_service_assign", "wifi_hook_cfg_read32",
                           "device_service_observe_command"}
+    # The ahci-service image (issue #496) also returns the AHCI to Command=0
+    # when its program halts, from one noinline release path.
+    if "device_service_release" in functions:
+        command_callers.add("device_service_release")
+        dword_callers.add("device_service_release")
     expected = {
         "out16": {"pci_config_command"},
         "out32": {"pci_config_command", "pci_config_dword"},

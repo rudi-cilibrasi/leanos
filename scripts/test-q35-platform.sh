@@ -115,6 +115,39 @@ if leanos_validate_q35_device_service_command negative 2>/dev/null; then
   exit 1
 fi
 
+ahci_service=()
+leanos_q35_ahci_service_command ahci_service build/boot/ahci-service-disk.img \
+  qemu-system-x86_64 128 build/evidence/ahci-service.serial.log \
+  build/boot/leanos.iso
+leanos_validate_q35_ahci_service_command ahci_service
+[[ "$LEANOS_Q35_AHCI_SERVICE_TOPOLOGY_VERSION" != "$LEANOS_Q35_TOPOLOGY_VERSION" &&
+   "$LEANOS_Q35_AHCI_SERVICE_TOPOLOGY_VERSION" != "$LEANOS_Q35_ASSIGNED_EDU_TOPOLOGY_VERSION" &&
+   "$LEANOS_Q35_AHCI_SERVICE_TOPOLOGY_VERSION" != "$LEANOS_Q35_DEVICE_SERVICE_TOPOLOGY_VERSION" ]] || {
+  echo "error: ahci-service construction reused another topology version" >&2
+  exit 1
+}
+if leanos_validate_q35_command ahci_service 2>/dev/null; then
+  echo "error: production q35 platform accepted the ahci-service disk" >&2
+  exit 1
+fi
+negative=("${ahci_service[@]}")
+negative[-3]="id=leanos-disk,if=none,format=raw,file=build/boot/ahci-service-disk.img"
+if leanos_validate_q35_ahci_service_command negative 2>/dev/null; then
+  echo "error: ahci-service platform accepted a writable disk" >&2
+  exit 1
+fi
+negative=("${ahci_service[@]}")
+negative[-1]=ide-hd,drive=leanos-disk,bus=ide.0
+if leanos_validate_q35_ahci_service_command negative 2>/dev/null; then
+  echo "error: ahci-service platform accepted the disk on the CD's port" >&2
+  exit 1
+fi
+negative=("${ahci_service[@]:0:${#ahci_service[@]}-4}" -device edu,bus=pcie.0,addr=0x3 "${ahci_service[@]: -4}")
+if leanos_validate_q35_ahci_service_command negative 2>/dev/null; then
+  echo "error: ahci-service platform accepted an extra function" >&2
+  exit 1
+fi
+
 negative=("${command[@]}")
 for index in "${!negative[@]}"; do
   if [[ "${negative[$index]}" == -nodefaults ]]; then

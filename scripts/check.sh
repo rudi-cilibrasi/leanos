@@ -195,6 +195,10 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-run-image.sh
 ./scripts/check-expectation-templates.sh
+# The ahci-service transcript (issue #496) must carry exactly the generated
+# disk's sector at the program's LBA and its digest.
+./scripts/generate-ahci-service-disk.py \
+  --check-transcript scripts/expectations/ahci-service.transcript
 
 ./scripts/test-browser-boot.sh
 
@@ -460,6 +464,27 @@ if ! grep -Fq 'tests/negative/IdentityCounterStepConsistency.lean' "$negative_lo
     ! grep -Fq 'type mismatch' "$negative_log" ||
     ! grep -Fq 'ownStepConsistent 2 Channels.delegateToSelf = true' "$negative_log"; then
   echo "error: identity-counter fixture lacked the expected family mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/CompositeChannelOverclaims.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: composite channel overclaims unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/CompositeChannelOverclaims.lean' "$negative_log" ||
+    ! grep -Fq 'ownOutputConsistentCounter 2 (Operation.terminateSubject 3) = true' \
+      "$negative_log" ||
+    ! grep -Fq 'ownStepConsistentCounter 2 (Operation.terminateSubject 3) = true' \
+      "$negative_log" ||
+    ! grep -Fq '(seed plan).capabilities.nextIdentity = (Channels.shifted plan).capabilities.nextIdentity' \
+      "$negative_log" ||
+    ! grep -Fq 'ownStepConsistentCounter 2 CompositeSwitchedChannels.ownSubtree = true' \
+      "$negative_log" ||
+    ! grep -Fq 'ownOutputConsistentCounter 2 CompositeSwitchedChannels.preempt = true' \
+      "$negative_log"; then
+  echo "error: composite channel fixture lacked an expected family or counter mismatch" >&2
   cat "$negative_log" >&2
   exit 1
 fi

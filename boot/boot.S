@@ -2516,7 +2516,15 @@ user_a_fault_handler_divide:
     test %rax, %rax
     jz 2f
     mov %rax, %rbx
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+    /* The AHCI service's event is a sector dword (low half) and its
+       sequence number (high half): send them as the two payload words. */
+    mov %rax, %rcx
+    shr $32, %rcx
+    mov %ebx, %ebx
+#else
     xor %ecx, %ecx
+#endif
     mov $8, %rax
     int $0x80
     jmp 1b
@@ -3110,6 +3118,15 @@ user_b_entry:
 #else
     /* Echo subject: block on endpoint 10; when woken, RAX/RBX hold the two
        payload words; echo them back (syscall 9) and block again. */
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+    /* It holds no device capability: its one attempt to invoke the device
+       is refused (all ones) before it first blocks. */
+    mov $60, %rax
+    int $0x80
+    cmp $-1, %rax
+    je 1f
+    ud2
+#endif
 1:  mov $7, %rax
     int $0x80
     mov %rbx, %rcx

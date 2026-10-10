@@ -62,6 +62,10 @@ PROFILES = {
         "0001000800020004", 6, 2, 80,
         {**PRODUCTION_EXPECTED, (0, 2, 0): (1, 0x1B36, 0x000D, 0x0C0330, 0, 0, 1)},
     ),
+    # The ahci-service construction (issue #496) adds only a disk behind the
+    # built-in AHCI's port 1: the production PCI inventory, quarantined
+    # unassigned; the kernel assigns the AHCI only after VT-d is enabled.
+    "ahci-service": Profile("0001000800020005", 5, 1, 16, PRODUCTION_EXPECTED),
 }
 
 

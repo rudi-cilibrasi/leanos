@@ -11,15 +11,18 @@
 # runner variable, and the named markers below expand to the segments every
 # boot scenario shares, which are spelled once here.
 # The DMA quarantine summary names the scenario's pinned q35 construction:
-# the production inventory, or the device-service one (issue #449) whose
-# assigned xHCI firmware leaves bus-mastering; runners select it through
-# expectation_q35_topology.
+# the production inventory, the device-service one (issue #449) whose
+# assigned xHCI firmware leaves bus-mastering, or the ahci-service one (issue
+# #496), the production inventory with a disk behind the AHCI; runners select
+# it through expectation_q35_topology.
 expectation_dma_summary() {
   case "${expectation_q35_topology:-production}" in
     production)
       printf '%s\n' "${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS" ;;
     device-service)
       printf '%s\n' "${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020004 bus=0 scanned=256 present=6 optional-absent=1 writes=6 readbacks=6 initial-bus-masters=2 initial-bus-master-mask=80 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS" ;;
+    ahci-service)
+      printf '%s\n' "${LEANOS_SERIAL_15_DMA} snapshot=1 topology=0001000800020005 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS" ;;
     *)
       echo "failure_class=runner-template: unknown q35 topology ${expectation_q35_topology}" >&2
       exit 1 ;;

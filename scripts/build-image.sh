@@ -601,7 +601,18 @@ lean_c_modules=(
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer
+  WifiExec
 )
+# Generated C file name -> Lean source. WifiExec is the device-program
+# executor step (LeanOS/Wifi/Exec.lean, issue #494) that the device-service
+# kernels run.
+lean_c_source() {
+  case "$1" in
+    WifiExec) printf '%s\n' LeanOS/Wifi/Exec.lean ;;
+    *) printf 'LeanOS/%s.lean\n' "$1" ;;
+  esac
+}
 lean_c_signature="$build/generated-lean-c.sha256"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
 reuse_lean_c=1
@@ -617,7 +628,7 @@ if ((reuse_lean_c == 0)); then
   lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
   trap 'rm -rf "$lean_c_stage"' EXIT
   for module in "${lean_c_modules[@]}"; do
-    generate_lean_c "LeanOS/$module.lean" "$build/$module.c"
+    generate_lean_c "$(lean_c_source "$module")" "$build/$module.c"
     record_bootstrap_phase "lean-c-$module" generated
   done
   printf '%s\n' "$current_lean_c_signature" > "$lean_c_signature"
@@ -636,23 +647,28 @@ lean_prefix="$(lake env lean --print-prefix)"
 python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
   leanos_boot_transition LeanOS/Refinement/BootTransitionC.lean
 # The device-service image embeds the Lean xHCI keyboard program (issue
-# #449). leanos-wifi-gen refuses a program outside its target's admitted
-# policy; the header is rewritten only when the image bytes change.
+# #449), the ahci-service image the Lean one-sector AHCI program (issue
+# #496). leanos-wifi-gen refuses a program outside its target's admitted
+# policy; each header is rewritten only when the image bytes change.
 lake build leanos-wifi-gen
-LEANOS_KBD_SECONDS=20 .lake/build/bin/leanos-wifi-gen kbd-q35-service \
-  "$build/device-service-program.bin" >/dev/null
-python3 - "$build/device-service-program.bin" "$build/device-service-program.h" <<'PY'
+embed_device_program() {
+  local program="$1" stem="$2"
+  .lake/build/bin/leanos-wifi-gen "$program" "$build/$stem.bin" >/dev/null
+  python3 - "$program" "$build/$stem.bin" "$build/$stem.h" <<'PY'
 import sys
 from pathlib import Path
-image = Path(sys.argv[1]).read_bytes()
+image = Path(sys.argv[2]).read_bytes()
 rows = ",\n".join("  " + ", ".join(str(b) for b in image[i:i + 16])
                    for i in range(0, len(image), 16))
-text = ("/* Generated from leanos-wifi-gen kbd-q35-service; do not edit. */\n"
+text = (f"/* Generated from leanos-wifi-gen {sys.argv[1]}; do not edit. */\n"
         "static const uint8_t device_service_program[] = {\n" + rows + "\n};\n")
-out = Path(sys.argv[2])
+out = Path(sys.argv[3])
 if not out.exists() or out.read_text() != text:
     out.write_text(text)
 PY
+}
+LEANOS_KBD_SECONDS=20 embed_device_program kbd-q35-service device-service-program
+embed_device_program ahci-q35-service ahci-service-program
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
@@ -759,6 +775,7 @@ compute_graph_make_input_signature() {
     find "$build" -maxdepth 1 -type f \
       \( -name '*.c' -o -name 'composite-tokens.h' -o -name 'boundary-abi.h' -o \
       -name 'serial-protocol.h' -o -name 'device-service-program.h' -o \
+      -name 'ahci-service-program.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
       while IFS= read -r -d '' input; do
@@ -1242,6 +1259,15 @@ for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-b
       | tee "$build/entry-stack-$gated_scenario-final-elf.txt"
   fi
 done
+# The ahci-service image (issue #496) runs the device-program executor and the
+# release scrub on its syscall path, under its own reviewed manifest.
+if selected_final_enabled "$build/leanos-ahci-service.elf"; then
+  LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-ahci-service-callgraph.tsv \
+    LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-ahci-service-optimizer-optional.tsv \
+    LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-ahci-service-final-elf-edges.tsv" \
+    ./scripts/check-entry-stack-budget.sh "$build/leanos-ahci-service.elf" \
+    | tee "$build/entry-stack-ahci-service-final-elf.txt"
+fi
 # The keyboard-echo image (issue #493) runs the device-program executor and
 # the console object on one syscall path, under its own reviewed manifest.
 if selected_final_enabled "$build/leanos-keyboard-echo.elf"; then

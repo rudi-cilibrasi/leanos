@@ -218,6 +218,12 @@
         "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-keyboard-echo.h\""
       ],
+      "kernel-ahci-service": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_DEVICE_SERVICE_SCENARIO=1",
+        "-DLEANOS_AHCI_SERVICE_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-ahci-service.h\""
+      ],
       "kernel-example-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
@@ -527,6 +533,13 @@
           "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
           "-DLEANOS_CONSOLE_SERVER_SCENARIO=1",
           "-DLEANOS_KEYBOARD_ECHO_SCENARIO=1"
+        ]
+      },
+      "boot-ahci-service": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_IPC_STREAM_SCENARIO=1",
+          "-DLEANOS_AHCI_SERVICE_SCENARIO=1"
         ]
       },
       "boot-example-subject": {
@@ -927,6 +940,14 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-keyboard-echo.h",
+        "plan_equal_to": null
+      },
+      "leanos-ahci-service": {
+        "boot": "boot-ahci-service",
+        "kernel": "kernel-ahci-service",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-ahci-service.h",
         "plan_equal_to": null
       },
       "leanos-example-subject": {
@@ -1335,6 +1356,13 @@
           "key": "keyboard-echo"
         }
       },
+      "leanos-ahci-service": {
+        "iso": "leanos-@VERSION@-x86_64-ahci-service.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "ahci-service"
+        }
+      },
       "leanos-example-subject": {
         "iso": "leanos-@VERSION@-x86_64-example-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1683,6 +1711,16 @@
         "description": "keyboard-echo",
         "targets": [
           "leanos-keyboard-echo"
+        ]
+      },
+      {
+        "image": "leanos-ahci-service",
+        "check": "converge",
+        "expected": "boot-page-plan-ahci-service.h",
+        "final": "boot-page-plan-ahci-service.final.h",
+        "description": "ahci-service",
+        "targets": [
+          "leanos-ahci-service"
         ]
       },
       {
@@ -3457,6 +3495,34 @@
         "SC-IPC-EVENT-STREAM"
       ],
       "does_not_prove": "Not a refinement of SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run with QMP-typed keys and no console input; the kernel checks its console and device capability tables and each decision against the generated witnesses leanos_console_authorize and leanos_device_authorize, and each key exchange against leanos_blocking_ipc_event with C mapped to the model's receiver on endpoint 10, but the tables are kernel-owned data checked against the witnesses rather than derived from the models, and the C kernel, boot.S, the executor, compiler and QEMU stay trusted"
+    },
+    "ahci-service": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/ahci-service.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "120",
+        "image": "leanos-@VERSION@-x86_64-ahci-service.iso",
+        "elf": "leanos-ahci-service.elf",
+        "serial_log": "ahci-service.serial.log",
+        "scenario": "ahci-service",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-IPC-EVENT-STREAM",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT",
+        "SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS"
+      ],
+      "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS: one finite QEMU run reading one fixed sector of a generated disk image; the kernel checks each device invocation against the generated witness leanos_device_authorize and each exchange against leanos_blocking_ipc_event, but its device table, the release scrub, the executor hooks, the generated C, compiler, boot assembly and QEMU's AHCI and VT-d stay trusted, and that the descriptor map lists every AHCI pointer field is assumed"
     },
     "example-subject": {
       "release_artifacts": [
