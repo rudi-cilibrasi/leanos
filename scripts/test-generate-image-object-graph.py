@@ -1288,6 +1288,42 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
             with self.assertRaisesRegex(SystemExit, "subject 'subject-example' is malformed"):
                 MODULE.load_build_manifest(path)
 
+    def test_admitted_subject_runs_the_lean_checker(self) -> None:
+        # Issue #492: an admitted subject is also linked as a separate ELF,
+        # admitted by leanos-elf-admit, and embedded as .user.admitted.
+        graph = MODULE.render_graph(
+            Path("out"), "gcc", [], Path("/lean"), ROOT,
+            subjects={"subject-example": {"source": "subjects/example", "slot": "c",
+                                          "admitted": True}},
+        )
+        lines = graph.splitlines()
+        index = next(
+            position for position, line in enumerate(lines)
+            if line.startswith("out/subject-example.o:")
+        )
+        rule, recipe = lines[index], lines[index + 1]
+        tool = str(ROOT / ".lake/build/bin/leanos-elf-admit")
+        self.assertIn(str(ROOT / "subjects/admitted.ld"), rule)
+        self.assertIn(tool, rule)
+        self.assertIn(f"--admit-tool {tool}", recipe)
+        self.assertIn("--admitted-elf out/subject-example.admitted.elf", recipe)
+        self.assertIn("--admitted-plan out/subject-example.admitted.tsv", recipe)
+        plain = MODULE.render_graph(
+            Path("out"), "gcc", [], Path("/lean"), ROOT,
+            subjects={"subject-example": {"source": "subjects/example", "slot": "c"}},
+        )
+        self.assertNotIn("--admit-tool", plain)
+        manifest = json.loads(
+            (ROOT / "scripts/scenario-manifest.json").read_text(encoding="utf-8"))
+        self.assertIs(manifest["build"]["subjects"]["subject-example"].get("admitted"), True)
+        bad = json.loads(json.dumps(manifest))
+        bad["build"]["subjects"]["subject-example"]["admitted"] = False
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(bad), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "subject 'subject-example' is malformed"):
+                MODULE.load_build_manifest(path)
+
     def test_cli_writes_deterministic_graph(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "objects.mk"
@@ -1331,6 +1367,12 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
             (source / "scripts").mkdir()
             for script in ("build-subject.sh", "check-subject-policy.py"):
                 shutil.copy2(ROOT / "scripts" / script, source / "scripts" / script)
+            # The admitted-subject rule (#492) runs the Lean checker; this
+            # fixture graph only needs a tool that admits.
+            admit_tool = source / ".lake/build/bin/leanos-elf-admit"
+            admit_tool.parent.mkdir(parents=True)
+            admit_tool.write_text("#!/bin/sh\necho 'elf\tfixture'\n", encoding="utf-8")
+            admit_tool.chmod(0o755)
             for index, module in enumerate(MODULE.GENERATED_MODULES):
                 (build / f"{module}.c").write_text(
                     f"int generated_module_{index}(void) {{ return {index}; }}\n",

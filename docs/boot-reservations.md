@@ -10,7 +10,11 @@ containment before any allocator state is returned.
 The vocabulary covers low-memory policy, the complete loaded ELF/BSS image,
 page tables, descriptor tables (GDT/IDT/TSS), other kernel stacks, the ordinary
 privilege-entry guard and usable stack as distinct identities, embedded user
-images/stacks, and the live Multiboot2 information block.
+images/stacks, and the live Multiboot2 information block. The embedded-user
+entry runs from the first subject's text to `__user_admitted_end`, so it also
+covers the admitted subject ELF's frames in the `example-subject` image
+([ADR 0024](adr/0024-build-time-elf-admission.md)); in every other image that
+range is empty.
 The overlapping in-image entries make the reviewable inventory explicit. The
 Multiboot2 entry is bootstrap-lifetime data; this slice conservatively keeps it
 reserved. Reclamation requires a separate proved transition after its last
