@@ -90,8 +90,16 @@ an empty inheritance set** only; fork and clone stay excluded either way.
 | 4. Proof plan | **Partial** | Discharged for the spawn transition: invariant preservation, including `Capability.WellFormed` and the composite and resource invariants (`spawnGate_preserves_resourceRuntimeWellFormed`, built on `installCreatedAddressSpace_preserves_authoritativeRuntimeWellFormed`); inheritance-set exactness (`spawn_child_capabilities`, `spawn_child_authority`); no authority amplification for the parent or any other subject (`spawn_no_authority_amplification`, `spawn_parent_unchanged`); fresh identity (`spawn_fresh_identity`); the empty start (`spawn_child_starts_empty`); and the whole-trace resource theorem with spawn steps (`spawn_resource_trace`). **Not discharged:** confinement of the child over later steps as a spawn-specific theorem (it follows only from the general capability-model results), stale child references across slot reuse (#491), cleanup on child termination, and spawn resource accounting against a parent budget (#490). |
 | 5. Canonical executable encoding with adversarial tests | **Partial (hosted Lean oracle only)** | `LeanOS.SpawnOracle` defines the canonical command (tag `0x7001`; `decodeSpawn_encodeSpawn`, `encodeSpawn_decodeSpawn`), injective result codes (`decodeSpawnErrorCode_spawnErrorCode`), and adversarial vectors on the dispatcher's seed for every failure point, both issuer exhaustions, stale and malformed parent handles, a re-granted spawn capability, isolation, the child presenting the parent's handle, and never-reuse after termination (`spawn_vectors_pass`). `NegativeFixtures/SpawnIdentityRollback` forgets to roll back the identity and fails. **Not done:** the command is not in the generated boot dispatcher or its C exports (`boot_dispatcher_rejects_spawn_tag`), and there is no QEMU scenario. |
 
-Items 1, 2, 4, and 5 all remain partial, so the ring-3 spawn syscall stays
-gated.
+### Gate status update (2026-10-10, issues #490 and #491)
+
+| Item | Status | Evidence or gap |
+| --- | --- | --- |
+| 1. One authoritative composite state | **Partial** | The child table, the subject budget, and the control-generation counter are part of `CompositeState.spawn`, and frame slices and their return are composite transitions on the frame commitment (`grantFrames`, `terminateChild`). The whole-trace theorem covers them: along every admissible trace of composite steps and public spawn-family steps, both invariants hold, the allocator is exact, and no frame is newly committed (`child_resource_trace`). **Remaining:** the composite still has no budget-charged memory allocation or release, so no composite step changes a subject's usage; `CompositeDispatcher`'s frame-budget tokens still denote `FrameBudgetScenario.Runtime`. |
+| 2. Atomic creation, failure and exhaustion semantics | **Met in the model** | The public spawn family (`ChildOperation`, `childGate`) adds the two missing pieces. Subject-budget exhaustion (`spawnCharged_subject_budget_exhausted`), frame-budget exhaustion (`grantFrames_frame_budget_exhausted`), and control-generation exhaustion (`spawnCharged_control_generation_exhausted`) are typed rejections with the pre-state, as is every other rejection of the family (`ChildOperation.apply_rejected_unchanged`, `childGate_unchanged_of_not_running`). Budget transfer moves frames between parent and child exactly (`grantFrames_limits`), and child termination removes the child's spawn records and child-table entry (`terminateChild_releases`). The executable boundary is item 5. |
+| 4. Proof plan | **Partial** | Newly discharged: no stale references (`terminateChild_retires`, `retired_rejected_unchanged`, `stale_control_after_respawn`, and across every later step `child_resource_trace`; for capabilities `terminateChild_revokes`, `terminateChild_stale_word`, `stale_word_after_respawn`); cleanup on termination (`terminateChild_releases`); resource accounting (`ChildAccountingWellFormed`, kept by `childGate_preserves` and `CompositeStep.childAccounting`; `usage_add_childLimits_le`; `child_resource_trace`). **Not discharged:** confinement of the child over later steps as a spawn-specific theorem; capability-word staleness after arbitrary later steps (it is proved across the termination and a following spawn); and nested cleanup, since terminating a child does not terminate or reclaim the child's own children. |
+| 5. Canonical executable encoding with adversarial tests | **Partial (hosted Lean oracle only)** | `LeanOS.SpawnAccountingOracle` runs `childGate` from command words: charged spawn (`0x7001`), frame grant (`0x7101`), and child termination (`0x7201`), with canonical encodings (`encodeGrant_decodeChild`, `encodeTerminate_decodeChild`) and injective result codes (`childErrorCodes_injective`). `child_vectors_pass` covers both exhaustions, a grant and its return, release on termination, stale control words after termination and after slot reuse, a stale parent capability over the child's address space, and isolation; every `SpawnOracle` vector gives the same result through it. `NegativeFixtures/SpawnAccounting` (budgetless spawn, minting grant, charge-keeping termination) fails. **Not done:** the commands are not in the generated boot dispatcher (`boot_dispatcher_rejects_child_tags`). The QEMU scenario of #491 is blocked by this gate: it needs spawn in a booted image, which only the gated syscall would give. |
+
+Items 1, 4, and 5 remain partial, so the ring-3 spawn syscall stays gated.
 
 ### Spawn readiness decision
 
@@ -196,3 +204,47 @@ must accept it before #489 is closed.
   kind, so its first context will be the reviewed reset value. The composite
   device projections are unchanged by spawn, and the child holds no device
   capability because it holds no capability other than the two above.
+
+## Amendment (2026-10-10): spawn accounting and child control handles (issues #490 and #491)
+
+### The subject budget is carried by the spawn capability
+
+`SpawnCapability.subjectBudget` is the most children its holder may have
+charged to it at once. The kernel names it when it grants the capability
+(`ChildOperation.grantAuthority subject budget`). The grant is rejected if
+the budget exceeds the child table or the subject already has more children.
+Revoking the capability does not kill the children; they stay charged to the
+parent until it terminates them.
+
+### Children are recorded in a per-parent child table
+
+Each parent has a fixed kernel table of 64 slots
+(`CompositeState.spawn.children`). An entry names the child, the generation
+of the parent's control handle for it, and the frames the parent has charged
+to it. Generations come from a never-reused counter. The parent names a
+child only by its control word, a `CapabilityHandle` word of the slot and the
+generation. A cleared or reused slot never matches an old word. The table is
+the authority for the two child operations; `spawn.parent` and
+`spawn.addressSpace` stay records only.
+
+### Frames given to a child are a slice of the parent's budget
+
+A frame grant commits some of the parent's free committed frames to the
+child and adds them to the entry's charge. No frame is created, and no other
+subject's commitment changes. Child termination commits every frame of the
+child back to the parent. The accounting is hierarchical: each child's own
+frames plus what it charged to its children stay within the charge its
+parent recorded.
+
+### The public spawn family
+
+`ChildOperation` (`spawn`, `grantFrames`, `terminateChild`,
+`grantAuthority`, `revokeAuthority`), run by `childGate`, is the family the
+executable boundary uses. `SpawnOperation` and `spawnGate` from #489 remain
+the unaccounted core that the charged spawn wraps.
+
+### What this does not do
+
+- It adds no budget-charged memory allocation or release to the composite.
+- Terminating a child does not terminate the child's own children.
+- It adds no syscall, no boot-dispatcher command, and no QEMU scenario.

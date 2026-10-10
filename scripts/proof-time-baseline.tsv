@@ -1,12 +1,12 @@
-# reason: add the generated device-program executor modules (LeanOS.Wifi.ExecRefinement: the step equals Sim.step, #494; LeanOS.Wifi.Exec; LeanOS.DeviceProgramExecutor) at their measured times normalized to this baseline
+# reason: LeanOS.CompositeDispatcher and LeanOS.IOMMU elaborate proofs over FailStop.CompositeState, which gained the issuer/budget/scrub (#538), spawn (#543) and child-accounting (#544) projections; raise both to their measured CI times normalized to this baseline (IOMMU 81.4 s in run 38050760354; CompositeDispatcher 137 s on main after #543, with samples of 136.6 s and 168.7 s since)
 module	seconds
 LeanOS.FailStop	137.8
-LeanOS.CompositeDispatcher	121.8
+LeanOS.CompositeDispatcher	137.0
 LeanOS.CapabilityTransfer	103.9
 LeanOS.BootPageTablePlan	139.8
 LeanOS.FaultDispatch	74.3
 LeanOS.BootMemoryMapStreamPipeline	62.9
-LeanOS.IOMMU	59.4
+LeanOS.IOMMU	81.4
 LeanOS.ResumablePreemption	55.4
 LeanOS.BlockingIPC	44.4
 LeanOS.QotomMadtStream	41.9

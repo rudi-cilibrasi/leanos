@@ -52,6 +52,7 @@ LeanOS/NegativeFixtures/PageFaultAgreement.lean	negative-fixture
 LeanOS/NegativeFixtures/PageFaultError.lean	negative-fixture
 LeanOS/NegativeFixtures/PageFaultProvenance.lean	negative-fixture
 LeanOS/NegativeFixtures/SharedContainment.lean	negative-fixture
+LeanOS/NegativeFixtures/SpawnAccounting.lean	negative-fixture
 LeanOS/NegativeFixtures/SpawnIdentityRollback.lean	negative-fixture
 LeanOS/NegativeFixtures/StaleTranslation.lean	negative-fixture
 LeanOS/NegativeFixtures/UserFaultClass.lean	negative-fixture
@@ -66,6 +67,7 @@ LeanOS/QotomMadtStream.lean	bounded-model
 LeanOS/ResumablePreemption.lean	bounded-model
 LeanOS/Scheduler.lean	bounded-model
 LeanOS/SecurityClaims.lean	bounded-model
+LeanOS/SpawnAccountingOracle.lean	bounded-model
 LeanOS/SpawnOracle.lean	bounded-model
 LeanOS/StaleTranslation.lean	bounded-model
 LeanOS/SubjectLifecycle.lean	bounded-model
