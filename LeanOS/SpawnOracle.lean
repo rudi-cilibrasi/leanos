@@ -11,6 +11,11 @@ dispatcher (`CompositeDispatcher.dispatch`), has no C export, and is not a
 ring-3 syscall: the version-one boot command decoder rejects the spawn tag as
 an unknown command (`boot_dispatcher_rejects_spawn_tag`).
 
+The charged boundary of issues #490 and #491,
+`LeanOS.SpawnAccountingOracle.childOracleStep`, decodes the same spawn words
+and runs them through the public spawn family (`childGate`), which also
+checks the parent's subject budget.
+
 ## Encoding
 
 The command uses the dispatcher's `CommandWords` shape:

@@ -186,7 +186,10 @@ def spawn (state : CompositeState) (request : SpawnRequest) : SpawnOutcome :=
 
 /-- The spawn family.  `grantAuthority` and `revokeAuthority` are trusted
 kernel operations, like `DeviceCapability.grant`; no subject word reaches
-them. -/
+them.  This is the unaccounted core: the public spawn family is
+`ChildOperation` (`SpawnAccounting`, issues #490 and #491), which charges
+spawn against the parent's subject budget and records the child in the
+parent's child table. -/
 inductive SpawnOperation where
   | spawn (request : SpawnRequest)
   | grantAuthority (subject : Nat)
