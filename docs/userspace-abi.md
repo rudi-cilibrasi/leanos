@@ -36,11 +36,11 @@ ABI.
 | 5 | canonical (blocking-ipc, preemption) | 1 | final resumed-context check after preemption |
 | 6 | canonical (blocking-ipc, preemption) | 1 | resume probe (returns the preemption phase) |
 | 7 | canonical (blocking-ipc, preemption) | 2 | block on endpoint 10 (empty) |
-| 7 | ipc-stream, device-service | 2 | block on endpoint 10 |
+| 7 | ipc-stream, device-service, ahci-service | 2 | block on endpoint 10 |
 | 8 | canonical (blocking-ipc, preemption) | 1 | send on endpoint 10 (RBX, RCX = payload) |
-| 8 | ipc-stream, device-service | 1 | send one event on endpoint 10 |
+| 8 | ipc-stream, device-service, ahci-service | 1 | send one event on endpoint 10 (ahci-service: RBX = sector dword, RCX = its sequence number from 1) |
 | 9 | canonical (blocking-ipc, preemption) | 2 | report the delivered payload |
-| 9 | ipc-stream, device-service | 2 | report the delivered event; the kernel checks it equals what A sent (ipc-stream also echoes it, device-service does not) |
+| 9 | ipc-stream, device-service, ahci-service | 2 | report the delivered event; the kernel checks it equals what A sent (ipc-stream also echoes it, device-service does not; ahci-service also checks the sequence number and folds the dword into the sector digest) |
 | 7 | three-subject | 3 | C blocks on endpoint 12 |
 | 8 | three-subject | 1 | A sends one word on endpoint 12 (RBX, RCX = payload) |
 | 9 | three-subject | 3 | C reports the delivered word (final record) |
@@ -98,7 +98,9 @@ ABI.
 | 39 | inflight-revocation | 1, 2 | in-flight revocation script step |
 | 40 | inflight-revocation | 1, 2 | in-flight revocation script step |
 | 60 | ipc-stream, device-service | 1 | next event (device-service: the next key from the bound device program) |
+| 60 | ahci-service | 1, 2 | next sector dword from the bound AHCI program (sequence number in the high half; 0 = end, after the release scrub), for the device-capability holder A only; B's one attempt before it first blocks is refused (no device capability, returns all ones) |
 | 61 | ipc-stream, device-service | 1 | end of stream (final record) |
+| 61 | ahci-service | 1 | end of stream: A's final check of the 128 deliveries, the refusal and the release (final record with the sector digest) |
 | 62 | three-subject | 2 | B's single run from its initial context reports its register canaries (RBX, RCX) |
 | 7 | keyboard-echo | 3 | C, the echo server, blocks for the next key on its receive-only endpoint capability (slot in RDX); B's attempt is refused |
 | 8 | keyboard-echo | 1 | A sends one key to C on its send-only endpoint capability (slot in RDX, RBX = key, RCX = 1); B's attempt is refused |
@@ -141,7 +143,10 @@ returns 0 at the end of the stream. In the `console-server` and
 `keyboard-echo` images a refused capability request changes nothing and
 returns `1 | reason << 8` ([console-server.md](console-server.md)). The
 `keyboard-echo` image adds reason 7: a device request (60) from a subject
-without the device capability. The `0xff01`–`0xff06` words in
+without the device capability. The `ahci-service` image returns all ones
+to B's device request (60), which it refuses for the same reason, and
+returns each sector dword to A with its sequence number in the high half, so
+that only 0 ends the stream. The `0xff01`–`0xff06` words in
 `LeanOS/BoundaryVocabulary.lean` are a kernel-internal Lean↔C ABI, not a user
 ABI.
 

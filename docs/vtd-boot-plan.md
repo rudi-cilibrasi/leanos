@@ -23,6 +23,7 @@ deny-all remapping base. Dynamic revocation remains a later issue.
 | q35 production (every scenario image) | none | `IOMMU.emptyState` (deny-all) | no context entry | Tested: guest read-back of the installed tables at activation and at every CPL3 gate |
 | `assigned-edu-inventory` | 16 (EDU, 00:02.0) | `VTdBootPlan.assignedEDUState`: one read-only and one write-only page | two directional leaves over linker-owned buffers | Tested: the same read-back, plus the scalar authority and fault exports and the guest's EDU transfer and fault records |
 | `device-service` | 16 (qemu-xhci, 00:02.0) | `VTdBootPlan.deviceServiceState` (`deviceServiceState_shape`, `deviceServiceTransfer_window`): one read/write grant of four model pages | four read/write leaves at IOVA 16 KiB over the executor scratch | Tested: the same read-back, and the exact `device-service` transcript |
+| `ahci-service` | 250 (ICH9 AHCI, 00:1f.2) | `VTdBootPlan.ahciServiceState` (`ahciServiceState_shape`, `ahciServiceTransfer_window`): one read/write grant of one model page | the service's own context entry and one read/write leaf at IOVA 16 KiB over the first scratch page | Tested: the same read-back, and the exact `ahci-service` transcript |
 
 The model theorems constrain what the generator emits. That the installed
 tables match the emitted words is checked by the guest's read-back, which is
@@ -171,7 +172,8 @@ protected frame. `accepted_requesters_bound_once` fixes the 256-entry context
 table indexed by requester. These are statements about the encoded tables, not
 about the IOMMU's table walk, which remains a trusted hardware boundary. The
 assigned-EDU and device-service tables are instances: the per-scenario facts
-that remain (`deviceServiceState_shape`, `deviceServiceTransfer_window`) are
+that remain (`deviceServiceState_shape`, `deviceServiceTransfer_window`,
+`ahciServiceState_shape`, `ahciServiceTransfer_window`) are
 about the model state and its transfer admission, and the executable vectors
 in `VTdBootPlan` check the translation of both scenarios over the sample
 layout.
@@ -207,11 +209,14 @@ rejects boot before an assigned device could be enabled.
 remapping-table symbol addresses and the CPU page-table layout and builds the
 finite `VTdBootPlan.Input` values those symbols represent: the deny-all state,
 the assigned-EDU state bound to requester 16 and the linked read/write
-buffers, and, for a device-service image, the device-service state bound to the
+buffers, and, for a device-service image, its reviewed service state
+(`serviceOf`: the xHCI's or the AHCI's, named by the image's
+`leanos_service_device` symbol) bound to the service's requester and to the
 start of the executor scratch. It requires `compile` to accept every one and
 emits only compiled table words (`leanos_vtd_root_table`,
 `leanos_vtd_context_table`, the `leanos_vtd_assigned_*` context and
-second-level arrays, and `leanos_vtd_service_second_level_table`) plus pinned
+second-level arrays, `leanos_vtd_service_context_table` and
+`leanos_vtd_service_second_level_table`) plus pinned
 register constants as a C header. If any plan is rejected it fails rather than
 emitting tables. Moving the assigned and service tables onto `compile` left
 every generated header byte-identical.

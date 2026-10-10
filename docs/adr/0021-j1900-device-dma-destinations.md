@@ -111,8 +111,18 @@ an effect-level checker, from one writing an ordinary parameter.
    proved. So is the controller's behaviour: the output contexts and event
    ring, which the controller itself writes, are outside the map, and a
    controller that DMA-writes into the map is not modelled.
-4. **AHCI and RTL8168 descriptors: assumed.** Their policies carry no
-   descriptor map yet. That the AHCI command header's CTBA and the PRD's
+4. **AHCI and RTL8168 descriptors: assumed on the Qotom, proved for the q35
+   AHCI read program.** The q35 one-sector program of the `ahci-service`
+   image (`LeanOS.Storage.AhciRead`, issue #496) declares
+   `q35AhciPolicy`, whose descriptor map names the CTBA of all 32 command
+   headers and the data base of the 40 PRDs before its data buffer, so
+   `run_admissible_descriptors` covers its command-table and PRD pointers.
+   Its named assumption is that this map lists every pointer the controller
+   follows for the commands it issues (AHCI 1.3.1 §4.2.2–4.2.3; one header,
+   PRDTL 1); a program that wrote a larger PRDTL could point the controller
+   at PRDs past the map. On q35 the VT-d grant (one scratch page) bounds the
+   controller independently. The Qotom identify program's and the RTL8168
+   program's policies carry no descriptor map yet. That the AHCI command header's CTBA and the PRD's
    data-buffer address, and the RTL8168 transmit and receive descriptors'
    buffer addresses, hold scratch bus addresses is an **unproved trusted
    assumption**, mitigated by the programs' structure (every such pointer is
@@ -145,5 +155,5 @@ profile sink and descriptor region.
 * That every reachable run of the keyboard program passes the descriptor
   check is not proved; the `device-service` QEMU scenario runs it under the
   check, and the Qotom keyboard lab exercises the Bay Trail layout.
-* Next: descriptor maps for AHCI (command header, PRD) and RTL8168
-  (descriptor rings), or an IOMMU platform.
+* Next: descriptor maps for the Qotom AHCI program (the q35 one has one) and
+  the RTL8168 (descriptor rings), or an IOMMU platform.

@@ -130,6 +130,10 @@ extern uint64_t page_directory_b[], page_table_b[];
     !(defined(LEANOS_CONSOLE_SERVER_SCENARIO) && defined(LEANOS_DEVICE_SERVICE_SCENARIO))
 #error "the keyboard-echo image combines the console-server and device-service images"
 #endif
+#if defined(LEANOS_AHCI_SERVICE_SCENARIO) && \
+    (!defined(LEANOS_DEVICE_SERVICE_SCENARIO) || defined(LEANOS_KEYBOARD_ECHO_SCENARIO))
+#error "the ahci-service image is the two-subject device-service image for the q35 AHCI"
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 /* Third subject C (issue #472), linked only into the three-subject image. */
 extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
@@ -170,12 +174,23 @@ extern uint64_t vtd_assigned_write_buffer[], vtd_assigned_guard_after[];
 
 /* boot.S consumes these link-visible constants before entering long mode so
    the dedicated assigned images, and only those, install their device's BAR
-   leaves (present, writable, supervisor, no-execute): q35 EDU's one page, or
-   the device-service xHCI's four. Zero leaves the window as kernel data. */
+   leaves (present, writable, supervisor, no-execute): q35 EDU's one page, the
+   device-service xHCI's four, or the ahci-service AHCI's one. Zero leaves the
+   window as kernel data. */
 #if defined(LEANOS_ASSIGNED_EDU_SCENARIO) && \
     !defined(LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE)
 const uint32_t leanos_assigned_bar_leaf = UINT32_C(0xFEA00003);
 const uint32_t leanos_assigned_window_pages = 1;
+#elif defined(LEANOS_AHCI_SERVICE_SCENARIO)
+const uint32_t leanos_assigned_bar_leaf = UINT32_C(0xFEBF0003);
+const uint32_t leanos_assigned_window_pages = 1;
+/* Size the linker's assigned-device window to the 4 KiB ABAR (boot/linker.ld),
+   and select the reviewed AHCI assignment (LeanOS.VTdBootPlanGenerator's
+   service 2) for the generated VT-d plan (scripts/generate-boot-page-plan.sh). */
+__asm__(".globl leanos_assigned_window_bytes\n"
+        ".set leanos_assigned_window_bytes, 0x1000\n"
+        ".globl leanos_service_device\n"
+        ".set leanos_service_device, 2\n");
 #elif defined(LEANOS_DEVICE_SERVICE_SCENARIO)
 const uint32_t leanos_assigned_bar_leaf = UINT32_C(0xFEBF0003);
 const uint32_t leanos_assigned_window_pages = 4;
@@ -196,6 +211,13 @@ const uint32_t leanos_assigned_window_pages = 1;
 #define LEANOS_VTD_ASSIGNED_LEAF_TABLE leanos_vtd_service_second_level_table
 #else
 #define LEANOS_VTD_ASSIGNED_LEAF_TABLE leanos_vtd_assigned_second_level_table
+#endif
+/* The xHCI shares EDU's requester 16, so its images install the assigned
+   context table; the AHCI (requester 250) installs the service plan's own. */
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+#define LEANOS_VTD_ASSIGNED_CONTEXT_TABLE leanos_vtd_service_context_table
+#else
+#define LEANOS_VTD_ASSIGNED_CONTEXT_TABLE leanos_vtd_assigned_context_table
 #endif
 
 struct __attribute__((packed)) mb2_tag { uint32_t type, size; };
@@ -2544,6 +2566,11 @@ struct pci_manifest_entry {
 #ifdef LEANOS_ASSIGNED_EDU_SCENARIO
 #define Q35_TOPOLOGY_TEXT "0001000800020003"
 #define Q35_EXPECTED_PRESENT 6u
+#elif defined(LEANOS_AHCI_SERVICE_SCENARIO)
+/* The production PCI inventory; the construction adds only a disk behind the
+   built-in AHCI's port 1, which is not a PCI function. */
+#define Q35_TOPOLOGY_TEXT "0001000800020005"
+#define Q35_EXPECTED_PRESENT 5u
 #elif defined(LEANOS_DEVICE_SERVICE_SCENARIO)
 #define Q35_TOPOLOGY_TEXT "0001000800020004"
 #define Q35_EXPECTED_PRESENT 6u
@@ -2568,7 +2595,7 @@ static const struct pci_manifest_entry q35_pci_manifest[] = {
        still quarantined to Command=0 here; publishing its generated tables
        and enabling its reviewed memory/bus-master bits are later stages. */
     { 2, 0, 0x1234, 0x11e8, 0x00ff00, 1, 1, 0, 0 },
-#elif defined(LEANOS_DEVICE_SERVICE_SCENARIO)
+#elif defined(LEANOS_DEVICE_SERVICE_SCENARIO) && !defined(LEANOS_AHCI_SERVICE_SCENARIO)
     /* The device-service image admits exactly the pinned qemu-xhci function
        (issue #449); quarantined here like EDU, then given its BAR, VT-d
        window and memory/bus-master bits once translation is enabled. */
@@ -2820,9 +2847,14 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
                 (command & ~PCI_COMMAND_MODEL_MASK) != 0)
                 fail("dma-live-command");
 #ifdef LEANOS_DEVICE_SERVICE_SCENARIO
-            if ((entry->assigned && command != PCI_COMMAND_MEMORY &&
+            /* The live assignment: the manifest's for the xHCI; the AHCI is
+               assigned only after VT-d translation and released at the end
+               of its program (device_service_assign, _release). */
+            unsigned assigned =
+                q35_live_pci_snapshot.functions[index].assigned;
+            if ((assigned && command != PCI_COMMAND_MEMORY &&
                     command != (PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER)) ||
-                (!entry->assigned && command != 0))
+                (!assigned && command != 0))
                 fail("dma-live-assignment-command");
 #elif defined(LEANOS_ASSIGNED_DEVICE)
             if ((entry->assigned && command !=
@@ -3361,23 +3393,83 @@ static unsigned vtd_journal_steps;
    the code that runs here. wifi-gen-exec.h supplies its named hook
    primitives over the executor state, in the direct-hook configuration, and
    the step loop `wifi_gen_resume`; its dispatch is a tree of `<` tests, so
-   it has no jump table for the entry-stack gate to reject. */
+   it has no jump table for the entry-stack gate to reject.
+
+   The ahci-service image (issue #496) is the same service for a second
+   device, as a copy of this pattern: the Lean one-sector AHCI program
+   (`ahci-q35-service`, LeanOS/Storage/AhciRead.lean) drives q35's built-in
+   ICH9 AHCI at 00:1f.2 under `q35AhciPolicy`, through the generated
+   requester-250 table that grants it one read/write page at the start of
+   the scratch at IOVA 16 KiB (LeanOS.VTdBootPlan.ahciServiceState). It reads
+   one sector at a fixed LBA and yields its 128 dwords; subject 1 sends each
+   to subject 2 over the same verified IPC. What differs is named below:
+   the function is part of the production inventory, so it is quarantined
+   unassigned and assigned only after translation is enabled; syscall 60
+   checks the generated device witness and refuses subject 2; each yielded
+   word carries its sequence number, so a zero dword is not end-of-stream;
+   and when the program halts the kernel releases the function (Command=0)
+   and scrubs the scratch. */
 #define WIFI_HOOKS_DIRECT 1
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "../hardware/wifi/wifi-gen-exec.h"
 #pragma GCC diagnostic pop
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+#include "ahci-service-program.h"
+#else
 #include "device-service-program.h"
+#endif
 
 #define DEVICE_SERVICE_BAR UINT32_C(0xFEBF0000)
 #define DEVICE_SERVICE_PM_TIMER 0x608u
 #define DEVICE_SERVICE_BUDGET 200000u
 #define DEVICE_SERVICE_STEP_LIMIT UINT64_C(40000000000)
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+/* ICH9 AHCI at 00:1f.2, slot 4 of the production manifest; ABAR is a 32-bit
+   memory BAR at 0x24. CAP: 64-bit, NCQ, AHCI-only, Gen1, 32 slots, 6 ports. */
+#define DEVICE_SERVICE_DEV 31u
+#define DEVICE_SERVICE_FN 2u
+#define DEVICE_SERVICE_SLOT 4u
+#define DEVICE_SERVICE_ID UINT32_C(0x29228086)
+#define DEVICE_SERVICE_WINDOW 0x200u
+#define DEVICE_SERVICE_BAR_OFFSET 0x24u
+#define DEVICE_SERVICE_CAPABILITIES UINT32_C(0xc0141f05)
+#define DEVICE_SERVICE_BDF "0:31.2"
+#define DEVICE_SERVICE_DMA_PAGES 1u
+/* The generated device witness (KeyboardEcho.deviceAuthorize): subject 1
+   alone holds the one assigned device, index 0. */
+#define DEVICE_SERVICE_MODEL_DEVICE 0u
+#define DEVICE_SERVICE_MODEL_ACCEPT 1u
+#define DEVICE_SERVICE_MODEL_REFUSE 2u
+/* The value subject 2's refused invocation returns. */
+#define DEVICE_SERVICE_REFUSED UINT64_C(0xffffffffffffffff)
+#else
+#define DEVICE_SERVICE_DEV 2u
+#define DEVICE_SERVICE_FN 0u
+#define DEVICE_SERVICE_SLOT 6u
+#define DEVICE_SERVICE_ID UINT32_C(0x000d1b36)
+#define DEVICE_SERVICE_WINDOW 0x4000u
+#define DEVICE_SERVICE_BAR_OFFSET 0x10u
 #define DEVICE_SERVICE_CAPABILITIES UINT32_C(0x01000040)
+#define DEVICE_SERVICE_BDF "0:2.0"
+#define DEVICE_SERVICE_DMA_PAGES 4u
+#endif
 
 static struct wifi_vm device_service_vm;
 static unsigned device_service_bound, device_service_ended;
 
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+/* The widest policy the admitted function may declare (`q35AhciPolicy`):
+   identity/command reads, no other configuration access, Memory Space and
+   Bus Master (and clearing it), DMA, PxCLB and PxFB of ports 0 and 1 as
+   address sinks, and the program's descriptor map (the CTBA of the 32
+   command headers, the data base of the 40 PRDs). */
+static const struct wifi_policy device_service_profile = {
+    1, 1, 0x200u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 4,
+    { 0x100, 0x108, 0x180, 0x188 }, 2,
+        { { 0, 0x0008u, 32, 32 }, { 0, 0x0580u, 40, 16 } } };
+static unsigned device_service_yields, device_service_refusals;
+#else
 /* The widest policy the admitted function may declare (`q35XhciPolicy`):
    identity/command reads, no other configuration access, Memory Space and
    Bus Master, DMA, the CRCR, DCBAAP, ERSTBA and ERDP address sinks, and the
@@ -3388,6 +3480,7 @@ static const struct wifi_policy device_service_profile = {
     { 0x58, 0x70, 0x1030, 0x1038 }, 6,
         { { 0, 0x0000u, 5, 8 }, { 0, 0x0C00u, 1, 16 }, { 0, 0x1048u, 31, 32 },
           { 1, 0x0400u, 64, 16 }, { 1, 0x2800u, 256, 16 }, { 1, 0x3800u, 64, 16 } } };
+#endif
 
 static __attribute__((noinline, noipa)) void pci_config_write_dword(
         uint8_t device, uint8_t function, uint8_t offset, uint32_t value) {
@@ -3398,11 +3491,11 @@ static __attribute__((noinline, noipa)) void pci_config_write_dword(
 }
 
 __attribute__((noinline, noipa)) uint32_t wifi_hook_cfg_read32(uint32_t off) {
-    return pci_config_dword(2, 0, (uint8_t)off);
+    return pci_config_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, (uint8_t)off);
 }
 
 __attribute__((noinline, noipa)) void wifi_hook_cfg_write32(uint32_t off, uint32_t value) {
-    pci_config_write_dword(2, 0, (uint8_t)off, value);
+    pci_config_write_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, (uint8_t)off, value);
 }
 
 uint32_t wifi_hook_mmio_read32(uint32_t off) {
@@ -3430,7 +3523,8 @@ void wifi_hook_mmio_write8(uint32_t off, uint8_t value) {
 }
 
 uint32_t wifi_hook_phys(uint32_t off) {
-    /* The VT-d window maps IOVA [16 KiB, 32 KiB) onto scratch [0, 16 KiB). */
+    /* The VT-d window maps IOVA 16 KiB onward onto scratch offset 0 onward:
+       four pages for the xHCI, one for the AHCI. */
     return (uint32_t)LEANOS_VTD_SERVICE_IOVA + off;
 }
 
@@ -3447,6 +3541,16 @@ __attribute__((noinline, noipa)) void wifi_hook_delay_us(uint32_t us) {
 }
 
 void wifi_hook_print(uint32_t tag, uint32_t value) {
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+    /* The program's one record: the sector at `value` was read and the
+       controller is quiescent again. */
+    if (tag == 0x3301) {
+        serial_puts(LEANOS_SERIAL_10_DEVICE " event=read subject=1 device="
+            DEVICE_SERVICE_BDF " port=1 lba=");
+        serial_u64(value);
+        serial_puts(" sectors=1 engines=stopped bus-master=cleared\n");
+    }
+#else
     /* Only the deterministic keyboard records reach the transcript. */
     if (tag == 0x2101) {
         serial_puts(LEANOS_SERIAL_10_DEVICE " event=ready subject=1 vendor=");
@@ -3455,15 +3559,32 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         serial_u64(value >> 16);
         serial_puts(" type-now\n");
     }
+#endif
 }
 
 static __attribute__((noinline)) void device_service_assign(void) {
     /* Memory decoding only: the program enables bus mastering itself (its
-       policy admits it) once it has reset the controller, so no ring
-       pointer the firmware left behind is ever used for DMA. */
+       policy admits it) once it has reset the controller, or stopped its
+       ports, so no pointer the firmware left behind is ever used for DMA. */
     const uint16_t command = PCI_COMMAND_MEMORY;
-    if ((uint16_t)pci_config_dword(2, 0, 0x04) != 0 ||
-        !q35_live_pci_snapshot.functions[6].assigned)
+    if ((uint16_t)pci_config_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04) != 0)
+        fail("service-quarantine");
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+    /* The production quarantine left the SATA function unassigned; it is
+       assigned only now, under the live generated tables. */
+    if (q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].assigned)
+        fail("service-quarantine");
+    q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].assigned = 1;
+    if ((pci_config_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN,
+            DEVICE_SERVICE_BAR_OFFSET) & 0xfu) != 0u)
+        fail("service-bar-type");
+    pci_config_write_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN,
+        DEVICE_SERVICE_BAR_OFFSET, DEVICE_SERVICE_BAR);
+    if (pci_config_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN,
+            DEVICE_SERVICE_BAR_OFFSET) != DEVICE_SERVICE_BAR)
+        fail("service-bar");
+#else
+    if (!q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].assigned)
         fail("service-quarantine");
     if ((pci_config_dword(2, 0, 0x10) & 0xfu) != 4u)
         fail("service-bar-type");
@@ -3472,20 +3593,31 @@ static __attribute__((noinline)) void device_service_assign(void) {
     if (pci_config_dword(2, 0, 0x10) != (DEVICE_SERVICE_BAR | 4u) ||
         pci_config_dword(2, 0, 0x14) != 0)
         fail("service-bar");
-    pci_config_command(2, 0, command);
-    uint16_t readback = (uint16_t)pci_config_dword(2, 0, 0x04);
+#endif
+    pci_config_command(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, command);
+    uint16_t readback = (uint16_t)pci_config_dword(
+        DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04);
     if (readback != command) fail("service-command");
-    q35_live_pci_snapshot.functions[6].command_after = readback;
+    q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].command_after = readback;
     if (wifi_hook_mmio_read32(0) != DEVICE_SERVICE_CAPABILITIES)
         fail("service-mmio-identity");
     if ((uint64_t)wifi_scratch != LEANOS_VTD_SERVICE_DMA_FRAME * PAGE_BYTES)
         fail("service-dma-window");
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+    serial_puts(LEANOS_SERIAL_21_VTD_ASSIGN " bdf=0:31.2 requester=250 domain=");
+    serial_u64(LEANOS_VTD_ASSIGNED_DOMAIN);
+    serial_puts(" tables=generated-readback bar=");
+    serial_u64(DEVICE_SERVICE_BAR);
+    serial_puts(" window=4096 dma-iova=16384,20480 dma=scratch,0,4096,read-write"
+        " capabilities=");
+#else
     serial_puts(LEANOS_SERIAL_21_VTD_ASSIGN " bdf=0:2.0 requester=16 domain=");
     serial_u64(LEANOS_VTD_ASSIGNED_DOMAIN);
     serial_puts(" tables=generated-readback bar=");
     serial_u64(DEVICE_SERVICE_BAR);
     serial_puts(" window=16384 dma-iova=16384,32768 dma=scratch,0,16384,read-write"
         " capabilities=");
+#endif
     serial_u64(DEVICE_SERVICE_CAPABILITIES);
     serial_puts(" command=2 memory=enabled bus-master=program"
         " stage=post-translation result=PASS\n");
@@ -3507,9 +3639,10 @@ static __attribute__((noinline)) void device_service_assign(void) {
 static int device_service_admitted(const struct wifi_target *target,
                                    const struct wifi_policy *policy) {
     const struct wifi_policy *max = &device_service_profile;
-    if (target->bus != 0 || target->dev != 2 || target->fn != 0 ||
-        target->id != UINT32_C(0x000d1b36) || target->window != 0x4000u ||
-        target->bar != 0x10u || !policy->present)
+    if (target->bus != 0 || target->dev != DEVICE_SERVICE_DEV ||
+        target->fn != DEVICE_SERVICE_FN || target->id != DEVICE_SERVICE_ID ||
+        target->window != DEVICE_SERVICE_WINDOW ||
+        target->bar != DEVICE_SERVICE_BAR_OFFSET || !policy->present)
         return 0;
     for (uint32_t k = 0; k < max->sink_count; ++k)
         if (!wifi_is_sink(policy, max->sinks[k])) return 0;
@@ -3536,22 +3669,54 @@ static void device_service_bind(void) {
             (uint32_t)sizeof device_service_program))
         fail("service-bind");
     device_service_bound = 1;
-    serial_puts(LEANOS_SERIAL_10_DEVICE " event=bind subject=1 device=0:2.0"
-        " image-bytes=");
+    serial_puts(LEANOS_SERIAL_10_DEVICE " event=bind subject=1 device="
+        DEVICE_SERVICE_BDF " image-bytes=");
     serial_u64(sizeof device_service_program);
-    serial_puts(" policy=admitted window=16384 dma=vtd result=PASS\n");
+    serial_puts(" policy=admitted window=");
+    serial_u64(DEVICE_SERVICE_WINDOW);
+    serial_puts(" dma=vtd result=PASS\n");
 }
 
 /* After every invocation the assigned function's Command word may only be
    Memory Space, optionally with the Bus Master bit the program's policy
    admits; the live snapshot the CPL3 gates compare against follows it. */
 static __attribute__((noinline, noipa)) void device_service_observe_command(void) {
-    uint16_t command = (uint16_t)pci_config_dword(2, 0, 0x04);
+    uint16_t command = (uint16_t)pci_config_dword(
+        DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04);
     if (command != PCI_COMMAND_MEMORY &&
         command != (PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER))
         fail("service-command-policy");
-    q35_live_pci_snapshot.functions[6].command_after = command;
+    q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].command_after = command;
 }
+
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+/* Release (issue #496): once the program has halted, the function returns to
+   quarantine and the scratch is scrubbed before anything else could reuse
+   it. The program has already cleared Bus Master; the kernel requires that,
+   then clears Memory Space too, unassigns the function (so the live gates
+   again require Command=0), zeroes all of the executor scratch and reads it
+   back. The VT-d grant itself is a static generated plan and stays. */
+static __attribute__((noinline, noipa)) void device_service_release(void) {
+    if ((uint16_t)pci_config_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04) !=
+            PCI_COMMAND_MEMORY)
+        fail("service-release-command");
+    pci_config_command(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0);
+    uint16_t readback = (uint16_t)pci_config_dword(
+        DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04);
+    if (readback != 0) fail("service-release-command");
+    q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].command_after = 0;
+    q35_live_pci_snapshot.functions[DEVICE_SERVICE_SLOT].assigned = 0;
+    volatile uint64_t *scratch = (volatile uint64_t *)wifi_scratch;
+    for (uint64_t word = 0; word < WIFI_SCRATCH_BYTES / sizeof(uint64_t); ++word)
+        scratch[word] = 0;
+    for (uint64_t word = 0; word < WIFI_SCRATCH_BYTES / sizeof(uint64_t); ++word)
+        if (scratch[word] != 0) fail("service-release-scrub");
+    serial_puts(LEANOS_SERIAL_10_DEVICE " event=release subject=1 device="
+        DEVICE_SERVICE_BDF " command=0 assigned=0 scratch-bytes=");
+    serial_u64(WIFI_SCRATCH_BYTES);
+    serial_puts(" scrub=verified result=PASS\n");
+}
+#endif
 
 /* One invocation on behalf of subject 1: resume the program in bounded
    slices until it yields a key (returned), or halts (0: end of stream). */
@@ -3563,7 +3728,14 @@ static uint64_t device_service_next_key(void) {
         int status = wifi_gen_resume(&device_service_vm, 0,
             device_service_vm.steps + DEVICE_SERVICE_BUDGET, &code);
         device_service_observe_command();
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+        /* The sequence number (from 1) in the high half keeps a zero sector
+           dword distinct from the end of the stream. */
+        if (status == WIFI_YIELD)
+            return (uint64_t)++device_service_yields << 32 | code;
+#else
         if (status == WIFI_YIELD) return code;
+#endif
         if (status == WIFI_STEP_LIMIT &&
             device_service_vm.steps < DEVICE_SERVICE_STEP_LIMIT)
             continue;
@@ -3574,6 +3746,9 @@ static uint64_t device_service_next_key(void) {
         serial_u64(code);
         serial_putc('\n');
         if (status != WIFI_HALT) fail("service-program");
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+        device_service_release();
+#endif
         return 0;
     }
 }
@@ -3693,14 +3868,25 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
             : word == 1
                 ? LEANOS_VTD_ASSIGNED_WRITE_BUFFER_FRAME * PAGE_BYTES + 2 : 0;
 #ifdef LEANOS_DEVICE_SERVICE_SCENARIO
-        /* Four read/write leaves from IOVA 16 KiB over the executor
-           scratch's first pages. */
+        /* Read/write leaves from IOVA 16 KiB over the executor scratch's
+           first pages: four for the xHCI, one for the AHCI. */
         uint64_t first = LEANOS_VTD_SERVICE_IOVA / PAGE_BYTES;
         uint64_t expected_service_leaf =
-            word >= first && word < first + LEANOS_VTD_SERVICE_DMA_PAGES
+            word >= first && word < first + DEVICE_SERVICE_DMA_PAGES
             ? (LEANOS_VTD_SERVICE_DMA_FRAME + word - first) * PAGE_BYTES + 3 : 0;
         if (leanos_vtd_service_second_level_table[word] != expected_service_leaf)
             fail("vtd-service-plan-shape");
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+        /* The AHCI's own context entry, at its requester 0:31.2 (250). */
+        uint64_t service_context_low =
+            (DEVICE_SERVICE_DEV * 8u + DEVICE_SERVICE_FN) * 2u;
+        uint64_t expected_service_context = word == service_context_low
+            ? LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME * PAGE_BYTES + 1
+            : word == service_context_low + 1
+                ? LEANOS_VTD_ASSIGNED_DOMAIN * 256 + 1 : 0;
+        if (leanos_vtd_service_context_table[word] != expected_service_context)
+            fail("vtd-service-plan-shape");
+#endif
 #endif
         if (leanos_vtd_assigned_context_table[word] != expected_context ||
             leanos_vtd_assigned_second_level_root[word] != expected_root ||
@@ -3755,7 +3941,7 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     for (uint64_t word = 0; word < 512; ++word) {
         root[word] = leanos_vtd_root_table[word];
 #ifdef LEANOS_ASSIGNED_DEVICE
-        context[word] = leanos_vtd_assigned_context_table[word];
+        context[word] = LEANOS_VTD_ASSIGNED_CONTEXT_TABLE[word];
         second_root[word] = leanos_vtd_assigned_second_level_root[word];
         second_directory[word] =
             leanos_vtd_assigned_second_level_directory[word];
@@ -3767,7 +3953,7 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     for (uint64_t word = 0; word < 512; ++word) {
         if (root[word] != leanos_vtd_root_table[word] ||
 #ifdef LEANOS_ASSIGNED_DEVICE
-            context[word] != leanos_vtd_assigned_context_table[word] ||
+            context[word] != LEANOS_VTD_ASSIGNED_CONTEXT_TABLE[word] ||
             second_root[word] !=
                 leanos_vtd_assigned_second_level_root[word] ||
             second_directory[word] !=
@@ -3882,7 +4068,7 @@ static __attribute__((noinline, noipa)) void verify_vtd_state(void) {
         if (vtd_root_table[word] != leanos_vtd_root_table[word] ||
 #ifdef LEANOS_ASSIGNED_DEVICE
             vtd_context_table[word] !=
-                leanos_vtd_assigned_context_table[word] ||
+                LEANOS_VTD_ASSIGNED_CONTEXT_TABLE[word] ||
             vtd_second_level_root[word] !=
                 leanos_vtd_assigned_second_level_root[word] ||
             vtd_second_level_directory[word] !=
@@ -4268,6 +4454,11 @@ static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
 static unsigned ipc_stream_step;          /* 0 block, 1 send, 3 deliver */
 static unsigned ipc_stream_started;       /* A has run at least once */
 static uint64_t ipc_stream_sent0, ipc_stream_sent1, ipc_stream_events;
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+/* FNV-1a (32-bit) of the sector bytes subject 2 handed back, in order. */
+#define AHCI_SERVICE_SECTOR_WORDS 128u
+static uint32_t ipc_stream_sector_digest = UINT32_C(0x811c9dc5);
+#endif
 #ifndef LEANOS_DEVICE_SERVICE_SCENARIO
 static const char ipc_stream_source[] = "lean ipc\n";
 static unsigned ipc_stream_source_at;
@@ -4401,8 +4592,32 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
         }
         return IPC_STREAM_RESUME_A;
     }
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+    /* Device invocation is mediated by the generated device witness: subject
+       1 holds the one device capability, subject 2 none. Subject 2 tries
+       once, before it first blocks, and is refused without effect. */
+    if (number == 60 && current_subject == 2 && ipc_stream_step == 0 &&
+        !ipc_stream_started && device_service_refusals == 0) {
+        if (leanos_device_authorize(2, DEVICE_SERVICE_MODEL_DEVICE) !=
+                DEVICE_SERVICE_MODEL_REFUSE ||
+            device_service_bound)
+            fail("service-device-model-refuse");
+        device_service_refusals = 1;
+        serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=2 op=device-invoke"
+            " device=" DEVICE_SERVICE_BDF " reason=no-device-capability"
+            " model=refused\n");
+        return DEVICE_SERVICE_REFUSED;
+    }
+    if (number == 60 && current_subject == 1 && ipc_stream_step == 1) {
+        if (leanos_device_authorize(1, DEVICE_SERVICE_MODEL_DEVICE) !=
+                DEVICE_SERVICE_MODEL_ACCEPT || device_service_refusals != 1)
+            fail("service-device-model-accept");
+        return ipc_stream_next_event();
+    }
+#else
     if (number == 60 && current_subject == 1 && ipc_stream_step == 1)
         return ipc_stream_next_event();
+#endif
     if (number == 8 && current_subject == 1 && ipc_stream_step == 1) {
         if (leanos_blocking_ipc_event(1, 2, 1) != IPC_EVENT_WORD(2, 2, 1, 1, 0) ||
             leanos_blocking_ipc_event(2, 3, 1) != IPC_EVENT_WORD(3, 3, 2, 2, 0))
@@ -4421,6 +4636,16 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
             fail("ipc-stream-model-delivery");
         if (arg0 != ipc_stream_sent0 || arg1 != ipc_stream_sent1)
             fail("ipc-stream-payload");
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+        /* Subject 2 received sector dword payload1 (from 1) as payload0. */
+        if (arg1 != ipc_stream_events + 1 || arg0 > UINT32_MAX ||
+            ipc_stream_events >= AHCI_SERVICE_SECTOR_WORDS)
+            fail("ipc-stream-sector-word");
+        for (unsigned byte = 0; byte < 4; ++byte) {
+            ipc_stream_sector_digest ^= (uint8_t)(arg0 >> (8 * byte));
+            ipc_stream_sector_digest *= UINT32_C(16777619);
+        }
+#endif
         ipc_stream_step = 0;
         ipc_stream_events++;
 #ifdef LEANOS_DEVICE_SERVICE_SCENARIO
@@ -4436,7 +4661,20 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
         return 0;
     }
     if (number == 61 && current_subject == 1 && ipc_stream_step == 1) {
-#ifdef LEANOS_DEVICE_SERVICE_SCENARIO
+#ifdef LEANOS_AHCI_SERVICE_SCENARIO
+        if (ipc_stream_events != AHCI_SERVICE_SECTOR_WORDS ||
+            device_service_yields != AHCI_SERVICE_SECTOR_WORDS ||
+            !device_service_ended || device_service_refusals != 1)
+            fail("ipc-stream-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS events=");
+        serial_u64(ipc_stream_events);
+        serial_puts(" blocks="); serial_u64(ipc_stream_events + 1);
+        serial_puts(" deliveries="); serial_u64(ipc_stream_events);
+        serial_puts(" sector-bytes=512 sector-fnv1a=");
+        serial_u64(ipc_stream_sector_digest);
+        serial_puts(" refusals=1\n");
+        finish(0x10);
+#elif defined(LEANOS_DEVICE_SERVICE_SCENARIO)
         if (ipc_stream_events == 0) fail("ipc-stream-count");
 #else
         if (ipc_stream_events != sizeof ipc_stream_source - 1) fail("ipc-stream-count");

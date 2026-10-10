@@ -1,6 +1,7 @@
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Usb.Xhci
 import LeanOS.Storage.Ahci
+import LeanOS.Storage.AhciRead
 import LeanOS.Net.Rtl8168
 
 namespace LeanOS.NegativeFixtures.DeviceProgramConfinement
@@ -287,6 +288,74 @@ low byte (DCS) and zeros — are accepted. -/
   clearInput) == .halt
 
 end XhciFragments
+
+/-! ## The q35 one-sector AHCI program (issue #496) -/
+
+section AhciReadFragments
+open LeanOS.Storage.AhciRead
+
+/-- The q35 AHCI policy's sinks are PxCLB and PxFB of ports 0 and 1, and its
+descriptor map is the read program's. -/
+example : q35AhciPolicy.addrSinks = [pxClb 0, pxFb 0, pxClb dataPort, pxFb dataPort] := by
+  decide
+
+example : q35AhciPolicy.descriptors = descriptorMap := by
+  decide
+
+/-- The program's target window fits the policy window. -/
+example : target.windowBytes = q35AhciPolicy.window := by
+  decide
+
+/-- A fragment declaring the q35 AHCI target and policy, as the generator
+emits it. -/
+private def ahciFrag (body : ProgM Unit) : Program :=
+  match build (do body; halt) with
+  | .ok p => { p with target := some target, policy := some q35AhciPolicy }
+  | .error _ => { words := #[], blob := .empty, sections := #[] }
+
+private def ahciStatus (body : ProgM Unit) : Sim.Status :=
+  (Sim.run (ahciFrag body) Sim.Device.none () 2000).1
+
+/- The program itself is admissible under the policy it declares. -/
+#guard match build program with
+  | .ok p => admissible { p with target := some target, policy := some q35AhciPolicy }
+      q35AhciPolicy
+  | .error _ => false
+
+/- The program's own descriptor stores (command-table and data-buffer
+pointers from `physAddr`, zero high dwords) are accepted. -/
+#guard ahciStatus (do
+  emit (.physAddr 0 cmdTable); st 4 (cmdList + 8) (.reg 0); st 4 (cmdList + 12) (.imm 0)
+  emit (.physAddr 0 sector); st 4 prdt (.reg 0); st 4 (prdt + 4) (.imm 0)) == .halt
+
+/- Mutants: a forged command-table base (1 MiB, outside scratch) in command
+header 0 or in an unused header, a forged PRD data base, a nonzero high
+dword, and a forged PRD past the first stop with a policy violation. -/
+#guard ahciStatus (st 4 (cmdList + 8) (.imm 0x00100000)) == .error "policy"
+#guard ahciStatus (st 4 (cmdList + 31 * 32 + 8) (.imm 0x00100000)) == .error "policy"
+#guard ahciStatus (st 4 prdt (.imm 0x00100000)) == .error "policy"
+#guard ahciStatus (st 4 (cmdList + 12) (.imm 1)) == .error "policy"
+#guard ahciStatus (st 4 (prdt + 39 * 16) (.imm 0x00100000)) == .error "policy"
+
+/- Port 0's and port 1's command-list and FIS bases take only scratch
+addresses. -/
+#guard ahciStatus (w32 (pxClb dataPort) 0x00100000) == .error "policy"
+#guard ahciStatus (w32 (pxFb 0) 0x00100000) == .error "policy"
+
+/-- `one i` for the q35 AHCI target, declaring its policy. -/
+private def oneA (i : Instr) : Program := { one i target with policy := some q35AhciPolicy }
+
+/- Ports outside the window (port 2 starts at 0x200) cannot be reached. -/
+/--
+error: Tactic `decide` proved that the proposition
+  admissible (oneA (Instr.write32 (pxClb 2) (Operand.imm 0))) q35AhciPolicy = true
+is false
+-/
+#guard_msgs in
+example : admissible (oneA (.write32 (pxClb 2) (.imm 0))) q35AhciPolicy = true := by
+  decide
+
+end AhciReadFragments
 
 /- A policy with a descriptor map admits a program only if its image declares
 that policy, so the executor checks the map. -/

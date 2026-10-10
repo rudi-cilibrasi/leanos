@@ -175,7 +175,9 @@ static int wifi_image_header(const uint8_t *image, uint32_t image_len,
     t->bar = wifi_le32(image + 28) ? wifi_le32(image + 28) : 0x10u;
     if (t->bar < 0x10u || t->bar > 0x24u || (t->bar & 3u))
         return WIFI_BAD_IMAGE;
-    if (t->window == 0 || t->window > WIFI_WINDOW_MAX || (t->window & 0x7ffu) ||
+    /* Windows come in 512-byte units: the q35 AHCI program's window is the
+       host control registers and ports 0 and 1 only (issue #496). */
+    if (t->window == 0 || t->window > WIFI_WINDOW_MAX || (t->window & 0x1ffu) ||
         (bdf & ~0xff1f07u))
         return WIFI_BAD_IMAGE;
     *header_len = 32;

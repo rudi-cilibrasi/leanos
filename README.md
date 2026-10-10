@@ -179,6 +179,7 @@ index current:
 | `ipc-stream` | evidence | SC-IPC-EVENT-STREAM |
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `keyboard-echo` | evidence | SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
+| `ahci-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS |
 | `example-subject` | evidence | none (integration only) |
 | `endpoint-directory` | evidence | SC-DIRECTORY-NO-AMPLIFICATION, SC-DIRECTORY-MISS |
 | `fault-handler` | evidence | SC-FAULT-HANDLER-DELIVERY |

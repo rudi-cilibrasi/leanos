@@ -267,3 +267,42 @@ leanos_q35_device_service_command() {
     -qmp "unix:$qmp_socket,server=on,wait=off")
   leanos_validate_q35_device_service_command "$command_name"
 }
+
+# The ahci-service scenario (issue #496) is its own construction contract: the
+# unchanged production devices plus one disk behind port 1 (ide.1) of the
+# built-in ICH9 AHCI, whose port 0 holds the boot CD. The disk is the
+# generated fixed image (scripts/generate-ahci-service-disk.py), opened with
+# snapshot=on so the guest can never change it; the program only reads it.
+readonly LEANOS_Q35_AHCI_SERVICE_TOPOLOGY_VERSION=0001000800020005
+
+leanos_validate_q35_ahci_service_command() {
+  local command_name="$1"
+  local -n ahci_command="$command_name"
+  local count="${#ahci_command[@]}"
+  local -a production_command=()
+
+  [[ $count -ge 4 &&
+     "${ahci_command[$((count - 4))]}" == -drive &&
+     "${ahci_command[$((count - 3))]}" == id=leanos-disk,if=none,format=raw,snapshot=on,file=* &&
+     "${ahci_command[$((count - 2))]}" == -device &&
+     "${ahci_command[$((count - 1))]}" == ide-hd,drive=leanos-disk,bus=ide.1 ]] || {
+    echo "error: ahci-service platform requires the pinned snapshot disk on AHCI port 1 last" >&2
+    return 1
+  }
+  production_command=("${ahci_command[@]:0:$((count - 4))}")
+  leanos_validate_q35_command production_command
+}
+
+leanos_q35_ahci_service_command() {
+  local command_name="$1"
+  local disk="$2"
+  shift 2
+
+  leanos_q35_command "$command_name" "$@"
+  local -n ahci_command="$command_name"
+  ahci_command+=(
+    -drive "id=leanos-disk,if=none,format=raw,snapshot=on,file=$disk"
+    -device ide-hd,drive=leanos-disk,bus=ide.1
+  )
+  leanos_validate_q35_ahci_service_command "$command_name"
+}
