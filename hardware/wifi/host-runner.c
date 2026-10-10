@@ -1,9 +1,10 @@
 /* Hosted runner for computation-only WiFi programs (no device): used to
-   cross-check the C executor against LeanOS/Wifi/Sim.lean.
+   cross-check the generated executor (wifi-gen-exec.h, linked with the
+   generated C of LeanOS/Wifi/Exec.lean) against LeanOS/Wifi/Sim.lean.
    usage: host-runner program.bin */
 #include <stdio.h>
 #include <stdlib.h>
-#include "wifi-exec.h"
+#include "wifi-gen-exec.h"
 
 static uint32_t r32(void *c, uint32_t o) { (void)c; (void)o; return 0; }
 static uint16_t r16(void *c, uint32_t o) { (void)c; (void)o; return 0; }

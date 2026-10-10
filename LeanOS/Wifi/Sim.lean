@@ -1,8 +1,10 @@
 import LeanOS.Wifi.Bytecode
 
 /-
-Hosted reference simulator for the device-program executor
-(`hardware/wifi/wifi-exec.h`).
+Hosted reference simulator for the device-program executor. The executor
+that runs is generated from `LeanOS.Wifi.Exec.step`, which
+`LeanOS.Wifi.ExecRefinement.step_eq` proves equal to `step` below
+(`hardware/wifi/wifi-gen-exec.h`, issue #494).
 
 It interprets the *encoded* instruction words, so a program is tested in the
 same form the C executor runs, and it performs the same checks in the same
@@ -327,7 +329,7 @@ def loop {σ} (p : Program) (d : Device σ) : Nat → Machine σ → Status × M
     | .stop s m' => (s, m')
 
 /-- Continue a machine after `yield` until `stepLimit` total steps (the C
-executor's `wifi_resume`). -/
+executor's `wifi_gen_resume`). -/
 def resume {σ} (p : Program) (d : Device σ) (stepLimit : Nat) (m : Machine σ) :
     Status × Machine σ :=
   loop p d (stepLimit - m.steps) m

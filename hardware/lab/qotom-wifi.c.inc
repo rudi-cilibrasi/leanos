@@ -1,11 +1,11 @@
 /* Lab-only: execute Lean-authored device programs (LeanOS/Wifi/Bytecode.lean,
-   hardware/wifi/wifi-exec.h) on the Qotom: the BCM43224 WiFi driver and the
+   with the generated executor of hardware/wifi/wifi-gen-exec.h) on the Qotom: the BCM43224 WiFi driver and the
    xHCI USB keyboard driver.
 
    Only version-3 images run: each declares its PCI target and confinement
    policy, the declared policy must lie inside the admitted profile for that
    function below (the Qotom policies proved sane in
-   LeanOS/DeviceProgramConfinement.lean), and wifi_exec then enforces it on
+   LeanOS/DeviceProgramConfinement.lean), and the executor then enforces it on
    every configuration access and physAddr.
 
    For each program the target's memory BAR is shown through borrowed
@@ -260,7 +260,7 @@ static uint32_t lab_service_holder;       /* subject holding the device; 0 = non
 static int lab_service_invoke(struct wifi_vm *vm, uint32_t subject, uint32_t *code) {
     if (subject == 0 || subject != lab_service_holder)
         return -1;
-    return wifi_resume(vm, 0, vm->steps + LAB_SERVICE_BUDGET, code);
+    return wifi_gen_resume(vm, 0, vm->steps + LAB_SERVICE_BUDGET, code);
 }
 
 static int lab_dev_execute(const uint8_t *image, uint32_t image_len, uint32_t *code) {
@@ -419,7 +419,7 @@ static __attribute__((noinline, unused)) uint64_t lab_stream_next_key(void) {
     uint64_t key = 0;
     for (;;) {
         uint32_t code = 0;
-        int status = wifi_resume(&lab_stream_vm, 0,
+        int status = wifi_gen_resume(&lab_stream_vm, 0,
             lab_stream_vm.steps + LAB_SERVICE_BUDGET, &code);
         ++lab_stream_invocations;
         if (status == WIFI_YIELD) { key = code; break; }
