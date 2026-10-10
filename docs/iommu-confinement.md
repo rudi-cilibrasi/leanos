@@ -4,8 +4,8 @@
 Lean model only. By itself it does not program Intel VT-d, construct
 remapping tables or invalidate an IOTLB. `LeanOS.VTdBootPlan` consumes its
 states to generate the q35 tables: deny-all for production images, and one
-assigned grant each for the `assigned-edu-inventory` and `device-service`
-images ([vtd-boot-plan.md](vtd-boot-plan.md#assigned-images)). That the
+assigned grant each for the `assigned-edu-inventory`, `device-service`
+and `ahci-service` images ([vtd-boot-plan.md](vtd-boot-plan.md#assigned-images)). That the
 installed tables match the generated words is tested by guest read-back. No
 correspondence to generated C, QEMU, firmware, PCIe, or physical hardware is
 proved.

@@ -13,6 +13,7 @@ scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 fault_scenario=0
 stale_translation_scenario=0
 device_service_scenario=0
+ahci_service_scenario=0
 extended_instruction=x87
 extended_vector=7
 if [[ "$scenario" == fast-entry-syscall ]]; then
@@ -67,6 +68,12 @@ elif [[ "$scenario" == keyboard-echo ]]; then
   device_service_scenario=1
   expectation_q35_topology=device-service
   default_image="build/boot/leanos-${version}-x86_64-keyboard-echo.iso"
+elif [[ "$scenario" == ahci-service ]]; then
+  # The one-sector AHCI service (issue #496) reads the generated fixed disk
+  # behind the built-in AHCI; no input is typed.
+  ahci_service_scenario=1
+  expectation_q35_topology=ahci-service
+  default_image="build/boot/leanos-${version}-x86_64-ahci-service.iso"
 elif [[ "$scenario" == stale-translation-denial ]]; then
   stale_translation_scenario=1
   default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"
@@ -194,7 +201,14 @@ fi
 mkdir -p "$(dirname "$log")"; : > "$log"
 command=()
 qmp_dir=
-if (( device_service_scenario )); then
+disk_dir=
+if (( ahci_service_scenario )); then
+  # A fresh copy of the generated disk per run; QEMU opens it snapshot=on.
+  disk_dir="$(mktemp -d)"
+  ./scripts/generate-ahci-service-disk.py --output "$disk_dir/ahci-service-disk.img"
+  leanos_q35_ahci_service_command command "$disk_dir/ahci-service-disk.img" \
+    "$qemu" "$memory_mib" "$log" "$image"
+elif (( device_service_scenario )); then
   # The keyboard behind the assigned xHCI is typed through QMP once the
   # guest's device program reports it ready.
   qmp_dir="$(mktemp -d)"
@@ -213,6 +227,7 @@ if (( device_service_scenario )); then
   typist=$!
 fi
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
+[[ -z "$disk_dir" ]] || rm -rf "$disk_dir"
 typist_status=0
 if [[ -n "$typist" ]]; then
   set +e; wait "$typist"; typist_status=$?; set -e
@@ -293,6 +308,14 @@ if (( device_service_scenario )); then
   if [[ ${#vtd_lines[@]} -ne 5 ]] ||
      [[ "${vtd_lines[3]}" != "${LEANOS_SERIAL_21_VTD_ASSIGN} bdf=0:2.0 requester=16 domain=0 tables=generated-readback bar=4273930240 window=16384 dma-iova=16384,32768 dma=scratch,0,16384,read-write capabilities=16777280 command=2 memory=enabled bus-master=program stage=post-translation result=PASS" ]]; then
     echo "failure_class=vtd-evidence: exact device-service assignment evidence not observed" >&2
+    exit 1
+  fi
+  vtd_lines=("${vtd_lines[@]:0:3}" "${vtd_lines[4]}")
+elif (( ahci_service_scenario )); then
+  # The assigned AHCI adds exactly one assignment record before activation.
+  if [[ ${#vtd_lines[@]} -ne 5 ]] ||
+     [[ "${vtd_lines[3]}" != "${LEANOS_SERIAL_21_VTD_ASSIGN} bdf=0:31.2 requester=250 domain=0 tables=generated-readback bar=4273930240 window=4096 dma-iova=16384,20480 dma=scratch,0,4096,read-write capabilities=3222544133 command=2 memory=enabled bus-master=program stage=post-translation result=PASS" ]]; then
+    echo "failure_class=vtd-evidence: exact ahci-service assignment evidence not observed" >&2
     exit 1
   fi
   vtd_lines=("${vtd_lines[@]:0:3}" "${vtd_lines[4]}")
@@ -393,6 +416,7 @@ fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
 snapshot_profile=production
 (( device_service_scenario )) && snapshot_profile=device-service
+(( ahci_service_scenario )) && snapshot_profile=ahci-service
 if ! ./scripts/write-dma-snapshot.py --profile "$snapshot_profile" \
     --serial-log "$log" \
     --source-revision "$source_revision_file" \

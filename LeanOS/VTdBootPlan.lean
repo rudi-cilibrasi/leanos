@@ -1554,6 +1554,66 @@ theorem deviceServiceTransfer_window :
     validateDeviceServiceTransfer 0 2 64 16 1 = 3 := by
   native_decide
 
+/-! ## AHCI service assignment (issue #496)
+
+The `ahci-service` image assigns q35's built-in ICH9 AHCI at 00:1f.2
+(requester 0xFA = 250) through the same second-level table storage. Its one
+read-only sector program keeps every structure the controller reads or
+writes in the first scratch page (`LeanOS.Storage.AhciRead`), so its
+authority is one read/write mapping of one model page, IOVA `[64, 80)`,
+which the hardware projection scales to IOVA `[16 KiB, 20 KiB)` over the
+first 4 KiB page of the executor scratch. As for the xHCI, the window starts
+above zero because the program reads a zero bus address as "no DMA". -/
+
+def ahciServiceTopologyVersion : UInt64 := 0x0001000800020005
+
+def ahciServiceGrant : IOMMU.GrantRequest :=
+  ⟨IOMMU.assignment0, ⟨0, 1⟩, 4 * IOMMU.pageSize, 0, IOMMU.pageSize, IOMMU.readWrite⟩
+
+/-- The one reviewed AHCI-service assignment and its read/write page. -/
+def ahciServiceState : IOMMU.State :=
+  (IOMMU.gate IOMMU.assignedState (.grant ahciServiceGrant)).state
+
+/-- Transfer admission over `ahciServiceState`, with the result codes of
+`validateDeviceServiceTransfer`. -/
+def validateAhciServiceTransfer
+    (source assignmentGeneration iova length direction : Nat) : Nat :=
+  let request : IOMMU.TransferRequest := ⟨source, assignmentGeneration, iova, length⟩
+  let result := IOMMU.translate ahciServiceState request
+    (if direction == 1 then .read else .write)
+  if direction != 1 && direction != 2 then 2
+  else match result with
+    | .ok _ => 0
+    | .error .staleAssignment => 3
+    | .error .invalidRange => 4
+    | .error .permissionDenied => 5
+    | .error .staleFrame => 6
+    | .error _ => 7
+
+/-- The grant is accepted and is the only mapping: one assignment (device 0,
+source 0, domain 0) holding IOVA `[64, 80)` read/write at frame 0, offset 0. -/
+theorem ahciServiceState_shape :
+    ahciServiceState.core.assignments.map (fun a => (a.device, a.source, a.domain.slot)) =
+        [(0, 0, 0)] ∧
+    ahciServiceState.core.mappings.map
+        (fun m => (m.iova, m.length, m.frame.frame, m.frameOffset, m.permission)) =
+      [(64, 16, 0, 0, IOMMU.readWrite)] := by
+  native_decide
+
+/-- Both directions are admitted inside the one page, and nothing outside it
+(the device-service xHCI's second page included) or from another source or
+assignment generation is. -/
+theorem ahciServiceTransfer_window :
+    validateAhciServiceTransfer 0 1 64 16 1 = 0 ∧
+    validateAhciServiceTransfer 0 1 64 16 2 = 0 ∧
+    validateAhciServiceTransfer 0 1 72 8 2 = 0 ∧
+    validateAhciServiceTransfer 0 1 72 16 1 = 4 ∧
+    validateAhciServiceTransfer 0 1 80 16 2 = 4 ∧
+    validateAhciServiceTransfer 0 1 0 16 2 = 4 ∧
+    validateAhciServiceTransfer 1 1 64 16 1 = 3 ∧
+    validateAhciServiceTransfer 0 2 64 16 1 = 3 := by
+  native_decide
+
 /-! ## Executable vectors -/
 
 def sampleRootTableFrame : Nat := 8
@@ -1635,6 +1695,19 @@ example : sampleTranslate { sampleAssignedInput with state := deviceServiceState
     none := by native_decide
 example : sampleTranslate { sampleAssignedInput with state := deviceServiceState } 16 8 =
     none := by native_decide
+/-- The AHCI-service binding: the sample tables bound to requester 250. -/
+def sampleAhciInput : Input :=
+  { sampleAssignedInput with
+    state := ahciServiceState
+    grantBinding := some { sampleGrantBinding with requester := 250 } }
+
+/-- The AHCI-service page: model IOVA `[64, 80)` is page 4 alone, bound to
+the AHCI's requester (250) and to no other. -/
+example : sampleTranslate sampleAhciInput 250 4 = some (40, IOMMU.readWrite) := by
+  native_decide
+example : sampleTranslate sampleAhciInput 250 5 = none := by native_decide
+example : sampleTranslate sampleAhciInput 250 3 = none := by native_decide
+example : sampleTranslate sampleAhciInput 16 4 = none := by native_decide
 
 /-- A grant overlapping a CPU page-table frame. -/
 example : rejectedAs (withFrameBase 10) .grantOverlapsReservedFrame = true := by native_decide

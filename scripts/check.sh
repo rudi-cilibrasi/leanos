@@ -195,6 +195,10 @@ check_phase="image-and-emulator-contracts"
 
 ./scripts/test-run-image.sh
 ./scripts/check-expectation-templates.sh
+# The ahci-service transcript (issue #496) must carry exactly the generated
+# disk's sector at the program's LBA and its digest.
+./scripts/generate-ahci-service-disk.py \
+  --check-transcript scripts/expectations/ahci-service.transcript
 
 ./scripts/test-browser-boot.sh
 

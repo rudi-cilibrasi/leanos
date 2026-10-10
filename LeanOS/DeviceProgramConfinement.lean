@@ -437,6 +437,35 @@ def q35XhciPolicy : Policy where
 
 theorem q35XhciPolicy_sane : q35XhciPolicy.sane = true := by decide
 
+/-- QEMU ICH9 AHCI at 00:1f.2 in the q35 `ahci-service` image (issue #496):
+the generic host control registers and ports 0 and 1 of the ABAR (window
+0x200), identity and command reads, no configuration writes, Memory Space
+and Bus Master (and clearing Bus Master again), DMA into scratch. PxCLB and
+PxFB of both ports (0x100, 0x108, 0x180, 0x188) are address sinks, and the
+descriptor map is the one-sector read program's
+(`LeanOS.Storage.AhciRead.descriptorMap`): the CTBA of all 32 command headers
+and the data base of the 40 PRDs before the data buffer only ever hold zero
+or a bus address inside scratch. -/
+def q35AhciPolicy : Policy where
+  window := 0x200
+  cfgRead := cfgBits [0x00, 0x04]
+  cfgWrite := 0
+  cmdClear := 0xFFFF0004
+  cmdSet := 0x6
+  dma := true
+  addrSinks := [0x100, 0x108, 0x180, 0x188]
+  descriptors := [
+    { trb := false, start := 0x0008, count := 32, stride := 32 },   -- command-header CTBA
+    { trb := false, start := 0x0580, count := 40, stride := 16 }]   -- PRD data base
+
+/-- The q35 AHCI fence is sane, its descriptor map is one the executor
+accepts, and its configuration bitmaps are the ones the device-service
+kernel's profile lists. -/
+theorem q35AhciPolicy_sane :
+    q35AhciPolicy.sane = true ∧ q35AhciPolicy.descWf = true ∧
+      q35AhciPolicy.cfgRead = 0x3 ∧ q35AhciPolicy.cfgWrite = 0 := by
+  decide
+
 /-- Both xHCI descriptor maps are ones the executor accepts. -/
 theorem xhciPolicies_descWf :
     qotomXhciPolicy.descWf = true ∧ q35XhciPolicy.descWf = true := by

@@ -35,8 +35,11 @@ structure Layout where
   assignedWriteBufferStart : Nat
   assignedGuardAfterStart : Nat
   /-- Device-service images only: the executor scratch whose first pages form
-  the xHCI DMA window; `none` for every other image. -/
+  the assigned controller's DMA window; `none` for every other image. -/
   serviceDmaStart : Option Nat := none
+  /-- Which reviewed device-service assignment the image carries: 1 the q35
+  xHCI (`deviceServiceState`), 2 the q35 AHCI (`ahciServiceState`). -/
+  serviceDevice : Nat := 1
   deriving Repr
 
 def expectedArgumentCount : Nat := 12
@@ -47,8 +50,9 @@ def parseNat (value : String) : Except String Nat :=
   | none => .error s!"invalid decimal address: {value}"
 
 def parseLayout (args : List String) : Except String Layout := do
-  if args.length != expectedArgumentCount && args.length != expectedArgumentCount + 1 then
-    throw s!"expected {expectedArgumentCount} decimal addresses (+1 for a device service), got {args.length}"
+  if args.length != expectedArgumentCount && args.length != expectedArgumentCount + 1 &&
+      args.length != expectedArgumentCount + 2 then
+    throw s!"expected {expectedArgumentCount} decimal addresses (+1 for a device service, +2 with its device), got {args.length}"
   let values ← args.mapM parseNat
   let valueAt (index : Nat) := values[index]?.getD 0
   pure {
@@ -60,7 +64,8 @@ def parseLayout (args : List String) : Except String Layout := do
     assignedReadBufferStart := valueAt 9,
     assignedWriteBufferStart := valueAt 10,
     assignedGuardAfterStart := valueAt 11,
-    serviceDmaStart := if args.length > expectedArgumentCount then some (valueAt 12) else none }
+    serviceDmaStart := if args.length > expectedArgumentCount then some (valueAt 12) else none,
+    serviceDevice := if args.length > expectedArgumentCount + 1 then valueAt 13 else 1 }
 
 def frameOf (address : Nat) : Nat := address / pageBytes
 
@@ -231,34 +236,62 @@ def emitArray (name : String) (entries : List Nat) : String :=
 def emitConstant (name : String) (value : Nat) : String :=
   "#define " ++ name ++ " " ++ toString value ++ "ULL"
 
-/-! The device-service projection: the single read/write mapping of
-`deviceServiceState` scaled to hardware pages, starting at the executor
-scratch. Only these leaves are present; the rest of scratch, and every other
-page, stays unmapped for the controller. -/
+/-! The device-service projection: the single read/write mapping of the
+image's reviewed service state scaled to hardware pages, starting at the
+executor scratch, bound to the assigned controller's requester. Only these
+leaves are present; the rest of scratch, and every other page, stays unmapped
+for the controller. -/
 
-def serviceMapping : IOMMU.Mapping := deviceServiceState.core.mappings.head!
+/-- One reviewed device-service assignment: its model state, its transfer
+admission, the platform requester it binds, the number of pages it grants,
+and the construction it belongs to. -/
+structure Service where
+  state : IOMMU.State
+  transfer : Nat → Nat → Nat → Nat → Nat → Nat
+  requester : Nat
+  pages : Nat
+  topology : UInt64
 
-def servicePages : Nat := serviceMapping.length / IOMMU.pageSize
+/-- The q35 xHCI at 00:02.0 (requester 16), issue #449. -/
+def xhciService : Service :=
+  { state := deviceServiceState, transfer := validateDeviceServiceTransfer,
+    requester := 2 * 8, pages := 4, topology := deviceServiceTopologyVersion }
 
-def serviceAuthorityValid : Bool :=
-  deviceServiceState.core.mappings.length == 1 &&
-    deviceServiceState.core.assignments.length == 1 &&
-    serviceMapping.iova == 4 * IOMMU.pageSize && serviceMapping.frameOffset == 0 &&
-    serviceMapping.permission == IOMMU.readWrite && servicePages == 4 &&
-    validateDeviceServiceTransfer 0 1 serviceMapping.iova serviceMapping.length 1 == 0 &&
-    validateDeviceServiceTransfer 0 1 serviceMapping.iova serviceMapping.length 2 == 0 &&
-    validateDeviceServiceTransfer 0 1 0 1 1 == 4 &&
-    validateDeviceServiceTransfer 0 1 (serviceMapping.iova + serviceMapping.length) 1 1 == 4
+/-- The q35 ICH9 AHCI at 00:1f.2 (requester 250), issue #496. -/
+def ahciService : Service :=
+  { state := ahciServiceState, transfer := validateAhciServiceTransfer,
+    requester := 31 * 8 + 2, pages := 1, topology := ahciServiceTopologyVersion }
 
-example : serviceAuthorityValid = true := by native_decide
+def serviceOf : Nat → Option Service
+  | 1 => some xhciService
+  | 2 => some ahciService
+  | _ => none
+
+def Service.mapping (service : Service) : IOMMU.Mapping := service.state.core.mappings.head!
+
+def Service.authorityValid (service : Service) : Bool :=
+  let mapping := service.mapping
+  service.state.core.mappings.length == 1 &&
+    service.state.core.assignments.length == 1 &&
+    mapping.iova == 4 * IOMMU.pageSize && mapping.frameOffset == 0 &&
+    mapping.permission == IOMMU.readWrite &&
+    mapping.length == service.pages * IOMMU.pageSize &&
+    service.requester < contextEntryCount &&
+    service.transfer 0 1 mapping.iova mapping.length 1 == 0 &&
+    service.transfer 0 1 mapping.iova mapping.length 2 == 0 &&
+    service.transfer 0 1 0 1 1 == 4 &&
+    service.transfer 0 1 (mapping.iova + mapping.length) 1 1 == 4
+
+example : xhciService.authorityValid = true := by native_decide
+example : ahciService.authorityValid = true := by native_decide
 
 /-- The device-service plan input: the window's model frame lands at the
-start of the executor scratch. -/
-def serviceInput (layout : Layout) (dmaStart : Nat) : Input :=
+start of the executor scratch, for the service's requester. -/
+def serviceInput (layout : Layout) (service : Service) (dmaStart : Nat) : Input :=
   { input layout with
-    state := deviceServiceState
-    grantBinding := some (assignedBinding layout serviceMapping.frame.frame
-      (frameOf dmaStart)) }
+    state := service.state
+    grantBinding := some { assignedBinding layout service.mapping.frame.frame
+      (frameOf dmaStart) with requester := service.requester } }
 
 def compileOrThrow (label : String) (planInput : Input) : Except String Plan :=
   match compile planInput with
@@ -266,27 +299,37 @@ def compileOrThrow (label : String) (planInput : Input) : Except String Plan :=
   | .ok plan => pure plan
 
 /-- The window is page-aligned kernel memory clear of both table families. -/
-def serviceLayoutValid (layout : Layout) (dmaStart : Nat) : Bool :=
+def serviceLayoutValid (layout : Layout) (pages dmaStart : Nat) : Bool :=
   dmaStart != 0 && dmaStart % pageBytes == 0 &&
-    (dmaStart + servicePages * pageBytes ≤ layout.rootTableStart ||
+    (dmaStart + pages * pageBytes ≤ layout.rootTableStart ||
       layout.assignedGuardAfterStart + pageBytes ≤ dmaStart) &&
-    (dmaStart + servicePages * pageBytes ≤ layout.cpuRootA ||
+    (dmaStart + pages * pageBytes ≤ layout.cpuRootA ||
       layout.cpuTableEnd ≤ dmaStart)
 
-def emitService (layout : Layout) : Except String (List String) :=
+def emitService (layout : Layout) (assigned : Plan) : Except String (List String) :=
   match layout.serviceDmaStart with
   | none => pure []
   | some dmaStart => do
-    if !serviceAuthorityValid then
+    let some service := serviceOf layout.serviceDevice
+      | throw s!"unknown device-service assignment {layout.serviceDevice}"
+    if !service.authorityValid then
       throw "device-service model authority is not the reviewed read/write window"
-    if !serviceLayoutValid layout dmaStart then
+    if !serviceLayoutValid layout service.pages dmaStart then
       throw "device-service DMA window is not page-aligned kernel memory clear of the tables"
-    let plan ← compileOrThrow "device-service" (serviceInput layout dmaStart)
+    let plan ← compileOrThrow "device-service" (serviceInput layout service dmaStart)
+    -- The kernel installs the assigned image's top and directory tables for
+    -- every assigned image; the service plan must agree with them.
+    if plan.secondLevelRootWords != assigned.secondLevelRootWords ||
+        plan.secondLevelDirectoryWords != assigned.secondLevelDirectoryWords ||
+        rootTableWords plan != rootTableWords assigned then
+      throw "device-service plan disagrees with the assigned upper tables"
     pure
-      [emitConstant "LEANOS_VTD_SERVICE_TOPOLOGY" deviceServiceTopologyVersion.toNat,
+      [emitConstant "LEANOS_VTD_SERVICE_TOPOLOGY" service.topology.toNat,
+       emitConstant "LEANOS_VTD_SERVICE_REQUESTER" service.requester,
        emitConstant "LEANOS_VTD_SERVICE_DMA_FRAME" (frameOf dmaStart),
-       emitConstant "LEANOS_VTD_SERVICE_DMA_PAGES" servicePages,
-       emitConstant "LEANOS_VTD_SERVICE_IOVA" (hardwareIova serviceMapping.iova),
+       emitConstant "LEANOS_VTD_SERVICE_DMA_PAGES" service.pages,
+       emitConstant "LEANOS_VTD_SERVICE_IOVA" (hardwareIova service.mapping.iova),
+       emitArray "leanos_vtd_service_context_table" (contextTableWords plan),
        emitArray "leanos_vtd_service_second_level_table" plan.secondLevelTableWords]
 
 def emit (layout : Layout) : Except String String := do
@@ -297,7 +340,7 @@ def emit (layout : Layout) : Except String String := do
   let assigned ← compileOrThrow "assigned EDU" (assignedInput layout)
   if !assignedHardwareProjectionValid layout assigned then
     throw "assigned EDU hardware tables do not match the reviewed model projection"
-  let service ← emitService layout
+  let service ← emitService layout assigned
   let plan ← compileOrThrow "canonical linked" (input layout)
   if rootTableWords assigned != rootTableWords plan then
     throw "assigned and deny-all VT-d plans disagree on the root table"
