@@ -1,4 +1,6 @@
 import LeanOS.FailStop.Latch
+import LeanOS.LifetimeIssuer
+import LeanOS.FrameScrub
 
 /-!
 # Fail-stop composite: state, projections, and the runtime invariant
@@ -13,6 +15,28 @@ namespace LeanOS.FailStop
 
 open LeanOS
 set_option linter.unusedSimpArgs false
+
+/-- The two kernel-owned never-reused lifetime issuers of
+`BoundedLifecycle.Runtime`, held by the composite (issue #499).  Every
+identity an issuer hands out is the counter's current value, and the counter
+only advances. -/
+structure LifecycleIssuers where
+  subject : LifetimeIssuer.Issuer .subject := {}
+  object : LifetimeIssuer.Issuer .object := {}
+
+/-- The fixed boot-admitted frame commitment of `FrameBudget.State`.  The
+memory and subject history it is read against are the composite's own
+`virtualMemory.memory` and `lifecycle.issuedSubjects`, so the budgets add no
+second memory model (`CompositeState.budgetState`). -/
+structure FrameBudgets where
+  commitment : FrameAllocator.FrameId → Option Capability.SubjectId := fun _ => none
+
+/-- The frame contents and per-lifetime write flags of `FrameScrub.State`.  As
+for the budgets, the memory they are read against is the composite's own
+`virtualMemory.memory` (`CompositeState.scrubState`). -/
+structure FrameContents where
+  bytes : FrameScrub.FrameBytes := fun _ _ => FrameScrub.initialByte
+  written : Capability.ObjectId → Bool := fun _ => false
 
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
@@ -59,6 +83,16 @@ structure CompositeState where
   a disconnected generated-dispatcher fixture. -/
   invalidationPublication : InvalidationPublication.State :=
     InvalidationPublication.initial
+  /-- The never-reused subject and object lifetime issuers.  No ordinary,
+  blocking, or invalidation operation reads or writes them; only the issued
+  lifecycle family (`LifecycleOperation`) draws from them. -/
+  issuers : LifecycleIssuers := {}
+  /-- The per-subject frame commitment.  No existing operation reads or
+  writes it. -/
+  frameBudgets : FrameBudgets := {}
+  /-- Frame contents and lifetime write flags.  No existing operation reads or
+  writes them. -/
+  scrub : FrameContents := {}
 
 /-- The concrete value type owned by each named composite projection.  This is
 the first integration boundary between the dependency-free footprint
@@ -81,6 +115,9 @@ def CompositeProjectionType : CompositeFootprint.Projection → Type
   | .dmaAccepted => DMAQuarantine.AcceptedSnapshot
   | .dmaObserved => DMAQuarantine.Snapshot
   | .invalidationPublication => InvalidationPublication.State
+  | .issuers => LifecycleIssuers
+  | .frameBudgets => FrameBudgets
+  | .scrub => FrameContents
 
 /-- Read one named projection without introducing an untyped sum or a second
 copy of composite state. -/
@@ -102,6 +139,9 @@ def CompositeState.project (state : CompositeState) :
   | .dmaAccepted => state.dmaAccepted
   | .dmaObserved => state.dmaObserved
   | .invalidationPublication => state.invalidationPublication
+  | .issuers => state.issuers
+  | .frameBudgets => state.frameBudgets
+  | .scrub => state.scrub
 
 /-- A typed frame obligation over the concrete composite state.  The dependent
 projection result keeps each equality in its native subsystem type while the

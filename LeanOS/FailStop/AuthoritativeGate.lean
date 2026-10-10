@@ -1,4 +1,5 @@
 import LeanOS.FailStop.DeferredBlocking
+import LeanOS.FailStop.ProjectionInvariants
 
 /-!
 # Fail-stop composite: the authoritative gate
@@ -73,6 +74,77 @@ theorem AuthoritativeRuntimeWellFormed.deferred {state : CompositeState}
     (hstate : AuthoritativeRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed state :=
   ⟨hstate.1, hstate.2⟩
+
+/-! ## `AuthoritativeRuntimeWellFormed` by projection -/
+
+/-- The retained-context classification reads only the blocking store, its
+saved contexts, the deferred cancellations, and the resumable bank. -/
+def deferredCancellationInvariant : ProjectionInvariant where
+  support := [.resumable, .blockingIPC, .blockingContexts, .deferredCancels]
+  holds := CompositeState.DeferredCancellationWellFormed
+  dependsOn := by projection_depends_on
+
+/-- The invalidation-publication protocol invariant reads only its own
+projection. -/
+def publicationInvariant : ProjectionInvariant where
+  support := [.invalidationPublication]
+  holds state := InvalidationPublication.WellFormed state.invalidationPublication
+  dependsOn := by projection_depends_on
+
+/-- `AuthoritativeRuntimeWellFormed`, one supported conjunct per entry: the
+runtime conjuncts followed by the deferred-cancellation and publication
+conjuncts. -/
+def authoritativeInvariants : List ProjectionInvariant :=
+  runtimeInvariants ++ [deferredCancellationInvariant, publicationInvariant]
+
+/-- The per-projection decomposition is exactly the authoritative runtime
+invariant. -/
+theorem authoritativeRuntimeWellFormed_iff_all (state : CompositeState) :
+    AuthoritativeRuntimeWellFormed state ↔
+      ProjectionInvariant.All authoritativeInvariants state := by
+  rw [authoritativeInvariants, ProjectionInvariant.all_append,
+    ← runtimeWellFormed_iff_all]
+  simp only [ProjectionInvariant.All, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq]
+  constructor
+  · intro hstate
+    exact ⟨hstate.1, hstate.2, hstate.publication⟩
+  · rintro ⟨hruntime, hdeferred, hpublication⟩
+    exact ⟨hruntime, hdeferred, hpublication⟩
+
+/-- **Authoritative lifting.**  A framed transition preserves
+`AuthoritativeRuntimeWellFormed` once every conjunct whose support it writes
+is proved. -/
+theorem authoritativeRuntimeWellFormed_preserved_of_frames {footprint : CompositeFootprint.Footprint}
+    {before after : CompositeState}
+    (frames : CompositeState.Frames footprint before after)
+    (holds : AuthoritativeRuntimeWellFormed before)
+    (touched : ∀ invariant, invariant ∈ authoritativeInvariants →
+      invariant.untouchedBy footprint = false → invariant.holds after) :
+    AuthoritativeRuntimeWellFormed after :=
+  (authoritativeRuntimeWellFormed_iff_all after).2
+    (ProjectionInvariant.All.preserved_of_frames frames
+      ((authoritativeRuntimeWellFormed_iff_all before).1 holds) touched)
+
+/-- A transition that writes only the invalidation-publication projection
+preserves `AuthoritativeRuntimeWellFormed` once the publication protocol
+invariant is re-established; every other conjunct is lifted. -/
+theorem authoritativeRuntimeWellFormed_preserved_of_publicationFrames
+    {before after : CompositeState}
+    (frames : CompositeState.Frames
+      (.ofLists [] [.invalidationPublication]) before after)
+    (holds : AuthoritativeRuntimeWellFormed before)
+    (publication : InvalidationPublication.WellFormed after.invalidationPublication) :
+    AuthoritativeRuntimeWellFormed after := by
+  refine authoritativeRuntimeWellFormed_preserved_of_frames frames holds ?_
+  intro invariant member touched
+  simp only [authoritativeInvariants, runtimeInvariants, List.cons_append, List.nil_append,
+    List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl
+  all_goals first
+    | exact publication
+    | exact absurd touched (by decide)
 
 /-- The successor invariant exposes the same proof-carrying PCI quarantine
 carried by the sole global runtime invariant. -/
@@ -210,49 +282,271 @@ def authoritativePublishReuse (state : CompositeState) :
     accepted := outcome.accepted
     effect := outcome.effect }
 
+/-! ## Invalidation-publication footprints
+
+The conditional invalidation-publication entry points are not
+`AuthoritativeOperation` constructors.  `InvalidationOperation` names each of
+them so that they declare footprints exactly like the gate families:
+preparation, acknowledgement, and reuse write only the publication projection;
+the current-root preparation also reads the execution latch; and the active
+current-unmap completion republishes the acknowledged mapping successor. -/
+
+/-- Every public invalidation-publication entry point, with its arguments. -/
+inductive InvalidationOperation where
+  | prepareUnmap (subject : VirtualMapping.SubjectId)
+      (addressSpace : VirtualMapping.AddressSpaceId) (page : VirtualMapping.VirtualPage)
+  | prepareCurrentUnmap (page : Nat)
+  | prepareProtect (subject : VirtualMapping.SubjectId)
+      (addressSpace : VirtualMapping.AddressSpaceId) (page : VirtualMapping.VirtualPage)
+      (permissions : VirtualMapping.Permissions)
+  | prepareRelease (subject : VirtualMapping.SubjectId) (slot : VirtualMapping.SlotId)
+  | prepareDestroy (subject : VirtualMapping.SubjectId) (slot : VirtualMapping.SlotId)
+  | prepareSwitch (addressSpace : VirtualMapping.AddressSpaceId)
+  | acknowledgeUnmap (ack : InvalidationPublication.Acknowledgement)
+  | acknowledgeCurrentUnmap (ack : InvalidationPublication.Acknowledgement)
+  | acknowledgeProtect (ack : InvalidationPublication.Acknowledgement)
+  | acknowledgeRelease (ack : InvalidationPublication.Acknowledgement)
+  | acknowledgeDestroy (ack : InvalidationPublication.Acknowledgement)
+  | acknowledgeSwitch (ack : InvalidationPublication.Acknowledgement)
+  | publishReuse
+
+/-- Run one invalidation-publication entry point. -/
+def InvalidationOperation.apply (state : CompositeState) :
+    InvalidationOperation → InvalidationBoundaryOutcome
+  | .prepareUnmap subject addressSpace page =>
+      authoritativePrepareUnmap state subject addressSpace page
+  | .prepareCurrentUnmap page => authoritativePrepareCurrentUnmap state page
+  | .prepareProtect subject addressSpace page permissions =>
+      authoritativePrepareProtect state subject addressSpace page permissions
+  | .prepareRelease subject slot => authoritativePrepareRelease state subject slot
+  | .prepareDestroy subject slot => authoritativePrepareDestroy state subject slot
+  | .prepareSwitch addressSpace => authoritativePrepareSwitch state addressSpace
+  | .acknowledgeUnmap ack => authoritativeAcknowledgeUnmap state ack
+  | .acknowledgeCurrentUnmap ack => authoritativeAcknowledgeCurrentUnmap state ack
+  | .acknowledgeProtect ack => authoritativeAcknowledgeProtect state ack
+  | .acknowledgeRelease ack => authoritativeAcknowledgeRelease state ack
+  | .acknowledgeDestroy ack => authoritativeAcknowledgeDestroy state ack
+  | .acknowledgeSwitch ack => authoritativeAcknowledgeSwitch state ack
+  | .publishReuse => authoritativePublishReuse state
+
+/-- The declared footprint of each invalidation-publication entry point. -/
+def InvalidationOperation.footprint : InvalidationOperation → CompositeFootprint.Footprint
+  | .prepareCurrentUnmap _ => .ofLists [.execution] [.invalidationPublication]
+  | .acknowledgeCurrentUnmap _ =>
+      .ofLists [] (mappingProjections ++ [.invalidationPublication])
+  | .prepareUnmap .. | .prepareProtect .. | .prepareRelease .. | .prepareDestroy ..
+  | .prepareSwitch _ | .acknowledgeUnmap _ | .acknowledgeProtect _
+  | .acknowledgeRelease _ | .acknowledgeDestroy _ | .acknowledgeSwitch _
+  | .publishReuse => .ofLists [] [.invalidationPublication]
+
+private theorem installInvalidationPublication_frames state publication :
+    CompositeState.Frames (.ofLists [] [.invalidationPublication]) state
+      (installInvalidationPublication state publication) := by
+  composite_frame
+
+private theorem authoritativePrepareInvalidation_frames state kind request :
+    CompositeState.Frames (.ofLists [] [.invalidationPublication]) state
+      (authoritativePrepareInvalidation state kind request).state :=
+  installInvalidationPublication_frames _ _
+
+private theorem authoritativeAcknowledgeInvalidation_frames state kind ack :
+    CompositeState.Frames (.ofLists [] [.invalidationPublication]) state
+      (authoritativeAcknowledgeInvalidation state kind ack).state := by
+  unfold authoritativeAcknowledgeInvalidation
+  repeat' split
+  all_goals first
+    | exact CompositeState.frames_of_eq _ rfl
+    | exact installInvalidationPublication_frames _ _
+
+private theorem authoritativePublishReuse_frames state :
+    CompositeState.Frames (.ofLists [] [.invalidationPublication]) state
+      (authoritativePublishReuse state).state :=
+  installInvalidationPublication_frames _ _
+
+private theorem installAcknowledgedInvalidation_frames state publication :
+    CompositeState.Frames (.ofLists [] (mappingProjections ++ [.invalidationPublication]))
+      state (installAcknowledgedInvalidation state publication) :=
+  CompositeState.frames_trans _
+    ((installVirtualMemory_frames _ _ _).mono (by footprint_within))
+    ((installInvalidationPublication_frames _ _).mono (by footprint_within))
+
+/-- **Invalidation frame rule.**  Every projection outside an
+invalidation-publication entry point's declared write set is unchanged, on
+accepted and rejected outcomes alike. -/
+theorem InvalidationOperation.apply_frames (state : CompositeState)
+    (operation : InvalidationOperation) :
+    CompositeState.Frames operation.footprint state (operation.apply state).state := by
+  cases operation with
+  | prepareUnmap _ _ _ | prepareProtect _ _ _ _ | prepareRelease _ _ | prepareDestroy _ _
+  | prepareSwitch _ => exact authoritativePrepareInvalidation_frames _ _ _
+  | prepareCurrentUnmap _ =>
+      exact (authoritativePrepareInvalidation_frames _ _ _).mono (by footprint_within)
+  | acknowledgeUnmap _ | acknowledgeProtect _ | acknowledgeRelease _ | acknowledgeDestroy _
+  | acknowledgeSwitch _ => exact authoritativeAcknowledgeInvalidation_frames _ _ _
+  | publishReuse => exact authoritativePublishReuse_frames _
+  | acknowledgeCurrentUnmap ack =>
+      simp only [InvalidationOperation.apply, InvalidationOperation.footprint,
+        authoritativeAcknowledgeCurrentUnmap]
+      by_cases accepted : (authoritativeAcknowledgeUnmap state ack).accepted = true
+      · simp only [accepted, ↓reduceIte]
+        exact installAcknowledgedInvalidation_frames _ _
+      · simp only [accepted, ↓reduceIte]
+        exact (authoritativeAcknowledgeInvalidation_frames _ _ _).mono (by footprint_within)
+
+/-- No invalidation-publication entry point writes the direct-port or DMA
+authority. -/
+theorem InvalidationOperation.footprint_untouched_authority
+    (operation : InvalidationOperation) :
+    CompositeFootprint.Untouched operation.footprint .directPortIO ∧
+      CompositeFootprint.Untouched operation.footprint .dmaAccepted ∧
+      CompositeFootprint.Untouched operation.footprint .dmaObserved := by
+  cases operation <;>
+    simp only [CompositeFootprint.Untouched, InvalidationOperation.footprint] <;> decide
+
+private theorem authoritativeAcknowledgeInvalidation_reads (left right : CompositeState)
+    kind ack
+    (agree : CompositeState.AgreeOn
+      (CompositeFootprint.Footprint.ofLists [] [.invalidationPublication]).reads left right) :
+    (authoritativeAcknowledgeInvalidation left kind ack).accepted =
+        (authoritativeAcknowledgeInvalidation right kind ack).accepted ∧
+      (authoritativeAcknowledgeInvalidation left kind ack).effect =
+        (authoritativeAcknowledgeInvalidation right kind ack).effect ∧
+      CompositeState.AgreeOn
+        (CompositeFootprint.Footprint.ofLists [] [.invalidationPublication]).writes
+        (authoritativeAcknowledgeInvalidation left kind ack).state
+        (authoritativeAcknowledgeInvalidation right kind ack).state := by
+  cases left; cases right
+  agree_subst agree
+  clear agree
+  unfold authoritativeAcknowledgeInvalidation
+  dsimp only
+  repeat' split
+  all_goals
+    refine ⟨rfl, rfl, ?_⟩
+    intro projection written
+    cases projection <;> (try exact absurd written Bool.false_ne_true)
+    rfl
+
+/-- **Invalidation read independence.**  Two states that agree on an
+invalidation-publication entry point's declared reads produce the same
+acceptance and machine effect, and post-states that agree on its declared
+writes. -/
+theorem InvalidationOperation.apply_reads (left right : CompositeState)
+    (operation : InvalidationOperation)
+    (agree : CompositeState.AgreeOn operation.footprint.reads left right) :
+    (operation.apply left).accepted = (operation.apply right).accepted ∧
+      (operation.apply left).effect = (operation.apply right).effect ∧
+      CompositeState.AgreeOn operation.footprint.writes
+        (operation.apply left).state (operation.apply right).state := by
+  cases operation
+  case acknowledgeCurrentUnmap ack =>
+    obtain ⟨accepted, effect, published⟩ :=
+      authoritativeAcknowledgeInvalidation_reads left right .unmap ack
+        (agree.mono fun projection supported => by
+          cases projection <;> first | rfl | exact absurd supported Bool.false_ne_true)
+    simp only [InvalidationOperation.apply, authoritativeAcknowledgeCurrentUnmap,
+      authoritativeAcknowledgeUnmap]
+    by_cases hright :
+        (authoritativeAcknowledgeInvalidation right .unmap ack).accepted = true
+    · have hleft := accepted.trans hright
+      simp only [hleft, hright, ↓reduceIte]
+      refine ⟨by trivial, effect, ?_⟩
+      have publication := published .invalidationPublication rfl
+      simp only [CompositeState.project] at publication
+      rw [publication]
+      cases left; cases right
+      agree_subst agree
+      intro projection written
+      cases projection <;> (try exact absurd written Bool.false_ne_true)
+      all_goals rfl
+    · have hleft : ¬ (authoritativeAcknowledgeInvalidation left .unmap ack).accepted = true :=
+        fun hleft => hright (accepted.symm.trans hleft)
+      simp only [hleft, hright, ↓reduceIte]
+      refine ⟨accepted, effect, ?_⟩
+      cases left; cases right
+      agree_subst agree
+      clear agree accepted effect published hright
+      intro projection written
+      cases projection <;> (try exact absurd written Bool.false_ne_true)
+      all_goals
+        unfold authoritativeAcknowledgeInvalidation
+        dsimp only
+        repeat' split
+        all_goals rfl
+  case acknowledgeUnmap ack | acknowledgeProtect ack | acknowledgeRelease ack
+      | acknowledgeDestroy ack | acknowledgeSwitch ack =>
+    exact authoritativeAcknowledgeInvalidation_reads _ _ _ _ agree
+  all_goals
+    cases left; cases right
+    agree_subst agree
+    clear agree
+    refine ⟨rfl, rfl, ?_⟩
+    intro projection written
+    cases projection <;> (try exact absurd written Bool.false_ne_true)
+    all_goals rfl
+
+/-- Every invalidation-publication entry point other than the active
+current-unmap completion writes only the publication projection.  It
+therefore preserves `RuntimeWellFormed` and the deferred-cancellation
+classification by the frame rule alone, without inspecting the protocol. -/
+theorem InvalidationOperation.preserves_runtimeWellFormed (state : CompositeState)
+    (operation : InvalidationOperation)
+    (publicationOnly : ∀ ack, operation ≠ .acknowledgeCurrentUnmap ack)
+    (hstate : RuntimeWellFormed state)
+    (hdeferred : state.DeferredCancellationWellFormed) :
+    RuntimeWellFormed (operation.apply state).state ∧
+      (operation.apply state).state.DeferredCancellationWellFormed := by
+  have runtime : RuntimeWellFormed (operation.apply state).state := by
+    refine runtimeWellFormed_preserved_of_untouched (operation.apply_frames state) ?_ hstate
+    intro invariant member
+    cases operation
+    case acknowledgeCurrentUnmap ack => exact absurd rfl (publicationOnly ack)
+    all_goals
+      simp only [runtimeInvariants, List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+        rfl | rfl | rfl
+      all_goals rfl
+  have deferred : deferredCancellationInvariant.untouchedBy operation.footprint = true := by
+    cases operation
+    case acknowledgeCurrentUnmap ack => exact absurd rfl (publicationOnly ack)
+    all_goals rfl
+  exact ⟨runtime, deferredCancellationInvariant.preserved_of_frames
+    (operation.apply_frames state) deferred hdeferred⟩
+
 private theorem authoritativePrepareInvalidation_preserves
     state kind request (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativePrepareInvalidation state kind request).state := by
-  refine ⟨?_, ?_, ?_⟩
-  · change RuntimeWellFormed state
-    exact hstate.1
-  · change state.DeferredCancellationWellFormed
-    exact hstate.2
-  · simpa [authoritativePrepareInvalidation, installInvalidationPublication]
-      using InvalidationPublication.prepare_preserves_wellFormed
-        state.invalidationPublication kind request hstate.publication
+  refine authoritativeRuntimeWellFormed_preserved_of_publicationFrames
+    (authoritativePrepareInvalidation_frames state kind request) hstate ?_
+  simpa [authoritativePrepareInvalidation, installInvalidationPublication]
+    using InvalidationPublication.prepare_preserves_wellFormed
+      state.invalidationPublication kind request hstate.publication
 
 private theorem authoritativeAcknowledgeInvalidation_preserves
     state kind ack (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeAcknowledgeInvalidation state kind ack).state := by
+  refine authoritativeRuntimeWellFormed_preserved_of_publicationFrames
+    (authoritativeAcknowledgeInvalidation_frames state kind ack) hstate ?_
   cases hpending : state.invalidationPublication.pending with
-  | none => simpa [authoritativeAcknowledgeInvalidation, hpending] using hstate
+  | none => simpa [authoritativeAcknowledgeInvalidation, hpending] using hstate.publication
   | some pending =>
       by_cases hkind : pending.kind = kind
       · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, ite_eq_left]
-        refine ⟨?_, ?_, ?_⟩
-        · change RuntimeWellFormed state
-          exact hstate.1
-        · change state.DeferredCancellationWellFormed
-          exact hstate.2
-        · simpa [installInvalidationPublication] using
-              InvalidationPublication.acknowledge_preserves_wellFormed
-                state.invalidationPublication ack hstate.publication
-      · simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using hstate
+        simpa [installInvalidationPublication] using
+          InvalidationPublication.acknowledge_preserves_wellFormed
+            state.invalidationPublication ack hstate.publication
+      · simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using hstate.publication
 
 private theorem authoritativePublishReuse_preserves
     state (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed (authoritativePublishReuse state).state := by
-  refine ⟨?_, ?_, ?_⟩
-  · change RuntimeWellFormed state
-    exact hstate.1
-  · change state.DeferredCancellationWellFormed
-    exact hstate.2
-  · simpa [authoritativePublishReuse, installInvalidationPublication] using
-      InvalidationPublication.publishReuse_preserves_wellFormed
-        state.invalidationPublication hstate.publication
+  refine authoritativeRuntimeWellFormed_preserved_of_publicationFrames
+    (authoritativePublishReuse_frames state) hstate ?_
+  simpa [authoritativePublishReuse, installInvalidationPublication] using
+    InvalidationPublication.publishReuse_preserves_wellFormed
+      state.invalidationPublication hstate.publication
 
 theorem authoritativePrepareUnmap_preserves_authoritativeRuntimeWellFormed
     state subject addressSpace page
@@ -1040,32 +1334,6 @@ theorem AuthoritativeOperation.footprint_untouched_authority
       simp only [CompositeFootprint.Untouched, AuthoritativeOperation.footprint]
       decide
 
-private theorem gate_retains_invalidationPublication state operation :
-    (gate state operation).state.invalidationPublication =
-      state.invalidationPublication :=
-  gate_frames state operation .invalidationPublication
-    (Operation.footprint_untouched_authority operation).2.2.2
-
-private theorem restoreBlockingPeer_invalidationPublication
-    state blocking next
-    (hnext : restoreBlockingPeer state blocking = .ok next) :
-    next.invalidationPublication = state.invalidationPublication :=
-  restoreBlockingPeer_frames state blocking next hnext .invalidationPublication
-    (by untouched_decide)
-
-private theorem publishReleasedBlockingContext_invalidationPublication
-    state blocking saved next
-    (hnext : publishReleasedBlockingContext state blocking saved = .ok next) :
-    next.invalidationPublication = state.invalidationPublication :=
-  publishReleasedBlockingContext_frames state blocking saved next hnext
-    .invalidationPublication (by untouched_decide)
-
-private theorem blockingGate_retains_invalidationPublication state operation :
-    (blockingGate state operation).state.invalidationPublication =
-      state.invalidationPublication :=
-  blockingGate_frames state operation .invalidationPublication
-    (AuthoritativeOperation.footprint_untouched_authority (.blocking operation)).2.2.2
-
 private theorem drainDeferredCancellation_retains_invalidationPublication
     state subject :
     (drainDeferredCancellation state subject).state.invalidationPublication =
@@ -1073,25 +1341,19 @@ private theorem drainDeferredCancellation_retains_invalidationPublication
   drainDeferredCancellation_frames state subject .invalidationPublication
     (by untouched_decide)
 
+/-- Publication well-formedness is lifted through the authoritative frame
+rule: no authoritative operation writes the publication projection. -/
 private theorem authoritativeGate_preserves_invalidationPublication state operation
     (hpublication :
       InvalidationPublication.WellFormed state.invalidationPublication) :
     InvalidationPublication.WellFormed
-      (authoritativeGate state operation).state.invalidationPublication := by
-  cases operation with
-  | ordinary operation =>
-      rw [authoritativeGate_ordinary_state,
-        gate_retains_invalidationPublication]
-      exact hpublication
-  | blocking operation =>
-      rw [authoritativeGate_blocking_state,
-        blockingGate_retains_invalidationPublication]
-      exact hpublication
-  | drainDeferred subject =>
-      cases hmode : state.execution.mode <;>
-        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
-          drainDeferredCancellation_retains_invalidationPublication,
-          hpublication]
+      (authoritativeGate state operation).state.invalidationPublication :=
+  publicationInvariant.preserved_of_frames (authoritativeGate_frames state operation)
+    (by
+      have untouched := (AuthoritativeOperation.footprint_untouched_authority operation).2.2.2
+      simp only [CompositeFootprint.Untouched] at untouched
+      simp [ProjectionInvariant.untouchedBy, publicationInvariant, untouched])
+    hpublication
 
 /-- No authoritative ordinary, blocking, or deferred-drain operation can
 replace the boot-accepted PCI authority or the current live observation.

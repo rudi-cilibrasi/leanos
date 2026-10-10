@@ -271,6 +271,101 @@ def CompositeState.DependsOn (support : Projection → Bool)
       after.project projection = before.project projection) →
     predicate before → predicate after
 
+/-! ## Projection agreement
+
+Read sets are checked by read-independence theorems: two states that agree on
+an operation's declared reads produce results that agree on its declared
+writes.  Together with the frame rule, the declared footprint then determines
+the whole post-state. -/
+
+/-- Two composite states agree on every projection selected by `support`. -/
+def CompositeState.AgreeOn (support : Projection → Bool) (left right : CompositeState) :
+    Prop :=
+  ∀ projection, support projection = true → left.project projection = right.project projection
+
+theorem CompositeState.AgreeOn.refl (support : Projection → Bool) (state : CompositeState) :
+    CompositeState.AgreeOn support state state :=
+  fun _ _ => rfl
+
+theorem CompositeState.AgreeOn.symm {support : Projection → Bool}
+    {left right : CompositeState} (agree : CompositeState.AgreeOn support left right) :
+    CompositeState.AgreeOn support right left :=
+  fun projection supported => (agree projection supported).symm
+
+/-- Agreement on a support implies agreement on every smaller support. -/
+theorem CompositeState.AgreeOn.mono {small large : Projection → Bool}
+    (within : ∀ projection, small projection = true → large projection = true)
+    {left right : CompositeState} (agree : CompositeState.AgreeOn large left right) :
+    CompositeState.AgreeOn small left right :=
+  fun projection supported => agree projection (within projection supported)
+
+/-- States that agree on a footprint's reads agree on its writes, because
+every written projection is declared as read. -/
+theorem CompositeState.AgreeOn.writes_of_reads {footprint : Footprint}
+    {left right : CompositeState} (agree : CompositeState.AgreeOn footprint.reads left right) :
+    CompositeState.AgreeOn footprint.writes left right :=
+  agree.mono footprint.writesAreRead
+
+/-- Agreement on every projection is equality of composite states. -/
+theorem CompositeState.eq_of_agreeOn_all {left right : CompositeState}
+    (agree : CompositeState.AgreeOn (fun _ => true) left right) : left = right := by
+  cases left; cases right
+  have execution := agree .execution rfl
+  have scheduler := agree .scheduler rfl
+  have preemption := agree .preemption rfl
+  have virtualMemory := agree .virtualMemory rfl
+  have ipc := agree .ipc rfl
+  have capabilities := agree .capabilities rfl
+  have lifecycle := agree .lifecycle rfl
+  have resumable := agree .resumable rfl
+  have transfers := agree .transfers rfl
+  have blockingIPC := agree .blockingIPC rfl
+  have blockingContexts := agree .blockingContexts rfl
+  have deferredCancels := agree .deferredCancels rfl
+  have directPortIO := agree .directPortIO rfl
+  have dmaAccepted := agree .dmaAccepted rfl
+  have dmaObserved := agree .dmaObserved rfl
+  have invalidationPublication := agree .invalidationPublication rfl
+  have issuers := agree .issuers rfl
+  have frameBudgets := agree .frameBudgets rfl
+  have scrub := agree .scrub rfl
+  simp only [CompositeState.project] at *
+  subst_vars
+  rfl
+
+/-- Substitute one projection of two destructured composite states when the
+agreement hypothesis covers it; otherwise do nothing. -/
+macro "agree_subst_one " agree:ident projection:term : tactic => `(tactic|
+  first
+    | (have same := $agree $projection rfl
+       simp only [CompositeState.project] at same
+       subst same)
+    | skip)
+
+/-- After `cases` on two composite states, identify every field covered by
+an agreement hypothesis.  The remaining goal then mentions only one copy of
+each agreed projection, so branch conditions over agreed projections are
+syntactically shared by both states. -/
+macro "agree_subst " agree:ident : tactic => `(tactic| (
+  agree_subst_one $agree .execution; agree_subst_one $agree .scheduler
+  agree_subst_one $agree .preemption; agree_subst_one $agree .virtualMemory
+  agree_subst_one $agree .ipc; agree_subst_one $agree .capabilities
+  agree_subst_one $agree .lifecycle; agree_subst_one $agree .resumable
+  agree_subst_one $agree .transfers; agree_subst_one $agree .blockingIPC
+  agree_subst_one $agree .blockingContexts; agree_subst_one $agree .deferredCancels
+  agree_subst_one $agree .directPortIO; agree_subst_one $agree .dmaAccepted
+  agree_subst_one $agree .dmaObserved; agree_subst_one $agree .invalidationPublication
+  agree_subst_one $agree .issuers; agree_subst_one $agree .frameBudgets
+  agree_subst_one $agree .scrub))
+
+/-- `DependsOn` is preservation under agreement on the support. -/
+theorem CompositeState.dependsOn_iff_agreeOn (support : Projection → Bool)
+    (predicate : CompositeState → Prop) :
+    CompositeState.DependsOn support predicate ↔
+      ∀ before after, CompositeState.AgreeOn support after before →
+        predicate before → predicate after :=
+  Iff.rfl
+
 /-- **Lifting rule.**  A predicate over projections an operation does not
 write is preserved by that operation, without inspecting the operation. -/
 theorem applyOperation_preserves_of_dependsOn {support : Projection → Bool}
