@@ -7701,6 +7701,12 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.q35AhciPolicy_sane",
+      "display": "q35AhciPolicy_sane",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.q35XhciPolicy_sane",
       "display": "q35XhciPolicy_sane",
       "kind": "theorem"
@@ -22427,6 +22433,18 @@
       "source": "LeanOS/VTdBootPlan.lean",
       "qualified": "LeanOS.VTdBootPlan.accepted_unbound_translates_nothing",
       "display": "accepted_unbound_translates_nothing",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.ahciServiceState_shape",
+      "display": "ahciServiceState_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/VTdBootPlan.lean",
+      "qualified": "LeanOS.VTdBootPlan.ahciServiceTransfer_window",
+      "display": "ahciServiceTransfer_window",
       "kind": "theorem"
     },
     {

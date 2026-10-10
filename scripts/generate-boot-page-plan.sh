@@ -117,9 +117,19 @@ if [[ "${1:-}" == --stub ]]; then
     # frame is 64 KiB-aligned like the executor scratch, so no check folds. The
     # frame is 64 KiB-aligned like the executor scratch, so no check folds.
     echo '#define LEANOS_VTD_SERVICE_TOPOLOGY 281509336580100ULL'
+    echo '#define LEANOS_VTD_SERVICE_REQUESTER 16ULL'
     echo '#define LEANOS_VTD_SERVICE_DMA_FRAME 16ULL'
     echo '#define LEANOS_VTD_SERVICE_DMA_PAGES 4ULL'
     echo '#define LEANOS_VTD_SERVICE_IOVA 16384ULL'
+    # The AHCI service's own context table (requester 250, issue #496); a
+    # distinct pattern from the other context placeholders.
+    echo 'static const unsigned long long leanos_vtd_service_context_table[512] = {'
+    for ((word = 0; word < 512; ++word)); do
+      if ((word == 500)); then echo '  12289ULL,'
+      elif ((word == 501)); then echo '  1ULL,'
+      else echo '  0ULL,'; fi
+    done
+    echo '};'
     echo 'static const unsigned long long leanos_vtd_service_second_level_table[512] = {'
     for ((word = 0; word < 4; ++word)); do echo '  0ULL,'; done
     for ((word = 4; word < 8; ++word)); do echo "  ($((65536 + (word - 4) * 4096))ULL + 3ULL),"; done
@@ -132,7 +142,8 @@ if [[ "${1:-}" == --stub ]]; then
 fi
 
 # The assigned-device kind selects the pinned BAR behind the linker-owned
-# device window: 1 is q35 EDU, 2 the device-service image's q35 xHCI.
+# device window: 1 is q35 EDU, 2 a device-service image's controller (the q35
+# xHCI, or the q35 AHCI of the ahci-service image), pinned at 0xFEBF0000.
 assigned_edu=0
 if [[ "${1:-}" == --assigned-edu ]]; then
   assigned_edu=1
@@ -240,6 +251,11 @@ vtd_args=()
 for name in "${vtd_symbols[@]}"; do vtd_args+=("$(symbol_decimal "$name")"); done
 if [[ "$assigned_edu" == 2 ]]; then
   vtd_args+=("$(symbol_decimal wifi_scratch)")
+  # A service image other than the xHCI names its reviewed assignment
+  # (LeanOS.VTdBootPlanGenerator.serviceOf; 2 is the AHCI, issue #496).
+  if nm "$elf" | awk '$3 == "leanos_service_device" { found = 1 } END { exit !found }'; then
+    vtd_args+=("$(symbol_decimal leanos_service_device)")
+  fi
 fi
 
 if [[ "${LEANOS_BOOT_PLAN_EXECUTABLES_READY:-}" == 1 ]]; then

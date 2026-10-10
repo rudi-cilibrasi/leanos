@@ -4,8 +4,8 @@ The Lean device programs (the BCM43224 WiFi driver, `docs/wifi-driver.md`,
 the xHCI keyboard driver, `docs/usb-keyboard.md`, the AHCI identify
 program, `docs/storage-ahci.md`, and the RTL8168 Ethernet program,
 `docs/net-rtl8168.md`) run in ring 0 of the
-lab kernel, and the keyboard program under the canonical `device-service`
-kernel, through the generated executor: its step is the compiled
+lab kernel, the keyboard program under the canonical `device-service`
+kernel and the q35 one-sector AHCI program under the `ahci-service` kernel, through the generated executor: its step is the compiled
 `LeanOS/Wifi/Exec.lean`, proved equal to `Sim.step`, with the C hooks of
 `hardware/wifi/wifi-gen-exec.h` ([ADR 0020](adr/0020-device-program-executor-assurance.md)).
 Each program is
@@ -28,6 +28,7 @@ confined to a **policy** (`Policy` in `LeanOS/Wifi/Bytecode.lean`):
 | BCM43224 02:00.0 | 16 KiB | 0x00, 0x04 | 0x80, 0xAC (backplane windows) | may set Memory Space and clear Bus Master | no | — | — |
 | xHCI 00:14.0 | 64 KiB | 0x00, 0x04, 0xD4, 0xDC | 0xD0, 0xD8 (port routing) | may set Memory Space and Bus Master | yes | CRCR, DCBAAP, ERSTBA, ERDP | DCBAA, scratchpad array, ERST entry, input-context dequeue pointers, command/EP0/interrupt rings |
 | AHCI 00:13.0 (ABAR) | 2 KiB | 0x00, 0x04 | — | may set Memory Space and Bus Master, clear Bus Master | yes | P1CLB, P1FB | — (assumed) |
+| q35 AHCI 00:1f.2 (ABAR, `ahci-service`) | 512 B | 0x00, 0x04 | — | may set Memory Space and Bus Master, clear Bus Master | yes | P0CLB, P0FB, P1CLB, P1FB | command-header CTBA (32), PRD data base (40) |
 | RTL8168E-VL 01:00.0 (BAR2) | 4 KiB | 0x00, 0x04 | — | may set Memory Space and Bus Master, clear Bus Master | yes | DTCCR, TNPDS, THPDS, RDSAR | — (assumed) |
 
 ## Three layers

@@ -2,6 +2,7 @@ import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Storage.Ahci
+import LeanOS.Storage.AhciRead
 import LeanOS.Net.Rtl8168
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
@@ -25,6 +26,8 @@ def admittedPolicy (p : Program) : Option Policy :=
     some LeanOS.DeviceProgramConfinement.q35XhciPolicy
   else if p.effTarget == LeanOS.Storage.Ahci.target then
     some LeanOS.DeviceProgramConfinement.qotomAhciPolicy
+  else if p.effTarget == LeanOS.Storage.AhciRead.target then
+    some LeanOS.DeviceProgramConfinement.q35AhciPolicy
   else if p.effTarget == LeanOS.Net.Rtl8168.target then
     some LeanOS.DeviceProgramConfinement.qotomRtl8168Policy
   else none
@@ -123,6 +126,7 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
              else if full then LeanOS.Wifi.Connect.connectDhcp fw cfg6 bssid pmk
              else connect fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
    ("ahci-identify", pure LeanOS.Storage.Ahci.program),
+   ("ahci-q35-service", pure LeanOS.Storage.AhciRead.program),
    ("rtl8168-arp", pure LeanOS.Net.Rtl8168.program),
    ("kbd", do
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 60

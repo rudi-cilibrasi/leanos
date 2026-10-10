@@ -56,6 +56,19 @@ SERVICE_ASSIGN_RE = re.compile(
     r"dma-iova=16384,32768 dma=scratch,0,16384,read-write capabilities=16777280 "
     r"command=2 memory=enabled bus-master=program stage=post-translation result=PASS$"
 )
+# The ahci-service construction (issue #496) records one assignment of the
+# q35 AHCI (requester 250) to one scratch page instead.
+AHCI_SERVICE_TOPOLOGY = "0001000800020005"
+AHCI_SERVICE_ASSIGN_RE = re.compile(
+    "^" + re.escape(SERIAL["21/VTD-ASSIGN"]) + r" bdf=0:31\.2 requester=250 domain=0 "
+    r"tables=generated-readback bar=4273930240 window=4096 "
+    r"dma-iova=16384,20480 dma=scratch,0,4096,read-write capabilities=3222544133 "
+    r"command=2 memory=enabled bus-master=program stage=post-translation result=PASS$"
+)
+SERVICE_PROFILES = {
+    "device-service": (SERVICE_TOPOLOGY, SERVICE_ASSIGN_RE),
+    "ahci-service": (AHCI_SERVICE_TOPOLOGY, AHCI_SERVICE_ASSIGN_RE),
+}
 ACTIVATE_RE = re.compile(
     "^" + re.escape(SERIAL["21/VTD-ACTIVATE"]) + r" order=validate,scrub,construct,publish,"
     r"invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 "
@@ -70,9 +83,9 @@ def parse(serial_log: Path, profile: str = "production") -> tuple[int, int, int]
         for line in serial_log.read_text(encoding="utf-8", errors="strict").splitlines()
         if line.startswith(SERIAL["21"] + " ")
     ]
-    if profile == "device-service":
-        if len(lines) != 5 or SERVICE_ASSIGN_RE.match(lines[3]) is None:
-            raise ValueError("expected the device-service VT-d assignment record")
+    if profile in SERVICE_PROFILES:
+        if len(lines) != 5 or SERVICE_PROFILES[profile][1].match(lines[3]) is None:
+            raise ValueError(f"expected the {profile} VT-d assignment record")
         del lines[3]
     if len(lines) != 4:
         raise ValueError(f"expected exactly 4 VT-d records, found {len(lines)}")
@@ -118,7 +131,7 @@ def write_snapshot(
         "meta\tmachine\tq35",
         "meta\taccelerator\ttcg",
         "meta\tplan-version\t1",
-        f"meta\ttopology-version\t{SERVICE_TOPOLOGY if profile == 'device-service' else TOPOLOGY}",
+        f"meta\ttopology-version\t{SERVICE_PROFILES[profile][0] if profile in SERVICE_PROFILES else TOPOLOGY}",
         "meta\tunit-version\t16",
         "meta\tcapability\t59110346977575430",
         "meta\textended-capability\t3842",
@@ -141,7 +154,7 @@ def main() -> int:
     parser.add_argument("--source-revision", type=Path, required=True)
     parser.add_argument("--qemu-version", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--profile", choices=("production", "device-service"),
+    parser.add_argument("--profile", choices=("production", "device-service", "ahci-service"),
                         default="production")
     args = parser.parse_args()
     try:

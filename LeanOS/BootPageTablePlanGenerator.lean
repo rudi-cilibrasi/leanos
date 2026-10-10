@@ -66,8 +66,10 @@ structure Layout where
   vtdWindowEnd : Nat
   eduWindowStart : Nat
   eduWindowEnd : Nat
-  /-- 0: no assigned device; 1: q35 EDU (4 KiB BAR); 2: the device-service
-  image's q35 xHCI (16 KiB BAR). The window pages map the device's BAR. -/
+  /-- 0: no assigned device; 1: q35 EDU (4 KiB BAR); 2: a device-service
+  image's controller pinned at 0xFEBF0000 (the q35 xHCI's 16 KiB BAR, or the
+  ahci-service image's 4 KiB AHCI ABAR). The window pages map the device's
+  BAR. -/
   assignedDevice : Nat
   vtdTableStart : Nat
   vtdTableEnd : Nat
