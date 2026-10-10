@@ -68,6 +68,8 @@ import LeanOS.CompositeObservation
 import LeanOS.CompositeUnwinding
 import LeanOS.SpawnOracle
 import LeanOS.SpawnAccountingOracle
+import LeanOS.SpawnConfinement
+import LeanOS.CompositeDispatcherResources
 import LeanOS.CompositeOwnSteps
 import LeanOS.CompositeChannels
 import LeanOS.CompositeLocalRespect

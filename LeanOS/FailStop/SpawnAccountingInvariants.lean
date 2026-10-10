@@ -705,6 +705,168 @@ theorem grantFrames_preserves (state : CompositeState) (word : UInt64) (frames :
 
 /-! ## Child termination keeps the accounting -/
 
+/-! ### Reclaiming the child's memory -/
+
+theorem reclaimable_facts {state : CompositeState} {child frame : Nat}
+    (reclaim : reclaimable state child frame = true) :
+    state.frameBudgets.commitment frame = some child ∧
+      ∃ object, state.virtualMemory.memory.allocator.status frame = .owned object ∧
+        state.capabilities.objects object = false := by
+  simp only [reclaimable, Bool.and_eq_true, beq_iff_eq] at reclaim
+  refine ⟨reclaim.1, ?_⟩
+  have owned := reclaim.2
+  split at owned
+  · next object found => exact ⟨object, found, by simpa using owned⟩
+  · cases owned
+
+/-- A frame owned by a live object is never reclaimed. -/
+theorem not_reclaimable_of_live {state : CompositeState} {child frame object : Nat}
+    (owned : state.virtualMemory.memory.allocator.status frame = .owned object)
+    (live : state.capabilities.objects object = true) :
+    reclaimable state child frame = false := by
+  cases reclaim : reclaimable state child frame with
+  | false => rfl
+  | true =>
+      obtain ⟨_, other, owned', dead⟩ := reclaimable_facts reclaim
+      rw [owned] at owned'
+      cases owned'
+      rw [live] at dead; cases dead
+
+/-- **Reclaiming keeps the combined invariant.**  Only frames owned by dead
+objects are freed, so no mapping, capability, or unwritten lifetime loses its
+frame. -/
+theorem reclaimChildFrames_preserves (state : CompositeState) (child : Nat)
+    (holds : ResourceRuntimeWellFormed state) :
+    ResourceRuntimeWellFormed (reclaimChildFrames state child) := by
+  obtain ⟨⟨runtime, deferred, publication⟩, resource⟩ := holds
+  obtain ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+    hscheduler, hpreemption, hresumable, htransfers, hhalted, _hlivePlan,
+    hblockingCoherent, hdevices⟩ := runtime
+  obtain ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent,
+    hcapabilitiesCoherent, hvirtualCapabilitiesCoherent, hipcVirtualCoherent,
+    hipcCapabilitiesCoherent, hresumableSchedulerCoherent,
+    hresumableVirtualCoherent, htransfersCoherent, hauthorityCoherent,
+    hdeadMailbox, hliveSender⟩ := hcoherent
+  have vmCaps : state.virtualMemory.memory.capabilities = state.capabilities :=
+    hvirtualCapabilitiesCoherent.trans hcapabilitiesCoherent.symm
+  let vm' := reclaimedVirtualMemory state child
+  have vmDef : vm' = reclaimedVirtualMemory state child := rfl
+  -- A bound object whose frame it owns keeps both after reclaiming, when live.
+  have keepLive : ∀ object frame, state.virtualMemory.memory.binding object = some frame →
+      FrameAllocator.IsOwnedBy state.virtualMemory.memory.allocator frame object →
+      state.capabilities.objects object = true →
+      vm'.memory.binding object = some frame ∧
+        FrameAllocator.IsOwnedBy vm'.memory.allocator frame object := by
+    intro object frame bound owned live
+    have keep := not_reclaimable_of_live (child := child) owned live
+    refine ⟨by simp [vmDef, reclaimedVirtualMemory, bound, keep], ?_⟩
+    simp only [vmDef, reclaimedVirtualMemory, FrameAllocator.IsOwnedBy, keep,
+      Bool.false_eq_true, ↓reduceIte]
+    exact owned
+  have hvirtual' : VirtualMapping.LifecycleWellFormed vm' := by
+    obtain ⟨⟨hownerLive, hmappings⟩, hcaps, haddressSpaces, hownedAddressSpaces⟩ := hvirtual
+    refine ⟨⟨hownerLive, ?_⟩, hcaps, haddressSpaces, hownedAddressSpaces⟩
+    intro space page mapping held
+    obtain ⟨subject, frame, howner, hperm, hbinding, hframe, hread, hwrite⟩ :=
+      hmappings space page mapping held
+    have live : state.capabilities.objects mapping.object = true := by
+      have permits : mapping.permissions.read = true ∨ mapping.permissions.write = true := by
+        simp only [VirtualMapping.Permissions.nonempty, Bool.or_eq_true] at hperm
+        exact hperm
+      rcases permits with readable | writable
+      · obtain ⟨_, capability, heldCap, sameObject, _⟩ := hread readable
+        have := (hcapabilities.1 _ _ _ (by rw [← vmCaps]; exact heldCap)).2.1
+        rw [sameObject] at this; exact this
+      · obtain ⟨_, capability, heldCap, sameObject, _⟩ := hwrite writable
+        have := (hcapabilities.1 _ _ _ (by rw [← vmCaps]; exact heldCap)).2.1
+        rw [sameObject] at this; exact this
+    obtain ⟨bound', owned'⟩ := keepLive _ _ hbinding hframe live
+    exact ⟨subject, frame, howner, hperm, bound', owned', hread, hwrite⟩
+  have hresumable' : ResumablePreemption.WellFormed
+      { state.resumable with
+        translations := { state.resumable.translations with virtual := vm' } } := by
+    obtain ⟨hsched, hcapacity, hunique, hvalid, habsent, hreadyAgree, htranslation, hagree,
+      hkindsAgree, htlb⟩ := hresumable
+    refine ⟨hsched, hcapacity, hunique, hvalid, habsent, hreadyAgree, ?_, ?_, hkindsAgree, htlb⟩
+    · have owner := htranslation.1
+      rw [hresumableVirtualCoherent] at owner
+      exact ⟨by simpa [vmDef, reclaimedVirtualMemory] using owner, htranslation.2⟩
+    · have caps := hagree.1
+      rw [hresumableVirtualCoherent] at caps
+      exact ⟨by simpa [vmDef, reclaimedVirtualMemory] using caps, hvirtual'⟩
+  refine ⟨⟨⟨?_, ?_, hlifecycle, hcapabilities, hvirtual', ⟨hvirtual', hipc.2⟩, hscheduler,
+    hpreemption, hresumable', htransfers, hhalted, by simp [reclaimChildFrames],
+    hblockingCoherent, hdevices⟩, deferred, publication⟩, ?_⟩
+  · refine ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent, hcapabilitiesCoherent,
+      by simpa [reclaimChildFrames, reclaimedVirtualMemory] using hvirtualCapabilitiesCoherent,
+      rfl, hipcCapabilitiesCoherent, hresumableSchedulerCoherent, rfl, htransfersCoherent,
+      hauthorityCoherent, hdeadMailbox, hliveSender⟩
+  · obtain ⟨hcore, _, hmode⟩ := hexecution
+    exact ⟨hcore, by simp [reclaimChildFrames], hmode⟩
+  · obtain ⟨issuersHold, agreementHold, budgetHold, scrubHold⟩ :=
+      (resourceWellFormed_iff state).1 resource
+    rw [resourceWellFormed_iff]
+    refine ⟨issuersHold, ?_, ?_, ?_⟩
+    · simpa [issuerAgreementInvariant, reclaimChildFrames, reclaimedVirtualMemory,
+        CompositeState.lifecycleRuntime, BoundedLifecycle.issuedObject] using agreementHold
+    · intro frame subject committed
+      obtain ⟨member, unreserved, issued⟩ := budgetHold frame subject committed
+      refine ⟨member, ?_, issued⟩
+      show ¬FrameAllocator.IsReserved vm'.memory.allocator frame
+      simp only [vmDef, reclaimedVirtualMemory, FrameAllocator.IsReserved]
+      split
+      · simp
+      · exact unreserved
+    · intro object frame bound unwritten
+      change vm'.memory.binding object = some frame at bound
+      simp only [vmDef, reclaimedVirtualMemory] at bound
+      cases boundOld : state.virtualMemory.memory.binding object with
+      | none => simp [boundOld] at bound
+      | some oldFrame =>
+          simp only [boundOld] at bound
+          split at bound
+          · cases bound
+          · next keep =>
+            have same : oldFrame = frame := by simpa using bound
+            subst same
+            obtain ⟨owned, initial⟩ := scrubHold object oldFrame boundOld unwritten
+            refine ⟨?_, ?_⟩
+            · show FrameAllocator.IsOwnedBy vm'.memory.allocator oldFrame object
+              simp only [vmDef, reclaimedVirtualMemory, FrameAllocator.IsOwnedBy]
+              simp only [Bool.not_eq_true] at keep
+              simp only [keep, Bool.false_eq_true, ↓reduceIte]
+              exact owned
+            · intro offset inFrame
+              show (if reclaimable state child oldFrame = true ∧ offset < FrameScrub.frameBytes then
+                FrameScrub.initialByte else state.scrub.bytes oldFrame offset) = _
+              simp only [Bool.not_eq_true] at keep
+              simp only [keep, Bool.false_eq_true, false_and, ↓reduceIte]
+              exact initial offset inFrame
+
+/-- **Reclaiming frees the child's dead memory.**  Every frame committed to
+the child that backs a dead object is free, its object's binding is gone, and
+it holds only initial bytes; the commitment and the frame list are kept. -/
+theorem reclaimChildFrames_reclaims (state : CompositeState) (child frame object : Nat)
+    (committed : state.frameBudgets.commitment frame = some child)
+    (owned : state.virtualMemory.memory.allocator.status frame = .owned object)
+    (dead : state.capabilities.objects object = false) :
+    (reclaimChildFrames state child).virtualMemory.memory.allocator.status frame = .free ∧
+      ((reclaimChildFrames state child).virtualMemory.memory.binding object = none ∨
+        state.virtualMemory.memory.binding object ≠ some frame) ∧
+      (∀ offset, offset < FrameScrub.frameBytes →
+        (reclaimChildFrames state child).scrub.bytes frame offset = FrameScrub.initialByte) ∧
+      (reclaimChildFrames state child).frameBudgets = state.frameBudgets ∧
+      (reclaimChildFrames state child).virtualMemory.memory.allocator.frames =
+        state.virtualMemory.memory.allocator.frames := by
+  have reclaim : reclaimable state child frame = true := by
+    simp [reclaimable, committed, owned, dead]
+  refine ⟨by simp [reclaimChildFrames, reclaimedVirtualMemory, reclaim], ?_, ?_, rfl, rfl⟩
+  · by_cases bound : state.virtualMemory.memory.binding object = some frame
+    · left; simp [reclaimChildFrames, reclaimedVirtualMemory, bound, reclaim]
+    · right; exact bound
+  · intro offset inFrame
+    simp [reclaimChildFrames, reclaim, inFrame]
+
 /-- **Returning a child's frames.**  Every frame committed to the child is
 committed to the parent: the parent's limit grows by exactly the child's, the
 child's becomes zero, and every other subject's is unchanged. -/
@@ -764,7 +926,8 @@ theorem terminateChild_preserves (state : CompositeState) (word : UInt64)
     rw [limitsT, limitsT] at limitParent
     have resourcePost : ResourceRuntimeWellFormed
         (releaseChild (terminatedChild state child) (spawnParent state) slot child) := by
-      have spawned := withSpawn_resourceRuntimeWellFormed holdsT
+      have holdsR := reclaimChildFrames_preserves (terminatedChild state child) child holdsT
+      have spawned := withSpawn_resourceRuntimeWellFormed holdsR
         { (terminatedChild state child).spawn with
           children := fun candidate candidateSlot =>
             if candidate = spawnParent state ∧ candidateSlot = slot then none
@@ -776,13 +939,15 @@ theorem terminateChild_preserves (state : CompositeState) (word : UInt64)
       apply withFrameBudgets_resourceRuntimeWellFormed spawned
       intro frame subject committed
       simp only [returnFrames] at committed
-      have agreement := ((resourceWellFormed_iff _).1 holdsT.2).2.2.1
+      have agreement := ((resourceWellFormed_iff _).1 holdsR.2).2.2.1
       split at committed
       · next fromChild =>
         simp only [Option.some.injEq] at committed
         subst committed
         obtain ⟨member, reserved, _⟩ := agreement frame child fromChild
-        exact ⟨member, reserved, by rw [issuedT]; exact parentIssued⟩
+        refine ⟨member, reserved, ?_⟩
+        show (terminatedChild state child).lifecycle.issuedSubjects (spawnParent state) = true
+        rw [issuedT]; exact parentIssued
       · exact agreement frame subject committed
     rw [stateEq]
     generalize hpost : releaseChild (terminatedChild state child) (spawnParent state) slot child =
@@ -872,7 +1037,7 @@ theorem grantBudgetedAuthority_preserves (state : CompositeState) (subject budge
   unfold grantBudgetedAuthority
   split
   · next admitted =>
-    obtain ⟨_, _, covered⟩ := admitted
+    obtain ⟨_, _, covered, _⟩ := admitted
     refine ⟨withSpawn_resourceRuntimeWellFormed holds _, ?_, fun _ => rfl⟩
     refine ⟨accounting.entries, accounting.unique, accounting.fresh,
       fun parent capability found => ?_⟩

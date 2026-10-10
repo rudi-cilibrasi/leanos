@@ -101,6 +101,16 @@ an empty inheritance set** only; fork and clone stay excluded either way.
 
 Items 1, 4, and 5 remain partial, so the ring-3 spawn syscall stays gated.
 
+### Gate status update (2026-10-10, gate items 1 and 4)
+
+| Item | Status | Evidence or gap |
+| --- | --- | --- |
+| 1. One authoritative composite state | **Met in the model** | The composite now allocates and releases memory against the frame budgets it holds. `MemoryOperation` (`allocate`, `release`), run by `memoryGate` under the running latch, charges an allocation to a free frame committed to the acting subject (`allocateMemory_charges`), scrubs the frame before publication (`allocateMemory_fresh`), and on release retires the object everywhere and scrubs its frame (`releaseMemory_retires`, `releaseMemory_returns`). Both keep the combined invariant (`memoryGate_preserves`, built on `installAllocatedMemory_preserves_authoritativeRuntimeWellFormed` and `installReleasedMemory_preserves_authoritativeRuntimeWellFormed`), declare footprints that pass the frame rule and the read-set check (`memoryGate_frames`, `memoryGate_reads`), reject with the pre-state (`MemoryOperation.apply_rejected_unchanged`), including a full budget (`allocateMemory_frame_budget_exhausted`, `allocateMemory_full_rejected`) and exhausted object identities (`allocateMemory_object_identity_exhausted`), and are exactly `FrameBudget.allocate` and `FrameBudget.release` on the budget projection (`allocateMemory_refines`, `releaseMemory_refines`). Memory steps are in the whole-trace theorem (`child_resource_trace`, `ChildTraceStep.memory`). Caller-identity `createSubjectOne` is admissible on every dispatcher-reachable token in the dispatcher's resource view, the same states with the subject counter at 2, which no authoritative step reads (`authoritativeGate_resourceView`, `dispatcher_createSubject_admissible`, `dispatcher_resource_trace`); the dispatcher, its `initialState`, and its generated C are unchanged. **At the executable boundary (item 5):** `CompositeDispatcher`'s frame-budget tokens still denote the standalone `FrameBudgetScenario.Runtime`, whose allocate and release steps are the standalone model that the composite refines. |
+| 4. Proof plan | **Met in the model** | Every obligation of the proof plan is discharged for the public spawn family together with the memory family. *Invariant preservation* and *resource accounting*: `child_resource_trace` (all three invariants, usage within limit, no frame created, subject budgets, entitlement bounds). *No amplification*: `spawn_no_authority_amplification`, `spawn_parent_unchanged`. *Confinement*: when the child acts, every operation of its syscall surface that does not designate an observer leaves the whole view of every subject sharing no object with the child unchanged, for one step and along runs (`child_step_confined`, `child_run_confined`); right after spawn the child names exactly the granted endpoint and its own address space (`spawn_child_names`, `spawned_child_confined`); its memory allocations are invisible to every other subject (`memory_allocate_confined`). *Stale references*: control words (`child_resource_trace`) and capability words naming the child or its objects stay unresolvable along every later trace of composite, spawn-family, and memory steps (`stale_word_forever`, from per-step identity provenance `CompositeStep.identityStep`, `childGate_identityStep`, `memoryGate_identityStep`). *Cleanup*: a child never holds spawn authority and never has children (`SpawnTreeWellFormed`, `charged_child_childless`, `child_spawn_rejected`), so terminating it orphans nothing (`terminateChild_no_orphans`); termination now also frees and scrubs the frames of the child's memory (`reclaimChildFrames_reclaims`) and releases everything it was given (`terminateChild_releases_everything`). **Stated exclusions of confinement** (`LeanOS.SpawnConfinement`): the public scheduler choice (a blocking receive that blocks), operations that designate the observer as a delegation destination or revocation victim, and `capabilityRevokeSubtree` and memory release, which retire derived authority wherever it went; timing and caches are not modeled. |
+
+Items 1 and 4 are met in the model. Item 5 remains partial, so the ring-3
+spawn syscall stays gated.
+
 ### Spawn readiness decision
 
 The gate is **not met**. Spawn work may proceed only through #489 (explicit
@@ -248,3 +258,51 @@ the unaccounted core that the charged spawn wraps.
 - It adds no budget-charged memory allocation or release to the composite.
 - Terminating a child does not terminate the child's own children.
 - It adds no syscall, no boot-dispatcher command, and no QEMU scenario.
+
+## Amendment (2026-10-10): budget-charged memory, one-level spawn, and complete child cleanup (gate items 1 and 4)
+
+### Memory is allocated against the composite budgets
+
+`MemoryOperation` is a separate family, like `LifecycleOperation` and
+`ChildOperation`, so `Operation` and `applyOperation` are unchanged. The
+acting subject is the current subject of the execution latch; no command word
+names the charged subject, the frame, or the object identity. Allocation
+takes the object issuer's next identity and the first free frame committed to
+the actor (`FrameBudget.firstAvailable` on the budget projection), scrubs the
+frame, and publishes the object with a root capability in the actor's slot.
+It also requires that the lifecycle attributes the frame to no one, so no
+stale ownership record can be overwritten (`frameUnavailable`). Release
+follows `MemoryLifecycle.release`: a memory capability with `revoke`, the
+object's current binding and allocator owner, and the actor recorded as the
+owner. It retires the object everywhere: every capability naming it in every
+slot, every mapping of it, every pending sealed transfer carrying it, and
+every cached translation (the full flush subject cleanup uses). The frame is
+then free and scrubbed, and the identity stays issued.
+
+### Spawn authority is held only outside child tables
+
+The public grant (`grantBudgetedAuthority`) now refuses a subject recorded as
+a spawned child. Spawn never passes spawn authority to the child, so no child
+ever holds it and no child ever has children (`SpawnTreeWellFormed`). The
+spawn tree of a parent is one level deep, and child termination is its whole
+cleanup. Nested spawn is a later decision; it would need cascading
+termination and reclamation through the child's table.
+
+### Child termination reclaims the child's memory
+
+Composite termination retires every memory object the terminated subject
+owned but leaves its frame allocated. Child termination now frees, unbinds,
+and scrubs every frame committed to the child that backs a dead object
+(`reclaimChildFrames`) before the child's frames return to the parent. A frame
+backing a live object is never reclaimed (`not_reclaimable_of_live`).
+
+### The dispatcher's caller-identity creation
+
+`CompositeDispatcher` replays `createSubject 1` from `bootRuntime`, whose
+subject counter is 1, so the step is outside `CompositeStep.Admissible`.
+Rather than change the dispatcher's seed, and with it the generated boot C,
+`LeanOS.CompositeDispatcherResources` reads every dispatcher state with the
+subject counter at 2. No authoritative step reads or writes the issuers, so
+the dispatcher's states and these views differ only in that counter, and the
+whole dispatcher path is an admissible composite trace from a seed satisfying
+the combined invariant.

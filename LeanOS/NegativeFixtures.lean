@@ -9,6 +9,7 @@ import LeanOS.NegativeFixtures.ElfAdmission
 import LeanOS.NegativeFixtures.Example
 import LeanOS.NegativeFixtures.FrameBudget
 import LeanOS.NegativeFixtures.IOMMUConfinement
+import LeanOS.NegativeFixtures.MemoryAllocation
 import LeanOS.NegativeFixtures.NMIFrame
 import LeanOS.NegativeFixtures.NMIHalt
 import LeanOS.NegativeFixtures.NMIManifest

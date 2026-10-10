@@ -27,6 +27,10 @@ This section states the accounting rules for parents and children and proves tha
 - `mem_availableFrames` — A frame offered to a child is a real frame, committed to the parent, and not in use.
 - `grantFrames_limits` — Handing frames to a child lowers the parent's allowance and raises the child's by exactly the number moved, and leaves everyone else's alone: no frame is created.
 - `grantFrames_preserves` — A memory grant keeps the full rulebook and the accounting rules, and only the receiving child's entitlement can grow.
+- `reclaimable_facts` — A frame marked for reclaiming is committed to the child and backs a dead object.
+- `not_reclaimable_of_live` — A frame that backs a live object is never reclaimed.
+- `reclaimChildFrames_preserves` — Reclaiming an ended child's memory keeps both rulebooks.
+- `reclaimChildFrames_reclaims` — Reclaiming frees, unbinds and wipes every frame of the child that backs a dead object, and keeps the commitments and the frame list.
 - `releaseChild_limits` — Ending a child gives all its frames back to the parent: the parent's allowance grows by the child's, the child's drops to zero, and nobody else's changes.
 - `terminatedChild_facts` — Ending a child through the kernel's normal termination keeps the full rulebook, the identity and frame records, and the spawn records.
 - `terminateChild_preserves` — Ending a child keeps the full rulebook and the accounting rules, and no subject other than an existing child gains entitlement.

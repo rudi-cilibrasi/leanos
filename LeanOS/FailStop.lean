@@ -17,6 +17,9 @@ import LeanOS.FailStop.ReadSets
 import LeanOS.FailStop.Resources
 import LeanOS.FailStop.ResourceSteps
 import LeanOS.FailStop.SpawnAddressSpace
+import LeanOS.FailStop.MemoryAllocation
+import LeanOS.FailStop.MemoryRelease
+import LeanOS.FailStop.MemoryOperations
 import LeanOS.FailStop.Spawn
 import LeanOS.FailStop.SpawnInvariants
 import LeanOS.FailStop.SpawnAuthority
@@ -24,7 +27,11 @@ import LeanOS.FailStop.SpawnTraces
 import LeanOS.FailStop.SpawnAccounting
 import LeanOS.FailStop.SpawnAccountingInvariants
 import LeanOS.FailStop.SpawnChildCleanup
+import LeanOS.FailStop.SpawnTree
 import LeanOS.FailStop.SpawnAccountingTraces
+import LeanOS.FailStop.CapabilityIdentities
+import LeanOS.FailStop.CapabilityIdentitySteps
+import LeanOS.FailStop.SpawnGate
 import LeanOS.FailStop.AuthoritativeTraces
 import LeanOS.FailStop.Evidence
 
