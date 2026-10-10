@@ -22,6 +22,7 @@ import LeanOS.EndpointDirectory
 import LeanOS.FaultHandler
 import LeanOS.KeyboardEcho
 import LeanOS.TimerServer
+import LeanOS.FrameServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
 
@@ -86,7 +87,9 @@ def adapters : List AdapterSpec := [
   adapter "EndpointDirectory.resolve" 24 "leanos_directory_resolve" 2,
   adapter "FaultHandler.route" 25 "leanos_fault_handler_route" 4,
   adapter "KeyboardEcho.deviceAuthorize" 26 "leanos_device_authorize" 2,
-  adapter "TimerServer.decide" 27 "leanos_timer_server_decide" 3]
+  adapter "TimerServer.decide" 27 "leanos_timer_server_decide" 3,
+  adapter "FrameServer.check" 28 "leanos_frame_server_check" 6,
+  adapter "FrameServer.view" 29 "leanos_frame_server_view" 6]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -162,6 +165,15 @@ private def deviceAuthorize (id : String) (subject device : UInt64) : Vector :=
 private def timerServerDecide (id : String) (event subject word : UInt64) : Vector :=
   { id, adapter := "TimerServer.decide", words := [event, subject, word],
     expected := TimerServer.timerServerDecide event subject word }
+private def frameServerCheck (id : String) (op view usage limit requested held : UInt64) :
+    Vector :=
+  { id, adapter := "FrameServer.check", words := [op, view, usage, limit, requested, held],
+    expected := FrameServer.frameServerCheck op view usage limit requested held }
+
+private def frameServerView (id : String) (op index poolSize holder client free : UInt64) :
+    Vector :=
+  { id, adapter := "FrameServer.view", words := [op, index, poolSize, holder, client, free],
+    expected := FrameServer.frameServerView op index poolSize holder client free }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -574,6 +586,44 @@ def timerServerVectors : List Vector := [
   timerServerDecide "timer-server.wake-other-signaller" 3 2 1,
   timerServerDecide "timer-server.wake-other-client" 3 3 2,
   timerServerDecide "timer-server.unknown-event" 4 3 1]
+/-- Frame-server decision checks (#486): the image's four decisions (grant
+to A, A's over-budget refusal, A's revocation, the republished grant to B),
+then every rejection of a hostile decision (outside the pool, frame in use,
+amplified or empty rights, over budget, untruthful refusals, reclaim of a
+frame the client does not hold), an accepted reclaim and pool-exhausted
+refusal, an unknown op, and maximum words. -/
+def frameServerVectors : List Vector := [
+  frameServerCheck "frame-server.grant-a" 1 1 0 1 3 3,
+  frameServerCheck "frame-server.refuse-a-over-budget" 2 0 1 1 0 3,
+  frameServerCheck "frame-server.revoke-a" 5 0 1 1 0 3,
+  frameServerCheck "frame-server.grant-b-republished" 1 1 0 2 3 3,
+  frameServerCheck "frame-server.grant-outside-pool" 1 0 0 1 3 3,
+  frameServerCheck "frame-server.grant-frame-in-use" 1 3 0 1 3 3,
+  frameServerCheck "frame-server.grant-amplified-rights" 1 1 0 1 4 3,
+  frameServerCheck "frame-server.grant-empty-rights" 1 1 0 1 0 3,
+  frameServerCheck "frame-server.grant-over-budget" 1 1 1 1 3 3,
+  frameServerCheck "frame-server.refuse-within-budget" 2 0 0 1 0 3,
+  frameServerCheck "frame-server.refuse-pool-with-free-frame" 3 1 0 1 0 3,
+  frameServerCheck "frame-server.refuse-pool-exhausted" 3 0 0 1 0 3,
+  frameServerCheck "frame-server.reclaim-held" 4 2 1 1 0 3,
+  frameServerCheck "frame-server.reclaim-not-holder" 4 3 0 1 0 3,
+  frameServerCheck "frame-server.unknown-op" 0 1 0 1 3 3,
+  frameServerCheck "frame-server.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
+
+/-- Frame-server view words (#486): a free pool frame for A and for B, a frame
+outside the pool, a frame held by another client, a frame held by the
+client, the pool-exhausted bit, ops without a frame, and maximum words. -/
+def frameServerViewVectors : List Vector := [
+  frameServerView "frame-server-view.free-for-a" 1 0 2 0 1 2,
+  frameServerView "frame-server-view.free-for-b" 1 0 2 0 2 1,
+  frameServerView "frame-server-view.outside-pool" 1 2 2 0 1 2,
+  frameServerView "frame-server-view.held-by-other" 1 1 2 2 1 1,
+  frameServerView "frame-server-view.held-by-client" 4 0 2 1 1 1,
+  frameServerView "frame-server-view.pool-exhausted" 3 0 2 0 1 0,
+  frameServerView "frame-server-view.refuse-budget" 2 0 2 1 1 1,
+  frameServerView "frame-server-view.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
 
 /-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
 classification. Each argument ranges over the boundary words 0, 1, 2 and
@@ -930,9 +980,10 @@ def vectors : List Vector := [
     inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
     consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
-    deviceAuthorizeVectors ++ timerServerVectors
+    deviceAuthorizeVectors ++ timerServerVectors ++ frameServerVectors ++
+    frameServerViewVectors
 
-theorem corpus_shape : vectors.length = 540 := by decide
+theorem corpus_shape : vectors.length = 564 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -982,7 +1033,17 @@ theorem hosted_device_authorize_vectors_exact :
 
 /-- Oracle indices 524--539 are the timer-server decision corpus (#487). -/
 theorem hosted_timer_server_vectors_exact :
-    vectors.drop 524 = timerServerVectors := by
+    (vectors.drop 524).take timerServerVectors.length = timerServerVectors := by
+  rfl
+
+/-- Oracle indices 540--555 are the frame-server decision-check corpus (#486). -/
+theorem hosted_frame_server_vectors_exact :
+    (vectors.drop 540).take frameServerVectors.length = frameServerVectors := by
+  rfl
+
+/-- Oracle indices 556--563 are the frame-server view corpus (#486). -/
+theorem hosted_frame_server_view_vectors_exact :
+    vectors.drop 556 = frameServerViewVectors := by
   rfl
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -1012,7 +1073,8 @@ theorem hosted_inFlight_revocation_vectors_exact :
     vectors.drop 398 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors ++
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
-        faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors := by
+        faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
+          frameServerVectors ++ frameServerViewVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

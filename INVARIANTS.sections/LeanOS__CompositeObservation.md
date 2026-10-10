@@ -1,23 +1,25 @@
 # What a program can see of the real kernel state, and what other programs cannot change
 
-These theorems apply the privacy recipe to the kernel's authoritative combined state and its one published operation gate, rather than to a separate simplified model. An observing program's view is: which program the scheduler picked (treated as public), whether the observer is alive, its capability table (the list of permissions it holds), the state of every object those permissions name (liveness, kind, queued messages, pending capability transfers, blocked receivers), whether it is itself blocked and what reply it was handed, and the page mappings of the address spaces it owns. Some operations by other programs are classified as "silent" for the observer; the theorems prove that silent operations change nothing in that view, and everything else is announced to the observer. Timing, caches, device reads, programs that never finish, and the link to the compiled kernel are outside this model.
+These theorems apply the privacy recipe to the kernel's authoritative combined state and its one published operation gate, rather than to a separate simplified model. An observing program's view is: which program the scheduler picked (treated as public), whether the observer is alive, its capability table (the list of permissions it holds), the state of every object those permissions name (liveness, kind, queued messages, pending capability transfers, blocked receivers, and whether a memory object is backed by a frame it still owns), whether it is itself blocked and what reply it was handed, and which address spaces it owns together with their page mappings. Some operations by other programs are classified as "silent" for the observer; the theorems prove that silent operations change nothing in that view, and everything else is announced to the observer. Timing, caches, device reads, programs that never finish, and the link to the compiled kernel are outside this model.
 
 - `observe_eq_of_projections` — The observer's view is read only from six named parts of the kernel state (lifecycle, capabilities, virtual memory, IPC, capability transfers, blocking IPC); if none of those parts changes, the view does not change.
 - `observe_eq_of` — A finer test for an unchanged view: it is enough that the scheduler choice, the observer's liveness, table size and table entries, the objects its table names, the ownership of address spaces, the mappings of spaces it owns, and its blocking state all stay the same; anything else may change freely.
 - `isSilent_actor` — A step classified as silent for an observer is never one the observer itself performs, so the observer never misses its own replies.
 - `copy_frame` — Copying a capability into another program's table leaves the observer's table entries, every program's liveness and table size, and every object's liveness and kind exactly as they were.
 - `revokeRuntimeSafe_frame` — Taking back one capability from another program likewise leaves the observer's table entries, liveness, table sizes, and every object's liveness and kind untouched.
-- `map_frame` — Mapping a page on behalf of some program never changes who owns any address space, and never changes the mappings of an address space owned by a different program.
-- `unmap_frame` — The same for unmapping: ownership is unchanged, and address spaces owned by other programs keep every mapping.
+- `map_frame` — Mapping a page on behalf of some program never changes who owns any address space or the memory bookkeeping, and never changes the mappings of an address space owned by a different program.
+- `unmap_frame` — The same for unmapping: ownership and memory bookkeeping are unchanged, and address spaces owned by other programs keep every mapping.
+- `syscallDispatch_frame` — The same for a memory system call (map, unmap, or access check) made by another program: ownership and memory bookkeeping are unchanged, and the observer's own spaces keep every mapping.
 - `resolveCurrent_ok_lookup` — Bookkeeping: when a program's handle word is accepted, the capability it resolves to is exactly the one stored in that program's table at the handle's slot.
 - `endpointSend_mailbox_other` — Sending a message changes at most the mailbox of the endpoint being sent to; every other endpoint's mailbox is untouched.
 - `endpointReceive_mailbox_other` — Receiving a message changes at most the mailbox of the endpoint being received from; every other endpoint's mailbox is untouched.
 - `ipcDispatch_mailbox_other` — A data-only IPC call changes only the mailbox of the endpoint its handle word resolves to.
 - `applyOperation_observe_of_untouched` — An operation whose declared footprint writes none of the view's six state parts leaves every observer's view unchanged — the footprint frame rule doing the work.
 - `observe_installCopiedCapabilities` — Publishing a new capability table that keeps the observer's entries, all liveness and table sizes, and all object liveness and kinds leaves the observer's view unchanged.
-- `observe_installVirtualMemory` — Publishing new virtual memory that keeps address-space ownership and the mappings of the observer's own spaces leaves the observer's view unchanged.
+- `observe_installVirtualMemory` — Publishing new virtual memory that keeps address-space ownership, the memory bookkeeping, and the mappings of the observer's own spaces leaves the observer's view unchanged.
 - `observe_installIPC` — Publishing new IPC state that keeps the mailboxes of every endpoint the observer's table names leaves the observer's view unchanged.
 - `observe_dispatchIPC` — A data-only IPC call aimed at an endpoint the observer holds no permission for leaves the observer's view unchanged, whether it is accepted, rejected, or held back for a pending capability transfer.
+- `observe_selectLiveReturnAuthority` — Preparing the return to a program touches only execution state, so it leaves every observer's view unchanged.
 - `applyOperation_silent_observe` — Local respect for every operation family: each operation classified as silent for an observer leaves that observer's view exactly unchanged.
 - `gate_state_cases` — Bookkeeping: the ordinary gate either leaves the state alone (busy or halted) or applies the operation.
 - `authoritativeGate_silent_observe` — Local respect at the published gate: a silent operation leaves the observer's view unchanged, including when the gate refuses it as busy or halted.
@@ -32,6 +34,12 @@ These theorems apply the privacy recipe to the kernel's authoritative combined s
 - `LowEquiv.resolve` — Indistinguishable states give the observer the same result when resolving any of its own handles.
 - `LowEquiv.resolveCurrent` — Indistinguishable states give the observer the same result when decoding and resolving any handle word it presents.
 - `LowEquiv.lookupObject` — An object the observer can look up through its own table looks the same in both of two indistinguishable states.
+- `LowEquiv.scheduled` — Indistinguishable states agree on which program the scheduler picked.
+- `LowEquiv.rowEq` — Indistinguishable states give the observer the same complete permission list.
+- `LowEquiv.namesEq` — Indistinguishable states agree on which objects the observer's permissions name.
+- `LowEquiv.ownsIff` — Indistinguishable states agree on which address spaces the observer owns.
+- `LowEquiv.ownedMappings` — Indistinguishable states agree on every mapping of every address space the observer owns.
+- `LowEquiv.namedView` — Indistinguishable states agree on the visible state of every object the observer's permissions name.
 - `LowEquiv.endpointSend` — In indistinguishable states (with the IPC capability copy matching the published table), the observer's send gets the same accept-or-reject answer.
 - `LowEquiv.endpointReceive` — In indistinguishable states (with the IPC capability copy matching the published table), the observer's receive gets the same answer, including the same delivered message.
 - `ipcCapabilitiesPublished_of_coherent` — In any coherent kernel state, the capability copies used by IPC and by capability transfers are the published capability table.
@@ -39,5 +47,6 @@ These theorems apply the privacy recipe to the kernel's authoritative combined s
 - `run_state` — The state part of an observed run is exactly the result of feeding the operations, in order, through the kernel's published gate.
 - `system_replays` — The kernel model satisfies the one-step replay guarantee: silent operations change nothing the observer sees, and every other operation announces exactly the observer's resulting view.
 - `finite_trace_lowEquiv` — The main theorem: two finite runs of the kernel's published gate that start indistinguishable to an observer and announce the same events to it end indistinguishable to it, even when other programs took different numbers and kinds of silent steps; the scheduler's choices are part of what is announced.
+- `Evidence.identity_counter_projection_witness` — Demonstrated concretely: a silent hand-over between two other programs changes the number of the permission the observer later receives, from 5 to 6, so the global permission counter is a visible channel rather than a hidden one.
 - `Evidence.shared_capability_revocation_visible` — Demonstrated concretely: when the observer holds a capability derived from another program's capability, that program taking back its whole family changes the observer's table, even though the operation names neither the observer nor its slots.
 - `Evidence.naive_named_subject_silence_unsound` — Consequently, calling a family take-back silent just because it names other programs would be wrong; the silence classification must, and does, treat such take-backs as visible.

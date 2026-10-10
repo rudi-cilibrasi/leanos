@@ -343,7 +343,7 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
     UniversalAuthoritativePreservation GenericCompositeSuccess \
     DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation \
     ReplyCapabilityAmplification CopyableReplyCapability \
-    FaultHandlerAuthorityAmplification TimerExpiryToNonHolder; do
+    FaultHandlerAuthorityAmplification TimerExpiryToNonHolder FrameServerReleaseScrubs; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
@@ -447,6 +447,19 @@ if ! grep -Fq 'tests/negative/SharedCapabilityConfidentiality.lean' "$negative_l
     ! grep -Fq 'isSilent 0 (Evidence.composite base 7) Evidence.sharedRevoke = true' \
       "$negative_log"; then
   echo "error: shared-capability fixture lacked the expected silence mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/IdentityCounterStepConsistency.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: identity-counter step-consistency overclaim unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/IdentityCounterStepConsistency.lean' "$negative_log" ||
+    ! grep -Fq 'type mismatch' "$negative_log" ||
+    ! grep -Fq 'ownStepConsistent 2 Channels.delegateToSelf = true' "$negative_log"; then
+  echo "error: identity-counter fixture lacked the expected family mismatch" >&2
   cat "$negative_log" >&2
   exit 1
 fi

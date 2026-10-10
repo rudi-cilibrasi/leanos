@@ -14,10 +14,15 @@ its separate scheduler/observation model to the authoritative
 * S's authority: its liveness, slot capacity, complete finite capability row
   (`Capability.capabilitySpace`), and for every capability in that row the
   object it names (liveness, kind, endpoint mailbox, pending sealed transfer,
-  blocking mailbox, and blocking waiter queue);
+  blocking mailbox, blocking waiter queue, and frame backing);
 * S's IPC observations: the messages queued on endpoints S names (above), the
   endpoint S waits on, and its blocking completion (delivered reply words);
-* the mappings of every address space S owns.
+* which address spaces S owns, and their mappings.
+
+The frame backing of a named object and the set of spaces S owns are exactly
+what S's own `map` reads beyond its capability; they are part of the view so
+that step and output consistency for S's own memory operations hold
+(`LeanOS.CompositeUnwinding`).
 
 **Unwinding.**  `isSilent` is a decidable classification of authoritative
 operations.  It is true only for an operation that another subject performs
@@ -29,11 +34,13 @@ event carries S's resulting view and, when S is the actor, S's reply.
 
 **Scope.**  Silent families: `nmi`, `selectUserReturn`, `userReturn`, and
 `restart` (frame rule); `capabilityCopy` whose destination is not S;
-`capabilityRevoke` whose victim is not S; `map` and `unmap`; and data-only
-`ipc` whose resolved endpoint is not named by S's row.  All other ordinary
-operations, every blocking operation, and every deferred drain are always
-visible to S.  The scheduler's choice is a public input: it is part of every
-view and scheduler operations are always visible.
+`capabilityRevoke` whose victim is not S; `map`, `unmap`, and memory
+`syscall`s; and data-only `ipc` whose resolved endpoint is not named by S's
+row.  All other ordinary operations, every blocking operation, and every
+deferred drain are always visible to S here; `LeanOS.CompositeUnwinding`
+extends the silent families under a trace invariant.  The scheduler's choice
+is a public input: it is part of every view and scheduler operations are
+always visible.
 
 **Exclusions.**  Timing, caches, device reads, the termination channel, and
 refinement to generated C or hardware are not modeled.  The theorem is
@@ -60,7 +67,16 @@ structure ObjectView where
   sealed : Option CapabilityTransfer.Sealed
   blockingMailbox : Option BlockingIPC.Envelope
   waiters : List SubjectId
+  /-- Whether a memory object is bound to a frame (`none`), and if so whether
+  the allocator still records that frame as owned by the object.  This is
+  exactly what `VirtualMapping.map` consults beyond the capability itself. -/
+  backing : Option Bool
   deriving DecidableEq
+
+/-- The frame-binding status `VirtualMapping.map` reads for one object. -/
+def backing (state : CompositeState) (object : ObjectId) : Option Bool :=
+  (state.virtualMemory.memory.binding object).map fun frame =>
+    decide (state.virtualMemory.memory.allocator.status frame = .owned object)
 
 def objectView (state : CompositeState) (object : ObjectId) : ObjectView :=
   { live := state.capabilities.objects object
@@ -68,7 +84,8 @@ def objectView (state : CompositeState) (object : ObjectId) : ObjectView :=
     mailbox := state.ipc.endpoints.mailbox object
     sealed := state.transfers.pending object
     blockingMailbox := state.blockingIPC.mailbox object
-    waiters := state.blockingIPC.waiters object }
+    waiters := state.blockingIPC.waiters object
+    backing := backing state object }
 
 /-- The observer's complete, finite capability row. -/
 def row (state : CompositeState) (observer : SubjectId) :
@@ -86,6 +103,8 @@ structure View where
   capacity : Nat
   row : List (Option Capability.Capability)
   named : List (Option ObjectView)
+  /-- The address spaces the observer owns. -/
+  owns : VirtualMapping.AddressSpaceId → Bool
   mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
     Option VirtualMapping.Mapping
   waitingOn : Option ObjectId
@@ -97,6 +116,7 @@ def observe (observer : SubjectId) (state : CompositeState) : View :=
     capacity := state.capabilities.slotCapacity observer
     row := row state observer
     named := (row state observer).map (Option.map fun cap => objectView state cap.object)
+    owns := fun space => decide (state.virtualMemory.owner space = some observer)
     mappings := fun space page =>
       if state.virtualMemory.owner space = some observer then
         state.virtualMemory.mappings space page
@@ -123,8 +143,8 @@ theorem observe_eq_of_projections (observer : SubjectId) (before after : Composi
   have hipc : after.ipc = before.ipc := same .ipc (by decide)
   have htransfers : after.transfers = before.transfers := same .transfers (by decide)
   have hblocking : after.blockingIPC = before.blockingIPC := same .blockingIPC (by decide)
-  simp [observe, row, objectView, hlifecycle, hcapabilities, hvirtual, hipc, htransfers,
-    hblocking]
+  simp [observe, row, objectView, backing, hlifecycle, hcapabilities, hvirtual, hipc,
+    htransfers, hblocking]
 
 /-- Field-wise sufficient condition for an unchanged view.  Objects outside the
 observer's row and address spaces it does not own may change arbitrarily. -/
@@ -169,8 +189,11 @@ theorem observe_eq_of (observer : SubjectId) (before after : CompositeState)
     by_cases hown : before.virtualMemory.owner space = some observer
     · simp [hown, hmappings space hown]
     · simp [hown]
+  have hown : (fun space => decide (after.virtualMemory.owner space = some observer)) =
+      (fun space => decide (before.virtualMemory.owner space = some observer)) := by
+    rw [howner]
   simp only [observe, hcurrent, hlive, hcapacity, hrow, hnamedList, hmap, hwaiting,
-    hcompletion]
+    hcompletion, hown]
 
 /-! ## Silent operations -/
 
@@ -196,7 +219,7 @@ def isSilentOrdinary (observer : SubjectId) (state : CompositeState) :
   | .nmi _ _ | .selectUserReturn _ | .userReturn _ | .restart => actor state != observer
   | .capabilityCopy _ destination _ _ => actor state != observer && destination != observer
   | .capabilityRevoke _ victim _ => actor state != observer && victim != observer
-  | .map _ _ _ | .unmap _ => actor state != observer
+  | .map _ _ _ | .unmap _ | .syscall _ => actor state != observer
   | .ipc call =>
       actor state != observer &&
         match ipcTarget state call with
@@ -248,7 +271,7 @@ theorem revokeRuntimeSafe_frame (capabilities : Capability.State) actor authorit
 theorem map_frame (virtualMemory : VirtualMapping.State) actor slot space page permissions
     (observer : SubjectId) (hne : actor ≠ observer) :
     let next := (VirtualMapping.map virtualMemory actor slot space page permissions).state
-    next.owner = virtualMemory.owner ∧
+    next.owner = virtualMemory.owner ∧ next.memory = virtualMemory.memory ∧
       ∀ candidate, virtualMemory.owner candidate = some observer →
         next.mappings candidate = virtualMemory.mappings candidate := by
   simp only [VirtualMapping.map]
@@ -266,7 +289,7 @@ theorem map_frame (virtualMemory : VirtualMapping.State) actor slot space page p
 theorem unmap_frame (virtualMemory : VirtualMapping.State) actor space page
     (observer : SubjectId) (hne : actor ≠ observer) :
     let next := (VirtualMapping.unmap virtualMemory actor space page).state
-    next.owner = virtualMemory.owner ∧
+    next.owner = virtualMemory.owner ∧ next.memory = virtualMemory.memory ∧
       ∀ candidate, virtualMemory.owner candidate = some observer →
         next.mappings candidate = virtualMemory.mappings candidate := by
   simp only [VirtualMapping.unmap]
@@ -280,6 +303,33 @@ theorem unmap_frame (virtualMemory : VirtualMapping.State) actor space page
       subst hsame
       simp_all
     simp [hspace]
+
+/-- A memory syscall (map, unmap, or access check) by another subject changes
+only address spaces that subject owns. -/
+theorem syscallDispatch_frame (virtualMemory : VirtualMapping.State)
+    (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
+    (observer : SubjectId) (hne : context.caller ≠ observer) :
+    let next := (Syscall.dispatch virtualMemory context call).state
+    next.owner = virtualMemory.owner ∧ next.memory = virtualMemory.memory ∧
+      ∀ candidate, virtualMemory.owner candidate = some observer →
+        next.mappings candidate = virtualMemory.mappings candidate := by
+  simp only [Syscall.dispatch]
+  split
+  · exact ⟨rfl, rfl, fun _ _ => rfl⟩
+  · rename_i decoded _
+    cases decoded with
+    | map handleWord page permissions =>
+        simp only [Syscall.dispatchDecoded]
+        split
+        · exact ⟨rfl, rfl, fun _ _ => rfl⟩
+        · exact map_frame virtualMemory context.caller _ context.activeAddressSpace page
+            permissions observer hne
+    | unmap page =>
+        exact unmap_frame virtualMemory context.caller context.activeAddressSpace page
+          observer hne
+    | access page access =>
+        simp only [Syscall.dispatchDecoded]
+        split <;> exact ⟨rfl, rfl, fun _ _ => rfl⟩
 
 theorem resolveCurrent_ok_lookup (capabilities : Capability.State) caller word expected
     resolution
@@ -377,15 +427,18 @@ theorem observe_installCopiedCapabilities (observer : SubjectId) (state : Compos
     observe observer (installCopiedCapabilities state capabilities) = observe observer state := by
   apply observe_eq_of <;> simp [installCopiedCapabilities, objectView, hsubjects, hcapacity,
     hslots, hobjects, hkinds]
+  intro _ _
+  rfl
 
 theorem observe_installVirtualMemory (observer : SubjectId) (state : CompositeState)
     (virtualMemory : VirtualMapping.State) (translations : TLB.State)
     (howner : virtualMemory.owner = state.virtualMemory.owner)
+    (hmemory : virtualMemory.memory = state.virtualMemory.memory)
     (hmappings : ∀ space, state.virtualMemory.owner space = some observer →
       virtualMemory.mappings space = state.virtualMemory.mappings space) :
     observe observer (installVirtualMemory state virtualMemory translations) =
       observe observer state := by
-  apply observe_eq_of <;> simp [installVirtualMemory, objectView, howner]
+  apply observe_eq_of <;> simp [installVirtualMemory, objectView, backing, howner, hmemory]
   exact hmappings
 
 theorem observe_installIPC (observer : SubjectId) (state : CompositeState)
@@ -395,7 +448,7 @@ theorem observe_installIPC (observer : SubjectId) (state : CompositeState)
     observe observer (installIPC state ipc) = observe observer state := by
   apply observe_eq_of <;> simp [installIPC, objectView]
   intro object hnames
-  exact hmailbox object hnames
+  exact ⟨hmailbox object hnames, rfl⟩
 
 theorem observe_dispatchIPC (observer : SubjectId) (state : CompositeState)
     (call : IPCSyscall.Call)
@@ -413,6 +466,15 @@ theorem observe_dispatchIPC (observer : SubjectId) (state : CompositeState)
       simp only [dispatchIPC]
       repeat' split
       all_goals first | rfl | exact hinstall
+
+/-- Arming or disarming the return authority writes only `execution`. -/
+theorem observe_selectLiveReturnAuthority (observer : SubjectId) (state : CompositeState)
+    (purpose : Interrupt.ReturnPurpose) :
+    observe observer (selectLiveReturnAuthority state purpose) = observe observer state :=
+  observe_eq_of_projections observer state _ fun projection hmem =>
+    selectLiveReturnAuthority_frames state purpose projection (by
+      simp only [viewProjections, List.mem_cons, List.mem_nil_iff, or_false] at hmem
+      rcases hmem with h | h | h | h | h | h <;> subst h <;> untouched_decide)
 
 /-- **Local respect** for ordinary operations: every operation classified as
 silent leaves the observer's view literally unchanged. -/
@@ -454,22 +516,35 @@ theorem applyOperation_silent_observe (observer : SubjectId) (state : CompositeS
           hobjects hkinds
   | map slot page permissions =>
       simp only [isSilentOrdinary, bne_iff_ne, ne_eq, actor] at hsilent
-      obtain ⟨howner, hmappings⟩ := map_frame state.virtualMemory
+      obtain ⟨howner, hmemory, hmappings⟩ := map_frame state.virtualMemory
         state.execution.core.context.currentSubject slot
         state.execution.core.context.activeAddressSpace page permissions observer hsilent
       simp only [applyOperation]
       split
       · rfl
-      · exact observe_installVirtualMemory observer state _ _ howner hmappings
+      · exact observe_installVirtualMemory observer state _ _ howner hmemory hmappings
   | unmap page =>
       simp only [isSilentOrdinary, bne_iff_ne, ne_eq, actor] at hsilent
-      obtain ⟨howner, hmappings⟩ := unmap_frame state.virtualMemory
+      obtain ⟨howner, hmemory, hmappings⟩ := unmap_frame state.virtualMemory
         state.execution.core.context.currentSubject
         state.execution.core.context.activeAddressSpace page observer hsilent
       simp only [applyOperation]
       split
       · rfl
-      · exact observe_installVirtualMemory observer state _ _ howner hmappings
+      · exact observe_installVirtualMemory observer state _ _ howner hmemory hmappings
+  | syscall call =>
+      simp only [isSilentOrdinary, bne_iff_ne, ne_eq, actor] at hsilent
+      obtain ⟨howner, hmemory, hmappings⟩ := syscallDispatch_frame state.virtualMemory
+        state.syscallContext call observer hsilent
+      simp only [applyOperation]
+      split
+      · rfl
+      · split
+        · exact observe_selectLiveReturnAuthority observer state _
+        · rw [observe_selectLiveReturnAuthority]
+          exact observe_installVirtualMemory observer state _ _ howner hmemory hmappings
+        · rw [observe_selectLiveReturnAuthority]
+          exact observe_installVirtualMemory observer state _ _ howner hmemory hmappings
   | ipc call =>
       simp only [isSilentOrdinary, Bool.and_eq_true] at hsilent
       have hdisjoint : ∀ object, Names state observer object = true →
@@ -626,6 +701,55 @@ theorem LowEquiv.lookupObject {observer left right} (hlow : LowEquiv observer le
   obtain ⟨hin, hslot⟩ := lookup_found_inRange _ _ _ _ hfound
   obtain ⟨hsame, hobject⟩ := hlow.slot slot (hlow.capacity ▸ hin)
   exact hobject cap (hsame.trans hslot)
+
+theorem LowEquiv.scheduled {observer left right} (hlow : LowEquiv observer left right) :
+    left.lifecycle.current = right.lifecycle.current :=
+  congrArg View.scheduled hlow
+
+theorem LowEquiv.rowEq {observer left right} (hlow : LowEquiv observer left right) :
+    row left observer = row right observer :=
+  congrArg View.row hlow
+
+theorem LowEquiv.namesEq {observer left right} (hlow : LowEquiv observer left right)
+    (object : ObjectId) : Names left observer object = Names right observer object := by
+  simp only [Names, hlow.rowEq]
+
+theorem LowEquiv.ownsIff {observer left right} (hlow : LowEquiv observer left right)
+    (space : VirtualMapping.AddressSpaceId) :
+    left.virtualMemory.owner space = some observer ↔
+      right.virtualMemory.owner space = some observer := by
+  have h := congrFun (congrArg View.owns hlow) space
+  simp only [observe, decide_eq_decide] at h
+  exact h
+
+theorem LowEquiv.ownedMappings {observer left right} (hlow : LowEquiv observer left right)
+    (space : VirtualMapping.AddressSpaceId)
+    (hown : left.virtualMemory.owner space = some observer) :
+    left.virtualMemory.mappings space = right.virtualMemory.mappings space := by
+  funext page
+  have h := congrFun (congrFun (congrArg View.mappings hlow) space) page
+  simp only [observe, hown, (hlow.ownsIff space).1 hown, ↓reduceIte] at h
+  exact h
+
+/-- Low-equivalent states agree on the view of every object the observer
+names. -/
+theorem LowEquiv.namedView {observer left right} (hlow : LowEquiv observer left right)
+    (object : ObjectId) (hnames : Names left observer object = true) :
+    objectView left object = objectView right object := by
+  have hnamed := congrArg View.named hlow
+  simp only [observe] at hnamed
+  rw [← hlow.rowEq] at hnamed
+  have hpointwise := List.map_inj_left.mp hnamed
+  simp only [Names, List.any_eq_true] at hnames
+  obtain ⟨slot, hmem, hslot⟩ := hnames
+  cases slot with
+  | none => simp at hslot
+  | some cap =>
+      simp only [Option.any_some, beq_iff_eq] at hslot
+      have h := hpointwise (some cap) hmem
+      simp only [Option.map_some, Option.some.injEq] at h
+      rw [← hslot]
+      exact h
 
 theorem LowEquiv.endpointSend {observer left right} (hlow : LowEquiv observer left right)
     (hleft : left.ipc.endpoints.capabilities = left.capabilities)
@@ -897,7 +1021,12 @@ def counterTrace : List AuthoritativeOperation :=
   [.ordinary (.capabilityCopy 1 2 2 { send := true }),
    .ordinary (.capabilityCopy 1 0 1 { send := true })]
 
-example (base : CompositeState) :
+/-- **Identity-counter channel, executable witness.**  Prefixing the
+observer's delegation with a silent delegation between subjects 1 and 2
+changes the identity of the capability the observer receives from 5 to 6.
+`CompositeUnwinding.identity_counter_step_inconsistent` proves the same
+channel breaks step consistency between runtime-well-formed states. -/
+theorem identity_counter_projection_witness (base : CompositeState) :
     (projection 0 (composite base 7) counterTrace).map handleIdentities = [[4, 6]] ∧
       (projection 0 (composite base 7) counterTrace.tail).map handleIdentities =
         [[4, 5]] := by
