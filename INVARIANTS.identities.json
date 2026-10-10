@@ -13298,6 +13298,438 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.ChildOperation.apply_rejected_unchanged",
+      "display": "ChildOperation.apply_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.childGate_unchanged_of_not_running",
+      "display": "childGate_unchanged_of_not_running",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.childSlots_encodable",
+      "display": "childSlots_encodable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.decode_controlWord",
+      "display": "decode_controlWord",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.freeChildSlot_some",
+      "display": "freeChildSlot_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.grantBudgetedAuthority_rejected_unchanged",
+      "display": "grantBudgetedAuthority_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_frame_budget_exhausted",
+      "display": "grantFrames_frame_budget_exhausted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_granted",
+      "display": "grantFrames_granted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_rejected_unchanged",
+      "display": "grantFrames_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_result",
+      "display": "grantFrames_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_shape",
+      "display": "grantFrames_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.list_sum_update",
+      "display": "list_sum_update",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.resolveControl_ok",
+      "display": "resolveControl_ok",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.resolveControl_stale",
+      "display": "resolveControl_stale",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.slotSum_congr",
+      "display": "slotSum_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.slotSum_update",
+      "display": "slotSum_update",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_control_generation_exhausted",
+      "display": "spawnCharged_control_generation_exhausted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_rejected_unchanged",
+      "display": "spawnCharged_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_result",
+      "display": "spawnCharged_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_shape",
+      "display": "spawnCharged_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_spawned",
+      "display": "spawnCharged_spawned",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_subject_budget_exhausted",
+      "display": "spawnCharged_subject_budget_exhausted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_rejected_unchanged",
+      "display": "terminateChild_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_result",
+      "display": "terminateChild_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_shape",
+      "display": "terminateChild_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccounting.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_terminated",
+      "display": "terminateChild_terminated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.apply_spawn",
+      "display": "CompositeStep.apply_spawn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.childAccounting",
+      "display": "CompositeStep.childAccounting",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.budgetLimit_countP",
+      "display": "budgetLimit_countP",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.childAccounting_of_empty",
+      "display": "childAccounting_of_empty",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.childAccounting_of_kept",
+      "display": "childAccounting_of_kept",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.childCharge_empty",
+      "display": "childCharge_empty",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.childGate_preserves",
+      "display": "childGate_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.childTable_congr",
+      "display": "childTable_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.childTable_update",
+      "display": "childTable_update",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.countP_move",
+      "display": "countP_move",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.countP_return",
+      "display": "countP_return",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.frameBudgets_unsupported",
+      "display": "frameBudgets_unsupported",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.grantBudgetedAuthority_preserves",
+      "display": "grantBudgetedAuthority_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_limits",
+      "display": "grantFrames_limits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_preserves",
+      "display": "grantFrames_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.list_sum_zero",
+      "display": "list_sum_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.live_issued",
+      "display": "live_issued",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.mem_availableFrames",
+      "display": "mem_availableFrames",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.releaseChild_limits",
+      "display": "releaseChild_limits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.revokeSpawnAuthority_preserves",
+      "display": "revokeSpawnAuthority_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.slotSum_mono",
+      "display": "slotSum_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.slotSum_zero",
+      "display": "slotSum_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.spawnAuthorize_live",
+      "display": "spawnAuthorize_live",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_preserves",
+      "display": "spawnCharged_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.spawn_budgetLimit",
+      "display": "spawn_budgetLimit",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.spawn_childTable",
+      "display": "spawn_childTable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.subjectBudget_of_authority",
+      "display": "subjectBudget_of_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_preserves",
+      "display": "terminateChild_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.terminatedChild_facts",
+      "display": "terminatedChild_facts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.usage_add_childLimits_le",
+      "display": "usage_add_childLimits_le",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.withFrameBudgets_resourceRuntimeWellFormed",
+      "display": "withFrameBudgets_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.ChildOperation.apply_keeps",
+      "display": "ChildOperation.apply_keeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.ChildStepKeeps.of_children",
+      "display": "ChildStepKeeps.of_children",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.ChildStepKeeps.refl",
+      "display": "ChildStepKeeps.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.ChildStepKeeps.trans",
+      "display": "ChildStepKeeps.trans",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.ChildTraceStep.admissible_preserves",
+      "display": "ChildTraceStep.admissible_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.ChildTraceStep.created_fresh",
+      "display": "ChildTraceStep.created_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.keeps",
+      "display": "CompositeStep.keeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.bootRuntime_childAccounting",
+      "display": "bootRuntime_childAccounting",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.childGate_keeps",
+      "display": "childGate_keeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.child_resource_trace",
+      "display": "child_resource_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.createdAlongChild_fresh",
+      "display": "createdAlongChild_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.runChildSteps_admissible",
+      "display": "runChildSteps_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.runChildSteps_composite",
+      "display": "runChildSteps_composite",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_charged",
+      "display": "spawnCharged_charged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.stale_control_after_respawn",
+      "display": "stale_control_after_respawn",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FailStop/SpawnAddressSpace.lean",
       "qualified": "LeanOS.FailStop.VirtualMapping.createAddressSpace_accepted_state",
       "display": "VirtualMapping.createAddressSpace_accepted_state",
@@ -13547,6 +13979,84 @@
       "source": "LeanOS/FailStop/SpawnAuthority.lean",
       "qualified": "LeanOS.FailStop.spawn_stale_endpoint_rejected",
       "display": "spawn_stale_endpoint_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.ChildOperation.apply_advances",
+      "display": "ChildOperation.apply_advances",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.advances",
+      "display": "CompositeStep.advances",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.TableAdvances.of_spawn_eq",
+      "display": "TableAdvances.of_spawn_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.TableAdvances.refl",
+      "display": "TableAdvances.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.TableAdvances.retired",
+      "display": "TableAdvances.retired",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.childGate_advances",
+      "display": "childGate_advances",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.retired_rejected_unchanged",
+      "display": "retired_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.stale_slot_after_respawn",
+      "display": "stale_slot_after_respawn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.stale_word_after_respawn",
+      "display": "stale_word_after_respawn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_releases",
+      "display": "terminateChild_releases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_retires",
+      "display": "terminateChild_retires",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_revokes",
+      "display": "terminateChild_revokes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildCleanup.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_stale_word",
+      "display": "terminateChild_stale_word",
       "kind": "theorem"
     },
     {
@@ -21629,6 +22139,102 @@
       "source": "LeanOS/SmapWindowPlan.lean",
       "qualified": "LeanOS.SmapWindowPlan.windows_ret_closed",
       "display": "windows_ret_closed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.allChildSpawnErrors_complete",
+      "display": "allChildSpawnErrors_complete",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.allControlDenials_complete",
+      "display": "allControlDenials_complete",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.allFrameGrantErrors_complete",
+      "display": "allFrameGrantErrors_complete",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.boot_dispatcher_rejects_child_tags",
+      "display": "boot_dispatcher_rejects_child_tags",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.childErrorCodes_injective",
+      "display": "childErrorCodes_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.childSpawnErrorCodes_distinct",
+      "display": "childSpawnErrorCodes_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.child_vectors_pass",
+      "display": "child_vectors_pass",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.controlDenialCodes_distinct",
+      "display": "controlDenialCodes_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.decodeChildSpawnErrorCode_code",
+      "display": "decodeChildSpawnErrorCode_code",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.decodeChild_encodeGrant",
+      "display": "decodeChild_encodeGrant",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.decodeChild_encodeTerminate",
+      "display": "decodeChild_encodeTerminate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.decodeControlDenialCode_code",
+      "display": "decodeControlDenialCode_code",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.decodeFrameGrantErrorCode_code",
+      "display": "decodeFrameGrantErrorCode_code",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.encodeGrant_decodeChild",
+      "display": "encodeGrant_decodeChild",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.encodeTerminate_decodeChild",
+      "display": "encodeTerminate_decodeChild",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAccountingOracle.lean",
+      "qualified": "LeanOS.SpawnAccountingOracle.frameGrantErrorCodes_distinct",
+      "display": "frameGrantErrorCodes_distinct",
       "kind": "theorem"
     },
     {

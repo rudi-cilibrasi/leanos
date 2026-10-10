@@ -46,10 +46,26 @@ revoked and re-granted spawn capability has a new generation, so a stale word
 never authorizes a spawn. -/
 structure SpawnCapability where
   generation : Nat
+  /-- The most children the holder may have charged to it at once (issue
+  #490).  The #489 kernel grant (`grantSpawnAuthority`) leaves it zero; the
+  public grant (`grantBudgetedAuthority`) names it. -/
+  subjectBudget : Nat := 0
+  deriving DecidableEq, Repr
+
+/-- One entry of a parent's child table (issues #490 and #491): the child, the
+generation of the control handle naming it, and the frames the parent has
+charged to it. -/
+structure ChildEntry where
+  child : Nat
+  generation : Nat
+  charge : Nat
   deriving DecidableEq, Repr
 
 /-- Spawn authority and the parent/child record (issue #489).  `parent` and
-`addressSpace` are records, not authority: no authorization reads them. -/
+`addressSpace` are records, not authority: no authorization reads them.  The
+child table (`children`) is the accounting of the public spawn family
+(`ChildOperation`, issues #490 and #491): only control words resolved in it
+authorize a child operation. -/
 structure SpawnRegistry where
   /-- The spawn capability each subject holds, if any. -/
   authority : Capability.SubjectId → Option SpawnCapability := fun _ => none
@@ -59,6 +75,10 @@ structure SpawnRegistry where
   parent : Capability.SubjectId → Option Capability.SubjectId := fun _ => none
   /-- The address space created for each spawned child. -/
   addressSpace : Capability.SubjectId → Option Nat := fun _ => none
+  /-- Each parent's child table, indexed by control-handle slot. -/
+  children : Capability.SubjectId → Nat → Option ChildEntry := fun _ _ => none
+  /-- The next control-handle generation; generations are never reused. -/
+  nextChildGeneration : Nat := 1
 
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
