@@ -22,6 +22,12 @@ Every public kernel operation declares a footprint: the parts of the composite k
 - `dispatchIPC_frames` — Handling a data-only message send or receive, whether accepted, rejected, or blocked by a pending sealed transfer, changes only the message store and the sealed-transfer store.
 - `applyOperation_frames` — The frame rule: for every public kernel operation, every part of the composite kernel state outside that operation's declared footprint is exactly the same after the operation as before it.
 - `applyOperation_project_untouched` — Any single part of the kernel state that an operation's footprint declares untouched has exactly the same value after the operation.
+- `CompositeState.AgreeOn.refl` — Bookkeeping: every kernel state agrees with itself on any chosen set of parts.
+- `CompositeState.AgreeOn.symm` — Bookkeeping: agreement between two kernel states on a chosen set of parts holds in either order.
+- `CompositeState.AgreeOn.mono` — Two kernel states that agree on a set of parts also agree on every smaller set of parts.
+- `CompositeState.AgreeOn.writes_of_reads` — Two kernel states that agree on everything an operation declares it reads also agree on everything it declares it writes, because every declared write is also a declared read.
+- `CompositeState.eq_of_agreeOn_all` — Two kernel states that agree on every one of their named parts are the same state.
+- `CompositeState.dependsOn_iff_agreeOn` — Spelling out the definition: a property depends only on some parts of the kernel state exactly when it survives any change that keeps those parts the same.
 - `applyOperation_preserves_of_dependsOn` — Any property that depends only on parts of the kernel state an operation does not write is automatically preserved by that operation, without a separate proof for the operation.
 - `Operation.footprint_untouched_authority` — No public kernel operation declares a write to the device-port controls, the accepted device-access authority, the live device-control observation, or the pending invalidation record.
 - `dispatchIPC_directPortIO` — Bookkeeping: message operations never touch the hardware-port controls or the device state.
