@@ -22,6 +22,7 @@ LeanOS/DMAQuarantine.lean	bounded-model
 LeanOS/DMAQuarantineCorpus.lean	bounded-model
 LeanOS/DirectPortContainment.lean	bounded-model
 LeanOS/DirectPortIO.lean	bounded-model
+LeanOS/ElfAdmission.lean	bounded-model
 LeanOS/EndpointIPC.lean	bounded-model
 LeanOS/ExtendedState.lean	bounded-model
 LeanOS/FailStop/Evidence.lean	bounded-model
@@ -43,6 +44,7 @@ LeanOS/NegativeFixtures/BootPhase.lean	negative-fixture
 LeanOS/NegativeFixtures/BootTopology.lean	negative-fixture
 LeanOS/NegativeFixtures/DMAQuarantine.lean	negative-fixture
 LeanOS/NegativeFixtures/DirectPort.lean	negative-fixture
+LeanOS/NegativeFixtures/ElfAdmission.lean	negative-fixture
 LeanOS/NegativeFixtures/FrameBudget.lean	negative-fixture
 LeanOS/NegativeFixtures/IOMMUConfinement.lean	negative-fixture
 LeanOS/NegativeFixtures/MemoryAllocation.lean	negative-fixture

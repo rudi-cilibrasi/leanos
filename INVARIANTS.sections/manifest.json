@@ -43,6 +43,7 @@
     "LeanOS/DeviceProgramExecutor.lean",
     "LeanOS/DirectPortContainment.lean",
     "LeanOS/DirectPortIO.lean",
+    "LeanOS/ElfAdmission.lean",
     "LeanOS/EndpointDirectory.lean",
     "LeanOS/EndpointIPC.lean",
     "LeanOS/Example.lean",

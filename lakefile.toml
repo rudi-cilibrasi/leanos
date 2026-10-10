@@ -32,6 +32,11 @@ root = "LeanOS.BootPageTablePlanGenerator"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-elf-admit"
+root = "LeanOS.ElfAdmissionGenerator"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-vtd-plan"
 root = "LeanOS.VTdBootPlanGenerator"
 moreLeanArgs = ["-DwarningAsError=true"]
