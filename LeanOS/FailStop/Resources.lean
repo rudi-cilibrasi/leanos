@@ -919,15 +919,18 @@ theorem authoritativeGate_preserves_resourceWellFormed_of_keepsHistory
 
 /-! ## Composite traces -/
 
-/-- One composite step: an issued lifecycle operation or an authoritative
-operation. -/
+/-- One composite step: an issued lifecycle operation, an authoritative
+operation, or an invalidation-publication entry point.  Together these are
+every public transition of the composite. -/
 inductive CompositeStep where
   | lifecycle (operation : LifecycleOperation)
   | authoritative (operation : AuthoritativeOperation)
+  | invalidation (operation : InvalidationOperation)
 
 def CompositeStep.apply (state : CompositeState) : CompositeStep → CompositeState
   | .lifecycle operation => (lifecycleGate state operation).state
   | .authoritative operation => (authoritativeGate state operation).state
+  | .invalidation operation => (operation.apply state).state
 
 /-- The subject identity a step issues, if any. -/
 def CompositeStep.issued (state : CompositeState) : CompositeStep → Option Nat
@@ -935,7 +938,7 @@ def CompositeStep.issued (state : CompositeState) : CompositeStep → Option Nat
       match (lifecycleGate state operation).result with
       | .completed (.issued identity) => some identity
       | _ => none
-  | .authoritative _ => none
+  | .authoritative _ | .invalidation _ => none
 
 def runSteps (state : CompositeState) : List CompositeStep → CompositeState
   | [] => state
@@ -958,6 +961,9 @@ theorem CompositeStep.apply_issuers (state : CompositeState) (step : CompositeSt
   cases step with
   | authoritative operation =>
       have same := (authoritativeGate_resources state operation).1
+      simp [CompositeStep.apply, CompositeStep.issued, same]
+  | invalidation operation =>
+      have same := (InvalidationOperation.apply_resources state operation).1
       simp [CompositeStep.apply, CompositeStep.issued, same]
   | lifecycle operation =>
       cases operation

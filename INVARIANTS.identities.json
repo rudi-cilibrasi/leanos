@@ -11342,6 +11342,432 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPC.cancelSubjectTyped_issuedSubjects",
+      "display": "BlockingIPC.cancelSubjectTyped_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPC.cancelSubject_issuedSubjects",
+      "display": "BlockingIPC.cancelSubject_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPC.receiveOrBlock_issuedSubjects",
+      "display": "BlockingIPC.receiveOrBlock_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPC.send_issuedSubjects",
+      "display": "BlockingIPC.send_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPCContext.cancel_issuedSubjects",
+      "display": "BlockingIPCContext.cancel_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPCContext.drainDeferred_issuedSubjects",
+      "display": "BlockingIPCContext.drainDeferred_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPCContext.receiveOrBlock_issuedSubjects",
+      "display": "BlockingIPCContext.receiveOrBlock_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.BlockingIPCContext.send_issuedSubjects",
+      "display": "BlockingIPCContext.send_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeState.Coherent.resumableLifecycle",
+      "display": "CompositeState.Coherent.resumableLifecycle",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeState.Coherent.resumableVirtual",
+      "display": "CompositeState.Coherent.resumableVirtual",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.admissible_grows",
+      "display": "CompositeStep.admissible_grows",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.admissible_of_unconditional",
+      "display": "CompositeStep.admissible_of_unconditional",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.admissible_preserves",
+      "display": "CompositeStep.admissible_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.created_fresh",
+      "display": "CompositeStep.created_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.InvalidationOperation.apply_historyAgrees",
+      "display": "InvalidationOperation.apply_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.InvalidationOperation.apply_preserves_authoritativeRuntimeWellFormed",
+      "display": "InvalidationOperation.apply_preserves_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.InvalidationOperation.apply_preserves_resourceRuntimeWellFormed",
+      "display": "InvalidationOperation.apply_preserves_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.ResourceHistoryAgrees.grows",
+      "display": "ResourceHistoryAgrees.grows",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.ResourceHistoryAgrees.trans",
+      "display": "ResourceHistoryAgrees.trans",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.ResourceHistoryGrows.budget",
+      "display": "ResourceHistoryGrows.budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.ResourceHistoryGrows.trans",
+      "display": "ResourceHistoryGrows.trans",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.ResumablePreemption.remove_history",
+      "display": "ResumablePreemption.remove_history",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.ResumablePreemption.switch_history",
+      "display": "ResumablePreemption.switch_history",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.Scheduler.remove_issuedSubjects",
+      "display": "Scheduler.remove_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.Scheduler.selectNext_eq_issuedSubjects",
+      "display": "Scheduler.selectNext_eq_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.Scheduler.selectNext_issuedSubjects",
+      "display": "Scheduler.selectNext_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.Scheduler.tick_issuedSubjects",
+      "display": "Scheduler.tick_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.StaleTranslation.step_unmap_virtualHistory",
+      "display": "StaleTranslation.step_unmap_virtualHistory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.Syscall.dispatch_virtualHistory",
+      "display": "Syscall.dispatch_virtualHistory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.TLB.protect_virtualHistory",
+      "display": "TLB.protect_virtualHistory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.VirtualHistoryAgrees.of_memory",
+      "display": "VirtualHistoryAgrees.of_memory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.VirtualHistoryAgrees.refl",
+      "display": "VirtualHistoryAgrees.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.admissibleAlong_of_unconditional",
+      "display": "admissibleAlong_of_unconditional",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.applyOperation_historyAgrees_of_coherent",
+      "display": "applyOperation_historyAgrees_of_coherent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.applyOperation_historyAgrees_of_framed",
+      "display": "applyOperation_historyAgrees_of_framed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeAcknowledgeCurrentUnmap_historyAgrees",
+      "display": "authoritativeAcknowledgeCurrentUnmap_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeAcknowledgeCurrentUnmap_preserves_resourceRuntimeWellFormed",
+      "display": "authoritativeAcknowledgeCurrentUnmap_preserves_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_budget_exact",
+      "display": "authoritativeGate_budget_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_createSubject_grows",
+      "display": "authoritativeGate_createSubject_grows",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_createSubject_history",
+      "display": "authoritativeGate_createSubject_history",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_createSubject_preserves_resourceRuntimeWellFormed",
+      "display": "authoritativeGate_createSubject_preserves_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_createSubject_preserves_resourceWellFormed",
+      "display": "authoritativeGate_createSubject_preserves_resourceWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_createSubject_requires_bound",
+      "display": "authoritativeGate_createSubject_requires_bound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_historyAgrees",
+      "display": "authoritativeGate_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_preserves_resourceRuntimeWellFormed",
+      "display": "authoritativeGate_preserves_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_termination_accounts",
+      "display": "authoritativeGate_termination_accounts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativePrepareCurrentUnmap_pendingHistoryAgrees",
+      "display": "authoritativePrepareCurrentUnmap_pendingHistoryAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.composite_resource_trace",
+      "display": "composite_resource_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.composite_resource_trace_unconditional",
+      "display": "composite_resource_trace_unconditional",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.createdAlong_fresh",
+      "display": "createdAlong_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.currentUnmapAdmissible_of_prepared",
+      "display": "currentUnmapAdmissible_of_prepared",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.dispatchBlockingCancel_historyAgrees",
+      "display": "dispatchBlockingCancel_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.dispatchBlockingReceive_historyAgrees",
+      "display": "dispatchBlockingReceive_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.dispatchBlockingSend_historyAgrees",
+      "display": "dispatchBlockingSend_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.drainDeferredCancellation_historyAgrees",
+      "display": "drainDeferredCancellation_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.gate_stutters_or_applies",
+      "display": "gate_stutters_or_applies",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.historyAgrees_of_frames",
+      "display": "historyAgrees_of_frames",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.installResumable_historyAgrees",
+      "display": "installResumable_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.installTerminatedResumable_cleanup_historyAgrees",
+      "display": "installTerminatedResumable_cleanup_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.installTerminatedSubject_historyAgrees",
+      "display": "installTerminatedSubject_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.installVirtualMemory_historyAgrees",
+      "display": "installVirtualMemory_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.issued_never_recreated",
+      "display": "issued_never_recreated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.lifecycleGate_grows",
+      "display": "lifecycleGate_grows",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.publishBlockingIPCContext_historyAgrees",
+      "display": "publishBlockingIPCContext_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.publishInterruptCleanup_historyAgrees",
+      "display": "publishInterruptCleanup_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.publishReleasedBlockingContext_historyAgrees",
+      "display": "publishReleasedBlockingContext_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.resourceHistoryAgrees_of",
+      "display": "resourceHistoryAgrees_of",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.resourceWellFormed_of_added_subject",
+      "display": "resourceWellFormed_of_added_subject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.restoreBlockingPeer_historyAgrees",
+      "display": "restoreBlockingPeer_historyAgrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.runSteps_admissible",
+      "display": "runSteps_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/ResourceSteps.lean",
+      "qualified": "LeanOS.FailStop.selectLiveReturnAuthority_historyAgrees",
+      "display": "selectLiveReturnAuthority_historyAgrees",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FailStop/Resources.lean",
       "qualified": "LeanOS.FailStop.AuthoritativeOperation.footprint_unread_resources",
       "display": "AuthoritativeOperation.footprint_unread_resources",
