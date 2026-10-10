@@ -1,22 +1,25 @@
-import LeanOS.FailStop.SpawnChildCleanup
+import LeanOS.FailStop.SpawnTree
 
 /-!
 # Fail-stop composite: whole traces of the public spawn family
 
 `ChildTraceStep` is one step of a trace that may run every composite step
 (`CompositeStep`: issued creation, authoritative operations, invalidation
-entry points) and every operation of the public spawn family
-(`ChildOperation`, through `childGate`).  `child_resource_trace` is the
-whole-trace resource theorem with charged spawn, frame slices, and child
-termination.  Along every admissible trace from a state satisfying the
-combined invariant and the accounting invariant:
+entry points), every operation of the public spawn family (`ChildOperation`,
+through `childGate`), and every operation of the composite memory family
+(`MemoryOperation`, through `memoryGate`: budget-charged allocation and
+release).  `child_resource_trace` is the whole-trace resource theorem with
+charged spawn, frame slices, child termination, and memory allocation and
+release.  Along every admissible trace from a state satisfying the combined
+invariant, the accounting invariant, and the spawn-tree invariant:
 
-- both invariants hold at the end;
+- all three invariants hold at the end;
 - no subject identity is created twice, by any creation path, and none that
   was issued before the trace;
 - the subject history only grows;
-- **no frame is created**: the allocator is exactly the starting one, and
-  every frame committed at the end was committed at the start;
+- **no frame is created**: the allocator's frame list is exactly the
+  starting one, and every frame committed at the end was committed at the
+  start;
 - **subject budgets**: every parent holding a spawn capability has at most
   its subject budget of children;
 - **frame budgets**: every parent's own usage plus its children's frame
@@ -31,19 +34,24 @@ namespace LeanOS.FailStop
 open LeanOS
 set_option linter.unusedSimpArgs false
 
-/-- One step of a trace that may use the public spawn family. -/
+/-- One step of a trace that may use the public spawn family and the memory
+family. -/
 inductive ChildTraceStep where
   | composite (step : CompositeStep)
   | child (operation : ChildOperation)
+  | memory (operation : MemoryOperation)
 
 def ChildTraceStep.apply (state : CompositeState) : ChildTraceStep → CompositeState
   | .composite step => step.apply state
   | .child operation => (childGate state operation).state
+  | .memory operation => (memoryGate state operation).state
 
-/-- Spawn-family steps need no premise; composite steps keep theirs. -/
+/-- Spawn-family and memory steps need no premise; composite steps keep
+theirs. -/
 def ChildTraceStep.Admissible (state : CompositeState) : ChildTraceStep → Prop
   | .composite step => step.Admissible state
   | .child _ => True
+  | .memory _ => True
 
 /-- The subject identity a step adds to the issued history, by any creation
 path. -/
@@ -53,6 +61,7 @@ def ChildTraceStep.created (state : CompositeState) : ChildTraceStep → Option 
       match (childGate state operation).result with
       | .completed (.spawned spawnedChild _ _) => some spawnedChild
       | _ => none
+  | .memory _ => none
 
 def runChildSteps (state : CompositeState) : List ChildTraceStep → CompositeState
   | [] => state
@@ -66,12 +75,13 @@ def AdmissibleAlongChild : CompositeState → List ChildTraceStep → Prop
   | _, [] => True
   | state, step :: rest => step.Admissible state ∧ AdmissibleAlongChild (step.apply state) rest
 
-/-- What every step keeps: the allocator, the committed frames (which only
-shrink), the subject history (which only grows), fresh control generations,
-and uncharged issued subjects (which stay uncharged and never gain
-entitlement). -/
+/-- What every step keeps: the allocator's frame list, the committed frames
+(which only shrink), the subject history (which only grows), fresh control
+generations, and uncharged issued subjects (which stay uncharged and never
+gain entitlement). -/
 structure ChildStepKeeps (before after : CompositeState) : Prop where
-  allocator : after.virtualMemory.memory.allocator = before.virtualMemory.memory.allocator
+  frames : after.virtualMemory.memory.allocator.frames =
+    before.virtualMemory.memory.allocator.frames
   committed : ∀ frame, (after.frameBudgets.commitment frame).isSome = true →
     (before.frameBudgets.commitment frame).isSome = true
   issued : ∀ subject, before.lifecycle.issuedSubjects subject = true →
@@ -84,7 +94,7 @@ structure ChildStepKeeps (before after : CompositeState) : Prop where
 theorem ChildStepKeeps.trans {first second third : CompositeState}
     (left : ChildStepKeeps first second) (right : ChildStepKeeps second third) :
     ChildStepKeeps first third := by
-  refine ⟨right.allocator.trans left.allocator,
+  refine ⟨right.frames.trans left.frames,
     fun frame committed => left.committed frame (right.committed frame committed),
     fun subject issued => right.issued subject (left.issued subject issued),
     ⟨Nat.le_trans left.advances.1 right.advances.1, fun parent slot entry found => ?_⟩,
@@ -132,7 +142,8 @@ theorem CompositeStep.keeps (state : CompositeState) (step : CompositeStep)
   have grows := step.admissible_grows state holds admissible
   have spawnSame := step.apply_spawn state
   have entitlements := (step.childAccounting state holds admissible accounting).2
-  refine ⟨grows.2.2.1.2.2.1, fun frame committed => by rw [grows.1] at committed; exact committed,
+  refine ⟨by rw [grows.2.2.1.2.2.1], fun frame committed => by
+      rw [grows.1] at committed; exact committed,
     grows.2.2.2, step.advances state, fun subject _ uncharged => ⟨?_, ?_⟩⟩
   · intro charged
     apply uncharged
@@ -195,7 +206,9 @@ theorem ChildOperation.apply_keeps (state : CompositeState) (operation : ChildOp
         have issuedEq := keeps.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
         refine ⟨?_, fun frame committed => ?_, fun subject issued => ?_, advances,
           rootsOf (spawnCharged_charged state request holds)⟩
-        · rw [stateEq]; exact keeps.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+        · rw [stateEq]
+          show (FailStop.spawn state request).state.virtualMemory.memory.allocator.frames = _
+          rw [keeps.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
         · rw [stateEq] at committed
           have budgets : (installChild (FailStop.spawn state request).state (spawnParent state)
               slot child).frameBudgets = state.frameBudgets := budgetsEq
@@ -241,14 +254,17 @@ theorem ChildOperation.apply_keeps (state : CompositeState) (operation : ChildOp
           terminateChild_terminated state control child returned result
         obtain ⟨_, agreesT, spawnT⟩ := terminatedChild_facts state child holds
         obtain ⟨_, budgetsT, _, issuedT, _, _, allocatorT, _⟩ := agreesT
-        refine ⟨by rw [stateEq]; exact allocatorT, fun frame committed => ?_,
+        refine ⟨by
+            rw [stateEq]
+            show (terminatedChild state child).virtualMemory.memory.allocator.frames = _
+            rw [allocatorT], fun frame committed => ?_,
           fun subject issued => by
             rw [stateEq]
             show (terminatedChild state child).lifecycle.issuedSubjects subject = true
             rw [issuedT]; exact issued,
           advances, rootsOf ?_⟩
         · rw [stateEq] at committed
-          simp only [releaseChild, returnFrames, budgetsT] at committed
+          simp only [releaseChild, reclaimChildFrames, returnFrames, budgetsT] at committed
           split at committed
           · next fromChild => rw [fromChild]; rfl
           · exact committed
@@ -256,7 +272,7 @@ theorem ChildOperation.apply_keeps (state : CompositeState) (operation : ChildOp
           left
           obtain ⟨parent, candidateSlot, entry', found', same⟩ := charged
           rw [stateEq] at found'
-          simp only [releaseChild, spawnT] at found'
+          simp only [releaseChild, reclaimChildFrames, spawnT] at found'
           split at found'
           · cases found'
           · exact ⟨parent, candidateSlot, entry', found', same⟩
@@ -277,21 +293,75 @@ theorem childGate_keeps (state : CompositeState) (operation : ChildOperation)
   · exact ChildOperation.apply_keeps state operation hmode holds accounting
   all_goals exact ChildStepKeeps.refl state
 
+/-- A memory step keeps every entitlement: the frame commitment, the frame
+list, and the child tables are unchanged. -/
+theorem memoryGate_entitlement (state : CompositeState) (operation : MemoryOperation)
+    (subject : Nat) :
+    entitlement (memoryGate state operation).state subject = entitlement state subject := by
+  have keeps := memoryGate_keeps state operation
+  have children : (memoryGate state operation).state.spawn.children = state.spawn.children := by
+    rw [keeps.spawn]
+  simp only [entitlement, budgetLimit_of_frames _ _ subject keeps.frameBudgets keeps.frames,
+    (childTable_congr children subject).1]
+
+/-- **Memory steps keep the accounting.** -/
+theorem memoryGate_childAccounting (state : CompositeState) (operation : MemoryOperation)
+    (accounting : ChildAccountingWellFormed state) :
+    ChildAccountingWellFormed (memoryGate state operation).state := by
+  have keeps := memoryGate_keeps state operation
+  have children : (memoryGate state operation).state.spawn.children = state.spawn.children := by
+    rw [keeps.spawn]
+  refine ⟨fun parent slot entry found => ?_,
+    fun parent slot entry parent' slot' entry' f1 f2 eq => ?_,
+    fun subject slot unissued => ?_, fun parent capability found => ?_⟩
+  · rw [children] at found
+    obtain ⟨inRange, generation, ne, issued, bound⟩ := accounting.entries parent slot entry found
+    refine ⟨inRange, by rw [keeps.spawn]; exact generation, ne,
+      by rw [keeps.issuedSubjects]; exact issued, ?_⟩
+    rw [memoryGate_entitlement]; exact bound
+  · rw [children] at f1 f2
+    exact accounting.unique parent slot entry parent' slot' entry' f1 f2 eq
+  · rw [children]
+    rw [keeps.issuedSubjects] at unissued
+    exact accounting.fresh subject slot unissued
+  · rw [keeps.spawn] at found
+    rw [(childTable_congr children parent).2]
+    exact accounting.budget parent capability found
+
+theorem memoryGate_childKeeps (state : CompositeState) (operation : MemoryOperation) :
+    ChildStepKeeps state (memoryGate state operation).state := by
+  have keeps := memoryGate_keeps state operation
+  refine ⟨keeps.frames, fun frame committed => by rw [keeps.frameBudgets] at committed; exact committed,
+    fun subject issued => by rw [keeps.issuedSubjects]; exact issued,
+    TableAdvances.of_spawn_eq keeps.spawn, fun subject _ uncharged => ⟨?_, ?_⟩⟩
+  · intro charged
+    apply uncharged
+    obtain ⟨parent, slot, entry, found, same⟩ := charged
+    rw [keeps.spawn] at found
+    exact ⟨parent, slot, entry, found, same⟩
+  · rw [memoryGate_entitlement]; exact Nat.le_refl _
+
 /-! ## Steps -/
 
 theorem ChildTraceStep.admissible_preserves (state : CompositeState) (step : ChildTraceStep)
     (holds : ResourceRuntimeWellFormed state) (accounting : ChildAccountingWellFormed state)
-    (admissible : step.Admissible state) :
+    (tree : SpawnTreeWellFormed state) (admissible : step.Admissible state) :
     ResourceRuntimeWellFormed (step.apply state) ∧ ChildAccountingWellFormed (step.apply state) ∧
-      ChildStepKeeps state (step.apply state) := by
+      SpawnTreeWellFormed (step.apply state) ∧ ChildStepKeeps state (step.apply state) := by
   cases step with
   | composite step =>
       exact ⟨step.admissible_preserves state holds admissible,
         (step.childAccounting state holds admissible accounting).1,
+        step.spawnTree state holds admissible tree,
         step.keeps state holds admissible accounting⟩
   | child operation =>
       obtain ⟨h1, h2, _⟩ := childGate_preserves state operation holds accounting
-      exact ⟨h1, h2, childGate_keeps state operation holds accounting⟩
+      exact ⟨h1, h2, childGate_spawnTree state operation holds accounting tree,
+        childGate_keeps state operation holds accounting⟩
+  | memory operation =>
+      exact ⟨memoryGate_preserves state operation holds,
+        memoryGate_childAccounting state operation accounting,
+        memoryGate_spawnTree state operation tree, memoryGate_childKeeps state operation⟩
 
 /-- A created identity was not in the issued history before its step and is
 in it afterwards. -/
@@ -341,28 +411,30 @@ theorem ChildTraceStep.created_fresh (state : CompositeState) (step : ChildTrace
             split at result <;> cases result
         | revokeAuthority subject => cases result
       · cases created
+  | memory operation => cases created
 
 /-! ## Whole traces -/
 
 theorem runChildSteps_admissible (state : CompositeState) (steps : List ChildTraceStep)
     (holds : ResourceRuntimeWellFormed state) (accounting : ChildAccountingWellFormed state)
-    (admissible : AdmissibleAlongChild state steps) :
+    (tree : SpawnTreeWellFormed state) (admissible : AdmissibleAlongChild state steps) :
     ResourceRuntimeWellFormed (runChildSteps state steps) ∧
       ChildAccountingWellFormed (runChildSteps state steps) ∧
+      SpawnTreeWellFormed (runChildSteps state steps) ∧
       ChildStepKeeps state (runChildSteps state steps) := by
   induction steps generalizing state with
-  | nil => exact ⟨holds, accounting, ChildStepKeeps.refl state⟩
+  | nil => exact ⟨holds, accounting, tree, ChildStepKeeps.refl state⟩
   | cons step rest ih =>
       obtain ⟨now, later⟩ := admissible
-      obtain ⟨nextHolds, nextAccounting, keeps⟩ :=
-        step.admissible_preserves state holds accounting now
-      obtain ⟨final, finalAccounting, finalKeeps⟩ := ih (step.apply state) nextHolds
-        nextAccounting later
-      exact ⟨final, finalAccounting, keeps.trans finalKeeps⟩
+      obtain ⟨nextHolds, nextAccounting, nextTree, keeps⟩ :=
+        step.admissible_preserves state holds accounting tree now
+      obtain ⟨final, finalAccounting, finalTree, finalKeeps⟩ := ih (step.apply state) nextHolds
+        nextAccounting nextTree later
+      exact ⟨final, finalAccounting, finalTree, keeps.trans finalKeeps⟩
 
 theorem createdAlongChild_fresh (state : CompositeState) (steps : List ChildTraceStep)
     (holds : ResourceRuntimeWellFormed state) (accounting : ChildAccountingWellFormed state)
-    (admissible : AdmissibleAlongChild state steps) :
+    (tree : SpawnTreeWellFormed state) (admissible : AdmissibleAlongChild state steps) :
     (createdAlongChild state steps).Nodup ∧
       ∀ identity, identity ∈ createdAlongChild state steps →
         state.lifecycle.issuedSubjects identity = false ∧
@@ -371,11 +443,11 @@ theorem createdAlongChild_fresh (state : CompositeState) (steps : List ChildTrac
   | nil => simp [createdAlongChild]
   | cons step rest ih =>
       obtain ⟨now, later⟩ := admissible
-      obtain ⟨nextHolds, nextAccounting, keeps⟩ :=
-        step.admissible_preserves state holds accounting now
-      obtain ⟨nodup, fresh⟩ := ih (step.apply state) nextHolds nextAccounting later
+      obtain ⟨nextHolds, nextAccounting, nextTree, keeps⟩ :=
+        step.admissible_preserves state holds accounting tree now
+      obtain ⟨nodup, fresh⟩ := ih (step.apply state) nextHolds nextAccounting nextTree later
       have tail := (runChildSteps_admissible (step.apply state) rest nextHolds nextAccounting
-        later).2.2
+        nextTree later).2.2.2
       cases created : step.created state with
       | none =>
           simp only [createdAlongChild, created, Option.toList_none, List.nil_append,
@@ -403,17 +475,21 @@ theorem createdAlongChild_fresh (state : CompositeState) (steps : List ChildTrac
               | false => rfl
               | true => rw [keeps.issued candidate h] at laterBefore; cases laterBefore
 
-/-- **The whole-trace resource theorem with charged spawn** (#490, #491).
-Along every admissible trace of composite steps and public spawn-family
-steps, from a state satisfying the combined invariant and the accounting
-invariant:
+/-- **The whole-trace resource theorem with charged spawn and memory**
+(#490, #491, ADR 0010 gate items 1 and 4).  Along every admissible trace of
+composite steps, public spawn-family steps, and memory steps (budget-charged
+allocation and release), from a state satisfying the combined invariant, the
+accounting invariant, and the spawn-tree invariant:
 
-- both invariants hold at the end;
+- all three invariants hold at the end;
 - no subject identity is created twice, and none issued before the trace is
   created again;
 - the subject history only grows;
-- the allocator is exactly the starting one and every frame committed at the
-  end was committed at the start: no frame is ever created;
+- the allocator's frame list is exactly the starting one and every frame
+  committed at the end was committed at the start: no frame is ever
+  created;
+- every subject's usage is within its limit;
+- no child in any child table has children of its own;
 - every parent holding a spawn capability has at most its subject budget of
   children;
 - every parent's own usage plus its children's frame limits is within its
@@ -424,16 +500,21 @@ invariant:
 - every retired control word is still retired at the end. -/
 theorem child_resource_trace (state : CompositeState) (steps : List ChildTraceStep)
     (holds : ResourceRuntimeWellFormed state) (accounting : ChildAccountingWellFormed state)
-    (admissible : AdmissibleAlongChild state steps) :
+    (tree : SpawnTreeWellFormed state) (admissible : AdmissibleAlongChild state steps) :
     ResourceRuntimeWellFormed (runChildSteps state steps) ∧
       ChildAccountingWellFormed (runChildSteps state steps) ∧
+      SpawnTreeWellFormed (runChildSteps state steps) ∧
       (createdAlongChild state steps).Nodup ∧
       (∀ identity, identity ∈ createdAlongChild state steps →
         state.lifecycle.issuedSubjects identity = false) ∧
       (∀ subject, state.lifecycle.issuedSubjects subject = true →
         (runChildSteps state steps).lifecycle.issuedSubjects subject = true) ∧
-      (runChildSteps state steps).virtualMemory.memory.allocator =
-        state.virtualMemory.memory.allocator ∧
+      (runChildSteps state steps).virtualMemory.memory.allocator.frames =
+        state.virtualMemory.memory.allocator.frames ∧
+      (∀ subject, (runChildSteps state steps).budgetUsage subject ≤
+        (runChildSteps state steps).budgetLimit subject) ∧
+      (∀ parent slot entry, (runChildSteps state steps).spawn.children parent slot = some entry →
+        ∀ childSlot, (runChildSteps state steps).spawn.children entry.child childSlot = none) ∧
       (∀ frame, ((runChildSteps state steps).frameBudgets.commitment frame).isSome = true →
         (state.frameBudgets.commitment frame).isSome = true) ∧
       (∀ parent capability, (runChildSteps state steps).spawn.authority parent = some capability →
@@ -446,26 +527,29 @@ theorem child_resource_trace (state : CompositeState) (steps : List ChildTraceSt
           childLimits (runChildSteps state steps) subject ≤ entitlement state subject) ∧
       ∀ parent word, ControlRetired state parent word →
         ControlRetired (runChildSteps state steps) parent word := by
-  obtain ⟨final, finalAccounting, keeps⟩ :=
-    runChildSteps_admissible state steps holds accounting admissible
-  obtain ⟨nodup, fresh⟩ := createdAlongChild_fresh state steps holds accounting admissible
-  refine ⟨final, finalAccounting, nodup, fun identity member => (fresh identity member).1,
-    keeps.issued, keeps.allocator, keeps.committed, finalAccounting.budget,
+  obtain ⟨final, finalAccounting, finalTree, keeps⟩ :=
+    runChildSteps_admissible state steps holds accounting tree admissible
+  obtain ⟨nodup, fresh⟩ := createdAlongChild_fresh state steps holds accounting tree admissible
+  refine ⟨final, finalAccounting, finalTree, nodup, fun identity member => (fresh identity member).1,
+    keeps.issued, keeps.frames, fun subject => (budget_conservation _).1 subject,
+    fun parent slot entry found => (charged_child_childless finalTree found).2,
+    keeps.committed, finalAccounting.budget,
     usage_add_childLimits_le _ finalAccounting, fun subject issued uncharged => ?_,
     fun parent word retired => keeps.advances.retired retired⟩
   exact Nat.le_trans (usage_add_childLimits_le _ finalAccounting subject)
     (keeps.roots subject issued uncharged).2
 
-/-- **The boot runtime satisfies both invariants**: the combined invariant
-(`bootRuntime_resourceRuntimeWellFormed`) and, since every child table is
-empty, the accounting invariant.  So `child_resource_trace` applies to every
-admissible trace from boot. -/
+/-- **The boot runtime satisfies all three invariants**: the combined
+invariant (`bootRuntime_resourceRuntimeWellFormed`) and, since the spawn
+registry is empty, the accounting and spawn-tree invariants.  So
+`child_resource_trace` applies to every admissible trace from boot. -/
 theorem bootRuntime_childAccounting input plan
     (compiled : BootPageTablePlan.compile input = .ok plan) :
     ResourceRuntimeWellFormed (bootRuntime plan) ∧
-      ChildAccountingWellFormed (bootRuntime plan) :=
+      ChildAccountingWellFormed (bootRuntime plan) ∧ SpawnTreeWellFormed (bootRuntime plan) :=
   ⟨bootRuntime_resourceRuntimeWellFormed input plan compiled,
-    childAccounting_of_empty _ (fun _ _ => rfl)⟩
+    childAccounting_of_empty _ (fun _ _ => rfl),
+    spawnTree_of_empty _ (fun _ _ => rfl) (fun _ => rfl) (fun _ => rfl)⟩
 
 /-- Composite traces embed into child traces unchanged. -/
 theorem runChildSteps_composite (state : CompositeState) (steps : List CompositeStep) :

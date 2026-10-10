@@ -365,9 +365,51 @@ def returnFrames (budgets : FrameBudgets) (child parent : Nat) : FrameBudgets :=
   { commitment := fun frame => if budgets.commitment frame = some child then some parent
       else budgets.commitment frame }
 
-/-- Return a terminated child's frames to its parent and remove its records. -/
-def releaseChild (state : CompositeState) (parent slot child : Nat) : CompositeState :=
+/-- A frame committed to `child` whose allocator owner is a dead object: after
+the child's termination, exactly the frames of the memory the child had
+allocated. -/
+def reclaimable (state : CompositeState) (child frame : Nat) : Bool :=
+  state.frameBudgets.commitment frame == some child &&
+    match state.virtualMemory.memory.allocator.status frame with
+    | .owned object => !state.capabilities.objects object
+    | _ => false
+
+/-- The virtual memory with every reclaimable frame of `child` free, and every
+binding to such a frame removed. -/
+def reclaimedVirtualMemory (state : CompositeState) (child : Nat) : VirtualMapping.State :=
+  { state.virtualMemory with
+    memory := { state.virtualMemory.memory with
+      allocator := { state.virtualMemory.memory.allocator with
+        status := fun frame =>
+          if reclaimable state child frame then .free
+          else state.virtualMemory.memory.allocator.status frame }
+      binding := fun object => match state.virtualMemory.memory.binding object with
+        | some frame => if reclaimable state child frame then none else some frame
+        | none => none } }
+
+/-- **Reclaim a terminated child's memory** (gate item 4).  Every frame
+committed to the child that backs a dead object is freed, unbound, and
+scrubbed, in every copy of the virtual memory.  Composite termination retires
+every memory object the child owned but leaves its frame allocated; this step
+gives those frames back before they return to the parent's budget. -/
+def reclaimChildFrames (state : CompositeState) (child : Nat) : CompositeState :=
+  let virtualMemory := reclaimedVirtualMemory state child
   { state with
+    execution := { state.execution with returnAuthorityArmed := false }
+    virtualMemory
+    ipc := { state.ipc with virtualMemory }
+    resumable := { state.resumable with
+      translations := { state.resumable.translations with virtual := virtualMemory } }
+    scrub := { state.scrub with
+      bytes := fun frame offset =>
+        if reclaimable state child frame ∧ offset < FrameScrub.frameBytes then
+          FrameScrub.initialByte
+        else state.scrub.bytes frame offset } }
+
+/-- Reclaim a terminated child's memory, return its frames to its parent, and
+remove its records. -/
+def releaseChild (state : CompositeState) (parent slot child : Nat) : CompositeState :=
+  { reclaimChildFrames state child with
     frameBudgets := returnFrames state.frameBudgets child parent
     spawn := { state.spawn with
       children := fun candidate candidateSlot =>
@@ -392,10 +434,13 @@ def terminateChild (state : CompositeState) (word : UInt64) : ChildOutcome :=
         result := .terminated entry.child (state.budgetLimit entry.child) }
 
 /-- Grant a fresh-generation spawn capability carrying a subject budget.  The
-budget must fit the child table and cover the subject's live children. -/
+budget must fit the child table and cover the subject's live children, and
+the subject must not itself be a spawned child: spawn authority is held only
+by subjects outside every child table, so a child never has children of its
+own (`SpawnTreeWellFormed`). -/
 def grantBudgetedAuthority (state : CompositeState) (subject budget : Nat) : ChildOutcome :=
   if state.capabilities.subjects subject = true ∧ budget ≤ childSlots ∧
-      childCount state subject ≤ budget then
+      childCount state subject ≤ budget ∧ state.spawn.parent subject = none then
     { state := { state with spawn := { state.spawn with
         authority := fun candidate => if candidate = subject then
           some { generation := state.spawn.nextGeneration, subjectBudget := budget }
