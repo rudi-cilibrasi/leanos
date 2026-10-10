@@ -1,12 +1,12 @@
 # Charged spawn command encoding and adversarial test vectors
 
-This section fixes exact word encodings for giving memory to a child and ending a child, and checks charged spawning against hostile and limit-exhausting requests on a realistic kernel state. It is a test boundary inside the Lean model only: none of these commands is available to the boot image or to user programs.
+This section fixes exact word encodings for giving memory to a child and ending a child, and checks charged spawning against hostile and limit-exhausting requests on a realistic kernel state. It is the general test boundary inside the Lean model; user programs cannot issue these commands, and the boot image's dispatcher reaches the same encodings only at the spawn family's own states.
 
 - `decodeChild_encodeGrant` — A memory-grant command with a nonzero frame count decodes back to exactly that grant.
 - `decodeChild_encodeTerminate` — An end-child command decodes back to exactly that request.
 - `encodeGrant_decodeChild` — Any words that decode to a memory grant are exactly the standard encoding of it, so there is only one way to write each grant.
 - `encodeTerminate_decodeChild` — Any words that decode to an end-child request are exactly its standard encoding.
-- `boot_dispatcher_rejects_child_tags` — The boot image's command decoder does not know either new command.
+- `boot_dispatcher_rejects_child_tags` — The command decoder of the dispatcher's original fixed trace does not know either new command; the boot image's dispatcher reaches them only at the spawn family's own states.
 - `childSpawnErrorCodes_distinct` — Every charged-spawn refusal reason has its own code.
 - `frameGrantErrorCodes_distinct` — Every memory-grant refusal reason has its own code.
 - `controlDenialCodes_distinct` — Every control-handle refusal reason has its own code.

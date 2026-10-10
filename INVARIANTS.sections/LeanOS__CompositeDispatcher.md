@@ -36,7 +36,7 @@ The kernel's stateful exported boundary speaks only in numbers: its two C-callab
 - `dispatchResult_control_eq_dispatch` — The control field of the logical two-word result is exactly the original scalar dispatcher result, so adding the value word cannot change the established control ABI.
 - `dispatchResult_value_eq_dispatchValue` — The value field of that logical result is exactly the allocation-free scalar value export invoked by the hosted C boundary.
 - `dispatchValue_eq_delivered_handle_iff` — The value accessor returns the canonical delivered handle exactly when the validated control word is the accepted attached-receipt reply.
-- `dispatchValue_eq_zero_iff` — Every control other than the accepted attached receipt returns the unambiguous zero no-value word.
+- `dispatchValue_eq_zero_iff` — The value accessor returns the zero no-value word exactly for controls outside a fixed list: the two accepted attached receipts and the seven accepted spawn-family results that return a generation, a child control word, or a frame count.
 - `delivered_handle_decodes` — The published value `0x60003` decodes canonically as slot 3, generation 6 rather than a raw slot or reserved handle.
 - `capabilityHandle_command_uses_canonical_codec` — Bookkeeping: the stale-handle probe command is built with the one canonical capability-handle code in both directions, not a private convention.
 - `mixedPhaseTwoCommands_cover_authoritative_families` — Bookkeeping: the five denial probes translate to five different families of kernel operation — a system call, a message receive, a capability copy, a blocking cancel, and a deferred drain.

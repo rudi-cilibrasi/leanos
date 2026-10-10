@@ -28,6 +28,7 @@ LeanOS/FailStop/Evidence.lean	bounded-model
 LeanOS/FaultDispatch.lean	bounded-model
 LeanOS/FaultHandler.lean	bounded-model
 LeanOS/FrameBudget.lean	bounded-model
+LeanOS/FrameBudgetComposite.lean	bounded-model
 LeanOS/FrameBudgetScenario.lean	bounded-model
 LeanOS/FrameScrub.lean	bounded-model
 LeanOS/IOMMU.lean	bounded-model
@@ -67,6 +68,8 @@ LeanOS/ResumablePreemption.lean	bounded-model
 LeanOS/Scheduler.lean	bounded-model
 LeanOS/SecurityClaims.lean	bounded-model
 LeanOS/SpawnAccountingOracle.lean	bounded-model
+LeanOS/SpawnBoundary.lean	bounded-model
+LeanOS/SpawnBoundaryChecks.lean	bounded-model
 LeanOS/SpawnOracle.lean	bounded-model
 LeanOS/StaleTranslation.lean	bounded-model
 LeanOS/SubjectLifecycle.lean	bounded-model

@@ -5,9 +5,11 @@ import LeanOS.FailStop.SpawnAccountingTraces
 # Charged spawn, frame slices, and child termination: hosted oracle vectors
 
 ADR 0010 gate item 5 for issues #490 and #491.  Like `LeanOS.SpawnOracle`,
-this is a **hosted, Lean-side oracle only**: none of these commands is in the
-generated boot dispatcher, none has a C export, and none is a ring-3 syscall
-(`boot_dispatcher_rejects_child_tags`).  `childOracleStep` runs the public
+this is the general hosted, Lean-side oracle, and none of these commands is a
+ring-3 syscall.  The original trace's version-one decoder rejects the new tags
+(`boot_dispatcher_rejects_child_tags`); the generated dispatcher reaches them,
+with this encoding, only at the spawn family's state tokens
+(`LeanOS.SpawnBoundary`).  `childOracleStep` runs the public
 spawn family (`childGate`), so the spawn command `0x7001` of `SpawnOracle`
 is charged against the parent's subject budget here.
 
@@ -154,9 +156,9 @@ theorem encodeTerminate_decodeChild (words : CommandWords) (control : UInt64)
     simp_all [encodeTerminate]
   · simp at decoded
 
-/-- The generated boot dispatcher's version-one decoder knows neither new
-tag: frame grants and child termination are not reachable through the boot
-boundary. -/
+/-- The version-one decoder of the dispatcher's original trace knows neither
+new tag: frame grants and child termination reach the generated boundary only
+through the spawn family's state tokens (`LeanOS.SpawnBoundary`). -/
 theorem boot_dispatcher_rejects_child_tags (arg0 arg1 arg2 arg3 : UInt64) :
     CompositeDispatcher.decodeCommand
         { tag := grantFramesTag, arg0, arg1, arg2, arg3 } = .error .reservedBits ∧

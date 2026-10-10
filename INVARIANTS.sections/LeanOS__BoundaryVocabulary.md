@@ -10,6 +10,8 @@ The kernel's generated C boundary talks in numbers: every canonical state, comma
 - `mixedStateId_covered` — Every state of the mixed transfer/IPC/mapping family has a token in the vocabulary.
 - `invalidationStateId_covered` — Every state of the invalidation publication sequence has a token in the vocabulary.
 - `budgetStateId_covered` — Every frame-budget scenario state has a token in the vocabulary.
+- `spawnStateId_covered` — Every spawn-family state has a token in the vocabulary.
+- `spawnEdge_tags_covered` — Every command tag used by the spawn family's dispatcher table is listed among the generated command selectors.
 - `capabilityTransferBootStateId_covered` — Every state of the machine A-to-B capability-transfer trace has a token in the vocabulary.
 - `inFlightRevocationStateId_covered` — Every state of the in-flight revocation trace has a token in the vocabulary.
 - `commandId_covered` — Every basic-family command tag is listed among the generated command selectors.
