@@ -44,6 +44,7 @@ GENERATED_MODULES = (
     "FaultHandler",
     "KeyboardEcho",
     "TimerServer",
+    "FrameServer",
     "WifiExec",
 )
 
@@ -69,6 +70,7 @@ FAULT_DISPATCH_PARTS = (
     "FaultHandler",
     "KeyboardEcho",
     "TimerServer",
+    "FrameServer",
     "WifiExec",
 )
 

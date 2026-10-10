@@ -3,10 +3,23 @@
 Ordinary operations, blocking message operations, and deferred-cancellation drains all pass through one authoritative gate under the same fail-stop latch. These theorems define its footprints and frame rule, show how pending memory-translation invalidations are published in order, and prove that the gate's combined invariant survives each ordinary operation family.
 
 - `DeferredBlockingRuntimeWellFormed.authoritative` — Bookkeeping: the deferred blocking guarantee together with a consistent invalidation-publication record yields the successor "authoritative" guarantee.
+- `authoritativeRuntimeWellFormed_iff_all` — The authoritative guarantee is exactly the list of its separately stated parts: the runtime parts, the classification of retained cancelled contexts, and the consistency of the invalidation-publication record, each with the parts of the kernel state it reads.
+- `authoritativeRuntimeWellFormed_preserved_of_frames` — A step that respects a declared write set keeps the authoritative guarantee once each part of the guarantee that reads something the step writes is proved again; every other part carries over automatically.
+- `authoritativeRuntimeWellFormed_preserved_of_publicationFrames` — A step that changes only the invalidation-publication record keeps the authoritative guarantee as soon as that record is shown to stay consistent; every other part of the guarantee carries over automatically.
 - `AuthoritativeRuntimeWellFormed.blocking` — Bookkeeping: the authoritative guarantee contains the blocking runtime guarantee.
 - `AuthoritativeRuntimeWellFormed.deferred` — Bookkeeping: the authoritative guarantee contains the deferred blocking guarantee.
 - `AuthoritativeRuntimeWellFormed.dmaQuarantined` — The successor guarantee carries the very same proof that PCI devices remain quarantined from memory as the original global runtime guarantee.
 - `installInvalidationPublication_self` — Spelling out the definition: reinstalling a state's own invalidation-publication record changes nothing.
+- `installInvalidationPublication_frames` — A stepping-stone fact: installing a new invalidation-publication record changes nothing else in the kernel state.
+- `authoritativePrepareInvalidation_frames` — A stepping-stone fact: preparing a translation-invalidation ticket, accepted or refused, changes nothing outside the invalidation-publication record.
+- `authoritativeAcknowledgeInvalidation_frames` — A stepping-stone fact: acknowledging a translation invalidation, accepted or refused, changes nothing outside the invalidation-publication record.
+- `authoritativePublishReuse_frames` — A stepping-stone fact: announcing that retired memory capacity may be reused changes nothing outside the invalidation-publication record.
+- `installAcknowledgedInvalidation_frames` — A stepping-stone fact: installing an acknowledged mapping change touches only the views that share the mapping state and the invalidation-publication record.
+- `InvalidationOperation.apply_frames` — Frame rule for the invalidation-publication entry points: each one, accepted or refused, leaves every part of the kernel state outside its declared write set exactly as it was.
+- `InvalidationOperation.footprint_untouched_authority` — No invalidation-publication entry point declares a write to the device-port controls, the accepted device-access authority, or the live device-control observation.
+- `authoritativeAcknowledgeInvalidation_reads` — A stepping-stone fact: an invalidation acknowledgement reads only the invalidation-publication record, so two states that agree on it get the same answer, the same machine flush, and the same new record.
+- `InvalidationOperation.apply_reads` — Each invalidation-publication entry point reads only what it declares: two states that agree on its declared reads get the same acceptance, the same machine flush request, and agreeing results on everything it declares it writes.
+- `InvalidationOperation.preserves_runtimeWellFormed` — Every invalidation-publication entry point except the completion of a current-address-space unmap keeps the global runtime guarantee and the classification of retained cancelled contexts, derived purely from its declared write set.
 - `authoritativePrepareInvalidation_preserves` — A stepping-stone fact used by later theorems: preparing any translation-invalidation ticket preserves the authoritative guarantee, since only the publication protocol's own records move.
 - `authoritativeAcknowledgeInvalidation_preserves` — A stepping-stone fact used by later theorems: acknowledging an invalidation preserves the authoritative guarantee, and an acknowledgement aimed at the wrong operation family, or arriving with nothing pending, is refused without any change.
 - `authoritativePublishReuse_preserves` — A stepping-stone fact used by later theorems: announcing that retired memory capacity may be reused preserves the authoritative guarantee.
@@ -69,10 +82,6 @@ Ordinary operations, blocking message operations, and deferred-cancellation drai
 - `applyAuthoritativeOperation_frames` — The frame rule for every authoritative operation: ordinary, blocking, and deferred-drain operations change nothing outside their declared footprints.
 - `authoritativeGate_frames` — The frame rule holds for every outcome of the single authoritative kernel gate, including busy and halted rejections.
 - `AuthoritativeOperation.footprint_untouched_authority` — No authoritative operation, ordinary, blocking, or deferred drain, declares a write to the device-port controls, device-access authority, live device-control observation, or pending invalidation record.
-- `gate_retains_invalidationPublication` — A stepping-stone fact used by later theorems: no ordinary operation ever touches the flush-publication record.
-- `restoreBlockingPeer_invalidationPublication` — A stepping-stone fact: waking a sleeping message peer never touches the flush-publication record.
-- `publishReleasedBlockingContext_invalidationPublication` — A stepping-stone fact: handing back a cancelled sleeper's saved registers never touches the flush-publication record.
-- `blockingGate_retains_invalidationPublication` — A stepping-stone fact: no blocking message operation ever touches the flush-publication record.
 - `drainDeferredCancellation_retains_invalidationPublication` — A stepping-stone fact: draining a deferred cancellation never touches the flush-publication record.
 - `authoritativeGate_preserves_invalidationPublication` — A stepping-stone fact: every operation through the authoritative gate keeps the flush-publication record internally consistent.
 - `authoritativeGate_dmaAuthority` — No operation of any kind through the authoritative gate can replace the device authority accepted at boot or the current live device observation, with no conditions attached.

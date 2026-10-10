@@ -54,6 +54,7 @@ import LeanOS.FailStop
 import LeanOS.FaultDispatch
 import LeanOS.FaultHandler
 import LeanOS.TimerServer
+import LeanOS.FrameServer
 import LeanOS.KernelTransition
 import LeanOS.KeyboardEcho
 import LeanOS.Refinement.CSubset
@@ -63,6 +64,7 @@ import LeanOS.MemoryLifecycle
 import LeanOS.Observation
 import LeanOS.ReplayUnwinding
 import LeanOS.CompositeObservation
+import LeanOS.CompositeUnwinding
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption
 import LeanOS.ResumableContext

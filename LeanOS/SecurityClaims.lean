@@ -16,6 +16,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.CompositeObservation
+import LeanOS.CompositeUnwinding
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -31,6 +32,7 @@ import LeanOS.DeviceCapability
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.FaultHandler
 import LeanOS.TimerServer
+import LeanOS.FrameServer
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -3160,10 +3162,20 @@ theorem scheduled_finite_trace_isolation observer left right leftSteps rightStep
     hlow hevents
 
 /-- SC-COMPOSITE-OBSERVER-ISOLATION: over the authoritative composite state and
-`authoritativeGate`, every operation classified silent for an observer leaves
-its view (authority row, named objects, IPC observations, owned mappings, and
-the public scheduler choice) unchanged, and finite runs from low-equivalent
-states with equal observer event projections end low-equivalent. -/
+`authoritativeGate`, (1) every operation classified silent for an observer
+leaves its view (authority row, named objects, IPC observations, owned spaces
+and mappings, and the public scheduler choice) unchanged, and (2) finite runs
+from low-equivalent states with equal observer event projections end
+low-equivalent.  Given the preserved `AuthoritativeRuntimeWellFormed`
+invariant, (3) the coherent families (`protect`, `createSubject`, blocking
+send/receive/cancel away from the observer) are also silent and (4) the
+trace theorem holds with them silent.  For the scheduled observer, (5) its
+own operations in `ownStepConsistent` are step consistent and (6) those in
+`ownOutputConsistent` are output consistent, and (7) the two compose: a run
+of its operations in both families returns equal results and ends
+low-equivalent.  (8) The two excluded channels are real: the global
+capability-identity counter breaks step consistency and a delegation's
+destination breaks output consistency. -/
 theorem composite_observer_isolation (observer : Nat) :
     (∀ state operation, CompositeObservation.isSilent observer state operation = true →
       CompositeObservation.LowEquiv observer
@@ -3174,12 +3186,68 @@ theorem composite_observer_isolation (observer : Nat) :
         CompositeObservation.projection observer right rightOperations →
       CompositeObservation.LowEquiv observer
         (CompositeObservation.run observer left leftOperations).1
-        (CompositeObservation.run observer right rightOperations).1) := by
-  exact ⟨fun state operation hsilent =>
+        (CompositeObservation.run observer right rightOperations).1) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeUnwinding.isSilentCoherent observer state operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate state operation).state state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer left right →
+      CompositeUnwinding.projectionCoherent observer left leftOperations =
+        CompositeUnwinding.projectionCoherent observer right rightOperations →
+      CompositeObservation.LowEquiv observer
+        (CompositeUnwinding.runCoherent observer left leftOperations).1
+        (CompositeUnwinding.runCoherent observer right rightOperations).1) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeUnwinding.ownStepConsistent observer operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate left (.ordinary operation)).state
+        (FailStop.authoritativeGate right (.ordinary operation)).state) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeUnwinding.ownOutputConsistent observer operation = true →
+      (FailStop.authoritativeGate left (.ordinary operation)).result =
+        (FailStop.authoritativeGate right (.ordinary operation)).result) ∧
+    (∀ left right operations, CompositeUnwinding.OwnStep observer left right →
+      (∀ operation, operation ∈ operations →
+        CompositeUnwinding.ownTraceFamily observer operation = true) →
+      (CompositeUnwinding.ownRun left operations).2 =
+          (CompositeUnwinding.ownRun right operations).2 ∧
+        CompositeObservation.LowEquiv observer (CompositeUnwinding.ownRun left operations).1
+          (CompositeUnwinding.ownRun right operations).1) ∧
+    (∀ plan,
+      (CompositeUnwinding.OwnStep 2 (CompositeUnwinding.Channels.seed plan)
+          (CompositeUnwinding.Channels.shifted plan) ∧
+        ¬ CompositeObservation.LowEquiv 2
+          (FailStop.authoritativeGate (CompositeUnwinding.Channels.seed plan)
+            (.ordinary CompositeUnwinding.Channels.delegateToSelf)).state
+          (FailStop.authoritativeGate (CompositeUnwinding.Channels.shifted plan)
+            (.ordinary CompositeUnwinding.Channels.delegateToSelf)).state) ∧
+      (FailStop.authoritativeGate (CompositeUnwinding.Channels.seed plan)
+          (.ordinary CompositeUnwinding.Channels.delegateToOther)).result ≠
+        (FailStop.authoritativeGate (CompositeUnwinding.Channels.shifted plan)
+          (.ordinary CompositeUnwinding.Channels.delegateToOther)).result) := by
+  refine ⟨fun state operation hsilent =>
       CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
     fun left right leftOperations rightOperations hlow hevents =>
       CompositeObservation.finite_trace_lowEquiv observer left right leftOperations
-        rightOperations hlow hevents⟩
+        rightOperations hlow hevents,
+    fun state operation hstate hsilent =>
+      CompositeUnwinding.authoritativeGate_silentCoherent_observe observer state operation
+        hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeUnwinding.finite_trace_lowEquiv_coherent observer left right leftOperations
+        rightOperations hleft hright hlow hevents,
+    fun left right operation h hfamily =>
+      CompositeUnwinding.own_step_consistent h operation hfamily,
+    fun left right operation h hfamily =>
+      CompositeUnwinding.own_output_consistent h operation hfamily,
+    fun left right operations h hfamily =>
+      CompositeUnwinding.own_run_noninterference h operations hfamily,
+    fun plan =>
+      ⟨CompositeUnwinding.Channels.identity_counter_step_inconsistent plan,
+        (CompositeUnwinding.Channels.copy_destination_output_inconsistent plan).2⟩⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :
@@ -3507,6 +3575,105 @@ theorem fault_handler_delivery (sys : FaultHandler.System) (entry : InterruptEnt
     exact ⟨hdead, hready, hcontext,
       fun holder slot capability hslot =>
         FaultHandler.reply_no_amplification next subject .terminate holder slot capability hslot⟩
+
+/-- SC-FRAME-SERVER-BUDGET: with allocation policy in a ring-3 frame server,
+no client ever holds more pool frames than its budget capability allows,
+whatever the server decides and whatever any client writes; and no step gives
+anyone more authority: the server, its pool and its pool rights never change,
+no budget ever grows, and every grant is of a pool frame with rights inside the
+pool rights. -/
+theorem frame_server_budget (sys : FrameServer.System) (op : FrameServer.Op)
+    (hinv : FrameServer.Invariant sys) :
+    FrameServer.Invariant (FrameServer.step sys op) ∧
+      (∀ client, FrameServer.usage (FrameServer.step sys op) client ≤
+        (FrameServer.step sys op).limit client) ∧
+      (FrameServer.step sys op).server = sys.server ∧
+      (FrameServer.step sys op).pool = sys.pool ∧
+      (FrameServer.step sys op).poolRights = sys.poolRights ∧
+      (∀ client, (FrameServer.step sys op).limit client ≤ sys.limit client) ∧
+      FrameServer.Confined (FrameServer.step sys op) := by
+  obtain ⟨hserver, hpool, hrights, hlimit, hconf⟩ := FrameServer.no_amplification sys op hinv
+  exact ⟨FrameServer.step_preserves_invariant sys op hinv,
+    FrameServer.budget_respected sys op hinv, hserver, hpool, hrights, hlimit, hconf⟩
+
+/-- SC-FRAME-SERVER-SCRUB: a frame the server grants is completely scrubbed
+before the client can see it, whatever it held (in particular a frame released
+or revoked from another client, whose bytes release leaves in place); revoking
+a client's budget capability retires every frame it held; and in every
+invariant state a client reading a held frame it has not written reads zero. -/
+theorem frame_server_scrub (sys : FrameServer.System) (caller client : Capability.SubjectId)
+    (frame : FrameAllocator.FrameId) (rights : UInt64) :
+    ((FrameServer.decide sys caller (.grant client frame rights)).2 = .granted client frame →
+      (∀ offset, offset < FrameScrub.frameBytes →
+        (FrameServer.decide sys caller (.grant client frame rights)).1.bytes frame offset =
+          FrameScrub.initialByte) ∧
+      (rights &&& FrameServer.readBit ≠ 0 → ∀ offset, offset < FrameScrub.frameBytes →
+        FrameServer.read (FrameServer.decide sys caller (.grant client frame rights)).1
+          client frame offset = some FrameScrub.initialByte)) ∧
+    (FrameServer.decide sys caller (.reclaim client frame)).1.bytes = sys.bytes ∧
+    (FrameServer.decide sys caller (.revoke client)).1.bytes = sys.bytes ∧
+    ((FrameServer.decide sys caller (.revoke client)).2 = .revoked client →
+      (FrameServer.decide sys caller (.revoke client)).1.limit client = 0 ∧
+      ∀ held, FrameServer.holds (FrameServer.decide sys caller (.revoke client)).1 client held =
+        false) ∧
+    (FrameServer.Invariant sys → ∀ reader held offset g value,
+      sys.grant held = some g → sys.written held = false → offset < FrameScrub.frameBytes →
+      FrameServer.read sys reader held offset = some value → value = FrameScrub.initialByte) := by
+  refine ⟨fun h => ⟨?_, fun hread offset hoffset =>
+      FrameServer.grant_publishes_scrubbed sys caller client frame rights h hread offset hoffset⟩,
+    (FrameServer.release_preserves_bytes sys caller client frame).1,
+    (FrameServer.release_preserves_bytes sys caller client frame).2,
+    FrameServer.revoke_retires sys caller client,
+    fun hinv reader held offset g value hg hw hoffset hread =>
+      FrameServer.read_unwritten_zero sys hinv reader held offset g hg hw hoffset value hread⟩
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, hbytes⟩ :=
+    FrameServer.granted_exact sys caller client frame rights client frame h
+  exact hbytes
+
+/-- SC-FRAME-SERVER-CHECK: the kernel's role is reduced to checking the
+server's decisions.  Every decision is either refused without effect or
+applied exactly as the server named it (the kernel chooses no client, frame,
+rights or reason); a decision from any subject but the server is refused; an
+accepted grant names a free pool frame, rights inside the pool rights and a
+client below its limit; a typed refusal is true; the honest server policy is
+never overridden; and the boot witness `frameServerCheck` answers exactly the
+model's encoded reply. -/
+theorem frame_server_kernel_checks (sys : FrameServer.System) (caller : Capability.SubjectId)
+    (d : FrameServer.Decision) :
+    ((∃ reason, FrameServer.check sys caller d = some reason ∧
+        FrameServer.decide sys caller d = (sys, .rejected reason)) ∨
+      (FrameServer.check sys caller d = none ∧
+        FrameServer.decide sys caller d = (FrameServer.effect sys d, FrameServer.replyOf d))) ∧
+    (caller ≠ sys.server → FrameServer.decide sys caller d = (sys, .rejected .notServer)) ∧
+    (∀ client frame rights, d = .grant client frame rights →
+      (FrameServer.decide sys caller d).2 = .granted client frame →
+      caller = sys.server ∧ frame ∈ sys.pool ∧ sys.grant frame = none ∧
+        FrameServer.rightsSubset rights sys.poolRights = true ∧
+        FrameServer.usage sys client < sys.limit client) ∧
+    (∀ client reason, d = .refuse client reason →
+      (FrameServer.decide sys caller d).2 = .refused client reason →
+      (reason = .budgetExhausted → sys.limit client ≤ FrameServer.usage sys client) ∧
+      (reason = .poolExhausted → FrameServer.hasFree sys = false)) ∧
+    (sys.poolRights ≠ 0 → ∀ client,
+      FrameServer.check sys sys.server (FrameServer.serverPolicy sys client) = none) ∧
+    (FrameServer.usage sys d.client < 2 ^ 64 → sys.limit d.client < 2 ^ 64 →
+      FrameServer.frameServerCheck (FrameServer.opWord d) (FrameServer.decisionView sys d)
+          (UInt64.ofNat (FrameServer.usage sys d.client)) (UInt64.ofNat (sys.limit d.client))
+          (FrameServer.requestedWord d) sys.poolRights =
+        FrameServer.encodeReply (FrameServer.decide sys sys.server d).2) := by
+  refine ⟨FrameServer.kernel_only_checks sys caller d,
+    FrameServer.decide_not_server sys caller d, ?_, ?_,
+    fun hrights client => FrameServer.serverPolicy_accepted sys client hrights,
+    FrameServer.frameServerCheck_agrees sys d⟩
+  · intro client frame rights hd h
+    subst hd
+    obtain ⟨_, _, hs, hp, hfree, hr, hu, _⟩ :=
+      FrameServer.granted_exact sys caller client frame rights client frame h
+    exact ⟨hs, hp, hfree, hr, hu⟩
+  · intro client reason hd h
+    subst hd
+    obtain ⟨_, _, _, hb, hp⟩ := FrameServer.refused_truthful sys caller client reason client reason h
+    exact ⟨hb, hp⟩
 
 /-- SC-DEVICE-CONSOLE-SEPARATION: in the composed console and device system
 under the keyboard-echo authority, a change to the console trace is an action

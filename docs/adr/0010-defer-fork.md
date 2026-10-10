@@ -70,6 +70,12 @@ an empty inheritance set** only; fork and clone stay excluded either way.
 | 5. Canonical executable encoding with adversarial tests | **Gap** | `CompositeDispatcher.Command.createSubjectOne` (tag 0x0101) is an oracle/boundary command, not a ring-3 syscall. No spawn encoding exists. |
 | 6. TCB and model-to-binary gap documented | **Met (unchanged)** | ADR 0001 and the README's trusted-boundary section; ADR 0023 records the first one-export refinement edge, which does not cover spawn. |
 
+### Gate status update (2026-10-09, issue #499)
+
+| Item | Status | Evidence or gap |
+| --- | --- | --- |
+| 1. One authoritative composite state | **Partial** | `FailStop.CompositeState` now holds the never-reused issuers (`issuers`), the frame commitment (`frameBudgets`), and the frame contents (`scrub`) as projections. `BoundedLifecycle.Runtime`, `FrameBudget.State`, and `FrameScrub.State` are each one projection of it (`lifecycleRuntime`, `budgetState`, `scrubState`), read against the composite's own lifecycle and memory. `LifecycleOperation.createSubject` draws its identity from the composite issuer, is atomic (`issueSubject_exhausted_unchanged`, `issueSubject_rejected_unchanged`), refines `BoundedLifecycle.createSubject` (`issueSubject_refines`), and gives the new subject a zero frame budget (`issueSubject_zero_budget`). `composite_identity_no_reuse` lifts `bounded_identity_no_reuse` to composite traces. The trace may contain only steps proved to keep the combined invariant: issued creation, every operation that writes neither lifecycle nor memory, and capability copy, revocation, transfer, map, and unmap. **Remaining:** that invariant is not yet proved for interrupt cleanup, `syscall`, `resumePreempt`, `protect`, termination, the scheduler steps, the blocking operations, and the deferred drain. The caller-identity `Operation.createSubject` still exists beside the issued path. The composite has no budget-charged memory allocation or release. `CompositeDispatcher`'s frame-budget tokens still denote `FrameBudgetScenario.Runtime`. |
+
 ### Spawn readiness decision
 
 The gate is **not met**. Spawn work may proceed only through #489 (explicit

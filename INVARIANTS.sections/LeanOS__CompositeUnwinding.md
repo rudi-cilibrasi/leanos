@@ -1,0 +1,96 @@
+# Finishing the privacy proof for the real kernel state, and the leaks that remain
+
+These theorems complete the privacy argument for the kernel's real combined state. They add the three standard proof obligations on top of the observer view defined for the real kernel state. First, more operations by other programs are proved invisible to the observer, provided the kernel's main health condition holds, and every operation is known to keep that condition. Second, when the observer is the running program in two states it cannot tell apart, its own operations keep the two states indistinguishable. Third, those operations give it the same answer in both states. Together these show that a run consisting only of the observer's own such operations gives it the same answers and ends indistinguishable, which is proved rather than assumed. Where an obligation genuinely fails, the failure is itself a theorem, shown on the kernel's standard example state. One failure is the global counter that numbers new permissions. The other is the answer to handing a permission to another program.
+
+- `coherent_of` — Bookkeeping: the kernel's full health condition includes the condition that all copies of shared state agree.
+- `blockingCoherent_of` — Bookkeeping: the kernel's full health condition includes the condition that the blocking-message store uses the one shared scheduler.
+- `capabilities_eq_lifecycle` — In a consistent kernel state, the published permission table is the program-lifecycle table.
+- `memoryCapabilities_eq` — In a consistent kernel state, the permission table used by memory mapping is the published one.
+- `translations_eq` — In a consistent kernel state, the page-translation cache works from the published virtual-memory state.
+- `blockingCurrent_eq` — When the blocking-message store is consistent, its idea of which program is running matches the kernel's.
+- `actor_of_current` — In a consistent state, the program the scheduler picked is the one acting, and its own address space is the active one.
+- `isSilentCoherent_of_isSilent` — Every operation that the basic classification calls silent is also silent under the extended classification.
+- `isSilentCoherent_actor` — An operation silent under the extended classification is never performed by the observer itself.
+- `protect_frame` — Another program changing a page's protection never changes who owns any address space or the memory bookkeeping, and leaves the observer's own spaces' mappings alone.
+- `create_frame` — Bringing a program other than the observer to life leaves the observer's liveness, every table size, every table entry, and every object's liveness and kind unchanged.
+- `observe_installCreatedSubject` — In a consistent state, creating a program other than the observer leaves the observer's view unchanged.
+- `blockingSend_frame` — A blocking send changes only its target endpoint's mailbox and queue, and the woken receiver's bookkeeping; it does not change which program is running or the observer's waiting state, as long as the observer is not queued there.
+- `blockingReceive_frame` — A blocking receive that already has a message or reply waiting never blocks, and changes only that message slot and the caller's own reply.
+- `blockingCancel_frame` — Cancelling another program's wait leaves the running program, every mailbox, the observer's waiting state, and every queue the cancelled program is not in unchanged.
+- `observe_publishBlockingIPCContext` — Publishing a new blocking-message store leaves the observer's view unchanged when it keeps the running program, the queues and mailboxes of the observer's endpoints, and the observer's own waiting state.
+- `publishReleasedBlockingContext_observe` — Waking a program with its saved registers changes nothing the observer sees beyond publishing the blocking store itself.
+- `blockingTarget_of_resolve` — Bookkeeping: the endpoint the silence test computes for a blocking call is the one the call itself resolves.
+- `observe_dispatchBlockingSend` — A blocking send by another program that is silent for the observer leaves the observer's view unchanged.
+- `observe_dispatchBlockingReceive` — A blocking receive by another program that is silent for the observer leaves the observer's view unchanged.
+- `cancelSubjectTyped_cancelled_state` — Bookkeeping: a successful wait cancellation produces exactly the plain cancellation state.
+- `observe_dispatchBlockingCancel` — A wait cancellation by another program that is silent for the observer leaves the observer's view unchanged.
+- `applyOperation_silentCoherent_observe` — In a consistent state, every ordinary operation silent under the extended classification leaves the observer's view unchanged.
+- `authoritativeGate_silentCoherent_observe` — At the kernel's published gate, and given the health condition, every operation silent under the extended classification leaves the observer's view unchanged, even when refused as busy or halted.
+- `runCoherent_state` — The state part of an observed run under the extended classification is exactly the result of feeding the operations through the published gate.
+- `systemCoherent_preserves` — Every step keeps the kernel's full health condition, so it holds throughout any run that starts healthy.
+- `systemCoherent_replaysOn` — In healthy states, the extended model meets the one-step replay guarantee: silent steps change nothing the observer sees, and other steps announce the observer's resulting view.
+- `finite_trace_lowEquiv_coherent` — The main theorem with the extended classification: two healthy runs that start indistinguishable to the observer and announce the same events end indistinguishable, even though other programs' protection changes, program creations and qualifying blocking messages are now silent.
+- `owner_current` — In a healthy state, the running program owns its own address space.
+- `OwnStep.rightCurrent` — If the observer is running in one of two indistinguishable states, it is running in the other too.
+- `OwnStep.leftActor` — In the first state, the observer is the acting program and its own address space is active.
+- `OwnStep.rightActor` — In the second state, the observer is the acting program and its own address space is active.
+- `gate_state_pair` — When two states have the same kernel mode, the gate either leaves both alone or applies the operation to both.
+- `lowEquiv_gate_of_apply` — If applying an operation keeps two indistinguishable states indistinguishable, so does sending it through the gate, given the same kernel mode.
+- `lowEquiv_of_unchanged` — If an operation leaves each of two indistinguishable states looking the same to the observer, they stay indistinguishable.
+- `observe_apply_copy_other` — Handing a permission to a program other than the observer, by anyone, leaves the observer's view unchanged.
+- `observe_apply_revoke_other` — Taking a permission from a program other than the observer, by anyone, leaves the observer's view unchanged.
+- `observe_apply_create_other` — In a consistent state, creating a program other than the observer leaves the observer's view unchanged.
+- `map_congr` — Two memory states that agree on what mapping a page reads give the same answer and the same new mapping for that page.
+- `map_other` — Mapping a page changes nothing about address-space ownership, memory bookkeeping, or any other page.
+- `unmap_other` — Unmapping a page changes nothing about address-space ownership, memory bookkeeping, or any other page.
+- `protect_other` — Changing a page's protection changes nothing about address-space ownership, memory bookkeeping, or any other page.
+- `unmap_congr` — Two memory states that agree on the space's owner and the page give the same unmap answer and the same result for that page.
+- `protect_congr` — Two memory states that agree on the space's owner and the page give the same protection answer and the same result for that page.
+- `backing_installVirtualMemory` — Publishing new mappings that keep the memory bookkeeping leaves every object's frame backing unchanged.
+- `observe_installVirtualMemory_eq` — Publishing new mappings that keep ownership and memory bookkeeping changes the observer's view only in the mappings of its own spaces.
+- `lowEquiv_installVirtualMemory` — Two indistinguishable states that publish new mappings agreeing on the observer's own spaces stay indistinguishable.
+- `names_of_lookup` — A permission the observer can look up in its own table names an object in its view.
+- `OwnStep.lookup` — In two indistinguishable states, the observer's own permission lookups give the same result.
+- `OwnStep.lookupView` — An object the observer can look up looks the same in both indistinguishable states.
+- `lowEquiv_mapping_step` — Two indistinguishable states stay indistinguishable after a mapping change to one page of the observer's space that agrees on both sides and leaves everything else alone.
+- `own_step_map` — The observer mapping a page of its own space keeps two indistinguishable states indistinguishable.
+- `own_step_unmap` — The observer unmapping a page keeps two indistinguishable states indistinguishable.
+- `own_step_protect` — The observer changing a page's protection keeps two indistinguishable states indistinguishable.
+- `lowEquiv_selectLiveReturnAuthority` — Preparing the return to a program keeps two indistinguishable states indistinguishable.
+- `own_step_syscall` — The observer's memory system calls (map, unmap, or access check) keep two indistinguishable states indistinguishable.
+- `observe_installIPC_eq` — Publishing new message state changes the observer's view only in the mailboxes of the objects it can name.
+- `lowEquiv_installIPC` — Two indistinguishable states that publish message state agreeing on the observer's endpoints stay indistinguishable.
+- `endpointSend_mailbox_congr` — Two message states that agree on what a send reads leave the same contents in any mailbox that agreed before.
+- `endpointReceive_mailbox_congr` — Two message states that agree on what a receive reads leave the same contents in any mailbox that agreed before.
+- `OwnStep.endpointObject` — For an endpoint the observer can look up, both indistinguishable states agree on its liveness, kind and mailbox.
+- `OwnStep.endpointLookup` — The observer's lookups through the message system's permission copy agree in both indistinguishable states.
+- `OwnStep.endpointResolve` — The observer's handle words resolve the same way in the message system of both indistinguishable states.
+- `OwnStep.namedMailbox` — Every mailbox of an object the observer names is the same in both indistinguishable states.
+- `own_step_dispatchIPC` — The observer's own data-only message call keeps two indistinguishable states indistinguishable.
+- `own_step_ipc` — The observer's own data-only message operation keeps two indistinguishable states indistinguishable.
+- `revokeRuntimeSafe_self_congr` — Taking back one of the observer's own permissions gives the same answer whenever the observer's own lookups agree.
+- `revokeRuntimeSafe_accepted_state` — An accepted take-back clears exactly the chosen slot.
+- `observe_installCopiedCapabilities_eq` — Publishing a new permission table that keeps object liveness and kinds changes the observer's view only in its liveness, table size, entries, and the objects they name.
+- `lowEquiv_installCopiedCapabilities` — Two indistinguishable states that publish permission tables agreeing on the observer's entries, all naming already-visible objects, stay indistinguishable.
+- `capabilitySpace_clear_self` — Clearing one of a program's slots changes its permission list exactly at that slot.
+- `own_step_revoke` — The observer taking back a permission keeps two indistinguishable states indistinguishable.
+- `own_step_consistent` — Step consistency for the observer's own operations: in two healthy, indistinguishable states where it is running and the kernel mode matches, every one of its listed operations keeps them indistinguishable; giving a permission to itself is not on the list.
+- `names_of_mapping` — In a healthy state, a page of the observer's own space that allows an access maps an object the observer holds a permission for.
+- `translateError_congr` — Two memory states that agree on what an access check reads give the same answer.
+- `own_output_syscall_access` — The observer's access check gives the same answer in two healthy indistinguishable states.
+- `authoritativeGate_result_of_reply` — When two states have the same kernel mode and the same operation answer, the gate returns the same result.
+- `copy_self_congr` — Handing a permission into the observer's own table gives the same answer whenever the observer's table looks the same.
+- `own_output_consistent` — Output consistency for the observer's own operations: in two healthy, indistinguishable states where it is running and the kernel mode matches, each listed operation returns the same result; giving a permission to another program is not on the list.
+- `Channels.seed_wellFormed` — The kernel's standard example state is healthy.
+- `Channels.seed_ownStep_shifted` — The example state, and the same state after the observer gave a permission to another program, are indistinguishable to the observer and meet every condition of the consistency theorems.
+- `Channels.seed_delegateToSelf_identities` — In the example state, a permission the observer gives itself gets number 6.
+- `Channels.shifted_delegateToSelf_identities` — After the earlier hand-over, the same self-given permission gets number 7.
+- `Channels.identity_counter_step_inconsistent` — A real leak: the global counter that numbers new permissions makes two indistinguishable healthy states distinguishable after the observer gives itself a permission, so step consistency cannot hold for that operation.
+- `Channels.seed_delegateToOther_result` — In the example state, the observer's hand-over to the other program succeeds.
+- `Channels.shifted_delegateToOther_result` — After the earlier hand-over, the same hand-over is refused because the slot is taken.
+- `Channels.copy_destination_output_inconsistent` — A real leak: the answer to handing a permission to another program reveals whether that program's slot is occupied, so output consistency cannot hold for that operation.
+- `dispatchIPC_lifecycle_execution` — A data-only message call never changes program lifecycle or execution state.
+- `selectLiveReturnAuthority_lifecycle` — Preparing a return never changes program lifecycle state.
+- `ownTraceFamily_preserves` — The observer's operations that are both step and output consistent keep the same program running and the same kernel mode.
+- `OwnStep.next` — After one such operation, the two states still meet every condition of the consistency theorems.
+- `own_run_noninterference` — Classical noninterference for the observer's own runs: the same sequence of its step- and output-consistent operations, from two healthy indistinguishable states, gives the same answers at every step and ends indistinguishable.

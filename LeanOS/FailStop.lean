@@ -4,6 +4,7 @@ import LeanOS.FailStop.BlockingIPC
 import LeanOS.FailStop.Operations
 import LeanOS.FailStop.Footprint
 import LeanOS.FailStop.Gate
+import LeanOS.FailStop.ProjectionInvariants
 import LeanOS.FailStop.IPC
 import LeanOS.FailStop.Capabilities
 import LeanOS.FailStop.Memory
@@ -12,6 +13,8 @@ import LeanOS.FailStop.Scheduler
 import LeanOS.FailStop.Faults
 import LeanOS.FailStop.DeferredBlocking
 import LeanOS.FailStop.AuthoritativeGate
+import LeanOS.FailStop.ReadSets
+import LeanOS.FailStop.Resources
 import LeanOS.FailStop.AuthoritativeTraces
 import LeanOS.FailStop.Evidence
 
