@@ -100,7 +100,11 @@ jobs:
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:af925e193385dd49622746927054d55d37edb4f6f670efe20055ef410bfa2d24
     # The full proof lane crossed 40 minutes after the closed-root checks joined it.
-    timeout-minutes: 60
+    # On slower hosted runners it takes ~60 minutes on main alone (2026-10-09/10
+    # main runs finished in 59m42s and 59m50s), so a 60-minute limit cancels
+    # healthy runs; 90 leaves headroom without hiding a real regression, which
+    # the proof-time and aggregate-phase timing gates still catch.
+    timeout-minutes: 90
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
