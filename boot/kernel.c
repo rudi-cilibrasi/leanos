@@ -122,6 +122,8 @@ extern char __user_a_text_start[], __user_a_text_end[];
 extern char __user_a_stack_start[], __user_a_stack_end[];
 extern char __user_b_text_start[], __user_b_text_end[];
 extern char __user_b_stack_start[], __user_b_stack_end[];
+/* End of the admitted subject ELF's range (issue #492), linked in every image. */
+extern char __user_admitted_end[];
 extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
 extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
@@ -2073,15 +2075,16 @@ static void copy_boot_decode_state(struct boot_decode_state *destination,
         words[query] = source->word[query];
 }
 
-/* The CPU page-table block and the embedded-user block each end after the
-   last linked subject: B in a two-subject image, C in the three-subject one. */
+/* The CPU page-table block ends after the last linked subject's tables: B's
+   in a two-subject image, C's in the three-subject one.  The embedded-user
+   block ends after the admitted subject ELF's range (issue #492), which
+   follows the last subject and is empty in every image that links none. */
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 #define BOOT_LAST_PAGE_TABLE page_table_c
-#define BOOT_LAST_USER_STACK_END __user_c_stack_end
 #else
 #define BOOT_LAST_PAGE_TABLE page_table_b
-#define BOOT_LAST_USER_STACK_END __user_b_stack_end
 #endif
+#define BOOT_EMBEDDED_USERS_END __user_admitted_end
 #define BOOT_MANIFEST_ARGS(info_address, total) \
     0, 0x100000u, \
     (uint64_t)__boot_image_start, \
@@ -2095,7 +2098,7 @@ static void copy_boot_decode_state(struct boot_decode_state *destination,
     (uint64_t)__entry_stack_start, \
     (uint64_t)__entry_stack_end - (uint64_t)__entry_stack_start, \
     (uint64_t)__user_a_text_start, \
-    (uint64_t)BOOT_LAST_USER_STACK_END - (uint64_t)__user_a_text_start, \
+    (uint64_t)BOOT_EMBEDDED_USERS_END - (uint64_t)__user_a_text_start, \
     (uint64_t)(info_address), (uint64_t)(total)
 
 #define BOOT_BITMAP_ARGS(words) \

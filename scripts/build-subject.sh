@@ -2,7 +2,8 @@
 # Build one ring-3 subject from a subjects/ directory into a relocatable
 # object for one slot of the boot image (#484).
 #
-#   build-subject.sh --cc CC --slot c --output OBJ SUBJECT_DIR
+#   build-subject.sh --cc CC --slot c --output OBJ
+#     [--admit-tool EXE --admitted-elf ELF --admitted-plan TSV] SUBJECT_DIR
 #
 # 1. Compile every *.c and *.S in SUBJECT_DIR, plus subjects/runtime/entry.S,
 #    separately and freestanding: no libc, no SSE/x87, no stack protector,
@@ -18,6 +19,14 @@
 #    user_<slot>_stack, user_<slot>_stack_top, user_<slot>_template_text);
 #    every other symbol is prefixed with user_<slot>_ and made local.
 #
+# With --admit-tool (#492), the policy-checked object from step 2 is also
+# linked on its own with subjects/admitted.ld into a separate static
+# executable (ELF), the Lean checker EXE (leanos-elf-admit) must admit it and
+# writes its admitted plan (TSV), and the ELF's bytes are added to the slot
+# object as section .user.admitted, which boot/linker.ld places in the
+# image's reserved range (__user_admitted_start..__user_admitted_end).
+# scripts/check-admitted-subject.py re-reads those bytes from the linked image.
+#
 # boot/linker.ld places the renamed sections at the slot's range when the
 # image is linked, and the boot page plan is generated from that linked ELF,
 # so addresses flow from the plan's linked input to the subject, never back.
@@ -28,20 +37,32 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cc="${LEANOS_CC:-gcc}"
 slot=""
 output=""
+admit_tool=""
+admitted_elf=""
+admitted_plan=""
 while (($#)); do
   case "$1" in
     --cc) cc="$2"; shift 2 ;;
     --slot) slot="$2"; shift 2 ;;
     --output) output="$2"; shift 2 ;;
+    --admit-tool) admit_tool="$2"; shift 2 ;;
+    --admitted-elf) admitted_elf="$2"; shift 2 ;;
+    --admitted-plan) admitted_plan="$2"; shift 2 ;;
     --) shift; break ;;
     -*) echo "error: build-subject: unknown option $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
 (($# == 1)) && [[ -n "$output" ]] || {
-  echo "usage: build-subject.sh [--cc CC] --slot c --output OBJ SUBJECT_DIR" >&2
+  echo "usage: build-subject.sh [--cc CC] --slot c --output OBJ" \
+    "[--admit-tool EXE --admitted-elf ELF --admitted-plan TSV] SUBJECT_DIR" >&2
   exit 2
 }
+if [[ -n "$admit_tool$admitted_elf$admitted_plan" ]] &&
+    [[ -z "$admit_tool" || -z "$admitted_elf" || -z "$admitted_plan" ]]; then
+  echo "error: build-subject: --admit-tool, --admitted-elf and --admitted-plan go together" >&2
+  exit 2
+fi
 subject_dir="${1%/}"
 # Only slot C is linked from a separate object today; A and B are still the
 # handwritten boot.S subjects every image shares.
@@ -103,5 +124,26 @@ for symbol in entry stack stack_top template_text; do
     exit 1
   }
 done
+if [[ -n "$admit_tool" ]]; then
+  # The separate executable is linked from the same policy-checked object.
+  ld -m elf_x86_64 -nostdlib --build-id=none -z max-page-size=4096 \
+    -z noexecstack --strip-all -T "$repo_root/subjects/admitted.ld" \
+    -o "$work/admitted.elf" "$work/subject.o"
+  if ! "$admit_tool" admit "$work/admitted.elf" > "$work/admitted.tsv"; then
+    cat "$work/admitted.tsv" >&2
+    echo "error: build-subject: LeanOS.ElfAdmission rejected $subject_dir" >&2
+    exit 1
+  fi
+  (cd "$work" && objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.user.admitted,alloc,load,readonly,data,contents \
+    admitted.elf admitted-bytes.o)
+  objcopy --strip-all "$work/admitted-bytes.o"
+  ld -m elf_x86_64 -r --build-id=none -o "$work/slot-admitted.o" \
+    "$work/slot.o" "$work/admitted-bytes.o"
+  mv "$work/slot-admitted.o" "$work/slot.o"
+  mkdir -p "$(dirname "$admitted_elf")" "$(dirname "$admitted_plan")"
+  cp "$work/admitted.elf" "$admitted_elf"
+  cp "$work/admitted.tsv" "$admitted_plan"
+fi
 mkdir -p "$(dirname "$output")"
 mv "$work/slot.o" "$output"

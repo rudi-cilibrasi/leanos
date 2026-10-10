@@ -606,7 +606,8 @@
     "subjects": {
       "subject-example": {
         "source": "subjects/example",
-        "slot": "c"
+        "slot": "c",
+        "admitted": true
       },
       "subject-directory": {
         "source": "subjects/directory",

@@ -5,6 +5,7 @@ import LeanOS.NegativeFixtures.BootTopology
 import LeanOS.NegativeFixtures.DeviceProgramConfinement
 import LeanOS.NegativeFixtures.DirectPort
 import LeanOS.NegativeFixtures.DMAQuarantine
+import LeanOS.NegativeFixtures.ElfAdmission
 import LeanOS.NegativeFixtures.Example
 import LeanOS.NegativeFixtures.FrameBudget
 import LeanOS.NegativeFixtures.IOMMUConfinement

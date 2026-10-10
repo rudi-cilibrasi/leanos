@@ -8030,6 +8030,138 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.Rejection.mem_all",
+      "display": "Rejection.mem_all",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admit_plan_exact",
+      "display": "admit_plan_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_entry_in_text",
+      "display": "admitted_entry_in_text",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_header",
+      "display": "admitted_header",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_no_violation",
+      "display": "admitted_no_violation",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_no_writable_executable",
+      "display": "admitted_no_writable_executable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_plan",
+      "display": "admitted_plan",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_program_header_types",
+      "display": "admitted_program_header_types",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_program_headers_bounded",
+      "display": "admitted_program_headers_bounded",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_segment_sizes",
+      "display": "admitted_segment_sizes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_segments_aligned",
+      "display": "admitted_segments_aligned",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_segments_disjoint",
+      "display": "admitted_segments_disjoint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_segments_in_file",
+      "display": "admitted_segments_in_file",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.admitted_segments_in_user_window",
+      "display": "admitted_segments_in_user_window",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.check_error_sound",
+      "display": "check_error_sound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.check_ok_iff",
+      "display": "check_ok_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.check_total",
+      "display": "check_total",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.firstRejection_none_iff",
+      "display": "firstRejection_none_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.pairwiseDisjoint_iff",
+      "display": "pairwiseDisjoint_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.parse_programHeaders_length",
+      "display": "parse_programHeaders_length",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.placed_sources_reserved",
+      "display": "placed_sources_reserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ElfAdmission.lean",
+      "qualified": "LeanOS.ElfAdmission.userWindow_above_boot_plan",
+      "display": "userWindow_above_boot_plan",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/EndpointDirectory.lean",
       "qualified": "LeanOS.EndpointDirectory.boot_client_capability",
       "display": "boot_client_capability",

@@ -85,7 +85,18 @@ SECTIONS
   __user_c_stack_start = .;
   .user_c_bss : { KEEP(*(.user.c.bss)) }
   __user_c_stack_end = .;
+  /* The admitted subject ELF (issue #492): the bytes of one separate subject
+     executable that LeanOS.ElfAdmission admitted at build time, kept in
+     page-aligned frames inside the embedded-user reservation.  No boot
+     address space maps it to ring 3; scripts/check-admitted-subject.py
+     re-reads it from the linked image and re-runs the checker.  Only the
+     example-subject image links .user.admitted; every other image links an
+     empty range at the image end, so its layout is unchanged. */
   . = ALIGN(4K);
+  __user_admitted_start = .;
+  .user_admitted : { KEEP(*(.user.admitted)) }
+  . = ALIGN(4K);
+  __user_admitted_end = .;
   __boot_image_end = .;
   /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) }
 }
