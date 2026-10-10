@@ -11,11 +11,12 @@
 #    configuration), the generated step needs no Lean runtime or libc symbol
 #    and contains no indirect branch (the entry-stack gate's ban; no jump
 #    table).
-# 2. Hosted differential (the hosted generated-boundary row
+# 2. Hosted regression test (the hosted generated-boundary row
 #    `device-program-step`): on the fuzz corpus of tests/WifiFuzz.lean the
-#    generated executor, the handwritten wifi-exec.h and Sim print identical
-#    summary lines. During the transition this diffs the generated executor
-#    against the handwritten one; afterwards it is a regression test.
+#    generated executor, which every LeanOS kernel boots, and Sim print
+#    identical summary lines. The handwritten interpreter it replaced is
+#    deleted; the corpus stays as a regression test of the compiler path and
+#    the C hooks.
 #
 # usage: check-generated-executor-host.sh [ordinary|sanitized]
 # LEANOS_DEVICE_PROGRAM_CORPUS names an existing corpus directory (as

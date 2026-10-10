@@ -63,6 +63,7 @@
     "LeanOS/FailStop/Operations.lean",
     "LeanOS/FailStop/ProjectionInvariants.lean",
     "LeanOS/FailStop/ReadSets.lean",
+    "LeanOS/FailStop/ResourceSteps.lean",
     "LeanOS/FailStop/Resources.lean",
     "LeanOS/FailStop/Scheduler.lean",
     "LeanOS/FaultDispatch.lean",

@@ -102,13 +102,14 @@ form one import chain, in this order:
 | `AuthoritativeTraces` | Blocking slices, admissibility, and authoritative traces |
 | `Evidence` | Executable regressions and the dispatcher's initial states |
 
-Three modules branch off the chain and build in parallel with it:
+Four modules branch off the chain and build in parallel with it:
 
 | Module | Imports | Contents |
 | --- | --- | --- |
 | `ProjectionInvariants` | `Gate` | `ProjectionInvariant`, `RuntimeWellFormed` split by projection |
 | `ReadSets` | `AuthoritativeGate` | Read-independence theorems for every gate family |
 | `Resources` | `ReadSets`, `AuthoritativeTraces` | Issuers, frame budgets, frame contents, and issued subject creation |
+| `ResourceSteps` | `Resources` | Resource invariants for every composite step and whole traces |
 
 `AuthoritativeGate` imports `ProjectionInvariants` as well as
 `DeferredBlocking`. No module exceeds about 3,500 lines. Helpers that a later
@@ -262,8 +263,9 @@ Before issue #499 these lived outside `CompositeState`. The issuers were in
 `BoundedLifecycle.Runtime`. The budgets and scrub state were in
 `FrameBudgetScenario.Runtime`, reached through `CompositeDispatcher` state
 tokens. #536 wrote a four-step plan for bringing them in. Steps 1 to 3 are now
-done, in a narrower form than written. Step 4 is not done. The module is
-`Resources`.
+done, in a narrower form than written. Step 4 is not done. The modules are
+`Resources` (the projections, issued creation, and the steps covered by the
+frame rule) and `ResourceSteps` (every other step and whole traces).
 
 **Step 1: three new projections.** `CompositeState` has three new fields, each
 with a default:
@@ -323,22 +325,53 @@ so no existing `AuthoritativeRuntimeWellFormed` proof changes. Which steps keep
 - `bootRuntime_resourceRuntimeWellFormed`: the boot runtime satisfies the
   combined invariant.
 
-**Not yet proved for the remaining steps.** No proof yet covers these steps,
-which also write `lifecycle` or `virtualMemory`:
+**Every other step** (module `ResourceSteps`). The remaining steps write
+`lifecycle` or `virtualMemory`, and most of them republish a lifecycle or a
+memory taken from the resumable or blocking views. Their proofs therefore use
+the coherence and blocking-lifecycle facts of `AuthoritativeRuntimeWellFormed`
+together with one subsystem lemma per transition: no scheduler, resumable,
+blocking, cleanup, syscall, or protection transition changes
+`issuedSubjects`, and none changes the memory registry or the issued address
+spaces (`Scheduler.tick_issuedSubjects`, `ResumablePreemption.switch_history`,
+`BlockingIPCContext.receiveOrBlock_issuedSubjects`,
+`Syscall.dispatch_virtualHistory`, `TLB.protect_virtualHistory`, and others).
 
-- interrupt cleanup, `syscall`, `resumePreempt`, and `protect`;
-- the caller-identity `createSubject`, `terminateSubject`, and
-  `terminateCurrent`;
-- `scheduleRemove`, `scheduleNext`, `scheduleYield`, and `scheduleTick`;
-- blocking send, receive, and cancel, and the deferred drain;
-- `acknowledgeCurrentUnmap`.
-
-Termination and the scheduler steps republish a lifecycle taken from the
-resumable or blocking views. For those, history agreement needs the
-composite's coherence and subsystem lemmas. The caller-identity
-`Operation.createSubject k` cannot keep `issuerAgreementInvariant` when `k` is
-at or above the counter. It remains the unchanged oracle path, which #535's
-unwinding proofs and `CompositeDispatcher` replay depend on.
+- `authoritativeGate_historyAgrees`: every authoritative step except
+  caller-identity creation keeps every history the resource conjuncts read
+  (`ResourceHistoryAgrees`). That covers interrupt cleanup, `syscall`,
+  `resumePreempt`, `protect`, `terminateSubject`, `terminateCurrent`,
+  `scheduleRemove`, `scheduleNext`, `scheduleYield`, `scheduleTick`, blocking
+  send, receive, and cancel, and the deferred drain.
+  `authoritativeGate_preserves_resourceRuntimeWellFormed` follows with no
+  premise beyond the combined invariant.
+- **Termination** keeps both issuers and the whole subject history, so a
+  terminated identity stays issued and below the counter, and it keeps every
+  subject's frame usage and limit (`authoritativeGate_termination_accounts`).
+  `authoritativeGate_budget_exact` keeps usage and limit for every
+  authoritative step: no step writes the commitment or the allocator.
+- **Caller-identity `Operation.createSubject k`** is unchanged. It is the
+  oracle path that `CompositeDispatcher` replays (`createSubjectOne` runs
+  `createSubject 1`) and that #535's unwinding proofs reason about, and
+  restricting it would change generated C. Instead it is proved under an
+  explicit hypothesis: it keeps the combined invariant when `0 < k` and `k` is
+  below the subject counter
+  (`authoritativeGate_createSubject_preserves_resourceRuntimeWellFormed`). The
+  issuer then already covers `k`, and `SubjectLifecycle.create` rejects any
+  identity that was ever issued. The bound is necessary: an accepted creation
+  that leaves the issuer agreement intact had a bounded identity
+  (`authoritativeGate_createSubject_requires_bound`).
+- **Invalidation publication.** Every entry point except
+  `acknowledgeCurrentUnmap` keeps the combined invariant
+  (`InvalidationOperation.apply_preserves_resourceRuntimeWellFormed`).
+  `acknowledgeCurrentUnmap` installs the pending successor's virtual memory,
+  which the publication protocol computed from its own `published` view, so
+  it needs that successor's memory histories to agree with the composite's
+  (`PendingHistoryAgrees`,
+  `authoritativeAcknowledgeCurrentUnmap_historyAgrees`). Its preservation of
+  `AuthoritativeRuntimeWellFormed` was already conditional (see
+  `CompositeState.InvalidationProjectionCoherent`); `CurrentUnmapAdmissible`
+  names both premises, and `currentUnmapAdmissible_of_prepared` discharges
+  them on the established prepare-then-acknowledge path.
 
 **Step 3: issued creation.** `LifecycleOperation.createSubject` takes no
 identity. `issueSubject` issues the subject counter's current value and runs
@@ -364,8 +397,9 @@ commits the advanced counter only together with an accepted creation, and
 - **Invariants:** `lifecycleGate_preserves_resourceRuntimeWellFormed`.
 - **Never-reuse lifted:** `composite_identity_no_reuse` lifts
   `BoundedLifecycle.bounded_identity_no_reuse` to composite traces
-  (`CompositeStep`, `runSteps`). The trace may mix issued creation with any
-  authoritative operation that keeps the combined invariant
+  (`CompositeStep`, `runSteps`). A step is an issued lifecycle operation, an
+  authoritative operation, or an invalidation entry point. The trace may
+  contain any step that keeps the combined invariant
   (`CompositeStep.Preserving`). Along such a trace:
   - the combined invariant holds at the end;
   - the issued identities strictly increase;
@@ -373,8 +407,8 @@ commits the advanced counter only together with an accepted creation, and
   - an exhausted issuer stays exhausted.
 
   `issuedAlong_strictly_increasing` and `runSteps_exhausted_absorbing` hold for
-  every trace, with no invariant, because no authoritative operation writes
-  the issuers.
+  every trace, with no invariant, because no authoritative operation or
+  invalidation entry point writes the issuers.
 - **Budgets:** `budget_conservation` lifts `FrameBudget.usage_le_limit`,
   commitment disjointness, and allocator conservation to every composite
   state. `authoritativeGate_budget_unchanged` and
@@ -383,6 +417,27 @@ commits the advanced counter only together with an accepted creation, and
   `virtualMemory`, and the second covers issued creation.
   `issueSubject_zero_budget`: a newly issued subject has limit and usage zero,
   which is the zero-budget clause of the #489 inheritance set.
+
+**Whole traces** (module `ResourceSteps`). `CompositeStep.Admissible` is
+the premise a step needs from the state it runs in: the bound for
+caller-identity creation, `CurrentUnmapAdmissible` for the current-unmap
+completion, and nothing for every other step
+(`CompositeStep.unconditional`). `composite_resource_trace`: along every trace
+whose steps are each admissible (`AdmissibleAlong`), from a state satisfying
+the combined invariant,
+
+- the combined invariant holds at the end;
+- no identity is created twice by either creation path, and none that was
+  issued before the trace is created again (`createdAlong`, `Nodup`);
+- the identities drawn from the issuer strictly increase;
+- the issued subject history only grows;
+- every subject's frame usage and limit are exactly unchanged, and usage is
+  within the limit at the end.
+
+`issued_never_recreated`: an identity already in the issued history, such as
+a terminated one, is never created again by either path.
+`composite_resource_trace_unconditional` states the result with no step
+premise for traces that avoid the two conditional steps.
 
 **What is narrower than the plan.**
 
@@ -393,7 +448,17 @@ commits the advanced counter only together with an accepted creation, and
 - **Step 4 is not done.** It would move `CompositeDispatcher`'s frame-budget
   state tokens (`0x4001` to `0x4b01`) onto the new projections. Those tokens
   still denote `FrameBudgetScenario.Runtime` states, whose frames are a
-  separate scenario pool. This change does not alter generated C.
+  separate scenario pool. The scenario's tokens exercise budget-charged
+  allocation, exhaustion, and release, and the composite has no such
+  transition for them to denote until #490 adds one. Moving them would also
+  change the dispatcher's generated C, its oracle vectors, and its boundary
+  exports. Neither the `Resources` nor the `ResourceSteps` change alters
+  generated boot C beyond the wider `CompositeState` constructor.
+- **Caller-identity creation is unrestricted at the executable boundary.**
+  The proofs cover it only under the issuer bound, and the dispatcher's
+  `createSubjectOne` runs it from a state whose counter does not cover the
+  identity. Routing that command through `LifecycleOperation.createSubject`
+  changes the dispatcher, so it belongs with step 4.
 
 ## Diagnostic and trusted boundary
 
