@@ -1,0 +1,84 @@
+# Privacy for the observer's own permission, transfer and scheduler operations
+
+These theorems extend the privacy argument to the rest of the observer's own operations. The global counter that numbers new permissions is treated as public, like the scheduler's choice: two states may only be compared if they agree on it, and the observer is assumed to learn how many permissions the whole system has issued. Under that assumption, the observer handing a permission to itself, offering a permission through an endpoint, creating any program, and every scheduler operation except terminating the running program keep two indistinguishable states indistinguishable. Offering and receiving permissions, revoking a permission tree rooted at its own slot, creating or terminating itself, and asking the scheduler for the next program also give the observer the same answer in both states, and so do yield, tick and queue removal when the ready queue is public too. Receiving a sealed permission keeps the states indistinguishable when they agree on the object it carries. The operations that are both kinds of consistent combine into a private run.
+
+- `copy_accepted_state` — A successful permission copy looks up the source permission and installs a new permission numbered by the counter, recording where it came from.
+- `copy_frame_self` — A permission copy never changes which programs are alive, how many slots any program has, or which objects exist and their kinds.
+- `copy_nextIdentity` — A permission copy advances the counter by one exactly when it succeeds.
+- `own_step_copy_self` — With the counter public, the observer copying one of its permissions into its own table keeps indistinguishable states indistinguishable.
+- `observe_installTransfers_eq` — Bookkeeping: what the observer sees after a permission-transfer update is its old view with its table and the transfer fields of its objects replaced.
+- `lowEquiv_installTransfers` — Two indistinguishable states stay indistinguishable after transfer updates that agree on the observer's table and on every object it names afterwards.
+- `transfers_published` — In a consistent state, the permission-transfer store uses the published permission table and mailboxes.
+- `ownStep_transferObject` — In two indistinguishable consistent states, every object the observer names has the same transfer-store registry entry, mailbox and pending sealed permission.
+- `ownStep_transferLookup` — In two indistinguishable consistent states, looking up any of the observer's slots in the transfer store gives the same answer.
+- `ownStep_transferResolve` — In two indistinguishable consistent states, decoding any of the observer's handle words in the transfer store gives the same answer.
+- `ownStep_transferLookupObject` — Objects reached through the observer's slots have the same registry entry and mailbox in both states.
+- `OwnStepCounter.transferCounter` — Two states that agree on the public counter also agree on it in their transfer stores.
+- `transfer_row_named` — A transfer update that keeps the permission table and agrees on the mailboxes and pending transfers of the observer's objects keeps two states indistinguishable.
+- `offer_eq` — Bookkeeping: a permission offer is a validation followed by one fixed update.
+- `offerWords_eq` — Bookkeeping: the handle-word form of a permission offer is a validation followed by the same fixed update.
+- `offerCheck_congr` — The offer validation gives the same answer for two stores that agree on the caller's slots and on the objects they name.
+- `offerWordsCheck_congr` — The handle-word offer validation gives the same answer for two such stores that also agree on the counter.
+- `ownStep_callerInputs` — Two indistinguishable consistent states give the observer the same inputs to every transfer validation.
+- `offerWords_result` — An offer is accepted exactly when its validation passes.
+- `applyOperation_transferOffer` — Bookkeeping: the kernel step for an offer either changes nothing or publishes the fixed offer update.
+- `own_step_offer` — With the counter public, the observer's own permission offer keeps indistinguishable states indistinguishable.
+- `own_output_offer` — With the counter public, the observer's own permission offer gets the same answer in both states.
+- `nextIdentity_transferOffer` — With the counter public, the observer's offer leaves the two counters equal.
+- `accept_eq` — Bookkeeping: receiving a transfer is a validation followed by either a data receipt or a sealed-permission receipt.
+- `acceptWord_eq` — Bookkeeping: the handle-word form of receipt is a validation followed by the same updates.
+- `pendingValid_of_wellFormed` — In a well-formed transfer store, every pending sealed permission names a live object of its kind with its recorded history.
+- `acceptCheck_congr` — The receipt validation gives the same answer for two well-formed stores that agree on the caller's slots and the objects they name.
+- `acceptWordCheck_congr` — The handle-word receipt validation gives the same answer for two such stores.
+- `acceptOutcome_reply` — The answer and returned handle of a receipt depend only on its validation.
+- `ownStep_pendingValid` — Both of two healthy states have only valid pending sealed permissions.
+- `own_output_accept` — The observer's own receipt gets the same answer and handle in both indistinguishable states.
+- `applyOperation_transferAccept` — Bookkeeping: the kernel step for a receipt either changes nothing or publishes the receipt update.
+- `acceptCheck_ok` — A successful receipt validation found the endpoint in the caller's table and, for a sealed permission, an empty destination slot.
+- `acceptWordCheck_ok` — The same holds for the handle-word form.
+- `capabilitySpace_install_self` — Bookkeeping: installing a permission into a program's own table changes exactly that slot of its table.
+- `own_step_accept` — The observer's own receipt keeps indistinguishable states indistinguishable, given that they agree on the objects carried by sealed permissions waiting on its endpoints.
+- `create_self_rejected` — The running observer is alive, so creating it is refused as already alive.
+- `apply_create_self` — Creating the running observer changes nothing.
+- `reply_create_self` — Creating the running observer always answers already alive.
+- `apply_scheduleNext` — The kernel never applies a bare scheduler selection; it changes nothing.
+- `apply_scheduleYield` — The kernel never applies a bare yield; it changes nothing.
+- `apply_scheduleTick` — The kernel never applies a bare timer tick; it changes nothing.
+- `observe_apply_scheduleAdd` — Adding a program to the ready queue never changes what any observer sees.
+- `observe_installSchedulerRemoval` — Removing a program from the queue changes the observer's view at most in which program is running.
+- `scheduler_remove_accepted_current` — A successful queue removal clears the running program exactly when it removes that program.
+- `remove_accepted_current` — The same holds for the context-saving form of queue removal.
+- `resumable_lifecycle` — In a consistent state, the saved-context store uses the published program lifecycle.
+- `observe_apply_scheduleRemove_other` — Removing a program other than the running observer leaves the observer's view unchanged.
+- `remove_self_accepted` — Removing the running observer from the queue always succeeds.
+- `observe_apply_scheduleRemove_self` — After removing itself from the queue, the observer sees the same view except that nothing is running.
+- `own_step_scheduleRemove` — The observer's queue removal of any program keeps indistinguishable states indistinguishable.
+- `yield_result` — In a healthy scheduler with a running program, a bare yield is refused for a full queue and otherwise picks a program that owns its address space.
+- `schedulerYield_result` — The kernel's answer to a yield depends only on whether the ready queue is full.
+- `schedulerTick_result` — The kernel's answer to a timer tick depends only on whether the ready queue is full.
+- `scheduler_remove_congr` — A queue removal's answer, new running program and new queue depend only on the running program and the queue.
+- `remove_result_eq` — Bookkeeping: the answer to the context-saving queue removal is computed from the plain removal.
+- `remove_result_congr` — The answer to a queue removal depends only on the running program and the ready queue.
+- `own_output_scheduler` — With the ready queue and its size public, yield, tick and queue removal by the observer get the same answer in both states.
+- `reply_scheduleNext` — While the observer runs, asking for the next program always answers duplicate.
+- `reply_terminateCurrent` — While the observer runs, terminating the running program always succeeds.
+- `reply_terminate_self` — The running observer terminating itself always succeeds.
+- `rightsSubset_trans` — If one set of rights is within a second and the second within a third, the first is within the third.
+- `rightsSubset_refl` — Every set of rights is within itself.
+- `not_critical_of_subset` — Rights within a set that has no runtime-critical right have none either.
+- `descendant_rights` — In a well-formed table, every recorded descendant of a permission has a subset of its rights.
+- `subtreeSafe_eq` — In a well-formed table, the safety check for revoking a whole permission tree depends only on the rights of the revoked permission.
+- `revokeSubtreeRuntimeSafe_self_congr` — Revoking a permission tree rooted at the observer's own slot gets the same answer in two tables that agree on the observer's slots.
+- `reply_revokeSubtree_self` — The observer's revocation of a permission tree rooted at its own slot gets the same answer in both indistinguishable states.
+- `own_step_consistent_counter` — With the counter public, every operation in the extended family keeps indistinguishable states indistinguishable when the observer performs it.
+- `own_step_accept_gate` — The receipt result above also holds at the kernel's published gate.
+- `not_nmi_of` — Bookkeeping: an operation that is not a non-maskable interrupt is not one.
+- `own_output_consistent_counter` — With the counter public, every operation in the extended output family gives the observer the same answer in both states.
+- `own_output_consistent_scheduler` — With the ready queue public too, yield, tick and queue removal give the observer the same answer at the gate.
+- `revokeRuntimeSafe_nextIdentity` — Revoking one permission never changes the counter.
+- `apply_nextIdentity_of_ownTraceFamily` — The observer's operations that were already known to compose never issue a new permission number.
+- `copy_self_counter` — With the counter public, the observer's copy into its own table leaves the two counters equal.
+- `ownTraceFamilyCounter_preserves` — The extended composable operations keep the same program running and the same kernel mode.
+- `ownTraceFamilyCounter_counter` — The extended composable operations keep the two counters equal.
+- `OwnStepCounter.next` — After one extended composable operation, the two states still meet every condition, counter included.
+- `own_run_noninterference_counter` — With the counter public, the same run of the observer's extended composable operations gives the same answers at every step and ends indistinguishable.

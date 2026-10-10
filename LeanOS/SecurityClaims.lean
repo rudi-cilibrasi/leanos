@@ -17,6 +17,10 @@ import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.CompositeObservation
 import LeanOS.CompositeUnwinding
+import LeanOS.CompositeChannels
+import LeanOS.CompositeLocalRespect
+import LeanOS.CompositeOwnTermination
+import LeanOS.CompositeSwitchedChannels
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -3175,7 +3179,37 @@ own operations in `ownStepConsistent` are step consistent and (6) those in
 of its operations in both families returns equal results and ends
 low-equivalent.  (8) The two excluded channels are real: the global
 capability-identity counter breaks step consistency and a delegation's
-destination breaks output consistency. -/
+destination breaks output consistency.
+
+Extensions (`CompositeLocalRespect`, `CompositeOwnSteps`, `CompositeChannels`):
+(9) scheduler operations that keep the scheduled subject, transfers on
+endpoints the observer does not name, interrupts that contain no scheduled
+subject, failed resumable switches, and drains of other subjects are also
+silent, and (10) the trace theorem holds with them silent.  With the identity
+counter a declared public input (`OwnStepCounter`), (11) step consistency
+extends to the observer's delegation into its own row, its transfer offers,
+creation of any subject, and every scheduler operation except
+`terminateCurrent`; (12) output consistency extends to transfer offer and
+receipt, subtree revocation of its own slot, creation and termination of the
+observer itself, `scheduleNext`, and `terminateCurrent`; (13) with the ready queue public as well, to
+`scheduleYield`, `scheduleTick`, and `scheduleRemove`; (14) transfer receipt is
+step consistent given agreement on the carried object; (15) deferred drains are
+step consistent and the observer's own drain is output consistent; and (16) the
+extended families compose.  (17) Every remaining exclusion with a counterexample
+is a real channel: creation, termination, and queue admission of another
+subject reveal its liveness and issuance; termination of another subject
+cancels the observer's pending offers; delegation to and revocation of another
+subject's slot reveal its occupancy, with the counters equal; and without the
+public counter, transfer offers are step inconsistent.
+
+(18) Given `AuthoritativeRuntimeWellFormed` of both states, the observer's own
+termination, `terminateCurrent`, and interrupts are step consistent, and
+interrupts and NMIs are output consistent.  (19) The kernel evaluates, on the
+canonical sample boot plan (which compiles), the channels that need another
+subject to run: subtree revocation of the observer's own or another subject's
+capability depends on a hidden derivation, and the replies of the observer's
+timer switch, blocking send, and wait cancellation carry another subject's
+saved registers. -/
 theorem composite_observer_isolation (observer : Nat) :
     (∀ state operation, CompositeObservation.isSilent observer state operation = true →
       CompositeObservation.LowEquiv observer
@@ -3227,7 +3261,155 @@ theorem composite_observer_isolation (observer : Nat) :
       (FailStop.authoritativeGate (CompositeUnwinding.Channels.seed plan)
           (.ordinary CompositeUnwinding.Channels.delegateToOther)).result ≠
         (FailStop.authoritativeGate (CompositeUnwinding.Channels.shifted plan)
-          (.ordinary CompositeUnwinding.Channels.delegateToOther)).result) := by
+          (.ordinary CompositeUnwinding.Channels.delegateToOther)).result) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeLocalRespect.isSilentExtended observer state operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate state operation).state state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer left right →
+      CompositeLocalRespect.projectionExtended observer left leftOperations =
+        CompositeLocalRespect.projectionExtended observer right rightOperations →
+      CompositeObservation.LowEquiv observer
+        (CompositeLocalRespect.runExtended observer left leftOperations).1
+        (CompositeLocalRespect.runExtended observer right rightOperations).1) ∧
+    (∀ left right operation, CompositeOwnSteps.OwnStepCounter observer left right →
+      CompositeOwnSteps.ownStepConsistentCounter observer operation = true →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate left (.ordinary operation)).state
+        (FailStop.authoritativeGate right (.ordinary operation)).state) ∧
+    (∀ left right operation, CompositeOwnSteps.OwnStepCounter observer left right →
+      CompositeOwnSteps.ownOutputConsistentCounter observer operation = true →
+      (FailStop.authoritativeGate left (.ordinary operation)).result =
+        (FailStop.authoritativeGate right (.ordinary operation)).result) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeOwnSteps.SchedulerPublic left right →
+      CompositeOwnSteps.schedulerOutputConsistent operation = true →
+      (FailStop.authoritativeGate left (.ordinary operation)).result =
+        (FailStop.authoritativeGate right (.ordinary operation)).result) ∧
+    (∀ left right endpointWord destinationSlot, CompositeUnwinding.OwnStep observer left right →
+      CompositeOwnSteps.CarriedAgree observer left right →
+      CompositeObservation.LowEquiv observer
+        (FailStop.authoritativeGate left
+          (.ordinary (.transferAccept endpointWord destinationSlot))).state
+        (FailStop.authoritativeGate right
+          (.ordinary (.transferAccept endpointWord destinationSlot))).state) ∧
+    (∀ left right subject, CompositeUnwinding.OwnStep observer left right →
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer
+          (FailStop.authoritativeGate left (.drainDeferred subject)).state
+          (FailStop.authoritativeGate right (.drainDeferred subject)).state ∧
+        (FailStop.authoritativeGate left (.drainDeferred observer)).result =
+          (FailStop.authoritativeGate right (.drainDeferred observer)).result) ∧
+    (∀ left right operations, CompositeOwnSteps.OwnStepCounter observer left right →
+      (∀ operation, operation ∈ operations →
+        CompositeOwnSteps.ownTraceFamilyCounter observer operation = true) →
+      (CompositeUnwinding.ownRun left operations).2 =
+          (CompositeUnwinding.ownRun right operations).2 ∧
+        CompositeObservation.LowEquiv observer (CompositeUnwinding.ownRun left operations).1
+          (CompositeUnwinding.ownRun right operations).1) ∧
+    (∀ plan,
+      (CompositeOwnSteps.OwnStepCounter 2 (CompositeChannels.seed plan)
+          (CompositeChannels.created plan) ∧
+        CompositeChannels.reply (CompositeChannels.seed plan) CompositeChannels.createThree ≠
+          CompositeChannels.reply (CompositeChannels.created plan)
+            CompositeChannels.createThree ∧
+        CompositeChannels.reply (CompositeChannels.seed plan) (.terminateSubject 3) ≠
+          CompositeChannels.reply (CompositeChannels.created plan) (.terminateSubject 3) ∧
+        CompositeChannels.reply (CompositeChannels.seed plan) (.scheduleAdd 3) ≠
+          CompositeChannels.reply (CompositeChannels.created plan) (.scheduleAdd 3)) ∧
+      (CompositeOwnSteps.OwnStepCounter 2 (CompositeChannels.offered plan)
+          (CompositeChannels.offeredCreated plan) ∧
+        ¬ CompositeObservation.LowEquiv 2
+          (CompositeChannels.step (CompositeChannels.offered plan) (.terminateSubject 3))
+          (CompositeChannels.step (CompositeChannels.offeredCreated plan)
+            (.terminateSubject 3))) ∧
+      (CompositeOwnSteps.OwnStepCounter 2 (CompositeChannels.toSlotThree plan)
+          (CompositeChannels.toSlotTwo plan) ∧
+        CompositeChannels.reply (CompositeChannels.toSlotThree plan)
+            CompositeUnwinding.Channels.delegateToOther ≠
+          CompositeChannels.reply (CompositeChannels.toSlotTwo plan)
+            CompositeUnwinding.Channels.delegateToOther ∧
+        CompositeChannels.reply (CompositeChannels.toSlotThree plan)
+            (.capabilityRevoke 0 1 2) ≠
+          CompositeChannels.reply (CompositeChannels.toSlotTwo plan)
+            (.capabilityRevoke 0 1 2) ∧
+        CompositeChannels.reply (CompositeChannels.toSlotThree plan)
+            (.capabilityRevokeSubtree 0 1 2) ≠
+          CompositeChannels.reply (CompositeChannels.toSlotTwo plan)
+            (.capabilityRevokeSubtree 0 1 2)) ∧
+      (CompositeUnwinding.OwnStep 2 (CompositeChannels.seed plan)
+          (CompositeUnwinding.Channels.shifted plan) ∧
+        (CompositeChannels.seed plan).capabilities.nextIdentity ≠
+          (CompositeUnwinding.Channels.shifted plan).capabilities.nextIdentity ∧
+        ¬ CompositeObservation.LowEquiv 2
+          (CompositeChannels.step (CompositeChannels.seed plan) CompositeChannels.offerMemory)
+          (CompositeChannels.step (CompositeUnwinding.Channels.shifted plan)
+            CompositeChannels.offerMemory))) ∧
+    (∀ left right, CompositeUnwinding.OwnStep observer left right →
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer
+          (FailStop.authoritativeGate left (.ordinary (.terminateSubject observer))).state
+          (FailStop.authoritativeGate right (.ordinary (.terminateSubject observer))).state ∧
+        CompositeObservation.LowEquiv observer
+          (FailStop.authoritativeGate left (.ordinary .terminateCurrent)).state
+          (FailStop.authoritativeGate right (.ordinary .terminateCurrent)).state ∧
+        (∀ frame,
+          CompositeObservation.LowEquiv observer
+              (FailStop.authoritativeGate left (.ordinary (.interrupt frame))).state
+              (FailStop.authoritativeGate right (.ordinary (.interrupt frame))).state ∧
+            (FailStop.authoritativeGate left (.ordinary (.interrupt frame))).result =
+              (FailStop.authoritativeGate right (.ordinary (.interrupt frame))).result) ∧
+        (∀ raw context,
+          (FailStop.authoritativeGate left (.ordinary (.nmi raw context))).result =
+            (FailStop.authoritativeGate right (.ordinary (.nmi raw context))).result)) ∧
+    (∃ plan, BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) ∧
+    (∀ plan, BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan →
+      (CompositeOwnSteps.OwnStepCounter 2
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace) ∧
+        ¬ CompositeObservation.LowEquiv 2
+          (CompositeChannels.step
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+            CompositeSwitchedChannels.ownSubtree)
+          (CompositeChannels.step
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)
+            CompositeSwitchedChannels.ownSubtree) ∧
+        ¬ CompositeObservation.LowEquiv 2
+          (CompositeChannels.step
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+            CompositeSwitchedChannels.otherSubtree)
+          (CompositeChannels.step
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)
+            CompositeSwitchedChannels.otherSubtree)) ∧
+      (CompositeOwnSteps.OwnStepCounter 2
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptLeftTrace)
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptRightTrace) ∧
+        CompositeChannels.reply
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptLeftTrace)
+            CompositeSwitchedChannels.preempt ≠
+          CompositeChannels.reply
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptRightTrace)
+            CompositeSwitchedChannels.preempt) ∧
+      (CompositeOwnSteps.OwnStepCounter 2
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace) ∧
+        (FailStop.authoritativeGate
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
+            CompositeSwitchedChannels.blockingSend).result ≠
+          (FailStop.authoritativeGate
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace)
+            CompositeSwitchedChannels.blockingSend).result ∧
+        (FailStop.authoritativeGate
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
+            CompositeSwitchedChannels.blockingCancel).result ≠
+          (FailStop.authoritativeGate
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace)
+            CompositeSwitchedChannels.blockingCancel).result)) := by
   refine ⟨fun state operation hsilent =>
       CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
     fun left right leftOperations rightOperations hlow hevents =>
@@ -3247,7 +3429,52 @@ theorem composite_observer_isolation (observer : Nat) :
       CompositeUnwinding.own_run_noninterference h operations hfamily,
     fun plan =>
       ⟨CompositeUnwinding.Channels.identity_counter_step_inconsistent plan,
-        (CompositeUnwinding.Channels.copy_destination_output_inconsistent plan).2⟩⟩
+        (CompositeUnwinding.Channels.copy_destination_output_inconsistent plan).2⟩,
+    fun state operation hstate hsilent =>
+      CompositeLocalRespect.authoritativeGate_silentExtended_observe observer state operation
+        hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeLocalRespect.finite_trace_lowEquiv_extended observer left right leftOperations
+        rightOperations hleft hright hlow hevents,
+    fun left right operation h hfamily =>
+      CompositeOwnSteps.own_step_consistent_counter h operation hfamily,
+    fun left right operation h hfamily =>
+      CompositeOwnSteps.own_output_consistent_counter h operation hfamily,
+    fun left right operation h hpublic hfamily =>
+      CompositeOwnSteps.own_output_consistent_scheduler h hpublic operation hfamily,
+    fun left right endpointWord destinationSlot h hcarried =>
+      CompositeOwnSteps.own_step_accept_gate h hcarried endpointWord destinationSlot,
+    fun left right subject h hleft hright =>
+      ⟨CompositeLocalRespect.own_step_drain h hleft hright subject,
+        CompositeLocalRespect.own_output_drain_self h hleft hright⟩,
+    fun left right operations h hfamily =>
+      CompositeOwnSteps.own_run_noninterference_counter h operations hfamily,
+    fun plan =>
+      ⟨⟨CompositeChannels.seed_created plan,
+          (CompositeChannels.create_output_inconsistent plan).2,
+          (CompositeChannels.terminate_output_inconsistent plan).2,
+          (CompositeChannels.scheduleAdd_output_inconsistent plan).2⟩,
+        CompositeChannels.terminate_step_inconsistent plan,
+        ⟨CompositeChannels.slotThree_slotTwo plan,
+          (CompositeChannels.copy_destination_output_inconsistent_counter plan).2,
+          (CompositeChannels.revoke_other_output_inconsistent plan).2,
+          (CompositeChannels.revokeSubtree_other_output_inconsistent plan).2⟩,
+        CompositeChannels.offer_counter_step_inconsistent plan⟩,
+    fun left right h hleft hright =>
+      ⟨CompositeOwnTermination.own_step_terminate_self h hleft hright,
+        CompositeOwnTermination.own_step_terminateCurrent h hleft hright,
+        fun frame => ⟨CompositeOwnTermination.own_step_interrupt h hleft hright frame,
+          CompositeOwnTermination.own_output_interrupt h frame⟩,
+        fun raw context => CompositeOwnTermination.own_output_nmi h raw context⟩,
+    CompositeSwitchedChannels.sample_plan_exists,
+    fun plan hplan =>
+      ⟨⟨CompositeSwitchedChannels.derivation_pair plan hplan,
+          (CompositeSwitchedChannels.revokeSubtree_own_step_inconsistent plan hplan).2,
+          (CompositeSwitchedChannels.revokeSubtree_other_step_inconsistent plan hplan).2⟩,
+        CompositeSwitchedChannels.resumePreempt_output_inconsistent plan hplan,
+        ⟨CompositeSwitchedChannels.blocked_pair plan hplan,
+          (CompositeSwitchedChannels.blockingSend_output_inconsistent plan hplan).2,
+          (CompositeSwitchedChannels.blockingCancel_output_inconsistent plan hplan).2⟩⟩⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :
