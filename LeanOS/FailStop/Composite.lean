@@ -38,6 +38,28 @@ structure FrameContents where
   bytes : FrameScrub.FrameBytes := fun _ _ => FrameScrub.initialByte
   written : Capability.ObjectId → Bool := fun _ => false
 
+/-- A kernel-granted spawn capability (ADR 0010, 2026-10-10 amendment).  It is
+a capability kind of its own, layered beside the generic slot registry the way
+ADR 0022 layers device capabilities: the kernel grants it, subjects cannot
+copy or transfer it, and an explicit spawn presents its generation word.  A
+revoked and re-granted spawn capability has a new generation, so a stale word
+never authorizes a spawn. -/
+structure SpawnCapability where
+  generation : Nat
+  deriving DecidableEq, Repr
+
+/-- Spawn authority and the parent/child record (issue #489).  `parent` and
+`addressSpace` are records, not authority: no authorization reads them. -/
+structure SpawnRegistry where
+  /-- The spawn capability each subject holds, if any. -/
+  authority : Capability.SubjectId → Option SpawnCapability := fun _ => none
+  /-- The next spawn-capability generation; generations are never reused. -/
+  nextGeneration : Nat := 1
+  /-- The subject that spawned each child. -/
+  parent : Capability.SubjectId → Option Capability.SubjectId := fun _ => none
+  /-- The address space created for each spawned child. -/
+  addressSpace : Capability.SubjectId → Option Nat := fun _ => none
+
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
 the composite transition system. -/
@@ -93,6 +115,9 @@ structure CompositeState where
   /-- Frame contents and lifetime write flags.  No existing operation reads or
   writes them. -/
   scrub : FrameContents := {}
+  /-- Spawn authority and the parent/child record.  Only the spawn family
+  (`SpawnOperation`) reads or writes it. -/
+  spawn : SpawnRegistry := {}
 
 /-- The concrete value type owned by each named composite projection.  This is
 the first integration boundary between the dependency-free footprint
@@ -118,6 +143,7 @@ def CompositeProjectionType : CompositeFootprint.Projection → Type
   | .issuers => LifecycleIssuers
   | .frameBudgets => FrameBudgets
   | .scrub => FrameContents
+  | .spawn => SpawnRegistry
 
 /-- Read one named projection without introducing an untyped sum or a second
 copy of composite state. -/
@@ -142,6 +168,7 @@ def CompositeState.project (state : CompositeState) :
   | .issuers => state.issuers
   | .frameBudgets => state.frameBudgets
   | .scrub => state.scrub
+  | .spawn => state.spawn
 
 /-- A typed frame obligation over the concrete composite state.  The dependent
 projection result keeps each equality in its native subsystem type while the

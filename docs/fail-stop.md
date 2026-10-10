@@ -102,7 +102,7 @@ form one import chain, in this order:
 | `AuthoritativeTraces` | Blocking slices, admissibility, and authoritative traces |
 | `Evidence` | Executable regressions and the dispatcher's initial states |
 
-Four modules branch off the chain and build in parallel with it:
+Nine modules branch off the chain and build in parallel with it:
 
 | Module | Imports | Contents |
 | --- | --- | --- |
@@ -110,6 +110,11 @@ Four modules branch off the chain and build in parallel with it:
 | `ReadSets` | `AuthoritativeGate` | Read-independence theorems for every gate family |
 | `Resources` | `ReadSets`, `AuthoritativeTraces` | Issuers, frame budgets, frame contents, and issued subject creation |
 | `ResourceSteps` | `Resources` | Resource invariants for every composite step and whole traces |
+| `SpawnAddressSpace` | `Resources` | Composite creation of an empty address space and its invariant preservation |
+| `Spawn` | `SpawnAddressSpace` | Explicit spawn (#489), the spawn family and gate, rollback |
+| `SpawnInvariants` | `Spawn`, `ResourceSteps` | Spawn keeps the combined invariant |
+| `SpawnAuthority` | `SpawnInvariants` | Inheritance-set exactness, no amplification, fresh identity, empty start |
+| `SpawnTraces` | `SpawnAuthority` | Whole traces that may spawn |
 
 `AuthoritativeGate` imports `ProjectionInvariants` as well as
 `DeferredBlocking`. No module exceeds about 3,500 lines. Helpers that a later
@@ -459,6 +464,74 @@ premise for traces that avoid the two conditional steps.
   `createSubjectOne` runs it from a state whose counter does not cover the
   identity. Routing that command through `LifecycleOperation.createSubject`
   changes the dispatcher, so it belongs with step 4.
+
+### Explicit spawn (#489)
+
+ADR 0010's amendment of 2026-10-10 records the decisions. `CompositeState`
+gains one more projection, `spawn : SpawnRegistry`, which no existing
+operation reads or writes (`footprints_unread_spawn`). It holds the
+kernel-granted spawn capabilities (`authority`, with a never-reused
+`generation`), the parent of each spawned child, and each child's address
+space. The spawn capability is a capability kind of its own beside the generic
+slot registry, as ADR 0022 layers device capabilities; subjects cannot copy or
+transfer it.
+
+`spawn state request` (module `Spawn`) is one composite transition, a separate
+family (`SpawnOperation`, run by `spawnGate` under the running latch). It does
+not change `Operation`, `applyOperation`, or caller-identity `createSubject`.
+For the current subject (the parent) it: checks the spawn capability; issues
+the subject issuer's next identity through `issueSubject`; checks the child's
+slot space holds slots 0 and 1; issues the object issuer's next identity and
+creates it as an empty address space owned by the child, with its root
+capability in slot 1 (`installCreatedAddressSpace`, module
+`SpawnAddressSpace`, the first composite address-space creation); resolves
+the parent's endpoint handle word, requires `grant` and a valid subset of
+rights, and installs the `Capability.copy` in the child's slot 0 through the
+composite `capabilityCopy` publication; and records `spawn.parent` and
+`spawn.addressSpace`. Every stage runs on a candidate state; any failure
+returns the typed `SpawnError` and the pre-state.
+
+| Property | Theorems |
+| --- | --- |
+| Rollback at every failure point | `spawn_rejected_unchanged`, `spawn_missing_right`, `spawn_stale_spawn_capability`, `spawn_identity_exhausted`, `spawn_slot_table_full`, `spawn_address_space_exhausted`, `spawn_stale_endpoint_rejected`, `spawnGate_unchanged_of_not_running` |
+| Address-space creation keeps the invariant | `installCreatedAddressSpace_preserves_runtimeWellFormed`, `installCreatedAddressSpace_preserves_authoritativeRuntimeWellFormed` |
+| Spawn keeps the combined invariant | `spawn_preserves_resourceRuntimeWellFormed`, `spawnGate_preserves_resourceRuntimeWellFormed` |
+| Inheritance-set exactness | `spawn_child_capabilities`, `spawn_child_authority` |
+| No authority amplification | `spawn_other_slots_unchanged`, `spawn_no_authority_amplification`, `spawn_parent_unchanged`, `spawn_registry` |
+| Fresh identity | `spawn_fresh_identity` (built on the issuer agreement behind `composite_identity_no_reuse`) |
+| The child starts empty | `spawn_child_starts_empty`, `spawn_keeps` |
+| Relation, not authority | `spawnAuthorize_ignores_records`, `footprints_unread_spawn` |
+| Whole traces | `spawn_resource_trace` (`SpawnTraceStep` adds the spawn family to `CompositeStep`; `runSpawnSteps_composite` embeds composite traces) |
+
+**The child holds two capabilities, not one.** `VirtualMapping.LifecycleWellFormed`
+requires the owner of an address space to hold `revoke` over it, so the
+child's own empty address space comes with its root capability (`{grant,
+revoke}`, from `VirtualMapping.createAddressSpace`). The child's authority over
+every object that existed before the spawn is exactly the granted endpoint
+with the requested rights (`spawn_child_authority`).
+
+**The child cannot run yet.** Spawn leaves it not runnable
+(`spawn_child_starts_empty`). The scheduler also admits only a subject that
+owns the address space whose identifier equals its subject identifier
+(`Scheduler.ownsAddressSpace`), and the child's address space is drawn from
+the object issuer, a different counter. Loading code and admission are the
+loader issue.
+
+**Executable boundary.** `LeanOS.SpawnOracle` gives the canonical encoding
+(tag `0x7001`, `decodeSpawn_encodeSpawn`, `encodeSpawn_decodeSpawn`), injective
+result codes, and adversarial vectors on the dispatcher's seed: every failure
+point, both issuer exhaustions, stale and malformed parent handles, a
+re-granted spawn capability, isolation of the other subjects, the child
+presenting the parent's handle, and never-reuse after termination
+(`spawn_vectors_pass`). It is a hosted Lean oracle only: the generated boot
+dispatcher does not decode the tag (`boot_dispatcher_rejects_spawn_tag`), and
+there is no C export, QEMU scenario, or syscall. The negative fixture
+`NegativeFixtures/SpawnIdentityRollback` keeps the issued child on a failed
+grant and fails the rollback check.
+
+**Not done.** Budget transfer to the child and the parent's subject budget
+(#490); stale child handles across slot reuse and cleanup of the spawn record
+on termination (#491); the ring-3 syscall, which ADR 0010 keeps gated.
 
 ## Diagnostic and trusted boundary
 
