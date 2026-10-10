@@ -75,10 +75,129 @@ Known gaps:
   `PhyCfg.spurAvoidDisable`).
 * The SNonce is hashed from timing jitter (TSF samples), a lab-grade source,
   not a vetted RNG.
-* No group-key (GTK) rekeying: once the AP rotates its group key, broadcast
-  frames (including ARP requests) stop decrypting. There is no IP traffic
-  beyond ARP and ICMP echo (no UDP or TCP).
+* No TCP, and no IP traffic beyond ARP, ICMP echo and UDP echo on port 7.
 * Calibration accuracy has no reference measurement, and an A/B from the
   development runner showed no measurable link-quality change.
 * The driver runs in ring 0 of the lab kernel, outside the kernel's authority
   model (tracked in #454).
+
+## Ring-3 network subject on the Qotom
+
+Issue #450 moves ARP, ICMP echo and UDP echo out of the driver program into a
+ring-3 network subject ([network-subject.md](network-subject.md)). With
+`LEANOS_WIFI_NETWORK_SUBJECT` set, the `connect` program serves a frame
+endpoint after DHCP (`LeanOS.Wifi.Endpoint.serve`):
+
+* It yields each decapsulated data frame as Ethernet II.
+* It transmits whatever reply the kernel leaves in its scratch.
+* It answers nothing itself.
+
+The driver keeps the PMK, the TK and the GTK, and it handles group-key
+rotation. The DHCP client stays in the driver program for now; moving it to a
+subject of its own is a follow-up. Without `LEANOS_WIFI_NETWORK_SUBJECT`,
+`connect` with `LEANOS_WIFI_SERVE_SECONDS` still runs the ring-0 responder.
+That is the baseline of the 2026-09-30 capture, kept until the ring-3 capture
+replaces it.
+
+`scripts/build-qotom-recovery-lab.py --network-subject` extends the
+`--ipc-device-stream` flow of the audited `qotom-blocking-ipc-v1` profile.
+After the fixed first exchange:
+
+* Subject 2 (B) is the WiFi driver subject. It holds the device capability
+  for the bound program.
+* Subject 1 (A) runs the network subject. It is compiled from the same
+  `subjects/net/main.c` and the same generated responder (`NetEcho.c`) as the
+  q35 image, into A's text. Its frame buffer is the bottom of A's stack
+  range.
+* Frames cross through the audited bounded copy roots, which alias exactly
+  A's two stack pages. A copy is sixteen bytes per `leanos_copy_root_transfer`,
+  the primitive's audited bound. No root, alias or primitive changes.
+* The dispatcher checks every copy against `leanos_frame_copy_check`, every
+  device request against `leanos_device_authorize`, and every frame exchange
+  against `leanos_blocking_ipc_event`.
+* The blocking-IPC audit runs with its `--network-subject` contract.
+
+The trust contract leaves the BCM43224 in D3hot with Command=0
+([qotom-broadcom-d3.md](qotom-broadcom-d3.md)). Before binding, the lab
+returns it to D0: its PMCSR advertises No_Soft_Reset, so the BARs survive. It
+then requires Command to be still 0. This is a lab-only assignment step
+outside the reviewed contract. A reviewed contract variant that admits the
+Broadcom as assigned is still open.
+
+None of this has run on the hardware yet. The q35 `network-subject` scenario
+exercises the same subject, endpoint layout and witnesses.
+
+### Maintainer steps for the capture
+
+Run these on the development host in a checkout of the merged branch. The
+board boots legacy BIOS, as for the 2026-10-07 keyboard stream. Use the flag
+set recorded in
+`hardware/lab/observations/qotom-device-stream-20261007/manifest.json`; the
+`<flag set>` below stands for it.
+
+1. Build the canonical inputs:
+
+   ```sh
+   ./scripts/build-image.sh
+   ```
+
+2. Run the keyless smoke test first. Generate the frame-source image for the
+   Broadcom target and build the lab image:
+
+   ```sh
+   .lake/build/bin/leanos-wifi-gen net-bcm-frames build/net/net-bcm-frames.bin
+   python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
+     --lab-program build/net/net-bcm-frames.bin --ipc-device-stream --network-subject
+   ```
+
+   The image touches no Broadcom register. It feeds the six q35 frames
+   through the real Qotom path: copy roots, IPC, and the network subject in
+   ring 3. Install and run it as in [Booting the image from the
+   SSD](#booting-the-image-from-the-ssd):
+
+   ```sh
+   scp build/qotom-wifi-lab/leanos-qotom-lab.elf freebsd@192.168.6.21:/var/tmp/leanos-wifi.elf
+   sha256sum build/qotom-wifi-lab/leanos-qotom-lab.elf
+   ssh freebsd@192.168.6.21 sudo sh /var/tmp/install-ssd.sh <sha256>
+   build/wifi/lab-trial.sh build/wifi/net450-smoke
+   ```
+
+   Expect the following in `build/wifi/net450-smoke/cycle-1/serial.raw`:
+   * `SERVICE assign device=2:0.0 pmcsr=d3hot,d0`;
+   * one `NET event=deliver`/`fetch` pair per frame, and a `send` for the
+     three replies;
+   * `WIFI 5101`/`5102` records from the frame source (each reply matched
+     the reference);
+   * `LEANOS/10 FINAL status=PASS network-subject=1 device-holder=2 frames=7
+     fetches=7 replies=3 refusals=2`.
+
+3. Run the WiFi capture. This image embeds the PMK: keep it under `build/`,
+   never commit it, and never print the passphrase.
+
+   ```sh
+   LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" LEANOS_WIFI_DHCP=1 \
+     LEANOS_WIFI_SERVE_SECONDS=90 LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     .lake/build/bin/leanos-wifi-gen connect build/wifi/net450.bin
+   python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
+     --lab-program build/wifi/net450.bin --ipc-device-stream --network-subject
+   ```
+
+   Install it as in step 2 and start `build/wifi/lab-trial.sh
+   build/wifi/net450`. Once `WIFI 0F11` (endpoint ready) shows the leased
+   address, run these from a LAN host:
+
+   ```sh
+   ping -c 10 <leased address>
+   printf 'ring 3 echo\n' | nc -u -w 2 <leased address> 7
+   ```
+
+   Optionally record the air side with `sudo tcpdump -i eno1 host <leased
+   address>`. Expect:
+   * ten echo replies;
+   * the UDP payload echoed back;
+   * one `NET event=fetch`/`send` pair per ARP, ICMP and UDP frame, and
+     `WIFI 0F13` per transmitted reply;
+   * a final `LEANOS/10 FINAL status=PASS network-subject=1 ...`.
+
+   The retained serial stream contains decrypted payloads. Redact them before
+   committing an observation, and never commit `net450.bin`.

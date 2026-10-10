@@ -466,6 +466,28 @@ theorem q35AhciPolicy_sane :
       q35AhciPolicy.cfgRead = 0x3 ∧ q35AhciPolicy.cfgWrite = 0 := by
   decide
 
+/-- The frame source of the q35 `network-subject` image (issue #450,
+`LeanOS.Net.FrameSource`): a device program that drives no device. Its
+window is 512 bytes, the smallest the image parser accepts (the image's
+MMIO hooks fail-stop); it may not read or write configuration space or
+change the command register, and it has no DMA. -/
+def q35FrameSourcePolicy : Policy where
+  window := 0x200
+  cfgRead := 0
+  cfgWrite := 0
+  cmdClear := 0
+  cmdSet := 0
+  dma := false
+
+/-- The frame-source fence is sane, admits no configuration access, no
+command change and no DMA, and declares no address sink or descriptor. -/
+theorem q35FrameSourcePolicy_sane :
+    q35FrameSourcePolicy.sane = true ∧ q35FrameSourcePolicy.cfgRead = 0 ∧
+      q35FrameSourcePolicy.cfgWrite = 0 ∧ q35FrameSourcePolicy.cmdSet = 0 ∧
+      q35FrameSourcePolicy.dma = false ∧ q35FrameSourcePolicy.addrSinks = [] ∧
+      q35FrameSourcePolicy.descriptors = [] := by
+  decide
+
 /-- Both xHCI descriptor maps are ones the executor accepts. -/
 theorem xhciPolicies_descWf :
     qotomXhciPolicy.descWf = true ∧ q35XhciPolicy.descWf = true := by

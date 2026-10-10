@@ -108,6 +108,7 @@
     "LeanOS/KeyboardEcho.lean",
     "LeanOS/LifetimeIssuer.lean",
     "LeanOS/MemoryLifecycle.lean",
+    "LeanOS/NetworkSubject.lean",
     "LeanOS/NotifyReply.lean",
     "LeanOS/Observation.lean",
     "LeanOS/Oracle.lean",

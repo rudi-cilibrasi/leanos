@@ -84,6 +84,13 @@
 62	keyboard-echo	2	B reports its canaries and its three refused attempts
 70	keyboard-echo	1, 2, 3	console write of RBX's byte through the console capability in slot RDX (C only); A's and B's attempts are refused
 71	keyboard-echo	1, 2, 3	console read through the console capability in slot RDX (C only; poll only: 256 when empty)
+7	network-subject	3	C (built from subjects/net) blocks on endpoint 12 (RDX) for the next frame; woken with its length (RAX), sequence number (RBX) and the delivery flag (RCX)
+8	network-subject	1	A sends the frame's length (RBX) and sequence number (RCX) to C on endpoint 12 (RDX); never the frame
+60	network-subject	1, 3	next frame from the bound frame-source program, for the device-capability holder A only: sequence number in the high half, length in the low half (0 = end); C's attempt is refused (no device capability: bit 63 or 7)
+61	network-subject	1	A's final check of the frame, copy, reply and edge counts (final record)
+62	network-subject	2	B reports its canaries and its refused frame fetch (RDX)
+64	network-subject	1, 2, 3	frame fetch: copy the pending frame into the caller's buffer at RBX, checked against the generated witness leanos_frame_copy_check (C only, the whole range inside C's own page); returns the length, or bit 63 or the reason
+65	network-subject	3	frame send: copy RCX bytes (14-1514) at RBX out as the reply, under the same check; returns 0, or bit 63 or the reason
 70	notify-reply	1	signal notification 20 with RBX bits (the script signals 5)
 71	notify-reply	2	wait on notification 20 (blocks until signalled)
 72	notify-reply	1	call endpoint 10 with RBX; creates a one-shot reply capability for the caller

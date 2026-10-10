@@ -1,0 +1,88 @@
+@10/BOOT@ target=x86_64-q35 subjects=3 schedule=network-subject controls=wp,smep,smap
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=C selected=0 leaves=4096 policy=manifest result=PASS
+@10/IPC@ event=subject subject=3 source=subjects/net generated=NetEcho entry=text-start stack=2048 result=PASS
+@10/NET@ event=install device=frame-source device-holders=1 holder=1 endpoint-holder=3 holder-endpoint=refused endpoint-holder-device=refused model=agree result=PASS
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=network-subject
+@10/CAP@ event=refuse subject=3 op=device-invoke device=frame-source reason=no-device-capability model=refused
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=none
+@10/NET@ event=refuse subject=2 op=fetch reason=not-holder model=refused
+@10/IPC@ event=run subject=2 address-space=2 context=initial canaries=exact observed=refused result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=device
+@10/NET@ event=refuse subject=1 op=fetch reason=not-holder model=refused
+@10/DEVICE@ event=bind subject=1 device=frame-source image-bytes=4132 policy=admitted window=512 config=none dma=none result=PASS
+@10/NET@ event=deliver subject=1 frame=1 bytes=10 kind=host-configuration
+@10/IPC@ event=send sender=1 endpoint=12 payload0=10 payload1=1 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=1 bytes=10 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=1 reply=none reference=match
+@10/NET@ event=deliver subject=1 frame=2 bytes=60 kind=ethernet
+@10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=2 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=2 bytes=60 window=own-page model=accepted
+@10/NET@ event=send subject=3 frame=2 bytes=42 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=2 reply-bytes=42 reference=match
+@10/NET@ event=deliver subject=1 frame=3 bytes=64 kind=ethernet
+@10/IPC@ event=send sender=1 endpoint=12 payload0=64 payload1=3 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=3 bytes=64 window=own-page model=accepted
+@10/NET@ event=send subject=3 frame=3 bytes=64 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=3 reply-bytes=64 reference=match
+@10/NET@ event=deliver subject=1 frame=4 bytes=61 kind=ethernet
+@10/IPC@ event=send sender=1 endpoint=12 payload0=61 payload1=4 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=4 bytes=61 window=own-page model=accepted
+@10/NET@ event=send subject=3 frame=4 bytes=61 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=4 reply-bytes=61 reference=match
+@10/NET@ event=deliver subject=1 frame=5 bytes=51 kind=ethernet
+@10/IPC@ event=send sender=1 endpoint=12 payload0=51 payload1=5 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=5 bytes=51 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=5 reply=none reference=match
+@10/NET@ event=deliver subject=1 frame=6 bytes=60 kind=ethernet
+@10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=6 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=6 bytes=60 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=6 reply=none reference=match
+@10/NET@ event=deliver subject=1 frame=7 bytes=52 kind=ethernet
+@10/IPC@ event=send sender=1 endpoint=12 payload0=52 payload1=7 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=7 bytes=52 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=7 reply=none reference=match
+@10/DEVICE@ event=end subject=1 status=0 code=0
+@10/FINAL@ status=PASS subjects=3 network-subject=3 device-holder=1 frames=7 fetches=7 replies=3 checked=7 refusals=3 ipc-edges=29

@@ -237,6 +237,19 @@ No new executor architecture was needed. What had to change, and why:
 The scratch is still the static `wifi_scratch` array, not frames charged to
 the holder's budget (issue #449's item 2), for both devices.
 
+## Frames for a ring-3 network subject (issue #450)
+
+The `network-subject` image ([network-subject.md](../network-subject.md))
+hosts a device program whose yields are frames rather than events. A frame
+does not fit in two words, so the program leaves it in its scratch and yields
+its length. The kernel copies it into the network subject's own page only on
+the network subject's request, and only after
+`leanos_frame_copy_check` accepts. The reply comes back the same way, and the
+program takes it at the next invocation. On q35 the source is the deviceless
+`net-q35-frames` program; on the Qotom it is the BCM43224 `connect` program
+in its endpoint form (`LeanOS.Wifi.Endpoint`). The executor, its hooks and
+the budgeted resumable invocation are unchanged.
+
 ## Consequences
 
 * The executor gains `yield` and resumption; the differential fuzzer and its
