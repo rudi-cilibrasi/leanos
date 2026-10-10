@@ -192,8 +192,9 @@ premise.
   - The executable witness `Evidence.identity_counter_projection_witness`
     shows the same effect through a silent delegation between two other
     subjects.
-  - Transfer offer and accept allocate identities the same way, so they are
-    excluded for the same reason.
+  - Transfer offers allocate identities the same way
+    (`CompositeChannels.offer_counter_step_inconsistent`). Receipt allocates
+    none; it installs the identity the offer reserved.
   - The negative fixture `tests/negative/IdentityCounterStepConsistency.lean`
     shows that the step-consistency theorem cannot be instantiated for S's
     delegation into its own row.
@@ -202,19 +203,120 @@ premise.
   occupied, and by the same check whether that subject is live
   (`Channels.copy_destination_output_inconsistent`).
 
-**Scope and remaining exclusions.** The following are visible, which makes
-them part of the compared projection rather than a claimed absence. No step
-or output consistency is claimed for them:
+**The identity counter as a declared public input.** The counter channel
+cannot be closed in the view, and closing it in the model (for example with
+per-subject identity namespaces) would change the handle generations that the
+generated dispatcher (`LeanOS.CompositeDispatcher`) and its replay fix. The
+extended theorems therefore treat the counter like the scheduler choice and
+the fail-stop mode: `CompositeOwnSteps.OwnStepCounter` adds agreement on
+`nextIdentity` to `OwnStep`. This is a declared channel, not a claimed
+absence: S learns how many identities the whole system has issued. The two
+counter channel theorems show that the premise is necessary, and the negative
+fixture `tests/negative/CompositeChannelOverclaims.lean` shows that
+`OwnStepCounter` cannot be built for states with different counters.
 
-- deferred drains;
-- the remaining blocking operations, including S's own: the reply depends on
-  the global ready-queue capacity, and a block changes the scheduled
-  subject;
-- subtree revocation: the derivation tree reaches capabilities of other
-  subjects;
-- subject termination;
-- interrupts and preemption;
-- scheduler operations: the scheduler's choice is a public input.
+**Local respect for more of other subjects' operations**
+(`LeanOS.CompositeLocalRespect`). Under the same trace invariant,
+`isSilentExtended` also classifies as silent, for another actor:
+
+- `scheduleNext`, `scheduleYield`, and `scheduleTick`, which the composite
+  never applies (selection goes through the resumable switch), and
+  `scheduleAdd`, which writes only scheduler queues;
+- `scheduleRemove` of a subject that is not the scheduled one;
+- transfer offer and receipt on an endpoint S does not name;
+- an interrupt that contains no scheduled subject (timer, syscall, rejected
+  and fatal entries, and contained faults of an unscheduled identity);
+- a resumable switch that fails (it rejects or latches the halt);
+- a deferred-cancellation drain of a subject other than S.
+
+`authoritativeGate_silentExtended_observe` is local respect and
+`finite_trace_lowEquiv_extended` the trace theorem.
+
+**Step and output consistency for the rest of S's operations.**
+
+- `CompositeOwnSteps.own_step_consistent_counter`: under `OwnStepCounter`,
+  also S's delegation into its own row, its transfer offers, creation of any
+  subject (itself included), and `scheduleAdd`, `scheduleRemove`,
+  `scheduleNext`, `scheduleYield`, `scheduleTick`.
+- `CompositeOwnSteps.own_output_consistent_counter`: also transfer offer and
+  receipt (`CapabilityTransfer.WellFormed` makes the carried object's checks
+  succeed), subtree revocation of S's own slot (rights attenuate along every
+  derivation edge, so the runtime-safety check reads only the revoked
+  capability), creation and termination of S itself, `scheduleNext`, and
+  `terminateCurrent`.
+- `CompositeOwnSteps.own_output_consistent_scheduler`: `scheduleYield`,
+  `scheduleTick`, and `scheduleRemove`, when the two states also agree on the
+  ready queue and its capacity (`SchedulerPublic`, the scheduler's choice as a
+  public input).
+- `CompositeOwnSteps.own_step_accept_gate`: transfer receipt, given agreement
+  on the objects that sealed transfers pending on S's endpoints carry
+  (`CarriedAgree`). Receipt adds the carried object to S's authority; that is
+  the information flow the sender's offer authorizes.
+- `CompositeLocalRespect.own_step_drain` and `own_output_drain_self`: every
+  deferred drain is step consistent, and S's drain of itself (always rejected
+  while S is scheduled) is output consistent.
+- `CompositeOwnTermination`: S's own termination (`terminateSubject` of
+  itself or `terminateCurrent`) and interrupts are step consistent, since S's
+  view after its termination depends only on its slot capacity and blocking
+  completion (`deadView`); interrupts and NMIs are output consistent, since
+  their classification reads only the frame, the mode, and the scheduled
+  subject. These need `AuthoritativeRuntimeWellFormed` (S waits on nothing).
+- `CompositeOwnSteps.own_run_noninterference_counter` composes the extended
+  families: the same run of S's operations that are in both returns the same
+  results and ends low-equivalent, now including its own delegations, offers,
+  creation of itself, and `scheduleNext`.
+
+**More channels stated as theorems.** Every exclusion below has a
+counterexample whose two states satisfy `OwnStepCounter` (so the counter
+agrees too).
+
+- From S's own operations on the dispatcher seed
+  (`LeanOS.CompositeChannels`):
+  - creating, terminating, or admitting another subject to the queue replies
+    with its liveness and issuance (`create_output_inconsistent`,
+    `terminate_output_inconsistent`, `scheduleAdd_output_inconsistent`);
+  - an accepted termination of another subject cancels every pending sealed
+    offer, including S's own offer on S's endpoint
+    (`terminate_step_inconsistent`);
+  - delegation to, and direct or subtree revocation of, another subject's
+    slot replies with that slot's occupancy
+    (`copy_destination_output_inconsistent_counter`,
+    `revoke_other_output_inconsistent`,
+    `revokeSubtree_other_output_inconsistent`).
+- With subject 1 running between authoritative timer switches, evaluated by
+  the kernel on the canonical sample boot plan
+  (`LeanOS.CompositeSwitchedChannels`):
+  - subtree revocation of S's own or another subject's capability cancels the
+    sealed transfer pending on S's endpoint exactly when a derivation S cannot
+    see links it to the revoked root
+    (`revokeSubtree_own_step_inconsistent`,
+    `revokeSubtree_other_step_inconsistent`);
+  - the replies of S's timer switch, of its blocking send that wakes a
+    waiter, and of its cancellation of a wait carry another subject's saved
+    registers (`resumePreempt_output_inconsistent`,
+    `blockingSend_output_inconsistent`, `blockingCancel_output_inconsistent`).
+    The model attributes the gate result to the scheduled subject, which is
+    S here.
+
+The negative fixture `tests/negative/CompositeChannelOverclaims.lean` shows
+that the extended families cannot be instantiated for termination of another
+subject, S's subtree revocation of its own slot, or S's timer switch.
+
+**Remaining gaps.** No theorem and no counterexample yet covers:
+
+- output consistency of `selectUserReturn` and `userReturn`, whose replies
+  read the boot return plan and the physical frames behind S's code and stack
+  mappings (the canonical seed's return plan is not live, so it gives no
+  counterexample);
+- step consistency of S's timer switch (`resumePreempt`) and of S's blocking
+  send, receive, and cancel, and output consistency of S's blocking receive;
+- output consistency of a drain of another subject;
+- step consistency of transfer receipt without `CarriedAgree` (in the
+  canonical seed every object a transfer can carry is already named by S, so
+  it gives no counterexample).
+
+These operations stay visible, so they are part of the compared projection
+rather than a claimed absence.
 
 The claim is termination-insensitive and excludes timing, caches, device
 reads, and refinement to the generated C or the binary. The executable

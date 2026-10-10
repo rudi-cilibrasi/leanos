@@ -15,6 +15,7 @@ import LeanOS.FailStop.DeferredBlocking
 import LeanOS.FailStop.AuthoritativeGate
 import LeanOS.FailStop.ReadSets
 import LeanOS.FailStop.Resources
+import LeanOS.FailStop.ResourceSteps
 import LeanOS.FailStop.AuthoritativeTraces
 import LeanOS.FailStop.Evidence
 
