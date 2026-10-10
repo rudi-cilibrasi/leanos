@@ -1,0 +1,42 @@
+# Allocating and releasing memory against a subject's budget
+
+This section adds the kernel's memory operations. The current subject can allocate a memory object, paid for with one free frame from its own budget, or release a memory object it owns. Allocation wipes the frame before anyone can see it, and release wipes it again. Every refusal leaves the state unchanged, a full budget is refused, both operations keep every rulebook, and on the budget view they behave exactly like the standalone budget model.
+
+- `allocateDecision_not_released` — An allocation decision never claims to have released anything.
+- `releaseDecision_not_allocated` — A release decision never claims to have allocated anything.
+- `allocateMemory_result` — The answer of an allocation is exactly its decision.
+- `releaseMemory_result` — The answer of a release is exactly its decision.
+- `allocateMemory_shape` — An allocation either is refused with the state unchanged or allocates.
+- `releaseMemory_shape` — A release either is refused with the state unchanged or releases.
+- `MemoryOperation.apply_rejected_unchanged` — Every refused memory operation leaves the whole kernel state unchanged.
+- `memoryGate_unchanged_of_not_running` — When the kernel is busy or halted, every memory operation is refused and nothing changes.
+- `frameState_eq_free_of_beq` — Bookkeeping: a frame that tests as free is free.
+- `countP_lt_of_mono` — Bookkeeping: counting with a stricter test that misses one counted item gives a strictly smaller count.
+- `firstAvailable_some` — The frame chosen for an allocation is a known frame, committed to the subject, and free.
+- `allocateMemory_allocated` — An accepted allocation used the next object number, found it unused, picked the subject's first free frame, passed every check, and published exactly the new object.
+- `releaseMemory_released` — An accepted release found a memory capability with the right to destroy, the object's frame, and the subject as owner, and published exactly the release.
+- `allocateMemory_frame_budget_exhausted` — A subject with no free frame left in its budget is refused with a typed budget-exhausted answer and the state unchanged.
+- `firstAvailable_none_of_full` — When every frame in a subject's budget is in use, there is no frame to allocate.
+- `allocateMemory_full_rejected` — A subject whose budget is fully used never allocates: it is refused with the state unchanged.
+- `allocateMemory_object_identity_exhausted` — When object numbers have run out, allocation is refused with a typed answer and the state unchanged.
+- `MemoryOperation.footprint_untouched` — No memory operation writes the frame budgets, the spawn records, the saved contexts, the deferred cancellations, or the invalidation state.
+- `memoryGate_frames` — Every memory operation changes nothing outside what it declares it writes.
+- `MemoryOperation.apply_reads` — Two states that agree on everything a memory operation declares it reads give the same answer and the same written parts.
+- `memoryGate_reads` — The same holds through the kernel's gate.
+- `AuthoritativeRuntimeWellFormed.withResources` — Changing only the number issuers and the frame contents keeps the kernel rulebook.
+- `allocateMemory_preserves` — Every allocation keeps the full kernel rulebook and the resource rulebook.
+- `releaseMemory_preserves` — Every release keeps the full kernel rulebook and the resource rulebook.
+- `memoryGate_preserves` — Every memory operation, in every outcome, keeps both rulebooks.
+- `budgetUsage_setStatus_other` — Changing one frame's state does not change the usage of any subject the frame is not committed to.
+- `budgetLimit_of_frames` — A subject's budget depends only on the commitments and the list of frames.
+- `allocateMemory_charges` — An allocation is paid by the acting subject: its frame was free and committed to that subject, nobody's budget changes, nobody else's usage changes, and the subject's usage grows.
+- `releaseMemory_returns` — A release frees and wipes the frame, changes nobody's budget, and lowers only the usage of the subject the frame is committed to.
+- `allocateMemory_refines` — On the budget view, an accepted allocation is exactly the standalone budget model's allocation of the same object.
+- `releaseMemory_refines` — On the budget view, an accepted release is exactly the standalone budget model's release of the same slot.
+- `allocateMemory_fresh` — An allocation uses an object number never used before under any kind, moves the counter past it, and publishes the object on a fully wiped frame as an unwritten lifetime.
+- `allocateMemory_capability` — The allocating subject receives the new memory capability in its chosen slot, and no other slot changes.
+- `releaseMemory_retires` — A release kills the object everywhere, removes its mappings, transfers, frame and cached translations, keeps its number used, and wipes its frame.
+- `memoryGate_state_cases` — The memory gate either changes nothing or runs the operation.
+- `MemoryKeeps.refl` — Bookkeeping: a state that does not change keeps every memory guarantee.
+- `MemoryOperation.apply_keeps` — Every memory operation keeps the subject counter, the identity history, the frame commitments, the frame list, the spawn records, and the address-space history, and only moves the object counter forward.
+- `memoryGate_keeps` — The same holds through the kernel's gate.

@@ -50,6 +50,12 @@ These are stated, not hidden:
   that designates the observer this way is excluded by `Designates`; the
   installed or revoked capability is still one derived from a capability the
   child holds.
+- **Memory release** (`MemoryOperation.release`) retires the released
+  object everywhere, including capabilities other subjects were delegated and
+  sealed transfers of it pending at endpoints the child need not name, so,
+  like `capabilityRevokeSubtree`, it is not claimed silent.  **Memory
+  allocation** is: it changes no other subject's view whatever the reach
+  (`memory_allocate_confined`).
 - **Kernel and scheduler events** (interrupts, preemption, scheduler steps,
   subject creation and termination, deferred drains, blocking cancellation)
   are not invoked by the child and are not in `ChildInvocable`.
@@ -424,5 +430,76 @@ theorem spawned_child_confined (state : CompositeState) (request : SpawnRequest)
   rintro object (rfl | rfl)
   · exact notEndpoint
   · exact notSpace
+
+/-! ## Memory allocation by the child -/
+
+/-- **Allocation is confined to the allocating subject.**  An allocation by
+the acting subject, accepted or rejected, leaves the view of every other
+subject exactly unchanged: the new object was dead, so no other row names it,
+and its frame was free, so it backed no named object. -/
+theorem memory_allocate_confined (state : CompositeState) (slot : Nat) (observer : SubjectId)
+    (holds : RuntimeWellFormed state) (other : observer ≠ actor state) :
+    observe observer (allocateMemory state slot).state = observe observer state := by
+  rcases allocateMemory_shape state slot with ⟨same, _⟩ | ⟨object, frame, allocated⟩
+  · rw [same]
+  obtain ⟨_, _, _, _, _, allocatable, stateEq⟩ :=
+    allocateMemory_allocated state slot object frame allocated
+  have coherent := holds.1
+  have capsWf : Capability.WellFormed state.capabilities := holds.2.2.2.1
+  rw [stateEq]
+  apply observe_eq_of
+  · rfl
+  · rfl
+  · rfl
+  · funext candidateSlot
+    simp only [allocatedState, installAllocatedMemory_capabilities, allocatedCapabilities_slots]
+    have ne : observer ≠ memoryActor state := other
+    simp [ne]
+  · intro named namedBy
+    obtain ⟨namedSlot, cap, _, held, sameObject⟩ := (names_iff state observer named).1 namedBy
+    have live : state.capabilities.objects named = true := by
+      have := (capsWf.1 _ _ _ held).2.1
+      rw [sameObject] at this; exact this
+    have ne : named ≠ object := by
+      intro same; rw [same, allocatable.dead] at live; cases live
+    simp only [objectView, backing]
+    have bindingSame : (allocatedState state object (memoryActor state) slot
+        frame).virtualMemory.memory.binding named = state.virtualMemory.memory.binding named := by
+      simp [allocatedState, installAllocatedMemory, allocatedMemory, MemoryLifecycle.setBinding,
+        ne]
+    have statusSame : ∀ candidate,
+        decide ((allocatedState state object (memoryActor state) slot
+          frame).virtualMemory.memory.allocator.status candidate = .owned named) =
+        decide (state.virtualMemory.memory.allocator.status candidate = .owned named) := by
+      intro candidate
+      by_cases atFrame : candidate = frame
+      · subst atFrame
+        simp [allocatedState, installAllocatedMemory, allocatedMemory, FrameAllocator.setStatus,
+          allocatable.frameFree, Ne.symm ne]
+      · simp [allocatedState, installAllocatedMemory, allocatedMemory, FrameAllocator.setStatus,
+          atFrame]
+    rw [bindingSame]
+    congr 1
+    · show (allocatedCapabilities state.capabilities object (memoryActor state) slot).objects
+        named = _
+      rw [allocatedCapabilities_objects_of_ne _ _ _ _ ne]
+    · show (allocatedCapabilities state.capabilities object (memoryActor state) slot).kinds
+        named = _
+      rw [allocatedCapabilities_kinds_of_ne _ _ _ _ ne]
+    · cases state.virtualMemory.memory.binding named with
+      | none => rfl
+      | some boundFrame => simp only [Option.map_some, statusSame]
+  · rfl
+  · intro _ _; rfl
+  · rfl
+  · rfl
+
+/-- The same through the memory gate, on every outcome. -/
+theorem memoryGate_allocate_confined (state : CompositeState) (slot : Nat)
+    (observer : SubjectId) (holds : RuntimeWellFormed state) (other : observer ≠ actor state) :
+    observe observer (memoryGate state (.allocate slot)).state = observe observer state := by
+  rcases memoryGate_state_cases state (.allocate slot) with same | applied
+  · rw [same]
+  · rw [applied]; exact memory_allocate_confined state slot observer holds other
 
 end LeanOS.SpawnConfinement

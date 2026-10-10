@@ -15,3 +15,5 @@ This section shows that a child created by spawn is confined. When the child act
 - `reachDisjoint_of_bound` — If everything the child holds lies in some set and another subject holds nothing in that set, the two share no object.
 - `spawn_child_names` — Right after spawn, the child holds capabilities to exactly two objects: the endpoint its parent gave it and its own new address space.
 - `spawned_child_confined` — Right after spawn, any subject that holds neither of those two objects cannot be affected by the child's system calls, except when a call names that subject as the receiver or holder of a capability, or is a receive that makes the child wait.
+- `memory_allocate_confined` — When a subject allocates memory, no other subject sees any change, whatever they share.
+- `memoryGate_allocate_confined` — The same holds through the kernel's gate, in every outcome.

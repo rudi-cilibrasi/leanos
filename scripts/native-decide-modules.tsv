@@ -45,6 +45,7 @@ LeanOS/NegativeFixtures/DMAQuarantine.lean	negative-fixture
 LeanOS/NegativeFixtures/DirectPort.lean	negative-fixture
 LeanOS/NegativeFixtures/FrameBudget.lean	negative-fixture
 LeanOS/NegativeFixtures/IOMMUConfinement.lean	negative-fixture
+LeanOS/NegativeFixtures/MemoryAllocation.lean	negative-fixture
 LeanOS/NegativeFixtures/NMIManifest.lean	negative-fixture
 LeanOS/NegativeFixtures/PageFaultAgreement.lean	negative-fixture
 LeanOS/NegativeFixtures/PageFaultError.lean	negative-fixture

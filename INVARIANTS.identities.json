@@ -5420,6 +5420,132 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.authoritativeGate_issuers",
+      "display": "authoritativeGate_issuers",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.authoritativeGate_resourceView",
+      "display": "authoritativeGate_resourceView",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.authoritativeGate_withIssuers",
+      "display": "authoritativeGate_withIssuers",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.bind_pure_ok",
+      "display": "bind_pure_ok",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.command_admissible",
+      "display": "command_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.dispatcher_createSubject_admissible",
+      "display": "dispatcher_createSubject_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.dispatcher_edge_admissible",
+      "display": "dispatcher_edge_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.dispatcher_resource_trace",
+      "display": "dispatcher_resource_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.issuers_unread",
+      "display": "issuers_unread",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.materialize_pred",
+      "display": "materialize_pred",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.materialize_resourceView",
+      "display": "materialize_resourceView",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.resourceSeed_resourceRuntimeWellFormed",
+      "display": "resourceSeed_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.resourceView_budget",
+      "display": "resourceView_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.resourceView_gate",
+      "display": "resourceView_gate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.resourceView_project",
+      "display": "resourceView_project",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.resourceView_subject_next",
+      "display": "resourceView_subject_next",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.runSteps_append_single",
+      "display": "runSteps_append_single",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.runSteps_subject_next",
+      "display": "runSteps_subject_next",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.steps_admissible",
+      "display": "steps_admissible",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.two_le_identityReserved",
+      "display": "two_le_identityReserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcherResources.lean",
+      "qualified": "LeanOS.CompositeDispatcherResources.withIssuers_project",
+      "display": "withIssuers_project",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/CompositeFootprint.lean",
       "qualified": "LeanOS.CompositeFootprint.Footprint.ofLists_untouched",
       "display": "Footprint.ofLists_untouched",
@@ -10376,6 +10502,288 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.Capability.copy_identityFrom",
+      "display": "Capability.copy_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.Capability.installRoot_identityFrom",
+      "display": "Capability.installRoot_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.Capability.revokeRuntimeSafe_identityFrom",
+      "display": "Capability.revokeRuntimeSafe_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.Capability.revokeSubtreeRuntimeSafe_shrinks",
+      "display": "Capability.revokeSubtreeRuntimeSafe_shrinks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.Capability.revokeSubtree_shrinks",
+      "display": "Capability.revokeSubtree_shrinks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.Capability.revoke_shrinks",
+      "display": "Capability.revoke_shrinks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityFrom.of_shrink",
+      "display": "IdentityFrom.of_shrink",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityFrom.refl",
+      "display": "IdentityFrom.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityFrom.shrink_pending",
+      "display": "IdentityFrom.shrink_pending",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityFrom.trans",
+      "display": "IdentityFrom.trans",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityStep.of_capabilities_eq",
+      "display": "IdentityStep.of_capabilities_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityStep.of_eq",
+      "display": "IdentityStep.of_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityStep.of_frames",
+      "display": "IdentityStep.of_frames",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityStep.refl",
+      "display": "IdentityStep.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityStep.retired",
+      "display": "IdentityStep.retired",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.IdentityStep.trans",
+      "display": "IdentityStep.trans",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentities.lean",
+      "qualified": "LeanOS.FailStop.stale_word_of_retired",
+      "display": "stale_word_of_retired",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CapabilityTransfer.acceptWord_identityFrom",
+      "display": "CapabilityTransfer.acceptWord_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CapabilityTransfer.accept_identityFrom",
+      "display": "CapabilityTransfer.accept_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CapabilityTransfer.offerWords_identityFrom",
+      "display": "CapabilityTransfer.offerWords_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CapabilityTransfer.offer_identityFrom",
+      "display": "CapabilityTransfer.offer_identityFrom",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeState.Coherent.lifecycleCapabilities",
+      "display": "CompositeState.Coherent.lifecycleCapabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeState.Coherent.resumableCapabilities",
+      "display": "CompositeState.Coherent.resumableCapabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeState.Coherent.transfersCapabilities",
+      "display": "CompositeState.Coherent.transfersCapabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.identityStep",
+      "display": "CompositeStep.identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.IdentityFrom.congr_left",
+      "display": "IdentityFrom.congr_left",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.InvalidationOperation.apply_identityStep",
+      "display": "InvalidationOperation.apply_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.ResumablePreemption.switch_capabilities",
+      "display": "ResumablePreemption.switch_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.Scheduler.selectNext_capabilities",
+      "display": "Scheduler.selectNext_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.Scheduler.tick_capabilities",
+      "display": "Scheduler.tick_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.SubjectLifecycle.create_capabilities_slots",
+      "display": "SubjectLifecycle.create_capabilities_slots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.applyOperation_identityStep",
+      "display": "applyOperation_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.authoritativeGate_identityStep",
+      "display": "authoritativeGate_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.childGate_identityStep",
+      "display": "childGate_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.cleanup_slots_sub",
+      "display": "cleanup_slots_sub",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.gate_identityStep",
+      "display": "gate_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.installTerminatedSubject_identityStep",
+      "display": "installTerminatedSubject_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.installTerminatedSubject_shrinks",
+      "display": "installTerminatedSubject_shrinks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.installTransfers_identityStep",
+      "display": "installTransfers_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.lifecycleGate_identityStep",
+      "display": "lifecycleGate_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.publishInterruptCleanup_identityStep",
+      "display": "publishInterruptCleanup_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.releaseChild_capabilities",
+      "display": "releaseChild_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.releaseChild_pending",
+      "display": "releaseChild_pending",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.spawnSpaced_identityStep",
+      "display": "spawnSpaced_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.spawn_identityStep",
+      "display": "spawn_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_identityRetired",
+      "display": "terminateChild_identityRetired",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/CapabilityIdentitySteps.lean",
+      "qualified": "LeanOS.FailStop.terminatedChild_shrinks",
+      "display": "terminatedChild_shrinks",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FailStop/Composite.lean",
       "qualified": "LeanOS.FailStop.CompositeState.DMAQuarantined.quarantine",
       "display": "CompositeState.DMAQuarantined.quarantine",
@@ -11885,6 +12293,462 @@
       "source": "LeanOS/FailStop/Memory.lean",
       "qualified": "LeanOS.FailStop.syscall_entry_leaves_return_unarmed",
       "display": "syscall_entry_leaves_return_unarmed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_authority_mono",
+      "display": "allocatedCapabilities_authority_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_derivations",
+      "display": "allocatedCapabilities_derivations",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_derivations_of_lt",
+      "display": "allocatedCapabilities_derivations_of_lt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_kinds",
+      "display": "allocatedCapabilities_kinds",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_kinds_of_ne",
+      "display": "allocatedCapabilities_kinds_of_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_nextIdentity",
+      "display": "allocatedCapabilities_nextIdentity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_objects",
+      "display": "allocatedCapabilities_objects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_objects_mono",
+      "display": "allocatedCapabilities_objects_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_objects_of_ne",
+      "display": "allocatedCapabilities_objects_of_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_slotCapacity",
+      "display": "allocatedCapabilities_slotCapacity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_slots",
+      "display": "allocatedCapabilities_slots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_slots_mono",
+      "display": "allocatedCapabilities_slots_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_subjects",
+      "display": "allocatedCapabilities_subjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.allocatedCapabilities_wellFormed",
+      "display": "allocatedCapabilities_wellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.installAllocatedMemory_capabilities",
+      "display": "installAllocatedMemory_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.installAllocatedMemory_mode",
+      "display": "installAllocatedMemory_mode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.installAllocatedMemory_owned",
+      "display": "installAllocatedMemory_owned",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.installAllocatedMemory_preserves_authoritativeRuntimeWellFormed",
+      "display": "installAllocatedMemory_preserves_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryAllocation.lean",
+      "qualified": "LeanOS.FailStop.installAllocatedMemory_preserves_runtimeWellFormed",
+      "display": "installAllocatedMemory_preserves_runtimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.AuthoritativeRuntimeWellFormed.withResources",
+      "display": "AuthoritativeRuntimeWellFormed.withResources",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.MemoryKeeps.refl",
+      "display": "MemoryKeeps.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.MemoryOperation.apply_keeps",
+      "display": "MemoryOperation.apply_keeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.MemoryOperation.apply_reads",
+      "display": "MemoryOperation.apply_reads",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.MemoryOperation.apply_rejected_unchanged",
+      "display": "MemoryOperation.apply_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.MemoryOperation.footprint_untouched",
+      "display": "MemoryOperation.footprint_untouched",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateDecision_not_released",
+      "display": "allocateDecision_not_released",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_allocated",
+      "display": "allocateMemory_allocated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_capability",
+      "display": "allocateMemory_capability",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_charges",
+      "display": "allocateMemory_charges",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_frame_budget_exhausted",
+      "display": "allocateMemory_frame_budget_exhausted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_fresh",
+      "display": "allocateMemory_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_full_rejected",
+      "display": "allocateMemory_full_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_object_identity_exhausted",
+      "display": "allocateMemory_object_identity_exhausted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_preserves",
+      "display": "allocateMemory_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_refines",
+      "display": "allocateMemory_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_result",
+      "display": "allocateMemory_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.allocateMemory_shape",
+      "display": "allocateMemory_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.budgetLimit_of_frames",
+      "display": "budgetLimit_of_frames",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.budgetUsage_setStatus_other",
+      "display": "budgetUsage_setStatus_other",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.countP_lt_of_mono",
+      "display": "countP_lt_of_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.firstAvailable_none_of_full",
+      "display": "firstAvailable_none_of_full",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.firstAvailable_some",
+      "display": "firstAvailable_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.frameState_eq_free_of_beq",
+      "display": "frameState_eq_free_of_beq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_frames",
+      "display": "memoryGate_frames",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_keeps",
+      "display": "memoryGate_keeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_preserves",
+      "display": "memoryGate_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_reads",
+      "display": "memoryGate_reads",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_state_cases",
+      "display": "memoryGate_state_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_unchanged_of_not_running",
+      "display": "memoryGate_unchanged_of_not_running",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseDecision_not_allocated",
+      "display": "releaseDecision_not_allocated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_preserves",
+      "display": "releaseMemory_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_refines",
+      "display": "releaseMemory_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_released",
+      "display": "releaseMemory_released",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_result",
+      "display": "releaseMemory_result",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_retires",
+      "display": "releaseMemory_retires",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_returns",
+      "display": "releaseMemory_returns",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryOperations.lean",
+      "qualified": "LeanOS.FailStop.releaseMemory_shape",
+      "display": "releaseMemory_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.installReleasedMemory_capabilities",
+      "display": "installReleasedMemory_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.installReleasedMemory_mode",
+      "display": "installReleasedMemory_mode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.installReleasedMemory_preserves_authoritativeRuntimeWellFormed",
+      "display": "installReleasedMemory_preserves_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.installReleasedMemory_preserves_runtimeWellFormed",
+      "display": "installReleasedMemory_preserves_runtimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.installReleasedMemory_released",
+      "display": "installReleasedMemory_released",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.releasedTransfers_mailbox_none",
+      "display": "releasedTransfers_mailbox_none",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.releasedTransfers_mailbox_some",
+      "display": "releasedTransfers_mailbox_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.releasedTransfers_pending",
+      "display": "releasedTransfers_pending",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_authority",
+      "display": "retireCapabilities_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_derivations",
+      "display": "retireCapabilities_derivations",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_kinds",
+      "display": "retireCapabilities_kinds",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_kinds_of_ne",
+      "display": "retireCapabilities_kinds_of_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_nextIdentity",
+      "display": "retireCapabilities_nextIdentity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_objects",
+      "display": "retireCapabilities_objects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_objects_of_ne",
+      "display": "retireCapabilities_objects_of_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_slotCapacity",
+      "display": "retireCapabilities_slotCapacity",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_slots_some",
+      "display": "retireCapabilities_slots_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_subjects",
+      "display": "retireCapabilities_subjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/MemoryRelease.lean",
+      "qualified": "LeanOS.FailStop.retireCapabilities_wellFormed",
+      "display": "retireCapabilities_wellFormed",
       "kind": "theorem"
     },
     {
@@ -13563,6 +14427,30 @@
     },
     {
       "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.not_reclaimable_of_live",
+      "display": "not_reclaimable_of_live",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.reclaimChildFrames_preserves",
+      "display": "reclaimChildFrames_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.reclaimChildFrames_reclaims",
+      "display": "reclaimChildFrames_reclaims",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
+      "qualified": "LeanOS.FailStop.reclaimable_facts",
+      "display": "reclaimable_facts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingInvariants.lean",
       "qualified": "LeanOS.FailStop.releaseChild_limits",
       "display": "releaseChild_limits",
       "kind": "theorem"
@@ -13703,6 +14591,24 @@
       "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
       "qualified": "LeanOS.FailStop.createdAlongChild_fresh",
       "display": "createdAlongChild_fresh",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_childAccounting",
+      "display": "memoryGate_childAccounting",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_childKeeps",
+      "display": "memoryGate_childKeeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_entitlement",
+      "display": "memoryGate_entitlement",
       "kind": "theorem"
     },
     {
@@ -14060,6 +14966,42 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FailStop/SpawnGate.lean",
+      "qualified": "LeanOS.FailStop.ChildTraceStep.identityStep",
+      "display": "ChildTraceStep.identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnGate.lean",
+      "qualified": "LeanOS.FailStop.allocatedState_identityStep",
+      "display": "allocatedState_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnGate.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_identityStep",
+      "display": "memoryGate_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnGate.lean",
+      "qualified": "LeanOS.FailStop.releasedState_identityStep",
+      "display": "releasedState_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnGate.lean",
+      "qualified": "LeanOS.FailStop.runChildSteps_identityStep",
+      "display": "runChildSteps_identityStep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnGate.lean",
+      "qualified": "LeanOS.FailStop.stale_word_forever",
+      "display": "stale_word_forever",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FailStop/SpawnInvariants.lean",
       "qualified": "LeanOS.FailStop.SpawnOperation.apply_preserves_resourceRuntimeWellFormed",
       "display": "SpawnOperation.apply_preserves_resourceRuntimeWellFormed",
@@ -14183,6 +15125,102 @@
       "source": "LeanOS/FailStop/SpawnTraces.lean",
       "qualified": "LeanOS.FailStop.spawn_resource_trace",
       "display": "spawn_resource_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.CompositeStep.spawnTree",
+      "display": "CompositeStep.spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.charged_child_childless",
+      "display": "charged_child_childless",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.childGate_spawnTree",
+      "display": "childGate_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.child_spawn_rejected",
+      "display": "child_spawn_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.grantFrames_spawnTree",
+      "display": "grantFrames_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.memoryGate_spawnTree",
+      "display": "memoryGate_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.not_recorded_of_authority",
+      "display": "not_recorded_of_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.not_recorded_of_children",
+      "display": "not_recorded_of_children",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.spawnCharged_spawnTree",
+      "display": "spawnCharged_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.spawnTree_of_empty",
+      "display": "spawnTree_of_empty",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.spawnTree_of_kept",
+      "display": "spawnTree_of_kept",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.spawn_parent_record",
+      "display": "spawn_parent_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_no_orphans",
+      "display": "terminateChild_no_orphans",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_releases_everything",
+      "display": "terminateChild_releases_everything",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.terminateChild_spawnTree",
+      "display": "terminateChild_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnTree.lean",
+      "qualified": "LeanOS.FailStop.terminatedChild_retires_memory",
+      "display": "terminatedChild_retires_memory",
       "kind": "theorem"
     },
     {
@@ -22235,6 +23273,96 @@
       "source": "LeanOS/SpawnAccountingOracle.lean",
       "qualified": "LeanOS.SpawnAccountingOracle.frameGrantErrorCodes_distinct",
       "display": "frameGrantErrorCodes_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.blockingTarget_named",
+      "display": "blockingTarget_named",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.child_run_confined",
+      "display": "child_run_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.child_step_confined",
+      "display": "child_step_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.child_step_silent",
+      "display": "child_step_silent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.ipcTarget_named",
+      "display": "ipcTarget_named",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.memoryGate_allocate_confined",
+      "display": "memoryGate_allocate_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.memory_allocate_confined",
+      "display": "memory_allocate_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.names_iff",
+      "display": "names_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.names_of_resolve",
+      "display": "names_of_resolve",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.names_of_slot",
+      "display": "names_of_slot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.reachDisjoint_of_bound",
+      "display": "reachDisjoint_of_bound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.spawn_child_names",
+      "display": "spawn_child_names",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.spawned_child_confined",
+      "display": "spawned_child_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.transferTarget_named",
+      "display": "transferTarget_named",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnConfinement.lean",
+      "qualified": "LeanOS.SpawnConfinement.waiter_names",
+      "display": "waiter_names",
       "kind": "theorem"
     },
     {

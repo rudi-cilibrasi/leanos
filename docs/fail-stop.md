@@ -102,7 +102,7 @@ form one import chain, in this order:
 | `AuthoritativeTraces` | Blocking slices, admissibility, and authoritative traces |
 | `Evidence` | Executable regressions and the dispatcher's initial states |
 
-Nine modules branch off the chain and build in parallel with it:
+Twenty modules branch off the chain and build in parallel with it:
 
 | Module | Imports | Contents |
 | --- | --- | --- |
@@ -111,6 +111,9 @@ Nine modules branch off the chain and build in parallel with it:
 | `Resources` | `ReadSets`, `AuthoritativeTraces` | Issuers, frame budgets, frame contents, and issued subject creation |
 | `ResourceSteps` | `Resources` | Resource invariants for every composite step and whole traces |
 | `SpawnAddressSpace` | `Resources` | Composite creation of an empty address space and its invariant preservation |
+| `MemoryAllocation` | `SpawnAddressSpace` | Composite publication of an allocated memory object and its invariant preservation |
+| `MemoryRelease` | `MemoryAllocation` | Composite publication of a released memory object and its invariant preservation |
+| `MemoryOperations` | `MemoryRelease` | The memory family: budget-charged allocation and release with scrub, gate, footprints, read sets, exhaustion, refinement of `FrameBudget` |
 | `Spawn` | `SpawnAddressSpace` | Explicit spawn (#489), the spawn family and gate, rollback |
 | `SpawnInvariants` | `Spawn`, `ResourceSteps` | Spawn keeps the combined invariant |
 | `SpawnAuthority` | `SpawnInvariants` | Inheritance-set exactness, no amplification, fresh identity, empty start |
@@ -118,7 +121,11 @@ Nine modules branch off the chain and build in parallel with it:
 | `SpawnAccounting` | `SpawnAuthority` | Charged spawn, child control handles, frame slices, child termination (#490, #491) |
 | `SpawnAccountingInvariants` | `SpawnAccounting` | The spawn accounting invariant and its preservation |
 | `SpawnChildCleanup` | `SpawnAccountingInvariants` | Stale control words and capabilities after child termination; cleanup |
-| `SpawnAccountingTraces` | `SpawnChildCleanup` | Whole traces of the public spawn family |
+| `SpawnTree` | `SpawnChildCleanup`, `MemoryOperations` | Children never have children; complete cleanup on child termination |
+| `SpawnAccountingTraces` | `SpawnTree` | Whole traces of the public spawn family and the memory family |
+| `CapabilityIdentities` | `SpawnAccounting` | Capability-identity provenance (`IdentityStep`), retired identities, stale words |
+| `CapabilityIdentitySteps` | `CapabilityIdentities`, `SpawnChildCleanup` | Identity provenance of every composite and spawn-family step |
+| `SpawnGate` | `SpawnAccountingTraces`, `CapabilityIdentitySteps` | Identity provenance of memory steps and whole traces; stale words along every later trace |
 
 `AuthoritativeGate` imports `ProjectionInvariants` as well as
 `DeferredBlocking`. No module exceeds about 3,500 lines. Helpers that a later
@@ -551,8 +558,9 @@ writes:
 
 - `SpawnCapability.subjectBudget`: the most children the holder may have
   charged to it at once. `ChildOperation.grantAuthority subject budget` names
-  it, and is rejected if the subject already has more children or the budget
-  exceeds the table. The #489 grant leaves it zero.
+  it, and is rejected if the subject already has more children, the budget
+  exceeds the table, or the subject is itself a spawned child. The #489 grant
+  leaves it zero.
 - `children parent slot`: each parent's child table, a fixed kernel table of
   `childSlots` (64) slots. An entry (`ChildEntry`) names the child, the
   generation of its control word, and the frames the parent charged to it.
@@ -572,10 +580,11 @@ The operations:
   pre-state. The child receives a slice of the parent's budget: no frame is
   created and no other subject's commitment changes (`grantFrames_limits`).
 - **`terminateChild control`**: the composite termination transition runs on
-  the child, every frame committed to the child is committed to the parent
-  again (`releaseChild_limits`), and the entry and the child's spawn records
-  are removed. A child already terminated by another path is reaped the same
-  way.
+  the child; every frame committed to the child that backs a dead object (the
+  child's own memory) is freed, unbound, and scrubbed (`reclaimChildFrames`);
+  every frame committed to the child is committed to the parent again
+  (`releaseChild_limits`); and the entry and the child's spawn records are
+  removed. A child already terminated by another path is reaped the same way.
 
 A parent's **entitlement** is its own frame limit plus the charges in its
 child table. `ChildAccountingWellFormed` says: every entry is in the table,
@@ -590,20 +599,22 @@ holding a spawn capability has at most its subject budget of children.
 | Both invariants kept by every step | `childGate_preserves`, `CompositeStep.childAccounting` |
 | Live children within the subject budget | `ChildAccountingWellFormed.budget`, kept by `spawnCharged_preserves` and `grantBudgetedAuthority_preserves` |
 | Children's budgets plus the parent's usage within its entitlement | `usage_add_childLimits_le` |
-| Frame slices move frames, never create them | `grantFrames_limits`, `releaseChild_limits`, `child_resource_trace` (allocator exact, committed frames only shrink) |
-| Terminating a child returns its charge and releases what it was given | `terminateChild_releases` |
+| Frame slices move frames, never create them | `grantFrames_limits`, `releaseChild_limits`, `child_resource_trace` (frame list exact, committed frames only shrink) |
+| Terminating a child returns its charge and releases what it was given | `terminateChild_releases`, `terminateChild_releases_everything` |
+| Children never have children | `SpawnTreeWellFormed`, `childGate_spawnTree`, `charged_child_childless`, `child_spawn_rejected`, `terminateChild_no_orphans` |
 | Stale control words | `terminateChild_retires`, `retired_rejected_unchanged`, `childGate_advances`, `CompositeStep.advances`, `stale_control_after_respawn` |
-| Stale capabilities naming the child | `terminateChild_revokes`, `terminateChild_stale_word`, `stale_word_after_respawn` |
-| Whole traces | `child_resource_trace` (`ChildTraceStep` adds `childGate` to `CompositeStep`; `runChildSteps_composite` embeds composite traces) |
+| Stale capabilities naming the child | `terminateChild_revokes`, `terminateChild_stale_word`, `stale_word_after_respawn`, `stale_word_forever` |
+| Whole traces | `child_resource_trace` (`ChildTraceStep` adds `childGate` and `memoryGate` to `CompositeStep`; `runChildSteps_composite` embeds composite traces) |
 
 `child_resource_trace` proves, along every admissible trace of composite
-steps and public spawn-family steps from a state satisfying both
-invariants: both invariants at the end; no identity created twice; the
-subject history only grows; the allocator exact and no frame newly
-committed; every subject budget respected; every parent's usage plus its
-children's limits within its entitlement; a subject that was issued and not
-a charged child at the start never gains entitlement; and every retired
-control word still retired.
+steps, public spawn-family steps, and memory steps from a state satisfying
+the combined, accounting, and spawn-tree invariants: all three at the end; no
+identity created twice; the subject history only grows; the frame list exact
+and no frame newly committed; every subject's usage within its limit; no
+child with children; every subject budget respected; every parent's usage
+plus its children's limits within its entitlement; a subject that was issued
+and not a charged child at the start never gains entitlement; and every
+retired control word still retired.
 
 **Stale child authority.** After `terminateChild`, the control word's slot
 is empty (`terminateChild_retires`). A later spawn may reuse the slot, but
@@ -635,13 +646,82 @@ both new tags (`boot_dispatcher_rejects_child_tags`). The negative fixture
 budget, a grant that mints a frame, and a termination that keeps the charge;
 each fails its check.
 
-**Not done.** The composite still has no budget-charged memory allocation or
-release, so no composite step changes a subject's usage. Terminating a child
-does not terminate or reclaim the child's own children: their entries stay
-in the dead child's table, charged within the child's former charge. The
-capability-word results cover termination followed by a spawn, not arbitrary
-later steps. The #491 QEMU scenario is blocked by ADR 0010: it needs spawn
+**Children never have children.** Spawn never passes spawn authority to the
+child, and the public grant refuses a spawned child, so
+`SpawnTreeWellFormed` holds along every trace: every table entry's child is
+recorded with that parent, every holder of spawn authority is issued, and a
+recorded child holds no spawn authority and has an empty table. A child
+cannot spawn (`child_spawn_rejected`), and terminating a child orphans
+nothing (`terminateChild_no_orphans`).
+
+**Stale capability words along every later trace.** `IdentityStep` says
+that every capability identity after a step was present before, in a slot or
+a pending sealed transfer, or is at least the old counter. Every step of
+every family has it (`CompositeStep.identityStep`, `childGate_identityStep`,
+`memoryGate_identityStep`), so it holds along whole traces
+(`runChildSteps_identityStep`). The identity of every capability a child
+termination removes is retired (`terminateChild_identityRetired`), stays
+retired (`IdentityStep.retired`), and a word naming it never resolves again
+(`stale_word_forever`).
+
+**Confinement.** `LeanOS.SpawnConfinement` states confinement over the
+observer views of `LeanOS.CompositeObservation`. When the child acts, an
+operation of its syscall surface that does not designate an observer leaves
+unchanged the whole view of every subject that names no object the child
+names (`child_step_confined`, `child_run_confined`); at spawn the child names
+exactly the granted endpoint and its own address space
+(`spawn_child_names`, `spawned_child_confined`); and its memory allocations
+are invisible to every other subject (`memory_allocate_confined`). The
+module lists the exclusions: the public scheduler choice, designation of the
+observer, `capabilityRevokeSubtree` and memory release, timing, and caches.
+
+**Not done.** The #491 QEMU scenario is blocked by ADR 0010: it needs spawn
 in a booted image, and the ring-3 syscall stays gated.
+
+### Budget-charged memory (gate item 1)
+
+`MemoryOperation`, run by `memoryGate` under the running latch (module
+`MemoryOperations`), is the composite's memory family. Like the spawn
+family it is separate from `Operation`. The acting subject is the latch's
+current subject (`memoryActor`).
+
+- **`allocate slot`**: the registry checks of `FrameBudget.allocate`; the
+  object issuer's next identity, unused under every kind; the first free
+  frame committed to the actor (`FrameBudget.firstAvailable`), else
+  `frameBudgetExhausted`; and a frame the lifecycle attributes to no one.
+  The frame is scrubbed, the object is published bound to it with a root
+  capability in the actor's slot (`installAllocatedMemory`), the lifetime is
+  marked unwritten, and the object issuer advances.
+- **`release slot`**: the checks of `MemoryLifecycle.release` and the actor
+  recorded as owner. The object is retired everywhere: capabilities in every
+  slot, mappings, pending sealed transfers, and cached translations
+  (`installReleasedMemory`). The frame is free and scrubbed, and the identity
+  stays issued.
+
+| Property | Theorems |
+| --- | --- |
+| Rejection keeps the pre-state | `MemoryOperation.apply_rejected_unchanged`, `memoryGate_unchanged_of_not_running` |
+| Typed exhaustion | `allocateMemory_frame_budget_exhausted`, `allocateMemory_full_rejected`, `allocateMemory_object_identity_exhausted` |
+| Footprint, frame rule, read set | `MemoryOperation.footprint`, `memoryGate_frames`, `MemoryOperation.apply_reads`, `memoryGate_reads` |
+| Combined invariant | `installAllocatedMemory_preserves_authoritativeRuntimeWellFormed`, `installReleasedMemory_preserves_authoritativeRuntimeWellFormed`, `allocateMemory_preserves`, `releaseMemory_preserves`, `memoryGate_preserves` |
+| Charging and return | `allocateMemory_charges`, `releaseMemory_returns`, `budgetLimit_of_frames` |
+| Scrub and fresh identities | `allocateMemory_fresh`, `releaseMemory_retires`, `allocateMemory_capability` |
+| Refinement of the standalone budget model | `allocateMemory_refines`, `releaseMemory_refines` |
+| Whole traces | `child_resource_trace`, `memoryGate_keeps`, `memoryGate_childAccounting`, `memoryGate_spawnTree` |
+
+`NegativeFixtures/MemoryAllocation` has an allocation that skips the scrub
+and one that takes another subject's frame when the budget is full; each
+fails its check, and `allocateMemory` passes both.
+
+**The dispatcher's caller-identity creation.** `CompositeDispatcher` replays
+`createSubject 1` from `bootRuntime`, whose subject counter is 1.
+`LeanOS.CompositeDispatcherResources` reads every dispatcher state with the
+subject counter at 2 (`resourceView`). No authoritative step reads or writes
+the issuers (`authoritativeGate_resourceView`), so every dispatcher edge is
+admissible in that view (`dispatcher_createSubject_admissible`,
+`dispatcher_edge_admissible`) and `composite_resource_trace` covers the whole
+dispatcher path (`dispatcher_resource_trace`). The dispatcher and its
+generated C are unchanged.
 
 ## Diagnostic and trusted boundary
 
