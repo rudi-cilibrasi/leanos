@@ -100,12 +100,18 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
       # exact and the generated paths perform no object allocation. The
       # frame-budget publication check calls the seven-word
       # leanos_boot_publish_authority export, whose seventh word is likewise
-      # pushed (issue #503).
+      # pushed (issue #503). The generated device-program executor step
+      # (issue #494) passes its instruction fields and loop state to the
+      # specialized descriptor-map scan, which takes more than six scalar
+      # arguments, so its instruction dispatcher and that scan push
+      # arguments too.
       [[ "${usage_kind[$function_name]}" == dynamic,bounded &&
          ( "$function_name" == authorize_page_fault_snapshot ||
            "$function_name" == leanos_authorize_page_fault_snapshot ||
            "$function_name" == leanos_page_fault_dispatch_transition ||
-           "$function_name" == frame_budget_require_publication_authority ) ]] || {
+           "$function_name" == frame_budget_require_publication_authority ||
+           "$function_name" == l_LeanOS_Wifi_Exec_exec___at___00LeanOS_Wifi_Exec_step___at___00LeanOS_Wifi_Exec_deviceProgramStep_spec__0_spec__0 ||
+           "$function_name" == l_LeanOS_Wifi_Exec_scanDescs___at___00LeanOS_Wifi_Exec_exec___at___00LeanOS_Wifi_Exec_step___at___00LeanOS_Wifi_Exec_deviceProgramStep_spec__0_spec__0_spec__5 ) ]] || {
         echo "error: path=$path function=$function_name stack-usage=${usage_kind[$function_name]}" >&2
         exit 1
       }

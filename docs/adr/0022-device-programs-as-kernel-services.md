@@ -35,8 +35,8 @@ Adopt **(a)** now, keeping (b) as the long-term shape.
   then *invoke* it for a bounded number of steps. Programs are resumable: the
   new `yield` instruction (opcode 27) suspends the program and hands one
   value — for the keyboard, one key — to the invoking subject, and the next
-  invocation continues after it (`wifi_start`/`wifi_resume` in
-  `hardware/wifi/wifi-exec.h`, `Sim.resume`). Budgets bound each invocation,
+  invocation continues after it (`wifi_start` in `hardware/wifi/wifi-exec.h`,
+  `wifi_gen_resume` in `hardware/wifi/wifi-gen-exec.h`, `Sim.resume`). Budgets bound each invocation,
   so the driver cannot hold the CPU indefinitely.
 * The model (`LeanOS/DeviceCapability.lean`) layers device capabilities,
   bound programs and suspended machines over an unmodified

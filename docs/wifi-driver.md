@@ -4,10 +4,12 @@ LeanOS drives the Qotom's Broadcom BCM43224 (PCI `14e4:4353`, D11 core rev 23,
 N-PHY rev 6, radio 2056 rev 11) with device programs written in Lean. The lab
 kernel cannot run allocating Lean code, so the driver is expressed in a small
 register-machine instruction set (`LeanOS/Wifi/Bytecode.lean`); a hosted
-generator (`lake exe leanos-wifi-gen`) encodes a program and a runtime-free C
-executor (`hardware/wifi/wifi-exec.h`) performs only the effects each
-instruction names: MMIO, configuration space, delays, scratch memory, FIFOs
-and serial records.
+generator (`lake exe leanos-wifi-gen`) encodes a program and a runtime-free
+executor performs only the effects each instruction names: MMIO,
+configuration space, delays, scratch memory, FIFOs and serial records. The
+executor's step is the generated C of `LeanOS/Wifi/Exec.lean`, proved equal
+to `Sim.step` (ADR 0020); `hardware/wifi/wifi-gen-exec.h` supplies its hooks
+and step loop, and `hardware/wifi/wifi-exec.h` the image parser.
 
 | Layer | Modules |
 | --- | --- |
@@ -26,7 +28,12 @@ executor (`leanos-wifi-xcheck`); the reference library passes published
 vectors (`leanos-wifi-vectors`).
 
 Development runs from FreeBSD userland with `hardware/wifi/fbsd-runner.c`
-(`/dev/mem`, `/dev/pci`); the same program image is spliced into the lab
+(`/dev/mem`, `/dev/pci`), built together with the generated executor:
+`lean --c=Exec.c LeanOS/Wifi/Exec.lean` (or `.lake/build/ir/LeanOS/Wifi/Exec.c`
+after `lake build`), then
+`cc -O2 -ffunction-sections -I<lean-prefix>/include -Ihardware/wifi
+hardware/wifi/fbsd-runner.c Exec.c -Wl,--gc-sections`, where `<lean-prefix>`
+is `lean --print-prefix` (only its headers are used). The same program image is spliced into the lab
 kernel with `scripts/build-qotom-recovery-lab.py --wifi-program` and installed
 by `hardware/wifi/install-lab.sh`. Hardware observations:
 `hardware/lab/observations/qotom-wifi-scan-20260926`,

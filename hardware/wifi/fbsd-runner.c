@@ -2,7 +2,9 @@
 
    Lab-only: maps the Broadcom BAR0 through /dev/mem and reaches its PCI
    configuration space through /dev/pci, then executes a program image
-   produced by `lake exe leanos-wifi-gen`. Requires root. It performs no DMA.
+   produced by `lake exe leanos-wifi-gen` with the generated executor
+   (wifi-gen-exec.h); link the generated C of LeanOS/Wifi/Exec.lean (see
+   docs/wifi-driver.md). Requires root. It performs no DMA.
 
    usage: fbsd-runner [-t] [-s bus:dev:fn] program.bin */
 #include <sys/types.h>
@@ -18,7 +20,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "wifi-exec.h"
+#include "wifi-gen-exec.h"
 
 struct run {
     int pci_fd;

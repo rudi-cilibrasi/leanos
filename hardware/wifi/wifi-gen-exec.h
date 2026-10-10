@@ -1,22 +1,25 @@
-/* Generated device-program executor (issue #494, ADR 0020).
+/* The device-program executor (issue #494, ADR 0020).
 
    The instruction step is not written here: it is
    `leanos_device_program_step`, the C the Lean compiler generates for
    `LeanOS.Wifi.Exec.step` (LeanOS/Wifi/Exec.lean), which
-   `LeanOS.Wifi.ExecRefinement.step_eq` proves equal to `Sim.step`. This file
-   supplies only
+   `LeanOS.Wifi.ExecRefinement.step_eq` proves equal to `Sim.step`. It is the
+   only interpreter: the booted device-service kernel, the lab kernel and the
+   hosted runners all execute programs through it. This file supplies only
 
    * the named hook primitives `wifi_gen_*` that step calls, each a direct
      reading or update of the executor state of `wifi-exec.h` (registers, pc,
      return stack, scratch) or one device effect through the WH_* hooks; their
      Lean meaning is `LeanOS.Wifi.ExecRefinement.instHooksSt`; and
-   * `wifi_gen_resume`, the step loop (`Sim.loop`/`Sim.resume`).
+   * `wifi_gen_resume`, the step loop (`Sim.loop`/`Sim.resume`), and
+     `wifi_exec`, start-and-run.
 
-   Image parsing and `wifi_start` stay those of `wifi-exec.h`. Include this
-   file in exactly one translation unit: the hooks have external linkage
-   because the generated step calls them by name. The generated step ignores
-   the token a hook receives except to pass it on; a hook's result is the value
-   it delivers (or anything, for updates), which keeps the generated calls in
+   Image parsing and `wifi_start` are those of `wifi-exec.h`. Include this
+   file in exactly one translation unit and link the generated C of
+   LeanOS/Wifi/Exec.lean: the hooks have external linkage because the
+   generated step calls them by name. The generated step ignores the token a
+   hook receives except to pass it on; a hook's result is the value it
+   delivers (or anything, for updates), which keeps the generated calls in
    program order. */
 #ifndef LEANOS_WIFI_GEN_EXEC_H
 #define LEANOS_WIFI_GEN_EXEC_H
@@ -24,6 +27,9 @@
 #include "wifi-exec.h"
 
 #define WIFI_GEN_NEXT 12u
+
+/* The generated step (LeanOS.Wifi.Exec.deviceProgramStep). */
+uint64_t leanos_device_program_step(uint64_t);
 
 /* The executor the hooks act on: set by wifi_gen_resume for one call. */
 static struct wifi_vm *wifi_gen_vm;
@@ -172,7 +178,9 @@ uint64_t wifi_gen_done(uint64_t t, uint32_t st, uint32_t code) {
 }
 
 /* Run a started program with the generated step until it stops or the step
-   count reaches `step_limit` (`Sim.resume`). `code` as for `wifi_resume`. */
+   count reaches `step_limit` (`Sim.resume`): the total steps since
+   `wifi_start`. `code` receives the fail code, the yielded value or the
+   offending pc. */
 static int wifi_gen_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
                            uint64_t step_limit, uint32_t *code) {
     wifi_gen_vm = vm;
@@ -190,6 +198,17 @@ static int wifi_gen_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
     }
     *code = vm->pc;
     return WIFI_STEP_LIMIT;
+}
+
+/* Start and run `image` to completion (programs that never yield); a yield
+   ends the run with WIFI_YIELD. */
+static inline int wifi_exec(const uint8_t *image, uint32_t image_len,
+                            const struct wifi_hooks *h, uint64_t max_steps,
+                            uint32_t *code) {
+    static struct wifi_vm vm;
+    if (wifi_start(&vm, image, image_len))
+        return WIFI_BAD_IMAGE;
+    return wifi_gen_resume(&vm, h, max_steps, code);
 }
 
 #endif

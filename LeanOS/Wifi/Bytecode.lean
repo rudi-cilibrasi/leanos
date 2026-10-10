@@ -105,7 +105,7 @@ inductive Instr where
   | write8 (off : UInt32) (src : Operand)
   deriving Repr
 
-/-- Opcode numbers shared with `hardware/wifi/wifi-exec.h`. -/
+/-- Opcode numbers (decoded by `LeanOS.Wifi.Exec.step` and `Sim.step`). -/
 def opcode : Instr → UInt32
   | .halt => 0 | .fail _ => 1 | .cfgRead32 .. => 2 | .cfgWrite32 .. => 3
   | .read32 .. => 4 | .read16 .. => 5 | .write32 .. => 6 | .write16 .. => 7
