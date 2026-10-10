@@ -464,6 +464,27 @@ if ! grep -Fq 'tests/negative/IdentityCounterStepConsistency.lean' "$negative_lo
   exit 1
 fi
 
+if lake env lean tests/negative/CompositeChannelOverclaims.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: composite channel overclaims unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/CompositeChannelOverclaims.lean' "$negative_log" ||
+    ! grep -Fq 'ownOutputConsistentCounter 2 (Operation.terminateSubject 3) = true' \
+      "$negative_log" ||
+    ! grep -Fq 'ownStepConsistentCounter 2 (Operation.terminateSubject 3) = true' \
+      "$negative_log" ||
+    ! grep -Fq '(seed plan).capabilities.nextIdentity = (Channels.shifted plan).capabilities.nextIdentity' \
+      "$negative_log" ||
+    ! grep -Fq 'ownStepConsistentCounter 2 CompositeSwitchedChannels.ownSubtree = true' \
+      "$negative_log" ||
+    ! grep -Fq 'ownOutputConsistentCounter 2 CompositeSwitchedChannels.preempt = true' \
+      "$negative_log"; then
+  echo "error: composite channel fixture lacked an expected family or counter mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 rm -f "$negative_log"
 negative_log=""
 record_check_phase proof-integrity-and-negative-fixtures
