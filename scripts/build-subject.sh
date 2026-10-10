@@ -119,6 +119,12 @@ if [[ -n "$generated" ]]; then
   mkdir -p "$work/generated"
   cp "$generated" "$work/generated/"
   cflags+=(-ffunction-sections -fdata-sections -I"$work/generated" -I"$lean_include")
+  if "$cc" --version | sed -n '1p' | grep -qi clang; then
+    # As for the kernel's generated C (build-image.sh): with general
+    # registers only, Clang otherwise reports an extended FLT_EVAL_METHOD,
+    # which lean.h rejects; its no-SSE diagnostic stays a warning.
+    cflags+=(-ffp-eval-method=source -Wno-error=pragmas)
+  fi
   link_flags=(--gc-sections -e subject_entry)
 fi
 objects=()
