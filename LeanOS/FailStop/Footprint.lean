@@ -326,6 +326,9 @@ theorem CompositeState.eq_of_agreeOn_all {left right : CompositeState}
   have dmaAccepted := agree .dmaAccepted rfl
   have dmaObserved := agree .dmaObserved rfl
   have invalidationPublication := agree .invalidationPublication rfl
+  have issuers := agree .issuers rfl
+  have frameBudgets := agree .frameBudgets rfl
+  have scrub := agree .scrub rfl
   simp only [CompositeState.project] at *
   subst_vars
   rfl
@@ -351,7 +354,9 @@ macro "agree_subst " agree:ident : tactic => `(tactic| (
   agree_subst_one $agree .transfers; agree_subst_one $agree .blockingIPC
   agree_subst_one $agree .blockingContexts; agree_subst_one $agree .deferredCancels
   agree_subst_one $agree .directPortIO; agree_subst_one $agree .dmaAccepted
-  agree_subst_one $agree .dmaObserved; agree_subst_one $agree .invalidationPublication))
+  agree_subst_one $agree .dmaObserved; agree_subst_one $agree .invalidationPublication
+  agree_subst_one $agree .issuers; agree_subst_one $agree .frameBudgets
+  agree_subst_one $agree .scrub))
 
 /-- `DependsOn` is preservation under agreement on the support. -/
 theorem CompositeState.dependsOn_iff_agreeOn (support : Projection → Bool)

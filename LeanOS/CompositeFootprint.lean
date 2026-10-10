@@ -26,6 +26,12 @@ inductive Projection where
   | dmaAccepted
   | dmaObserved
   | invalidationPublication
+  /-- The never-reused subject and object lifetime issuers (issue #499). -/
+  | issuers
+  /-- The fixed boot-admitted frame commitment of the per-subject budgets. -/
+  | frameBudgets
+  /-- Frame contents and per-lifetime write flags of the scrub model. -/
+  | scrub
   deriving DecidableEq, Repr
 
 /-- The complete finite vocabulary, in `CompositeState` declaration order. -/
@@ -33,7 +39,7 @@ def Projection.all : List Projection :=
   [ .execution, .scheduler, .preemption, .virtualMemory, .ipc
   , .capabilities, .lifecycle, .resumable, .transfers, .blockingIPC
   , .blockingContexts, .deferredCancels, .directPortIO, .dmaAccepted
-  , .dmaObserved, .invalidationPublication ]
+  , .dmaObserved, .invalidationPublication, .issuers, .frameBudgets, .scrub ]
 
 /-- Every projection name occurs in the explicit finite vocabulary. -/
 theorem Projection.mem_all (projection : Projection) :

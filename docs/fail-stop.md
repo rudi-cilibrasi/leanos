@@ -102,12 +102,13 @@ form one import chain, in this order:
 | `AuthoritativeTraces` | Blocking slices, admissibility, and authoritative traces |
 | `Evidence` | Executable regressions and the dispatcher's initial states |
 
-Two modules branch off the chain and build in parallel with it:
+Three modules branch off the chain and build in parallel with it:
 
 | Module | Imports | Contents |
 | --- | --- | --- |
 | `ProjectionInvariants` | `Gate` | `ProjectionInvariant`, `RuntimeWellFormed` split by projection |
 | `ReadSets` | `AuthoritativeGate` | Read-independence theorems for every gate family |
+| `Resources` | `ReadSets`, `AuthoritativeTraces` | Issuers, frame budgets, frame contents, and issued subject creation |
 
 `AuthoritativeGate` imports `ProjectionInvariants` as well as
 `DeferredBlocking`. No module exceeds about 3,500 lines. Helpers that a later
@@ -255,33 +256,144 @@ existing proofs have not been rewritten into that form, so inserting a
 conjunct *into* `RuntimeWellFormed` would still touch them. That is why step 4
 adds conjuncts to a list instead.
 
-### State outside the composite
+### Lifecycle issuers, frame budgets, and frame contents
 
-`BoundedLifecycle` (the subject and object identity issuers), the per-subject
-frame budgets, and the frame-scrub state still live outside `CompositeState`.
-The issuers are in `BoundedLifecycle.Runtime`. The budgets and scrub state are
-in `FrameBudgetScenario.Runtime`, reached through `CompositeDispatcher` state
-tokens. This matters for item 1 of the #473 spawn gate. The plan to bring them
-in uses the machinery above:
+Before issue #499 these lived outside `CompositeState`. The issuers were in
+`BoundedLifecycle.Runtime`. The budgets and scrub state were in
+`FrameBudgetScenario.Runtime`, reached through `CompositeDispatcher` state
+tokens. #536 wrote a four-step plan for bringing them in. Steps 1 to 3 are now
+done, in a narrower form than written. Step 4 is not done. The module is
+`Resources`.
 
-1. Add `issuers`, `frameBudgets`, and `scrub` projections, following the
-   checklist above. No existing operation reads or writes them. Every existing
-   frame, read-independence, and preservation proof is therefore unchanged.
-2. State each subsystem's well-formedness as a `ProjectionInvariant` with
-   singleton support. State the cross-projection agreement as a separate
-   conjunct: issued identities bound the lifecycle's `issuedSubjects`, and
-   budgets bound owned frames. Its support also names `lifecycle` and
-   `virtualMemory`. Add both to the authoritative list. Only the operations
-   that write `lifecycle` or `virtualMemory` must re-prove the agreement
-   conjunct. These are creation, termination, cleanup, and mapping.
-3. Route `createSubject` through `BoundedLifecycle.createSubject` and give
-   allocation and release explicit `Operation` constructors with footprints.
-   Their frame lemmas follow from helper lemmas, as for every other operation.
-4. Move `CompositeDispatcher`'s state tokens onto the new projections.
-   `CompositeDispatcher` is a boot-compiled module, so this step changes its
-   generated C. It needs the hosted-boundary replay and an image rebuild.
+**Step 1: three new projections.** `CompositeState` has three new fields, each
+with a default:
 
-Steps 1 to 3 need no change to generated code.
+- `issuers` (`LifecycleIssuers`): the subject and object `LifetimeIssuer`s.
+- `frameBudgets` (`FrameBudgets`): the fixed frame commitment of
+  `FrameBudget.State`.
+- `scrub` (`FrameContents`): the frame bytes and lifetime write flags of
+  `FrameScrub.State`.
+
+The budgets and contents have no memory of their own. Each subsystem state is
+one projection of the composite, read against the composite's own lifecycle
+and virtual memory: `lifecycleRuntime`, `budgetState`, and `scrubState`. There
+is therefore still one physical-ownership model.
+
+No existing operation declares a read or write of the new projections. The
+following theorems check that by evaluating the footprints:
+
+- `Operation.footprint_unread_resources`
+- `AuthoritativeOperation.footprint_unread_resources`
+- `InvalidationOperation.footprint_unread_resources`
+
+`authoritativeGate_resources` and `InvalidationOperation.apply_resources`
+follow from the frame rule. Every existing frame, read-independence, and
+preservation proof was left unchanged. The only edits were one line each in
+`agree_subst` and `CompositeState.eq_of_agreeOn_all`.
+
+**Step 2: invariants.** `resourceInvariants` lists four `ProjectionInvariant`
+conjuncts. `ResourceWellFormed` is their conjunction, and
+`ResourceRuntimeWellFormed` adds `AuthoritativeRuntimeWellFormed`
+(`resourceRuntimeWellFormed_iff_all`).
+
+| Conjunct | Support | Says |
+| --- | --- | --- |
+| `issuersInvariant` | `issuers` | Both counters are at most the reserved terminal identity |
+| `issuerAgreementInvariant` | `issuers`, `lifecycle`, `virtualMemory` | Every issued subject identity, and every identity in either object history, is positive and below its counter |
+| `budgetAgreementInvariant` | `frameBudgets`, `lifecycle`, `virtualMemory` | Every committed frame is a modeled, unreserved allocator frame, committed to an issued subject |
+| `scrubInvariant` | `scrub`, `virtualMemory` | `FrameScrub.ScrubInvariant` over the composite memory |
+
+The conjuncts are a separate list and are not added to `authoritativeInvariants`,
+so no existing `AuthoritativeRuntimeWellFormed` proof changes. Which steps keep
+`ResourceWellFormed` is proved as follows:
+
+- **By the frame rule alone** (`authoritativeGate_preserves_resourceWellFormed_of_framed`):
+  every authoritative operation that writes neither `lifecycle` nor
+  `virtualMemory`. `resourceFramed_ordinary` lists them: IPC, NMI, return
+  selection and return, queue admission, and restart. The invalidation entry
+  points other than `acknowledgeCurrentUnmap` qualify as well
+  (`InvalidationOperation.apply_preserves_resourceWellFormed`).
+- **By history agreement**
+  (`authoritativeGate_preserves_resourceWellFormed_of_keepsHistory`): capability
+  copy, revocation, subtree revocation, sealed-transfer offer and accept, map,
+  and unmap. These operations write `lifecycle` and `virtualMemory`, but they
+  change no issued history, no allocator state, and no binding
+  (`applyOperation_historyAgrees`).
+- **Directly:** issued subject creation, described in step 3.
+- `bootRuntime_resourceRuntimeWellFormed`: the boot runtime satisfies the
+  combined invariant.
+
+**Not yet proved for the remaining steps.** No proof yet covers these steps,
+which also write `lifecycle` or `virtualMemory`:
+
+- interrupt cleanup, `syscall`, `resumePreempt`, and `protect`;
+- the caller-identity `createSubject`, `terminateSubject`, and
+  `terminateCurrent`;
+- `scheduleRemove`, `scheduleNext`, `scheduleYield`, and `scheduleTick`;
+- blocking send, receive, and cancel, and the deferred drain;
+- `acknowledgeCurrentUnmap`.
+
+Termination and the scheduler steps republish a lifecycle taken from the
+resumable or blocking views. For those, history agreement needs the
+composite's coherence and subsystem lemmas. The caller-identity
+`Operation.createSubject k` cannot keep `issuerAgreementInvariant` when `k` is
+at or above the counter. It remains the unchanged oracle path, which #535's
+unwinding proofs and `CompositeDispatcher` replay depend on.
+
+**Step 3: issued creation.** `LifecycleOperation.createSubject` takes no
+identity. `issueSubject` issues the subject counter's current value and runs
+the composite `createSubject` transition with exactly that identity. It
+commits the advanced counter only together with an accepted creation, and
+`lifecycleGate` runs it under the running latch. It has a declared footprint:
+`publicationProjections` plus `issuers`. The following are proved about it:
+
+- **Frame rule and read independence:** `issueSubject_frames`,
+  `lifecycleGate_frames`, `issueSubject_reads`, `lifecycleGate_reads`.
+- **Atomic failure:** `issueSubject_exhausted_unchanged`,
+  `issueSubject_rejected_unchanged`, and `lifecycleGate_unchanged_of_not_issued`.
+  An exhausted or rejected creation, or a busy or halted latch, leaves the
+  whole composite unchanged, both issuers included.
+  `issueSubject_exhausted_iff`: exhaustion is decided by the issuer alone.
+- **Fresh identity:** `issueSubject_issued`, `issueSubject_fresh`, and
+  `issueSubject_total`. Under the agreement invariant, a live issuer always
+  issues its next identity, and that identity was never issued.
+- **Refinement:** `issueSubject_refines`. The result, both issuers, the
+  lifecycle, and the mailboxes equal those of `BoundedLifecycle.createSubject`
+  on `lifecycleRuntime`. The composite also republishes the capability
+  registry into its memory view.
+- **Invariants:** `lifecycleGate_preserves_resourceRuntimeWellFormed`.
+- **Never-reuse lifted:** `composite_identity_no_reuse` lifts
+  `BoundedLifecycle.bounded_identity_no_reuse` to composite traces
+  (`CompositeStep`, `runSteps`). The trace may mix issued creation with any
+  authoritative operation that keeps the combined invariant
+  (`CompositeStep.Preserving`). Along such a trace:
+  - the combined invariant holds at the end;
+  - the issued identities strictly increase;
+  - every issued identity is above every subject in the starting history;
+  - an exhausted issuer stays exhausted.
+
+  `issuedAlong_strictly_increasing` and `runSteps_exhausted_absorbing` hold for
+  every trace, with no invariant, because no authoritative operation writes
+  the issuers.
+- **Budgets:** `budget_conservation` lifts `FrameBudget.usage_le_limit`,
+  commitment disjointness, and allocator conservation to every composite
+  state. `authoritativeGate_budget_unchanged` and
+  `issueSubject_budget_unchanged` keep each subject's usage and limit exactly.
+  The first covers every authoritative step that does not write
+  `virtualMemory`, and the second covers issued creation.
+  `issueSubject_zero_budget`: a newly issued subject has limit and usage zero,
+  which is the zero-budget clause of the #489 inheritance set.
+
+**What is narrower than the plan.**
+
+- **Allocation and release.** The plan gave them explicit constructors. They
+  have none, because the composite has no memory-allocation transition to
+  route them through. A budget-charged allocation that keeps `Coherent` and
+  `RuntimeWellFormed` is new composite semantics. That work belongs to #490.
+- **Step 4 is not done.** It would move `CompositeDispatcher`'s frame-budget
+  state tokens (`0x4001` to `0x4b01`) onto the new projections. Those tokens
+  still denote `FrameBudgetScenario.Runtime` states, whose frames are a
+  separate scenario pool. This change does not alter generated C.
 
 ## Diagnostic and trusted boundary
 
