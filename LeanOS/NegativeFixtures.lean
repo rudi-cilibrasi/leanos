@@ -17,6 +17,7 @@ import LeanOS.NegativeFixtures.PageFaultAgreement
 import LeanOS.NegativeFixtures.PageFaultProvenance
 import LeanOS.NegativeFixtures.SecurityClaims
 import LeanOS.NegativeFixtures.SharedContainment
+import LeanOS.NegativeFixtures.SpawnIdentityRollback
 import LeanOS.NegativeFixtures.StaleTranslation
 import LeanOS.NegativeFixtures.UserFaultClass
 import LeanOS.NegativeFixtures.VTdBootPlan
