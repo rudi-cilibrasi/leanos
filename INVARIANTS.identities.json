@@ -7833,6 +7833,12 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.q35FrameSourcePolicy_sane",
+      "display": "q35FrameSourcePolicy_sane",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.q35XhciPolicy_sane",
       "display": "q35XhciPolicy_sane",
       "kind": "theorem"
@@ -19754,6 +19760,138 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.deviceAuthorize_network",
+      "display": "deviceAuthorize_network",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyCheck_fetch",
+      "display": "frameCopyCheck_fetch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyCheck_fetchRequest",
+      "display": "frameCopyCheck_fetchRequest",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyCheck_nonholder",
+      "display": "frameCopyCheck_nonholder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyCheck_send",
+      "display": "frameCopyCheck_send",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyCheck_sendRequest",
+      "display": "frameCopyCheck_sendRequest",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyDecide_fetch",
+      "display": "frameCopyDecide_fetch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyDecide_fetch_iff",
+      "display": "frameCopyDecide_fetch_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyDecide_nonholder",
+      "display": "frameCopyDecide_nonholder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyDecide_send",
+      "display": "frameCopyDecide_send",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.frameCopyDecide_send_iff",
+      "display": "frameCopyDecide_send_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.gt1514_iff",
+      "display": "gt1514_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.lt14_iff",
+      "display": "lt14_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.network_no_device_effects",
+      "display": "network_no_device_effects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.nonholder_refused",
+      "display": "nonholder_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.rangeOk_iff",
+      "display": "rangeOk_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.run_driver_mem",
+      "display": "run_driver_mem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.run_mem_outside_window",
+      "display": "run_mem_outside_window",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.step_mem_changed",
+      "display": "step_mem_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.step_rx_changed",
+      "display": "step_rx_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.step_tx_changed",
+      "display": "step_tx_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/NetworkSubject.lean",
+      "qualified": "LeanOS.NetworkSubject.writeBytes_outside",
+      "display": "writeBytes_outside",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/NotifyReply.lean",
       "qualified": "LeanOS.NotifyReply.call_exhausted_unchanged",
       "display": "call_exhausted_unchanged",
@@ -22805,6 +22943,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.lifetime_identity_no_reuse_nonvacuous",
       "display": "lifetime_identity_no_reuse_nonvacuous",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.network_subject_confinement",
+      "display": "network_subject_confinement",
       "kind": "theorem"
     },
     {

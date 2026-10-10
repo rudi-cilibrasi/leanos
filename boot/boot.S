@@ -1510,7 +1510,8 @@ isr80_cld:
     je 32f
 #if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || \
     defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) || \
-    defined(LEANOS_FAULT_HANDLER_SCENARIO)
+    defined(LEANOS_FAULT_HANDLER_SCENARIO) || \
+    defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
     cmp $0x3c04, %rax
     je 33f
 #endif
@@ -1884,11 +1885,12 @@ isr80_cld:
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
-#if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
-33: /* The console server or the endpoint directory blocked again on
-       endpoint 12: preserve C's exact continuation and resume A, whose
-       result word the kernel sets in switch_complete (0 for the console
-       server's send). */
+#if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) || \
+    defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+33: /* The console server, the endpoint directory or the network subject
+       blocked again on endpoint 12: preserve C's exact continuation and
+       resume A, whose result word the kernel sets in switch_complete (0 for
+       the console server's send). */
     mov %rsp, %rsi
     lea saved_context_c(%rip), %rdi
     mov $20, %ecx
@@ -2381,6 +2383,38 @@ user_a_entry:
     int $0x80
 9:  ud2
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
+#ifdef LEANOS_NETWORK_SUBJECT_SCENARIO
+    /* Driver subject (#450).  It holds the device capability for the frame
+       source but not the frame endpoint: its frame fetch (64) is refused
+       (bit 63 | 1, not the holder).  It then loops: the next frame from the
+       bound device program (60: the sequence number in the high half, the
+       length in the low half; 0 ends the stream), sent to the network
+       subject C as two words, the length (RBX) and the sequence number
+       (RCX), on endpoint 12 (8); it never sees the frame's bytes.  It
+       finishes with 61. */
+    mov $user_a_stack, %rbx
+    mov $64, %eax
+    int $0x80
+    movabs $0x8000000000000001, %rcx
+    cmp %rcx, %rax
+    jne 9f
+1:  mov $60, %eax
+    int $0x80
+    test %rax, %rax
+    jz 2f
+    mov %rax, %rcx
+    shr $32, %rcx
+    mov %eax, %ebx
+    mov $12, %edx
+    mov $8, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    jmp 1b
+2:  mov $61, %eax
+    int $0x80
+9:  ud2
+#endif
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     /* Receiver for the template-built example subject C (#484): take the
        one word C queued on endpoint 12 (returned in RAX), then report it
@@ -3055,6 +3089,20 @@ user_b_entry:
     int $0x80
 1:  pause
     jmp 1b
+#endif
+#ifdef LEANOS_NETWORK_SUBJECT_SCENARIO
+    /* Bystander (#450): it holds neither the device nor the frame endpoint.
+       Its frame fetch (64) is refused; it reports the result (RDX) with
+       its initial-context canaries (62). */
+    mov $user_b_stack, %rbx
+    mov $64, %eax
+    int $0x80
+    mov %rax, %rdx
+    mov %r12, %rbx
+    mov %r13, %rcx
+    mov $62, %eax
+    int $0x80
+    ud2
 #endif
     /* Bystander subject: report the two canaries of the kernel-owned initial
        context it was dispatched from (syscall 62), in its own space. */

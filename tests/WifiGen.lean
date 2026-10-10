@@ -4,6 +4,8 @@ import LeanOS.DeviceProgramConfinement
 import LeanOS.Storage.Ahci
 import LeanOS.Storage.AhciRead
 import LeanOS.Net.Rtl8168
+import LeanOS.Net.FrameSource
+import LeanOS.Wifi.Endpoint
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
 consumed by `hardware/wifi/wifi-exec.h`.
@@ -30,6 +32,8 @@ def admittedPolicy (p : Program) : Option Policy :=
     some LeanOS.DeviceProgramConfinement.q35AhciPolicy
   else if p.effTarget == LeanOS.Net.Rtl8168.target then
     some LeanOS.DeviceProgramConfinement.qotomRtl8168Policy
+  else if p.effTarget == LeanOS.Net.FrameSource.target then
+    some LeanOS.DeviceProgramConfinement.q35FrameSourcePolicy
   else none
 
 /-- Check `p` against its target's policy and attach the policy. -/
@@ -120,12 +124,21 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
         match chain with
         | some c => { base with txChainOverride := some c }
         | none => base
+      -- LEANOS_WIFI_NETWORK_SUBJECT: serve the frame endpoint of the ring-3
+      -- network subject (issue #450) instead of answering in the driver.
+      let endpoint := (← IO.getEnv "LEANOS_WIFI_NETWORK_SUBJECT").isSome
       return if let some secs := serve then
-               LeanOS.Wifi.Responder.connectAndServe fw cfg6 bssid pmk
-                 (secs * 1000000).toUInt32
+               if endpoint then
+                 LeanOS.Wifi.Endpoint.connectAndServe fw cfg6 bssid pmk
+                   (secs * 1000000).toUInt32
+               else
+                 LeanOS.Wifi.Responder.connectAndServe fw cfg6 bssid pmk
+                   (secs * 1000000).toUInt32
              else if full then LeanOS.Wifi.Connect.connectDhcp fw cfg6 bssid pmk
              else connect fw (LeanOS.Wifi.NPhy.qotom 6) bssid pmk),
    ("ahci-identify", pure LeanOS.Storage.Ahci.program),
+   ("net-q35-frames", pure LeanOS.Net.FrameSource.program),
+   ("net-bcm-frames", pure LeanOS.Net.FrameSource.bcmProgram),
    ("ahci-q35-service", pure LeanOS.Storage.AhciRead.program),
    ("rtl8168-arp", pure LeanOS.Net.Rtl8168.program),
    ("kbd", do

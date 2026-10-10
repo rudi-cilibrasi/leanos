@@ -46,6 +46,7 @@ GENERATED_MODULES = (
     "TimerServer",
     "FrameServer",
     "WifiExec",
+    "NetworkSubject",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -72,6 +73,7 @@ FAULT_DISPATCH_PARTS = (
     "TimerServer",
     "FrameServer",
     "WifiExec",
+    "NetworkSubject",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"
@@ -119,8 +121,9 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             or not name.startswith("subject-")
             or name in build["boot_objects"]
             or not isinstance(entry, dict)
-            or not {"source", "slot"} <= set(entry) <= {"source", "slot", "admitted"}
+            or not {"source", "slot"} <= set(entry) <= {"source", "slot", "admitted", "generated"}
             or entry.get("admitted", True) is not True
+            or not re.fullmatch(r"[A-Z][A-Za-z0-9]*", str(entry.get("generated", "X")))
             or not isinstance(entry["source"], str)
             or not re.fullmatch(r"subjects/[a-z][a-z0-9-]*", entry["source"])
             or entry["slot"] != "c"
@@ -436,12 +439,23 @@ def render_graph(
                 f"--admitted-elf {build}/{name}.admitted.elf "
                 f"--admitted-plan {build}/{name}.admitted.tsv "
             )
+        generated = ""
+        if entry.get("generated"):
+            # Issue #450: the subject includes the C the Lean compiler
+            # generated for one module (build-image.sh's lean_c_modules).
+            generated_c = build_dir / f"{entry['generated']}.c"
+            inputs.append(generated_c)
+            generated = (
+                f"--generated {make_escape(str(generated_c))} "
+                f"--lean-include {make_escape(str(lean_prefix / 'include'))} "
+            )
         builder = make_escape(str(source_root / "scripts/build-subject.sh"))
         lines.extend(
             [
                 f"{target}: " + " ".join(make_escape(str(path)) for path in inputs),
                 f"\t{builder} --cc $(IMAGE_CC) --slot {entry['slot']} --output $@ "
                 + admission
+                + generated
                 + make_escape(str(source_dir)),
             ]
         )

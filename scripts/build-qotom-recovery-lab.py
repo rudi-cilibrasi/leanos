@@ -63,6 +63,7 @@ p.add_argument('--nosmap-control', action='store_true', help='enable SMEP and va
 p.add_argument('--wifi-program', type=Path, help='run a Lean-generated BCM43224 WiFi program (leanos-wifi-gen image) after the CPU/MSR gate')
 p.add_argument('--lab-program', type=Path, action='append', default=[], help='run a Lean-generated device program image (repeatable; after any --wifi-program)')
 p.add_argument('--ipc-device-stream', action='store_true', help='with --blocking-ipc-integration and one yield-per-key --lab-program: after the first exchange, subject 1 streams keys from the kernel-hosted program to subject 2 over the verified blocking IPC (issue #449 stage 3)')
+p.add_argument('--network-subject', action='store_true', help='with --ipc-device-stream (issue #450): after the first exchange, subject 2 is the WiFi driver subject and subject 1 runs the ring-3 network subject built from subjects/net with the generated responder; frames cross through the bounded copy roots, 16 bytes per transfer. Use the net-bcm-frames image for a keyless smoke test or a LEANOS_WIFI_NETWORK_SUBJECT connect image (embeds the PMK: never commit it)')
 p.add_argument('--copy-root-publication', action='store_true', help='construct, publish, and exercise the bounded Qotom copy roots')
 p.add_argument('--entry-integration', action='store_true', help='exercise a closed-root CPL3 entry and validated machine return')
 p.add_argument('--exception-integration', action='store_true', help='exercise a terminal CPL3 #UD after validated entry returns')
@@ -302,6 +303,8 @@ if a.q35_device_lab and (a.mode != 'completion' or not a.lab_program or a.wifi_p
     raise SystemExit('--q35-device-lab needs --lab-program images and completion mode')
 if a.device_service and not a.lab_program:
     raise SystemExit('--device-service needs --lab-program images')
+if a.network_subject and not a.ipc_device_stream:
+    raise SystemExit('--network-subject needs --ipc-device-stream')
 if a.ipc_device_stream and (not a.blocking_ipc_integration or len(a.lab_program) != 1 or
                             a.wifi_program or a.device_service or a.q35_device_lab):
     raise SystemExit('--ipc-device-stream needs --blocking-ipc-integration and exactly one --lab-program')
@@ -326,7 +329,7 @@ if lab_programs:
         if image[:4] != b'LWIF':
             raise SystemExit(f'{f} is not a leanos-wifi-gen image')
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
-    text = text.replace(marker, '#ifndef LEANOS_DEVICE_SERVICE_SCENARIO\nstatic void lab_wifi_run(void);\n#endif\n' + marker)
+    text = text.replace(marker, '#if !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)\nstatic void lab_wifi_run(void);\n#endif\n' + marker)
     gate = '    if (result != 1) pre_admission_fail("j1900-msr-readback");'
     if text.count(gate) != 1:
         raise SystemExit('unsupported CPU/MSR gate shape')
@@ -334,10 +337,12 @@ if lab_programs:
         # The stream binds after whole-platform admission instead of running
         # at the CPU gate; keep the one-shot runner referenced but unused.
         text = '#define LEANOS_QOTOM_IPC_DEVICE_STREAM 1\n' + text
+        if a.network_subject:
+            text = '#define LEANOS_QOTOM_NETWORK_SUBJECT 1\n' + text
         text = text.replace('\nstatic void lab_wifi_run(void);\n',
                             '\nstatic void lab_wifi_run(void) __attribute__((unused));\n')
     elif not a.q35_device_lab:
-        text = text.replace(gate, gate + '\n#ifndef LEANOS_DEVICE_SERVICE_SCENARIO\n    lab_wifi_run();\n#endif')
+        text = text.replace(gate, gate + '\n#if !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)\n    lab_wifi_run();\n#endif')
     arrays = ''
     for k, image in enumerate(images):
         body = ',\n'.join(', '.join(str(b) for b in image[i:i + 24]) for i in range(0, len(image), 24))
@@ -350,7 +355,7 @@ if lab_programs:
     marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
     # The overlaid kernel.c also builds the canonical device-service variant,
     # which hosts its own executor and hooks; the lab harness stays out of it.
-    text = text.replace(marker, '#ifndef LEANOS_DEVICE_SERVICE_SCENARIO\n#define WIFI_HOOKS_DIRECT 1\n' +
+    text = text.replace(marker, '#if !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)\n#define WIFI_HOOKS_DIRECT 1\n' +
                         ('#define LAB_PM_TIMER_PORT 0x608u\n#define LAB_Q35_DEVICE_LAB 1\n' if a.q35_device_lab else '') +
                         ('#define LAB_DEVICE_SERVICE 1\n' if a.device_service else '') +
                         (root / 'hardware/wifi/wifi-exec.h').read_text() + '\n' +
@@ -544,6 +549,48 @@ if blocking_profile_object is not None:
     if inserted < 2:
         raise SystemExit('blocking profile object missing prelink/final graph anchors')
     graph = '\n'.join(lines) + '\n'
+def build_network_subject(work):
+    """The q35 network subject's sources (subjects/net/main.c with the
+    generated responder NetEcho.c) compiled for the Qotom's subject 1: the
+    subject build rule's flags, the frame buffer at the bottom of A's stack
+    range (NET_EXTERNAL_FRAME), only what subject_main reaches, code only,
+    linked into .user.a.text with one global entry symbol."""
+    generated = build / 'NetEcho.c'
+    if not generated.is_file():
+        raise SystemExit('prepared build lacks NetEcho.c; rebuild canonical inputs first')
+    lean_prefix = subprocess.check_output(['lean', '--print-prefix'], text=True).strip()
+    obj, linked, final = work / 'net.o', work / 'net-linked.o', work / 'network-subject.o'
+    script = work / 'network-subject.ld'
+    script.write_text('SECTIONS {\n  .user.a.text : { *(.text .text.*) }\n'
+                      '  /DISCARD/ : { *(.comment) *(.note.gnu.*) *(.eh_frame) }\n}\n')
+    subprocess.run(['gcc', '-m64', '-std=c11', '-ffreestanding', '-fno-builtin',
+                    '-fno-stack-protector', '-fno-pic', '-fno-common', '-mno-red-zone',
+                    '-mgeneral-regs-only', '-fno-jump-tables', '-fno-asynchronous-unwind-tables',
+                    '-fno-unwind-tables', '-fcf-protection=none', '-O2', '-Wall', '-Wextra',
+                    '-Werror', '-ffunction-sections', '-fdata-sections',
+                    '-DNET_EXTERNAL_FRAME=user_a_stack', f'-I{root / "subjects/include"}',
+                    f'-I{build}', f'-I{lean_prefix}/include', '-c',
+                    str(root / 'subjects/net/main.c'), '-o', str(obj)], cwd=root, check=True)
+    subprocess.run(['ld', '-m', 'elf_x86_64', '-r', '--build-id=none', '--gc-sections',
+                    '-e', 'subject_main', '-T', str(script), '-o', str(linked), str(obj)],
+                   cwd=root, check=True)
+    subprocess.run(['objcopy', '--strip-unneeded', '--keep-symbol=subject_main',
+                    '--redefine-sym', 'subject_main=qotom_network_subject_main',
+                    str(linked), str(final)], cwd=root, check=True)
+    subprocess.run(['objcopy', '--keep-global-symbol=qotom_network_subject_main',
+                    str(final)], cwd=root, check=True)
+    sections = subprocess.check_output(['objdump', '-h', str(final)], text=True)
+    allocated = [line.split()[1] for line in sections.splitlines()
+                 if len(line.split()) > 1 and line.split()[0].isdigit() and
+                 line.split()[1] != '.note.GNU-stack']
+    if allocated != ['.user.a.text']:
+        raise SystemExit(f'network subject must be code only, found sections {allocated}')
+    undefined = subprocess.check_output(['nm', '-u', str(final)], text=True).split()
+    if [u for u in undefined if u != 'U'] != ['user_a_stack']:
+        raise SystemExit(f'network subject has unexpected undefined symbols {undefined}')
+    return final
+
+
 if a.copy_root_publication:
     copy_root_dir = out / 'copy-roots'
     copy_root_dir.mkdir(parents=True, exist_ok=True)
@@ -564,11 +611,15 @@ if a.copy_root_publication:
             entry_command.append('-DLEANOS_QOTOM_EXCEPTION_INTEGRATION=1')
         if a.ipc_device_stream:
             entry_command.append('-DLEANOS_QOTOM_IPC_DEVICE_STREAM=1')
+        if a.network_subject:
+            entry_command.append('-DLEANOS_QOTOM_NETWORK_SUBJECT=1')
         subprocess.run(entry_command + ['-c', 'experiments/copy-roots/entry.S',
                         '-o', str(entry_object)], cwd=root, check=True)
         subprocess.run(['gcc', '-m64', '-c', 'experiments/copy-roots/return.S',
                         '-o', str(return_object)], cwd=root, check=True)
         entry_objects = [entry_object, return_object]
+        if a.network_subject:
+            entry_objects.append(build_network_subject(copy_root_dir))
     anchor = str(build / 'pci-config-read.o')
     lines = graph.splitlines()
     inserted = 0
@@ -658,7 +709,8 @@ if a.blocking_ipc_integration:
     blocking_ipc_audit = out / 'blocking-ipc-integration-audit.json'
     checked = subprocess.run([
         'python3', 'scripts/audit-qotom-blocking-ipc-integration.py',
-        *(['--device-stream'] if a.ipc_device_stream else []), str(elf)],
+        *(['--network-subject'] if a.network_subject else
+          ['--device-stream'] if a.ipc_device_stream else []), str(elf)],
         cwd=root, check=True, capture_output=True)
     blocking_ipc_audit.write_bytes(checked.stdout)
     ap_start_audit = out / 'ap-start-audit.json'
@@ -823,7 +875,7 @@ if a.blocking_ipc_integration:
               build / 'qotom-platform-profile-inputs.h',
               root / 'scripts/expectations/blocking-ipc.transcript',
               blocking_profile_object, blocking_ipc_audit, ap_start_audit]
-manifest = {'wifi_program_sha256': hashlib.sha256(a.wifi_program.read_bytes()).hexdigest() if a.wifi_program else None, 'lab_program_sha256': [hashlib.sha256(f.read_bytes()).hexdigest() for f in a.lab_program], 'blocking_ipc_integration': a.blocking_ipc_integration, 'ipc_device_stream': a.ipc_device_stream, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+manifest = {'wifi_program_sha256': hashlib.sha256(a.wifi_program.read_bytes()).hexdigest() if a.wifi_program else None, 'lab_program_sha256': [hashlib.sha256(f.read_bytes()).hexdigest() for f in a.lab_program], 'blocking_ipc_integration': a.blocking_ipc_integration, 'ipc_device_stream': a.ipc_device_stream, 'network_subject': a.network_subject, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

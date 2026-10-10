@@ -47,6 +47,8 @@ elif [[ "$scenario" == ipc-stream ]]; then
   default_image="build/boot/leanos-${version}-x86_64-ipc-stream.iso"
 elif [[ "$scenario" == example-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-example-subject.iso"
+elif [[ "$scenario" == network-subject ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-network-subject.iso"
 elif [[ "$scenario" == fault-handler ]]; then
   default_image="build/boot/leanos-${version}-x86_64-fault-handler.iso"
 elif [[ "$scenario" == timer-server ]]; then

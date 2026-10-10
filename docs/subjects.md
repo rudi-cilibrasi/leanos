@@ -20,6 +20,7 @@ the image at build time, like every other byte of it.
 | `subjects/timer-server/` | The timer server booted by the `timer-server` image ([timer-server.md](timer-server.md), #487) |
 | `subjects/directory/` | The endpoint directory booted by the `endpoint-directory` image ([endpoint-directory.md](endpoint-directory.md), #485) |
 | `subjects/frame-server/` | The frame server booted by the `frame-server` image ([frame-server.md](frame-server.md), #486) |
+| `subjects/net/` | The network subject booted by the `network-subject` image ([network-subject.md](network-subject.md), #450); it includes a Lean-generated responder |
 | `subjects/runtime/entry.S` | The entry stub linked first into every subject |
 | `subjects/include/leanos/subject.h` | The only kernel interface: `int $0x80` wrappers |
 | `subjects/subject.ld` | The one linker script, used with `ld -r` |
@@ -91,6 +92,16 @@ one subject:
    `user_c_template_text`. Every other symbol gets the `user_c_` prefix and
    becomes local, so nothing in a subject can collide with or bind to a
    kernel symbol.
+
+A subject may include C that the Lean compiler generated for one module, as
+the network subject includes its responder. The manifest entry names the
+module (`"generated": "NetEcho"`), and the rule gets `--generated FILE
+--lean-include DIR`. The file is includable under its own name, and the
+subject defines the hooks the generated code calls before including it, so
+they inline. Every source is then compiled with `-ffunction-sections`. The
+link of step 2 keeps only what `subject_entry` reaches, and the undefined
+symbols of the discarded Lean runtime glue are stripped before step 3, which
+must still find none.
 
 `scripts/test-build-subject.sh` runs from `check.sh`. It builds the template,
 the example and the directory, and requires every fixture in

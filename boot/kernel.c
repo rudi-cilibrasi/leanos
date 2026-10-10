@@ -136,6 +136,11 @@ extern uint64_t page_directory_b[], page_table_b[];
     (!defined(LEANOS_DEVICE_SERVICE_SCENARIO) || defined(LEANOS_KEYBOARD_ECHO_SCENARIO))
 #error "the ahci-service image is the two-subject device-service image for the q35 AHCI"
 #endif
+#if defined(LEANOS_NETWORK_SUBJECT_SCENARIO) && \
+    (!defined(LEANOS_THREE_SUBJECT_SCENARIO) || defined(LEANOS_DEVICE_SERVICE_SCENARIO) || \
+     defined(LEANOS_CONSOLE_SERVER_SCENARIO))
+#error "the network-subject image is the three-subject image with a frame source and no assigned device"
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 /* Third subject C (issue #472), linked only into the three-subject image. */
 extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
@@ -4732,7 +4737,8 @@ static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
 static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
     uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
 static void check_initial_b_frame(const volatile uint64_t *frame);
-#if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+#if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) && \
+    !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
 static unsigned three_subject_step;  /* 0 C, 1 B, 2 A, 3 C woken */
 static uint64_t three_subject_sent0, three_subject_sent1;
 #endif
@@ -4761,6 +4767,8 @@ static void three_subject_require_root(const uint64_t *root) {
 }
 
 #if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
+/* The network-subject image has its own dispatcher (network_subject_syscall). */
+#ifndef LEANOS_NETWORK_SUBJECT_SCENARIO
 static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
                                       uint64_t arg1, uint64_t arg2) {
     if (number == 7 && current_subject == 3 && three_subject_step == 0) {
@@ -4836,6 +4844,7 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
     }
     fail("three-subject-switch");
 }
+#endif
 #elif defined(LEANOS_CONSOLE_SERVER_SCENARIO)
 /* Console server (issue #472, slices 2 and 3; docs/console-server.md).
    Design (a): the kernel keeps the UART and exposes one console object.  Its
@@ -5883,6 +5892,494 @@ static uint64_t example_subject_syscall(uint64_t number, uint64_t arg0,
 }
 #endif
 
+#ifdef LEANOS_NETWORK_SUBJECT_SCENARIO
+/* Network subject (issue #450; docs/network-subject.md,
+   LeanOS.NetworkSubject).  This image is the three-subject image with
+   subject C built from subjects/net by the subject template.
+
+   A, the driver subject, holds the device capability for the frame source:
+   the Lean device program `net-q35-frames` (LeanOS.Net.FrameSource), which
+   drives no device and stands in for the WiFi driver program.  Each
+   invocation (syscall 60) resumes it in budgeted slices until it leaves a
+   frame in its executor scratch and yields the frame's length; the kernel
+   returns the length and a sequence number (from 1) to A, never the frame.
+   A sends both words to C over endpoint 12.
+
+   C, the network subject, holds the frame endpoint and no device
+   capability.  It asks the kernel to copy the pending frame into a buffer
+   of its own (64) and to copy its reply out (65).  The kernel decides each
+   request from its own endpoint table and checks the decision against the
+   generated witness `leanos_frame_copy_check`
+   (NetworkSubject.frameCopyCheck_fetch, _send, _nonholder): only C, only
+   with the endpoint in the right state, only a frame length, and only for a
+   range wholly inside C's own stack page, the page its address space maps
+   writable for it alone.  Accepted copies go through the SMAP user-copy
+   window, under C's address space.  The reply lands in the scratch's
+   transmit slot, which the frame source checks against the reference
+   responder at its next invocation.  B holds nothing.
+
+   The device capability table is checked at boot against the generated
+   witness `leanos_device_authorize` (KeyboardEcho.deviceAuthorize: only A
+   holds device 0), and every frame exchange against
+   `leanos_blocking_ipc_event`, C in the model's receiver role, as in the
+   keyboard-echo image. */
+extern char user_c_template_text[];
+#define NETWORK_ENDPOINT 12u
+#define NETWORK_STACK_BYTES 2048u
+#define NETWORK_C_RESUMES_A 0x3c04u
+#define NETWORK_DRIVER 1u
+#define NETWORK_HOLDER 3u
+/* The model's device index of the frame source, and one other index. */
+#define NETWORK_DEVICE 0u
+#define NETWORK_OTHER_DEVICE 1u
+#define NETWORK_WITNESS_ACCEPT 1u
+#define NETWORK_WITNESS_REFUSE 2u
+/* A refused request: bit 63 and the reason. */
+#define NETWORK_REFUSED (UINT64_C(1) << 63)
+#define NETWORK_NO_DEVICE 7u
+/* LeanOS.Net.FrameSource's endpoint layout in executor scratch. */
+#define NETWORK_RX_AT 0x3E000u
+#define NETWORK_TX_AT 0x3E800u
+#define NETWORK_TX_LEN_AT 0x3F000u
+#define NETWORK_CONFIG_BYTES 10u
+#define NETWORK_FRAME_MIN 14u
+#define NETWORK_FRAME_MAX 1514u
+/* LeanOS.NetworkSubject: request words and the witness's reasons. */
+#define NETWORK_OP_FETCH 1u
+#define NETWORK_OP_SEND 2u
+#define NETWORK_BUDGET 200000u
+#define NETWORK_STEP_LIMIT UINT64_C(4000000)
+/* The frame source's records (LeanOS.Net.FrameSource.Tag). */
+#define NETWORK_TAG_REPLY_MATCHED 0x5101u
+#define NETWORK_TAG_NO_REPLY_MATCHED 0x5102u
+#define NETWORK_MODEL_SENDER 1u
+#define NETWORK_MODEL_RECEIVER 2u
+
+#define WIFI_HOOKS_DIRECT 1
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#include "../hardware/wifi/wifi-gen-exec.h"
+#pragma GCC diagnostic pop
+#include "network-subject-program.h"
+
+static const char *const network_reasons[] = {
+    "none", "not-holder", "endpoint-state", "frame-length", "outside-window",
+    "unknown-operation"
+};
+
+/* The widest policy the frame source may declare (`q35FrameSourcePolicy`):
+   a 512-byte window and nothing else. Its target is the reserved identity
+   0xffffffff, which no PCI function reports. */
+static const struct wifi_policy network_source_profile = {
+    1, 0, 0x200u, 0, 0, 0, 0, 0, { 0 }, 0, { { 0, 0, 0, 0 } } };
+
+/* Indexed by subject: 1 when the subject holds the device capability for
+   the frame source. */
+static const uint8_t network_device_capabilities[4] = {
+    [NETWORK_DRIVER] = 1,
+};
+/* The frame endpoint's one holder. */
+static const uint8_t network_endpoint_holder = NETWORK_HOLDER;
+
+static const uint64_t network_ipc_words[4] = {
+    0x0000000100010101ull, 0x0000000100010202ull,
+    0x0000000200020303ull, 0x0001000200020404ull,
+};
+
+static struct wifi_vm network_vm;
+static unsigned network_bound, network_ended;
+/* 0 C runs, 1 B runs, 2 A runs fresh, 3 C serves, 4 A resumed. */
+static unsigned network_phase;
+static unsigned network_waiting;
+static uint64_t network_seq, network_rx_len, network_rx_pending, network_tx_pending;
+static uint64_t network_tx_len, network_sent_len, network_sent_seq;
+static uint64_t network_fetches, network_replies, network_checked;
+static uint64_t network_refusals, network_b_result;
+static uint64_t network_ipc_step, network_ipc_edges;
+
+/* The frame source drives no device: every configuration and MMIO hook
+   fail-stops (its policy admits none), it has no DMA, and it never waits. */
+__attribute__((noinline, noipa)) uint32_t wifi_hook_cfg_read32(uint32_t off) {
+    (void)off; fail("network-source-config");
+}
+__attribute__((noinline, noipa)) void wifi_hook_cfg_write32(uint32_t off, uint32_t value) {
+    (void)off; (void)value; fail("network-source-config");
+}
+uint32_t wifi_hook_mmio_read32(uint32_t off) { (void)off; fail("network-source-mmio"); }
+uint16_t wifi_hook_mmio_read16(uint32_t off) { (void)off; fail("network-source-mmio"); }
+uint8_t wifi_hook_mmio_read8(uint32_t off) { (void)off; fail("network-source-mmio"); }
+void wifi_hook_mmio_write32(uint32_t off, uint32_t value) {
+    (void)off; (void)value; fail("network-source-mmio");
+}
+void wifi_hook_mmio_write16(uint32_t off, uint16_t value) {
+    (void)off; (void)value; fail("network-source-mmio");
+}
+void wifi_hook_mmio_write8(uint32_t off, uint8_t value) {
+    (void)off; (void)value; fail("network-source-mmio");
+}
+uint32_t wifi_hook_phys(uint32_t off) { (void)off; return 0; }
+__attribute__((noinline, noipa)) void wifi_hook_delay_us(uint32_t us) {
+    (void)us; fail("network-source-delay");
+}
+
+/* The frame source's one record per frame: the reply the network subject
+   returned matched the reference responder, or there was rightly none. The
+   kernel also requires it to name the frame just delivered and the reply
+   length C sent. */
+void wifi_hook_print(uint32_t tag, uint32_t value) {
+    uint64_t frame = (value >> 16) + 1u;
+    uint64_t bytes = value & 0xffffu;
+    if (tag == NETWORK_TAG_NO_REPLY_MATCHED) {
+        frame = (uint64_t)value + 1u;
+        bytes = 0;
+    } else if (tag != NETWORK_TAG_REPLY_MATCHED) {
+        fail("network-source-record");
+    }
+    if (frame != network_seq || bytes != network_sent_len ||
+        (bytes != 0 && network_sent_seq != network_seq))
+        fail("network-source-check");
+    network_checked++;
+    serial_puts(LEANOS_SERIAL_10_NET " event=checked frame=");
+    serial_u64(frame);
+    if (bytes != 0) {
+        serial_puts(" reply-bytes=");
+        serial_u64(bytes);
+    } else {
+        serial_puts(" reply=none");
+    }
+    serial_puts(" reference=match\n");
+}
+
+/* The slot the build rule produced: entry and template marker at the first
+   text byte, a 2048-byte stack at the bottom of the one-page stack range. */
+static void check_network_subject_slot(void) {
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != NETWORK_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("network-subject-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/net generated=NetEcho entry=text-start stack=2048 result=PASS\n");
+}
+
+static uint64_t network_device_expected(uint64_t subject, uint64_t device) {
+    return network_device_capabilities[subject] && device == NETWORK_DEVICE
+        ? NETWORK_WITNESS_ACCEPT : NETWORK_WITNESS_REFUSE;
+}
+
+/* Before any subject runs: the device table names exactly one holder, A,
+   and grants exactly what the generated device witness accepts; the frame
+   endpoint's holder, C, is not that holder, and the endpoint witness refuses
+   the device holder and the bystander every copy. */
+static void network_install(void) {
+    uint64_t holders = 0, holder = 0;
+    if (network_device_capabilities[0] != 0 ||
+        leanos_device_authorize(0, NETWORK_DEVICE) != 0)
+        fail("network-device-subject-domain");
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        if (leanos_device_authorize(subject, NETWORK_DEVICE) !=
+                network_device_expected(subject, NETWORK_DEVICE) ||
+            leanos_device_authorize(subject, NETWORK_OTHER_DEVICE) !=
+                network_device_expected(subject, NETWORK_OTHER_DEVICE))
+            fail("network-device-model-authority");
+        uint64_t endpoint = subject == network_endpoint_holder;
+        uint64_t fetch = leanos_frame_copy_check(subject, NETWORK_OP_FETCH | 0x100u,
+            (uint64_t)__user_c_stack_start, NETWORK_CONFIG_BYTES,
+            (uint64_t)__user_c_stack_start, (uint64_t)__user_c_stack_end);
+        if ((fetch == 0) != endpoint || (!endpoint && fetch != 1))
+            fail("network-endpoint-model-authority");
+        if (!network_device_capabilities[subject]) continue;
+        holders++;
+        holder = subject;
+        if (endpoint) fail("network-device-endpoint-overlap");
+    }
+    if (holders != 1 || holder != NETWORK_DRIVER)
+        fail("network-device-install");
+    serial_puts(LEANOS_SERIAL_10_NET " event=install device=frame-source device-holders=1 holder=1 endpoint-holder=3 holder-endpoint=refused endpoint-holder-device=refused model=agree result=PASS\n");
+}
+
+static void network_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("network-subject");
+}
+
+/* One edge of the model's frame exchange, taken by `caller` in its role. */
+static void network_ipc_edge(uint64_t caller) {
+    if (leanos_blocking_ipc_event(network_ipc_step, network_ipc_step + 1, caller) !=
+            network_ipc_words[network_ipc_step])
+        fail("network-ipc-model");
+    network_ipc_step = (network_ipc_step + 1) & 3u;
+    network_ipc_edges++;
+}
+
+static int network_source_admitted(const struct wifi_target *target,
+                                   const struct wifi_policy *policy) {
+    const struct wifi_policy *max = &network_source_profile;
+    if (target->bus != 0 || target->dev != 0 || target->fn != 0 ||
+        target->id != UINT32_C(0xffffffff) || target->window != max->window ||
+        !policy->present || policy->sink_count != 0 || policy->desc_count != 0)
+        return 0;
+    return policy->window <= max->window && !policy->dma && policy->cfg_read == 0 &&
+        policy->cfg_write == 0 && policy->cmd_clear == 0 && policy->cmd_set == 0;
+}
+
+static void network_bind(void) {
+    /* Static: the policy stays off the syscall entry stack. */
+    static struct wifi_target target;
+    static struct wifi_policy policy;
+    uint32_t header = 0;
+    if (wifi_image_header(network_subject_program,
+            (uint32_t)sizeof network_subject_program, &target, &policy, &header))
+        fail("network-source-image");
+    if (!network_source_admitted(&target, &policy)) fail("network-source-policy");
+    if (wifi_start(&network_vm, network_subject_program,
+            (uint32_t)sizeof network_subject_program))
+        fail("network-source-bind");
+    network_bound = 1;
+    serial_puts(LEANOS_SERIAL_10_DEVICE " event=bind subject=1 device=frame-source image-bytes=");
+    serial_u64(sizeof network_subject_program);
+    serial_puts(" policy=admitted window=512 config=none dma=none result=PASS\n");
+}
+
+/* One invocation on behalf of A: hand the pending reply (already in the
+   transmit slot) to the frame source, resume it in bounded slices until it
+   yields the next frame, and return the frame's sequence number and length
+   (0 once it has halted). */
+static uint64_t network_next_frame(void) {
+    if (!network_bound) network_bind();
+    if (network_ended) return 0;
+    if (network_rx_pending) fail("network-frame-unfetched");
+    volatile uint32_t *tx_len = (volatile uint32_t *)(wifi_scratch + NETWORK_TX_LEN_AT);
+    if (*tx_len != (network_tx_pending ? network_tx_len : 0))
+        fail("network-transmit-slot");
+    network_tx_pending = 0;
+    for (;;) {
+        uint32_t code = 0;
+        int status = wifi_gen_resume(&network_vm, 0,
+            network_vm.steps + NETWORK_BUDGET, &code);
+        if (status == WIFI_YIELD) {
+            if (*tx_len != 0) fail("network-transmit-not-taken");
+            if (network_seq == 0 ? code != NETWORK_CONFIG_BYTES
+                : code < NETWORK_FRAME_MIN || code > NETWORK_FRAME_MAX)
+                fail("network-frame-length");
+            network_rx_len = code;
+            network_rx_pending = 1;
+            network_sent_len = 0;
+            ++network_seq;
+            serial_puts(LEANOS_SERIAL_10_NET " event=deliver subject=1 frame=");
+            serial_u64(network_seq);
+            serial_puts(" bytes=");
+            serial_u64(code);
+            serial_puts(network_seq == 1 ? " kind=host-configuration\n" : " kind=ethernet\n");
+            return network_seq << 32 | code;
+        }
+        if (status == WIFI_STEP_LIMIT && network_vm.steps < NETWORK_STEP_LIMIT)
+            continue;
+        network_ended = 1;
+        serial_puts(LEANOS_SERIAL_10_DEVICE " event=end subject=1 status=");
+        serial_u64((uint64_t)status);
+        serial_puts(" code=");
+        serial_u64(code);
+        serial_putc('\n');
+        if (status != WIFI_HALT) fail("network-source-program");
+        if (*tx_len != 0) fail("network-transmit-not-taken");
+        return 0;
+    }
+}
+
+static uint64_t network_refuse(const char *operation, uint64_t reason) {
+    if (reason == 0 || reason >= sizeof network_reasons / sizeof network_reasons[0])
+        fail("network-refusal-reason");
+    network_refusals++;
+    serial_puts(LEANOS_SERIAL_10_NET " event=refuse subject=");
+    serial_u64(current_subject);
+    serial_puts(" op="); serial_puts(operation);
+    serial_puts(" reason="); serial_puts(network_reasons[reason]);
+    serial_puts(" model=refused\n");
+    return NETWORK_REFUSED | reason;
+}
+
+/* A frame copy (64 fetch, 65 send) decided from the endpoint table and
+   checked against the generated witness. */
+static uint64_t network_copy(uint64_t number, uint64_t addr, uint64_t len) {
+    const uint64_t base = (uint64_t)__user_c_stack_start;
+    const uint64_t limit = (uint64_t)__user_c_stack_end;
+    uint64_t op = number == 64 ? NETWORK_OP_FETCH : NETWORK_OP_SEND;
+    uint64_t pending = op == NETWORK_OP_FETCH ? network_rx_pending : network_tx_pending;
+    if (op == NETWORK_OP_FETCH) len = network_rx_len;
+    uint64_t witness = leanos_frame_copy_check(current_subject, op | pending << 8,
+        addr, len, base, limit);
+    unsigned accept = current_subject == network_endpoint_holder &&
+        (op == NETWORK_OP_FETCH ? pending == 1 : pending == 0) &&
+        (op == NETWORK_OP_FETCH || len >= NETWORK_FRAME_MIN) &&
+        len <= NETWORK_FRAME_MAX && addr >= base && addr <= limit &&
+        len <= limit - addr;
+    if ((witness == 0) != accept) fail("network-endpoint-model-decision");
+    const char *name = op == NETWORK_OP_FETCH ? "fetch" : "send";
+    if (!accept) return network_refuse(name, witness);
+    /* Only the holder, C, gets here, and it serves only between A's send
+       and its own next receive. */
+    if (current_subject != NETWORK_HOLDER || network_phase != 3)
+        fail("network-copy-sequence");
+    if (op == NETWORK_OP_FETCH) {
+        smap_copy_to((void *)addr, wifi_scratch + NETWORK_RX_AT, len);
+        if (ac_is_set()) fail("network-fetch-ac-set");
+        network_rx_pending = 0;
+        network_fetches++;
+    } else {
+        smap_copy_from(wifi_scratch + NETWORK_TX_AT, (const void *)addr, len);
+        if (ac_is_set()) fail("network-send-ac-set");
+        *(volatile uint32_t *)(wifi_scratch + NETWORK_TX_LEN_AT) = (uint32_t)len;
+        network_tx_pending = 1;
+        network_tx_len = len;
+        network_sent_len = len;
+        network_sent_seq = network_seq;
+        network_replies++;
+    }
+    serial_puts(LEANOS_SERIAL_10_NET " event=");
+    serial_puts(name);
+    serial_puts(" subject=3 frame=");
+    serial_u64(network_seq);
+    serial_puts(" bytes=");
+    serial_u64(len);
+    serial_puts(" window=own-page model=accepted\n");
+    return op == NETWORK_OP_FETCH ? len : 0;
+}
+
+static uint64_t network_subject_syscall(uint64_t number, uint64_t arg0,
+                                        uint64_t arg1, uint64_t arg2) {
+    network_require_caller();
+    if (current_subject == 3 && network_ipc_step == 3)
+        network_ipc_edge(NETWORK_MODEL_RECEIVER);
+    if (number == 60) {
+        if (leanos_device_authorize(current_subject, NETWORK_DEVICE) !=
+            network_device_expected(current_subject, NETWORK_DEVICE))
+            fail("network-device-model-decision");
+        if (!network_device_capabilities[current_subject]) {
+            network_refusals++;
+            serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+            serial_u64(current_subject);
+            serial_puts(" op=device-invoke device=frame-source reason=no-device-capability model=refused\n");
+            return NETWORK_REFUSED | NETWORK_NO_DEVICE;
+        }
+        if (current_subject != NETWORK_DRIVER ||
+            (network_phase != 2 && network_phase != 4) || !network_waiting)
+            fail("network-device-sequence");
+        return network_next_frame();
+    }
+    if (number == 64 || number == 65) return network_copy(number, arg0, arg1);
+    if (number == 8 && current_subject == NETWORK_DRIVER &&
+        (network_phase == 2 || network_phase == 4)) {
+        if (arg2 != NETWORK_ENDPOINT || !network_waiting || !network_rx_pending ||
+            arg0 != network_rx_len || arg1 != network_seq)
+            fail("network-send-frame");
+        network_waiting = 0;
+        network_phase = 3;
+        current_subject = 3;
+        network_ipc_edge(NETWORK_MODEL_SENDER);
+        network_ipc_edge(NETWORK_MODEL_SENDER);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=12 payload0=");
+        serial_u64(arg0);
+        serial_puts(" payload1=");
+        serial_u64(arg1);
+        serial_puts(" receiver=3 accepted=1\n");
+        return THREE_SUBJECT_A_SENT;
+    }
+    if (number == 7 && current_subject == 3 &&
+        (network_phase == 0 || network_phase == 3)) {
+        if (arg2 != NETWORK_ENDPOINT || network_waiting || network_rx_pending)
+            fail("network-receive-sequence");
+        network_waiting = 1;
+        network_ipc_edge(NETWORK_MODEL_RECEIVER);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
+        if (network_phase == 0) {
+            network_phase = 1;
+            current_subject = 2;
+            return THREE_SUBJECT_C_BLOCKED;
+        }
+        network_phase = 4;
+        current_subject = 1;
+        return NETWORK_C_RESUMES_A;
+    }
+    if (number == 62 && current_subject == 2 && network_phase == 1) {
+        if (arg0 != 0xc0dec0dec0dec0deull || arg1 != 0x51a7e51a7e51a7e5ull)
+            fail("network-b-context");
+        if (arg2 != (NETWORK_REFUSED | 1u)) fail("network-b-observation");
+        network_b_result = arg2;
+        network_phase = 2;
+        current_subject = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact observed=refused result=PASS\n");
+        return THREE_SUBJECT_B_RAN;
+    }
+    if (number == 61 && current_subject == NETWORK_DRIVER && network_phase == 4) {
+        if (!network_ended || network_seq < 2 || network_fetches != network_seq ||
+            network_checked != network_seq || network_rx_pending ||
+            network_tx_pending || !network_waiting || network_refusals != 3 ||
+            network_b_result != (NETWORK_REFUSED | 1u) || network_ipc_step != 1 ||
+            network_ipc_edges != 4 * network_seq + 1)
+            fail("network-subject-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 network-subject=3 device-holder=1 frames=");
+        serial_u64(network_seq);
+        serial_puts(" fetches="); serial_u64(network_fetches);
+        serial_puts(" replies="); serial_u64(network_replies);
+        serial_puts(" checked="); serial_u64(network_checked);
+        serial_puts(" refusals="); serial_u64(network_refusals);
+        serial_puts(" ipc-edges="); serial_u64(network_ipc_edges);
+        serial_putc('\n');
+        finish(0x10);
+    }
+    fail("network-subject-sequence");
+}
+
+static void network_switch(uint64_t *target, uint64_t target_owner,
+                           uint64_t saved_owner) {
+    if (current_subject == 2 && network_phase == 1) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 3) fail("network-switch-b-owner");
+        check_initial_b_frame(target);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=none\n");
+        return;
+    }
+    if (current_subject == 1 && network_phase == 2) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("network-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=3 capabilities=device\n");
+        return;
+    }
+    if (current_subject == 3 && network_phase == 3) {
+        check_selected_root_c();
+        if (target_owner != 3 || saved_owner != 1) fail("network-switch-c-owner");
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        /* SAVE layout: RAX at word 14, RBX 13, RCX 12. */
+        if (target[14] != network_rx_len || target[13] != network_seq || target[12] != 1)
+            fail("network-switch-payload");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 payload=exact\n");
+        return;
+    }
+    if (current_subject == 1 && network_phase == 4) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 3) fail("network-switch-resume-a-owner");
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1\n");
+        return;
+    }
+    fail("network-switch");
+}
+#endif
+
 #ifdef LEANOS_FAULT_HANDLER_SCENARIO
 /* Fault handler subject (#488, LeanOS.FaultHandler).  This image is the
    three-subject image with subject C built from subjects/fault-handler by the
@@ -6809,6 +7306,15 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         __asm__ volatile ("" : "+r"(frame_server_result));
         return frame_server_result;
     }
+#elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+    (void)saved_flags;
+    {
+        /* A real call, as for the frame server: the entry-stack gate must
+           see the edge under every supported compiler. */
+        uint64_t network_result = network_subject_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" : "+r"(network_result));
+        return network_result;
+    }
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     (void)saved_flags;
@@ -7619,6 +8125,9 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
     frame_server_switch(target, target_owner, saved_owner);
     return;
+#elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+    network_switch(target, target_owner, saved_owner);
+    return;
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     three_subject_switch(target, target_owner, saved_owner);
     return;
@@ -8409,6 +8918,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=console-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=endpoint-directory controls=wp,smep,smap\n");
+#elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=network-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
@@ -8625,6 +9136,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=directory\n");
+    enter_user(user_c_entry, user_c_stack_top);
+#elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+    check_boot_page_table_c();
+    check_network_subject_slot();
+    network_install();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=network-subject\n");
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     check_boot_page_table_c();

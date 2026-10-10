@@ -371,7 +371,13 @@ qotom_blocking_user_a_fault_recovered:
     mov $0x4f53, %rcx
     xor %rdx, %rdx
     int $0x80
-#ifdef LEANOS_QOTOM_IPC_DEVICE_STREAM
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
+    /* Network subject (issue #450): after the fixed first exchange A runs
+       the ring-3 network subject built from subjects/net (its C entry,
+       renamed by scripts/build-qotom-recovery-lab.py); it never returns. */
+    call qotom_network_subject_main
+    ud2
+#elif defined(LEANOS_QOTOM_IPC_DEVICE_STREAM)
     /* Device stream: ask the kernel-hosted keyboard program for a key
        (60), send it to B over endpoint 10 (8), until the program ends (61). */
 1:
@@ -478,7 +484,39 @@ qotom_blocking_user_b:
     mov $1, %rdx
     mov $9, %rax
     int $0x80
-#ifdef LEANOS_QOTOM_IPC_DEVICE_STREAM
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
+    /* WiFi driver subject (issue #450): it holds the device capability for
+       the bound BCM43224 program but not the frame endpoint, so its frame
+       fetch (64) is refused.  It then loops: the next frame (60: sequence
+       number in the high half, length in the low half, 0 at the end), sent
+       to the network subject A as the length (RBX) and the sequence number
+       (RCX) over endpoint 10 (8); it never sees the frame.  61 ends. */
+    mov $64, %rax
+    lea user_b_stack(%rip), %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    int $0x80
+    bt $63, %rax
+    jnc qotom_blocking_user_b_failure
+1:
+    mov $60, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    int $0x80
+    test %rax, %rax
+    jz 2f
+    mov %rax, %rcx
+    shr $32, %rcx
+    mov %eax, %ebx
+    xor %rdx, %rdx
+    mov $8, %rax
+    int $0x80
+    jmp 1b
+2:
+    mov $61, %rax
+    int $0x80
+#elif defined(LEANOS_QOTOM_IPC_DEVICE_STREAM)
     /* Device stream: block on endpoint 10 (7), then echo each delivered
        key back to the kernel (9). */
 1:
