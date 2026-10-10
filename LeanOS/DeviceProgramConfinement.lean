@@ -5,8 +5,9 @@ import Std.Tactic.BVDecide
 Static confinement of Lean device programs (issue #447).
 
 Device programs (`LeanOS/Wifi`, `LeanOS/Usb`) are encoded into a small
-register-machine bytecode and run by `hardware/wifi/wifi-exec.h` in ring 0 of
-the lab kernel. This module gives each program a `Policy` — MMIO window,
+register-machine bytecode and run in ring 0 of the lab kernel and of the
+`device-service` kernel by the generated executor (`LeanOS.Wifi.Exec`,
+`hardware/wifi/wifi-gen-exec.h`). This module gives each program a `Policy` — MMIO window,
 configuration offsets it may read or write, the command-register bits it may
 clear or set, and whether it may learn bus addresses (`physAddr`) — and a
 decidable checker `admissible` over the *encoded* instruction words.
@@ -18,8 +19,7 @@ the policy. An admitted program never sets the flag, on any device model,
 from any initial registers or scratch, for any number of steps:
 
 * MMIO accesses stay inside the policy window (direct offsets statically;
-  register-indirect offsets through the simulator's window check, the C
-  executor's `OFF`);
+  register-indirect offsets through the simulator's window check);
 * configuration reads and writes use only allow-listed offsets below 0x100;
 * the command register changes only through `cfgUpdate32` within the
   policy's clear/set masks, so a sane policy never lets a program set Bus
@@ -30,9 +30,12 @@ Version-3 images also carry the policy, and both the simulator and the C
 executor enforce it dynamically; `run_declared_confined` shows that this
 alone confines *any* program to its declared policy.
 
-This is a model-level result: that `wifi-exec.h` refines `Sim.step` is
-tested (`leanos-wifi-xcheck`, differential fuzzing), not proved. Where a
-device may write by DMA is a separate question (issue #448).
+These theorems are stated over `Sim`; the executor that runs is the
+generated C of `LeanOS.Wifi.Exec.step`, which `LeanOS.Wifi.ExecRefinement`
+proves equal to `Sim.step` and for which it restates them
+(`run_confined_generated`, …), up to the compilers and the named C hooks
+(ADR 0020, issue #494). Where a device may write by DMA is a separate
+question (issue #448).
 -/
 namespace LeanOS.DeviceProgramConfinement
 

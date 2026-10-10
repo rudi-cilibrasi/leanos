@@ -4,7 +4,11 @@ The Lean device programs (the BCM43224 WiFi driver, `docs/wifi-driver.md`,
 the xHCI keyboard driver, `docs/usb-keyboard.md`, the AHCI identify
 program, `docs/storage-ahci.md`, and the RTL8168 Ethernet program,
 `docs/net-rtl8168.md`) run in ring 0 of the
-lab kernel through the executor `hardware/wifi/wifi-exec.h`. Each program is
+lab kernel, and the keyboard program under the canonical `device-service`
+kernel, through the generated executor: its step is the compiled
+`LeanOS/Wifi/Exec.lean`, proved equal to `Sim.step`, with the C hooks of
+`hardware/wifi/wifi-gen-exec.h` ([ADR 0020](adr/0020-device-program-executor-assurance.md)).
+Each program is
 confined to a **policy** (`Policy` in `LeanOS/Wifi/Bytecode.lean`):
 
 * the MMIO window (bytes of BAR0 it may address);
@@ -59,8 +63,11 @@ Hardware: `hardware/lab/observations/qotom-device-confinement-20260929`.
 
 ## Not covered
 
-* That `wifi-exec.h` refines `Sim.step` is tested, not proved: differential
-  fuzzing with a mutation self-test
+* The executor's step is generated from a Lean function proved equal to
+  `Sim.step`, so the theorems hold of the code that runs; still trusted are
+  the Lean and C compilers and that each C hook in `wifi-gen-exec.h`
+  implements its Lean reading, which the fuzz corpus and its mutation
+  self-test check as a regression test
   ([ADR 0020](adr/0020-device-program-executor-assurance.md)).
 * Where a DMA-capable device writes beyond the root registers and the
   descriptor map: the AHCI and RTL8168 descriptor pointers are a trusted

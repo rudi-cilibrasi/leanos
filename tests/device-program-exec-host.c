@@ -1,15 +1,13 @@
-/* Hosted differential of the generated device-program executor (issue #494).
+/* Hosted regression test of the generated device-program executor (issue
+   #494).
 
    Every image of the fuzz corpus in $LEANOS_DEVICE_PROGRAM_CORPUS
    (tests/WifiFuzz.lean: NNNN.bin plus the simulator's expected.txt) runs
-   through both executors with the fuzzer's device model:
-
-   * the generated one: `leanos_device_program_step`, the compiled
-     `LeanOS.Wifi.Exec.step`, driven by hardware/wifi/wifi-gen-exec.h; and
-   * the handwritten one: `wifi_resume` of hardware/wifi/wifi-exec.h.
-
-   Each summary line must equal the simulator's (`Sim.run`) line. The module
-   is never initialized: the generated step needs no Lean runtime. */
+   through the executor every LeanOS kernel boots, `leanos_device_program_step`
+   (the compiled `LeanOS.Wifi.Exec.step`) driven by
+   hardware/wifi/wifi-gen-exec.h, with the fuzzer's device model. Each summary
+   line must equal the simulator's (`Sim.run`) line. The module is never
+   initialized: the generated step needs no Lean runtime. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,7 +40,7 @@ int main(void) {
         fprintf(stderr, "error: the generated step did not halt the one-instruction image\n");
         return 1;
     }
-    static char path[4096], expected[512], generated[512], handwritten[512];
+    static char path[4096], expected[512], generated[512];
     static uint8_t image[1 << 20];
     snprintf(path, sizeof path, "%s/expected.txt", dir);
     FILE *lines = fopen(path, "r");
@@ -56,11 +54,9 @@ int main(void) {
         size_t len = fread(image, 1, sizeof image, f);
         fclose(f);
         fuzz_summary(image, (uint32_t)len, wifi_gen_resume, generated, sizeof generated);
-        fuzz_summary(image, (uint32_t)len, wifi_resume, handwritten, sizeof handwritten);
-        if (strcmp(generated, expected) || strcmp(handwritten, expected)) {
-            fprintf(stderr, "error: program %u disagrees\n  sim:         %s\n"
-                "  generated:   %s\n  handwritten: %s\n", count, expected,
-                generated, handwritten);
+        if (strcmp(generated, expected)) {
+            fprintf(stderr, "error: program %u disagrees\n  sim:       %s\n"
+                "  generated: %s\n", count, expected, generated);
             return 1;
         }
         ++count;
@@ -70,6 +66,6 @@ int main(void) {
         fprintf(stderr, "error: empty corpus %s\n", dir);
         return 1;
     }
-    printf("Generated device-program executor: %u programs agree with Sim and wifi-exec.h\n", count);
+    printf("Generated device-program executor: %u programs agree with Sim\n", count);
     return 0;
 }

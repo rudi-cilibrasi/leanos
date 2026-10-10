@@ -353,7 +353,11 @@ if lab_programs:
     text = text.replace(marker, '#ifndef LEANOS_DEVICE_SERVICE_SCENARIO\n#define WIFI_HOOKS_DIRECT 1\n' +
                         ('#define LAB_PM_TIMER_PORT 0x608u\n#define LAB_Q35_DEVICE_LAB 1\n' if a.q35_device_lab else '') +
                         ('#define LAB_DEVICE_SERVICE 1\n' if a.device_service else '') +
-                        (root / 'hardware/wifi/wifi-exec.h').read_text() + '\n' + arrays +
+                        (root / 'hardware/wifi/wifi-exec.h').read_text() + '\n' +
+                        # The generated executor (issue #494): its hooks and
+                        # step loop; wifi-exec.h is already spliced above.
+                        (root / 'hardware/wifi/wifi-gen-exec.h').read_text().replace(
+                            '#include "wifi-exec.h"\n', '', 1) + '\n' + arrays +
                         (root / 'hardware/lab/qotom-wifi.c.inc').read_text() + '\n#endif\n' + marker)
 if a.handoff_capture:
     marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
