@@ -23,6 +23,7 @@ import LeanOS.BootMemoryMapStreaming
 import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.BootHandoffUefiReplay
 import LeanOS.BootReservation
+import LeanOS.ElfAdmission
 import LeanOS.BootMemoryMapStreamPipeline
 import LeanOS.BootMemoryMapFullProjectionABI
 import LeanOS.BootMemoryMapScalarRichEquivalence

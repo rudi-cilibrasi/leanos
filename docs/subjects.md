@@ -156,6 +156,38 @@ scenario runs in the evidence tier, on the `boot` runner:
 python3 scripts/run-emulator-evidence.py run --scenario example-subject --output example-subject.json
 ```
 
+## The admitted subject ELF
+
+The example subject is also built as a separate, statically linked x86-64
+executable (issue #492, build-time half;
+[ADR 0024](adr/0024-build-time-elf-admission.md)). Its manifest entry carries
+`"admitted": true`, and the build rule then does three more things:
+
+1. It links the policy-checked object with `subjects/admitted.ld`. The result
+   has one `R-X` text segment and one `RW-` data segment, both in the user
+   window at 16 MiB.
+2. It runs the Lean checker `leanos-elf-admit admit` over the file. The
+   checker is `LeanOS.ElfAdmission`. If it rejects the file, the build fails.
+   The build writes `build/boot/subject-example.admitted.elf` and its plan,
+   `subject-example.admitted.tsv`.
+3. It adds the file's bytes to the slot object as `.user.admitted`.
+   `boot/linker.ld` places that section page-aligned after C's slot, in
+   `[__user_admitted_start, __user_admitted_end)`. That range lies inside the
+   embedded-user reservation and is not mapped to ring 3.
+
+After the final link, `scripts/check-admitted-subject.py` does these checks:
+
+- It requires the image's bytes in that range to equal the admitted file.
+- It requires the bytes to be identity-loaded by one `PT_LOAD`.
+- It re-runs the checker over the bytes read back from the image, and
+  requires the same plan and a valid placement.
+- It requires each mutated copy of the file to be rejected for its reason.
+  There is one copy per rejection reason the issue lists.
+
+The placed plan is `build/boot/admitted-subject/admitted-subject-plan.tsv`.
+Nothing loads or runs the admitted file yet. The run-time loader is gated by
+[ADR 0010](adr/0010-defer-fork.md).
+
 ## Adding a subject
 
 1. Copy `subjects/template/` to `subjects/NAME/`, and write `subject_main`.

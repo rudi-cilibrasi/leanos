@@ -651,6 +651,9 @@ python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
 # #496). leanos-wifi-gen refuses a program outside its target's admitted
 # policy; each header is rewritten only when the image bytes change.
 lake build leanos-wifi-gen
+# The admitted-subject rule (issue #492) runs the Lean ELF checker inside the
+# image object graph; publish its executable once before Make fans out.
+lake build leanos-elf-admit
 embed_device_program() {
   local program="$1" stem="$2"
   .lake/build/bin/leanos-wifi-gen "$program" "$build/$stem.bin" >/dev/null
@@ -768,6 +771,7 @@ compute_graph_make_input_signature() {
     find "$repo_root/boot" "$repo_root/include" "$repo_root/hardware/wifi" \
       "$repo_root/subjects" "$repo_root/scripts/build-subject.sh" \
       "$repo_root/scripts/check-subject-policy.py" \
+      "$repo_root/.lake/build/bin/leanos-elf-admit" \
       -type f -print0 | sort -z |
       while IFS= read -r -d '' input; do
         sha256sum "$input"
@@ -1360,6 +1364,13 @@ if selected_final_enabled "$build/leanos-example-subject.elf"; then
       exit 1
     }
   echo "subject-policy final-elf negative=cli result=rejected"
+  # The admitted subject ELF (issue #492): the image's reserved range must
+  # hold exactly the bytes LeanOS.ElfAdmission admitted, the checker must
+  # admit those booted bytes with the same plan and place them inside the
+  # embedded-user reservation, and every listed rejection vector must fail.
+  ./scripts/check-admitted-subject.py "$build/leanos-example-subject.elf" \
+    "$build/subject-example.admitted.elf" "$build/subject-example.admitted.tsv" \
+    .lake/build/bin/leanos-elf-admit "$build/admitted-subject"
 fi
 
 if selected_final_enabled "$build/leanos-frame-budget.elf"; then

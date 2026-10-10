@@ -119,7 +119,8 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             or not name.startswith("subject-")
             or name in build["boot_objects"]
             or not isinstance(entry, dict)
-            or set(entry) != {"source", "slot"}
+            or not {"source", "slot"} <= set(entry) <= {"source", "slot", "admitted"}
+            or entry.get("admitted", True) is not True
             or not isinstance(entry["source"], str)
             or not re.fullmatch(r"subjects/[a-z][a-z0-9-]*", entry["source"])
             or entry["slot"] != "c"
@@ -424,11 +425,23 @@ def render_graph(
             source_root / "scripts/build-subject.sh",
             source_root / "scripts/check-subject-policy.py",
         ]
+        admission = ""
+        if entry.get("admitted"):
+            # Issue #492: also link the subject as a separate executable, admit
+            # it with the Lean checker, and embed its bytes as .user.admitted.
+            admit_tool = source_root / ".lake/build/bin/leanos-elf-admit"
+            inputs += [source_root / "subjects/admitted.ld", admit_tool]
+            admission = (
+                f"--admit-tool {make_escape(str(admit_tool))} "
+                f"--admitted-elf {build}/{name}.admitted.elf "
+                f"--admitted-plan {build}/{name}.admitted.tsv "
+            )
         builder = make_escape(str(source_root / "scripts/build-subject.sh"))
         lines.extend(
             [
                 f"{target}: " + " ".join(make_escape(str(path)) for path in inputs),
                 f"\t{builder} --cc $(IMAGE_CC) --slot {entry['slot']} --output $@ "
+                + admission
                 + make_escape(str(source_dir)),
             ]
         )
