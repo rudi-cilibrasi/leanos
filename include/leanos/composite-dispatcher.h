@@ -65,6 +65,18 @@
  * receipt with the typed empty rejection and no value word. No reply in this
  * family ever publishes a handle in result word one.
  *
+ * Spawn family (ADR 0010 gate item 5, #489): state tokens
+ * LEANOS_COMPOSITE_STATE_SPAWN_* name complete states replayed through
+ * childGate, memoryGate, and two authoritative steps from kernel-owned seeds
+ * (LeanOS.SpawnBoundary). The LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_* tags
+ * carry the hosted oracles' encodings; arguments are matched exactly against
+ * the bounded edge table. The reply byte is the hosted oracles' status byte
+ * (0x01 accepted, 0x80 + code rejected), and result word one carries their
+ * value word: the generation of a kernel grant, the control word of an
+ * accepted spawn, or the frames a grant moved or a termination returned.
+ * Every rejection is a stutter of the complete state. These are bounded
+ * dispatcher commands, not syscalls.
+ *
  * LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN and
  * LEANOS_FRAME_BUDGET_RELEASE_FLUSH_TOKEN are the exact full-state/command
  * authorizations for the two frame-retiring edges.

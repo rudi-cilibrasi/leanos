@@ -18,7 +18,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `EndpointDirectory.directoryResolve`, `FaultHandler.faultHandlerRoute`,
 `KeyboardEcho.deviceAuthorize`, `TimerServer.timerServerDecide`,
 `FrameServer.frameServerCheck` and `FrameServer.frameServerView`. Its stable
-564-vector order covers accepted calls,
+627-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns

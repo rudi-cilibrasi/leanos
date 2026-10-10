@@ -70,6 +70,10 @@ import LeanOS.SpawnOracle
 import LeanOS.SpawnAccountingOracle
 import LeanOS.SpawnConfinement
 import LeanOS.CompositeDispatcherResources
+import LeanOS.SpawnBoundary
+import LeanOS.SpawnBoundaryTraces
+import LeanOS.SpawnBoundaryChecks
+import LeanOS.FrameBudgetComposite
 import LeanOS.CompositeOwnSteps
 import LeanOS.CompositeChannels
 import LeanOS.CompositeLocalRespect
