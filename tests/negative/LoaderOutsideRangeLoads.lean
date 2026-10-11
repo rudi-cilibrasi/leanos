@@ -12,5 +12,5 @@ example (state : ChildLoader.State) (child : ChildLoader.Child) (control : UInt6
     (named : state.plan[index]? = some segment) (fresh : state.loaded index = false)
     (outside : source < state.start) :
     (ChildLoader.step state (.load control index source)).2 = .loaded := by
-  rw [SecurityClaims.loader_reserved_range_only.2.2 state child control index source segment live
-    named fresh (Or.inl outside)]
+  exact congrArg Prod.snd (SecurityClaims.loader_reserved_range_only.2.2 state child control index
+    source segment live named fresh (Or.inl outside))
