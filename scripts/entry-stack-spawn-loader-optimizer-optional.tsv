@@ -33,3 +33,5 @@ timer-switch	check_original_frame
 timer-switch	check_resumable_witness
 timer-switch	leanos_preemption_demo
 timer-switch	leanos_resumable_preemption_demo
+syscall	loader_report_words
+syscall	loader_syscall
