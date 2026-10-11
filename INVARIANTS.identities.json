@@ -6698,6 +6698,96 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.authoritativeGate_not_running",
+      "display": "authoritativeGate_not_running",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.cross_subject_channels_closed",
+      "display": "cross_subject_channels_closed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.finite_trace_lowEquiv_subject",
+      "display": "finite_trace_lowEquiv_subject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.not_nmi_of_target",
+      "display": "not_nmi_of_target",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.own_cross_stutter",
+      "display": "own_cross_stutter",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.own_output_consistent_subject",
+      "display": "own_output_consistent_subject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.own_output_cross",
+      "display": "own_output_cross",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.own_step_consistent_subject",
+      "display": "own_step_consistent_subject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.own_step_cross",
+      "display": "own_step_cross",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.refuses_own",
+      "display": "refuses_own",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.revokeSubtree_other_closed",
+      "display": "revokeSubtree_other_closed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.run_state",
+      "display": "run_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.subjectGate_own",
+      "display": "subjectGate_own",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.subjectGate_silent_observe",
+      "display": "subjectGate_silent_observe",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeSubjectGate.lean",
+      "qualified": "LeanOS.CompositeSubjectGate.system_replaysOn",
+      "display": "system_replaysOn",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/CompositeSwitchedChannels.lean",
       "qualified": "LeanOS.CompositeSwitchedChannels.blockedTrace_keeps",
       "display": "blockedTrace_keeps",
@@ -15425,6 +15515,54 @@
       "source": "LeanOS/FailStop/SpawnTree.lean",
       "qualified": "LeanOS.FailStop.terminatedChild_retires_memory",
       "display": "terminatedChild_retires_memory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.refusesCrossSubject_congr",
+      "display": "refusesCrossSubject_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.refusesCrossSubject_eq_false_of_target",
+      "display": "refusesCrossSubject_eq_false_of_target",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.refusesCrossSubject_true",
+      "display": "refusesCrossSubject_true",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.runSubjectOperations_preserves_authoritativeRuntimeWellFormed",
+      "display": "runSubjectOperations_preserves_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.subjectGate_cases",
+      "display": "subjectGate_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.subjectGate_of_not_refused",
+      "display": "subjectGate_of_not_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.subjectGate_preserves_authoritativeRuntimeWellFormed",
+      "display": "subjectGate_preserves_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SubjectGate.lean",
+      "qualified": "LeanOS.FailStop.subjectGate_refused",
+      "display": "subjectGate_refused",
       "kind": "theorem"
     },
     {

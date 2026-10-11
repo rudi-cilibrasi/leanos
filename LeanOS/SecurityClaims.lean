@@ -22,6 +22,7 @@ import LeanOS.CompositeLocalRespect
 import LeanOS.CompositeOwnTermination
 import LeanOS.CompositeSwitchedChannels
 import LeanOS.CompositeRegisterChannels
+import LeanOS.CompositeSubjectGate
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -3218,7 +3219,17 @@ timer switch, blocking send, and wait cancellation used to carry another
 subject's saved registers (the adversarial record, evaluated on the same
 pairs); they now name a subject only and agree on those pairs, and (20) the
 subject a switch reply names is the scheduled subject of the post-state, part
-of every observer's view. -/
+of every observer's view.
+
+(21) Over the subject-facing gate `FailStop.subjectGate`, which refuses a
+scheduled subject's request that names another subject (delegation into,
+direct or subtree revocation of, creation, termination and queue admission
+of, wait cancellation and deferred drain of another subject) with one fixed
+result and no effect: local respect also treats another subject's refused
+request as silent, finite-trace noninterference holds, the observer's
+cross-subject requests are step and output consistent without any further
+premise, every family above carries over, and on the `#542` pairs the
+cross-subject channels are closed. -/
 theorem composite_observer_isolation (observer : Nat) :
     (∀ state operation, CompositeObservation.isSilent observer state operation = true →
       CompositeObservation.LowEquiv observer
@@ -3440,7 +3451,72 @@ theorem composite_observer_isolation (observer : Nat) :
       (FailStop.authoritativeGate state (.ordinary (.resumePreempt frame registers))).result =
         .completed (.ordinary (.resume (some next) none)) →
       (FailStop.authoritativeGate state
-        (.ordinary (.resumePreempt frame registers))).state.lifecycle.current = some next) := by
+        (.ordinary (.resumePreempt frame registers))).state.lifecycle.current = some next) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeSubjectGate.isSilentSubject observer state operation = true →
+      CompositeObservation.LowEquiv observer (FailStop.subjectGate state operation).state state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer left right →
+      CompositeSubjectGate.projection observer left leftOperations =
+        CompositeSubjectGate.projection observer right rightOperations →
+      CompositeObservation.LowEquiv observer
+        (CompositeSubjectGate.run observer left leftOperations).1
+        (CompositeSubjectGate.run observer right rightOperations).1) ∧
+    (∀ left right operation, CompositeOwnSteps.OwnStepCounter observer left right →
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeSubjectGate.ownStepSubject observer operation = true →
+      CompositeObservation.LowEquiv observer (FailStop.subjectGate left operation).state
+        (FailStop.subjectGate right operation).state) ∧
+    (∀ left right operation, CompositeOwnSteps.OwnStepCounter observer left right →
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeSubjectGate.ownOutputSubject observer operation = true →
+      (FailStop.subjectGate left operation).result =
+        (FailStop.subjectGate right operation).result) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeSubjectGate.crossTarget observer operation = true →
+      (FailStop.subjectGate left operation).state = left ∧
+        (FailStop.subjectGate right operation).state = right ∧
+        (FailStop.subjectGate left operation).result =
+          (FailStop.subjectGate right operation).result) ∧
+    (∀ plan,
+      CompositeSubjectGate.subjectReply (CompositeChannels.seed plan)
+          CompositeChannels.createThree =
+        CompositeSubjectGate.subjectReply (CompositeChannels.created plan)
+          CompositeChannels.createThree ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.seed plan) (.terminateSubject 3) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.created plan)
+          (.terminateSubject 3) ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.seed plan) (.scheduleAdd 3) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.created plan) (.scheduleAdd 3) ∧
+      CompositeObservation.LowEquiv 2
+        (CompositeSubjectGate.subjectStep (CompositeChannels.offered plan)
+          (.terminateSubject 3))
+        (CompositeSubjectGate.subjectStep (CompositeChannels.offeredCreated plan)
+          (.terminateSubject 3)) ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.toSlotThree plan)
+          CompositeUnwinding.Channels.delegateToOther =
+        CompositeSubjectGate.subjectReply (CompositeChannels.toSlotTwo plan)
+          CompositeUnwinding.Channels.delegateToOther ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.toSlotThree plan)
+          (.capabilityRevoke 0 1 2) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.toSlotTwo plan)
+          (.capabilityRevoke 0 1 2) ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.toSlotThree plan)
+          (.capabilityRevokeSubtree 0 1 2) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.toSlotTwo plan)
+          (.capabilityRevokeSubtree 0 1 2)) ∧
+    (∀ plan, BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan →
+      CompositeObservation.LowEquiv 2
+        (CompositeSubjectGate.subjectStep
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+          CompositeSwitchedChannels.otherSubtree)
+        (CompositeSubjectGate.subjectStep
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)
+          CompositeSwitchedChannels.otherSubtree)) := by
   refine ⟨fun state operation hsilent =>
       CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
     fun left right leftOperations rightOperations hlow hevents =>
@@ -3505,7 +3581,20 @@ theorem composite_observer_isolation (observer : Nat) :
         CompositeRegisterChannels.legacy_replies_leaked plan hplan,
         CompositeRegisterChannels.register_channel_closed_on_pairs plan hplan⟩,
     fun state frame registers next hreply =>
-      CompositeRegisterChannels.resume_reply_names_scheduled state frame registers next hreply⟩
+      CompositeRegisterChannels.resume_reply_names_scheduled state frame registers next hreply,
+    fun state operation hstate hsilent =>
+      CompositeSubjectGate.subjectGate_silent_observe observer state operation hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeSubjectGate.finite_trace_lowEquiv_subject observer left right leftOperations
+        rightOperations hleft hright hlow hevents,
+    fun left right operation h hleft hright hfamily =>
+      CompositeSubjectGate.own_step_consistent_subject h hleft hright operation hfamily,
+    fun left right operation h hleft hright hfamily =>
+      CompositeSubjectGate.own_output_consistent_subject h hleft hright operation hfamily,
+    fun left right operation h hcross =>
+      CompositeSubjectGate.own_cross_stutter h operation hcross,
+    fun plan => CompositeSubjectGate.cross_subject_channels_closed plan,
+    fun plan hplan => CompositeSubjectGate.revokeSubtree_other_closed plan hplan⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :

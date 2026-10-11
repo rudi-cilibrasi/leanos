@@ -39,6 +39,13 @@ Channels:
 * `offer_counter_step_inconsistent`: without the public counter, the
   observer's own transfer offer is step inconsistent, as its delegation is
   (`CompositeUnwinding.Channels.identity_counter_step_inconsistent`).
+
+**Adversarial record.**  These theorems are about `authoritativeGate`, the
+kernel's transition engine.  A scheduled subject now asks through
+`FailStop.subjectGate`, which refuses every request naming another subject
+(ADR 0025); `CompositeSubjectGate.cross_subject_channels_closed` re-evaluates
+the pairs above through it.  The cross-subject channels here stay as the
+record of what the raw transitions leaked.
 -/
 namespace LeanOS.CompositeChannels
 
