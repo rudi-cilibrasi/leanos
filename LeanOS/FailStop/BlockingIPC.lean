@@ -2013,12 +2013,18 @@ inductive CompositeBlockingSendReply where
   | restoreRejected (reason : ResumablePreemption.Error)
   | rejected (reason : BlockingIPC.Error)
   | sent
-  | woke (context : ResumableContext.Context)
+  /-- A wake replies with the woken receiver only.  Its saved frame and
+  registers move to the resumable bank and are never part of the sender's
+  reply (`restored` records them for the kernel). -/
+  | woke (receiver : BlockingIPC.SubjectId)
   deriving DecidableEq, Repr
 
 structure CompositeBlockingSendOutcome where
   state : CompositeState
   reply : CompositeBlockingSendReply
+  /-- Kernel-internal record of the receiver context a wake republished; not
+  part of the reply. -/
+  restored : Option ResumableContext.Context := none
 
 def dispatchBlockingSend (state : CompositeState) (handleWord word0 word1 : UInt64) :
     CompositeBlockingSendOutcome :=
@@ -2038,7 +2044,7 @@ def dispatchBlockingSend (state : CompositeState) (handleWord word0 word1 : UInt
           | some saved =>
               match publishReleasedBlockingContext state outcome.state saved with
               | .error reason => { state, reply := .restoreRejected reason }
-              | .ok next => { state := next, reply := .woke saved }
+              | .ok next => { state := next, reply := .woke saved.owner, restored := some saved }
 
 inductive CompositeBlockingSendRejection : CompositeBlockingSendReply -> Prop
   | handle reason : CompositeBlockingSendRejection (.handleRejected reason)
@@ -2177,7 +2183,7 @@ theorem dispatchBlockingSend_sent_preserves_runtimeWellFormed
 bank and clears that receiver's entry atomically. -/
 theorem dispatchBlockingSend_woke_exact state handleWord word0 word1 saved
     (hstate : BlockingReceiveWellFormed state)
-    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved) :
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).restored = some saved) :
     ∃ receiver,
       state.blockingContexts receiver = some saved ∧
       (dispatchBlockingSend state handleWord word0 word1).state.blockingContexts receiver = none ∧
@@ -2228,7 +2234,7 @@ theorem dispatchBlockingSend_woke_exact state handleWord word0 word1 saved
 /-- A typed wake exposes only the released context that passed the finite
 post-wake validity checks against the scheduler published in the same state. -/
 theorem dispatchBlockingSend_woke_context_valid state handleWord word0 word1 saved
-    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved) :
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).restored = some saved) :
     ResumablePreemption.validContext
       (dispatchBlockingSend state handleWord word0 word1).state.resumable saved := by
   cases hresolve : CapabilityHandle.resolveCurrent
@@ -2264,7 +2270,7 @@ at the same time that the authoritative scheduler marks its owner runnable. -/
 theorem dispatchBlockingSend_woke_preserves_runtimeWellFormed
     state handleWord word0 word1 saved
     (hstate : BlockingRuntimeWellFormed state)
-    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved) :
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).restored = some saved) :
     RuntimeWellFormed
       (dispatchBlockingSend state handleWord word0 word1).state := by
   cases hresolve : CapabilityHandle.resolveCurrent
@@ -2364,12 +2370,17 @@ inductive CompositeBlockingCancelReply where
   | contextRejected (reason : BlockingIPCContext.ContextError)
   | restoreRejected (reason : ResumablePreemption.Error)
   | rejected (reason : BlockingIPC.Error)
-  | cancelled (context : ResumableContext.Context)
+  /-- A cancellation replies with the cancelled subject only; its saved frame
+  and registers move to the resumable bank (`restored`). -/
+  | cancelled (subject : BlockingIPC.SubjectId)
   deriving DecidableEq, Repr
 
 structure CompositeBlockingCancelOutcome where
   state : CompositeState
   reply : CompositeBlockingCancelReply
+  /-- Kernel-internal record of the context a cancellation republished; not
+  part of the reply. -/
+  restored : Option ResumableContext.Context := none
 
 def dispatchBlockingCancel (state : CompositeState) (subject : BlockingIPC.SubjectId) :
     CompositeBlockingCancelOutcome :=
@@ -2384,7 +2395,7 @@ def dispatchBlockingCancel (state : CompositeState) (subject : BlockingIPC.Subje
       | some saved =>
           match publishReleasedBlockingContext state outcome.state saved with
           | .error reason => { state, reply := .restoreRejected reason }
-          | .ok next => { state := next, reply := .cancelled saved }
+          | .ok next => { state := next, reply := .cancelled saved.owner, restored := some saved }
 
 inductive CompositeBlockingCancelRejection : CompositeBlockingCancelReply -> Prop
   | notWaiting : CompositeBlockingCancelRejection .notWaiting
@@ -2446,7 +2457,7 @@ theorem dispatchBlockingCancel_preserves_wellFormed state subject
 
 theorem dispatchBlockingCancel_cancelled_exact state subject saved
     (hstate : BlockingReceiveWellFormed state)
-    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    (hcancelled : (dispatchBlockingCancel state subject).restored = some saved) :
     state.blockingContexts subject = some saved ∧
       (dispatchBlockingCancel state subject).state.blockingContexts subject = none ∧
       ResumablePreemption.contextFor
@@ -2484,7 +2495,7 @@ theorem dispatchBlockingCancel_cancelled_exact state subject saved
 /-- A typed cancellation restores only a context valid for the scheduler that
 the cancellation publishes atomically. -/
 theorem dispatchBlockingCancel_cancelled_context_valid state subject saved
-    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    (hcancelled : (dispatchBlockingCancel state subject).restored = some saved) :
     ResumablePreemption.validContext
       (dispatchBlockingCancel state subject).state.resumable saved := by
   cases houtcome : BlockingIPCContext.cancel state.blockingIPCContext subject with
@@ -2513,7 +2524,7 @@ bank while the authoritative scheduler publishes the canonical wake. -/
 theorem dispatchBlockingCancel_cancelled_preserves_runtimeWellFormed
     state subject saved
     (hstate : BlockingRuntimeWellFormed state)
-    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    (hcancelled : (dispatchBlockingCancel state subject).restored = some saved) :
     RuntimeWellFormed (dispatchBlockingCancel state subject).state := by
   have hpreserved := BlockingIPCContext.cancel_preserves_wellFormed
     state.blockingIPCContext subject hstate.2
@@ -2577,7 +2588,7 @@ invariant and the exact authoritative waiter/saved-context agreement. -/
 theorem dispatchBlockingCancel_cancelled_preserves_blockingRuntimeWellFormed
     state subject saved
     (hstate : BlockingRuntimeWellFormed state)
-    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    (hcancelled : (dispatchBlockingCancel state subject).restored = some saved) :
     BlockingRuntimeWellFormed (dispatchBlockingCancel state subject).state := by
   refine ⟨dispatchBlockingCancel_cancelled_preserves_runtimeWellFormed
       state subject saved hstate hcancelled, ?_⟩
@@ -2765,38 +2776,92 @@ theorem blockingGate_send_sent_preserves_runtimeWellFormed
     dispatchBlockingSend_sent_preserves_runtimeWellFormed
       state handleWord word0 word1 hstate hsent
 
+/-- The wake reply names exactly the owner of the context the wake
+republished; the context itself is only recorded for the kernel. -/
+theorem dispatchBlockingSend_woke_restored state handleWord word0 word1 receiver
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke receiver) :
+    ∃ saved, (dispatchBlockingSend state handleWord word0 word1).restored = some saved ∧
+      saved.owner = receiver := by
+  unfold dispatchBlockingSend at hwoke ⊢
+  dsimp only at hwoke ⊢
+  split at hwoke
+  · simp at hwoke
+  · generalize BlockingIPCContext.send _ _ _ _ = outcome at hwoke ⊢
+    rcases outcome with ⟨next, result, released⟩
+    cases result with
+    | ipcRejected reason => simp at hwoke
+    | contextRejected reason => simp at hwoke
+    | accepted =>
+        cases released with
+        | none => simp at hwoke
+        | some saved =>
+            dsimp only at hwoke ⊢
+            split at hwoke
+            · simp at hwoke
+            · simp only [CompositeBlockingSendReply.woke.injEq] at hwoke
+              exact ⟨saved, rfl, hwoke⟩
+
+/-- The cancellation reply names exactly the owner of the republished
+context. -/
+theorem dispatchBlockingCancel_cancelled_restored state subject cancelled
+    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled cancelled) :
+    ∃ saved, (dispatchBlockingCancel state subject).restored = some saved ∧
+      saved.owner = cancelled := by
+  unfold dispatchBlockingCancel at hcancelled ⊢
+  dsimp only at hcancelled ⊢
+  generalize BlockingIPCContext.cancel _ _ = outcome at hcancelled ⊢
+  rcases outcome with ⟨next, result, released⟩
+  cases result with
+  | notWaiting => simp at hcancelled
+  | ipcRejected reason => simp at hcancelled
+  | contextRejected reason => simp at hcancelled
+  | cancelled =>
+      cases released with
+      | none => simp at hcancelled
+      | some saved =>
+          dsimp only at hcancelled ⊢
+          split at hcancelled
+          · simp at hcancelled
+          · simp only [CompositeBlockingCancelReply.cancelled.injEq] at hcancelled
+            exact ⟨saved, rfl, hcancelled⟩
+
 /-- A wake reported by the outer gate publishes a context that is valid for
-the exact scheduler/lifecycle post-state paired with that typed result. -/
+the exact scheduler/lifecycle post-state paired with that typed result.  The
+reply names only the receiver; the context is the one the kernel recorded. -/
 theorem blockingGate_send_woke_context_valid
-    state handleWord word0 word1 saved
+    state handleWord word0 word1 receiver
     (hcompleted : (blockingGate state (.send handleWord word0 word1)).result =
-      .completed (.send (.woke saved))) :
-    ResumablePreemption.validContext
-      (blockingGate state (.send handleWord word0 word1)).state.resumable saved := by
+      .completed (.send (.woke receiver))) :
+    ∃ saved, saved.owner = receiver ∧
+      (dispatchBlockingSend state handleWord word0 word1).restored = some saved ∧
+      ResumablePreemption.validContext
+        (blockingGate state (.send handleWord word0 word1)).state.resumable saved := by
   have hsound := blockingGate_completed_sound state
-    (.send handleWord word0 word1) (.send (.woke saved)) hcompleted
+    (.send handleWord word0 word1) (.send (.woke receiver)) hcompleted
   have hwoke :
-      (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved := by
+      (dispatchBlockingSend state handleWord word0 word1).reply = .woke receiver := by
     simpa [blockingOperationReply] using hsound.2.1.symm
+  obtain ⟨saved, hrestored, howner⟩ :=
+    dispatchBlockingSend_woke_restored state handleWord word0 word1 receiver hwoke
+  refine ⟨saved, howner, hrestored, ?_⟩
   rw [hsound.2.2]
   simpa [applyBlockingOperation] using
-    dispatchBlockingSend_woke_context_valid state handleWord word0 word1 saved hwoke
+    dispatchBlockingSend_woke_context_valid state handleWord word0 word1 saved hrestored
 
 /-- The outer typed wake preserves both the global runtime invariant and the
 exact waiter/context agreement, so the released context cannot be published
 into a scheduler projection that disagrees with the blocking store. -/
 theorem blockingGate_send_woke_preserves_blockingRuntimeWellFormed
-    state handleWord word0 word1 saved
+    state handleWord word0 word1 receiver
     (hstate : BlockingRuntimeWellFormed state)
     (hcompleted : (blockingGate state (.send handleWord word0 word1)).result =
-      .completed (.send (.woke saved))) :
+      .completed (.send (.woke receiver))) :
     BlockingRuntimeWellFormed
       (blockingGate state (.send handleWord word0 word1)).state := by
   have hsound := blockingGate_completed_sound state
-    (.send handleWord word0 word1) (.send (.woke saved)) hcompleted
-  have hwoke :
-      (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved := by
-    simpa [blockingOperationReply] using hsound.2.1.symm
+    (.send handleWord word0 word1) (.send (.woke receiver)) hcompleted
+  obtain ⟨saved, hwoke, _⟩ := dispatchBlockingSend_woke_restored state handleWord word0 word1
+    receiver (by simpa [blockingOperationReply] using hsound.2.1.symm)
   refine ⟨?_, ?_⟩
   · rw [hsound.2.2]
     simpa [applyBlockingOperation] using
@@ -2812,16 +2877,18 @@ theorem blockingGate_send_woke_preserves_blockingRuntimeWellFormed
 
 /-- A cancellation reported by the outer gate likewise binds its restored
 context to the exact authoritative post-state. -/
-theorem blockingGate_cancel_cancelled_context_valid state subject saved
+theorem blockingGate_cancel_cancelled_context_valid state subject cancelled
     (hcompleted : (blockingGate state (.cancel subject)).result =
-      .completed (.cancel (.cancelled saved))) :
-    ResumablePreemption.validContext
-      (blockingGate state (.cancel subject)).state.resumable saved := by
+      .completed (.cancel (.cancelled cancelled))) :
+    ∃ saved, saved.owner = cancelled ∧
+      (dispatchBlockingCancel state subject).restored = some saved ∧
+      ResumablePreemption.validContext
+        (blockingGate state (.cancel subject)).state.resumable saved := by
   have hsound := blockingGate_completed_sound state
-    (.cancel subject) (.cancel (.cancelled saved)) hcompleted
-  have hcancelled :
-      (dispatchBlockingCancel state subject).reply = .cancelled saved := by
-    simpa [blockingOperationReply] using hsound.2.1.symm
+    (.cancel subject) (.cancel (.cancelled cancelled)) hcompleted
+  obtain ⟨saved, hcancelled, howner⟩ := dispatchBlockingCancel_cancelled_restored state
+    subject cancelled (by simpa [blockingOperationReply] using hsound.2.1.symm)
+  refine ⟨saved, howner, hcancelled, ?_⟩
   rw [hsound.2.2]
   simpa [applyBlockingOperation] using
     dispatchBlockingCancel_cancelled_context_valid state subject saved hcancelled
@@ -2829,17 +2896,16 @@ theorem blockingGate_cancel_cancelled_context_valid state subject saved
 /-- A cancellation completed by the outer typed gate preserves the integrated
 global runtime plus authoritative blocking-context invariant. -/
 theorem blockingGate_cancel_cancelled_preserves_blockingRuntimeWellFormed
-    state subject saved
+    state subject cancelled
     (hstate : BlockingRuntimeWellFormed state)
     (hcompleted : (blockingGate state (.cancel subject)).result =
-      .completed (.cancel (.cancelled saved))) :
+      .completed (.cancel (.cancelled cancelled))) :
     BlockingRuntimeWellFormed
       (blockingGate state (.cancel subject)).state := by
   have hsound := blockingGate_completed_sound state
-    (.cancel subject) (.cancel (.cancelled saved)) hcompleted
-  have hcancelled :
-      (dispatchBlockingCancel state subject).reply = .cancelled saved := by
-    simpa [blockingOperationReply] using hsound.2.1.symm
+    (.cancel subject) (.cancel (.cancelled cancelled)) hcompleted
+  obtain ⟨saved, hcancelled, _⟩ := dispatchBlockingCancel_cancelled_restored state subject
+    cancelled (by simpa [blockingOperationReply] using hsound.2.1.symm)
   rw [hsound.2.2]
   simpa [applyBlockingOperation] using
     dispatchBlockingCancel_cancelled_preserves_blockingRuntimeWellFormed

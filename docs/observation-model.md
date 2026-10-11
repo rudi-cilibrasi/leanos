@@ -290,13 +290,11 @@ agrees too).
     sealed transfer pending on S's endpoint exactly when a derivation S cannot
     see links it to the revoked root
     (`revokeSubtree_own_step_inconsistent`,
-    `revokeSubtree_other_step_inconsistent`);
-  - the replies of S's timer switch, of its blocking send that wakes a
-    waiter, and of its cancellation of a wait carry another subject's saved
-    registers (`resumePreempt_output_inconsistent`,
-    `blockingSend_output_inconsistent`, `blockingCancel_output_inconsistent`).
-    The model attributes the gate result to the scheduled subject, which is
-    S here.
+    `revokeSubtree_other_step_inconsistent`).
+
+The replies of S's timer switch, of its blocking send that wakes a waiter,
+and of its cancellation of a wait used to carry another subject's saved
+registers. That channel is closed; see the 2026-10-10 amendment below.
 
 The negative fixture `tests/negative/CompositeChannelOverclaims.lean` shows
 that the extended families cannot be instantiated for termination of another
@@ -309,7 +307,10 @@ subject, S's subtree revocation of its own slot, or S's timer switch.
   mappings (the canonical seed's return plan is not live, so it gives no
   counterexample);
 - step consistency of S's timer switch (`resumePreempt`) and of S's blocking
-  send, receive, and cancel, and output consistency of S's blocking receive;
+  send, receive, and cancel; output consistency of S's blocking receive; and
+  general output consistency of S's timer switch, blocking send, and wait
+  cancellation (their replies no longer carry registers, but the general
+  proof is not yet done);
 - output consistency of a drain of another subject;
 - step consistency of transfer receipt without `CarriedAgree` (in the
   canonical seed every object a transfer can carry is already named by S, so
@@ -324,3 +325,62 @@ evidence also shows the shared-capability channel: subtree revocation by
 another subject clears S's derived capability, although the operation names
 neither S nor its slots (`Evidence.shared_capability_revocation_visible`, and
 the negative fixture `tests/negative/SharedCapabilityConfidentiality.lean`).
+
+## Amendments
+
+### 2026-10-10: saved-register replies closed (#479)
+
+`#542` proved three output channels: the replies of S's timer switch
+(`resumePreempt`), of its blocking send that wakes a waiter, and of its
+cancellation of another subject's wait each carried that other subject's
+complete saved context, frame and registers included.
+
+**Model artifact, not a binary leak.** The booted kernel never returned
+those contexts to the caller. Every path in `boot/boot.S` that resumes a
+different subject (the timer gate `isr32`, the `isr80` send, block, report
+and server paths, fault delivery and the peer-restore paths of the fault
+families) overwrites all twenty words of the return frame. It copies either
+the incoming subject's own saved or initial context, or fifteen zero
+registers and a fresh `iretq` frame. The only words another subject
+contributes are values that subject passed as arguments (send payload words,
+call and reply words), values the kernel computes (subject numbers, answers,
+delivery flags, expiry bits), and, by design, the faulting instruction
+pointer in the fault-handler record. A subject that returns to itself gets
+only its own frame with the reply word in `rax`. The leak was in the model's
+typed reply, which recorded the restored context as if it were returned.
+
+`isr80` chooses its switch path by comparing the reply word with fixed
+values. A few replies carry a word a subject chose, so a chosen word equal to
+one of them would select another path. Each such path then fails closed
+(`switch_complete` or `validate_user_return` stops the machine before
+`iretq`), so nothing leaks. Separating the path selector from the reply word
+would remove the coincidence altogether.
+
+**Decision.** The replies now name a subject and nothing else:
+
+- `OperationReply.resume next error`, where `next` is the subject the switch
+  restored;
+- `CompositeBlockingSendReply.woke receiver`;
+- `CompositeBlockingCancelReply.cancelled subject`.
+
+The restored context stays in the composite state (the resumable bank) and,
+for the kernel's own proofs, in the dispatch outcome's `restored` field. The
+named subject is public. After a switch it is the scheduled subject of the
+post-state, which every view contains
+(`CompositeRegisterChannels.resume_reply_names_scheduled`). A wake names the
+receiver it released, and a cancellation names the subject it was asked to
+cancel. The generated dispatcher's scalar reply words are unchanged; only the
+typed meaning of its switch and wake selectors (`timerSwitched` and
+`blockingReceiverWoken`, the in-flight revocation family's
+`subjectTwoRestored`, and the capability-transfer boot family's switch) lost
+the context.
+
+**Adversarial record.** `CompositeRegisterChannels.legacyResume`,
+`legacySend` and `legacyCancel` compute the payload the old replies carried,
+from the same transitions. `legacy_replies_leaked` proves, by kernel
+evaluation on the canonical sample plan, that those payloads differ on
+`#542`'s pairs (states that satisfy every `OwnStepCounter` premise).
+`register_channel_closed_on_pairs` proves that the new replies on the same
+pairs are equal. The negative fixture
+`tests/negative/CompositeRegisterChannelReopened.lean` restates the old
+channel theorems for the new replies; the kernel rejects both.

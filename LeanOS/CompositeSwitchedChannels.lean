@@ -31,9 +31,12 @@ counter.  Only the hidden derivation of identity 7 differs.
 * `revokeSubtree_other_step_inconsistent`: revoking the subtree of subject
   1's root (slot 1, identity 2) cancels it exactly when identity 7 descends
   from identity 2.
-* `resumePreempt_output_inconsistent`: the reply of the observer's timer
-  switch carries the restored context of the next subject, whose registers
-  are outside the view.
+
+The traces `preemptLeftTrace`/`preemptRightTrace` and `blockedTrace` are the
+pairs on which the replies of the observer's timer switch, blocking send and
+wait cancellation used to carry another subject's saved registers;
+`LeanOS.CompositeRegisterChannels` keeps that record and proves the channel
+closed on them.
 -/
 namespace LeanOS.CompositeSwitchedChannels
 
@@ -127,26 +130,20 @@ def pairFacts (left right : CompositeState) : Bool :=
     left.capabilities.nextIdentity == right.capabilities.nextIdentity &&
     viewData 2 left == viewData 2 right
 
-/-- Every fact the channels below need, evaluated on one plan. -/
+/-- Every fact the channels below need, evaluated on one plan.  The replies of
+the observer's timer switch, blocking send and wait cancellation no longer
+differ on the paired states below: `LeanOS.CompositeRegisterChannels` keeps
+the record of the old replies and proves the new ones equal. -/
 def facts (plan : BootPageTablePlan.Plan) : Bool :=
   let left := runFrom plan leftTrace
   let right := runFrom plan rightTrace
-  let preemptLeft := runFrom plan preemptLeftTrace
-  let preemptRight := runFrom plan preemptRightTrace
   pairFacts left right &&
     Names (step left ownSubtree) 2 10 &&
     (step left ownSubtree).transfers.pending 10 !=
       (step right ownSubtree).transfers.pending 10 &&
     Names (step left otherSubtree) 2 10 &&
     (step left otherSubtree).transfers.pending 10 !=
-      (step right otherSubtree).transfers.pending 10 &&
-    pairFacts preemptLeft preemptRight &&
-    reply preemptLeft preempt != reply preemptRight preempt &&
-    pairFacts (runFrom plan blockedLeftTrace) (runFrom plan blockedRightTrace) &&
-    (authoritativeGate (runFrom plan blockedLeftTrace) blockingSend).result !=
-      (authoritativeGate (runFrom plan blockedRightTrace) blockingSend).result &&
-    (authoritativeGate (runFrom plan blockedLeftTrace) blockingCancel).result !=
-      (authoritativeGate (runFrom plan blockedRightTrace) blockingCancel).result
+      (step right otherSubtree).transfers.pending 10
 
 set_option maxRecDepth 100000 in
 /-- **Kernel evaluation on the canonical sample plan.** -/
@@ -378,36 +375,20 @@ structure Facts (plan : BootPageTablePlan.Plan) : Prop where
   otherNames : Names (step (runFrom plan leftTrace) otherSubtree) 2 10 = true
   otherPending : (step (runFrom plan leftTrace) otherSubtree).transfers.pending 10 ≠
     (step (runFrom plan rightTrace) otherSubtree).transfers.pending 10
-  preemptPair : pairFacts (runFrom plan preemptLeftTrace) (runFrom plan preemptRightTrace) = true
-  preemptReply : reply (runFrom plan preemptLeftTrace) preempt ≠
-    reply (runFrom plan preemptRightTrace) preempt
-  blockedPair : pairFacts (runFrom plan blockedLeftTrace) (runFrom plan blockedRightTrace) = true
-  sendReply : (authoritativeGate (runFrom plan blockedLeftTrace) blockingSend).result ≠
-    (authoritativeGate (runFrom plan blockedRightTrace) blockingSend).result
-  cancelReply : (authoritativeGate (runFrom plan blockedLeftTrace) blockingCancel).result ≠
-    (authoritativeGate (runFrom plan blockedRightTrace) blockingCancel).result
 
 theorem facts_parts {plan : BootPageTablePlan.Plan}
     (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
     Facts plan := by
   have hfacts := facts_of_compile hplan
   simp only [facts, Bool.and_eq_true, bne_iff_ne, ne_eq] at hfacts
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hpair, hownNames⟩, hownPending⟩, hotherNames⟩, hotherPending⟩,
-    hpreemptPair⟩, hpreempt⟩, hblockedPair⟩, hsend⟩, hcancel⟩ := hfacts
-  exact ⟨hpair, hownNames, hownPending, hotherNames, hotherPending, hpreemptPair, hpreempt,
-    hblockedPair, hsend, hcancel⟩
+  obtain ⟨⟨⟨⟨hpair, hownNames⟩, hownPending⟩, hotherNames⟩, hotherPending⟩ := hfacts
+  exact ⟨hpair, hownNames, hownPending, hotherNames, hotherPending⟩
 
 theorem derivation_pair (plan : BootPageTablePlan.Plan)
     (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
     OwnStepCounter 2 (runFrom plan leftTrace) (runFrom plan rightTrace) :=
   ownStepCounter_of_pairFacts plan _ _ leftTrace_keeps rightTrace_keeps
     (facts_parts hplan).derivationPair
-
-theorem blocked_pair (plan : BootPageTablePlan.Plan)
-    (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
-    OwnStepCounter 2 (runFrom plan blockedLeftTrace) (runFrom plan blockedRightTrace) :=
-  ownStepCounter_of_pairFacts plan _ _ (blockedTrace_keeps _) (blockedTrace_keeps _)
-    (facts_parts hplan).blockedPair
 
 theorem not_lowEquiv_of_pending {left right : CompositeState}
     (hnames : Names left 2 10 = true)
@@ -437,35 +418,5 @@ theorem revokeSubtree_other_step_inconsistent (plan : BootPageTablePlan.Plan)
         (step (runFrom plan rightTrace) otherSubtree) :=
   ⟨derivation_pair plan hplan,
     not_lowEquiv_of_pending (facts_parts hplan).otherNames (facts_parts hplan).otherPending⟩
-
-/-- **The observer's timer switch is output inconsistent**: its reply carries
-the restored context of the next subject, including registers outside the
-observer's view. -/
-theorem resumePreempt_output_inconsistent (plan : BootPageTablePlan.Plan)
-    (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
-    OwnStepCounter 2 (runFrom plan preemptLeftTrace) (runFrom plan preemptRightTrace) ∧
-      reply (runFrom plan preemptLeftTrace) preempt ≠
-        reply (runFrom plan preemptRightTrace) preempt :=
-  ⟨ownStepCounter_of_pairFacts plan _ _ preemptLeftTrace_keeps preemptRightTrace_keeps
-    (facts_parts hplan).preemptPair, (facts_parts hplan).preemptReply⟩
-
-/-- **The observer's blocking send is output inconsistent**: a send that wakes
-a waiter replies with the waiter's saved context, whose registers are outside
-the observer's view. -/
-theorem blockingSend_output_inconsistent (plan : BootPageTablePlan.Plan)
-    (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
-    OwnStepCounter 2 (runFrom plan blockedLeftTrace) (runFrom plan blockedRightTrace) ∧
-      (authoritativeGate (runFrom plan blockedLeftTrace) blockingSend).result ≠
-        (authoritativeGate (runFrom plan blockedRightTrace) blockingSend).result :=
-  ⟨blocked_pair plan hplan, (facts_parts hplan).sendReply⟩
-
-/-- **The observer's wait cancellation is output inconsistent**: it replies
-with the cancelled subject's saved context. -/
-theorem blockingCancel_output_inconsistent (plan : BootPageTablePlan.Plan)
-    (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
-    OwnStepCounter 2 (runFrom plan blockedLeftTrace) (runFrom plan blockedRightTrace) ∧
-      (authoritativeGate (runFrom plan blockedLeftTrace) blockingCancel).result ≠
-        (authoritativeGate (runFrom plan blockedRightTrace) blockingCancel).result :=
-  ⟨blocked_pair plan hplan, (facts_parts hplan).cancelReply⟩
 
 end LeanOS.CompositeSwitchedChannels
