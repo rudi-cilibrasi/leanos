@@ -4949,7 +4949,7 @@ private theorem lifecycleAllocatedKernel_invariant
     rw [hscheduleIPCCapabilities, hscheduleLifecycleCapabilities] at hkind
     simp [lifecycleReleasedCapabilities, lifecycleCapabilities,
       MemoryLifecycle.retireCapabilities] at hkind
-    split at hkind <;> simp_all
+    split at hkind <;> simp at hkind
   have hscheduleHistoryEndpoint :
       ∀ object envelope,
         envelope ∈
@@ -5255,7 +5255,7 @@ private theorem lifecycleAllocatedKernel_invariant
           some .endpoint at hkind
         simp [lifecycleReleasedCapabilities, lifecycleCapabilities,
           MemoryLifecycle.retireCapabilities] at hkind
-        split at hkind <;> simp_all
+        split at hkind <;> simp at hkind
   have htransfersAllocated :
       CapabilityTransfer.WellFormed
         (lifecycleAllocatedKernel plan).transfers := by
@@ -5307,7 +5307,7 @@ private theorem lifecycleAllocatedKernel_invariant
         rw [hblockingSchedule.2, hscheduleLifecycleCapabilities] at hcapabilityKind
         simp [lifecycleReleasedCapabilities, lifecycleCapabilities,
           MemoryLifecycle.retireCapabilities] at hcapabilityKind
-        split at hcapabilityKind <;> simp_all
+        split at hcapabilityKind <;> simp at hcapabilityKind
       · intro endpoint envelope hmailbox
         have hmailbox' :
             (lifecycleScheduleKernel plan).blockingIPCContext.ipc.mailbox
@@ -5320,7 +5320,7 @@ private theorem lifecycleAllocatedKernel_invariant
         rw [hblockingSchedule.2, hscheduleLifecycleCapabilities] at hkind
         simp [lifecycleReleasedCapabilities, lifecycleCapabilities,
           MemoryLifecycle.retireCapabilities] at hkind
-        split at hkind <;> simp_all
+        split at hkind <;> simp at hkind
     · intro subject saved hblocked
       exact hblockedResumableSchedule subject saved hblocked
     · intro subject saved hretained
