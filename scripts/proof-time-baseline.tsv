@@ -1,14 +1,14 @@
-# reason: LeanOS.Oracle checks every oracle vector, and the spawn boundary (#547) grew the corpus to 627+ vectors; record its measured normalized time on main (45.0 s, run 38151927204; 44.2 s on #553's run). Earlier: #550's Evidence/IOMMU re-measure, the FailStop split (#549) and the CompositeState projection raises.
+# reason: LeanOS.Oracle checks every oracle vector; the spawn syscall and loader adapters (#554/#555, adapters 30-33, 60 vectors) grew the corpus again, so record its measured normalized time (71.6 s, run 38166757901). Earlier: 45.0 s after the spawn boundary (#547), #550's Evidence/IOMMU re-measure, the FailStop split (#549).
 module	seconds
 LeanOS.BootPageTablePlan	139.8
 LeanOS.CompositeDispatcher	137.0
 LeanOS.CapabilityTransfer	103.9
 LeanOS.FaultDispatch	74.3
+LeanOS.Oracle	71.6
 LeanOS.BootMemoryMapStreamPipeline	62.9
 LeanOS.IOMMU	61.8
 LeanOS.ResumablePreemption	55.4
 LeanOS.DeviceProgramConfinement	54.4
-LeanOS.Oracle	45.0
 LeanOS.BlockingIPC	44.4
 LeanOS.QotomMadtStream	41.9
 LeanOS.Interrupt	38.4
