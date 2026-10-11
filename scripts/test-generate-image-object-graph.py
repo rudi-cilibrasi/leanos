@@ -1378,10 +1378,31 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
                     f"int generated_module_{index}(void) {{ return {index}; }}\n",
                     encoding="utf-8",
                 )
+            # A subject that includes Lean-generated C (#450) is compiled
+            # against lean/lean.h with that module's entry point; stand both
+            # in with a fake toolchain prefix and a stub that uses the
+            # subject's own hooks.
+            lean_prefix = Path(directory) / "lean"
+            (lean_prefix / "include/lean").mkdir(parents=True)
+            (lean_prefix / "include/lean/lean.h").write_text(
+                "/* fixture */\n", encoding="utf-8"
+            )
+            for entry in MODULE.BUILD_MANIFEST.get("subjects", {}).values():
+                if entry.get("generated") == "NetEcho":
+                    (build / "NetEcho.c").write_text(
+                        "uint64_t leanos_net_reply(uint64_t t, uint64_t len,\n"
+                        "                          uint64_t mac, uint64_t ip) {\n"
+                        "    return net_gen_wr8(net_gen_value(t, len), 0,\n"
+                        "                       (uint32_t)(net_gen_rd8(t, 0) ^ mac ^ ip));\n"
+                        "}\n",
+                        encoding="utf-8",
+                    )
+                elif entry.get("generated"):
+                    self.fail(f"no fixture stub for generated module {entry['generated']}")
             graph = Path(directory) / "objects.mk"
             graph.write_text(
                 MODULE.render_graph(
-                    build, "gcc", ["-O2"], Path("/lean"), source,
+                    build, "gcc", ["-O2"], lean_prefix, source,
                     [("kernel-selector", 1), ("post-validation-mutation", 11)],
                 ),
                 encoding="utf-8",

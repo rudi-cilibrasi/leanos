@@ -236,6 +236,49 @@ STREAM_EXPECTED = {
 }
 
 
+# Issue #450: the network-subject continuation of the stream. After the fixed
+# first exchange A calls the ring-3 network subject's C entry (its own
+# syscalls, 60 7 64 65, are compiled C outside this asm trace) and B is the
+# WiFi driver subject: one refused frame fetch (64), then the next frame (60)
+# sent to A (8) until 61. The dispatcher copies frames through the two
+# audited bounded copy roots (the first exchange's two transfers plus one
+# frame copy-out and one reply copy-in site), checks the cyclic witness, the
+# frame copy witness and the device witness, and invokes the device from
+# exactly one site.
+NETWORK_EXPECTED = {
+    **EXPECTED,
+    'a_syscalls': [4, 4, 8, 3],
+    'b_syscalls': [10, 11, 12, 7, 9, 64, 60, 8, 61, 3],
+    'copy_transfer_calls': 4,
+    'stream_invoke_calls': 1,
+    'stream_bind_calls': 1,
+    'network_entry_calls': 1,
+    'network_witnesses': {'leanos_blocking_ipc_event': True,
+                          'leanos_frame_copy_check': True,
+                          'leanos_device_authorize': True},
+}
+
+
+def network_facts(elf):
+    symbols, rows = load(elf)
+    user_a = body(symbols, rows, 'qotom_blocking_user_a')
+    # The dispatcher and the qotom_net_* helpers the compiler kept out of
+    # line: each generated witness must be called somewhere in them (the
+    # compiler may duplicate a call site, so presence, not a count).
+    bodies = [body(symbols, rows, 'qotom_entry_dispatch')]
+    bodies += [body(symbols, rows, name) for name in sorted(symbols)
+               if name.startswith('qotom_net_') and symbols[name][1] > 0 and
+               '.' not in name and name not in ('qotom_net_operands', 'qotom_net_ipc_words')
+               and any(row[0] == symbols[name][0] for row in rows)]
+    code = [row for rows_ in bodies for row in rows_]
+    return {
+        'network_entry_calls': calls(user_a, 'qotom_network_subject_main'),
+        'network_witnesses': {name: calls(code, name) > 0 for name in (
+            'leanos_blocking_ipc_event', 'leanos_frame_copy_check',
+            'leanos_device_authorize')},
+    }
+
+
 def stream_facts(elf):
     symbols, rows = load(elf)
     dispatch = body(symbols, rows, 'qotom_entry_dispatch')
@@ -255,11 +298,15 @@ def validate(observed, expected_facts=EXPECTED):
         raise ValueError('blocking profile retains PIT programming')
 
 
-def check(elf, device_stream=False):
+def check(elf, device_stream=False, network_subject=False):
     runpy.run_path(str(ROOT / 'scripts/audit-qotom-entry-integration.py'))['check'](
         elf, exception_integration=True, blocking_ipc_integration=True)
     observed = facts(elf)
-    if device_stream:
+    if network_subject:
+        observed.update(stream_facts(elf))
+        observed.update(network_facts(elf))
+        validate(observed, NETWORK_EXPECTED)
+    elif device_stream:
         observed.update(stream_facts(elf))
         validate(observed, STREAM_EXPECTED)
     else:
@@ -325,10 +372,13 @@ if __name__ == '__main__':
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--device-stream', action='store_true',
                         help='audit the issue #449 keyboard stream continuation')
+    parser.add_argument('--network-subject', action='store_true',
+                        help='audit the issue #450 network-subject continuation')
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.elf:
-        print(json.dumps(check(args.elf, args.device_stream), indent=2, sort_keys=True))
+        print(json.dumps(check(args.elf, args.device_stream, args.network_subject),
+                         indent=2, sort_keys=True))
     else:
         parser.error('provide an ELF or --self-test')
