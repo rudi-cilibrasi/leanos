@@ -111,6 +111,16 @@ Items 1, 4, and 5 remain partial, so the ring-3 spawn syscall stays gated.
 Items 1 and 4 are met in the model. Item 5 remains partial, so the ring-3
 spawn syscall stays gated.
 
+### Gate status update (2026-10-10, gate item 5)
+
+| Item | Status | Evidence or gap |
+| --- | --- | --- |
+| 1. One authoritative composite state | **Met** | The executable-boundary caveat of the previous row is closed by a refinement. `LeanOS.FrameBudgetComposite` gives every frame-budget token (`0x4001`–`0x4b01`) a composite denotation replayed by composite gates (`memoryGate` allocation and release, the authoritative timer switch, authoritative termination, an authoritative map syscall) and proves a forward simulation for every edge (`budget_tokens_simulated`): the composite successor is the counterpart step (`compositeOf_edge`), its typed result is the edge's reply (`counterpart_matches_reply`), and the budget view (current subject, live subjects, each live subject's usage and limit) agrees at every token (`views_agree`); on the budget projection the composite steps are exactly `FrameBudget.allocate` and `FrameBudget.release` (`allocateMemory_refines`, `releaseMemory_refines`). The generated table and the QEMU frame-budget image are unchanged. **Stated difference:** the standalone `FrameScrub` state of that fixture, like its QEMU image, reuses A's physical frame for B after A's termination; the composite frees frames across subjects only through child termination, and keeps a terminated non-child's frame charged to it, which no live subject can allocate in either model. |
+| 5. Canonical executable encoding with adversarial tests | **Met** | The spawn family is in the boot-compiled dispatcher (`leanos_composite_dispatch`, adapter 18) as eighteen state tokens (`0x7001`–`0x8101`) and 49 edges with the hosted oracles' tags `0x7001`, `0x7101`, `0x7201`, the memory tags `0x7301` and `0x7401`, and four bounded-boundary tags (kernel grant and revocation of spawn authority, timer switch, capability copy) (`LeanOS.SpawnBoundary`). *Canonical encoding:* `decodeFamily_encodeFamily`, `encodeFamily_decodeFamily`, `decodeState_encodeState`, and the reply decoding in `edges_dispatch`; the status byte and value word are the hosted oracles' (`edges_match_hosted_oracle`). *Refinement:* every edge is exactly one `childGate`, `memoryGate`, or authoritative step on the complete state its token names (`edge_refines`, `dispatcher_refines`), and every token satisfies the whole-trace theorem from a seed proved to satisfy the combined invariant (`spawn_boundary_trace`, `familySeed_resourceRuntimeWellFormed`). *Adversarial tests:* partial failure and rollback at every reachable spawn failure point, the frame grant, the memory family, and the kernel grant, each a stutter of the complete state (`rejected_edge_unchanged`); exhaustion of the subject budget, the frame budget, subject and object identities, and control generations; stale control words before and after child-table slot reuse and a stale memory handle after slot reuse; isolation of the child and of the bystander subject; termination cleanup with the returned frame allocated again on a scrubbed frame under a fresh identity (`boundary_checks_pass`); and 14 hostile encodings rejected before any gate (`spawn_negative_vectors_reject`). *Generated-C replay:* the 63 vectors are in the oracle corpus (627 vectors), replayed against the generated C by `check-oracle-host.sh` (ordinary and sanitized) and by every normal image's boot-time oracle replay under QEMU; `spawn_edge_vectors_match_model` ties each expected word to the model step. **Scope:** the boundary is a bounded table, not a general decoder; the slot-table-full and identity-rejection failures need seeds the table does not name and are covered by the hosted `SpawnOracle` vectors; reclamation of memory a child allocated itself is proved (`terminateChild_releases_everything`) but not exercised, since a child cannot run before a loader exists. |
+
+All six items are met for explicit spawn with the enumerated inheritance set.
+The architecture decision the gate requires is the amendment below.
+
 ### Spawn readiness decision
 
 The gate is **not met**. Spawn work may proceed only through #489 (explicit
@@ -306,3 +316,55 @@ subject counter at 2. No authoritative step reads or writes the issuers, so
 the dispatcher's states and these views differ only in that counter, and the
 whole dispatcher path is an admissible composite trace from a seed satisfying
 the combined invariant.
+
+## Amendment (2026-10-10): the ring-3 spawn syscall may be added (issue #489)
+
+### Evidence for the gate
+
+Every gate item is met for explicit spawn with the enumerated inheritance set
+(the 2026-10-07 set as clarified by the 2026-10-10 address-space amendment):
+
+1. One authoritative composite state: the 2026-10-10 rows for gate items 1
+   and 4 and for gate item 5 (`child_resource_trace`, `memoryGate_preserves`,
+   `budget_tokens_simulated`).
+2. Atomic creation, failure, and exhaustion semantics: the row for issues
+   #490 and #491 (`ChildOperation.apply_rejected_unchanged`, the three
+   exhaustion theorems, `terminateChild_releases_everything`).
+3. The enumerated inheritance set: the 2026-10-07 amendment and the
+   address-space clarification (`spawn_child_capabilities`,
+   `spawn_child_authority`).
+4. The proof plan: the row for gate items 1 and 4 (confinement, stale words
+   along every later trace, no nested children, complete cleanup).
+5. The executable boundary: the row for gate item 5 (`LeanOS.SpawnBoundary`,
+   the 627-vector corpus replayed against the generated C, hosted and booted).
+6. The trusted computing base and model-to-binary gap: ADR 0001, the README's
+   trusted-boundary section, and ADR 0023. The generated dispatcher, its C,
+   the compiler, and the QEMU replay remain trusted integration evidence, not
+   verification of the binary.
+
+### Decision for #489
+
+The readiness decision of 2026-10-07 ("the gate is not met") is superseded
+for explicit spawn. Issue #489 may add a ring-3 spawn syscall, under these
+conditions:
+
+- The syscall decodes exactly the canonical words of the spawn family:
+  spawn (`0x7001`), frame grant (`0x7101`), and child termination (`0x7201`)
+  with `decodeChild`, and memory allocation and release (`0x7301`, `0x7401`)
+  if it exposes them, with `decodeFamily`. A word sequence that does not
+  decode is rejected before any gate runs.
+- Each decoded command runs exactly `childGate` or `memoryGate` with the
+  latch's current subject as the actor; no word names the parent, the
+  child's identity, a frame, or an object identity.
+- The kernel grant and revocation of spawn authority (`0x7501`, `0x7601`),
+  the timer switch (`0x7701`), and the capability copy (`0x7801`) are
+  commands of the bounded dispatcher only. They are not syscalls: spawn
+  authority stays a kernel-granted capability kind.
+- The syscall's adapter joins the hosted generated-boundary replay with the
+  spawn family's vectors, and the result words keep the hosted oracles'
+  status codes and value words.
+- The child stays unschedulable until a loader issue decides admission and
+  code loading; a spawned child holds no spawn authority (one-level spawn).
+
+Fork, clone, and any operation with implicit inheritance stay excluded; this
+decision does not reopen them.
