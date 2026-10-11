@@ -602,14 +602,17 @@ lean_c_modules=(
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer
-  WifiExec
+  WifiExec NetworkSubject NetEcho
 )
 # Generated C file name -> Lean source. WifiExec is the device-program
 # executor step (LeanOS/Wifi/Exec.lean, issue #494) that the device-service
-# kernels run.
+# kernels run. NetEcho is the network subject's responder
+# (LeanOS/Net/EchoC.lean, issue #450): only the subject links it
+# (scripts/build-subject.sh --generated), never a kernel.
 lean_c_source() {
   case "$1" in
     WifiExec) printf '%s\n' LeanOS/Wifi/Exec.lean ;;
+    NetEcho) printf '%s\n' LeanOS/Net/EchoC.lean ;;
     *) printf 'LeanOS/%s.lean\n' "$1" ;;
   esac
 }
@@ -655,16 +658,16 @@ lake build leanos-wifi-gen
 # image object graph; publish its executable once before Make fans out.
 lake build leanos-elf-admit
 embed_device_program() {
-  local program="$1" stem="$2"
+  local program="$1" stem="$2" array="${3:-device_service_program}"
   .lake/build/bin/leanos-wifi-gen "$program" "$build/$stem.bin" >/dev/null
-  python3 - "$program" "$build/$stem.bin" "$build/$stem.h" <<'PY'
+  python3 - "$program" "$build/$stem.bin" "$build/$stem.h" "$array" <<'PY'
 import sys
 from pathlib import Path
 image = Path(sys.argv[2]).read_bytes()
 rows = ",\n".join("  " + ", ".join(str(b) for b in image[i:i + 16])
                    for i in range(0, len(image), 16))
 text = (f"/* Generated from leanos-wifi-gen {sys.argv[1]}; do not edit. */\n"
-        "static const uint8_t device_service_program[] = {\n" + rows + "\n};\n")
+        f"static const uint8_t {sys.argv[4]}[] = {{\n" + rows + "\n};\n")
 out = Path(sys.argv[3])
 if not out.exists() or out.read_text() != text:
     out.write_text(text)
@@ -672,6 +675,9 @@ PY
 }
 LEANOS_KBD_SECONDS=20 embed_device_program kbd-q35-service device-service-program
 embed_device_program ahci-q35-service ahci-service-program
+# The network-subject image (issue #450) hosts the deviceless frame source
+# (LeanOS.Net.FrameSource) for its driver subject.
+embed_device_program net-q35-frames network-subject-program network_subject_program
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
@@ -780,6 +786,7 @@ compute_graph_make_input_signature() {
       \( -name '*.c' -o -name 'composite-tokens.h' -o -name 'boundary-abi.h' -o \
       -name 'serial-protocol.h' -o -name 'device-service-program.h' -o \
       -name 'ahci-service-program.h' -o \
+      -name 'network-subject-program.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
       while IFS= read -r -d '' input; do
@@ -1254,7 +1261,8 @@ fi
 # Scenario images that reach CPL3 with their own syscall dispatch are gated
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
-    example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory; do
+    example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory \
+    network-subject; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \

@@ -1,4 +1,4 @@
-# reason: LeanOS.CompositeDispatcher and LeanOS.IOMMU elaborate proofs over FailStop.CompositeState, which gained the issuer/budget/scrub (#538), spawn (#543) and child-accounting (#544) projections; raise both to their measured CI times normalized to this baseline (IOMMU 81.4 s in run 38050760354; CompositeDispatcher 137 s on main after #543, with samples of 136.6 s and 168.7 s since)
+# reason: LeanOS.FailStop.Evidence entered the top 15 above the 60 s ceiling (62.8 s normalized in run 38103048046) after the spawn boot boundary (#547) grew the composite state it replays; record it at its measured time. Earlier: CompositeDispatcher and IOMMU raised for the #538/#543/#544 projections.
 module	seconds
 LeanOS.FailStop	137.8
 LeanOS.CompositeDispatcher	137.0
@@ -6,6 +6,7 @@ LeanOS.CapabilityTransfer	103.9
 LeanOS.BootPageTablePlan	139.8
 LeanOS.FaultDispatch	74.3
 LeanOS.BootMemoryMapStreamPipeline	62.9
+LeanOS.FailStop.Evidence	62.8
 LeanOS.IOMMU	81.4
 LeanOS.ResumablePreemption	55.4
 LeanOS.BlockingIPC	44.4

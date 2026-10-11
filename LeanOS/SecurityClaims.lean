@@ -44,6 +44,7 @@ import LeanOS.Refinement.BootTransitionC
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
+import LeanOS.NetworkSubject
 
 /-! # Stable security-claim contract
 
@@ -3916,6 +3917,47 @@ theorem device_console_separation {σ : Type} (models : Nat → Wifi.Sim.Device 
         c.device.devState k →
           ∃ fuel, action = .device (.invoke (KeyboardEcho.subjectId .a) fuel)) :=
   KeyboardEcho.boot_causes_distinct models c hcaps action
+
+/-- SC-NETWORK-SUBJECT-CONFINEMENT: frames cross between the WiFi driver
+subject and the ring-3 network subject only through the frame endpoint. A
+fetch or send by any subject other than the network subject is refused
+without effect; across any run, memory a subject did not store to itself
+changes only inside the network subject's own window (the kernel copies no
+frame byte anywhere else, the driver subject included); the transmit slot
+changes only by an accepted send from the network subject, carrying exactly
+bytes of its window, or by the driver program taking it; the generated
+witness refuses every other subject; and the network subject, never granted
+a device capability, cannot cause any device effect. -/
+theorem network_subject_confinement {σ : Type} (models : Nat → Wifi.Sim.Device σ) :
+    (∀ (w : NetworkSubject.Window) (s : NetworkSubject.State) (who : Nat),
+      who ≠ NetworkSubject.network →
+        (∀ addr, NetworkSubject.step w s (.fetch who addr) = (s, .refused)) ∧
+        (∀ addr len, NetworkSubject.step w s (.send who addr len) = (s, .refused))) ∧
+    (∀ (w : NetworkSubject.Window) (s : NetworkSubject.State) (ops : List NetworkSubject.Op)
+        (x a : Nat),
+      (∀ op ∈ ops, ∀ addr bytes, op ≠ .write x addr bytes) →
+      ¬(x = NetworkSubject.network ∧ w.contains a) →
+      (NetworkSubject.run w s ops).mem x a = s.mem x a) ∧
+    (∀ (w : NetworkSubject.Window) (s : NetworkSubject.State) (op : NetworkSubject.Op),
+      (NetworkSubject.step w s op).1.tx ≠ s.tx →
+        op = .transmit ∨
+        ∃ addr len, op = .send NetworkSubject.network addr len ∧ w.covers addr len = true ∧
+          (NetworkSubject.step w s op).1.tx =
+            NetworkSubject.readBytes (s.mem NetworkSubject.network) addr len) ∧
+    (∀ subject request addr len base limit : UInt64, subject ≠ 3 →
+      NetworkSubject.frameCopyCheck subject request addr len base limit = 1) ∧
+    (∀ (sys : DeviceCapability.System σ), sys.deviceCaps = KeyboardEcho.bootDeviceCaps →
+      ∀ ts : List DeviceCapability.Transition,
+        (∀ d, DeviceCapability.Transition.grant NetworkSubject.network d ∉ ts) →
+        (∀ program, DeviceCapability.step models (DeviceCapability.run models sys ts)
+            (.bind NetworkSubject.network program) =
+              (DeviceCapability.run models sys ts, .denied)) ∧
+        (∀ fuel, DeviceCapability.step models (DeviceCapability.run models sys ts)
+            (.invoke NetworkSubject.network fuel) =
+              (DeviceCapability.run models sys ts, .denied))) :=
+  ⟨NetworkSubject.nonholder_refused, NetworkSubject.run_mem_outside_window,
+   NetworkSubject.step_tx_changed, NetworkSubject.frameCopyCheck_nonholder,
+   fun sys hcaps ts hg => NetworkSubject.network_no_device_effects models sys hcaps ts hg⟩
 
 /-- SC-TIMER-CAPABILITY: the PIT alarm is armed only by an accepted arm from
 the timer-capability holder with a count in `1 .. 65535`; an arm from any
