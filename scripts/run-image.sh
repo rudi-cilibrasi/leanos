@@ -55,6 +55,8 @@ elif [[ "$scenario" == timer-server ]]; then
   default_image="build/boot/leanos-${version}-x86_64-timer-server.iso"
 elif [[ "$scenario" == frame-server ]]; then
   default_image="build/boot/leanos-${version}-x86_64-frame-server.iso"
+elif [[ "$scenario" == spawn-child ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-spawn-child.iso"
 elif [[ "$scenario" == endpoint-directory ]]; then
   default_image="build/boot/leanos-${version}-x86_64-endpoint-directory.iso"
 elif [[ "$scenario" == three-subject ]]; then

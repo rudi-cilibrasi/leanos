@@ -812,6 +812,45 @@ The hosted generated-C replay (`check-oracle-host.sh`) and every normal
 image's boot-time oracle replay run all 63 spawn vectors (49 edges and 14
 hostile encodings) through the generated dispatcher.
 
+### The ring-3 spawn syscall
+
+`LeanOS.SpawnSyscall` (#489) is the syscall that
+[ADR 0010](adr/0010-defer-fork.md)'s decision of 2026-10-10 permits. Numbers
+100 to 104 name spawn, frame grant, child termination, memory allocation and
+memory release, with RBX, RCX and RDX as the first three command words and a
+zero fourth ([userspace-abi.md](userspace-abi.md#spawn-spawn-child-image)).
+The generated witness `spawnSyscall` (export `leanos_spawn_syscall`, oracle
+adapter 30) takes the kernel's token, the current subject, and the four
+registers. It refuses a token outside the family (`0xfe20`), an actor other
+than the token's current subject (`0xfe21`), a number outside the family
+(`0xfe22`), and registers that do not decode (`0xfe23`), and otherwise returns
+the generated dispatcher's reply; a decodable command the bounded table does
+not cover is `0xfe24`, on which the kernel stops. `spawnSyscallValue`
+(adapter 31) is the value word. Both are allocation-free and fixed-width.
+
+| Property | Theorems |
+| --- | --- |
+| The canonical check is the decoder, and only child and memory commands decode | `canonical_iff_decodes` |
+| No number reaches a kernel command | `syscall_never_kernel_command` |
+| The generated spawn table answers an edge or an error word, for every input | `spawnDispatchRaw_cases` |
+| Every syscall is a refusal or exactly one edge at the presented token | `spawnSyscall_cases` |
+| The edge is one `childGate` or `memoryGate` step with the latch's current subject as actor, on the complete state the token names | `spawnSyscall_refines`, `stateActor_current` |
+| Every refusal and every rejection keeps the token and the pre-state | `spawnSyscall_rollback` |
+| Every reachable token satisfies the whole-trace theorem | `spawnSyscall_trace` |
+| The `spawn-child` image's run and the model states behind its transcript | `image_run`, `image_model` |
+
+The witness is a bounded boundary: the family's eighteen tokens name complete
+states, and only commands the table covers are gate steps. In the
+`spawn-child` image (#491) the kernel grants subject B (2) spawn authority with
+the bounded dispatcher's kernel command and enters B, which spawns a child,
+gives it a frame, terminates it, spawns a new child into the same child-table
+slot under generation 2, and presents the first child's control word for
+termination and for a grant: both are rejected with status `0xc3` and the
+state unchanged. The kernel realizes accepted steps (a fresh child root with
+an empty user window, the frame's scrub, and its return) and checks that every
+refusal and rejection leaves its token and its own records unchanged. The
+child is not runnable; nothing is loaded into it.
+
 ## Diagnostic and trusted boundary
 
 Boot-only WP/SMEP recovery remains a pre-runtime diagnostic behavior outside

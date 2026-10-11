@@ -185,6 +185,7 @@ index current:
 | `endpoint-directory` | evidence | SC-DIRECTORY-NO-AMPLIFICATION, SC-DIRECTORY-MISS |
 | `fault-handler` | evidence | SC-FAULT-HANDLER-DELIVERY |
 | `frame-server` | evidence | SC-FRAME-SERVER-BUDGET, SC-FRAME-SERVER-SCRUB, SC-FRAME-SERVER-CHECK |
+| `spawn-child` | evidence | SC-SPAWN-SYSCALL, SC-SPAWN-STALE-CHILD |
 | `timer-server` | evidence | SC-TIMER-CAPABILITY, SC-TIMER-SERVER-POLICY |
 | `three-subject` | evidence | none (integration only) |
 | `console-server` | evidence | SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY |
@@ -194,7 +195,7 @@ index current:
 <!-- scenario-index:end -->
 
 Before the main machine path, the normal images also replay the same bounded
-627-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+663-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -819,7 +820,11 @@ not promise `fork()`, a fork syscall, or a clone-like operation with implicit
 inheritance. [ADR 0010](docs/adr/0010-defer-fork.md) defines the whole-kernel
 readiness gate. Any future implementation must begin with a new architecture
 issue that closes every item in that gate before defining a model, ABI,
-adapter, or boot path.
+adapter, or boot path. Explicit spawn with an enumerated inheritance set
+passed that gate: the `spawn-child` image's ring-3 spawn syscall (numbers
+100 to 104, [userspace-abi.md](docs/userspace-abi.md#spawn-spawn-child-image))
+is decoded only by the generated witness `leanos_spawn_syscall`, whose every
+answer is a refusal or one `childGate`/`memoryGate` step of the spawn model.
 
 ## Contributing
 

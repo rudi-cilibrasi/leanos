@@ -249,6 +249,10 @@
         "-DLEANOS_FRAME_SERVER_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-frame-server.h\""
       ],
+      "kernel-spawn-child": [
+        "-DLEANOS_SPAWN_CHILD_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-spawn-child.h\""
+      ],
       "kernel-timer-server": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_TIMER_SERVER_SCENARIO=1",
@@ -585,6 +589,12 @@
           "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
           "-DLEANOS_FRAME_SERVER_SCENARIO=1",
           "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
+      "boot-spawn-child": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_SPAWN_CHILD_SCENARIO=1"
         ]
       },
       "boot-timer-server": {
@@ -1019,6 +1029,14 @@
         "prelink_plan": "boot-page-plan-frame-server.h",
         "plan_equal_to": null
       },
+      "leanos-spawn-child": {
+        "boot": "boot-spawn-child",
+        "kernel": "kernel-spawn-child",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-spawn-child.h",
+        "plan_equal_to": null
+      },
       "leanos-timer-server": {
         "boot": "boot-timer-server",
         "kernel": "kernel-timer-server",
@@ -1427,6 +1445,13 @@
           "key": "frame-server"
         }
       },
+      "leanos-spawn-child": {
+        "iso": "leanos-@VERSION@-x86_64-spawn-child.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "spawn-child"
+        }
+      },
       "leanos-timer-server": {
         "iso": "leanos-@VERSION@-x86_64-timer-server.iso",
         "grub": "boot/grub.cfg",
@@ -1817,6 +1842,16 @@
         "description": "frame-server",
         "targets": [
           "leanos-frame-server"
+        ]
+      },
+      {
+        "image": "leanos-spawn-child",
+        "check": "converge",
+        "expected": "boot-page-plan-spawn-child.h",
+        "final": "boot-page-plan-spawn-child.final.h",
+        "description": "spawn-child",
+        "targets": [
+          "leanos-spawn-child"
         ]
       },
       {
@@ -3692,6 +3727,28 @@
         "SC-FRAME-SERVER-CHECK"
       ],
       "does_not_prove": "Not a refinement of SC-FRAME-SERVER-BUDGET, SC-FRAME-SERVER-SCRUB, SC-FRAME-SERVER-CHECK: one finite QEMU run of a two-frame pool and two fixed budgets whose kernel checks each server decision against the generated Lean witness; the C kernel's mapping and scrub, boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
+    },
+    "spawn-child": {
+      "expectations": "scripts/expectations/spawn-child.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-spawn-child.iso",
+        "elf": "leanos-spawn-child.elf",
+        "serial_log": "spawn-child.serial.log",
+        "scenario": "spawn-child",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-SPAWN-SYSCALL",
+        "SC-SPAWN-STALE-CHILD"
+      ],
+      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-SPAWN-STALE-CHILD: one finite QEMU run of thirteen scripted ring-3 spawn-family syscalls whose kernel decodes each one only through the generated witness and keeps the token it names; the bounded table covers only these states, the child never runs and nothing is loaded into it, and the C kernel's mirror of accepted steps (child root, frame scrub and return), boot.S, the compiler, linker and QEMU stay trusted"
     },
     "timer-server": {
       "expectations": "scripts/expectations/timer-server.transcript",

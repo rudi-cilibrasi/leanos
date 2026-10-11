@@ -33,6 +33,8 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_timer_server_decide);
     REGISTER_BOUNDARY(leanos_frame_server_check);
     REGISTER_BOUNDARY(leanos_frame_server_view);
+    REGISTER_BOUNDARY(leanos_spawn_syscall);
+    REGISTER_BOUNDARY(leanos_spawn_syscall_value);
     REGISTER_BOUNDARY(leanos_capability_reuse_demo);
     REGISTER_BOUNDARY(leanos_extended_state_denial_demo);
     REGISTER_BOUNDARY(leanos_privilege_entry_control_demo);

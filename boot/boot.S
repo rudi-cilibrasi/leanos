@@ -1501,6 +1501,12 @@ isr80_cld:
     mov 136(%rsp), %r9
 #endif
     call syscall_handler
+#ifdef LEANOS_SPAWN_CHILD_SCENARIO
+    /* The spawn syscall's result word one (the generated value word) goes
+       to the caller's saved RBX; RAX gets the generated reply word below. */
+    mov spawn_syscall_value(%rip), %rcx
+    mov %rcx, 104(%rsp)
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
     cmp $0x3c01, %rax
     je 30f
@@ -3040,6 +3046,119 @@ user_b_entry:
     mov $62, %eax
     int $0x80
     ud2
+#elif defined(LEANOS_SPAWN_CHILD_SCENARIO)
+    /* Spawn parent (#489, #491).  B is the current subject and holds the
+       kernel-granted spawn capability (generation 1, subject budget 1),
+       endpoint handle 0x30000 (slot 0, with grant) and memory in slot 2.
+       Every syscall's reply word comes back in RAX (version 1, next-state
+       selector, status << 16; 0xfe2x is a refusal before any gate) and its
+       value word in RBX.  Any other answer is a fault (ud2). */
+    mov $1, %ebx                /* 100 spawn: generation 1, endpoint, send */
+    mov $0x30000, %ecx
+    mov $4, %edx
+    mov $100, %eax
+    int $0x80
+    cmp $0x017201, %rax
+    jne 9f
+    cmp $0x10000, %rbx          /* control word: slot 0, generation 1 */
+    jne 9f
+    mov %rbx, %r12
+    mov $1, %ebx                /* reserved rights bit: refused, no gate */
+    mov $0x30000, %ecx
+    mov $0x40, %edx
+    mov $100, %eax
+    int $0x80
+    cmp $0xfe23, %rax
+    jne 9f
+    mov $1, %ebx                /* a second child: subject budget 1 */
+    mov $0x30000, %ecx
+    mov $4, %edx
+    mov $100, %eax
+    int $0x80
+    cmp $0x8c7201, %rax
+    jne 9f
+    mov %r12, %rbx              /* 101 grant: B's memory holds its frame */
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $101, %eax
+    int $0x80
+    cmp $0xc57201, %rax
+    jne 9f
+    mov $2, %ebx                /* 104 release slot 2: the frame is free */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $104, %eax
+    int $0x80
+    cmp $0x017301, %rax
+    jne 9f
+    mov %r12, %rbx              /* 101 grant one frame to the child */
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $101, %eax
+    int $0x80
+    cmp $0x017401, %rax
+    jne 9f
+    cmp $1, %rbx
+    jne 9f
+    mov %r12, %rbx              /* 102 terminate: the frame comes back */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $102, %eax
+    int $0x80
+    cmp $0x017501, %rax
+    jne 9f
+    cmp $1, %rbx
+    jne 9f
+    mov %r12, %rbx              /* terminate again: stale control word */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $102, %eax
+    int $0x80
+    cmp $0xc37501, %rax
+    jne 9f
+    mov $2, %ebx                /* 103 allocate slot 2 */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $103, %eax
+    int $0x80
+    cmp $0x017601, %rax
+    jne 9f
+    mov $1, %ebx                /* spawn a new child into the same slot */
+    mov $0x30000, %ecx
+    mov $4, %edx
+    mov $100, %eax
+    int $0x80
+    cmp $0x017701, %rax
+    jne 9f
+    cmp $0x20000, %rbx          /* slot 0 again, generation 2 */
+    jne 9f
+    mov %rbx, %r13
+    mov %r12, %rbx              /* the old handle: terminate is rejected */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $102, %eax
+    int $0x80
+    cmp $0xc37701, %rax
+    jne 9f
+    mov %r12, %rbx              /* the old handle: grant is rejected */
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $101, %eax
+    int $0x80
+    cmp $0xc37701, %rax
+    jne 9f
+    mov %r13, %rbx              /* the new handle terminates the new child */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $102, %eax
+    int $0x80
+    cmp $0x017801, %rax
+    jne 9f
+    test %rbx, %rbx
+    jne 9f
+    mov $109, %eax              /* final report */
+    int $0x80
+9:  ud2
 #elif defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
     /* Directory server (#485).  Slot 0 holds endpoint 14 with send, receive
        and grant.  It registers it under "ECHO" (syscall 80), delegating send

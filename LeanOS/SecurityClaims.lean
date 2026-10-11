@@ -40,6 +40,7 @@ import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.FaultHandler
 import LeanOS.TimerServer
 import LeanOS.FrameServer
+import LeanOS.SpawnSyscall
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -4198,5 +4199,66 @@ theorem timer_server_alarm_policy :
    TimerServer.request_over_quota_refused,
    TimerServer.step_preserves_withinQuota,
    TimerServer.wake_only_by_holder⟩
+
+/-- SC-SPAWN-SYSCALL: the ring-3 spawn syscall's generated witness either
+refuses before any gate, keeping the kernel's token, or answers exactly one
+edge of the generated spawn table at the presented token.  That edge's words
+are the syscall's canonical command words, which decode to a public child or
+memory command (never a kernel command); the actor is the current subject of
+the latch on the complete state the token names; the step is exactly
+`childGate` or `memoryGate` there, whose post-state the successor token names;
+and a rejected step keeps the token and the complete pre-state. -/
+theorem spawn_syscall_refines_gate (plan : BootPageTablePlan.Plan)
+    (compiled : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan)
+    (state actor number rbx rcx rdx : UInt64) :
+    (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx ∈ SpawnSyscall.refusals ∧
+        SpawnSyscall.nextToken state (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) =
+          state) ∨
+      ∃ edge ∈ SpawnBoundary.edges, SpawnBoundary.encodeState edge.state = state ∧
+        SpawnBoundary.decodeFamily (SpawnSyscall.syscallWords number rbx rcx rdx) =
+          .ok edge.command ∧
+        SpawnSyscall.isSyscallCommand edge.command = true ∧
+        actor = UInt64.ofNat (FailStop.spawnParent (SpawnBoundary.stateOf plan edge.state)) ∧
+        SpawnBoundary.familyStep (SpawnBoundary.stateOf plan edge.state) edge.command =
+          { state := SpawnBoundary.stateOf plan edge.next, status := edge.status,
+            value := edge.value } ∧
+        SpawnSyscall.nextToken state (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) =
+          SpawnBoundary.encodeState edge.next ∧
+        (edge.status ≠ 0x01 → edge.next = edge.state ∧
+          (SpawnBoundary.familyStep (SpawnBoundary.stateOf plan edge.state) edge.command).state =
+            SpawnBoundary.stateOf plan edge.state) := by
+  rcases SpawnSyscall.spawnSyscall_cases state actor number rbx rcx rdx with
+    refused | ⟨edge, member, token, words, sameActor, _, _, reply⟩
+  · left
+    refine ⟨refused, ?_⟩
+    simp only [SpawnSyscall.refusals, List.mem_cons, List.not_mem_nil, or_false] at refused
+    simp only [SpawnSyscall.nextToken]
+    rcases refused with h | h | h | h | h <;> rw [h] <;> simp [SpawnSyscall.isEdgeReply]
+  · right
+    obtain ⟨decoded, isSyscall, current, step, next, _⟩ :=
+      SpawnSyscall.spawnSyscall_refines plan compiled state actor number rbx rcx rdx edge member
+        token words reply sameActor
+    exact ⟨edge, member, token, decoded, isSyscall, current, step, next,
+      SpawnBoundary.rejected_edge_unchanged plan compiled edge member⟩
+
+/-- SC-SPAWN-STALE-CHILD: a parent's control word for a child it terminated
+stays stale after the parent spawns a new child, including into the same
+child-table slot.  Both a frame grant and a termination through the old word
+are rejected with a typed control error and leave the complete composite
+state unchanged. -/
+theorem spawn_stale_child_control (state : FailStop.CompositeState) (word : UInt64)
+    (child returned : Nat) (accounting : FailStop.ChildAccountingWellFormed state)
+    (terminated : (FailStop.terminateChild state word).result = .terminated child returned)
+    (request : FailStop.SpawnRequest) (frames : Nat) :
+    let respawned :=
+      (FailStop.childGate (FailStop.terminateChild state word).state (.spawn request)).state
+    FailStop.spawnParent respawned = FailStop.spawnParent state →
+    (∃ reason, (FailStop.grantFrames respawned word frames).result =
+        .framesRejected (.control reason)) ∧
+      (FailStop.grantFrames respawned word frames).state = respawned ∧
+      (∃ reason, (FailStop.terminateChild respawned word).result = .terminateRejected reason) ∧
+      (FailStop.terminateChild respawned word).state = respawned :=
+  FailStop.stale_control_after_respawn state word child returned accounting terminated request
+    frames
 
 end LeanOS.SecurityClaims

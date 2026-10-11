@@ -73,6 +73,7 @@ LeanOS/SpawnAccountingOracle.lean	bounded-model
 LeanOS/SpawnBoundary.lean	bounded-model
 LeanOS/SpawnBoundaryChecks.lean	bounded-model
 LeanOS/SpawnOracle.lean	bounded-model
+LeanOS/SpawnSyscall.lean	bounded-model
 LeanOS/StaleTranslation.lean	bounded-model
 LeanOS/SubjectLifecycle.lean	bounded-model
 LeanOS/Syscall.lean	bounded-model

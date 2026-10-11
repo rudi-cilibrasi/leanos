@@ -45,6 +45,7 @@ GENERATED_MODULES = (
     "KeyboardEcho",
     "TimerServer",
     "FrameServer",
+    "SpawnSyscall",
     "WifiExec",
     "NetworkSubject",
 )
@@ -72,6 +73,7 @@ FAULT_DISPATCH_PARTS = (
     "KeyboardEcho",
     "TimerServer",
     "FrameServer",
+    "SpawnSyscall",
     "WifiExec",
     "NetworkSubject",
 )
