@@ -10,9 +10,14 @@
 
 static uint64_t qotom_blocking_step;
 /* The lab harness hosting the stream is absent from the canonical
-   device-service kernel variant, which the same overlay also builds. */
-#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && !defined(LEANOS_DEVICE_SERVICE_SCENARIO)
+   device-service and network-subject kernel variants, which the same
+   overlay also builds. */
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && \
+    !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
 #define QOTOM_IPC_DEVICE_STREAM 1
+#endif
+#if defined(QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
+#define QOTOM_NETWORK_SUBJECT 1
 #endif
 #ifdef QOTOM_IPC_DEVICE_STREAM
 /* Device stream continuation (issue #449 stage 3): after the fixed first
@@ -27,8 +32,8 @@ static uint64_t lab_stream_next_key(void);
     ((uint64_t)(event) + (uint64_t)(phase) * 0x100u +                        \
      (uint64_t)(current) * 0x10000u + (uint64_t)(space) * 0x100000000ull +   \
      (uint64_t)(sender) * 0x1000000000000ull)
-static uint64_t qotom_stream_sent0, qotom_stream_events;
-static void qotom_stream_key_name(uint64_t key) {
+static __attribute__((unused)) uint64_t qotom_stream_sent0, qotom_stream_events;
+static __attribute__((unused)) void qotom_stream_key_name(uint64_t key) {
     if (key == '\n') serial_puts("enter");
     else if (key == ' ') serial_puts("space");
     else if (key > 0x20 && key < 0x7f) serial_putc((char)key);
@@ -56,6 +61,18 @@ static uint64_t qotom_blocking_root(uint64_t subject) {
 static uint64_t qotom_blocking_rsp(uint64_t subject) {
     return subject==1?(uint64_t)user_a_stack_top:
         subject==2?(uint64_t)user_b_stack_top:0;
+}
+
+/* A subject enters with RSP at its stack top: the audited asm subjects
+   never push.  The network subject (A, compiled C) uses its stack after the
+   fixed first exchange, so from then on its RSP need only lie in its own
+   stack range. */
+static int qotom_blocking_rsp_ok(uint64_t rsp,uint64_t subject) {
+#ifdef QOTOM_NETWORK_SUBJECT
+    if(subject==1 && qotom_blocking_step>=30)
+        return rsp>(uint64_t)user_a_stack && rsp<=(uint64_t)user_a_stack_top;
+#endif
+    return rsp==qotom_blocking_rsp(subject);
 }
 
 static void qotom_copy_frame(uint64_t *destination,const uint64_t *source) {
@@ -86,7 +103,7 @@ static void qotom_require_user_frame(const uint64_t *saved,uint64_t subject,
     if(!saved || subject!=current_subject || expected==0 ||
        incoming!=expected || active_root!=qotom_entry_closed_root ||
        saved[16]!=UINT64_C(0x23) || saved[19]!=UINT64_C(0x1b) ||
-       saved[18]!=qotom_blocking_rsp(subject) ||
+       !qotom_blocking_rsp_ok(saved[18],subject) ||
        (saved[17]&UINT64_C(2))==0 || (saved[17]&prohibited)!=0 ||
        (allow_df && (saved[17]&(UINT64_C(1)<<10))==0))
         qotom_blocking_fail("qotom-blocking-frame");
@@ -205,9 +222,20 @@ static uint64_t qotom_blocking_capability(uint64_t *saved,uint64_t number) {
     qotom_blocking_fail("qotom-blocking-cap-sequence");
 }
 
+#ifdef QOTOM_NETWORK_SUBJECT
+#include "qotom-network-subject.c.inc"
+#endif
+
 static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
     uint64_t number=saved?saved[14]:UINT64_MAX;
     qotom_require_user_frame(saved,current_subject,number==4);
+#ifdef QOTOM_NETWORK_SUBJECT
+    if(qotom_blocking_step>=30) {
+        uint64_t root=qotom_net_dispatch(saved,number);
+        saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        return root;
+    }
+#endif
 
     if(current_subject==2 && number>=10 && number<=12) {
         saved[14]=qotom_blocking_capability(saved,number);
@@ -279,7 +307,21 @@ static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
         if(got!=oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected)
             qotom_blocking_fail("qotom-blocking-model-delivery");
         serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
-#ifdef QOTOM_IPC_DEVICE_STREAM
+#ifdef QOTOM_NETWORK_SUBJECT
+        /* Network subject (issue #450): A's send returns and A becomes the
+           network subject; B's report returns when A first blocks. */
+        qotom_copy_frame(qotom_saved_b,saved);
+        qotom_saved_b[14]=0;
+        qotom_saved_b[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        qotom_copy_frame(saved,qotom_saved_a);
+        saved[14]=0;
+        saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        qotom_blocking_step=30;
+        current_subject=1;
+        qotom_entry_subject_root=(uint64_t)page_map_level_4_a;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 role=network-subject\n");
+        return qotom_entry_subject_root;
+#elif defined(QOTOM_IPC_DEVICE_STREAM)
         qotom_blocking_step=5;
         saved[14]=0;
         saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
@@ -289,7 +331,7 @@ static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
         for(;;)__asm__ volatile("cli; hlt");
 #endif
     }
-#ifdef QOTOM_IPC_DEVICE_STREAM
+#if defined(QOTOM_IPC_DEVICE_STREAM) && !defined(QOTOM_NETWORK_SUBJECT)
     if(current_subject==2 && number==7 && qotom_blocking_step==5) {
         if(saved[13]!=0 || saved[12]!=0 || saved[11]!=0 ||
            leanos_blocking_ipc_event(0,1,2)!=QOTOM_STREAM_EVENT(1,1,1,1,0))

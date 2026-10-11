@@ -1,5 +1,7 @@
 # Reviewed trusted Lean declarations (issue #494): the C hook primitives of the
-# generated device-program executor, named in ADR 0020. One row per
+# generated device-program executor, named in ADR 0020, and (issue #450) the
+# three buffer hooks of the network subject's generated responder
+# (LeanOS/Net/EchoC.lean, docs/network-subject.md). One row per
 # @[extern] declaration: source file, then the C symbol. check.sh accepts
 # exactly these lines and fails on any other trusted declaration or a stale row.
 LeanOS/Wifi/Exec.lean	wifi_gen_value
@@ -45,3 +47,6 @@ LeanOS/Wifi/Exec.lean	wifi_gen_phys_base
 LeanOS/Wifi/Exec.lean	wifi_gen_delay
 LeanOS/Wifi/Exec.lean	wifi_gen_print
 LeanOS/Wifi/Exec.lean	wifi_gen_done
+LeanOS/Net/EchoC.lean	net_gen_value
+LeanOS/Net/EchoC.lean	net_gen_rd8
+LeanOS/Net/EchoC.lean	net_gen_wr8
