@@ -381,6 +381,25 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
                           &lab_dev_target, &policy, &hdr) ||
         !lab_dev_policy_admitted(&lab_dev_target, &policy))
         pre_admission_fail("qotom-stream-policy");
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+    /* The audited trust contract leaves the BCM43224 (02:00.0) in D3hot with
+       Command=0 (docs/qotom-broadcom-d3.md). Its PMCSR advertises
+       No_Soft_Reset, so the lab returns it to D0 with its BARs intact before
+       binding the WiFi program, and requires Command to still be 0: only the
+       program's admitted cmdSet enables Memory Space. Lab-only assignment
+       step, outside the reviewed contract (issue #450). */
+    if (lab_dev_target.bus == 2 && lab_dev_target.dev == 0 && lab_dev_target.fn == 0) {
+        uint32_t pm = wifi_hook_cfg_read32(0x44);
+        if ((pm & 0xffffu) != 0x400bu || (uint16_t)wifi_hook_cfg_read32(0x04) != 0)
+            pre_admission_fail("qotom-stream-broadcom-d3");
+        wifi_hook_cfg_write32(0x44, (pm & 0xffff0000u) | 0x4008u);
+        wifi_hook_delay_us(10000);
+        if ((wifi_hook_cfg_read32(0x44) & 0xffffu) != 0x4008u ||
+            (uint16_t)wifi_hook_cfg_read32(0x04) != 0)
+            pre_admission_fail("qotom-stream-broadcom-d0");
+        serial_puts("LEANOS-LAB/1 SERVICE assign device=2:0.0 pmcsr=d3hot,d0 command=0 result=PASS\n");
+    }
+#endif
     uint32_t id = wifi_hook_cfg_read32(0);
     uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);
     uint32_t bar1 = lab_dev_target.bar < 0x24u ? wifi_hook_cfg_read32(lab_dev_target.bar + 4u) : 0;
@@ -404,6 +423,10 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
     lab_stream_pages = pages;
     serial_puts("LEANOS-LAB/1 SERVICE grant subject=1 device=0:20.0 bind=accepted policy=admitted\n");
 }
+
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+static __attribute__((unused)) uint8_t *qotom_net_scratch(void) { return wifi_scratch; }
+#endif
 
 /* One invocation for subject 1: 0 once the program has halted. */
 static __attribute__((noinline, unused)) uint64_t lab_stream_next_key(void) {
