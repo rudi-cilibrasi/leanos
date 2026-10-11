@@ -655,11 +655,18 @@ inductive OperationReply where
   | interrupt (action : EntryAction)
   | interruptIdentityRejected (subject : Interrupt.SubjectId)
   | nmi (action : EntryAction)
-  | returnSelection (armed : Bool)
+  /-- Return-authority selection completed.  Whether the live return plan
+  armed the authority is kernel-internal: it reads the physical frames behind
+  the caller's code and stack, and a caller observes it only through the
+  following user return, which halts when the authority is not armed. -/
+  | returnSelection
   | userReturn (reply : UserReturnReply)
   | syscall (reply : Syscall.Reply)
   | ipc (reply : CompositeIPCReply)
-  | resume (restored : Option ResumablePreemption.Context)
+  /-- A resumable switch replies with the subject the scheduler restored (the
+  public scheduler choice), never with the restored context: its saved frame
+  and registers belong to that subject and stay in the resumable bank. -/
+  | resume (next : Option ResumablePreemption.SubjectId)
       (error : Option ResumablePreemption.Error)
   | transferOffer (result : CapabilityTransfer.Result CapabilityTransfer.OfferError)
   | transferAccept (result : CapabilityTransfer.AcceptResult)

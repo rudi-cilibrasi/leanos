@@ -1,4 +1,5 @@
 import LeanOS.FailStop.AuthoritativeTraces
+import LeanOS.KernelRfl
 
 /-!
 # Fail-stop composite: executable evidence and dispatcher seeds
@@ -400,10 +401,10 @@ example (state : CompositeState) :
       (blockingContextEvidenceBlocked state).state.resumable.translations.entries = [] := by
   exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
-set_option maxHeartbeats 800000 in
 /-- A boot-rooted authoritative state reaches the successful cancellation
 branch: subject 2 blocks with its exact saved context, the blocking transition
-preserves the folded invariant, and cancellation returns that context. -/
+preserves the folded invariant, and cancellation names subject 2 (its context
+is republished to the resumable bank, never returned in the reply). -/
 theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
     (hcompiled : BootPageTablePlan.compile input = .ok plan) :
     let initial := authoritativeBlockingCancelEvidence plan
@@ -414,9 +415,7 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
       AuthoritativeRuntimeWellFormed blocked.state ∧
       blocked.result = .completed (.blocking (.receive .blocked)) ∧
       (authoritativeGate blocked.state (.blocking (.cancel 2))).result =
-        .completed (.blocking (.cancel
-          (.cancelled (initial.blockingSavedContext
-            blockingEvidenceFrame blockingEvidenceRegisters2)))) := by
+        .completed (.blocking (.cancel (.cancelled 2))) := by
   have hboot :=
     bootRuntime_deferredBlockingRuntimeWellFormed input plan hcompiled
   have hcontrols := hboot.1.directPortControls
@@ -469,6 +468,9 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
     repeat' apply And.intro
     all_goals first
       | assumption
+      | simp [authoritativeBlockingCancelCapabilities,
+          authoritativeBlockingCancelSubject1Space,
+          authoritativeBlockingCancelSubject2Space]; done
       | simp_all [authoritativeBlockingCancelCapabilities,
           authoritativeBlockingCancelSubject1Space,
           authoritativeBlockingCancelSubject2Space]
@@ -489,7 +491,7 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
           blockingEvidenceFrame blockingEvidenceRegisters2))).state.resumable.contexts =
         [] := by
     rfl
-  refine ⟨hinitial, ?_, rfl, rfl⟩
+  refine ⟨hinitial, ?_, by kernel_rfl, by kernel_rfl⟩
   apply authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible _ _ hinitial
   change DormantCancellationCompatible _ _
   refine ⟨rfl, ?_, ?_, ?_⟩
@@ -508,11 +510,10 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
         installLifecycle, bootRuntime] at hretained
     contradiction
 
-set_option maxHeartbeats 800000 in
 /-- Explicit global termination consumes the waiter and exact blocked context
-created by the public blocking gate; the dead subject is never requeued.  This
-is a named theorem rather than an `example` so that its expensive
-definitional check is elaborated in parallel with the other evidence. -/
+created by the public blocking gate; the dead subject is never requeued.  The
+trace runs over an arbitrary background state, so the kernel, not the
+elaborator, checks each definitional equality (`kernel_rfl`). -/
 private theorem blockingContextEvidence_termination_consumes_waiter
     (state : CompositeState) :
     (blockingContextEvidenceTerminated state).result =
@@ -521,14 +522,13 @@ private theorem blockingContextEvidence_termination_consumes_waiter
       (blockingContextEvidenceTerminated state).state.blockingContexts 2 = none ∧
       (blockingContextEvidenceTerminated state).state.scheduler.lifecycle.capabilities.subjects
         2 = false := by
-  exact ⟨rfl, rfl, rfl, rfl⟩
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> kernel_rfl
 
-set_option maxHeartbeats 800000 in
 /-- Endpoint-owner termination removes the affected peer's waiter and blocked
 context together, retains the exact context for a checked cancellation drain,
 and clears the retired endpoint mailbox.  No external readiness witness is
-used to compute this executable trace.  Named, like the previous trace, so it
-is elaborated in parallel. -/
+used to compute this executable trace.  Checked by the kernel, like the
+previous trace. -/
 private theorem blockingContextEvidence_ownerTermination_defers_peer
     (state : CompositeState) :
     (blockingContextEvidenceOwnerTerminated state).result =
@@ -540,7 +540,7 @@ private theorem blockingContextEvidence_ownerTermination_defers_peer
         some ((blockingContextEvidenceComposite state).blockingSavedContext
           blockingEvidenceFrame blockingEvidenceRegisters2) ∧
       (blockingContextEvidenceOwnerTerminated state).state.blockingIPC.mailbox 10 = none := by
-  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> kernel_rfl
 
 /-- A mixed rejected-block-wake trace composes at the authoritative composite
 boundary.  The rejected prefix is atomic; both accepted suffix steps preserve
@@ -554,7 +554,7 @@ theorem mixedBlockingWakeTrace_preserves state staleWord liveWord frame register
     (_hblocked : (dispatchBlockingReceive state liveWord frame registers).reply = .blocked)
     (hwoke : (dispatchBlockingSend
       (dispatchBlockingReceive state liveWord frame registers).state
-      liveWord word0 word1).reply = .woke saved) :
+      liveWord word0 word1).restored = some saved) :
     (dispatchBlockingReceive state staleWord frame registers).state = state ∧
       BlockingReceiveWellFormed
         (dispatchBlockingReceive state liveWord frame registers).state ∧
@@ -590,8 +590,8 @@ theorem mixedBlockingCancelTrace_preserves state staleWord liveWord frame regist
       .handleRejected (.denied .staleHandle))
     (_hblocked : (dispatchBlockingReceive state liveWord frame registers).reply = .blocked)
     (hcancelled : (dispatchBlockingCancel
-      (dispatchBlockingReceive state liveWord frame registers).state subject).reply =
-        .cancelled saved) :
+      (dispatchBlockingReceive state liveWord frame registers).state subject).restored =
+        some saved) :
     (dispatchBlockingReceive state staleWord frame registers).state = state ∧
       BlockingReceiveWellFormed
         (dispatchBlockingReceive state liveWord frame registers).state ∧

@@ -690,7 +690,7 @@ theorem dispatchBlockingSend_woke_not_retained state handleWord word0 word1 rest
     (hstate : AuthoritativeRuntimeWellFormed state)
     (hretained : state.deferredCancels.retained subject = some retained)
     (hwoke :
-      (dispatchBlockingSend state handleWord word0 word1).reply = .woke restored) :
+      (dispatchBlockingSend state handleWord word0 word1).restored = some restored) :
     restored.owner ≠ subject := by
   have hcoherent : state.BlockingIPCCoherent := by
     rcases hstate.blocking.1 with
@@ -718,7 +718,7 @@ released waiter is removed from the blocked bank, appended to the resumable
 bank, and is the only identity whose scheduler/waiter projections change. -/
 theorem dispatchBlockingSend_woke_projection_exact state handleWord word0 word1 saved
     (hstate : BlockingReceiveWellFormed state)
-    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved) :
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).restored = some saved) :
     let next := (dispatchBlockingSend state handleWord word0 word1).state
     ∃ endpoint receiver rest,
       state.blockingContexts receiver = some saved ∧
@@ -972,14 +972,16 @@ theorem blockingSend_authoritativeOperationCompatible state handleWord word0 wor
             exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
               hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
               hvalid.2.2.2.2.2.2, hstate.2.2.2 subject saved hretained⟩
-      | woke saved =>
+      | woke wokenReceiver =>
+          obtain ⟨saved, hrestored, _⟩ := dispatchBlockingSend_woke_restored
+            state handleWord word0 word1 wokenReceiver hreply
           have hcoherent : state.BlockingIPCCoherent := by
             rcases hstate.blocking.1 with
               ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
             exact hblocking
           have hshape := dispatchBlockingSend_woke_projection_exact
             state handleWord word0 word1 saved
-              ⟨hstate.blocking.2, hcoherent⟩ hreply
+              ⟨hstate.blocking.2, hcoherent⟩ hrestored
           dsimp only at hshape
           obtain ⟨endpoint, receiver, rest, hstored, howner, hdeferred,
             hblocked, hipc, hcontexts, hqueue⟩ := hshape
@@ -1010,7 +1012,7 @@ theorem blockingSend_authoritativeOperationCompatible state handleWord word0 wor
               intro heq
               have hnotOwner := dispatchBlockingSend_woke_not_retained
                 state handleWord word0 word1 saved candidate retained
-                  hstate hretained hreply
+                  hstate hretained hrestored
               exact hnotOwner (howner.trans heq)
             rw [hipc, hcontexts]
             have hbefore :
@@ -1067,7 +1069,7 @@ theorem dispatchBlockingCancel_retained_unchanged state subject retained
 blocking indexes and scheduler state, then prepends its released context. -/
 theorem dispatchBlockingCancel_cancelled_projection_exact state subject saved
     (hstate : BlockingReceiveWellFormed state)
-    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    (hcancelled : (dispatchBlockingCancel state subject).restored = some saved) :
     let next := (dispatchBlockingCancel state subject).state
     next.deferredCancels = state.deferredCancels ∧
       next.blockingContexts =
@@ -1170,14 +1172,16 @@ theorem blockingCancel_authoritativeOperationCompatible state subject
             (.ipc reason) hreply]
           exact dormantCancellationCompatible_of_exact_projections
             state state hstate rfl rfl rfl rfl
-      | cancelled restored =>
+      | cancelled cancelledSubject =>
+          obtain ⟨restored, hrestored, _⟩ := dispatchBlockingCancel_cancelled_restored
+            state subject cancelledSubject hreply
           have hcoherent : state.BlockingIPCCoherent := by
             rcases hstate.blocking.1 with
               ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
             exact hblocking
           have hshape := dispatchBlockingCancel_cancelled_projection_exact
             state subject restored
-              ⟨hstate.blocking.2, hcoherent⟩ hreply
+              ⟨hstate.blocking.2, hcoherent⟩ hrestored
           dsimp only at hshape
           rcases hshape with ⟨hdeferred, hblocked, hipc, hcontexts, howner⟩
           refine ⟨hdeferred, ?_, ?_, ?_⟩

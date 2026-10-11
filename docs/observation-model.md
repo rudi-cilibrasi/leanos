@@ -290,26 +290,28 @@ agrees too).
     sealed transfer pending on S's endpoint exactly when a derivation S cannot
     see links it to the revoked root
     (`revokeSubtree_own_step_inconsistent`,
-    `revokeSubtree_other_step_inconsistent`);
-  - the replies of S's timer switch, of its blocking send that wakes a
-    waiter, and of its cancellation of a wait carry another subject's saved
-    registers (`resumePreempt_output_inconsistent`,
-    `blockingSend_output_inconsistent`, `blockingCancel_output_inconsistent`).
-    The model attributes the gate result to the scheduled subject, which is
-    S here.
+    `revokeSubtree_other_step_inconsistent`).
+
+The replies of S's timer switch, of its blocking send that wakes a waiter,
+and of its cancellation of a wait used to carry another subject's saved
+registers. That channel is closed; see the 2026-10-10 amendment below.
 
 The negative fixture `tests/negative/CompositeChannelOverclaims.lean` shows
 that the extended families cannot be instantiated for termination of another
 subject, S's subtree revocation of its own slot, or S's timer switch.
 
-**Remaining gaps.** No theorem and no counterexample yet covers:
+**Remaining gaps when #542 landed** (all closed by the 2026-10-10 amendments
+below). No theorem and no counterexample then covered:
 
 - output consistency of `selectUserReturn` and `userReturn`, whose replies
   read the boot return plan and the physical frames behind S's code and stack
   mappings (the canonical seed's return plan is not live, so it gives no
   counterexample);
 - step consistency of S's timer switch (`resumePreempt`) and of S's blocking
-  send, receive, and cancel, and output consistency of S's blocking receive;
+  send, receive, and cancel; output consistency of S's blocking receive; and
+  general output consistency of S's timer switch, blocking send, and wait
+  cancellation (their replies no longer carry registers, but the general
+  proof is not yet done);
 - output consistency of a drain of another subject;
 - step consistency of transfer receipt without `CarriedAgree` (in the
   canonical seed every object a transfer can carry is already named by S, so
@@ -324,3 +326,235 @@ evidence also shows the shared-capability channel: subtree revocation by
 another subject clears S's derived capability, although the operation names
 neither S nor its slots (`Evidence.shared_capability_revocation_visible`, and
 the negative fixture `tests/negative/SharedCapabilityConfidentiality.lean`).
+
+## Amendments
+
+### 2026-10-10: saved-register replies closed (#479)
+
+`#542` proved three output channels: the replies of S's timer switch
+(`resumePreempt`), of its blocking send that wakes a waiter, and of its
+cancellation of another subject's wait each carried that other subject's
+complete saved context, frame and registers included.
+
+**Model artifact, not a binary leak.** The booted kernel never returned
+those contexts to the caller. Every path in `boot/boot.S` that resumes a
+different subject (the timer gate `isr32`, the `isr80` send, block, report
+and server paths, fault delivery and the peer-restore paths of the fault
+families) overwrites all twenty words of the return frame. It copies either
+the incoming subject's own saved or initial context, or fifteen zero
+registers and a fresh `iretq` frame. The only words another subject
+contributes are values that subject passed as arguments (send payload words,
+call and reply words), values the kernel computes (subject numbers, answers,
+delivery flags, expiry bits), and, by design, the faulting instruction
+pointer in the fault-handler record. A subject that returns to itself gets
+only its own frame with the reply word in `rax`. The leak was in the model's
+typed reply, which recorded the restored context as if it were returned.
+
+`isr80` chooses its switch path by comparing the reply word with fixed
+values. A few replies carry a word a subject chose, so a chosen word equal to
+one of them would select another path. Each such path then fails closed
+(`switch_complete` or `validate_user_return` stops the machine before
+`iretq`), so nothing leaks. Separating the path selector from the reply word
+would remove the coincidence altogether.
+
+**Decision.** The replies now name a subject and nothing else:
+
+- `OperationReply.resume next error`, where `next` is the subject the switch
+  restored;
+- `CompositeBlockingSendReply.woke receiver`;
+- `CompositeBlockingCancelReply.cancelled subject`.
+
+The restored context stays in the composite state (the resumable bank) and,
+for the kernel's own proofs, in the dispatch outcome's `restored` field. The
+named subject is public. After a switch it is the scheduled subject of the
+post-state, which every view contains
+(`CompositeRegisterChannels.resume_reply_names_scheduled`). A wake names the
+receiver it released, and a cancellation names the subject it was asked to
+cancel. The generated dispatcher's scalar reply words are unchanged; only the
+typed meaning of its switch and wake selectors (`timerSwitched` and
+`blockingReceiverWoken`, the in-flight revocation family's
+`subjectTwoRestored`, and the capability-transfer boot family's switch) lost
+the context.
+
+**Adversarial record.** `CompositeRegisterChannels.legacyResume`,
+`legacySend` and `legacyCancel` compute the payload the old replies carried,
+from the same transitions. `legacy_replies_leaked` proves, by kernel
+evaluation on the canonical sample plan, that those payloads differ on
+`#542`'s pairs (states that satisfy every `OwnStepCounter` premise).
+`register_channel_closed_on_pairs` proves that the new replies on the same
+pairs are equal. The negative fixture
+`tests/negative/CompositeRegisterChannelReopened.lean` restates the old
+channel theorems for the new replies; the kernel rejects both.
+
+### 2026-10-10: cross-subject requests refused (#479)
+
+`#542` proved that every request of S naming another subject was a channel.
+The affected requests are:
+
+- creation, termination and queue admission of another subject, whose
+  replies reveal its liveness and issuance;
+- delegation into, and direct and subtree revocation of, another subject's
+  slot, whose replies reveal its occupancy;
+- termination of another subject, which cancels S's pending offer;
+- subtree revocation of another subject's capability, which depends on a
+  hidden derivation.
+
+S's cancellation of another subject's wait and its drain of another subject
+read that subject's wait and retained state in the same way.
+
+**Decision ([ADR 0025](adr/0025-subject-gate-cross-subject-refusal.md)).**
+`FailStop.authoritativeGate` stays the kernel's transition engine: boot, the
+spawn family, contained-fault cleanup and the issued lifecycle family use it
+without a caller. `FailStop.subjectGate` is the gate a scheduled subject asks
+through. When the latch is running, a subject is scheduled and the request
+names another subject (`AuthoritativeOperation.target`), the gate refuses
+with one fixed result, `crossSubjectRefused`. It decides this before
+anything of the target is read and changes nothing. Otherwise it is exactly
+`authoritativeGate`. Authorized cross-subject management goes through
+sealed transfer, subtree revocation of the caller's own lineage root, the
+spawn family and the fault-handler binding.
+
+**The unwinding over the subject gate** (`LeanOS.CompositeSubjectGate`):
+
+- Refusal reads only the latch mode, the scheduled subject and the request.
+  Another subject's refused request is therefore silent
+  (`subjectGate_silent_observe`), and finite-trace noninterference holds over
+  the subject gate (`finite_trace_lowEquiv_subject`).
+- When S names another subject, both states of an `OwnStep` pair refuse, or,
+  with the latch busy or halted, reject from the latch alike
+  (`own_cross_stutter`). S's cross-subject requests are step and output
+  consistent with no further premise (`own_step_cross`, `own_output_cross`).
+- Every other request is `authoritativeGate` on both sides
+  (`subjectGate_own`), so the families proved for the authoritative gate
+  carry over (`own_step_consistent_subject`,
+  `own_output_consistent_subject`).
+
+**Adversarial record.** The channel theorems over `authoritativeGate` in
+`LeanOS.CompositeChannels` and `LeanOS.CompositeSwitchedChannels` stay: they
+show that the raw transitions leaked when exposed to a subject.
+`cross_subject_channels_closed` and `revokeSubtree_other_closed` re-evaluate
+the same pairs through the subject gate and find equal replies and
+low-equivalent states. The negative fixture
+`tests/negative/CompositeCrossSubjectReopened.lean` restates three of the old
+channels for the subject gate; the kernel rejects all three.
+
+Still open after this amendment:
+
+- step consistency of S's subtree revocation of its own slot (a hidden
+  derivation);
+- transfer receipt without `CarriedAgree`;
+- the gaps listed above: the outputs of `selectUserReturn` and `userReturn`;
+  the timer switch; blocking send, receive and S's cancellation of itself.
+
+### 2026-10-10: the full view; every request consistent (#479)
+
+This amendment closes the remaining gaps. After it, every request S can make
+through the subject gate is step and output consistent. The only exclusions
+are timing, caches, device reads, the termination channel, refinement, the
+scheduler's choice as a public input, and the identity counter as a declared
+public input.
+
+**The full view ([ADR 0026](adr/0026-full-authority-view.md)).**
+`CompositeFullView.observeFull` is `observe` plus S's authority. For every
+capability in S's row it adds:
+
+- the capability's lineage, the chain of identities it derives from;
+- for the sealed transfer pending on the object it names, if any:
+  - the transfer's lineage;
+  - the carried object's view;
+  - the lineage of the transfer pending on the carried object.
+
+Both additions are authority S already holds:
+
+- Subtree revocation is defined over lineage. Which capabilities and offers
+  S's revocation removes is its revocation authority.
+- A transfer pending on an endpoint S names is an offer to S, which S can
+  accept at any time.
+
+Lineages of issued identities never change (`lineage_of_extends`) and decide
+revocation's bounded walk exactly (`descendsFrom_eq_lineage`).
+
+**No nested receipt.** The subject gate also refuses a receipt that carries
+another endpoint which has a transfer of its own pending
+(`refusesNestedTransfer`, result `nestedTransferRefused`, no effect).
+Otherwise receipt would make reachable an object that no offer to S carried.
+A transfer that carries the endpoint it is pending on is not refused, so the
+scripted receipt of the `capability-transfer` image is unaffected.
+
+**Public inputs.** `CompositeOwnSwitch.KernelPublic` treats the scheduler's
+bookkeeping as part of the scheduler's choice:
+
+- the ready queue and its capacity;
+- which subjects hold a saved context, and the bank's capacity;
+- the waiter-queue capacity.
+
+The identity counter stays a declared public input (`OwnStepCounter`).
+
+**The remaining gaps, closed** (each over the subject gate):
+
+| Request of S | Step | Output |
+| --- | --- | --- |
+| timer switch (`resumePreempt`) | `own_step_resumePreempt` | `own_output_resumePreempt` |
+| `selectUserReturn` | frame rule | `own_output_selectUserReturn` |
+| `userReturn` | frame rule | `own_output_userReturn`, when neither run halts |
+| blocking send, receive | `own_blockingSend`, `own_blockingReceive` | the same theorems |
+| cancellation of itself | `own_blockingCancel_self` | the same theorem |
+| receipt | `agree_accept` (no `CarriedAgree` premise) | `own_output_accept` |
+| subtree revocation of its own slot | `full_revoked` | `reply_revokeSubtree_self` |
+
+Notes on the table:
+
+- **Timer switch.** The switch decision reads only public data
+  (`switch_decision`), and the reply names the scheduled subject.
+- **`selectUserReturn`.** The reply is now constant. Whether the live return
+  plan armed the authority reads the physical frames behind S's code and
+  stack. No ring-3 result carries it: the only consequence S can see is the
+  following user return, which halts when the authority is not armed. So the
+  former `returnSelection armed` payload was a model artifact.
+- **`userReturn`.** Every rejection of a user return halts the machine. The
+  only difference is therefore the termination channel.
+- **Blocking send and receive.** The decision reads S's handle, the endpoint
+  (in the view), and the public bookkeeping. A woken receiver's saved context
+  moves to the bank; the reply names the receiver only.
+- **Cancellation of itself.** A scheduled S waits on nothing, so nothing
+  changes.
+
+Drains and cancellations of another subject are refused (ADR 0025).
+
+**The full statement** (`LeanOS.CompositeFullIsolation`,
+`LeanOS.CompositeFullTrace`). The premise `FullStep` is:
+
+- both states runtime-well-formed;
+- S scheduled;
+- the same fail-stop mode;
+- equal full views;
+- agreement on the public inputs.
+
+Under it:
+
+- every request through the subject gate keeps the full views equal
+  (`full_step`);
+- every request returns the same result, except that a user return may
+  differ by halting (`full_output`).
+
+For whole runs:
+
+- Another subject's request is silent on the full view when the subject gate
+  refuses it, or when it is silent for the view and touches no object S is
+  offered (`isSilentFull`, local respect `subjectGate_silent_full`).
+- Finite runs with equal projections end fully low-equivalent
+  (`finite_trace_full`).
+
+SC-COMPOSITE-OBSERVER-ISOLATION states all of this as conjunct (22).
+
+**Adversarial record.**
+
+- `revokeSubtree_own_step_inconsistent` stays: the base view does not contain
+  lineage.
+- On the same pair, the kernel evaluates the full views to different lineages
+  (`CompositeFullChannels.revokeSubtree_own_closed`).
+- The negative fixture `tests/negative/CompositeFullSubtreeReopened.lean`
+  restates the old premise on the full view; the kernel rejects it.
+- Receipt had no counterexample on the canonical seed (every object a transfer
+  there can carry is already named by S). It is closed by proof:
+  `agree_accept` derives what `CarriedAgree` assumed from the full view.

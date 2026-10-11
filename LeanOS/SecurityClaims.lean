@@ -21,6 +21,9 @@ import LeanOS.CompositeChannels
 import LeanOS.CompositeLocalRespect
 import LeanOS.CompositeOwnTermination
 import LeanOS.CompositeSwitchedChannels
+import LeanOS.CompositeRegisterChannels
+import LeanOS.CompositeSubjectGate
+import LeanOS.CompositeFullChannels
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -1104,22 +1107,26 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
         .completed (.send (.woke saved)) →
       FailStop.BlockingRuntimeWellFormed
         (FailStop.blockingGate state (.send handleWord word0 word1)).state) ∧
-    (∀ handleWord word0 word1 saved,
+    (∀ handleWord word0 word1 receiver,
       (FailStop.blockingGate state (.send handleWord word0 word1)).result =
-        .completed (.send (.woke saved)) →
-      ResumablePreemption.validContext
-        (FailStop.blockingGate state (.send handleWord word0 word1)).state.resumable saved) ∧
+        .completed (.send (.woke receiver)) →
+      ∃ saved, saved.owner = receiver ∧
+        (FailStop.dispatchBlockingSend state handleWord word0 word1).restored = some saved ∧
+        ResumablePreemption.validContext
+          (FailStop.blockingGate state (.send handleWord word0 word1)).state.resumable saved) ∧
     (∀ subject saved,
       FailStop.BlockingRuntimeWellFormed state →
       (FailStop.blockingGate state (.cancel subject)).result =
         .completed (.cancel (.cancelled saved)) →
       FailStop.BlockingRuntimeWellFormed
         (FailStop.blockingGate state (.cancel subject)).state) ∧
-    (∀ subject saved,
+    (∀ subject cancelled,
       (FailStop.blockingGate state (.cancel subject)).result =
-        .completed (.cancel (.cancelled saved)) →
-      ResumablePreemption.validContext
-        (FailStop.blockingGate state (.cancel subject)).state.resumable saved) := by
+        .completed (.cancel (.cancelled cancelled)) →
+      ∃ saved, saved.owner = cancelled ∧
+        (FailStop.dispatchBlockingCancel state subject).restored = some saved ∧
+        ResumablePreemption.validContext
+          (FailStop.blockingGate state (.cancel subject)).state.resumable saved) := by
   exact ⟨FailStop.blockingGate_preserves_wellFormed state operation hstate,
     FailStop.blockingGate_rejection_atomic state operation,
     FailStop.blockingGate_completed_sound state operation,
@@ -3209,9 +3216,37 @@ termination, `terminateCurrent`, and interrupts are step consistent, and
 interrupts and NMIs are output consistent.  (19) The kernel evaluates, on the
 canonical sample boot plan (which compiles), the channels that need another
 subject to run: subtree revocation of the observer's own or another subject's
-capability depends on a hidden derivation, and the replies of the observer's
-timer switch, blocking send, and wait cancellation carry another subject's
-saved registers. -/
+capability depends on a hidden derivation.  The replies of the observer's
+timer switch, blocking send, and wait cancellation used to carry another
+subject's saved registers (the adversarial record, evaluated on the same
+pairs); they now name a subject only and agree on those pairs, and (20) the
+subject a switch reply names is the scheduled subject of the post-state, part
+of every observer's view.
+
+(21) Over the subject-facing gate `FailStop.subjectGate`, which refuses a
+scheduled subject's request that names another subject (delegation into,
+direct or subtree revocation of, creation, termination and queue admission
+of, wait cancellation and deferred drain of another subject) with one fixed
+result and no effect: local respect also treats another subject's refused
+request as silent, finite-trace noninterference holds, the observer's
+cross-subject requests are step and output consistent without any further
+premise, every family above carries over, and on the `#542` pairs the
+cross-subject channels are closed.
+
+(22) **The full statement.**  The observer's full view adds the authority
+its row implies (`CompositeFullView`): the lineage of every capability it
+holds, and for every sealed transfer pending on an object it names, that
+transfer's lineage, the carried object's view, and the lineage of the transfer
+pending on the carried object.  The subject gate also refuses receipt of a
+transfer whose carried object has a transfer of its own pending.  Then, with
+the identity counter and the scheduler's bookkeeping public and both states
+runtime-well-formed (`CompositeFullIsolation.FullStep`): every request the
+scheduled observer makes through the subject gate is step consistent on the
+full view, and output consistent except that a user return may differ by
+halting (the termination channel); another subject's request silent on the
+full view leaves it unchanged, and finite traces with equal projections end
+fully low-equivalent; and the subtree-revocation pair of (19) is not fully
+low-equivalent: the derivation it depended on is in the full view. -/
 theorem composite_observer_isolation (observer : Nat) :
     (∀ state operation, CompositeObservation.isSilent observer state operation = true →
       CompositeObservation.LowEquiv observer
@@ -3391,27 +3426,139 @@ theorem composite_observer_isolation (observer : Nat) :
       (CompositeOwnSteps.OwnStepCounter 2
           (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptLeftTrace)
           (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptRightTrace) ∧
-        CompositeChannels.reply
+        CompositeRegisterChannels.legacyResume
             (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptLeftTrace)
             CompositeSwitchedChannels.preempt ≠
-          CompositeChannels.reply
+          CompositeRegisterChannels.legacyResume
             (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptRightTrace)
-            CompositeSwitchedChannels.preempt) ∧
-      (CompositeOwnSteps.OwnStepCounter 2
+            CompositeSwitchedChannels.preempt ∧
+        CompositeOwnSteps.OwnStepCounter 2
           (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
           (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace) ∧
+        CompositeRegisterChannels.legacySend
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
+            CompositeChannels.endpointWord 5 6 ≠
+          CompositeRegisterChannels.legacySend
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace)
+            CompositeChannels.endpointWord 5 6 ∧
+        CompositeRegisterChannels.legacyCancel
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace) 1 ≠
+          CompositeRegisterChannels.legacyCancel
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace)
+            1) ∧
+      (CompositeChannels.reply
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptLeftTrace)
+            CompositeSwitchedChannels.preempt =
+          CompositeChannels.reply
+            (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.preemptRightTrace)
+            CompositeSwitchedChannels.preempt ∧
         (FailStop.authoritativeGate
             (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
-            CompositeSwitchedChannels.blockingSend).result ≠
+            CompositeSwitchedChannels.blockingSend).result =
           (FailStop.authoritativeGate
             (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace)
             CompositeSwitchedChannels.blockingSend).result ∧
         (FailStop.authoritativeGate
             (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedLeftTrace)
-            CompositeSwitchedChannels.blockingCancel).result ≠
+            CompositeSwitchedChannels.blockingCancel).result =
           (FailStop.authoritativeGate
             (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.blockedRightTrace)
-            CompositeSwitchedChannels.blockingCancel).result)) := by
+            CompositeSwitchedChannels.blockingCancel).result)) ∧
+    (∀ state frame registers next,
+      (FailStop.authoritativeGate state (.ordinary (.resumePreempt frame registers))).result =
+        .completed (.ordinary (.resume (some next) none)) →
+      (FailStop.authoritativeGate state
+        (.ordinary (.resumePreempt frame registers))).state.lifecycle.current = some next) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeSubjectGate.isSilentSubject observer state operation = true →
+      CompositeObservation.LowEquiv observer (FailStop.subjectGate state operation).state state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeObservation.LowEquiv observer left right →
+      CompositeSubjectGate.projection observer left leftOperations =
+        CompositeSubjectGate.projection observer right rightOperations →
+      CompositeObservation.LowEquiv observer
+        (CompositeSubjectGate.run observer left leftOperations).1
+        (CompositeSubjectGate.run observer right rightOperations).1) ∧
+    (∀ left right operation, CompositeOwnSteps.OwnStepCounter observer left right →
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeSubjectGate.ownStepSubject observer operation = true →
+      CompositeObservation.LowEquiv observer (FailStop.subjectGate left operation).state
+        (FailStop.subjectGate right operation).state) ∧
+    (∀ left right operation, CompositeOwnSteps.OwnStepCounter observer left right →
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeSubjectGate.ownOutputSubject observer operation = true →
+      (FailStop.subjectGate left operation).result =
+        (FailStop.subjectGate right operation).result) ∧
+    (∀ left right operation, CompositeUnwinding.OwnStep observer left right →
+      CompositeSubjectGate.crossTarget observer operation = true →
+      (FailStop.subjectGate left operation).state = left ∧
+        (FailStop.subjectGate right operation).state = right ∧
+        (FailStop.subjectGate left operation).result =
+          (FailStop.subjectGate right operation).result) ∧
+    (∀ plan,
+      CompositeSubjectGate.subjectReply (CompositeChannels.seed plan)
+          CompositeChannels.createThree =
+        CompositeSubjectGate.subjectReply (CompositeChannels.created plan)
+          CompositeChannels.createThree ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.seed plan) (.terminateSubject 3) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.created plan)
+          (.terminateSubject 3) ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.seed plan) (.scheduleAdd 3) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.created plan) (.scheduleAdd 3) ∧
+      CompositeObservation.LowEquiv 2
+        (CompositeSubjectGate.subjectStep (CompositeChannels.offered plan)
+          (.terminateSubject 3))
+        (CompositeSubjectGate.subjectStep (CompositeChannels.offeredCreated plan)
+          (.terminateSubject 3)) ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.toSlotThree plan)
+          CompositeUnwinding.Channels.delegateToOther =
+        CompositeSubjectGate.subjectReply (CompositeChannels.toSlotTwo plan)
+          CompositeUnwinding.Channels.delegateToOther ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.toSlotThree plan)
+          (.capabilityRevoke 0 1 2) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.toSlotTwo plan)
+          (.capabilityRevoke 0 1 2) ∧
+      CompositeSubjectGate.subjectReply (CompositeChannels.toSlotThree plan)
+          (.capabilityRevokeSubtree 0 1 2) =
+        CompositeSubjectGate.subjectReply (CompositeChannels.toSlotTwo plan)
+          (.capabilityRevokeSubtree 0 1 2)) ∧
+    (∀ plan, BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan →
+      CompositeObservation.LowEquiv 2
+        (CompositeSubjectGate.subjectStep
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+          CompositeSwitchedChannels.otherSubtree)
+        (CompositeSubjectGate.subjectStep
+          (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)
+          CompositeSwitchedChannels.otherSubtree)) ∧
+    (∀ left right operation, CompositeFullIsolation.FullStep observer left right →
+      CompositeFullView.FullLowEquiv observer (FailStop.subjectGate left operation).state
+          (FailStop.subjectGate right operation).state ∧
+        ((∀ request, operation = .ordinary (.userReturn request) →
+            CompositeOwnSwitch.Continues (FailStop.subjectGate left operation).state ∧
+              CompositeOwnSwitch.Continues (FailStop.subjectGate right operation).state) →
+          (FailStop.subjectGate left operation).result =
+            (FailStop.subjectGate right operation).result)) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeFullTrace.isSilentFull observer state operation = true →
+      CompositeFullView.FullLowEquiv observer (FailStop.subjectGate state operation).state
+        state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeFullView.FullLowEquiv observer left right →
+      CompositeFullTrace.projection observer left leftOperations =
+        CompositeFullTrace.projection observer right rightOperations →
+      CompositeFullView.FullLowEquiv observer
+        (CompositeFullTrace.run observer left leftOperations).1
+        (CompositeFullTrace.run observer right rightOperations).1) ∧
+    (∀ plan, BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan →
+      ¬ CompositeFullView.FullLowEquiv 2
+        (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+        (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)) := by
   refine ⟨fun state operation hsilent =>
       CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
     fun left right leftOperations rightOperations hlow hevents =>
@@ -3473,10 +3620,32 @@ theorem composite_observer_isolation (observer : Nat) :
       ⟨⟨CompositeSwitchedChannels.derivation_pair plan hplan,
           (CompositeSwitchedChannels.revokeSubtree_own_step_inconsistent plan hplan).2,
           (CompositeSwitchedChannels.revokeSubtree_other_step_inconsistent plan hplan).2⟩,
-        CompositeSwitchedChannels.resumePreempt_output_inconsistent plan hplan,
-        ⟨CompositeSwitchedChannels.blocked_pair plan hplan,
-          (CompositeSwitchedChannels.blockingSend_output_inconsistent plan hplan).2,
-          (CompositeSwitchedChannels.blockingCancel_output_inconsistent plan hplan).2⟩⟩⟩
+        CompositeRegisterChannels.legacy_replies_leaked plan hplan,
+        CompositeRegisterChannels.register_channel_closed_on_pairs plan hplan⟩,
+    fun state frame registers next hreply =>
+      CompositeRegisterChannels.resume_reply_names_scheduled state frame registers next hreply,
+    fun state operation hstate hsilent =>
+      CompositeSubjectGate.subjectGate_silent_observe observer state operation hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeSubjectGate.finite_trace_lowEquiv_subject observer left right leftOperations
+        rightOperations hleft hright hlow hevents,
+    fun left right operation h hleft hright hfamily =>
+      CompositeSubjectGate.own_step_consistent_subject h hleft hright operation hfamily,
+    fun left right operation h hleft hright hfamily =>
+      CompositeSubjectGate.own_output_consistent_subject h hleft hright operation hfamily,
+    fun left right operation h hcross =>
+      CompositeSubjectGate.own_cross_stutter h operation hcross,
+    fun plan => CompositeSubjectGate.cross_subject_channels_closed plan,
+    fun plan hplan => CompositeSubjectGate.revokeSubtree_other_closed plan hplan,
+    fun left right operation h =>
+      ⟨CompositeFullIsolation.full_step h operation,
+        CompositeFullIsolation.full_output h operation⟩,
+    fun state operation hstate hsilent =>
+      CompositeFullTrace.subjectGate_silent_full observer state operation hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeFullTrace.finite_trace_full observer left right leftOperations rightOperations
+        hleft hright hlow hevents,
+    fun plan hplan => CompositeFullChannels.revokeSubtree_own_closed plan hplan⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :

@@ -102,7 +102,7 @@ form one import chain, in this order:
 | `AuthoritativeTraces` | Blocking slices, admissibility, and authoritative traces |
 | `Evidence` | Executable regressions and the dispatcher's initial states |
 
-Twenty modules branch off the chain and build in parallel with it:
+Twenty-one modules branch off the chain and build in parallel with it:
 
 | Module | Imports | Contents |
 | --- | --- | --- |
@@ -126,6 +126,7 @@ Twenty modules branch off the chain and build in parallel with it:
 | `CapabilityIdentities` | `SpawnAccounting` | Capability-identity provenance (`IdentityStep`), retired identities, stale words |
 | `CapabilityIdentitySteps` | `CapabilityIdentities`, `SpawnChildCleanup` | Identity provenance of every composite and spawn-family step |
 | `SpawnGate` | `SpawnAccountingTraces`, `CapabilityIdentitySteps` | Identity provenance of memory steps and whole traces; stale words along every later trace |
+| `SubjectGate` | `AuthoritativeTraces` | The subject-facing gate: refusal of a scheduled subject's cross-subject requests and of receipt of a nested transfer (#479) |
 
 `AuthoritativeGate` imports `ProjectionInvariants` as well as
 `DeferredBlocking`. No module exceeds about 3,500 lines. Helpers that a later
