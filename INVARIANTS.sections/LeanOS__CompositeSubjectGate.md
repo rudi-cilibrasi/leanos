@@ -12,7 +12,7 @@ These theorems restate the observer's privacy guarantee over the subject gate, t
 - `own_step_cross` — Such a request leaves the two runs indistinguishable to the observer.
 - `own_output_cross` — Such a request gets the same answer in both runs.
 - `refuses_own` — A request by the scheduled observer that names no other program is never refused.
-- `subjectGate_own` — Such a request is exactly the kernel's engine step.
+- `subjectGate_own` — Such a request, other than accepting a handover, is exactly the kernel's engine step.
 - `own_step_consistent_subject` — Every request in the step-consistent family, now including every request that names another program and every drain, leaves two indistinguishable states indistinguishable, given the same identity counter.
 - `own_output_consistent_subject` — Every request in the output-consistent family, now including every request that names another program, gets the same answer in two indistinguishable states, given the same identity counter.
 - `cross_subject_channels_closed` — On the example pairs where creating, terminating, and queueing another program and copying into or revoking its slots used to leak, the subject gate gives equal answers and indistinguishable states.

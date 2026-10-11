@@ -56,12 +56,16 @@ theorem subjectGate_silent_observe (observer : Nat) (state : CompositeState)
     (operation : AuthoritativeOperation) (hstate : AuthoritativeRuntimeWellFormed state)
     (hsilent : isSilentSubject observer state operation = true) :
     LowEquiv observer (subjectGate state operation).state state := by
-  cases hrefused : state.refusesCrossSubject operation
-  · simp only [isSilentSubject, hrefused, Bool.false_or] at hsilent
-    rw [subjectGate_of_not_refused hrefused]
-    exact authoritativeGate_silentExtended_observe observer state operation hstate hsilent
-  · rw [subjectGate_refused hrefused]
+  rcases subjectGate_cases state operation with ⟨_, _, hsame, _⟩ | ⟨hnone, hgate, _⟩
+  · rw [hsame]
     rfl
+  · have hrefused : state.refusesCrossSubject operation = false := by
+      cases h : state.refusesCrossSubject operation
+      · rfl
+      · simp [CompositeState.refusal, h] at hnone
+    simp only [isSilentSubject, hrefused, Bool.false_or] at hsilent
+    rw [hgate]
+    exact authoritativeGate_silentExtended_observe observer state operation hstate hsilent
 
 /-- One observer event over the subject gate. -/
 structure Event where
@@ -193,8 +197,15 @@ theorem own_cross_stutter {observer : Nat} {left right : CompositeState}
           unfold CompositeState.refusesCrossSubject
           split <;> simp_all
         have hrightMode : right.execution.mode ≠ .running := h.mode ▸ hmode
-        rw [subjectGate_of_not_refused (hnot left hmode),
-          subjectGate_of_not_refused (hnot right hrightMode)]
+        have hnested : ∀ state : CompositeState, state.execution.mode ≠ .running →
+            state.refusesNestedTransfer operation = false := by
+          intro state hrun
+          apply refusesNestedTransfer_eq_false
+          intro endpointWord destinationSlot heq
+          subst heq
+          simp [AuthoritativeOperation.target] at htarget
+        rw [subjectGate_of_not_refused (hnot left hmode) (hnested left hmode),
+          subjectGate_of_not_refused (hnot right hrightMode) (hnested right hrightMode)]
         obtain ⟨hl, hlr⟩ := authoritativeGate_not_running left operation
           (not_nmi_of_target htarget) hmode
         obtain ⟨hr, hrr⟩ := authoritativeGate_not_running right operation
@@ -233,13 +244,23 @@ theorem refuses_own {observer : Nat} {state : CompositeState}
   rw [hcross]
   exact hcurrent
 
+/-- Receipt is the one request whose refusal reads more than the latch and the
+scheduled subject (`refusesNestedTransfer`). -/
+def isAccept : AuthoritativeOperation → Bool
+  | .ordinary (.transferAccept _ _) => true
+  | _ => false
+
 theorem subjectGate_own {observer : Nat} {state : CompositeState}
     (hcurrent : state.lifecycle.current = some observer) (operation : AuthoritativeOperation)
-    (hcross : crossTarget observer operation = false) :
+    (hcross : crossTarget observer operation = false) (haccept : isAccept operation = false) :
     subjectGate state operation =
       { state := (authoritativeGate state operation).state
         result := .gate (authoritativeGate state operation).result } :=
   subjectGate_of_not_refused (refuses_own hcurrent operation hcross)
+    (refusesNestedTransfer_eq_false (by
+      intro endpointWord destinationSlot heq
+      subst heq
+      simp [isAccept] at haccept))
 
 /-- The observer's requests that are step consistent once the identity
 counter is public: every request naming another subject, every ordinary
@@ -259,8 +280,14 @@ theorem own_step_consistent_subject {observer : Nat} {left right : CompositeStat
     (operation : AuthoritativeOperation) (hfamily : ownStepSubject observer operation = true) :
     LowEquiv observer (subjectGate left operation).state (subjectGate right operation).state := by
   cases hcross : crossTarget observer operation
-  · rw [subjectGate_own h.current operation hcross,
-      subjectGate_own h.toOwnStep.rightCurrent operation hcross]
+  · have haccept : isAccept operation = false := by
+      cases operation with
+      | ordinary operation =>
+          cases operation <;> simp_all [isAccept, ownStepSubject, ownStepConsistentCounter,
+            ownStepConsistent]
+      | _ => rfl
+    rw [subjectGate_own h.current operation hcross haccept,
+      subjectGate_own h.toOwnStep.rightCurrent operation hcross haccept]
     simp only [ownStepSubject, hcross, Bool.false_or] at hfamily
     cases operation with
     | ordinary operation => exact own_step_consistent_counter h operation hfamily
@@ -273,6 +300,7 @@ counter is public. -/
 def ownOutputSubject (observer : Nat) (operation : AuthoritativeOperation) : Bool :=
   crossTarget observer operation ||
     match operation with
+    | .ordinary (.transferAccept _ _) => false
     | .ordinary operation => ownOutputConsistentCounter observer operation
     | .drainDeferred subject => subject == observer
     | .blocking _ => false
@@ -285,12 +313,20 @@ theorem own_output_consistent_subject {observer : Nat} {left right : CompositeSt
     (operation : AuthoritativeOperation) (hfamily : ownOutputSubject observer operation = true) :
     (subjectGate left operation).result = (subjectGate right operation).result := by
   cases hcross : crossTarget observer operation
-  · rw [subjectGate_own h.current operation hcross,
-      subjectGate_own h.toOwnStep.rightCurrent operation hcross]
+  · have haccept : isAccept operation = false := by
+      cases operation with
+      | ordinary operation =>
+          cases operation <;> simp_all [isAccept, ownOutputSubject]
+      | _ => rfl
+    rw [subjectGate_own h.current operation hcross haccept,
+      subjectGate_own h.toOwnStep.rightCurrent operation hcross haccept]
     simp only [ownOutputSubject, hcross, Bool.false_or] at hfamily
     simp only [SubjectGateResult.gate.injEq]
     cases operation with
-    | ordinary operation => exact own_output_consistent_counter h operation hfamily
+    | ordinary operation =>
+        cases operation
+        case transferAccept => simp at hfamily
+        all_goals exact own_output_consistent_counter h _ hfamily
     | drainDeferred subject =>
         simp only [beq_iff_eq] at hfamily
         subst hfamily

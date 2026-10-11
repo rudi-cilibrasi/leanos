@@ -1,0 +1,68 @@
+# The observer's full authority view
+
+The observer's ordinary view is what it sees through the permissions it holds. Two more things are within its authority. First, the history of each permission it holds: revoking a permission together with everything copied from it removes copies in any program's slots and cancels pending handovers copied from it, so which ones go is part of the observer's revocation authority. Second, what is offered to it: a permission handed over on an endpoint it names can be accepted at any time, which makes the offered object visible. The full view adds, for every permission the observer holds, its chain of ancestors, and for a handover pending on the object it names, the handover's ancestors, the offered object's state, and the ancestors of a handover pending on that object in turn. These theorems define that view and the tools the step proofs use: how ancestor chains decide revocation and never change once issued, what agreement on the extra view means fact by fact, and which kinds of steps leave it alone or touch only objects the observer names.
+
+- `parentsPrecede_of_wellFormed` — In a well-formed permission history every parent is older than its child.
+- `descendsFrom_eq_chain` — The kernel's bounded ancestry walk asks exactly whether an ancestor is in the permission's chain.
+- `chain_congr` — A permission's chain depends only on the history at or below it.
+- `chain_eq_of_derivations` — Two permission tables with the same history give the same chains.
+- `lineage_eq_of_derivations` — Two permission tables with the same history give the same complete chains.
+- `chain_stable` — Walking more steps than a permission's number never changes its chain.
+- `descendsFrom_eq_lineage` — Revocation's ancestry walk on an issued permission asks exactly whether the ancestor is in its complete chain.
+- `lineage_of_extends` — Adding new history never changes the chain of an already issued permission.
+- `FullLowEquiv.low` — Two states with the same full view have the same ordinary view.
+- `FullLowEquiv.extra` — Two states with the same full view agree on the extra authority.
+- `fullLowEquiv_of` — The same ordinary view and the same extra authority give the same full view.
+- `extra_pointwise` — Agreement on the extra authority holds for each permission in the observer's row.
+- `extra_of_pointwise` — Agreement for each permission in the row gives agreement on the extra authority.
+- `names_of_mem` — The observer names the object of every permission in its row.
+- `carried_of_mem` — An object handed over on an endpoint the observer names counts as offered to it.
+- `pending_of_view` — Two states that show an object the same way agree on the handover pending on it.
+- `mailbox_of_view` — Two states that show an object the same way agree on its mailbox.
+- `extra_of_agree` — The fact-by-fact agreement gives agreement on the extra authority.
+- `agree_of_extra` — Agreement on the extra authority gives the fact-by-fact agreement.
+- `fullLowEquiv_of_agree` — The same ordinary view and the fact-by-fact agreement give the same full view.
+- `FullLowEquiv.agree` — The same full view gives the fact-by-fact agreement.
+- `ExtraAgree.named` — The agreement covers every handover pending on any object the observer names.
+- `issued_of_runtime` — In a healthy state every held permission and every pending handover has an issued number, and parents are older than children.
+- `mem_row_slot` — Every permission in the observer's row sits in one of its slots.
+- `mem_row_slot_range` — Every permission in the observer's row sits in an in-range slot.
+- `Issued.row` — Every permission in the observer's row has an issued number.
+- `Frame.lineage` — A step that only adds history keeps the chain of every issued permission.
+- `carriedView_frame` — After such a step, what the observer sees of an offer differs from before at most in the offered object's state.
+- `extra_of_frame` — When both runs take steps that add only history, keep every pending handover, change nothing outside the objects the observer names, and give the observer no new permission, agreement on the extra authority survives.
+- `frame_of_unchanged` — A step that keeps the permission table and every pending handover, and changes nothing the observer does not name, is such a step.
+- `frame_refl` — Doing nothing is such a step.
+- `row_sub_of_eq` — A step that keeps the observer's row gives it no new permission.
+- `Unchanged.frame` — A step that changes no object is such a step.
+- `Unchanged.row` — A step that keeps the permission table keeps the observer's row.
+- `unchanged_refl` — Doing nothing changes no object.
+- `unchanged_of_fields` — A step that keeps the permission table, the mailboxes, the pending handovers, the blocking mailboxes and queues, and the memory registry changes no object.
+- `unchanged_of_projections` — A step that leaves the five state parts an object's view reads untouched changes no object.
+- `unchanged_apply_of_untouched` — An operation whose declared write set misses those five parts changes no object.
+- `unchanged_selectLiveReturnAuthority` — Selecting the return path changes no object.
+- `unchanged_trans` — Two steps that change no object in a row change no object.
+- `unchanged_installResumable` — Publishing a snapshot bank with the same permission table and translation changes no object.
+- `unchanged_execution` — Changing only the execution latch changes no object.
+- `map_memory` — Mapping a page keeps the memory registry.
+- `unmap_memory` — Unmapping a page keeps the memory registry.
+- `protect_memory` — Changing a page's permissions keeps the memory registry.
+- `syscall_memory` — A memory system call keeps the memory registry.
+- `unchanged_installVirtualMemory` — Publishing new mappings over the same memory registry changes no object.
+- `unchanged_apply` — Kernel entries, return-path steps, memory operations, timer switches, and scheduler operations change no object, whoever performs them.
+- `unchanged_apply_interrupt` — An interrupt that stops no scheduled program changes no object.
+- `names_eq_of_capabilities` — A step that keeps the permission table keeps what the observer names.
+- `frame_of_target` — A step that keeps the permission table and every pending handover, and changes at most one object, which the observer names, adds nothing the observer does not see.
+- `ipcTarget_named` — The endpoint a data message uses is one the sender names.
+- `objectView_installIPC` — Publishing a new message store changes an object's view only in its mailbox.
+- `frame_apply_ipc` — The running program's data message changes only an endpoint it names and keeps the permission table.
+- `objectView_installCopiedCapabilities` — Publishing a new permission table changes an object's view only in its liveness and kind.
+- `revokeRuntimeSafe_store` — Direct revocation keeps the history, the counter, the objects and their kinds, and only removes permissions.
+- `revokeRuntimeSafe_store_capacity` — Direct revocation keeps every program's slot count.
+- `frame_apply_revoke` — Direct revocation adds nothing the observer does not see and gives it no new permission.
+- `send_objects` — A blocking send changes the mailbox and waiting queue of its own endpoint only.
+- `receiveOrBlock_objects` — A blocking receive changes the mailbox and waiting queue of its own endpoint only.
+- `objectView_publishBlocking` — Publishing a blocking store changes an object's view only in its blocking mailbox and waiting queue.
+- `frame_publishBlocking` — Publishing a blocking store that differs only on an endpoint the observer names adds nothing the observer does not see.
+- `frame_dispatchBlockingSend` — The running program's blocking send changes only an endpoint it names and keeps the permission table.
+- `frame_dispatchBlockingReceive` — The running program's blocking receive changes only an endpoint it names and keeps the permission table.

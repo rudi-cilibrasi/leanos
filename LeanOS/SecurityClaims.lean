@@ -23,6 +23,7 @@ import LeanOS.CompositeOwnTermination
 import LeanOS.CompositeSwitchedChannels
 import LeanOS.CompositeRegisterChannels
 import LeanOS.CompositeSubjectGate
+import LeanOS.CompositeFullChannels
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomNoSmapControl
@@ -3228,7 +3229,22 @@ result and no effect: local respect also treats another subject's refused
 request as silent, finite-trace noninterference holds, the observer's
 cross-subject requests are step and output consistent without any further
 premise, every family above carries over, and on the `#542` pairs the
-cross-subject channels are closed. -/
+cross-subject channels are closed.
+
+(22) **The full statement.**  The observer's full view adds the authority
+its row implies (`CompositeFullView`): the lineage of every capability it
+holds, and for every sealed transfer pending on an object it names, that
+transfer's lineage, the carried object's view, and the lineage of the transfer
+pending on the carried object.  The subject gate also refuses receipt of a
+transfer whose carried object has a transfer of its own pending.  Then, with
+the identity counter and the scheduler's bookkeeping public and both states
+runtime-well-formed (`CompositeFullIsolation.FullStep`): every request the
+scheduled observer makes through the subject gate is step consistent on the
+full view, and output consistent except that a user return may differ by
+halting (the termination channel); another subject's request silent on the
+full view leaves it unchanged, and finite traces with equal projections end
+fully low-equivalent; and the subtree-revocation pair of (19) is not fully
+low-equivalent: the derivation it depended on is in the full view. -/
 theorem composite_observer_isolation (observer : Nat) :
     (∀ state operation, CompositeObservation.isSilent observer state operation = true →
       CompositeObservation.LowEquiv observer
@@ -3515,7 +3531,32 @@ theorem composite_observer_isolation (observer : Nat) :
           CompositeSwitchedChannels.otherSubtree)
         (CompositeSubjectGate.subjectStep
           (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)
-          CompositeSwitchedChannels.otherSubtree)) := by
+          CompositeSwitchedChannels.otherSubtree)) ∧
+    (∀ left right operation, CompositeFullIsolation.FullStep observer left right →
+      CompositeFullView.FullLowEquiv observer (FailStop.subjectGate left operation).state
+          (FailStop.subjectGate right operation).state ∧
+        ((∀ request, operation = .ordinary (.userReturn request) →
+            CompositeOwnSwitch.Continues (FailStop.subjectGate left operation).state ∧
+              CompositeOwnSwitch.Continues (FailStop.subjectGate right operation).state) →
+          (FailStop.subjectGate left operation).result =
+            (FailStop.subjectGate right operation).result)) ∧
+    (∀ state operation, FailStop.AuthoritativeRuntimeWellFormed state →
+      CompositeFullTrace.isSilentFull observer state operation = true →
+      CompositeFullView.FullLowEquiv observer (FailStop.subjectGate state operation).state
+        state) ∧
+    (∀ left right leftOperations rightOperations,
+      FailStop.AuthoritativeRuntimeWellFormed left →
+      FailStop.AuthoritativeRuntimeWellFormed right →
+      CompositeFullView.FullLowEquiv observer left right →
+      CompositeFullTrace.projection observer left leftOperations =
+        CompositeFullTrace.projection observer right rightOperations →
+      CompositeFullView.FullLowEquiv observer
+        (CompositeFullTrace.run observer left leftOperations).1
+        (CompositeFullTrace.run observer right rightOperations).1) ∧
+    (∀ plan, BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan →
+      ¬ CompositeFullView.FullLowEquiv 2
+        (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.leftTrace)
+        (CompositeSwitchedChannels.runFrom plan CompositeSwitchedChannels.rightTrace)) := by
   refine ⟨fun state operation hsilent =>
       CompositeObservation.authoritativeGate_silent_observe observer state operation hsilent,
     fun left right leftOperations rightOperations hlow hevents =>
@@ -3593,7 +3634,16 @@ theorem composite_observer_isolation (observer : Nat) :
     fun left right operation h hcross =>
       CompositeSubjectGate.own_cross_stutter h operation hcross,
     fun plan => CompositeSubjectGate.cross_subject_channels_closed plan,
-    fun plan hplan => CompositeSubjectGate.revokeSubtree_other_closed plan hplan⟩
+    fun plan hplan => CompositeSubjectGate.revokeSubtree_other_closed plan hplan,
+    fun left right operation h =>
+      ⟨CompositeFullIsolation.full_step h operation,
+        CompositeFullIsolation.full_output h operation⟩,
+    fun state operation hstate hsilent =>
+      CompositeFullTrace.subjectGate_silent_full observer state operation hstate hsilent,
+    fun left right leftOperations rightOperations hleft hright hlow hevents =>
+      CompositeFullTrace.finite_trace_full observer left right leftOperations rightOperations
+        hleft hright hlow hevents,
+    fun plan hplan => CompositeFullChannels.revokeSubtree_own_closed plan hplan⟩
 
 /-- Non-vacuity: a well-formed state and an accepted transition exist. -/
 theorem initial_transition_witness :

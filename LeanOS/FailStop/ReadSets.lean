@@ -146,8 +146,7 @@ theorem operationReply_reads (left right : CompositeState) (operation : Operatio
     cases left; cases right
     agree_subst agree
     clear agree
-    simp only [operationReply, ↓liveReturnExecution_fold,
-      selectLiveReturnAuthority_eq_selectLiveExecution]
+    simp only [operationReply, ↓liveReturnExecution_fold]
     all_goals
       dsimp only [CompositeState.syscallContext, schedulerAdmission, schedulerDispatch,
         schedulerYield, schedulerTick, CompositeState.returnPlanLive_eq]
