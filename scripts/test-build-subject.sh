@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The subject build rule (#484): the template, the example, the endpoint
 # directory (#485) and the timer server (#487) each build into a slot object,
+# as does the network subject (#450) with its generated responder,
 # and every negative fixture under subjects/fixtures is rejected at build time
 # with the expected reason.
 set -euo pipefail
@@ -32,6 +33,28 @@ for subject in template example directory timer-server; do
       echo "error: $subject slot object sections are not the slot layout" >&2; exit 1;
     }
 done
+
+# The network subject (#450) includes the C the Lean compiler generated for
+# its responder (--generated): built with it, the slot object still has no
+# undefined symbol and the slot layout; built without it, the include fails.
+lake build LeanOS.Net.EchoC >/dev/null
+mkdir -p "$work/generated"
+cp .lake/build/ir/LeanOS/Net/EchoC.c "$work/generated/NetEcho.c"
+./scripts/build-subject.sh --cc "$cc" --slot c --output "$work/net.o" \
+  --generated "$work/generated/NetEcho.c" \
+  --lean-include "$(lake env lean --print-prefix)/include" subjects/net
+[[ -z "$(nm -u "$work/net.o")" ]] || {
+  echo "error: network subject slot object has undefined symbols" >&2; exit 1;
+}
+grep -Eq '\.user\.c\.bss +(PROGBITS|NOBITS) +[0-9a-f]+ [0-9a-f]+ 001000 .* WA ' \
+    <<<"$(readelf -SW "$work/net.o")" || {
+  echo "error: network subject slot object sections are not the slot layout" >&2; exit 1;
+}
+if ./scripts/build-subject.sh --cc "$cc" --slot c --output "$work/net-bare.o" \
+    subjects/net >"$work/net-bare.log" 2>&1; then
+  echo "error: build rule built the network subject without its generated responder" >&2
+  exit 1
+fi
 
 # fixture <TAB> reason the rule must report
 fixtures=(
