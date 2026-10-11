@@ -66,11 +66,16 @@ ABI.
 | 90 | frame-server | 1, 2 | request to the frame server on endpoint 12 (RDX): RBX 1 asks for a frame (answer: its page address, or the typed rejection 0x100), RBX 2 releases the client's budget (A only; A never runs again) |
 | 91 | frame-server | 3 | C's decision for the pending request, checked against the generated witness: RBX op (1 grant, 2 refuse over budget, 3 refuse pool exhausted, 5 revoke) with rights << 8, RCX client, RDX pool frame; C then blocks on endpoint 12 for the next request |
 | 93 | frame-server | 2 | B reports the first and last byte of its republished frame (RBX, RCX) and its address (RDX) (final record) |
-| 100 | spawn-child | 2 | spawn (#489): RBX spawn-capability generation, RCX endpoint handle to grant, RDX rights mask; RAX the generated reply word (status << 16; 0xfe20..0xfe23 refused before any gate), RBX the control word of the child |
-| 101 | spawn-child | 2 | grant frames to a child: RBX control word, RCX frames (nonzero), RDX 0; RBX the frames moved |
-| 102 | spawn-child | 2 | terminate a child: RBX control word, RCX and RDX 0; RBX the frames returned; a stale control word is rejected (status 0xc3) with the state unchanged |
-| 103 | spawn-child | 2 | allocate memory into slot RBX (RCX and RDX 0) |
-| 104 | spawn-child | 2 | release the memory in slot RBX (RCX and RDX 0) |
+| 100 | spawn-child, spawn-loader | 2 | spawn (#489): RBX spawn-capability generation, RCX endpoint handle to grant, RDX rights mask; RAX the generated reply word (status << 16; 0xfe20..0xfe23 refused before any gate), RBX the control word of the child |
+| 101 | spawn-child, spawn-loader | 2 | grant frames to a child: RBX control word, RCX frames (nonzero), RDX 0; RBX the frames moved |
+| 102 | spawn-child, spawn-loader | 2 | terminate a child: RBX control word, RCX and RDX 0; RBX the frames returned; a stale control word is rejected (status 0xc3) with the state unchanged |
+| 103 | spawn-child, spawn-loader | 2 | allocate memory into slot RBX (RCX and RDX 0) |
+| 104 | spawn-child, spawn-loader | 2 | release the memory in slot RBX (RCX and RDX 0) |
+| 105 | spawn-loader | 2 | load one admitted segment into the child being loaded: RBX control word, RCX segment index, RDX the source address claimed inside the read authority; RAX the loader witness's decision (1 mapped in place, 2 copied, 0x101/0x102 refused without effect, 0x2xx rejected and the spawn rolled back) |
+| 106 | spawn-loader | 2 | start the loaded child: RBX control word; RAX 3, or 0x209 (not every segment loaded: rolled back) |
+| 107 | spawn-loader | 2 | wait for the started child's word: the kernel runs the child; RAX the word it sent |
+| 8 | spawn-loader | 4 | the loaded child sends one word (RBX) through its slot-0 endpoint capability (RDX 0); B is woken with it |
+| 108 | spawn-loader | 2 | B's final report (final record) |
 | 109 | spawn-child | 2 | B's final report: the kernel checks the token, its mirror and the bystander (final record) |
 | 10 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the initial handle |
 | 11 | canonical (blocking-ipc, preemption) | 2 | capability reuse: replay the stale handle (rejected) |
@@ -220,10 +225,21 @@ the granted endpoint (slot 0) and the root of its own new, empty address space
 (slot 1); it is not runnable, and it can never spawn. See
 [fail-stop.md](fail-stop.md#the-ring-3-spawn-syscall).
 
+The `spawn-loader` image adds the loader's syscalls (#492). 105 loads one
+admitted segment into the child being loaded. RBX is the control word, RCX the
+segment's index in the admitted plan, and RDX the source address the loader
+claims inside its read authority. 106 starts the child, and 107 waits for the
+child's word. RAX is the loader witness's decision
+(`LeanOS.ChildLoader.loaderDecide`, adapters 32 and 33): `1` mapped in place,
+`2` copied, `3` started, `0x101`/`0x102` refused without effect, and
+`0x200 + code` rejected with the spawn rolled back. The loaded child's only
+syscall is 8: it sends RBX through its slot-0 endpoint capability.
+
 ## What does not exist
 
 - no fork or clone syscall (ADR 0010), and spawn only in the `spawn-child`
-  image;
-- no libc and no dynamic loading: subjects are linked into the image;
+  and `spawn-loader` images;
+- no libc and no dynamic loading: subjects are linked into the image, and the
+  `spawn-loader` image loads one build-time-admitted ELF;
 - no stable syscall numbering;
 - no general error codes.

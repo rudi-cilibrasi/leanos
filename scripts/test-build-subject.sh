@@ -2,6 +2,7 @@
 # The subject build rule (#484): the template, the example, the endpoint
 # directory (#485) and the timer server (#487) each build into a slot object,
 # as does the network subject (#450) with its generated responder,
+# the loaded child (#492) builds into an admitted-only object,
 # and every negative fixture under subjects/fixtures is rejected at build time
 # with the expected reason.
 set -euo pipefail
@@ -34,6 +35,28 @@ for subject in template example directory timer-server; do
     }
 done
 
+# Slot `admitted` (#492): the loaded child builds into an object holding only
+# its admitted bytes, and the slot is refused without the Lean checker.
+admit_tool=.lake/build/bin/leanos-elf-admit
+if [[ -x "$admit_tool" ]]; then
+  ./scripts/build-subject.sh --cc "$cc" --slot admitted --output "$work/loaded.o" \
+    --admit-tool "$admit_tool" --admitted-elf "$work/loaded.admitted.elf" \
+    --admitted-plan "$work/loaded.admitted.tsv" subjects/loaded
+  loaded_sections="$(readelf -SW "$work/loaded.o")"
+  grep -Fq '.user.admitted' <<<"$loaded_sections" &&
+    ! grep -Eq '\.user\.c\.|\.subject\.' <<<"$loaded_sections" || {
+      echo "error: admitted-only object is not just the admitted bytes" >&2; exit 1;
+    }
+  cmp -s <(objcopy -O binary -j .user.admitted "$work/loaded.o" /dev/stdout) \
+    "$work/loaded.admitted.elf" || {
+      echo "error: admitted-only object bytes differ from the admitted file" >&2; exit 1;
+    }
+fi
+if ./scripts/build-subject.sh --cc "$cc" --slot admitted --output "$work/unadmitted.o" \
+    subjects/loaded >"$work/unadmitted.log" 2>&1 ||
+    ! grep -Fq 'slot admitted needs --admit-tool' "$work/unadmitted.log"; then
+  echo "error: build rule accepted slot admitted without the checker" >&2; exit 1
+fi
 # The network subject (#450) includes the C the Lean compiler generated for
 # its responder (--generated): built with it, the slot object still has no
 # undefined symbol and the slot layout; built without it, the include fails.

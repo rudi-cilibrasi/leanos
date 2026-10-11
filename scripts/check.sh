@@ -352,7 +352,7 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
     DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation \
     ReplyCapabilityAmplification CopyableReplyCapability \
     FaultHandlerAuthorityAmplification TimerExpiryToNonHolder FrameServerReleaseScrubs \
-    SpawnStaleControlAccepted; do
+    SpawnStaleControlAccepted LoaderOutsideRangeLoads; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

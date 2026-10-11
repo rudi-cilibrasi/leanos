@@ -484,14 +484,16 @@ inductive StateId where
   | seed | authorized | spawned | released | granted | terminated | reallocated
   | respawned | secondTerminated | otherSubject | revoked | regranted | regrantedSpawned
   | subjectsExhausted | objectsExhausted | controlsExhausted | narrowedSend | narrowedGrant
+  | loaderRespawned | loaderGranted | loaderTerminated
   deriving DecidableEq, Repr
 
 def allStates : List StateId :=
   [.seed, .authorized, .spawned, .released, .granted, .terminated, .reallocated,
     .respawned, .secondTerminated, .otherSubject, .revoked, .regranted, .regrantedSpawned,
-    .subjectsExhausted, .objectsExhausted, .controlsExhausted, .narrowedSend, .narrowedGrant]
+    .subjectsExhausted, .objectsExhausted, .controlsExhausted, .narrowedSend, .narrowedGrant,
+    .loaderRespawned, .loaderGranted, .loaderTerminated]
 
-/-- State tokens `0x7001` to `0x8101`: version 1 in bits 0..7, the selector in
+/-- State tokens `0x7001` to `0x8401`: version 1 in bits 0..7, the selector in
 bits 8..15. -/
 def encodeState : StateId → UInt64
   | .seed => 0x7001 | .authorized => 0x7101 | .spawned => 0x7201 | .released => 0x7301
@@ -500,6 +502,7 @@ def encodeState : StateId → UInt64
   | .revoked => 0x7a01 | .regranted => 0x7b01 | .regrantedSpawned => 0x7c01
   | .subjectsExhausted => 0x7d01 | .objectsExhausted => 0x7e01
   | .controlsExhausted => 0x7f01 | .narrowedSend => 0x8001 | .narrowedGrant => 0x8101
+  | .loaderRespawned => 0x8201 | .loaderGranted => 0x8301 | .loaderTerminated => 0x8401
 
 def decodeState (word : UInt64) : Except DecodeError StateId :=
   match allStates.find? (fun state => encodeState state == word) with
@@ -560,6 +563,15 @@ def origin : StateId → Seed × List FamilyCommand
   | .controlsExhausted => (.controlsExhausted, [grantAuthority 2 1])
   | .narrowedSend => (.main, [grantAuthority 2 1, .copy 0 2 3 { send := true }])
   | .narrowedGrant => (.main, [grantAuthority 2 1, .copy 0 2 3 { send := true, grant := true }])
+  | .loaderRespawned =>
+      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
+        terminate firstControl, spawnOne])
+  | .loaderGranted =>
+      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
+        terminate firstControl, spawnOne, grant secondControl 1])
+  | .loaderTerminated =>
+      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
+        terminate firstControl, spawnOne, grant secondControl 1, terminate secondControl])
 
 def runFamily (state : CompositeState) : List FamilyCommand → CompositeState
   | [] => state
@@ -613,7 +625,7 @@ def decodeReply (word : UInt64) : Except DecodeError (StateId × UInt64) :=
     | .ok next => .ok (next, word / 65536)
     | .error reason => .error reason
 
-/-- The 49 edges.  Fourteen are accepted and advance; the other 35 are typed
+/-- The 54 edges.  Seventeen are accepted and advance; the other 37 are typed
 rejections that leave the state token, and the composite state, unchanged. -/
 def edges : List Edge :=
   [ ⟨.seed, spawnOne, .seed, 0x81, 0x0⟩
@@ -665,6 +677,11 @@ def edges : List Edge :=
   , ⟨.controlsExhausted, spawnOne, .controlsExhausted, 0x8d, 0x0⟩
   , ⟨.narrowedSend, spawnWith 1 0x60003 sendOnly, .narrowedSend, 0x89, 0x0⟩
   , ⟨.narrowedGrant, spawnWith 1 0x60003 { receive := true }, .narrowedGrant, 0x8b, 0x0⟩
+  , ⟨.terminated, spawnOne, .loaderRespawned, 0x1, 0x20000⟩
+  , ⟨.loaderRespawned, grant secondControl 1, .loaderGranted, 0x1, 0x1⟩
+  , ⟨.loaderRespawned, grant firstControl 1, .loaderRespawned, 0xc3, 0x0⟩
+  , ⟨.loaderGranted, terminate secondControl, .loaderTerminated, 0x1, 0x1⟩
+  , ⟨.loaderGranted, terminate firstControl, .loaderGranted, 0xc3, 0x0⟩
   ]
 
 def Edge.words (edge : Edge) : CommandWords := encodeFamily edge.command

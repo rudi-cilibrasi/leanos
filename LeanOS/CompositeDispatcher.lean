@@ -688,6 +688,8 @@ def spawnDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
         arg2 == 0x0 && arg3 == 0x0 then 0xc37501
     else if tag == 0x7301 && arg0 == 0x2 && arg1 == 0x0 &&
         arg2 == 0x0 && arg3 == 0x0 then 0x17601
+    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
+        arg2 == 0x4 && arg3 == 0x0 then 0x18201
     else spawnFamilyMiss tag arg0 arg1 arg2 arg3
   else if stateWord = 0x7601 then
     if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
@@ -749,6 +751,20 @@ def spawnDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
     if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x60003 &&
         arg2 == 0x8 && arg3 == 0x0 then 0x8b8101
     else spawnFamilyMiss tag arg0 arg1 arg2 arg3
+  else if stateWord = 0x8201 then
+    if tag == 0x7101 && arg0 == 0x20000 && arg1 == 0x1 &&
+        arg2 == 0x0 && arg3 == 0x0 then 0x18301
+    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
+        arg2 == 0x0 && arg3 == 0x0 then 0xc38201
+    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
+  else if stateWord = 0x8301 then
+    if tag == 0x7201 && arg0 == 0x20000 && arg1 == 0x0 &&
+        arg2 == 0x0 && arg3 == 0x0 then 0x18401
+    else if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
+        arg2 == 0x0 && arg3 == 0x0 then 0xc38301
+    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
+  else if stateWord = 0x8401 then
+    spawnFamilyMiss tag arg0 arg1 arg2 arg3
   else 0xff03
 
 /-- Allocation-free generated entry point.  It validates every scalar before
@@ -769,7 +785,7 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if 0x6001 ≤ stateWord && stateWord ≤ 0x6501 then
     if stateWord % 256 != abiVersion then 0xff01
     else inFlightRevocationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
-  else if 0x7001 ≤ stateWord && stateWord ≤ 0x8101 then
+  else if 0x7001 ≤ stateWord && stateWord ≤ 0x8401 then
     if stateWord % 256 != abiVersion then 0xff01
     else spawnDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
@@ -869,8 +885,8 @@ word. Only the accepted attached-receipt selectors for the hosted and machine
 traces may publish a handle. The spawn family's accepted controls publish the
 hosted oracle's value word: the generation of a kernel grant (`0x017101`,
 `0x017b01`), the control word of an accepted spawn (`0x017201`, `0x017701`,
-`0x017c01`), and the frames a grant moved or a termination returned
-(`0x017401`, `0x017501`). -/
+`0x017c01`, `0x018201`), and the frames a grant moved or a termination returned
+(`0x017401`, `0x017501`, `0x018301`, `0x018401`). -/
 def resultValue (control : UInt64) : UInt64 :=
   if control = 0x210a01 then 0x60003
   else if control = 0x215401 then 0x60003
@@ -881,11 +897,15 @@ def resultValue (control : UInt64) : UInt64 :=
   else if control = 0x017701 then 0x20000
   else if control = 0x017b01 then 2
   else if control = 0x017c01 then 0x10000
+  else if control = 0x018201 then 0x20000
+  else if control = 0x018301 then 1
+  else if control = 0x018401 then 1
   else 0
 
 /-- The controls whose value word is not zero. -/
 def valueControls : List UInt64 :=
-  [0x210a01, 0x215401, 0x017101, 0x017201, 0x017401, 0x017501, 0x017701, 0x017b01, 0x017c01]
+  [0x210a01, 0x215401, 0x017101, 0x017201, 0x017401, 0x017501, 0x017701, 0x017b01, 0x017c01,
+    0x018201, 0x018301, 0x018401]
 
 def dispatchResult (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : DispatchResult :=
   let control := dispatch stateWord tag arg0 arg1 arg2 arg3
@@ -908,6 +928,24 @@ theorem dispatchResult_value_eq_dispatchValue stateWord tag arg0 arg1 arg2 arg3 
       dispatchValue stateWord tag arg0 arg1 arg2 arg3 := by
   rfl
 
+private theorem resultValue_ite_property {condition : Prop} [Decidable condition]
+    {property : UInt64 → Prop} {first second : UInt64}
+    (inFirst : condition → property first) (inSecond : ¬ condition → property second) :
+    property (if condition then first else second) := by
+  by_cases holds : condition
+  · simp only [holds, ↓reduceIte]; exact inFirst holds
+  · simp only [holds, ↓reduceIte]; exact inSecond holds
+
+private def handleProperty (control value : UInt64) : Prop :=
+  value = 0x60003 ↔ control = 0x210a01 ∨ control = 0x215401
+
+private def zeroProperty (control value : UInt64) : Prop :=
+  value = 0 ↔ ¬(control = 0x210a01 ∨ control = 0x215401 ∨ control = 0x017101 ∨
+    control = 0x017201 ∨ control = 0x017401 ∨ control = 0x017501 ∨ control = 0x017701 ∨
+    control = 0x017b01 ∨ control = 0x017c01 ∨ control = 0x018201 ∨ control = 0x018301 ∨
+    control = 0x018401)
+
+set_option linter.unusedSimpArgs false in
 /-- A returned handle is present exactly for the accepted receipt control
 word. This excludes every rejection, data-only success, and malformed input. -/
 theorem dispatchValue_eq_delivered_handle_iff stateWord tag arg0 arg1 arg2 arg3 :
@@ -916,9 +954,13 @@ theorem dispatchValue_eq_delivered_handle_iff stateWord tag arg0 arg1 arg2 arg3 
         dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x215401 := by
   unfold dispatchValue resultValue
   generalize dispatch stateWord tag arg0 arg1 arg2 arg3 = control
-  repeat' split
-  all_goals simp_all
+  repeat' (apply resultValue_ite_property (property := handleProperty control) <;> intro)
+  all_goals unfold handleProperty
+  all_goals first
+    | (subst_vars; decide)
+    | (simp only [*, false_or, or_false, iff_false]; decide)
 
+set_option linter.unusedSimpArgs false in
 /-- Every control outside `valueControls` exposes the canonical no-value word,
 and every control in it a nonzero one. -/
 theorem dispatchValue_eq_zero_iff stateWord tag arg0 arg1 arg2 arg3 :
@@ -927,8 +969,11 @@ theorem dispatchValue_eq_zero_iff stateWord tag arg0 arg1 arg2 arg3 :
   unfold dispatchValue resultValue
   generalize dispatch stateWord tag arg0 arg1 arg2 arg3 = control
   simp only [valueControls, List.mem_cons, List.not_mem_nil, or_false]
-  repeat' split
-  all_goals simp_all
+  repeat' (apply resultValue_ite_property (property := zeroProperty control) <;> intro)
+  all_goals unfold zeroProperty
+  all_goals first
+    | (subst_vars; decide)
+    | (simp only [*, false_or, or_false, not_false_eq_true, iff_true]; done)
 
 /-- The published receipt value is a canonical slot-3, generation-6 handle,
 not a raw slot number or a reserved no-value encoding. -/

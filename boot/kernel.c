@@ -123,7 +123,7 @@ extern char __user_a_stack_start[], __user_a_stack_end[];
 extern char __user_b_text_start[], __user_b_text_end[];
 extern char __user_b_stack_start[], __user_b_stack_end[];
 /* End of the admitted subject ELF's range (issue #492), linked in every image. */
-extern char __user_admitted_end[];
+extern char __user_admitted_start[], __user_admitted_end[];
 extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
 extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
@@ -283,6 +283,15 @@ static volatile uint64_t runtime_reuse_lifetime;
 static volatile unsigned runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+/* The loaded child's identity and ranges while it runs (0 otherwise), for
+   the return validator; set by the loader's start and wait (#492). */
+uint64_t loader_child_subject, loader_child_code_first, loader_child_code_last;
+uint64_t loader_child_stack_first, loader_child_entry, loader_child_stack;
+/* The child's word, which boot.S hands to B in RAX. */
+uint64_t loader_child_word;
+extern uint64_t spawn_child_pml4[];
+#endif
 volatile uint64_t reserved_fault_nxe_disabled;
 
 /* The machine-facing spelling of InterruptEntry's version-one canonical
@@ -1435,6 +1444,17 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
         code_first = user_b_entry; code_last = user_b_stack;
         stack_first = user_b_stack; stack_last = user_b_stack_top;
         expected_cr3 = page_map_level_4_b;
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+    } else if (loader_child_subject != 0 && current_subject == loader_child_subject) {
+        /* The loaded child: its code is its executable admitted segment's
+           file bytes, and its stack the first 2048 bytes of its writable
+           segment (the subject layout, subjects/admitted.ld). */
+        code_first = (const char *)loader_child_code_first;
+        code_last = (const char *)loader_child_code_last;
+        stack_first = (const char *)loader_child_stack_first;
+        stack_last = (const char *)loader_child_stack;
+        expected_cr3 = spawn_child_pml4;
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
     } else if (current_subject == 3) {
         code_first = user_c_entry; code_last = user_c_stack;
@@ -7261,7 +7281,7 @@ static void frame_server_switch(uint64_t *target, uint64_t target_owner,
 }
 #endif
 
-#ifdef LEANOS_SPAWN_CHILD_SCENARIO
+#if defined(LEANOS_SPAWN_CHILD_SCENARIO) || defined(LEANOS_SPAWN_LOADER_SCENARIO)
 /* The ring-3 spawn syscall (#489, #491; ADR 0010 decision of 2026-10-10).
    Subject B (2) is the parent, the current subject of the model's latch.
    Syscalls 100..104 are decoded only by the generated witness
@@ -7313,7 +7333,7 @@ static uint64_t spawn_slot_reused, spawn_stale_rejected, spawn_bystander_digest;
 static uint8_t spawn_frame[PAGE_BYTES] __attribute__((aligned(PAGE_BYTES)));
 /* The child's root: a fresh address space with the kernel's supervisor-only
    identity map, which interrupt entry needs, and an empty user window. */
-static uint64_t spawn_child_pml4[512] __attribute__((aligned(PAGE_BYTES)));
+uint64_t spawn_child_pml4[512] __attribute__((aligned(PAGE_BYTES)));
 static uint64_t spawn_child_pdpt[512] __attribute__((aligned(PAGE_BYTES)));
 static uint64_t spawn_child_pd[512] __attribute__((aligned(PAGE_BYTES)));
 static uint64_t spawn_child_pt[BOOT_LEAF_COUNT] __attribute__((aligned(PAGE_BYTES)));
@@ -7471,6 +7491,100 @@ static void spawn_report_tail(uint64_t reply, uint64_t value) {
     serial_puts(" result=PASS\n");
 }
 
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+/* The run-time loader (#492; LeanOS.ChildLoader, ADR 0024's run-time
+   amendment).  B, the loader, holds the spawn capability and the read
+   authority over the reserved range [__user_admitted_start,
+   __user_admitted_end) holding the admitted subject ELF.  After spawning a
+   child and giving it a frame, B asks the kernel to load each admitted
+   segment (105: RBX control word, RCX segment index, RDX the source address
+   B claims) and to start the child (106: RBX control word).  The generated
+   witnesses decide (leanos_loader_source, leanos_loader_decide;
+   loader_witness_agrees_load and _start); the kernel only computes their words
+   from its records and carries out the decision:
+
+   - 1: a read-only segment is mapped in place, page for page, from the
+     reserved range, user-accessible, read-only, executable only if admitted;
+   - 2: a writable segment is copied into the frame B gave the child (its
+     file bytes, then zeros) and mapped user, writable, no-execute;
+   - 0x1xx: refused without effect (the control word names no child being
+     loaded);
+   - 0x2xx: rolled back: the kernel terminates the child through the
+     generated dispatcher (childGate (.terminateChild control)) and discards
+     its pages.
+
+   The segments are read once at boot from the reserved bytes' program
+   headers; scripts/check-admitted-subject.py checks at build time that these
+   bytes are the file LeanOS.ElfAdmission admitted, with that plan. */
+#define LOADER_MAX_SEGMENTS 8u
+#define LOADER_WINDOW_START UINT64_C(0x1000000)
+#define LOADER_STACK_BYTES 2048u
+#define LOADER_CHILD_WORD (UINT64_C(0x4c4f4144) + UINT64_C(0x00444100))
+
+struct loader_segment {
+    uint64_t vaddr, mem_bytes, file_offset, file_bytes;
+    uint64_t writable, executable, pages;
+};
+
+static struct loader_segment loader_segments[LOADER_MAX_SEGMENTS];
+static uint64_t loader_segment_count, loader_entry;
+static uint64_t loader_started, loader_loaded, loader_used, loader_rollbacks;
+static uint64_t loader_child_running, loader_refused;
+
+static uint64_t loader_read(const uint8_t *bytes, unsigned width) {
+    uint64_t value = 0;
+    for (unsigned i = 0; i < width; ++i) value |= (uint64_t)bytes[i] << (8u * i);
+    return value;
+}
+
+/* Read the admitted ELF's load segments from the reserved bytes. */
+static void loader_install(void) {
+    const uint8_t *file = (const uint8_t *)__user_admitted_start;
+    const uint64_t size = (uint64_t)__user_admitted_end - (uint64_t)__user_admitted_start;
+    if (size < 64 || loader_read(file, 4) != UINT64_C(0x464c457f) ||
+        ((uint64_t)__user_admitted_start & (PAGE_BYTES - 1)) != 0)
+        fail("loader-admitted-range");
+    const uint64_t phoff = loader_read(file + 0x20, 8);
+    const uint64_t phnum = loader_read(file + 0x38, 2);
+    loader_entry = loader_read(file + 0x18, 8);
+    if (phnum > LOADER_MAX_SEGMENTS || phoff + phnum * 56u > size) fail("loader-program-headers");
+    for (uint64_t i = 0; i < phnum; ++i) {
+        const uint8_t *header = file + phoff + i * 56u;
+        if (loader_read(header, 4) != 1) continue;
+        struct loader_segment *segment = &loader_segments[loader_segment_count++];
+        const uint64_t flags = loader_read(header + 4, 4);
+        segment->file_offset = loader_read(header + 8, 8);
+        segment->vaddr = loader_read(header + 16, 8);
+        segment->file_bytes = loader_read(header + 32, 8);
+        segment->mem_bytes = loader_read(header + 40, 8);
+        segment->writable = (flags & 2u) != 0;
+        segment->executable = (flags & 1u) != 0;
+        segment->pages = ((segment->vaddr + segment->mem_bytes + PAGE_BYTES - 1) /
+            PAGE_BYTES * PAGE_BYTES - segment->vaddr) / PAGE_BYTES;
+        if (segment->vaddr < LOADER_WINDOW_START ||
+            (segment->vaddr - LOADER_WINDOW_START) / PAGE_BYTES + segment->pages > 512)
+            fail("loader-segment-window");
+    }
+    serial_puts(LEANOS_SERIAL_10_SPAWN " event=read-authority subject=2 range=reserved pages=");
+    serial_u64(size / PAGE_BYTES);
+    serial_puts(" segments=");
+    serial_u64(loader_segment_count);
+    serial_puts(" entry=");
+    serial_u64(loader_entry);
+    serial_puts(" mapped-to-ring3=0 result=PASS\n");
+}
+
+/* Discard the child's pages: clear its user window and scrub the copy. */
+static void loader_discard(void) {
+    for (unsigned i = 0; i < 512; ++i) spawn_child_window[i] = 0;
+    if (loader_used != 0) spawn_frame_fill(0);
+    loader_loaded = 0;
+    loader_used = 0;
+    loader_started = 0;
+    loader_child_running = 0;
+}
+#endif
+
 /* Realize one accepted edge.  Every identity, generation and frame count
    comes from the generated value word or the model's issuers' order; the
    mirror's checks fail-stop on any disagreement. */
@@ -7514,9 +7628,14 @@ static void spawn_child_apply(uint64_t number, uint64_t arg0, uint64_t value) {
         serial_puts(" frame=committed-to-child");
         return;
     }
-    if (number == 102) {
+    if (number == 102 || number == 105 || number == 106) {
         if (!m->child_live || arg0 != (m->generation << 16) || value != m->charge)
             fail("spawn-terminate-mirror");
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+        /* The child's copies go before its frame returns to B: the model's
+           frame is free and scrubbed, and the kernel's frame is made so. */
+        loader_discard();
+#endif
         const uint64_t child = m->child;
         const uint64_t address_space = m->address_space;
         /* The child allocated nothing, so the frames it was given come back
@@ -7532,7 +7651,7 @@ static void spawn_child_apply(uint64_t number, uint64_t arg0, uint64_t value) {
         m->child_live = 0;
         m->charge = 0;
         ++spawn_terminated;
-        spawn_report_head("terminate", number);
+        spawn_report_head(number == 102 ? "terminate" : "rollback", number);
         serial_puts(" child=");
         serial_u64(child);
         serial_puts(" address-space=");
@@ -7569,13 +7688,236 @@ static void spawn_child_apply(uint64_t number, uint64_t arg0, uint64_t value) {
     fail("spawn-apply-number");
 }
 
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+static uint64_t loader_all_loaded(void) {
+    return loader_segment_count != 0 &&
+        loader_loaded == ((UINT64_C(1) << loader_segment_count) - 1);
+}
+
+/* The control word names the live child, and it is still being loaded. */
+static uint64_t loader_live(uint64_t control) {
+    return spawn_mirror.child_live && control == (spawn_mirror.generation << 16) &&
+        !loader_started;
+}
+
+/* The kernel's rollback: terminate the child through the generated
+   dispatcher's edge, then realize it (pages discarded, frame returned). */
+static void loader_rollback(uint64_t number, uint64_t control) {
+    const uint64_t reply = leanos_composite_dispatch(spawn_state,
+        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_TERMINATE_CHILD, control, 0, 0, 0);
+    const uint64_t value = leanos_composite_dispatch_value(spawn_state,
+        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_TERMINATE_CHILD, control, 0, 0, 0);
+    if ((reply & 0xffu) != 1 || (reply >> 16) != 1) fail("loader-rollback-edge");
+    spawn_state = reply & UINT64_C(0xffff);
+    spawn_child_apply(number, control, value);
+    spawn_report_tail(reply, value);
+    ++loader_rollbacks;
+}
+
+static void loader_map(uint64_t vaddr, uint64_t physical, uint64_t writable,
+                       uint64_t executable) {
+    const uint64_t index = (vaddr - LOADER_WINDOW_START) / PAGE_BYTES;
+    if (index >= 512 || spawn_child_window[index] != 0) fail("loader-window-leaf");
+    spawn_child_window[index] = physical | PTE_PRESENT | PTE_USER |
+        (writable ? PTE_WRITABLE : 0) | (executable ? 0 : PTE_NX);
+}
+
+static void loader_report_words(uint64_t control, uint64_t index) {
+    serial_puts(" control-word=");
+    serial_u64(control);
+    serial_puts(" segment=");
+    serial_u64(index);
+}
+
+static uint64_t loader_syscall(uint64_t number, uint64_t arg0, uint64_t arg1,
+                               uint64_t arg2) {
+    const uint64_t start = (uint64_t)__user_admitted_start;
+    const uint64_t stop = (uint64_t)__user_admitted_end;
+    spawn_syscall_value = 0;
+    if (number == 107) {
+        /* B waits for the started child's word: run the child now. */
+        if (!loader_started || loader_child_running || loader_child_word != 0)
+            fail("loader-wait");
+        loader_child_running = 1;
+        loader_child_subject = spawn_mirror.child;
+        current_subject = spawn_mirror.child;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wait subject=2 endpoint=10 slot=0 blocked=1\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=");
+        serial_u64(spawn_mirror.child);
+        serial_puts(" address-space=");
+        serial_u64(spawn_mirror.address_space);
+        serial_puts(" cpl=3 root=child entry=");
+        serial_u64(loader_child_entry);
+        serial_puts(" stack=");
+        serial_u64(loader_child_stack);
+        serial_puts(" context=fresh\n");
+        return UINT64_C(0x5c01);
+    }
+    if (number == 108) {
+        if (spawn_state != LEANOS_COMPOSITE_STATE_SPAWN_LOADER_TERMINATED ||
+            spawn_mirror.child_live || !spawn_child_root_empty() || loader_rollbacks != 1 ||
+            loader_refused != 1 || loader_child_word != LOADER_CHILD_WORD ||
+            spawn_spawned != 2 || spawn_terminated != 2 || !spawn_frame_is(0))
+            fail("loader-final-state");
+        if (spawn_bystander() != spawn_bystander_digest) fail("spawn-bystander");
+        serial_puts(LEANOS_SERIAL_10_SPAWN " event=bystander subject=1 tables=unchanged context=unchanged ran=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=2 loader=2 spawned=2 rolled-back=1 refused=1 loaded=1 segments=");
+        serial_u64(loader_segment_count);
+        serial_puts(" child-ran=1 child-word=");
+        serial_u64(loader_child_word);
+        serial_puts(" children-live=0 bystander=unchanged\n");
+        finish(0x10);
+    }
+    const uint64_t op = number == 105 ? 1 : 2;
+    const uint64_t control = arg0;
+    const uint64_t live = loader_live(control);
+    const uint64_t started = spawn_mirror.child_live && loader_started;
+    uint64_t flags = (live ? 1u : 0u) | (started ? 2u : 0u) | (loader_all_loaded() ? 64u : 0u);
+    uint64_t source_code = 0, pages = 0;
+    const struct loader_segment *segment = 0;
+    if (op == 1 && arg1 < loader_segment_count) {
+        segment = &loader_segments[arg1];
+        pages = segment->pages;
+        flags |= 4u | (((loader_loaded >> arg1) & 1u) ? 8u : 0u) |
+            (segment->writable ? 16u : 0u) |
+            (segment->mem_bytes != segment->file_bytes ? 32u : 0u);
+        source_code = leanos_loader_source(arg2, start, stop, segment->file_offset,
+                                           pages * PAGE_BYTES);
+    }
+    const uint64_t frames = live ? spawn_mirror.charge : 0;
+    const uint64_t decision = leanos_loader_decide(op, flags, source_code, pages, frames,
+                                                   loader_used);
+    if (decision >= 0x100 && decision < 0x200) {
+        ++loader_refused;
+        spawn_report_head("load-refused", number);
+        loader_report_words(control, arg1);
+        serial_puts(decision == 0x101 ? " reason=no-child-being-loaded"
+                                      : " reason=already-started");
+        serial_puts(" rollback=none state=unchanged decision=");
+        serial_u64(decision);
+        serial_puts(" result=PASS\n");
+        return decision;
+    }
+    if (decision >= 0x200 && decision <= 0x209) {
+        static const char *const reasons[] = { "", "", "", " reason=bad-index",
+            " reason=already-loaded", " reason=outside-read-authority", " reason=wrong-source",
+            " reason=in-place-zero-fill", " reason=no-frames", " reason=incomplete" };
+        spawn_report_head("load-rejected", number);
+        loader_report_words(control, arg1);
+        serial_puts(arg2 >= start && arg2 < stop ? " source=inside" : " source=outside");
+        serial_puts(reasons[decision & 0xffu]);
+        serial_puts(" decision=");
+        serial_u64(decision);
+        serial_puts(" rollback=spawn result=PASS\n");
+        loader_rollback(number, control);
+        return decision;
+    }
+    if ((decision == 1 || decision == 2) && segment && live) {
+        for (uint64_t page = 0; page < segment->pages; ++page) {
+            const uint64_t vaddr = segment->vaddr + page * PAGE_BYTES;
+            if (decision == 1) {
+                loader_map(vaddr, arg2 + page * PAGE_BYTES, 0, segment->executable);
+            } else {
+                /* The parent gave the child one frame: the copy fills it. */
+                if (loader_used + page != 0) fail("loader-copy-frame");
+                volatile uint8_t *frame = spawn_frame;
+                const uint8_t *bytes = (const uint8_t *)arg2;
+                for (unsigned b = 0; b < PAGE_BYTES; ++b) {
+                    const uint64_t offset = page * PAGE_BYTES + b;
+                    frame[b] = offset < segment->file_bytes ? bytes[offset] : 0;
+                }
+                loader_map(vaddr, (uint64_t)spawn_frame, 1, 0);
+            }
+        }
+        if (decision == 2) loader_used += segment->pages;
+        loader_loaded |= UINT64_C(1) << arg1;
+        spawn_report_head("load", number);
+        loader_report_words(control, arg1);
+        serial_puts(" vaddr=");
+        serial_u64(segment->vaddr);
+        serial_puts(" pages=");
+        serial_u64(segment->pages);
+        serial_puts(segment->writable ? " perms=rw- backing=copy"
+            : segment->executable ? " perms=r-x backing=reserved"
+                                  : " perms=r-- backing=reserved");
+        serial_puts(" decision=");
+        serial_u64(decision);
+        serial_puts(" result=PASS\n");
+        return decision;
+    }
+    if (decision == 3 && live) {
+        uint64_t stack = 0;
+        for (uint64_t i = 0; i < loader_segment_count; ++i)
+            if (loader_segments[i].writable && !stack)
+                stack = loader_segments[i].vaddr + LOADER_STACK_BYTES;
+        if (!stack) fail("loader-child-stack");
+        loader_started = 1;
+        loader_child_entry = loader_entry;
+        loader_child_stack = stack;
+        loader_child_stack_first = stack - LOADER_STACK_BYTES;
+        for (uint64_t i = 0; i < loader_segment_count; ++i)
+            if (loader_segments[i].executable && !loader_child_code_first) {
+                loader_child_code_first = loader_segments[i].vaddr;
+                loader_child_code_last = loader_segments[i].vaddr + loader_segments[i].file_bytes;
+            }
+        if (loader_entry < loader_child_code_first || loader_entry >= loader_child_code_last)
+            fail("loader-entry");
+        uint64_t leaves = 0;
+        for (unsigned i = 0; i < 512; ++i) if (spawn_child_window[i]) ++leaves;
+        spawn_report_head("start", number);
+        serial_puts(" control-word=");
+        serial_u64(control);
+        serial_puts(" child=");
+        serial_u64(spawn_mirror.child);
+        serial_puts(" segments-loaded=");
+        serial_u64(loader_segment_count);
+        serial_puts(" user-leaves=");
+        serial_u64(leaves);
+        serial_puts(" runnable=1 decision=3 result=PASS\n");
+        return decision;
+    }
+    fail("loader-decision");
+}
+
+/* The running child's one syscall: a send through its slot-0 endpoint
+   capability (the send-only copy spawn gave it) to B, which is woken with
+   the word.  The child is never resumed: B terminates it. */
+static uint64_t loader_child_syscall(uint64_t number, uint64_t arg0, uint64_t arg1,
+                                     uint64_t arg2) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)spawn_child_pml4 ||
+        current_subject != spawn_mirror.child)
+        fail("loader-child-context");
+    if (number != 8 || arg1 != 0 || arg2 != 0) fail("loader-child-syscall");
+    loader_child_word = arg0;
+    loader_child_running = 0;
+    loader_child_subject = 0;
+    current_subject = SPAWN_PARENT;
+    serial_puts(LEANOS_SERIAL_10_IPC " event=send subject=");
+    serial_u64(spawn_mirror.child);
+    serial_puts(" slot=0 endpoint=10 right=send word=");
+    serial_u64(arg0);
+    serial_puts(" receiver=2 data=copied bss=zero result=PASS\n");
+    if (arg0 != LOADER_CHILD_WORD) fail("loader-child-word");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 context=saved woken=1\n");
+    return UINT64_C(0x5c02);
+}
+#endif
+
 static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
                                     uint64_t arg1, uint64_t arg2) {
     uint64_t cr3;
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+    if (loader_child_running) return loader_child_syscall(number, arg0, arg1, arg2);
+#endif
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if (current_subject != SPAWN_PARENT ||
         (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b)
         fail("spawn-caller-context");
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+    if (number >= 105 && number <= 108) return loader_syscall(number, arg0, arg1, arg2);
+#else
     if (number == 109) {
         if (spawn_state != LEANOS_COMPOSITE_STATE_SPAWN_SECOND_TERMINATED ||
             spawn_mirror.child_live || !spawn_child_root_empty() ||
@@ -7588,6 +7930,7 @@ static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
         serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=2 parent=2 spawned=2 terminated=2 slot-reused=1 stale-rejected=3 refused=1 rejected=5 children-live=0 bystander=unchanged\n");
         finish(0x10);
     }
+#endif
     if (number < 100 || number > 104) fail("spawn-child-syscall");
     const uint64_t before = spawn_digest();
     const uint64_t reply = leanos_spawn_syscall(spawn_state, current_subject,
@@ -7656,7 +7999,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         return result;
     }
 #endif
-#ifdef LEANOS_SPAWN_CHILD_SCENARIO
+#if defined(LEANOS_SPAWN_CHILD_SCENARIO) || defined(LEANOS_SPAWN_LOADER_SCENARIO)
     (void)saved_flags;
     {
         /* A real call, as for the endpoint directory: the entry-stack gate
@@ -9318,6 +9661,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=frame-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_SPAWN_CHILD_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=spawn-child controls=wp,smep,smap boundary=generated-spawn-syscall\n");
+#elif defined(LEANOS_SPAWN_LOADER_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=spawn-loader controls=wp,smep,smap boundary=generated-spawn-syscall,generated-loader\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -9569,6 +9914,14 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_b);
     check_selected_root_b();
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 role=spawn-parent\n");
+    enter_user(user_b_entry, user_b_stack_top);
+#elif defined(LEANOS_SPAWN_LOADER_SCENARIO)
+    spawn_child_install();
+    loader_install();
+    current_subject = 2;
+    activate_user_address_space(page_map_level_4_b);
+    check_selected_root_b();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 role=loader\n");
     enter_user(user_b_entry, user_b_stack_top);
 #else
     current_subject = 2;

@@ -57,6 +57,8 @@ elif [[ "$scenario" == frame-server ]]; then
   default_image="build/boot/leanos-${version}-x86_64-frame-server.iso"
 elif [[ "$scenario" == spawn-child ]]; then
   default_image="build/boot/leanos-${version}-x86_64-spawn-child.iso"
+elif [[ "$scenario" == spawn-loader ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-spawn-loader.iso"
 elif [[ "$scenario" == endpoint-directory ]]; then
   default_image="build/boot/leanos-${version}-x86_64-endpoint-directory.iso"
 elif [[ "$scenario" == three-subject ]]; then

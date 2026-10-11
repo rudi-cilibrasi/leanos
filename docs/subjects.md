@@ -21,6 +21,7 @@ the image at build time, like every other byte of it.
 | `subjects/directory/` | The endpoint directory booted by the `endpoint-directory` image ([endpoint-directory.md](endpoint-directory.md), #485) |
 | `subjects/frame-server/` | The frame server booted by the `frame-server` image ([frame-server.md](frame-server.md), #486) |
 | `subjects/net/` | The network subject booted by the `network-subject` image ([network-subject.md](network-subject.md), #450); it includes a Lean-generated responder |
+| `subjects/loaded/` | The child the `spawn-loader` image's loader loads from its admitted bytes (#492); built only as an admitted executable |
 | `subjects/runtime/entry.S` | The entry stub linked first into every subject |
 | `subjects/include/leanos/subject.h` | The only kernel interface: `int $0x80` wrappers |
 | `subjects/subject.ld` | The one linker script, used with `ld -r` |
@@ -196,8 +197,22 @@ After the final link, `scripts/check-admitted-subject.py` does these checks:
   There is one copy per rejection reason the issue lists.
 
 The placed plan is `build/boot/admitted-subject/admitted-subject-plan.tsv`.
-Nothing loads or runs the admitted file yet. The run-time loader is gated by
-[ADR 0010](adr/0010-defer-fork.md).
+The example image does not load or run its admitted file.
+
+### Loading an admitted subject at run time
+
+A manifest subject with `"slot": "admitted"` (and `"admitted": true`) has no
+slot. The build rule links and admits it as above, and its object holds only
+the `.user.admitted` bytes. The `spawn-loader` image links `subjects/loaded`
+this way. Its loader, subject B, spawns a child and has the kernel load the
+admitted segments into the child's fresh address space: read-only segments
+mapped in place from the reserved range, writable segments copied into the
+frame B gave the child. It then starts the child
+([ADR 0024's run-time amendment](adr/0024-build-time-elf-admission.md#amendment-2026-10-11-the-run-time-loader-492)).
+The child enters at the admitted entry point. Its stack is the first 2048
+bytes of its writable segment, which is the slot layout's stack. It holds one
+capability, the send-only endpoint in slot 0. `build-image.sh` runs
+`check-admitted-subject.py` on that image as well.
 
 ## Adding a subject
 

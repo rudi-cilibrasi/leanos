@@ -600,7 +600,7 @@ lean_c_modules=(
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
-  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer SpawnSyscall
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer SpawnSyscall ChildLoader
   WifiExec NetworkSubject NetEcho
 )
 # Generated C file name -> Lean source. WifiExec is the device-program
@@ -1261,7 +1261,7 @@ fi
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
     example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory \
-    network-subject spawn-child; do
+    network-subject spawn-child spawn-loader; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \
@@ -1378,6 +1378,14 @@ if selected_final_enabled "$build/leanos-example-subject.elf"; then
   ./scripts/check-admitted-subject.py "$build/leanos-example-subject.elf" \
     "$build/subject-example.admitted.elf" "$build/subject-example.admitted.tsv" \
     .lake/build/bin/leanos-elf-admit "$build/admitted-subject"
+fi
+
+if selected_final_enabled "$build/leanos-spawn-loader.elf"; then
+  # The loader image (#492) links only the admitted bytes of subjects/loaded:
+  # the same checks bind its reserved range to the file the checker admitted.
+  ./scripts/check-admitted-subject.py "$build/leanos-spawn-loader.elf" \
+    "$build/subject-loaded.admitted.elf" "$build/subject-loaded.admitted.tsv" \
+    .lake/build/bin/leanos-elf-admit "$build/admitted-loaded"
 fi
 
 if selected_final_enabled "$build/leanos-frame-budget.elf"; then

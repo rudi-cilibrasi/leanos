@@ -1501,11 +1501,54 @@ isr80_cld:
     mov 136(%rsp), %r9
 #endif
     call syscall_handler
-#ifdef LEANOS_SPAWN_CHILD_SCENARIO
+#if defined(LEANOS_SPAWN_CHILD_SCENARIO) || defined(LEANOS_SPAWN_LOADER_SCENARIO)
     /* The spawn syscall's result word one (the generated value word) goes
        to the caller's saved RBX; RAX gets the generated reply word below. */
     mov spawn_syscall_value(%rip), %rcx
     mov %rcx, 104(%rsp)
+#endif
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+    cmp $0x5c01, %rax
+    je 50f
+    cmp $0x5c02, %rax
+    jne 52f
+51: /* The loaded child sent its word (#492): its frame is discarded, it is
+       never resumed, and B's saved continuation is restored with the word
+       in RAX. */
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    mov loader_child_word(%rip), %rax
+    mov %rax, 112(%rsp)
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov $2, %esi
+    jmp user_return_epilogue
+50: /* B waits for the started child: preserve B's continuation and enter
+       the loaded child fresh at its admitted entry, on its own root, with
+       every general register zero. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    mov loader_child_entry(%rip), %rax
+    mov %rax, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    mov loader_child_stack(%rip), %rax
+    mov %rax, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    lea spawn_child_pml4(%rip), %rax
+    mov %rax, %cr3
+    xor %eax, %eax
+    mov $1, %esi
+    jmp user_return_epilogue
+52:
 #endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
     cmp $0x3c01, %rax
@@ -3046,6 +3089,106 @@ user_b_entry:
     mov $62, %eax
     int $0x80
     ud2
+#elif defined(LEANOS_SPAWN_LOADER_SCENARIO)
+    /* Loader (#492).  B holds the kernel-granted spawn capability and the
+       read authority over the reserved range holding the admitted ELF.  Its
+       segments are at file offsets 0x1000 (text) and 0x2000 (data), the
+       subjects/admitted.ld layout; the kernel accepts only the admitted
+       placement.  Spawn replies come back as in spawn-child (RAX reply,
+       RBX value); load and start return the loader witness's decision. */
+    mov $1, %ebx                /* 100 spawn the first child */
+    mov $0x30000, %ecx
+    mov $4, %edx
+    mov $100, %eax
+    int $0x80
+    cmp $0x017201, %rax
+    jne 9f
+    mov %rbx, %r12
+    mov $2, %ebx                /* 104 release slot 2: the frame is free */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $104, %eax
+    int $0x80
+    cmp $0x017301, %rax
+    jne 9f
+    mov %r12, %rbx              /* 101 give the child that frame */
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $101, %eax
+    int $0x80
+    cmp $0x017401, %rax
+    jne 9f
+    mov %r12, %rbx              /* 105 a source outside the read authority */
+    xor %ecx, %ecx
+    mov $__user_admitted_start - 0x1000, %edx
+    mov $105, %eax
+    int $0x80
+    cmp $0x205, %rax            /* rejected: the spawn is rolled back */
+    jne 9f
+    mov %r12, %rbx              /* 105 again: no child being loaded */
+    xor %ecx, %ecx
+    mov $__user_admitted_start + 0x1000, %edx
+    mov $105, %eax
+    int $0x80
+    cmp $0x101, %rax
+    jne 9f
+    mov $1, %ebx                /* 100 spawn again: slot 0, generation 2 */
+    mov $0x30000, %ecx
+    mov $4, %edx
+    mov $100, %eax
+    int $0x80
+    cmp $0x018201, %rax
+    jne 9f
+    cmp $0x20000, %rbx
+    jne 9f
+    mov %rbx, %r13
+    mov %r13, %rbx              /* 101 give the new child the frame */
+    mov $1, %ecx
+    xor %edx, %edx
+    mov $101, %eax
+    int $0x80
+    cmp $0x018301, %rax
+    jne 9f
+    mov %r13, %rbx              /* 105 text: mapped in place */
+    xor %ecx, %ecx
+    mov $__user_admitted_start + 0x1000, %edx
+    mov $105, %eax
+    int $0x80
+    cmp $1, %rax
+    jne 9f
+    mov %r13, %rbx              /* 105 data: copied into the child's frame */
+    mov $1, %ecx
+    mov $__user_admitted_start + 0x2000, %edx
+    mov $105, %eax
+    int $0x80
+    cmp $2, %rax
+    jne 9f
+    mov %r13, %rbx              /* 106 start the child */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $106, %eax
+    int $0x80
+    cmp $3, %rax
+    jne 9f
+    xor %ebx, %ebx              /* 107 wait for the child's word */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $107, %eax
+    int $0x80
+    cmp $0x4c938244, %rax       /* "LOAD" + the copied data word + bss 0 */
+    jne 9f
+    mov %r13, %rbx              /* 102 terminate the child */
+    xor %ecx, %ecx
+    xor %edx, %edx
+    mov $102, %eax
+    int $0x80
+    cmp $0x018401, %rax
+    jne 9f
+    cmp $1, %rbx
+    jne 9f
+    mov $108, %eax              /* final report */
+    int $0x80
+9:  ud2
 #elif defined(LEANOS_SPAWN_CHILD_SCENARIO)
     /* Spawn parent (#489, #491).  B is the current subject and holds the
        kernel-granted spawn capability (generation 1, subject budget 1),

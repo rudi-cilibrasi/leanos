@@ -2,7 +2,7 @@
 # Build one ring-3 subject from a subjects/ directory into a relocatable
 # object for one slot of the boot image (#484).
 #
-#   build-subject.sh --cc CC --slot c --output OBJ
+#   build-subject.sh --cc CC --slot c|admitted --output OBJ
 #     [--admit-tool EXE --admitted-elf ELF --admitted-plan TSV]
 #     [--generated C_FILE --lean-include DIR] SUBJECT_DIR
 #
@@ -69,7 +69,7 @@ while (($#)); do
   esac
 done
 (($# == 1)) && [[ -n "$output" ]] || {
-  echo "usage: build-subject.sh [--cc CC] --slot c --output OBJ" \
+  echo "usage: build-subject.sh [--cc CC] --slot c|admitted --output OBJ" \
     "[--admit-tool EXE --admitted-elf ELF --admitted-plan TSV]" \
     "[--generated C_FILE --lean-include DIR] SUBJECT_DIR" >&2
   exit 2
@@ -89,10 +89,15 @@ if [[ -n "$generated" ]] && [[ ! -f "$generated" || ! -f "$lean_include/lean/lea
 fi
 subject_dir="${1%/}"
 # Only slot C is linked from a separate object today; A and B are still the
-# handwritten boot.S subjects every image shares.
-[[ "$slot" == c ]] || {
-  echo "error: build-subject: unsupported slot '$slot' (only c)" >&2; exit 2;
+# handwritten boot.S subjects every image shares.  Slot `admitted` (#492)
+# links no slot at all: the object holds only the admitted executable's bytes
+# (.user.admitted), for an image whose loader loads them into a spawned child.
+[[ "$slot" == c || "$slot" == admitted ]] || {
+  echo "error: build-subject: unsupported slot '$slot' (only c or admitted)" >&2; exit 2;
 }
+if [[ "$slot" == admitted && -z "$admit_tool" ]]; then
+  echo "error: build-subject: slot admitted needs --admit-tool" >&2; exit 2
+fi
 [[ -d "$subject_dir" ]] || {
   echo "error: build-subject: no subject directory $subject_dir" >&2; exit 2;
 }
@@ -149,6 +154,26 @@ fi
 python3 "$repo_root/scripts/check-subject-policy.py" object "$work/subject.o" \
   >/dev/null
 
+if [[ "$slot" == admitted ]]; then
+  # No slot: the admitted executable's bytes are the whole object.
+  ld -m elf_x86_64 -nostdlib --build-id=none -z max-page-size=4096 \
+    -z noexecstack --strip-all -T "$repo_root/subjects/admitted.ld" \
+    -o "$work/admitted.elf" "$work/subject.o"
+  if ! "$admit_tool" admit "$work/admitted.elf" > "$work/admitted.tsv"; then
+    cat "$work/admitted.tsv" >&2
+    echo "error: build-subject: LeanOS.ElfAdmission rejected $subject_dir" >&2
+    exit 1
+  fi
+  (cd "$work" && objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.user.admitted,alloc,load,readonly,data,contents \
+    admitted.elf admitted-bytes.o)
+  objcopy --strip-all "$work/admitted-bytes.o"
+  mkdir -p "$(dirname "$admitted_elf")" "$(dirname "$admitted_plan")" "$(dirname "$output")"
+  cp "$work/admitted.elf" "$admitted_elf"
+  cp "$work/admitted.tsv" "$admitted_plan"
+  mv "$work/admitted-bytes.o" "$output"
+  exit 0
+fi
 objcopy --prefix-symbols="user_${slot}_" "$work/subject.o" "$work/prefixed.o"
 objcopy \
   --rename-section ".subject.text=.user.${slot}.text" \
