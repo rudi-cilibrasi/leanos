@@ -72,6 +72,11 @@ def main() -> int:
                "module=LeanOS.New normalized=90.0 entered-top-15")
         expect("new-module-below-ceiling", run(directory, dict(BASE, **{"LeanOS.New": 50.0})), 0,
                "result=PASS")
+        split = dict(BASE, **{"LeanOS.Slow": 0.2, "LeanOS.Slow.PartA": 58.0, "LeanOS.Slow.PartB": 59.0})
+        expect("split-top-module-stale-row", run(directory, split), 1,
+               "module=LeanOS.Slow baseline=120.0 normalized=0.2 stale-row<25%")
+        expect("top-module-speedup-above-fraction", run(directory, dict(BASE, **{"LeanOS.Slow": 40.0})), 0,
+               "result=PASS")
         partial = {module: BASE[module] * 3 for module in ("LeanOS.Slow", "LeanOS.Ref1")}
         expect("partial-rebuild-skipped", run(directory, partial), 0, "result=SKIPPED")
         expect("baseline-needs-reason", run(directory, BASE, baseline("")), 1,
