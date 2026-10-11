@@ -770,8 +770,10 @@ elaboration time and gates it against `scripts/proof-time-baseline.tsv`
 after normalizing for runner speed (`scripts/check-proof-time-budget.py`,
 issue #498): one of the fifteen slowest modules may not regress by more than
 35% and 15 seconds, and no other module may enter that set above 60 seconds.
-A PR raises the baseline only by editing it, with its `# reason:` line
-updated. Controlled negative fixtures ensure
+One of those fifteen that falls below a quarter of its baseline was split,
+renamed, or sped up, and fails until its rows are re-measured, so the moved
+proofs do not go untracked. A PR raises the baseline only by editing it, with
+its `# reason:` line updated. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 
