@@ -22,3 +22,14 @@ syscall	l_LeanOS_CompositeDispatcher_invalidationDispatchRaw.part.0
 syscall	l_LeanOS_CompositeDispatcher_invalidationDispatchRaw
 syscall	validate_copy
 syscall	l_LeanOS_CompositeDispatcher_spawnFamilyMiss
+syscall	spawn_child_root_clear
+syscall	spawn_report_head
+syscall	check_initial_b_frame
+syscall	check_original_frame
+syscall	check_resumable_witness
+syscall	leanos_resumable_preemption_demo
+timer-switch	check_initial_b_frame
+timer-switch	check_original_frame
+timer-switch	check_resumable_witness
+timer-switch	leanos_preemption_demo
+timer-switch	leanos_resumable_preemption_demo
