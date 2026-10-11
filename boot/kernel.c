@@ -7340,10 +7340,9 @@ static uint64_t loader_syscall(uint64_t number, uint64_t arg0, uint64_t arg1,
         serial_u64(segment->vaddr);
         serial_puts(" pages=");
         serial_u64(segment->pages);
-        serial_puts(segment->writable ? " perms=rw- backing=copy file-bytes="
-            : segment->executable ? " perms=r-x backing=reserved file-bytes="
-                                  : " perms=r-- backing=reserved file-bytes=");
-        serial_u64(segment->file_bytes);
+        serial_puts(segment->writable ? " perms=rw- backing=copy"
+            : segment->executable ? " perms=r-x backing=reserved"
+                                  : " perms=r-- backing=reserved");
         serial_puts(" decision=");
         serial_u64(decision);
         serial_puts(" result=PASS\n");

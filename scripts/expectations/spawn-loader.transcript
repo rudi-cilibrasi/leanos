@@ -15,8 +15,8 @@
 @10/SPAWN@ event=load-refused subject=2 origin=cpl3 number=105 control-word=65536 segment=0 reason=no-child-being-loaded rollback=none state=unchanged decision=257 result=PASS
 @10/SPAWN@ event=spawn subject=2 origin=cpl3 number=100 endpoint=196608 rights=send child=4 address-space=22 slot=0 generation=2 runnable=0 user-leaves=0 kernel-leaves=supervisor frames=0 reply=98817 value=131072 token=33281 result=PASS
 @10/SPAWN@ event=grant subject=2 origin=cpl3 number=101 child=4 frames=1 charge=1 frame=committed-to-child reply=99073 value=1 token=33537 result=PASS
-@10/SPAWN@ event=load subject=2 origin=cpl3 number=105 control-word=131072 segment=0 vaddr=16777216 pages=1 perms=r-x backing=reserved file-bytes=80 decision=1 result=PASS
-@10/SPAWN@ event=load subject=2 origin=cpl3 number=105 control-word=131072 segment=1 vaddr=16781312 pages=1 perms=rw- backing=copy file-bytes=4096 decision=2 result=PASS
+@10/SPAWN@ event=load subject=2 origin=cpl3 number=105 control-word=131072 segment=0 vaddr=16777216 pages=1 perms=r-x backing=reserved decision=1 result=PASS
+@10/SPAWN@ event=load subject=2 origin=cpl3 number=105 control-word=131072 segment=1 vaddr=16781312 pages=1 perms=rw- backing=copy decision=2 result=PASS
 @10/SPAWN@ event=start subject=2 origin=cpl3 number=106 control-word=131072 child=4 segments-loaded=2 user-leaves=2 runnable=1 decision=3 result=PASS
 @10/IPC@ event=wait subject=2 endpoint=10 slot=0 blocked=1
 @10/IPC@ event=enter subject=4 address-space=22 cpl=3 root=child entry=16777216 stack=16783360 context=fresh
