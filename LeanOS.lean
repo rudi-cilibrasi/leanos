@@ -58,6 +58,10 @@ import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.KernelTransition
 import LeanOS.KeyboardEcho
+import LeanOS.NetworkSubject
+import LeanOS.Net.Echo
+import LeanOS.Net.EchoC
+import LeanOS.Net.FrameSource
 import LeanOS.Refinement.CSubset
 import LeanOS.Refinement.BootTransitionC
 import LeanOS.LifetimeIssuer
