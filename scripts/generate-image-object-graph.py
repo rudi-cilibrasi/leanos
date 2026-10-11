@@ -46,6 +46,7 @@ GENERATED_MODULES = (
     "TimerServer",
     "FrameServer",
     "SpawnSyscall",
+    "ChildLoader",
     "WifiExec",
 )
 
@@ -73,6 +74,7 @@ FAULT_DISPATCH_PARTS = (
     "TimerServer",
     "FrameServer",
     "SpawnSyscall",
+    "ChildLoader",
     "WifiExec",
 )
 
@@ -125,7 +127,10 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             or entry.get("admitted", True) is not True
             or not isinstance(entry["source"], str)
             or not re.fullmatch(r"subjects/[a-z][a-z0-9-]*", entry["source"])
-            or entry["slot"] != "c"
+            or entry["slot"] not in ("c", "admitted")
+            # An admitted-only subject (#492) has no slot: only its admitted
+            # bytes are linked, so it must be admitted.
+            or (entry["slot"] == "admitted" and entry.get("admitted") is not True)
         ):
             raise SystemExit(f"error: scenario manifest subject {name!r} is malformed")
     for section, required in (("images", {"boot", "kernel", "extra_objects", "final_link", "prelink_plan", "plan_equal_to"}), ("policy_fixtures", {"boot", "kernel", "extra_objects"})):

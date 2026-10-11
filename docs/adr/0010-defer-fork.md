@@ -427,3 +427,27 @@ states, and a decodable command outside it stops the machine (`0xfe24`)
 instead of running a gate. A general decoder over arbitrary composite states,
 running children, and code loading are not added here. Issue #492 owns
 loading.
+
+## Amendment (2026-10-11): the loader starts a child (issue #492)
+
+The decision above kept a spawned child unschedulable "until a loader issue
+decides admission and code loading". Issue #492 decides as follows (see
+[ADR 0024's run-time amendment](0024-build-time-elf-admission.md#amendment-2026-10-11-the-run-time-loader-492)):
+
+- **Admission is a loader transition.** `ChildLoader.step (.start _)` starts
+  the child once every admitted segment is loaded. Before that, every
+  rejection of a load or start for the child rolls the spawn back, and the
+  kernel terminates the child through the spawn table's edge.
+- **The composite model still has no running child.** The scheduler of
+  `FailStop.CompositeState` admits no spawned child. In the `spawn-loader`
+  image the kernel runs the child once, on the child's own root. The child
+  sends one word through its slot-0 send-only endpoint, and its parent then
+  terminates it. That run is checked by the kernel against the child's
+  inheritance set. It is not a composite step, and no theorem covers it.
+- **Nested spawn stays refused.** The child holds no spawn authority, as
+  before.
+
+The spawn table gains `loaderRespawned`, `loaderGranted` and
+`loaderTerminated` (tokens `0x8201` to `0x8401`). These are a spawn into the
+slot a rolled-back child left, a frame grant to the new child, and its
+termination.

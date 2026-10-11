@@ -108,10 +108,10 @@ echo 'uint64_t leanos_stale(void);' >> "$tmp/out/boundary-abi.h"
 LEANOS_ORACLE_TOOL_SIGNATURE=test ./scripts/generate-oracle.sh "$tmp/out" > /dev/null
 cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
-grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 89U' "$tmp/out/composite-tokens.h"
+grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 92U' "$tmp/out/composite-tokens.h"
 export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
-if [[ "$export_count" -ne 106 ]]; then
-  echo "error: expected 106 generated boundary exports, found $export_count" >&2
+if [[ "$export_count" -ne 108 ]]; then
+  echo "error: expected 108 generated boundary exports, found $export_count" >&2
   exit 1
 fi
 
@@ -173,7 +173,7 @@ for mutation in \
   '#define LEANOS_COMPOSITE_STATE_INITIAL UINT64_C(0x0001)' \
   '#define LEANOS_COMPOSITE_ABI_VERSION UINT64_C(1)' \
   '#define LEANOS_COMPOSITE_DELIVERED_HANDLE UINT64_C(0x60003)' \
-  '#define LEANOS_COMPOSITE_STATE_COUNT 89U' \
+  '#define LEANOS_COMPOSITE_STATE_COUNT 92U' \
   '#define LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN UINT64_C(0xfb00444401)' \
   '#define LEANOS_COMPOSITE_REPLY_NEVER_GENERATED UINT64_C(0x1)' \
   'extern uint64_t leanos_boot_transition(uint64_t, uint64_t);' \

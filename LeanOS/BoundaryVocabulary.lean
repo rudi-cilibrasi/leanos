@@ -179,7 +179,10 @@ def states : List Token := [
   state "SPAWN_OBJECTS_EXHAUSTED" (SpawnBoundary.encodeState .objectsExhausted),
   state "SPAWN_CONTROLS_EXHAUSTED" (SpawnBoundary.encodeState .controlsExhausted),
   state "SPAWN_NARROWED_SEND" (SpawnBoundary.encodeState .narrowedSend),
-  state "SPAWN_NARROWED_GRANT" (SpawnBoundary.encodeState .narrowedGrant)]
+  state "SPAWN_NARROWED_GRANT" (SpawnBoundary.encodeState .narrowedGrant),
+  state "SPAWN_LOADER_RESPAWNED" (SpawnBoundary.encodeState .loaderRespawned),
+  state "SPAWN_LOADER_GRANTED" (SpawnBoundary.encodeState .loaderGranted),
+  state "SPAWN_LOADER_TERMINATED" (SpawnBoundary.encodeState .loaderTerminated)]
 
 def commands : List Token := [
   command "CREATE_SUBJECT_ONE" (encodeCommand .createSubjectOne),

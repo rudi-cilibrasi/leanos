@@ -4706,6 +4706,162 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.exact_rollback",
+      "display": "exact_rollback",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.flags_bits",
+      "display": "flags_bits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.frames_short_agrees",
+      "display": "frames_short_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.inSegment_disjoint",
+      "display": "inSegment_disjoint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.inside_rollback",
+      "display": "inside_rollback",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.leafOf_matches",
+      "display": "leafOf_matches",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.load_outside_authority_rejected",
+      "display": "load_outside_authority_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.loaderDecide_load",
+      "display": "loaderDecide_load",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.loaderDecide_start",
+      "display": "loaderDecide_start",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.loaderSource_agrees",
+      "display": "loaderSource_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.loader_witness_agrees_load",
+      "display": "loader_witness_agrees_load",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.loader_witness_agrees_start",
+      "display": "loader_witness_agrees_start",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.ofNat_lt_ofNat",
+      "display": "ofNat_lt_ofNat",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.pageCount_pos",
+      "display": "pageCount_pos",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.pageEnd_aligned",
+      "display": "pageEnd_aligned",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.plan_aligned",
+      "display": "plan_aligned",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.plan_disjoint",
+      "display": "plan_disjoint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.refused_unchanged",
+      "display": "refused_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.rejection_rolls_back",
+      "display": "rejection_rolls_back",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.rollback_empty",
+      "display": "rollback_empty",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.start_flags_bits",
+      "display": "start_flags_bits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.started_exact",
+      "display": "started_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.started_exact_unique",
+      "display": "started_exact_unique",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.step_preserves_exact",
+      "display": "step_preserves_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.step_preserves_inside",
+      "display": "step_preserves_inside",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.toNat_ofNat_small",
+      "display": "toNat_ofNat_small",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/CompositeChannels.lean",
       "qualified": "LeanOS.CompositeChannels.copy_destination_output_inconsistent_counter",
       "display": "copy_destination_output_inconsistent_counter",
@@ -5381,6 +5537,12 @@
       "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.reply_encoding_injective",
       "display": "reply_encoding_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.resultValue_ite_property",
+      "display": "resultValue_ite_property",
       "kind": "theorem"
     },
     {
@@ -20127,6 +20289,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_loader_vectors_exact",
+      "display": "hosted_loader_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_mixed_vectors_exact",
       "display": "hosted_mixed_vectors_exact",
       "kind": "theorem"
@@ -20183,6 +20351,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.ipc_scenario_agrees",
       "display": "ipc_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.loader_vectors_expected",
+      "display": "loader_vectors_expected",
       "kind": "theorem"
     },
     {
@@ -22901,6 +23075,24 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.lifetime_identity_no_reuse_nonvacuous",
       "display": "lifetime_identity_no_reuse_nonvacuous",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_exact_admitted_segments",
+      "display": "loader_exact_admitted_segments",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_failure_rolls_back",
+      "display": "loader_failure_rolls_back",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_reserved_range_only",
+      "display": "loader_reserved_range_only",
       "kind": "theorem"
     },
     {

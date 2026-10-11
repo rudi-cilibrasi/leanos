@@ -38,6 +38,7 @@ import LeanOS.FaultHandler
 import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.SpawnSyscall
+import LeanOS.ChildLoader
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -4049,5 +4050,78 @@ theorem spawn_stale_child_control (state : FailStop.CompositeState) (word : UInt
       (FailStop.terminateChild respawned word).state = respawned :=
   FailStop.stale_control_after_respawn state word child returned accounting terminated request
     frames
+
+/-- SC-LOADER-EXACT: the loader model keeps the child's pages exactly the
+pages of its loaded admitted segments, from the empty state and across every
+request; and when the child is started, every segment of the admitted plan is
+loaded and the child's pages are exactly the plan's pages, each matching its
+one segment's permissions (copied when writable, in place otherwise). -/
+theorem loader_exact_admitted_segments :
+    (∀ state : ChildLoader.State, ChildLoader.Exact (ChildLoader.rollback state)) ∧
+    (∀ (state : ChildLoader.State) (request : ChildLoader.Request), ChildLoader.Exact state →
+      ChildLoader.Exact (ChildLoader.step state request).1) ∧
+    (∀ (state : ChildLoader.State) (control : UInt64), ChildLoader.PlanLayout state.plan →
+      ChildLoader.Exact state →
+      (ChildLoader.step state (.start control)).2 = .started →
+      (ChildLoader.step state (.start control)).1.started = true ∧
+      (∀ page leaf, (ChildLoader.step state (.start control)).1.leaves page = some leaf →
+        ∃ segment ∈ state.plan, ChildLoader.inSegment segment page = true ∧
+          ChildLoader.Matches segment leaf) ∧
+      (∀ segment ∈ state.plan, ∀ page, ChildLoader.inSegment segment page = true →
+        ∃ leaf, (ChildLoader.step state (.start control)).1.leaves page = some leaf ∧
+          ChildLoader.Matches segment leaf)) := by
+  refine ⟨ChildLoader.exact_rollback, fun state request exact =>
+    ChildLoader.step_preserves_exact state request exact, ?_⟩
+  intro state control layout exact started
+  obtain ⟨isStarted, both⟩ := ChildLoader.started_exact state control exact started
+  refine ⟨isStarted, fun page leaf found => (both page).1 leaf found, ?_⟩
+  intro segment member page inside
+  exact ChildLoader.started_exact_unique state control layout exact started page segment member
+    inside
+
+/-- SC-LOADER-RESERVED-RANGE: whatever the loader asks, every page the model
+maps in place lies inside the loader's read authority (the reserved range),
+and every copy uses a frame given to the child; a load whose claimed source
+is not inside the read authority is rejected and rolls the spawn back. -/
+theorem loader_reserved_range_only :
+    (∀ state : ChildLoader.State, ChildLoader.Inside (ChildLoader.rollback state)) ∧
+    (∀ (state : ChildLoader.State) (request : ChildLoader.Request), ChildLoader.Inside state →
+      ChildLoader.Inside (ChildLoader.step state request).1) ∧
+    (∀ (state : ChildLoader.State) (child : ChildLoader.Child) (control : UInt64)
+        (index source : Nat) (segment : ElfAdmission.Segment),
+      ChildLoader.liveChild state control = some child → state.plan[index]? = some segment →
+      state.loaded index = false →
+      (source < state.start ∨ state.stop < source + ChildLoader.pageCount segment * ElfAdmission.pageBytes) →
+      ChildLoader.step state (.load control index source) =
+        (ChildLoader.rollback state, .rolledBack .outsideAuthority)) :=
+  ⟨ChildLoader.inside_rollback, fun state request inside =>
+    ChildLoader.step_preserves_inside state request inside,
+   ChildLoader.load_outside_authority_rejected⟩
+
+/-- SC-LOADER-ROLLBACK: every rejection of a request naming the child being
+loaded discards that child entirely (no child, no pages, nothing loaded, no
+frame used); a request naming no such child changes nothing; and the boot
+witnesses answer exactly the model's encoded reply for every request whose
+words are small. -/
+theorem loader_failure_rolls_back :
+    (∀ (state : ChildLoader.State) (request : ChildLoader.Request) (reason : ChildLoader.Rejection),
+      (ChildLoader.step state request).2 = .rolledBack reason →
+      (ChildLoader.step state request).1 = ChildLoader.rollback state ∧
+        (ChildLoader.step state request).1.child = none ∧
+        (∀ page, (ChildLoader.step state request).1.leaves page = none) ∧
+        (ChildLoader.step state request).1.used = 0) ∧
+    (∀ (state : ChildLoader.State) (request : ChildLoader.Request) (reason : ChildLoader.Rejection),
+      (ChildLoader.step state request).2 = .refused reason →
+      (ChildLoader.step state request).1 = state) ∧
+    (∀ (state : ChildLoader.State) (control : UInt64) (sourceCode pages frames used : UInt64),
+      ChildLoader.loaderDecide 2 (ChildLoader.flagsWord state (.start control)) sourceCode pages
+          frames used =
+        ChildLoader.encodeReply false (ChildLoader.step state (.start control)).2) := by
+  refine ⟨fun state request reason rejected => ?_, ChildLoader.refused_unchanged,
+    ChildLoader.loader_witness_agrees_start⟩
+  have rolled := ChildLoader.rejection_rolls_back state request reason rejected
+  obtain ⟨child, leaves, _, used⟩ := ChildLoader.rollback_empty state
+  rw [rolled]
+  exact ⟨rfl, child, leaves, used⟩
 
 end LeanOS.SecurityClaims

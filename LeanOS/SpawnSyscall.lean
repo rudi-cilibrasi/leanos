@@ -64,7 +64,7 @@ the frames a grant moved or a termination returned, and zero otherwise.
 * `spawnSyscall_trace`: every state a syscall reaches satisfies the whole-trace
   theorem `SpawnBoundary.spawn_boundary_trace`.
 
-The witness is a bounded boundary: the spawn table names eighteen complete
+The witness is a bounded boundary: the spawn table names twenty-one complete
 states, and a decodable command at a state the table does not cover is a
 fail-stop, not a gate step.
 -/
@@ -110,9 +110,9 @@ def canonical (tag rbx rcx rdx : UInt64) : Bool :=
   else if tag == 0x7201 || tag == 0x7301 || tag == 0x7401 then rcx == 0 && rdx == 0
   else false
 
-/-- The spawn family's state tokens, `0x7001` to `0x8101`. -/
+/-- The spawn family's state tokens, `0x7001` to `0x8401`. -/
 def familyToken (state : UInt64) : Bool :=
-  0x7001 ≤ state && state ≤ 0x8101 && state % 256 == 1
+  0x7001 ≤ state && state ≤ 0x8401 && state % 256 == 1
 
 /-- The current subject of the execution latch at a token: subject 1 after the
 dispatcher's timer switch (`otherSubject`), and subject 2 everywhere else
@@ -279,7 +279,7 @@ def edgeRow (edge : Edge) : Row :=
   ⟨encodeState edge.state, edge.words.tag, edge.words.arg0, edge.words.arg1, edge.words.arg2,
     edge.words.arg3, replyWord edge.next edge.status⟩
 
-/-- The 49 rows, as literals. -/
+/-- The 54 rows, as literals. -/
 def edgeRows : List Row :=
   [ ⟨28673, 28673, 1, 196608, 4, 0, 8482817⟩, ⟨28673, 28929, 65536, 1, 0, 0, 12808193⟩
   , ⟨28673, 29953, 2, 1, 0, 0, 94465⟩, ⟨28673, 29953, 3, 1, 0, 0, 8417281⟩
@@ -305,7 +305,9 @@ def edgeRows : List Row :=
   , ⟨31489, 28673, 1, 196608, 4, 0, 8551169⟩, ⟨31489, 28673, 2, 196608, 4, 0, 97281⟩
   , ⟨32001, 28673, 1, 196608, 4, 0, 8617217⟩, ⟨32257, 28673, 1, 196608, 4, 0, 8879617⟩
   , ⟨32513, 28673, 1, 196608, 4, 0, 9273089⟩, ⟨32769, 28673, 1, 393219, 4, 0, 9011201⟩
-  , ⟨33025, 28673, 1, 393219, 8, 0, 9142529⟩ ]
+  , ⟨33025, 28673, 1, 393219, 8, 0, 9142529⟩, ⟨29953, 28673, 1, 196608, 4, 0, 98817⟩
+  , ⟨33281, 28929, 131072, 1, 0, 0, 99073⟩, ⟨33281, 28929, 65536, 1, 0, 0, 12812801⟩
+  , ⟨33537, 29185, 131072, 0, 0, 0, 99329⟩, ⟨33537, 29185, 65536, 0, 0, 0, 12813057⟩ ]
 
 theorem edgeRows_eq : edges.map edgeRow = edgeRows := by
   decide
@@ -375,7 +377,7 @@ theorem dispatch_family (state tag arg0 arg1 arg2 arg3 : UInt64)
   obtain ⟨⟨low, high⟩, version⟩ := family
   rw [toNat_le] at low high
   have lowNat : 0x7001 ≤ state.toNat := by simpa using low
-  have highNat : state.toNat ≤ 0x8101 := by simpa using high
+  have highNat : state.toNat ≤ 0x8401 := by simpa using high
   unfold CompositeDispatcher.dispatch
   have notInvalidation : (decide (0x1a01 ≤ state) && decide (state ≤ 0x2d01)) = false := by
     simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, toNat_le]
@@ -389,7 +391,7 @@ theorem dispatch_family (state tag arg0 arg1 arg2 arg3 : UInt64)
   have notRevocation : (decide (0x6001 ≤ state) && decide (state ≤ 0x6501)) = false := by
     simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, toNat_le]
     right; simp; omega
-  have isSpawn : (decide (0x7001 ≤ state) && decide (state ≤ 0x8101)) = true := by
+  have isSpawn : (decide (0x7001 ≤ state) && decide (state ≤ 0x8401)) = true := by
     simp only [Bool.and_eq_true, decide_eq_true_eq, toNat_le]
     simp; omega
   simp only [notInvalidation, notBudget, notTransfer, notRevocation, isSpawn,

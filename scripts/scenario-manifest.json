@@ -248,6 +248,10 @@
         "-DLEANOS_SPAWN_CHILD_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-spawn-child.h\""
       ],
+      "kernel-spawn-loader": [
+        "-DLEANOS_SPAWN_LOADER_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-spawn-loader.h\""
+      ],
       "kernel-timer-server": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_TIMER_SERVER_SCENARIO=1",
@@ -584,6 +588,12 @@
           "-DLEANOS_SPAWN_CHILD_SCENARIO=1"
         ]
       },
+      "boot-spawn-loader": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_SPAWN_LOADER_SCENARIO=1"
+        ]
+      },
       "boot-timer-server": {
         "source": "boot/boot.S",
         "definitions": [
@@ -634,6 +644,11 @@
       "subject-timer-server": {
         "source": "subjects/timer-server",
         "slot": "c"
+      },
+      "subject-loaded": {
+        "source": "subjects/loaded",
+        "slot": "admitted",
+        "admitted": true
       }
     },
     "images": {
@@ -1007,6 +1022,16 @@
         "extra_objects": [],
         "final_link": true,
         "prelink_plan": "boot-page-plan-spawn-child.h",
+        "plan_equal_to": null
+      },
+      "leanos-spawn-loader": {
+        "boot": "boot-spawn-loader",
+        "kernel": "kernel-spawn-loader",
+        "extra_objects": [
+          "subject-loaded"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-spawn-loader.h",
         "plan_equal_to": null
       },
       "leanos-timer-server": {
@@ -1417,6 +1442,13 @@
           "key": "spawn-child"
         }
       },
+      "leanos-spawn-loader": {
+        "iso": "leanos-@VERSION@-x86_64-spawn-loader.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "spawn-loader"
+        }
+      },
       "leanos-timer-server": {
         "iso": "leanos-@VERSION@-x86_64-timer-server.iso",
         "grub": "boot/grub.cfg",
@@ -1807,6 +1839,16 @@
         "description": "spawn-child",
         "targets": [
           "leanos-spawn-child"
+        ]
+      },
+      {
+        "image": "leanos-spawn-loader",
+        "check": "converge",
+        "expected": "boot-page-plan-spawn-loader.h",
+        "final": "boot-page-plan-spawn-loader.final.h",
+        "description": "spawn-loader",
+        "targets": [
+          "leanos-spawn-loader"
         ]
       },
       {
@@ -3676,6 +3718,30 @@
         "SC-SPAWN-STALE-CHILD"
       ],
       "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-SPAWN-STALE-CHILD: one finite QEMU run of thirteen scripted ring-3 spawn-family syscalls whose kernel decodes each one only through the generated witness and keeps the token it names; the bounded table covers only these states, the child never runs and nothing is loaded into it, and the C kernel's mirror of accepted steps (child root, frame scrub and return), boot.S, the compiler, linker and QEMU stay trusted"
+    },
+    "spawn-loader": {
+      "expectations": "scripts/expectations/spawn-loader.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-spawn-loader.iso",
+        "elf": "leanos-spawn-loader.elf",
+        "serial_log": "spawn-loader.serial.log",
+        "scenario": "spawn-loader",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "release_artifacts": [],
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-SPAWN-SYSCALL",
+        "SC-LOADER-EXACT",
+        "SC-LOADER-RESERVED-RANGE",
+        "SC-LOADER-ROLLBACK"
+      ],
+      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's program-header read, page-table writes, byte copy and child switch, the child's one send (not a composite step: the composite model has no running children), boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
     },
     "timer-server": {
       "expectations": "scripts/expectations/timer-server.transcript",

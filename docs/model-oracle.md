@@ -19,8 +19,10 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `KeyboardEcho.deviceAuthorize`, `TimerServer.timerServerDecide`,
 `FrameServer.frameServerCheck` and `FrameServer.frameServerView`, and the
 ring-3 spawn syscall's `SpawnSyscall.spawnSyscall` and
-`SpawnSyscall.spawnSyscallValue` (adapters 30 and 31, #489). Its stable
-663-vector order covers accepted calls,
+`SpawnSyscall.spawnSyscallValue` (adapters 30 and 31, #489), and the run-time
+loader's `ChildLoader.loaderSource` and `ChildLoader.loaderDecide` (adapters
+32 and 33, #492). Its stable
+692-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -426,7 +428,7 @@ The scalar selector establishes the named model's accepted fresh-object
 allocation and old-page absence; C sequencing and QEMU do not prove that the
 binary refines that model.
 
-The last 36 vectors (indices 627--662, `hosted_spawn_syscall_vectors_exact`)
+Vectors 632--667 (`hosted_spawn_syscall_vectors_exact`)
 are the ring-3 spawn syscall (`LeanOS.SpawnSyscall`, #489). Each carries the
 kernel's spawn-family token, the actor, the syscall number and RBX, RCX, RDX.
 The first thirteen are the `spawn-child` image's calls at their tokens
@@ -443,6 +445,17 @@ value words. `spawn_syscall_vectors_expected` lists every expected word. The
 general statements are in `LeanOS.SpawnSyscall`: every input is a refusal or
 exactly one edge of the spawn table (`spawnSyscall_cases`), and that edge is
 one `childGate` or `memoryGate` step (`spawnSyscall_refines`).
+
+The last 24 vectors (indices 668--691, `hosted_loader_vectors_exact`) are the
+run-time loader's witnesses (`LeanOS.ChildLoader`, #492, adapters 32 and 33).
+`loaderSource` checks a claimed source on a four-page reserved range: inside
+at the admitted placement, below, past and across the end of the range, at the
+wrong placement, and with a span larger than the range. `loaderDecide` covers
+a load in place and by copy, the two refusals without effect, every rejection
+that rolls the spawn back, a start, an incomplete start, an unknown request,
+and maximum words. `loader_vectors_expected` lists every expected word, and
+`loader_witness_agrees_load` and `loader_witness_agrees_start` prove the
+witnesses answer exactly the model's reply.
 
 ## Post-state corpus (hosted only)
 

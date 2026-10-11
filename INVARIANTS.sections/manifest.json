@@ -25,6 +25,7 @@
     "LeanOS/CapabilityHandle.lean",
     "LeanOS/CapabilityReuse.lean",
     "LeanOS/CapabilityTransfer.lean",
+    "LeanOS/ChildLoader.lean",
     "LeanOS/CompositeChannels.lean",
     "LeanOS/CompositeDispatcher.lean",
     "LeanOS/CompositeDispatcherResources.lean",

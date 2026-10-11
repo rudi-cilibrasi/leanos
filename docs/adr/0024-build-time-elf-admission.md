@@ -1,6 +1,6 @@
 # ADR 0024: Build-time admission of one subject ELF
 
-- Status: Accepted, issue #492 (build-time half)
+- Status: Accepted, issue #492 (build-time half; the run-time half is the 2026-10-11 amendment)
 - Date: 2026-10-10
 
 ## Context
@@ -177,3 +177,87 @@ not proved:
   open, gated by ADR 0010.
 - The example image carries the admitted file's pages. No other image
   changes.
+
+## Amendment (2026-10-11): the run-time loader (#492)
+
+ADR 0010's decision of 2026-10-10 and the ring-3 spawn syscall
+(`LeanOS.SpawnSyscall`) unblock the run-time half. The `spawn-loader` image
+adds it.
+
+### What runs
+
+Subject B is the loader. The kernel grants it spawn authority. Its read
+authority is the reserved range `[__user_admitted_start, __user_admitted_end)`.
+That range holds the admitted bytes of `subjects/loaded`, a subject built only
+as an admitted executable: its manifest slot is `admitted`, so no slot of the
+image links it. The kernel reads the admitted segments from those bytes'
+program headers at boot. `scripts/check-admitted-subject.py` checks at build
+time that the bytes are the file the checker admitted, with that plan.
+
+B spawns a child and gives it a frame (syscalls 100 to 104). It asks the
+kernel to load each admitted segment (105: the control word, the segment's
+index, and the source address B claims). It then starts the child (106) and
+waits for the child's word (107). The kernel runs the child on the child's
+fresh root, at the admitted entry. The child sends one word through the one
+endpoint capability spawn gave it. B is woken with that word and terminates
+the child.
+
+### Decision: map read-only segments, copy writable ones
+
+- **A read-only segment is mapped in place.** Each of its pages is the
+  reserved page holding its file bytes, mapped user, read-only, and
+  executable only if admitted. The bytes cannot change, so sharing them is
+  safe, and the child is charged no frame. A mapped page cannot provide a
+  zero fill, so such a segment is accepted only when its memory image equals
+  its file image. The bytes after the segment's end in its last page are the
+  admitted file's following bytes or the range's zero padding, never anything
+  outside the reserved range.
+- **A writable segment is copied** into the frames the parent gave the child:
+  the segment's file bytes, then zeros. It is mapped user, writable and
+  no-execute. A child that writes its data never changes the admitted bytes,
+  and the zero fill (bss) is exact.
+
+The reserved range becomes user-visible, read-only, only in a loaded child's
+own root. No boot address space maps it to ring 3.
+
+### Model and theorems
+
+`LeanOS.ChildLoader` models the child's pages as the kernel builds them.
+
+| Property | Theorems |
+| --- | --- |
+| After loading, the child holds exactly the admitted segments with the admitted permissions | `step_preserves_exact`, `exact_rollback`, `started_exact`, `started_exact_unique` (SC-LOADER-EXACT) |
+| The loader cannot map anything outside the reserved range | `step_preserves_inside`, `inside_rollback`, `load_outside_authority_rejected` (SC-LOADER-RESERVED-RANGE) |
+| Any failure rolls back the spawn | `rejection_rolls_back`, `rollback_empty`, `refused_unchanged` (SC-LOADER-ROLLBACK) |
+| The generated witnesses are the model | `loaderSource_agrees`, `loader_witness_agrees_load`, `loader_witness_agrees_start` |
+
+The loader names a segment only by its index in the admitted plan and claims
+only its source. It cannot choose an address, a size or a permission. A claimed
+source outside the read authority, or one that is not the segment's admitted
+placement, is rejected. Every rejection of a request for the live child rolls
+the spawn back. The kernel terminates the child through the generated
+dispatcher's edge (`childGate (.terminateChild _)`, the spawn table's
+`granted` to `terminated`), which releases everything spawn and the grant
+gave it (`terminateChild_releases_everything`), and discards the child's
+pages.
+
+The spawn table gains three states for the loaded child. The first child's
+termination is followed by a spawn into the same child-table slot
+(`loaderRespawned`), a frame grant (`loaderGranted`), and the child's
+termination (`loaderTerminated`).
+
+### What is not proved
+
+- **The child's run is not a composite step.** The composite model's
+  scheduler admits no spawned child (ADR 0010, "What the model does not yet
+  give the child"). Starting the child is a transition of `ChildLoader` only.
+  The child's one send is checked by the kernel against the child's slot-0
+  send-only endpoint and is not a composite IPC step.
+- **The contents of the copy are not modeled.** The model records which
+  pages are copies. It does not record their bytes. The QEMU run checks the
+  contents: the child's word includes an initialized data word and a bss word.
+- **The kernel's half is trusted.** This covers its read of the program
+  headers, its page-table writes and byte copy, and the child switch in
+  `boot.S`. The composite model's frame stays free and scrubbed across the
+  copy, so the kernel scrubs the frame before the child's termination returns
+  it.

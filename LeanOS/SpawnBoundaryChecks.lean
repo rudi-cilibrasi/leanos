@@ -55,7 +55,7 @@ def bystanderView (state : CompositeState) :
 def mainStates : List StateId :=
   [.seed, .authorized, .spawned, .released, .granted, .terminated, .reallocated, .respawned,
     .secondTerminated, .otherSubject, .revoked, .regranted, .regrantedSpawned, .narrowedSend,
-    .narrowedGrant]
+    .narrowedGrant, .loaderRespawned, .loaderGranted, .loaderTerminated]
 
 /-- Spawn: the child gets exactly the send-only endpoint derived from the
 parent's capability and the root of its own empty address space; it holds no

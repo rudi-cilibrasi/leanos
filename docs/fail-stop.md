@@ -756,7 +756,7 @@ termination.
 
 `LeanOS.SpawnBoundary` puts the spawn family into the boot-compiled
 `CompositeDispatcher.dispatch` (`leanos_composite_dispatch`, oracle adapter
-18) as eighteen state tokens `0x7001`–`0x8101` and a table of 49 edges
+18) as twenty-one state tokens `0x7001`–`0x8401` and a table of 54 edges
 (`spawnDispatchRaw`). Each token names the complete `CompositeState` reached
 by replaying gate steps from one of four seeds: the dispatcher seed with the
 issuers past its histories and frame 4 committed to subject 2
@@ -808,7 +808,7 @@ by a vector. The slot-table-full and identity-rejection failures need seeds
 the bounded table does not name; the hosted `SpawnOracle` vectors cover them.
 
 The hosted generated-C replay (`check-oracle-host.sh`) and every normal
-image's boot-time oracle replay run all 63 spawn vectors (49 edges and 14
+image's boot-time oracle replay run all 68 spawn vectors (54 edges and 14
 hostile encodings) through the generated dispatcher.
 
 ### The ring-3 spawn syscall
@@ -838,7 +838,7 @@ not cover is `0xfe24`, on which the kernel stops. `spawnSyscallValue`
 | Every reachable token satisfies the whole-trace theorem | `spawnSyscall_trace` |
 | The `spawn-child` image's run and the model states behind its transcript | `image_run`, `image_model` |
 
-The witness is a bounded boundary: the family's eighteen tokens name complete
+The witness is a bounded boundary: the family's twenty-one tokens name complete
 states, and only commands the table covers are gate steps. In the
 `spawn-child` image (#491) the kernel grants subject B (2) spawn authority with
 the bounded dispatcher's kernel command and enters B, which spawns a child,
@@ -849,6 +849,14 @@ state unchanged. The kernel realizes accepted steps (a fresh child root with
 an empty user window, the frame's scrub, and its return) and checks that every
 refusal and rejection leaves its token and its own records unchanged. The
 child is not runnable; nothing is loaded into it.
+
+The `spawn-loader` image (#492) uses three more tokens, `loaderRespawned`,
+`loaderGranted` and `loaderTerminated` (`0x8201`–`0x8401`). They cover a spawn
+into the slot of a child whose load was rolled back, a frame grant to the new
+child, and its termination. The loading itself is `LeanOS.ChildLoader`
+([ADR 0024's run-time amendment](adr/0024-build-time-elf-admission.md#amendment-2026-10-11-the-run-time-loader-492)).
+The kernel rolls a rejected load back with the spawn table's termination
+edge. The child's run is not a composite step.
 
 ## Diagnostic and trusted boundary
 

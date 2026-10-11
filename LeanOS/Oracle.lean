@@ -16,6 +16,7 @@ import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.SpawnBoundary
 import LeanOS.SpawnSyscall
+import LeanOS.ChildLoader
 import LeanOS.IOTLB
 import LeanOS.NotifyReply
 import LeanOS.UserCopyPolicy
@@ -93,7 +94,9 @@ def adapters : List AdapterSpec := [
   adapter "FrameServer.check" 28 "leanos_frame_server_check" 6,
   adapter "FrameServer.view" 29 "leanos_frame_server_view" 6,
   adapter "SpawnSyscall.step" 30 "leanos_spawn_syscall" 6,
-  adapter "SpawnSyscall.value" 31 "leanos_spawn_syscall_value" 6]
+  adapter "SpawnSyscall.value" 31 "leanos_spawn_syscall_value" 6,
+  adapter "ChildLoader.source" 32 "leanos_loader_source" 5,
+  adapter "ChildLoader.decide" 33 "leanos_loader_decide" 6]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -188,6 +191,15 @@ private def spawnSyscallValue (id : String) (state actor number rbx rcx rdx : UI
     Vector :=
   { id, adapter := "SpawnSyscall.value", words := [state, actor, number, rbx, rcx, rdx],
     expected := SpawnSyscall.spawnSyscallValue state actor number rbx rcx rdx }
+
+private def loaderSource (id : String) (source start stop fileOffset span : UInt64) : Vector :=
+  { id, adapter := "ChildLoader.source", words := [source, start, stop, fileOffset, span],
+    expected := ChildLoader.loaderSource source start stop fileOffset span }
+
+private def loaderDecide (id : String) (op flags sourceCode pages frames used : UInt64) :
+    Vector :=
+  { id, adapter := "ChildLoader.decide", words := [op, flags, sourceCode, pages, frames, used],
+    expected := ChildLoader.loaderDecide op flags sourceCode pages frames used }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -474,6 +486,11 @@ def spawnEdgeNames : List String :=
   , "composite.spawn-controls-exhausted-spawn"
   , "composite.spawn-narrowed-send-spawn-narrowed-endpoint"
   , "composite.spawn-narrowed-grant-spawn-rights-not-subset"
+  , "composite.spawn-terminated-spawn-into-reused-slot"
+  , "composite.spawn-loader-respawned-grant-second-control"
+  , "composite.spawn-loader-respawned-grant-first-control"
+  , "composite.spawn-loader-granted-terminate-second-control"
+  , "composite.spawn-loader-granted-terminate-first-control"
   ]
 
 def spawnEdgeVector (name : String) (edge : SpawnBoundary.Edge) : Vector :=
@@ -502,7 +519,7 @@ def spawnNegativeVectors : List Vector := [
   composite "composite.spawn-reserved-command" 0x7201 0x7901 0 0 0 0,
   composite "composite.spawn-wrong-command-version" 0x7201 0x7002 1 0x30000 4 0,
   composite "composite.spawn-wrong-state-version" 0x7102 0x7001 1 0x30000 4 0,
-  composite "composite.spawn-state-above-family" 0x8201 0x7001 1 0x30000 4 0]
+  composite "composite.spawn-state-above-family" 0x8501 0x7001 1 0x30000 4 0]
 
 /-- The ring-3 spawn syscall (#489, #491): the `spawn-child` image's thirteen
 calls at their tokens, then every refusal (not a family token, not the current
@@ -548,6 +565,41 @@ def spawnSyscallVectors : List Vector := [
   spawnSyscallValue "spawn-syscall-value.old-handle-terminate" 0x7701 2 102 0x10000 0 0,
   spawnSyscallValue "spawn-syscall-value.refusal" 0x7201 2 100 1 0x30000 0x40,
   spawnSyscallValue "spawn-syscall-value.outside-table" 0x7101 2 103 5 0 0]
+
+/-- The run-time loader's witnesses (#492), on a reserved range of four
+pages at `0x400000` holding a text segment at file offset `0x1000` and a data
+segment at `0x2000`, one page each: the source check inside, below, past and
+across the end of the range, at the wrong placement, and with a span larger
+than the range; then every decision: in place, by copy, the two refusals
+without effect, every rollback, a started child, an incomplete start, an
+unknown request, and maximum words. -/
+def loaderVectors : List Vector := [
+  loaderSource "loader-source.text-in-place" 0x401000 0x400000 0x404000 0x1000 0x1000,
+  loaderSource "loader-source.data-copy" 0x402000 0x400000 0x404000 0x2000 0x1000,
+  loaderSource "loader-source.below-range" 0x3ff000 0x400000 0x404000 0x1000 0x1000,
+  loaderSource "loader-source.past-range" 0x404000 0x400000 0x404000 0x1000 0x1000,
+  loaderSource "loader-source.across-end" 0x403800 0x400000 0x404000 0x1000 0x1000,
+  loaderSource "loader-source.wrong-placement" 0x402000 0x400000 0x404000 0x1000 0x1000,
+  loaderSource "loader-source.span-beyond-range" 0x401000 0x400000 0x800 0 0x1000,
+  loaderSource "loader-source.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
+  loaderDecide "loader-decide.load-in-place" 1 5 0 1 1 0,
+  loaderDecide "loader-decide.load-copy" 1 21 0 1 1 0,
+  loaderDecide "loader-decide.refused-no-child" 1 0 0 1 1 0,
+  loaderDecide "loader-decide.refused-started" 1 2 0 1 1 0,
+  loaderDecide "loader-decide.rollback-bad-index" 1 1 0 0 1 0,
+  loaderDecide "loader-decide.rollback-already-loaded" 1 13 0 1 1 0,
+  loaderDecide "loader-decide.rollback-outside-authority" 1 5 5 1 1 0,
+  loaderDecide "loader-decide.rollback-wrong-source" 1 5 6 1 1 0,
+  loaderDecide "loader-decide.rollback-in-place-zero-fill" 1 37 0 1 1 0,
+  loaderDecide "loader-decide.rollback-no-frames" 1 21 0 1 0 0,
+  loaderDecide "loader-decide.rollback-frames-used" 1 21 0 1 1 1,
+  loaderDecide "loader-decide.start" 2 65 0 0 0 0,
+  loaderDecide "loader-decide.rollback-incomplete" 2 1 0 0 0 0,
+  loaderDecide "loader-decide.start-refused-no-child" 2 64 0 0 0 0,
+  loaderDecide "loader-decide.unknown-request" 3 65 0 0 0 0,
+  loaderDecide "loader-decide.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
 
 /-- The first hosted IOTLB corpus keeps one exact filled-cache trace together
 with stale-ticket and every lifetime-bearing scope mismatch. -/
@@ -1122,9 +1174,10 @@ def vectors : List Vector := [
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
     consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
     deviceAuthorizeVectors ++ timerServerVectors ++ frameServerVectors ++
-    frameServerViewVectors ++ spawnEdgeVectors ++ spawnNegativeVectors ++ spawnSyscallVectors
+    frameServerViewVectors ++ spawnEdgeVectors ++ spawnNegativeVectors ++ spawnSyscallVectors ++
+    loaderVectors
 
-theorem corpus_shape : vectors.length = 663 := by decide
+theorem corpus_shape : vectors.length = 692 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -1187,18 +1240,31 @@ theorem hosted_frame_server_view_vectors_exact :
     (vectors.drop 556).take frameServerViewVectors.length = frameServerViewVectors := by
   rfl
 
-/-- Oracle indices 564--612 are the spawn family's edges, in the order of
-`SpawnBoundary.edges`, and 613--626 its hostile encodings (ADR 0010 gate
+/-- Oracle indices 564--617 are the spawn family's edges, in the order of
+`SpawnBoundary.edges`, and 618--631 its hostile encodings (ADR 0010 gate
 item 5). -/
 theorem hosted_spawn_vectors_exact :
     (vectors.drop 564).take (spawnEdgeVectors.length + spawnNegativeVectors.length) =
       spawnEdgeVectors ++ spawnNegativeVectors := by
   rfl
 
-/-- Oracle indices 627--662 are the ring-3 spawn syscall's corpus (#489). -/
+/-- Oracle indices 632--667 are the ring-3 spawn syscall's corpus (#489). -/
 theorem hosted_spawn_syscall_vectors_exact :
-    vectors.drop 627 = spawnSyscallVectors := by
+    (vectors.drop 632).take spawnSyscallVectors.length = spawnSyscallVectors := by
   rfl
+
+/-- Oracle indices 668--691 are the run-time loader's corpus (#492). -/
+theorem hosted_loader_vectors_exact :
+    vectors.drop 668 = loaderVectors := by
+  rfl
+
+/-- The loader corpus's expected words. -/
+theorem loader_vectors_expected :
+    loaderVectors.map (·.expected) =
+      [0, 0, 5, 5, 5, 6, 5, 5,
+        1, 2, 0x101, 0x102, 0x203, 0x204, 0x205, 0x206, 0x207, 0x208, 0x208, 3, 0x209, 0x101,
+        0x1ff, 0x1ff] := by
+  decide
 
 /-- The syscall corpus's expected words: the image's thirteen calls answer as
 the boot assembly checks (`SpawnSyscall.image_run`), and every refusal vector
@@ -1284,7 +1350,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
         faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
           frameServerVectors ++ frameServerViewVectors ++ spawnEdgeVectors ++
-            spawnNegativeVectors ++ spawnSyscallVectors := by
+            spawnNegativeVectors ++ spawnSyscallVectors ++ loaderVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :
@@ -1397,16 +1463,16 @@ theorem composite_mixed_trace_agrees :
 /-- Before the spawn family, only the accepted hosted-mixed receipt and the
 independently modeled machine A-to-B receipt publish a value word. All
 data-only successes, scheduling edges, and rejections publish zero. In the
-spawn family exactly the seven accepted edges whose hosted-oracle value is
-nonzero publish one: two kernel grants (the generation), three spawns (the
-control word), one frame grant and one termination (the frames). -/
+spawn family exactly the ten accepted edges whose hosted-oracle value is
+nonzero publish one: two kernel grants (the generation), four spawns (the
+control word), two frame grants and two terminations (the frames). -/
 theorem composite_result_values_exact :
     (vectors[316]).id = "composite.mixed-transfer-accept" ∧
     (vectors[316]).expectedValue = 0x60003 ∧
     (vectors[395]).id = "composite.boot-transfer-subject-two-accept" ∧
     (vectors[395]).expectedValue = 0x60003 ∧
     ((vectors.take 564).filter (fun vector => vector.expectedValue ≠ 0)).length = 2 ∧
-    ((vectors.drop 564).filter (fun vector => vector.expectedValue ≠ 0)).length = 7 := by
+    ((vectors.drop 564).filter (fun vector => vector.expectedValue ≠ 0)).length = 10 := by
   native_decide
 
 theorem boot_decoder_roundtrip_cold :

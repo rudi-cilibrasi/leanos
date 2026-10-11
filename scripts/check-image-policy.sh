@@ -232,8 +232,10 @@ if grep -Eq '[[:space:]]page_map_level_4_c$' <<<"$symbols"; then
     echo "error: third-subject context bank is not 16-byte aligned" >&2; exit 1;
   }
 else
+  # An empty third-subject range sits at the image end, or just before the
+  # admitted subject range of an image that links one (#492).
   for symbol in "${user_c_bounds[@]}"; do
-    [[ $(($(symbol_address "$symbol"))) -eq $((image_end)) ]] || {
+    [[ $(($(symbol_address "$symbol"))) -eq $(($(symbol_address __user_admitted_start))) ]] || {
       echo "error: two-subject image links a non-empty third-subject range: $symbol" >&2; exit 1;
     }
   done
@@ -323,8 +325,10 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 # 6 in the timer-server paths (save C + resume A, save A + resume B, and the
 # alarm's save B + wake C in isr32; LEANOS_TIMER_SERVER_SCENARIO only), plus
 # 6 in the frame-server switches (save C + restore A, save B + restore C, save
-# C + restore B; LEANOS_FRAME_SERVER_SCENARIO only).
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 37 ]] || {
+# C + restore B; LEANOS_FRAME_SERVER_SCENARIO only), plus 2 in the loader's
+# child switches (save B + enter the loaded child, restore B after the
+# child's send; LEANOS_SPAWN_LOADER_SCENARIO only).
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 39 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
