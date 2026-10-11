@@ -15,6 +15,7 @@ import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
 import LeanOS.SpawnBoundary
+import LeanOS.SpawnSyscall
 import LeanOS.IOTLB
 import LeanOS.NotifyReply
 import LeanOS.UserCopyPolicy
@@ -90,7 +91,9 @@ def adapters : List AdapterSpec := [
   adapter "KeyboardEcho.deviceAuthorize" 26 "leanos_device_authorize" 2,
   adapter "TimerServer.decide" 27 "leanos_timer_server_decide" 3,
   adapter "FrameServer.check" 28 "leanos_frame_server_check" 6,
-  adapter "FrameServer.view" 29 "leanos_frame_server_view" 6]
+  adapter "FrameServer.view" 29 "leanos_frame_server_view" 6,
+  adapter "SpawnSyscall.step" 30 "leanos_spawn_syscall" 6,
+  adapter "SpawnSyscall.value" 31 "leanos_spawn_syscall_value" 6]
 
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
@@ -175,6 +178,16 @@ private def frameServerView (id : String) (op index poolSize holder client free 
     Vector :=
   { id, adapter := "FrameServer.view", words := [op, index, poolSize, holder, client, free],
     expected := FrameServer.frameServerView op index poolSize holder client free }
+
+private def spawnSyscallStep (id : String) (state actor number rbx rcx rdx : UInt64) :
+    Vector :=
+  { id, adapter := "SpawnSyscall.step", words := [state, actor, number, rbx, rcx, rdx],
+    expected := SpawnSyscall.spawnSyscall state actor number rbx rcx rdx }
+
+private def spawnSyscallValue (id : String) (state actor number rbx rcx rdx : UInt64) :
+    Vector :=
+  { id, adapter := "SpawnSyscall.value", words := [state, actor, number, rbx, rcx, rdx],
+    expected := SpawnSyscall.spawnSyscallValue state actor number rbx rcx rdx }
 
 private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
@@ -490,6 +503,51 @@ def spawnNegativeVectors : List Vector := [
   composite "composite.spawn-wrong-command-version" 0x7201 0x7002 1 0x30000 4 0,
   composite "composite.spawn-wrong-state-version" 0x7102 0x7001 1 0x30000 4 0,
   composite "composite.spawn-state-above-family" 0x8201 0x7001 1 0x30000 4 0]
+
+/-- The ring-3 spawn syscall (#489, #491): the `spawn-child` image's thirteen
+calls at their tokens, then every refusal (not a family token, not the current
+subject, not a spawn-family number, noncanonical registers for each number,
+a decodable command outside the bounded table, maximum words), the bystander
+presenting the parent's control word, and the value words of the accepted
+calls and of a refusal. -/
+def spawnSyscallVectors : List Vector := [
+  spawnSyscallStep "spawn-syscall.spawn" 0x7101 2 100 1 0x30000 4,
+  spawnSyscallStep "spawn-syscall.reserved-rights-bit" 0x7201 2 100 1 0x30000 0x40,
+  spawnSyscallStep "spawn-syscall.subject-budget-exhausted" 0x7201 2 100 1 0x30000 4,
+  spawnSyscallStep "spawn-syscall.grant-frame-in-use" 0x7201 2 101 0x10000 1 0,
+  spawnSyscallStep "spawn-syscall.release" 0x7201 2 104 2 0 0,
+  spawnSyscallStep "spawn-syscall.grant" 0x7301 2 101 0x10000 1 0,
+  spawnSyscallStep "spawn-syscall.terminate" 0x7401 2 102 0x10000 0 0,
+  spawnSyscallStep "spawn-syscall.terminate-stale" 0x7501 2 102 0x10000 0 0,
+  spawnSyscallStep "spawn-syscall.allocate" 0x7501 2 103 2 0 0,
+  spawnSyscallStep "spawn-syscall.respawn-same-slot" 0x7601 2 100 1 0x30000 4,
+  spawnSyscallStep "spawn-syscall.old-handle-terminate" 0x7701 2 102 0x10000 0 0,
+  spawnSyscallStep "spawn-syscall.old-handle-grant" 0x7701 2 101 0x10000 1 0,
+  spawnSyscallStep "spawn-syscall.terminate-new-child" 0x7701 2 102 0x20000 0 0,
+  spawnSyscallStep "spawn-syscall.not-family-state" 0x0101 2 100 1 0x30000 4,
+  spawnSyscallStep "spawn-syscall.not-current-subject" 0x7101 1 100 1 0x30000 4,
+  spawnSyscallStep "spawn-syscall.parent-after-switch" 0x7901 2 102 0x10000 0 0,
+  spawnSyscallStep "spawn-syscall.bystander-presents-control" 0x7901 1 102 0x10000 0 0,
+  spawnSyscallStep "spawn-syscall.kernel-grant-not-a-syscall" 0x7101 2 105 2 1 0,
+  spawnSyscallStep "spawn-syscall.number-below-family" 0x7101 2 99 1 0x30000 4,
+  spawnSyscallStep "spawn-syscall.zero-spawn-word" 0x7101 2 100 0 0x30000 4,
+  spawnSyscallStep "spawn-syscall.grant-zero-frames" 0x7301 2 101 0x10000 0 0,
+  spawnSyscallStep "spawn-syscall.grant-reserved-rdx" 0x7301 2 101 0x10000 1 1,
+  spawnSyscallStep "spawn-syscall.terminate-reserved-rcx" 0x7401 2 102 0x10000 1 0,
+  spawnSyscallStep "spawn-syscall.allocate-reserved-rdx" 0x7501 2 103 2 0 1,
+  spawnSyscallStep "spawn-syscall.release-reserved-rcx" 0x7201 2 104 2 1 0,
+  spawnSyscallStep "spawn-syscall.outside-table-allocate" 0x7101 2 103 5 0 0,
+  spawnSyscallStep "spawn-syscall.outside-table-empty-rights" 0x7101 2 100 1 0x30000 0,
+  spawnSyscallStep "spawn-syscall.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
+  spawnSyscallValue "spawn-syscall-value.spawn" 0x7101 2 100 1 0x30000 4,
+  spawnSyscallValue "spawn-syscall-value.grant" 0x7301 2 101 0x10000 1 0,
+  spawnSyscallValue "spawn-syscall-value.terminate" 0x7401 2 102 0x10000 0 0,
+  spawnSyscallValue "spawn-syscall-value.respawn-same-slot" 0x7601 2 100 1 0x30000 4,
+  spawnSyscallValue "spawn-syscall-value.terminate-new-child" 0x7701 2 102 0x20000 0 0,
+  spawnSyscallValue "spawn-syscall-value.old-handle-terminate" 0x7701 2 102 0x10000 0 0,
+  spawnSyscallValue "spawn-syscall-value.refusal" 0x7201 2 100 1 0x30000 0x40,
+  spawnSyscallValue "spawn-syscall-value.outside-table" 0x7101 2 103 5 0 0]
 
 /-- The first hosted IOTLB corpus keeps one exact filled-cache trace together
 with stale-ticket and every lifetime-bearing scope mismatch. -/
@@ -1064,9 +1122,9 @@ def vectors : List Vector := [
     bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
     consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
     deviceAuthorizeVectors ++ timerServerVectors ++ frameServerVectors ++
-    frameServerViewVectors ++ spawnEdgeVectors ++ spawnNegativeVectors
+    frameServerViewVectors ++ spawnEdgeVectors ++ spawnNegativeVectors ++ spawnSyscallVectors
 
-theorem corpus_shape : vectors.length = 627 := by decide
+theorem corpus_shape : vectors.length = 663 := by decide
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
@@ -1133,8 +1191,26 @@ theorem hosted_frame_server_view_vectors_exact :
 `SpawnBoundary.edges`, and 613--626 its hostile encodings (ADR 0010 gate
 item 5). -/
 theorem hosted_spawn_vectors_exact :
-    vectors.drop 564 = spawnEdgeVectors ++ spawnNegativeVectors := by
+    (vectors.drop 564).take (spawnEdgeVectors.length + spawnNegativeVectors.length) =
+      spawnEdgeVectors ++ spawnNegativeVectors := by
   rfl
+
+/-- Oracle indices 627--662 are the ring-3 spawn syscall's corpus (#489). -/
+theorem hosted_spawn_syscall_vectors_exact :
+    vectors.drop 627 = spawnSyscallVectors := by
+  rfl
+
+/-- The syscall corpus's expected words: the image's thirteen calls answer as
+the boot assembly checks (`SpawnSyscall.image_run`), and every refusal vector
+answers with its refusal word before any gate. -/
+theorem spawn_syscall_vectors_expected :
+    spawnSyscallVectors.map (·.expected) =
+      [0x017201, 0xfe23, 0x8c7201, 0xc57201, 0x017301, 0x017401, 0x017501, 0xc37501,
+        0x017601, 0x017701, 0xc37701, 0xc37701, 0x017801,
+        0xfe20, 0xfe21, 0xfe21, 0xc37901, 0xfe22, 0xfe22, 0xfe23, 0xfe23, 0xfe23, 0xfe23,
+        0xfe23, 0xfe23, 0xfe24, 0xfe24, 0xfe20,
+        0x10000, 1, 1, 0x20000, 0, 0, 0, 0] := by
+  decide
 
 /-- Each spawn edge vector carries its edge's words and expects its edge's
 reply and value words. -/
@@ -1208,7 +1284,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
         faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
           frameServerVectors ++ frameServerViewVectors ++ spawnEdgeVectors ++
-            spawnNegativeVectors := by
+            spawnNegativeVectors ++ spawnSyscallVectors := by
   rfl
 
 theorem hosted_inFlight_revocation_vectors_refine :

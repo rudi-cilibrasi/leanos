@@ -66,6 +66,12 @@ ABI.
 | 90 | frame-server | 1, 2 | request to the frame server on endpoint 12 (RDX): RBX 1 asks for a frame (answer: its page address, or the typed rejection 0x100), RBX 2 releases the client's budget (A only; A never runs again) |
 | 91 | frame-server | 3 | C's decision for the pending request, checked against the generated witness: RBX op (1 grant, 2 refuse over budget, 3 refuse pool exhausted, 5 revoke) with rights << 8, RCX client, RDX pool frame; C then blocks on endpoint 12 for the next request |
 | 93 | frame-server | 2 | B reports the first and last byte of its republished frame (RBX, RCX) and its address (RDX) (final record) |
+| 100 | spawn-child | 2 | spawn (#489): RBX spawn-capability generation, RCX endpoint handle to grant, RDX rights mask; RAX the generated reply word (status << 16; 0xfe20..0xfe23 refused before any gate), RBX the control word of the child |
+| 101 | spawn-child | 2 | grant frames to a child: RBX control word, RCX frames (nonzero), RDX 0; RBX the frames moved |
+| 102 | spawn-child | 2 | terminate a child: RBX control word, RCX and RDX 0; RBX the frames returned; a stale control word is rejected (status 0xc3) with the state unchanged |
+| 103 | spawn-child | 2 | allocate memory into slot RBX (RCX and RDX 0) |
+| 104 | spawn-child | 2 | release the memory in slot RBX (RCX and RDX 0) |
+| 109 | spawn-child | 2 | B's final report: the kernel checks the token, its mirror and the bystander (final record) |
 | 10 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the initial handle |
 | 11 | canonical (blocking-ipc, preemption) | 2 | capability reuse: replay the stale handle (rejected) |
 | 12 | canonical (blocking-ipc, preemption) | 2 | capability reuse: use the fresh handle |
@@ -168,9 +174,49 @@ endpoint capabilities by a slot of the caller's own table and resolves a
 64-bit name to a send-only copy through a ring-3 directory
 ([endpoint-directory.md](endpoint-directory.md)).
 
+## Spawn (`spawn-child` image)
+
+Syscalls 100 to 104 are the ring-3 spawn family that
+[ADR 0010](adr/0010-defer-fork.md)'s decision of 2026-10-10 permits (#489).
+Unlike every other number above, they are not decoded by C:
+`LeanOS.SpawnSyscall.spawnSyscall` (export `leanos_spawn_syscall`, oracle
+adapter 30) receives the kernel's spawn-family state token, the current
+subject, RAX and RBX, RCX, RDX, and returns RAX; `spawnSyscallValue` (adapter
+31) returns RBX.
+
+| Number | Command | RBX | RCX | RDX | Model step |
+| --- | --- | --- | --- | --- | --- |
+| 100 | spawn | spawn-capability generation (nonzero) | endpoint handle to grant | rights mask (below 64) | `childGate (.spawn _)` |
+| 101 | grant frames | control word | frames (nonzero) | 0 | `childGate (.grantFrames _ _)` |
+| 102 | terminate child | control word | 0 | 0 | `childGate (.terminateChild _)` |
+| 103 | allocate memory | slot | 0 | 0 | `memoryGate (.allocate _)` |
+| 104 | release memory | slot | 0 | 0 | `memoryGate (.release _)` |
+
+RAX is the generated dispatcher's reply word: version `0x01` in bits 0..7,
+the next state in bits 8..15, and the status byte in bits 16..23. Status
+`0x01` is accepted. `0x80 + code` is a typed rejection with the codes of
+`SpawnOracle` and `SpawnAccountingOracle` (for example `0x8c` subject budget
+exhausted, `0xc3` stale control word, `0xc5` frame budget exhausted); the
+state is unchanged. RBX is the value word: the control word of a spawned child
+(child-table slot in bits 0..15, a never-reused generation above), the frames a
+grant moved or a termination returned, and zero otherwise. Four words are
+refusals before any gate, with the state unchanged: `0xfe20` (the kernel's
+token is not a spawn-family state), `0xfe21` (the caller is not the current
+subject), `0xfe22` (not a family number) and `0xfe23` (the registers are not
+a canonical encoding, for example a reserved rights bit or a nonzero reserved
+register). `0xfe24`, a canonical command the bounded table does not cover,
+never reaches ring 3: the kernel stops the machine.
+
+No number reaches the kernel's grant or revocation of spawn authority, the
+timer switch, or the capability copy. A spawned child holds exactly a copy of
+the granted endpoint (slot 0) and the root of its own new, empty address space
+(slot 1); it is not runnable, and it can never spawn. See
+[fail-stop.md](fail-stop.md#the-ring-3-spawn-syscall).
+
 ## What does not exist
 
-- no fork, clone or spawn syscall (ADR 0010);
+- no fork or clone syscall (ADR 0010), and spawn only in the `spawn-child`
+  image;
 - no libc and no dynamic loading: subjects are linked into the image;
 - no stable syscall numbering;
 - no general error codes.

@@ -41,6 +41,12 @@
 90	frame-server	1, 2	request to the frame server on endpoint 12 (RDX): RBX 1 asks for a frame (answer: its page address, or the typed rejection 0x100), RBX 2 releases the client's budget (A only; A never runs again)
 91	frame-server	3	C's decision for the pending request, checked against the generated witness: RBX op (1 grant, 2 refuse over budget, 3 refuse pool exhausted, 5 revoke) with rights << 8, RCX client, RDX pool frame; C then blocks on endpoint 12 for the next request
 93	frame-server	2	B reports the first and last byte of its republished frame (RBX, RCX) and its address (RDX) (final record)
+100	spawn-child	2	spawn (#489): RBX spawn-capability generation, RCX endpoint handle to grant, RDX rights mask; RAX the generated reply word (status << 16; 0xfe20..0xfe23 refused before any gate), RBX the control word of the child
+101	spawn-child	2	grant frames to a child: RBX control word, RCX frames (nonzero), RDX 0; RBX the frames moved
+102	spawn-child	2	terminate a child: RBX control word, RCX and RDX 0; RBX the frames returned; a stale control word is rejected (status 0xc3) with the state unchanged
+103	spawn-child	2	allocate memory into slot RBX (RCX and RDX 0)
+104	spawn-child	2	release the memory in slot RBX (RCX and RDX 0)
+109	spawn-child	2	B's final report: the kernel checks the token, its mirror and the bystander (final record)
 10	canonical (blocking-ipc, preemption)	2	capability reuse: use the initial handle
 11	canonical (blocking-ipc, preemption)	2	capability reuse: replay the stale handle (rejected)
 12	canonical (blocking-ipc, preemption)	2	capability reuse: use the fresh handle

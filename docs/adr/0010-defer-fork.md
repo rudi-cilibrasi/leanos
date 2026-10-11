@@ -368,3 +368,62 @@ conditions:
 
 Fork, clone, and any operation with implicit inheritance stay excluded; this
 decision does not reopen them.
+
+## Amendment (2026-10-10): the ring-3 spawn syscall (issues #489 and #491)
+
+### What was added under the decision above
+
+`LeanOS.SpawnSyscall` is the syscall the decision permits. In the
+`spawn-child` image, numbers 100 to 104 name spawn, frame grant, child
+termination, memory allocation and memory release
+([userspace-abi.md](../userspace-abi.md#spawn-spawn-child-image)). Each
+condition of the decision is met as follows:
+
+- **Canonical decoders only.** RBX, RCX and RDX are the first three command
+  words and the fourth is zero. The allocation-free check `canonical` holds
+  exactly when the words decode with `decodeChild` or `decodeFamily`
+  (`canonical_iff_decodes`). Words that do not decode are refused before any
+  gate runs (`0xfe23`).
+- **`childGate` or `memoryGate` with the latch's current subject as the
+  actor.** The witness refuses an actor other than the token's current
+  subject (`0xfe21`, `stateActor_current`). Every answer that is not a
+  refusal is exactly one edge of the generated spawn table at the presented
+  token (`spawnDispatchRaw_cases`, `spawnSyscall_cases`). That edge is one
+  `childGate` or `memoryGate` step on the complete state the token names
+  (`spawnSyscall_refines`). Every refusal and every rejection keeps the token
+  and the complete pre-state (`spawnSyscall_rollback`). No word names the
+  parent, a child's identity, a frame, or an object identity.
+- **The kernel commands are not syscalls.** No number reaches `0x7501`,
+  `0x7601`, `0x7701` or `0x7801` (`syscall_never_kernel_command`). The image's
+  kernel grants spawn authority itself, through the bounded dispatcher, before
+  ring 3 runs.
+- **The adapter joins the hosted replay.** `leanos_spawn_syscall` and
+  `leanos_spawn_syscall_value` are oracle adapters 30 and 31. Their 36 vectors
+  are replayed against the generated C, ordinary and sanitized, and at boot in
+  every normal image (`hosted_spawn_syscall_vectors_exact`).
+- **The child stays unschedulable, and a child cannot spawn.** Spawn still
+  builds a child that is not runnable, and the image never runs it. Spawn
+  authority is granted only outside child tables, so a child never holds it
+  (`SpawnTreeWellFormed`).
+
+### The QEMU scenario of #491
+
+In the `spawn-child` image the parent B spawns a child, gives it a frame,
+terminates it, and spawns a new child into the same child-table slot under
+generation 2. It then presents the first child's control word for termination
+and for a grant. Both are rejected with status `0xc3`, and the state is
+unchanged. `image_run` checks every reply and value word of the run. On the
+complete states the tokens name, `image_model` checks the child-table entries,
+the children's address spaces, and the frame's holder that the transcript
+reports. The kernel builds each child a fresh root with the kernel's
+supervisor-only identity map and an empty user window. It clears that root on
+termination. It checks that every refusal and rejection leaves both its token
+and its own records unchanged.
+
+### Scope
+
+The syscall is a bounded boundary. The spawn table names eighteen complete
+states, and a decodable command outside it stops the machine (`0xfe24`)
+instead of running a gate. A general decoder over arbitrary composite states,
+running children, and code loading are not added here. Issue #492 owns
+loading.

@@ -146,6 +146,7 @@
     "LeanOS/SpawnBoundaryTraces.lean",
     "LeanOS/SpawnConfinement.lean",
     "LeanOS/SpawnOracle.lean",
+    "LeanOS/SpawnSyscall.lean",
     "LeanOS/StaleTranslation.lean",
     "LeanOS/SubjectLifecycle.lean",
     "LeanOS/Syscall.lean",

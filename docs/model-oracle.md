@@ -17,8 +17,10 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `ConsoleServer.consoleAuthorize`,
 `EndpointDirectory.directoryResolve`, `FaultHandler.faultHandlerRoute`,
 `KeyboardEcho.deviceAuthorize`, `TimerServer.timerServerDecide`,
-`FrameServer.frameServerCheck` and `FrameServer.frameServerView`. Its stable
-627-vector order covers accepted calls,
+`FrameServer.frameServerCheck` and `FrameServer.frameServerView`, and the
+ring-3 spawn syscall's `SpawnSyscall.spawnSyscall` and
+`SpawnSyscall.spawnSyscallValue` (adapters 30 and 31, #489). Its stable
+663-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -423,6 +425,24 @@ B/page 7, and a real CPL3 A read of the replacement canary.
 The scalar selector establishes the named model's accepted fresh-object
 allocation and old-page absence; C sequencing and QEMU do not prove that the
 binary refines that model.
+
+The last 36 vectors (indices 627--662, `hosted_spawn_syscall_vectors_exact`)
+are the ring-3 spawn syscall (`LeanOS.SpawnSyscall`, #489). Each carries the
+kernel's spawn-family token, the actor, the syscall number and RBX, RCX, RDX.
+The first thirteen are the `spawn-child` image's calls at their tokens
+(`image_run`): spawn, a reserved rights bit, a spawn over the subject budget,
+a grant while the parent's memory holds the frame, release, grant, terminate,
+the stale control word, allocate, spawn into the same child-table slot, the old
+control word for termination and for a grant, and termination of the new
+child. Then come every refusal word of the witness (a state outside the
+family, an actor other than the token's current subject, a number outside
+100..104 including the absent kernel grant, noncanonical registers for every
+number, and a decodable command the bounded table does not cover), the
+bystander presenting the parent's control word after the timer switch, and the
+value words. `spawn_syscall_vectors_expected` lists every expected word. The
+general statements are in `LeanOS.SpawnSyscall`: every input is a refusal or
+exactly one edge of the spawn table (`spawnSyscall_cases`), and that edge is
+one `childGate` or `memoryGate` step (`spawnSyscall_refines`).
 
 ## Post-state corpus (hosted only)
 

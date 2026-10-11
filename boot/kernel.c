@@ -6764,6 +6764,384 @@ static void frame_server_switch(uint64_t *target, uint64_t target_owner,
 }
 #endif
 
+#ifdef LEANOS_SPAWN_CHILD_SCENARIO
+/* The ring-3 spawn syscall (#489, #491; ADR 0010 decision of 2026-10-10).
+   Subject B (2) is the parent, the current subject of the model's latch.
+   Syscalls 100..104 are decoded only by the generated witness
+   leanos_spawn_syscall (LeanOS.SpawnSyscall): it checks the token, the
+   actor, the number and the canonical registers, and asks the generated
+   dispatcher's spawn table, whose every edge is one childGate or memoryGate
+   step on the complete state the token names (spawnSyscall_refines).
+
+   The kernel keeps the token and changes it only to the successor of an
+   accepted edge.  A refusal (0xfe20..0xfe23) or a rejected edge keeps the
+   token, which then names the pre-state itself (spawnSyscall_rollback); the
+   kernel checks that its own mirror is unchanged too.  0xfe24, a decodable
+   command the bounded table does not cover, stops the machine.
+
+   The mirror below only realizes accepted steps (the child's fresh root, the
+   frame's holder and scrub) and is never consulted to decide anything. */
+#define SPAWN_PARENT 2u
+#define SPAWN_REFUSED_FIRST UINT64_C(0xfe20)
+#define SPAWN_REFUSED_LAST UINT64_C(0xfe23)
+#define SPAWN_OUTSIDE_TABLE UINT64_C(0xfe24)
+#define SPAWN_WINDOW_DIRECTORY 8u
+#define SPAWN_PARENT_RESIDUE 0xa5u
+
+static uint64_t spawn_state = LEANOS_COMPOSITE_STATE_SPAWN_SEED;
+/* Result word one of the last spawn-family syscall; boot.S stores it in the
+   caller's saved RBX. */
+uint64_t spawn_syscall_value;
+
+struct spawn_mirror {
+    uint64_t child_live;
+    uint64_t child;
+    uint64_t generation;
+    uint64_t address_space;
+    uint64_t charge;
+    uint64_t next_subject;
+    uint64_t next_object;
+    uint64_t next_generation;
+    uint64_t frame_object;      /* memory object on the frame, 0 when free */
+    uint64_t frame_committed;   /* subject the frame is committed to */
+};
+/* The family seed: subject identities up to 2 and objects up to 20 issued,
+   no control generation issued, frame 4 committed to B and holding B's
+   memory object 20 (SpawnBoundary.spawnSeed). */
+static struct spawn_mirror spawn_mirror = { 0, 0, 0, 0, 0, 3, 21, 1, 20, 2 };
+static uint64_t spawn_spawned, spawn_terminated, spawn_refused, spawn_rejected;
+static uint64_t spawn_slot_reused, spawn_stale_rejected, spawn_bystander_digest;
+
+/* The model's frame 4. */
+static uint8_t spawn_frame[PAGE_BYTES] __attribute__((aligned(PAGE_BYTES)));
+/* The child's root: a fresh address space with the kernel's supervisor-only
+   identity map, which interrupt entry needs, and an empty user window. */
+static uint64_t spawn_child_pml4[512] __attribute__((aligned(PAGE_BYTES)));
+static uint64_t spawn_child_pdpt[512] __attribute__((aligned(PAGE_BYTES)));
+static uint64_t spawn_child_pd[512] __attribute__((aligned(PAGE_BYTES)));
+static uint64_t spawn_child_pt[BOOT_LEAF_COUNT] __attribute__((aligned(PAGE_BYTES)));
+static uint64_t spawn_child_window[512] __attribute__((aligned(PAGE_BYTES)));
+
+static uint64_t spawn_mix(uint64_t digest, uint64_t word) {
+    digest ^= word;
+    digest *= UINT64_C(0x100000001b3);
+    return digest ^ (digest >> 29);
+}
+
+static uint64_t spawn_words_digest(uint64_t digest, const uint64_t *words, unsigned count) {
+    for (unsigned i = 0; i < count; ++i)
+        digest = spawn_mix(digest, words[i] ^ i);
+    return digest;
+}
+
+/* Everything the kernel holds for the family: the token, the mirror, the
+   frame's bytes and the child's root. */
+static uint64_t spawn_digest(void) {
+    uint64_t digest = spawn_mix(UINT64_C(0xcbf29ce484222325), spawn_state);
+    digest = spawn_words_digest(digest, (const uint64_t *)&spawn_mirror,
+                                sizeof(spawn_mirror) / sizeof(uint64_t));
+    digest = spawn_words_digest(digest, (const uint64_t *)spawn_frame,
+                                PAGE_BYTES / sizeof(uint64_t));
+    digest = spawn_words_digest(digest, spawn_child_pml4, 512);
+    digest = spawn_words_digest(digest, spawn_child_pdpt, 512);
+    digest = spawn_words_digest(digest, spawn_child_pd, 512);
+    digest = spawn_words_digest(digest, spawn_child_pt, BOOT_LEAF_COUNT);
+    return spawn_words_digest(digest, spawn_child_window, 512);
+}
+
+/* What A, the bystander, holds: its tables and its saved context.  The CPU
+   may set accessed and dirty bits in A's tables while A's root was the boot
+   root, so those two bits are not part of what A holds. */
+static uint64_t spawn_table_digest(uint64_t digest, const uint64_t *table, unsigned count) {
+    for (unsigned i = 0; i < count; ++i)
+        digest = spawn_mix(digest, (table[i] & ~(PTE_ACCESSED | PTE_DIRTY)) ^ i);
+    return digest;
+}
+
+static uint64_t spawn_bystander(void) {
+    uint64_t digest = spawn_table_digest(UINT64_C(0x84222325cbf29ce4),
+                                         page_map_level_4_a, 512);
+    digest = spawn_table_digest(digest, page_directory_pointer_a, 512);
+    digest = spawn_table_digest(digest, page_directory_a, 512);
+    digest = spawn_table_digest(digest, page_table_a, BOOT_LEAF_COUNT);
+    return spawn_words_digest(digest, saved_context_a, 20);
+}
+
+static void spawn_frame_fill(uint8_t byte) {
+    volatile uint8_t *frame = spawn_frame;
+    for (unsigned i = 0; i < PAGE_BYTES; ++i) frame[i] = byte;
+    for (unsigned i = 0; i < PAGE_BYTES; ++i)
+        if (frame[i] != byte) fail("spawn-frame-fill");
+}
+
+static unsigned spawn_frame_is(uint8_t byte) {
+    for (unsigned i = 0; i < PAGE_BYTES; ++i)
+        if (spawn_frame[i] != byte) return 0;
+    return 1;
+}
+
+static void spawn_child_root_clear(void) {
+    for (unsigned i = 0; i < 512; ++i) {
+        spawn_child_pml4[i] = 0;
+        spawn_child_pdpt[i] = 0;
+        spawn_child_pd[i] = 0;
+        spawn_child_window[i] = 0;
+    }
+    for (unsigned i = 0; i < BOOT_LEAF_COUNT; ++i) spawn_child_pt[i] = 0;
+}
+
+static unsigned spawn_child_root_empty(void) {
+    for (unsigned i = 0; i < 512; ++i)
+        if (spawn_child_pml4[i] | spawn_child_pdpt[i] | spawn_child_pd[i] |
+            spawn_child_window[i]) return 0;
+    for (unsigned i = 0; i < BOOT_LEAF_COUNT; ++i)
+        if (spawn_child_pt[i]) return 0;
+    return 1;
+}
+
+/* The fresh address space: B's identity leaves with U/S cleared, so the
+   kernel stays mapped for entry and nothing is user-accessible, and an empty
+   user window.  Returns the number of user-accessible leaves (0). */
+static uint64_t spawn_child_root_build(void) {
+    if (!spawn_child_root_empty()) fail("spawn-root-not-fresh");
+    for (unsigned i = 0; i < BOOT_LEAF_COUNT; ++i)
+        spawn_child_pt[i] = page_table_b[i] & ~(PTE_USER | PTE_ACCESSED | PTE_DIRTY);
+    for (unsigned t = 0; t < BOOT_PT_COUNT; ++t)
+        spawn_child_pd[t] = (uint64_t)&spawn_child_pt[t * 512u] |
+            PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+    spawn_child_pd[SPAWN_WINDOW_DIRECTORY] = (uint64_t)spawn_child_window |
+        PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+    spawn_child_pdpt[0] = (uint64_t)spawn_child_pd | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+    spawn_child_pml4[0] = (uint64_t)spawn_child_pdpt | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+    uint64_t user_leaves = 0;
+    for (unsigned i = 0; i < BOOT_LEAF_COUNT; ++i)
+        if ((spawn_child_pt[i] & (PTE_PRESENT | PTE_USER)) == (PTE_PRESENT | PTE_USER))
+            ++user_leaves;
+    for (unsigned i = 0; i < 512; ++i)
+        if (spawn_child_window[i] & PTE_PRESENT) ++user_leaves;
+    return user_leaves;
+}
+
+static const char *spawn_reason(uint64_t status) {
+    if (status == 0x8c) return "subject-budget-exhausted";
+    if (status == 0xc5) return "frame-budget-exhausted";
+    if (status == 0xc3) return "stale-control-word";
+    return "typed-rejection";
+}
+
+static const char *spawn_refusal(uint64_t reply) {
+    if (reply == UINT64_C(0xfe20)) return "not-a-family-state";
+    if (reply == UINT64_C(0xfe21)) return "not-the-current-subject";
+    if (reply == UINT64_C(0xfe22)) return "not-a-spawn-syscall";
+    return "noncanonical-words";
+}
+
+/* The kernel's own grant of spawn authority, before ring 3: the bounded
+   dispatcher's kernel command 0x7501 (subject 2, subject budget 1). */
+static void spawn_child_install(void) {
+    spawn_frame_fill(SPAWN_PARENT_RESIDUE);
+    spawn_child_root_clear();
+    const uint64_t control = leanos_composite_dispatch(spawn_state,
+        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_GRANT_AUTHORITY, SPAWN_PARENT, 1, 0, 0);
+    const uint64_t value = leanos_composite_dispatch_value(spawn_state,
+        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_GRANT_AUTHORITY, SPAWN_PARENT, 1, 0, 0);
+    if ((control & UINT64_C(0xffff)) != LEANOS_COMPOSITE_STATE_SPAWN_AUTHORIZED ||
+        (control >> 16) != 1 || value != 1)
+        fail("spawn-authority-grant");
+    spawn_state = LEANOS_COMPOSITE_STATE_SPAWN_AUTHORIZED;
+    spawn_bystander_digest = spawn_bystander();
+    serial_puts(LEANOS_SERIAL_10_SPAWN " event=authority subject=2 budget=1 generation=");
+    serial_u64(value);
+    serial_puts(" source=kernel syscall=none control=");
+    serial_u64(control);
+    serial_puts(" frame=committed-to-2 object=20 result=PASS\n");
+}
+
+static void spawn_report_head(const char *event, uint64_t number) {
+    serial_puts(LEANOS_SERIAL_10_SPAWN " event=");
+    serial_puts(event);
+    serial_puts(" subject=2 origin=cpl3 number=");
+    serial_u64(number);
+}
+
+static void spawn_report_tail(uint64_t reply, uint64_t value) {
+    serial_puts(" reply=");
+    serial_u64(reply);
+    serial_puts(" value=");
+    serial_u64(value);
+    serial_puts(" token=");
+    serial_u64(spawn_state);
+    serial_puts(" result=PASS\n");
+}
+
+/* Realize one accepted edge.  Every identity, generation and frame count
+   comes from the generated value word or the model's issuers' order; the
+   mirror's checks fail-stop on any disagreement. */
+static void spawn_child_apply(uint64_t number, uint64_t arg0, uint64_t value) {
+    struct spawn_mirror *m = &spawn_mirror;
+    if (number == 100) {
+        const uint64_t slot = value & UINT64_C(0xffff);
+        const uint64_t generation = value >> 16;
+        if (m->child_live || slot != 0 || generation != m->next_generation)
+            fail("spawn-control-word");
+        if (m->generation != 0) ++spawn_slot_reused;
+        m->child_live = 1;
+        m->child = m->next_subject++;
+        m->address_space = m->next_object++;
+        m->generation = m->next_generation++;
+        m->charge = 0;
+        const uint64_t user_leaves = spawn_child_root_build();
+        if (user_leaves != 0) fail("spawn-root-user-leaf");
+        ++spawn_spawned;
+        spawn_report_head("spawn", number);
+        serial_puts(" endpoint=196608 rights=send child=");
+        serial_u64(m->child);
+        serial_puts(" address-space=");
+        serial_u64(m->address_space);
+        serial_puts(" slot=0 generation=");
+        serial_u64(m->generation);
+        serial_puts(" runnable=0 user-leaves=0 kernel-leaves=supervisor frames=0");
+        return;
+    }
+    if (number == 101) {
+        if (!m->child_live || arg0 != (m->generation << 16) || value != 1 ||
+            m->frame_object != 0 || m->frame_committed != SPAWN_PARENT)
+            fail("spawn-grant-mirror");
+        m->frame_committed = m->child;
+        m->charge += value;
+        spawn_report_head("grant", number);
+        serial_puts(" child=");
+        serial_u64(m->child);
+        serial_puts(" frames=1 charge=");
+        serial_u64(m->charge);
+        serial_puts(" frame=committed-to-child");
+        return;
+    }
+    if (number == 102) {
+        if (!m->child_live || arg0 != (m->generation << 16) || value != m->charge)
+            fail("spawn-terminate-mirror");
+        const uint64_t child = m->child;
+        const uint64_t address_space = m->address_space;
+        /* The child allocated nothing, so the frames it was given come back
+           to B still free and scrubbed (terminateChild_releases_everything). */
+        if ((m->frame_committed == child) != (value != 0)) fail("spawn-terminate-charge");
+        if (m->frame_committed == child) {
+            m->frame_committed = SPAWN_PARENT;
+            if (m->frame_object != 0 || !spawn_frame_is(0))
+                fail("spawn-terminate-frame");
+        }
+        spawn_child_root_clear();
+        if (!spawn_child_root_empty()) fail("spawn-terminate-root");
+        m->child_live = 0;
+        m->charge = 0;
+        ++spawn_terminated;
+        spawn_report_head("terminate", number);
+        serial_puts(" child=");
+        serial_u64(child);
+        serial_puts(" address-space=");
+        serial_u64(address_space);
+        serial_puts(" frames-returned=");
+        serial_u64(value);
+        serial_puts(value != 0 ? " root=cleared slot=0 frame=committed-to-2,free,scrubbed"
+                               : " root=cleared slot=0 frame=untouched");
+        return;
+    }
+    if (number == 103) {
+        if (arg0 != 2 || m->frame_object != 0 || m->frame_committed != SPAWN_PARENT)
+            fail("spawn-allocate-mirror");
+        spawn_frame_fill(0);
+        m->frame_object = m->next_object++;
+        spawn_report_head("allocate", number);
+        serial_puts(" slot=2 object=");
+        serial_u64(m->frame_object);
+        serial_puts(" frame=scrubbed");
+        return;
+    }
+    if (number == 104) {
+        if (arg0 != 2 || m->frame_object == 0 || m->frame_committed != SPAWN_PARENT)
+            fail("spawn-release-mirror");
+        const uint64_t object = m->frame_object;
+        spawn_frame_fill(0);
+        m->frame_object = 0;
+        spawn_report_head("release", number);
+        serial_puts(" slot=2 object=");
+        serial_u64(object);
+        serial_puts(" frame=free,scrubbed");
+        return;
+    }
+    fail("spawn-apply-number");
+}
+
+static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
+                                    uint64_t arg1, uint64_t arg2) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (current_subject != SPAWN_PARENT ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b)
+        fail("spawn-caller-context");
+    if (number == 109) {
+        if (spawn_state != LEANOS_COMPOSITE_STATE_SPAWN_SECOND_TERMINATED ||
+            spawn_mirror.child_live || !spawn_child_root_empty() ||
+            spawn_spawned != 2 || spawn_terminated != 2 || spawn_slot_reused != 1 ||
+            spawn_stale_rejected != 3 || spawn_refused != 1 || spawn_rejected != 5)
+            fail("spawn-final-state");
+        if (spawn_bystander() != spawn_bystander_digest)
+            fail("spawn-bystander");
+        serial_puts(LEANOS_SERIAL_10_SPAWN " event=bystander subject=1 tables=unchanged context=unchanged ran=0 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=2 parent=2 spawned=2 terminated=2 slot-reused=1 stale-rejected=3 refused=1 rejected=5 children-live=0 bystander=unchanged\n");
+        finish(0x10);
+    }
+    if (number < 100 || number > 104) fail("spawn-child-syscall");
+    const uint64_t before = spawn_digest();
+    const uint64_t reply = leanos_spawn_syscall(spawn_state, current_subject,
+                                                number, arg0, arg1, arg2);
+    const uint64_t value = leanos_spawn_syscall_value(spawn_state, current_subject,
+                                                      number, arg0, arg1, arg2);
+    if (reply == SPAWN_OUTSIDE_TABLE) fail("spawn-outside-bounded-table");
+    if (reply >= SPAWN_REFUSED_FIRST && reply <= SPAWN_REFUSED_LAST) {
+        if (value != 0 || spawn_digest() != before) fail("spawn-refusal-mutated");
+        ++spawn_refused;
+        spawn_syscall_value = 0;
+        spawn_report_head("refuse", number);
+        serial_puts(" reason=");
+        serial_puts(spawn_refusal(reply));
+        serial_puts(" gate=none state=unchanged");
+        spawn_report_tail(reply, value);
+        return reply;
+    }
+    if ((reply & 0xffu) != 1 || reply >= UINT64_C(0x1000000) || (reply >> 16) == 0)
+        fail("spawn-reply-shape");
+    const uint64_t status = reply >> 16;
+    const uint64_t next = reply & UINT64_C(0xffff);
+    if (status != 1) {
+        if (next != spawn_state || value != 0 || spawn_digest() != before)
+            fail("spawn-rejection-mutated");
+        ++spawn_rejected;
+        if (status == 0xc3) ++spawn_stale_rejected;
+        spawn_syscall_value = 0;
+        spawn_report_head("reject", number);
+        serial_puts(" words=");
+        serial_u64(arg0);
+        serial_puts(",");
+        serial_u64(arg1);
+        serial_puts(",");
+        serial_u64(arg2);
+        serial_puts(" status=");
+        serial_u64(status);
+        serial_puts(" reason=");
+        serial_puts(spawn_reason(status));
+        serial_puts(" state=unchanged");
+        spawn_report_tail(reply, value);
+        return reply;
+    }
+    spawn_state = next;
+    spawn_child_apply(number, arg0, value);
+    spawn_syscall_value = value;
+    spawn_report_tail(reply, value);
+    return reply;
+}
+#endif
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
@@ -6779,6 +7157,16 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         uint64_t result = keyboard_echo_syscall(number, arg0, arg1, arg2);
         __asm__ volatile ("" ::: "memory");
         return result;
+    }
+#endif
+#ifdef LEANOS_SPAWN_CHILD_SCENARIO
+    (void)saved_flags;
+    {
+        /* A real call, as for the endpoint directory: the entry-stack gate
+           must see the edge under every supported compiler. */
+        uint64_t spawn_result = spawn_child_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" : "+r"(spawn_result));
+        return spawn_result;
     }
 #endif
 #ifdef LEANOS_CONSOLE_SERVER_SCENARIO
@@ -8417,6 +8805,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=timer-server controls=wp,smep,smap\n");
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=frame-server controls=wp,smep,smap\n");
+#elif defined(LEANOS_SPAWN_CHILD_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=spawn-child controls=wp,smep,smap boundary=generated-spawn-syscall\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -8653,6 +9043,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_SPAWN_CHILD_SCENARIO)
+    spawn_child_install();
+    current_subject = 2;
+    activate_user_address_space(page_map_level_4_b);
+    check_selected_root_b();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 role=spawn-parent\n");
+    enter_user(user_b_entry, user_b_stack_top);
 #else
     current_subject = 2;
     activate_user_address_space(page_map_level_4_b);
