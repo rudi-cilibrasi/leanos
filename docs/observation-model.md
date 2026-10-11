@@ -384,3 +384,63 @@ evaluation on the canonical sample plan, that those payloads differ on
 pairs are equal. The negative fixture
 `tests/negative/CompositeRegisterChannelReopened.lean` restates the old
 channel theorems for the new replies; the kernel rejects both.
+
+### 2026-10-10: cross-subject requests refused (#479)
+
+`#542` proved that every request of S naming another subject was a channel.
+The affected requests are:
+
+- creation, termination and queue admission of another subject, whose
+  replies reveal its liveness and issuance;
+- delegation into, and direct and subtree revocation of, another subject's
+  slot, whose replies reveal its occupancy;
+- termination of another subject, which cancels S's pending offer;
+- subtree revocation of another subject's capability, which depends on a
+  hidden derivation.
+
+S's cancellation of another subject's wait and its drain of another subject
+read that subject's wait and retained state in the same way.
+
+**Decision ([ADR 0025](adr/0025-subject-gate-cross-subject-refusal.md)).**
+`FailStop.authoritativeGate` stays the kernel's transition engine: boot, the
+spawn family, contained-fault cleanup and the issued lifecycle family use it
+without a caller. `FailStop.subjectGate` is the gate a scheduled subject asks
+through. When the latch is running, a subject is scheduled and the request
+names another subject (`AuthoritativeOperation.target`), the gate refuses
+with one fixed result, `crossSubjectRefused`. It decides this before
+anything of the target is read and changes nothing. Otherwise it is exactly
+`authoritativeGate`. Authorized cross-subject management goes through
+sealed transfer, subtree revocation of the caller's own lineage root, the
+spawn family and the fault-handler binding.
+
+**The unwinding over the subject gate** (`LeanOS.CompositeSubjectGate`):
+
+- Refusal reads only the latch mode, the scheduled subject and the request.
+  Another subject's refused request is therefore silent
+  (`subjectGate_silent_observe`), and finite-trace noninterference holds over
+  the subject gate (`finite_trace_lowEquiv_subject`).
+- When S names another subject, both states of an `OwnStep` pair refuse, or,
+  with the latch busy or halted, reject from the latch alike
+  (`own_cross_stutter`). S's cross-subject requests are step and output
+  consistent with no further premise (`own_step_cross`, `own_output_cross`).
+- Every other request is `authoritativeGate` on both sides
+  (`subjectGate_own`), so the families proved for the authoritative gate
+  carry over (`own_step_consistent_subject`,
+  `own_output_consistent_subject`).
+
+**Adversarial record.** The channel theorems over `authoritativeGate` in
+`LeanOS.CompositeChannels` and `LeanOS.CompositeSwitchedChannels` stay: they
+show that the raw transitions leaked when exposed to a subject.
+`cross_subject_channels_closed` and `revokeSubtree_other_closed` re-evaluate
+the same pairs through the subject gate and find equal replies and
+low-equivalent states. The negative fixture
+`tests/negative/CompositeCrossSubjectReopened.lean` restates three of the old
+channels for the subject gate; the kernel rejects all three.
+
+Still open after this amendment:
+
+- step consistency of S's subtree revocation of its own slot (a hidden
+  derivation);
+- transfer receipt without `CarriedAgree`;
+- the gaps listed above: the outputs of `selectUserReturn` and `userReturn`;
+  the timer switch; blocking send, receive and S's cancellation of itself.
