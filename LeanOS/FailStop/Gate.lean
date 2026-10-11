@@ -51,8 +51,7 @@ def operationReply (state : CompositeState) : Operation → OperationReply
           else .interruptIdentityRejected subject
       | action => .interrupt action
   | .nmi raw context => .nmi (dispatchNmi state.execution raw context).action
-  | .selectUserReturn purpose =>
-      .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
+  | .selectUserReturn _ => .returnSelection
   | .userReturn request =>
       let execution :=
         if state.ReturnPlanLive then state.execution
@@ -66,7 +65,7 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .resumePreempt frame registers =>
       let outcome := ResumablePreemption.switch state.resumable state.execution.core
         frame registers
-      .resume outcome.restored outcome.error
+      .resume (outcome.restored.map (·.owner)) outcome.error
   | .transferOffer endpointWord sourceWord sourceKind payload rights =>
       .transferOffer
         (CapabilityTransfer.offerWords state.transfers

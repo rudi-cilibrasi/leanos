@@ -33,6 +33,7 @@ import LeanOS.FailStop.CapabilityIdentities
 import LeanOS.FailStop.CapabilityIdentitySteps
 import LeanOS.FailStop.SpawnGate
 import LeanOS.FailStop.AuthoritativeTraces
+import LeanOS.FailStop.SubjectGate
 import LeanOS.FailStop.Evidence
 
 /-!

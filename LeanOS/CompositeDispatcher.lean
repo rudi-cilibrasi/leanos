@@ -2017,19 +2017,9 @@ def mixedReplyResult : MixedReplyId → AuthoritativeGateResult
   | .blockingReceiverBlocked =>
       .completed (.blocking (.receive .blocked))
   | .blockingReceiverWoken =>
-      .completed (.blocking (.send (.woke
-        { owner := 2, addressSpace := 2
-          frame := compositeDispatcherBlockingFrame
-          registers := compositeDispatcherBlockingRegisters
-          kind := .suspended })))
+      .completed (.blocking (.send (.woke 2)))
   | .timerSwitched =>
-      .completed (.ordinary (.resume
-        (some
-          { owner := 2, addressSpace := 2
-            frame := compositeDispatcherBlockingFrame
-            registers := compositeDispatcherBlockingRegisters
-            kind := .suspended })
-        none))
+      .completed (.ordinary (.resume (some 2) none))
   | .userFaultCleaned =>
       .completed (.ordinary (.interrupt (.contained 2)))
   | .fatalEntered =>
@@ -2462,12 +2452,7 @@ def capabilityTransferBootReply : CapabilityTransferBootCommandId →
     AuthoritativeGateResult
   | .offer => .completed (.ordinary (.transferOffer .accepted))
   | .switchToSubjectTwo =>
-      .completed (.ordinary (.resume
-        (some
-          { owner := 2, addressSpace := 2
-            frame := compositeDispatcherTimerFrame
-            registers := compositeDispatcherBlockingRegisters
-            kind := .suspended }) none))
+      .completed (.ordinary (.resume (some 2) none))
   | .rejectSealedHandle =>
       .completed (.ordinary (.ipc (.syscall
         (.sendHandleRejected (.denied .staleHandle)))))
@@ -3089,13 +3074,7 @@ def inFlightRevocationReplyResult : InFlightRevocationReplyId → AuthoritativeG
   | .offerAfterRevocationRejected =>
       .completed (.ordinary (.transferOffer (.rejected .staleEndpoint)))
   | .subjectTwoRestored =>
-      .completed (.ordinary (.resume
-        (some
-          { owner := 2, addressSpace := 2
-            frame := compositeDispatcherTimerFrame
-            registers := compositeDispatcherBlockingRegisters
-            kind := .suspended })
-        none))
+      .completed (.ordinary (.resume (some 2) none))
   | .canceledReceiptRejected =>
       .completed (.ordinary (.transferAccept (.rejected .empty) none))
   | .destinationReplaced => .completed (.ordinary (.capability .accepted))

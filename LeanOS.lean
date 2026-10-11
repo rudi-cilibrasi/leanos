@@ -85,6 +85,15 @@ import LeanOS.CompositeChannels
 import LeanOS.CompositeLocalRespect
 import LeanOS.CompositeOwnTermination
 import LeanOS.CompositeSwitchedChannels
+import LeanOS.CompositeRegisterChannels
+import LeanOS.CompositeSubjectGate
+import LeanOS.CompositeOwnSwitch
+import LeanOS.CompositeOwnBlocking
+import LeanOS.CompositeFullView
+import LeanOS.CompositeFullSteps
+import LeanOS.CompositeFullIsolation
+import LeanOS.CompositeFullTrace
+import LeanOS.CompositeFullChannels
 import LeanOS.SpawnOracle
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption

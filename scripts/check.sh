@@ -494,6 +494,42 @@ if ! grep -Fq 'tests/negative/CompositeChannelOverclaims.lean' "$negative_log" |
   exit 1
 fi
 
+if lake env lean tests/negative/CompositeRegisterChannelReopened.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: reopened saved-register channel unexpectedly type-checked" >&2
+  exit 1
+fi
+if [[ "$(grep -c 'tests/negative/CompositeRegisterChannelReopened.lean:.*error: (kernel) application type mismatch' \
+    "$negative_log")" != 2 ]]; then
+  echo "error: saved-register fixture lacked the two expected kernel evaluation failures" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/CompositeCrossSubjectReopened.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: reopened cross-subject channel unexpectedly type-checked" >&2
+  exit 1
+fi
+if [[ "$(grep -c 'tests/negative/CompositeCrossSubjectReopened.lean:.*error: (kernel) application type mismatch' \
+    "$negative_log")" != 3 ]]; then
+  echo "error: cross-subject fixture lacked the three expected kernel evaluation failures" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/CompositeFullSubtreeReopened.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: reopened subtree-revocation channel unexpectedly type-checked" >&2
+  exit 1
+fi
+if [[ "$(grep -c 'tests/negative/CompositeFullSubtreeReopened.lean:.*error: (kernel) application type mismatch' \
+    "$negative_log")" != 1 ]]; then
+  echo "error: subtree-revocation fixture lacked the expected kernel evaluation failure" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 rm -f "$negative_log"
 negative_log=""
 record_check_phase proof-integrity-and-negative-fixtures
