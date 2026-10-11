@@ -79,6 +79,7 @@ import LeanOS.CompositeChannels
 import LeanOS.CompositeLocalRespect
 import LeanOS.CompositeOwnTermination
 import LeanOS.CompositeSwitchedChannels
+import LeanOS.CompositeRegisterChannels
 import LeanOS.SpawnOracle
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption

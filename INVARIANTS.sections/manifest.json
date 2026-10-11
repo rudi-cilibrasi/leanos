@@ -33,6 +33,7 @@
     "LeanOS/CompositeObservation.lean",
     "LeanOS/CompositeOwnSteps.lean",
     "LeanOS/CompositeOwnTermination.lean",
+    "LeanOS/CompositeRegisterChannels.lean",
     "LeanOS/CompositeSwitchedChannels.lean",
     "LeanOS/CompositeUnwinding.lean",
     "LeanOS/ConsoleServer.lean",

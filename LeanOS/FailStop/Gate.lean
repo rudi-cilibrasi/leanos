@@ -66,7 +66,7 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .resumePreempt frame registers =>
       let outcome := ResumablePreemption.switch state.resumable state.execution.core
         frame registers
-      .resume outcome.restored outcome.error
+      .resume (outcome.restored.map (·.owner)) outcome.error
   | .transferOffer endpointWord sourceWord sourceKind payload rights =>
       .transferOffer
         (CapabilityTransfer.offerWords state.transfers

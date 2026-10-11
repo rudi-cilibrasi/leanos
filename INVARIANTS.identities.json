@@ -6632,27 +6632,75 @@
       "kind": "theorem"
     },
     {
-      "source": "LeanOS/CompositeSwitchedChannels.lean",
-      "qualified": "LeanOS.CompositeSwitchedChannels.blockedTrace_keeps",
-      "display": "blockedTrace_keeps",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/CompositeSwitchedChannels.lean",
-      "qualified": "LeanOS.CompositeSwitchedChannels.blocked_pair",
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.blocked_pair",
       "display": "blocked_pair",
       "kind": "theorem"
     },
     {
-      "source": "LeanOS/CompositeSwitchedChannels.lean",
-      "qualified": "LeanOS.CompositeSwitchedChannels.blockingCancel_output_inconsistent",
-      "display": "blockingCancel_output_inconsistent",
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.facts_of_compile",
+      "display": "facts_of_compile",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.facts_parts",
+      "display": "facts_parts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.facts_sample",
+      "display": "facts_sample",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.legacyResume_owner",
+      "display": "legacyResume_owner",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.legacy_replies_leaked",
+      "display": "legacy_replies_leaked",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.preempt_pair",
+      "display": "preempt_pair",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.register_channel_closed_on_pairs",
+      "display": "register_channel_closed_on_pairs",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.resume_reply_names_scheduled",
+      "display": "resume_reply_names_scheduled",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.switch_restored_current",
+      "display": "switch_restored_current",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeRegisterChannels.lean",
+      "qualified": "LeanOS.CompositeRegisterChannels.yield_accepted_current",
+      "display": "yield_accepted_current",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/CompositeSwitchedChannels.lean",
-      "qualified": "LeanOS.CompositeSwitchedChannels.blockingSend_output_inconsistent",
-      "display": "blockingSend_output_inconsistent",
+      "qualified": "LeanOS.CompositeSwitchedChannels.blockedTrace_keeps",
+      "display": "blockedTrace_keeps",
       "kind": "theorem"
     },
     {
@@ -6737,12 +6785,6 @@
       "source": "LeanOS/CompositeSwitchedChannels.lean",
       "qualified": "LeanOS.CompositeSwitchedChannels.restoreBlockingPeer_virtualMemory",
       "display": "restoreBlockingPeer_virtualMemory",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/CompositeSwitchedChannels.lean",
-      "qualified": "LeanOS.CompositeSwitchedChannels.resumePreempt_output_inconsistent",
-      "display": "resumePreempt_output_inconsistent",
       "kind": "theorem"
     },
     {
@@ -10197,6 +10239,12 @@
     },
     {
       "source": "LeanOS/FailStop/BlockingIPC.lean",
+      "qualified": "LeanOS.FailStop.dispatchBlockingCancel_cancelled_restored",
+      "display": "dispatchBlockingCancel_cancelled_restored",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/BlockingIPC.lean",
       "qualified": "LeanOS.FailStop.dispatchBlockingCancel_preserves_wellFormed",
       "display": "dispatchBlockingCancel_preserves_wellFormed",
       "kind": "theorem"
@@ -10313,6 +10361,12 @@
       "source": "LeanOS/FailStop/BlockingIPC.lean",
       "qualified": "LeanOS.FailStop.dispatchBlockingSend_woke_preserves_runtimeWellFormed",
       "display": "dispatchBlockingSend_woke_preserves_runtimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/BlockingIPC.lean",
+      "qualified": "LeanOS.FailStop.dispatchBlockingSend_woke_restored",
+      "display": "dispatchBlockingSend_woke_restored",
       "kind": "theorem"
     },
     {

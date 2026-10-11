@@ -1,4 +1,4 @@
-import LeanOS.CompositeSwitchedChannels
+import LeanOS.CompositeRegisterChannels
 
 open LeanOS LeanOS.FailStop LeanOS.CompositeObservation LeanOS.CompositeUnwinding
 open LeanOS.CompositeOwnSteps LeanOS.CompositeChannels
@@ -47,10 +47,11 @@ example (plan : BootPageTablePlan.Plan)
   own_step_consistent_counter (CompositeSwitchedChannels.derivation_pair plan hplan)
     CompositeSwitchedChannels.ownSubtree rfl
 
-/- The observer's timer switch replies with the next subject's registers, so
-it is not in `ownOutputConsistentCounter`;
-`CompositeSwitchedChannels.resumePreempt_output_inconsistent` proves the claim
-would be false. -/
+/- The observer's timer switch is not in `ownOutputConsistentCounter`.  Its
+reply no longer carries the next subject's registers
+(`CompositeRegisterChannels.register_channel_closed_on_pairs`), but the
+family has no general proof for it: the switch reads the scheduler queue and
+the resumable bank, which `OwnStepCounter` does not make public. -/
 example (plan : BootPageTablePlan.Plan)
     (hplan : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan) :
     (authoritativeGate (CompositeSwitchedChannels.runFrom plan
@@ -59,6 +60,5 @@ example (plan : BootPageTablePlan.Plan)
       (authoritativeGate (CompositeSwitchedChannels.runFrom plan
         CompositeSwitchedChannels.preemptRightTrace)
         (.ordinary CompositeSwitchedChannels.preempt)).result :=
-  own_output_consistent_counter
-    (CompositeSwitchedChannels.resumePreempt_output_inconsistent plan hplan).1
+  own_output_consistent_counter (CompositeRegisterChannels.preempt_pair plan hplan)
     CompositeSwitchedChannels.preempt rfl

@@ -55,8 +55,8 @@ These theorems cover message operations that can put a program to sleep until a 
 - `dispatchBlockingSend_rejected_atomic` — Every rejection of a blocking send leaves the state exactly as it was.
 - `dispatchBlockingSend_preserves_wellFormed` — Every outcome of a blocking send keeps the waiting-store-and-snapshot record consistent and the scheduler views in agreement.
 - `dispatchBlockingSend_sent_preserves_runtimeWellFormed` — A send that merely deposits a message in a mailbox, waking no one, preserves the whole runtime invariant without changing the scheduler at all.
-- `dispatchBlockingSend_woke_exact` — A send that wakes a waiting receiver returns exactly the snapshot taken from that receiver's waiting slot, clears that slot, and places the snapshot in the resumable bank, all in one step.
-- `dispatchBlockingSend_woke_context_valid` — The snapshot exposed by a successful wake has passed the validity checks against the scheduler published in the very same state.
+- `dispatchBlockingSend_woke_exact` — A send that wakes a waiting receiver records, for the kernel only, exactly the snapshot taken from that receiver's waiting slot, clears that slot, and places the snapshot in the resumable bank, all in one step.
+- `dispatchBlockingSend_woke_context_valid` — The snapshot a successful wake records has passed the validity checks against the scheduler published in the very same state.
 - `dispatchBlockingSend_woke_preserves_runtimeWellFormed` — A successful wake preserves the whole runtime invariant: the receiver's saved snapshot moves from the waiting bank to the resumable bank at the same moment the scheduler marks it runnable.
 - `dispatchBlockingCancel_rejected_atomic` — Every rejection of a wait cancellation leaves the state exactly as it was.
 - `dispatchBlockingCancel_preserves_wellFormed` — Every outcome of a wait cancellation keeps the waiting-store-and-snapshot record consistent and the scheduler views in agreement.
@@ -71,9 +71,11 @@ These theorems cover message operations that can put a program to sleep until a 
 - `blockingGate_completed_sound` — A completed blocking result proves the kernel was running and pins both the exact typed reply and the exact resulting state, so a rejection can never be dressed up as a successful block, delivery, wake, or cancellation.
 - `blockingGate_receive_delivered_preserves_runtimeWellFormed` — A delivery reported by the outer blocking gate preserves the whole runtime invariant, and the reply can only be paired with the exact delivery state.
 - `blockingGate_send_sent_preserves_runtimeWellFormed` — A mailbox-only send completed through the outer gate preserves the whole runtime invariant and is tied to its exact mutation.
-- `blockingGate_send_woke_context_valid` — A wake reported by the outer gate publishes a snapshot valid for the exact scheduler and program records in the paired state.
+- `dispatchBlockingSend_woke_restored` — The answer to a send that wakes a receiver names only that receiver: the kernel keeps the receiver's saved snapshot, whose owner is the named program, out of the answer.
+- `dispatchBlockingCancel_cancelled_restored` — The answer to a successful wait cancellation names only the cancelled program; its saved snapshot is kept by the kernel, not returned.
+- `blockingGate_send_woke_context_valid` — A wake reported by the outer gate names a receiver whose kernel-kept snapshot is valid for the exact scheduler and program records in the paired state.
 - `blockingGate_send_woke_preserves_blockingRuntimeWellFormed` — A wake through the outer gate preserves both the runtime invariant and the wait/snapshot agreement, so the released snapshot cannot land in a scheduler view that disagrees with the waiting store.
-- `blockingGate_cancel_cancelled_context_valid` — A cancellation reported by the outer gate likewise binds its restored snapshot to the exact resulting state.
+- `blockingGate_cancel_cancelled_context_valid` — A cancellation reported by the outer gate likewise names the cancelled program and binds its kernel-kept snapshot to the exact resulting state.
 - `blockingGate_cancel_cancelled_preserves_blockingRuntimeWellFormed` — A cancellation completed through the outer gate preserves the combined runtime and waiting invariant.
 - `blockingGate_mode_rejection_atomic` — When the outer gate rejects because the kernel is busy with an entry or already halted, the state is exactly unchanged.
 - `blockingGate_rejection_atomic` — Every ordinary blocking-gate denial, whether a stale handle, a bad snapshot transition, an unavailable peer switch, a restore failure, a message denial, an empty cancellation, or a busy latch, returns the identical state, and the gate itself does the classifying rather than trusting callers to.

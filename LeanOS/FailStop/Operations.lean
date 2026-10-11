@@ -659,7 +659,10 @@ inductive OperationReply where
   | userReturn (reply : UserReturnReply)
   | syscall (reply : Syscall.Reply)
   | ipc (reply : CompositeIPCReply)
-  | resume (restored : Option ResumablePreemption.Context)
+  /-- A resumable switch replies with the subject the scheduler restored (the
+  public scheduler choice), never with the restored context: its saved frame
+  and registers belong to that subject and stay in the resumable bank. -/
+  | resume (next : Option ResumablePreemption.SubjectId)
       (error : Option ResumablePreemption.Error)
   | transferOffer (result : CapabilityTransfer.Result CapabilityTransfer.OfferError)
   | transferAccept (result : CapabilityTransfer.AcceptResult)

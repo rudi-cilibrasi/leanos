@@ -403,7 +403,8 @@ example (state : CompositeState) :
 set_option maxHeartbeats 800000 in
 /-- A boot-rooted authoritative state reaches the successful cancellation
 branch: subject 2 blocks with its exact saved context, the blocking transition
-preserves the folded invariant, and cancellation returns that context. -/
+preserves the folded invariant, and cancellation names subject 2 (its context
+is republished to the resumable bank, never returned in the reply). -/
 theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
     (hcompiled : BootPageTablePlan.compile input = .ok plan) :
     let initial := authoritativeBlockingCancelEvidence plan
@@ -414,9 +415,7 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
       AuthoritativeRuntimeWellFormed blocked.state ∧
       blocked.result = .completed (.blocking (.receive .blocked)) ∧
       (authoritativeGate blocked.state (.blocking (.cancel 2))).result =
-        .completed (.blocking (.cancel
-          (.cancelled (initial.blockingSavedContext
-            blockingEvidenceFrame blockingEvidenceRegisters2)))) := by
+        .completed (.blocking (.cancel (.cancelled 2))) := by
   have hboot :=
     bootRuntime_deferredBlockingRuntimeWellFormed input plan hcompiled
   have hcontrols := hboot.1.directPortControls
@@ -554,7 +553,7 @@ theorem mixedBlockingWakeTrace_preserves state staleWord liveWord frame register
     (_hblocked : (dispatchBlockingReceive state liveWord frame registers).reply = .blocked)
     (hwoke : (dispatchBlockingSend
       (dispatchBlockingReceive state liveWord frame registers).state
-      liveWord word0 word1).reply = .woke saved) :
+      liveWord word0 word1).restored = some saved) :
     (dispatchBlockingReceive state staleWord frame registers).state = state ∧
       BlockingReceiveWellFormed
         (dispatchBlockingReceive state liveWord frame registers).state ∧
@@ -590,8 +589,8 @@ theorem mixedBlockingCancelTrace_preserves state staleWord liveWord frame regist
       .handleRejected (.denied .staleHandle))
     (_hblocked : (dispatchBlockingReceive state liveWord frame registers).reply = .blocked)
     (hcancelled : (dispatchBlockingCancel
-      (dispatchBlockingReceive state liveWord frame registers).state subject).reply =
-        .cancelled saved) :
+      (dispatchBlockingReceive state liveWord frame registers).state subject).restored =
+        some saved) :
     (dispatchBlockingReceive state staleWord frame registers).state = state ∧
       BlockingReceiveWellFormed
         (dispatchBlockingReceive state liveWord frame registers).state ∧
