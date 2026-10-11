@@ -3,7 +3,8 @@
 # object for one slot of the boot image (#484).
 #
 #   build-subject.sh --cc CC --slot c --output OBJ
-#     [--admit-tool EXE --admitted-elf ELF --admitted-plan TSV] SUBJECT_DIR
+#     [--admit-tool EXE --admitted-elf ELF --admitted-plan TSV]
+#     [--generated C_FILE --lean-include DIR] SUBJECT_DIR
 #
 # 1. Compile every *.c and *.S in SUBJECT_DIR, plus subjects/runtime/entry.S,
 #    separately and freestanding: no libc, no SSE/x87, no stack protector,
@@ -18,6 +19,16 @@
 #    .user.<slot>.bss) and the symbols to the slot's names (user_<slot>_entry,
 #    user_<slot>_stack, user_<slot>_stack_top, user_<slot>_template_text);
 #    every other symbol is prefixed with user_<slot>_ and made local.
+#
+# With --generated (#450), C_FILE is the C the Lean compiler generated for one
+# module (an allocation-free export and the hooks it calls by name). It is
+# made includable, under its own file name, by the subject's sources, which
+# define the hooks before including it so the compiler can inline them;
+# DIR is the Lean toolchain's include directory for lean/lean.h. Every
+# source is then compiled with -ffunction-sections -fdata-sections, the link
+# of step 2 keeps only what subject_entry reaches (--gc-sections), and the
+# undefined symbols of the discarded Lean runtime glue are stripped before
+# the check of step 3, which must still find no undefined symbol.
 #
 # With --admit-tool (#492), the policy-checked object from step 2 is also
 # linked on its own with subjects/admitted.ld into a separate static
@@ -40,6 +51,8 @@ output=""
 admit_tool=""
 admitted_elf=""
 admitted_plan=""
+generated=""
+lean_include=""
 while (($#)); do
   case "$1" in
     --cc) cc="$2"; shift 2 ;;
@@ -48,6 +61,8 @@ while (($#)); do
     --admit-tool) admit_tool="$2"; shift 2 ;;
     --admitted-elf) admitted_elf="$2"; shift 2 ;;
     --admitted-plan) admitted_plan="$2"; shift 2 ;;
+    --generated) generated="$2"; shift 2 ;;
+    --lean-include) lean_include="$2"; shift 2 ;;
     --) shift; break ;;
     -*) echo "error: build-subject: unknown option $1" >&2; exit 2 ;;
     *) break ;;
@@ -55,12 +70,21 @@ while (($#)); do
 done
 (($# == 1)) && [[ -n "$output" ]] || {
   echo "usage: build-subject.sh [--cc CC] --slot c --output OBJ" \
-    "[--admit-tool EXE --admitted-elf ELF --admitted-plan TSV] SUBJECT_DIR" >&2
+    "[--admit-tool EXE --admitted-elf ELF --admitted-plan TSV]" \
+    "[--generated C_FILE --lean-include DIR] SUBJECT_DIR" >&2
   exit 2
 }
 if [[ -n "$admit_tool$admitted_elf$admitted_plan" ]] &&
     [[ -z "$admit_tool" || -z "$admitted_elf" || -z "$admitted_plan" ]]; then
   echo "error: build-subject: --admit-tool, --admitted-elf and --admitted-plan go together" >&2
+  exit 2
+fi
+if [[ -n "$generated$lean_include" ]] && [[ -z "$generated" || -z "$lean_include" ]]; then
+  echo "error: build-subject: --generated and --lean-include go together" >&2
+  exit 2
+fi
+if [[ -n "$generated" ]] && [[ ! -f "$generated" || ! -f "$lean_include/lean/lean.h" ]]; then
+  echo "error: build-subject: no generated source $generated or no lean/lean.h under $lean_include" >&2
   exit 2
 fi
 subject_dir="${1%/}"
@@ -90,6 +114,19 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-builtin -fno-stack-protector
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+link_flags=()
+if [[ -n "$generated" ]]; then
+  mkdir -p "$work/generated"
+  cp "$generated" "$work/generated/"
+  cflags+=(-ffunction-sections -fdata-sections -I"$work/generated" -I"$lean_include")
+  if "$cc" --version | sed -n '1p' | grep -qi clang; then
+    # As for the kernel's generated C (build-image.sh): with general
+    # registers only, Clang otherwise reports an extended FLT_EVAL_METHOD,
+    # which lean.h rejects; its no-SSE diagnostic stays a warning.
+    cflags+=(-ffp-eval-method=source -Wno-error=pragmas)
+  fi
+  link_flags=(--gc-sections -e subject_entry)
+fi
 objects=()
 index=0
 for source in "$repo_root/subjects/runtime/entry.S" "${sources[@]}"; do
@@ -98,8 +135,17 @@ for source in "$repo_root/subjects/runtime/entry.S" "${sources[@]}"; do
   objects+=("$object")
   index=$((index + 1))
 done
-ld -m elf_x86_64 -r --build-id=none -T "$repo_root/subjects/subject.ld" \
-  -o "$work/subject.o" "${objects[@]}"
+ld -m elf_x86_64 -r --build-id=none ${link_flags[@]+"${link_flags[@]}"} \
+  -T "$repo_root/subjects/subject.ld" -o "$work/subject.o" "${objects[@]}"
+if [[ -n "$generated" ]]; then
+  # Drop the undefined symbols only the discarded sections referenced; a
+  # reference the kept code still makes survives and fails the check below.
+  objcopy --strip-unneeded --keep-symbol=subject_entry \
+    --keep-symbol=subject_template_text --keep-symbol=subject_stack \
+    --keep-symbol=subject_stack_top --keep-symbol=subject_main \
+    "$work/subject.o" "$work/subject-kept.o"
+  mv "$work/subject-kept.o" "$work/subject.o"
+fi
 python3 "$repo_root/scripts/check-subject-policy.py" object "$work/subject.o" \
   >/dev/null
 

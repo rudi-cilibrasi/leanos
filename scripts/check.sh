@@ -190,6 +190,9 @@ check_phase="image-and-emulator-contracts"
 # The subject build rule (#484): the template and the example build, and every
 # privileged-instruction, fast-entry, libc and oversized fixture is rejected.
 ./scripts/test-build-subject.sh
+# The network subject's generated responder and frame copy witness (#450):
+# reference vectors and the differential test of the generated C.
+./scripts/check-network-subject-host.sh
 
 ./scripts/test-run-malformed-handoff.sh
 
@@ -298,7 +301,8 @@ grep -En \
 trusted_scan_status=$?
 set -e
 
-# The generated device-program executor's C hooks (#494, ADR 0020) are the
+# The generated device-program executor's C hooks (#494, ADR 0020) and the
+# network subject's responder hooks (#450) are the
 # only reviewed trusted declarations: drop exactly those lines, require every
 # allowlisted row to still exist, and fail on anything else.
 trusted_allowlist=scripts/trusted-declarations.tsv
