@@ -5,11 +5,12 @@ import LeanOS.CompositeDispatcher
 /-!
 # Spawn: canonical command encoding and adversarial oracle vectors
 
-ADR 0010 gate item 5 for explicit spawn (#489).  This is a **hosted, Lean-side
-oracle only**.  The spawn command is not part of the generated boot
-dispatcher (`CompositeDispatcher.dispatch`), has no C export, and is not a
-ring-3 syscall: the version-one boot command decoder rejects the spawn tag as
-an unknown command (`boot_dispatcher_rejects_spawn_tag`).
+ADR 0010 gate item 5 for explicit spawn (#489).  This is the general hosted,
+Lean-side oracle.  The spawn command is not a ring-3 syscall.  The decoder of
+the generated dispatcher's original version-one trace rejects the spawn tag
+(`boot_dispatcher_rejects_spawn_tag`); the generated dispatcher reaches the
+same tag, with this encoding, only at the spawn family's own state tokens
+(`LeanOS.SpawnBoundary`).
 
 The charged boundary of issues #490 and #491,
 `LeanOS.SpawnAccountingOracle.childOracleStep`, decodes the same spawn words
@@ -146,8 +147,9 @@ theorem encodeSpawn_decodeSpawn (words : CommandWords) (request : SpawnRequest)
   cases words
   simp_all [encodeSpawn]
 
-/-- The generated boot dispatcher's version-one command decoder does not know
-the spawn tag: spawn is not reachable through the boot boundary. -/
+/-- The version-one command decoder of the dispatcher's original trace does
+not know the spawn tag: spawn is reachable at the generated boundary only
+through the spawn family's state tokens (`LeanOS.SpawnBoundary`). -/
 theorem boot_dispatcher_rejects_spawn_tag (arg0 arg1 arg2 arg3 : UInt64) :
     CompositeDispatcher.decodeCommand
       { tag := spawnCommandTag, arg0, arg1, arg2, arg3 } = .error .reservedBits := by

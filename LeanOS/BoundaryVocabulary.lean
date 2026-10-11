@@ -1,5 +1,6 @@
 import LeanOS.CompositeDispatcher
 import LeanOS.FrameBudgetScenario
+import LeanOS.SpawnBoundary
 
 /-!
 # Boundary vocabulary
@@ -60,6 +61,9 @@ private def command (name : String) (words : CommandWords) : Token :=
 
 private def budgetCommand (name : String) (tag : UInt64) : Token :=
   ⟨"COMMAND", s!"COMPOSITE_COMMAND_BUDGET_{name}", tag, .hex 4⟩
+
+private def spawnCommand (name : String) (tag : UInt64) : Token :=
+  ⟨"COMMAND", s!"COMPOSITE_COMMAND_SPAWN_FAMILY_{name}", tag, .hex 4⟩
 
 private def reply (name : String) (word : UInt64) : Token :=
   ⟨"REPLY", s!"COMPOSITE_REPLY_{name}", word, .hex 6⟩
@@ -157,7 +161,25 @@ def states : List Token := [
   state "INFLIGHT_LINEAGE_REVOKED" (encodeInFlightRevocationState .lineageRevoked),
   state "INFLIGHT_SUBJECT_TWO_RESTORED" (encodeInFlightRevocationState .subjectTwoRestored),
   state "INFLIGHT_DESTINATION_REPLACED" (encodeInFlightRevocationState .destinationReplaced),
-  state "INFLIGHT_REPLACEMENT_USED" (encodeInFlightRevocationState .replacementUsed)]
+  state "INFLIGHT_REPLACEMENT_USED" (encodeInFlightRevocationState .replacementUsed),
+  state "SPAWN_SEED" (SpawnBoundary.encodeState .seed),
+  state "SPAWN_AUTHORIZED" (SpawnBoundary.encodeState .authorized),
+  state "SPAWN_SPAWNED" (SpawnBoundary.encodeState .spawned),
+  state "SPAWN_RELEASED" (SpawnBoundary.encodeState .released),
+  state "SPAWN_GRANTED" (SpawnBoundary.encodeState .granted),
+  state "SPAWN_TERMINATED" (SpawnBoundary.encodeState .terminated),
+  state "SPAWN_REALLOCATED" (SpawnBoundary.encodeState .reallocated),
+  state "SPAWN_RESPAWNED" (SpawnBoundary.encodeState .respawned),
+  state "SPAWN_SECOND_TERMINATED" (SpawnBoundary.encodeState .secondTerminated),
+  state "SPAWN_OTHER_SUBJECT" (SpawnBoundary.encodeState .otherSubject),
+  state "SPAWN_REVOKED" (SpawnBoundary.encodeState .revoked),
+  state "SPAWN_REGRANTED" (SpawnBoundary.encodeState .regranted),
+  state "SPAWN_REGRANTED_SPAWNED" (SpawnBoundary.encodeState .regrantedSpawned),
+  state "SPAWN_SUBJECTS_EXHAUSTED" (SpawnBoundary.encodeState .subjectsExhausted),
+  state "SPAWN_OBJECTS_EXHAUSTED" (SpawnBoundary.encodeState .objectsExhausted),
+  state "SPAWN_CONTROLS_EXHAUSTED" (SpawnBoundary.encodeState .controlsExhausted),
+  state "SPAWN_NARROWED_SEND" (SpawnBoundary.encodeState .narrowedSend),
+  state "SPAWN_NARROWED_GRANT" (SpawnBoundary.encodeState .narrowedGrant)]
 
 def commands : List Token := [
   command "CREATE_SUBJECT_ONE" (encodeCommand .createSubjectOne),
@@ -243,7 +265,16 @@ def commands : List Token := [
   budgetCommand "COMPLETE" (FrameBudgetScenario.encodeCommand .complete),
   budgetCommand "RELEASE_A" (FrameBudgetScenario.encodeCommand .releaseA),
   budgetCommand "REPEAT_RELEASE_A" (FrameBudgetScenario.encodeCommand .repeatReleaseA),
-  budgetCommand "COMPLETE_RELEASED" (FrameBudgetScenario.encodeCommand .completeReleased)]
+  budgetCommand "COMPLETE_RELEASED" (FrameBudgetScenario.encodeCommand .completeReleased),
+  spawnCommand "SPAWN" SpawnOracle.spawnCommandTag,
+  spawnCommand "GRANT_FRAMES" SpawnAccountingOracle.grantFramesTag,
+  spawnCommand "TERMINATE_CHILD" SpawnAccountingOracle.terminateChildTag,
+  spawnCommand "ALLOCATE_MEMORY" SpawnBoundary.allocateTag,
+  spawnCommand "RELEASE_MEMORY" SpawnBoundary.releaseTag,
+  spawnCommand "GRANT_AUTHORITY" SpawnBoundary.grantAuthorityTag,
+  spawnCommand "REVOKE_AUTHORITY" SpawnBoundary.revokeAuthorityTag,
+  spawnCommand "SWITCH" SpawnBoundary.switchTag,
+  spawnCommand "COPY" SpawnBoundary.copyTag]
 
 def replies : List Token := [
   reply "PAGE_UNMAPPED" (encodeMixedReply .pageUnmapped),
@@ -366,6 +397,13 @@ theorem capabilityTransferBootStateId_covered (s : CapabilityTransferBootStateId
 theorem inFlightRevocationStateId_covered (s : InFlightRevocationStateId) :
     encodeInFlightRevocationState s ∈ stateWords := by
   cases s <;> decide
+
+theorem spawnStateId_covered (s : SpawnBoundary.StateId) :
+    SpawnBoundary.encodeState s ∈ stateWords := by
+  cases s <;> decide
+theorem spawnEdge_tags_covered :
+    SpawnBoundary.edges.all (fun edge => edge.words.tag ∈ commandWords) = true := by
+  decide
 
 theorem commandId_covered (c : CommandId) : (encodeCommand c).tag ∈ commandWords := by
   cases c <;> decide

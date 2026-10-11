@@ -534,9 +534,11 @@ result codes, and adversarial vectors on the dispatcher's seed: every failure
 point, both issuer exhaustions, stale and malformed parent handles, a
 re-granted spawn capability, isolation of the other subjects, the child
 presenting the parent's handle, and never-reuse after termination
-(`spawn_vectors_pass`). It is a hosted Lean oracle only: the generated boot
-dispatcher does not decode the tag (`boot_dispatcher_rejects_spawn_tag`), and
-there is no C export, QEMU scenario, or syscall. The negative fixture
+(`spawn_vectors_pass`). The version-one command decoder of the original
+dispatcher trace does not decode the tag (`boot_dispatcher_rejects_spawn_tag`);
+the same tag reaches the generated dispatcher only through the spawn family's
+own state tokens (see "Spawn at the generated boundary" below), and there is
+no syscall. The negative fixture
 `NegativeFixtures/SpawnIdentityRollback` keeps the issued child on a failed
 grant and fails the rollback check.
 
@@ -640,8 +642,9 @@ result codes (`childErrorCodes_injective`). `child_vectors_pass` checks the
 grant and its return, release on termination, the stale control word after
 termination and after slot reuse, a parent capability over the child's
 address space going stale and staying stale, and another subject presenting
-the control word. It is a hosted Lean oracle only; the boot decoder rejects
-both new tags (`boot_dispatcher_rejects_child_tags`). The negative fixture
+the control word. The original trace's version-one decoder rejects both new
+tags (`boot_dispatcher_rejects_child_tags`); the generated dispatcher reaches
+them only through the spawn family's tokens (next sections). The negative fixture
 `NegativeFixtures/SpawnAccounting` has a spawn that ignores the subject
 budget, a grant that mints a frame, and a termination that keeps the charge;
 each fails its check.
@@ -675,8 +678,10 @@ are invisible to every other subject (`memory_allocate_confined`). The
 module lists the exclusions: the public scheduler choice, designation of the
 observer, `capabilityRevokeSubtree` and memory release, timing, and caches.
 
-**Not done.** The #491 QEMU scenario is blocked by ADR 0010: it needs spawn
-in a booted image, and the ring-3 syscall stays gated.
+**Booted images.** Every normal image replays the whole oracle corpus,
+including the spawn family's vectors, through its boot-compiled
+`leanos_composite_dispatch` (see "Spawn at the generated boundary"). A
+scenario in which ring-3 code spawns needs the gated syscall.
 
 ### Budget-charged memory (gate item 1)
 
@@ -722,6 +727,89 @@ admissible in that view (`dispatcher_createSubject_admissible`,
 `dispatcher_edge_admissible`) and `composite_resource_trace` covers the whole
 dispatcher path (`dispatcher_resource_trace`). The dispatcher and its
 generated C are unchanged.
+
+**The frame-budget tokens.** The dispatcher's frame-budget tokens
+(`0x4001`–`0x4b01`) still run `FrameBudgetScenario.dispatch`, the table the
+QEMU frame-budget image drives. `LeanOS.FrameBudgetComposite` gives each token
+a composite denotation, `compositeOf`, replayed from a composite seed by the
+composite counterpart of each scenario command (`memoryGate` allocation and
+release, the dispatcher's authoritative timer switch, authoritative
+termination, and an authoritative map syscall with the old handle word), and
+proves a forward simulation (`budget_tokens_simulated`): the composite
+successor of every edge is the counterpart step (`compositeOf_edge`), the
+counterpart's typed result is the edge's reply (`counterpart_matches_reply`),
+and at every token the budget view agrees (`views_agree`): which subject is
+current, which is live, and each live subject's frame usage and limit. On the
+budget projection each composite allocation and release is exactly the
+`FrameBudget` step the scenario runs (`allocateMemory_refines`,
+`releaseMemory_refines`). The view leaves out two differences.
+`FrameBudget.terminate` frees the dead subject's frame, while composite
+termination of a subject that is not a spawned child keeps it owned by the
+retired object; commitments never move except between parent and child, so
+no live subject can allocate that frame in either model. And the standalone
+`FrameScrub` state, like the QEMU image, reuses one physical frame for A's
+object and then B's fresh object; in the composite, B's fresh object is on
+B's own committed frame, and frames return across subjects only through child
+termination.
+
+### Spawn at the generated boundary (gate item 5)
+
+`LeanOS.SpawnBoundary` puts the spawn family into the boot-compiled
+`CompositeDispatcher.dispatch` (`leanos_composite_dispatch`, oracle adapter
+18) as eighteen state tokens `0x7001`–`0x8101` and a table of 49 edges
+(`spawnDispatchRaw`). Each token names the complete `CompositeState` reached
+by replaying gate steps from one of four seeds: the dispatcher seed with the
+issuers past its histories and frame 4 committed to subject 2
+(`spawnSeed`), and three exhaustion seeds with the subject issuer, the object
+issuer, or the control-generation counter at its bound, which no bounded
+trace reaches.
+
+| Tag | Command | Step |
+| --- | --- | --- |
+| `0x7001` | spawn (as in `SpawnOracle`) | `childGate (.spawn _)` |
+| `0x7101` | grant frames | `childGate (.grantFrames _ _)` |
+| `0x7201` | terminate child | `childGate (.terminateChild _)` |
+| `0x7301`, `0x7401` | allocate, release memory | `memoryGate` |
+| `0x7501`, `0x7601` | kernel grant, revocation of spawn authority | `childGate` |
+| `0x7701` | timer switch | the dispatcher's authoritative `resumePreempt` |
+| `0x7801` | capability copy | authoritative `capabilityCopy` |
+
+The reply's status byte is the hosted oracles' (`0x01` accepted, `0x80 + code`
+rejected), and result word one is their value word (`edges_match_hosted_oracle`).
+The command codec is canonical (`decodeFamily_encodeFamily`,
+`encodeFamily_decodeFamily`), and so are the state tokens and reply words
+(`decodeState_encodeState`, `edges_dispatch`).
+
+| Property | Theorems |
+| --- | --- |
+| The generated table is the edge table | `edges_dispatch`, `edges_decode` |
+| Each edge is one gate step on the named state | `edge_refines`, `dispatcher_refines` |
+| Rejections keep the complete state and the token | `rejected_edge_unchanged`, `familyStep_stutter` |
+| Every token satisfies the whole-trace theorem | `spawn_boundary_trace`, `familySeed_resourceRuntimeWellFormed` |
+| Isolation, cleanup, reuse, stale handles | `boundary_checks_pass` (module `SpawnBoundaryChecks`) |
+| The hosted generated-C replay checks the model | `spawn_edge_vectors_match_model`, `spawn_negative_vectors_reject` (module `Oracle`) |
+
+The edges cover every failure point reachable from the seeds with rollback:
+missing, stale, and re-granted spawn capabilities; malformed, stale,
+out-of-range, and wrong-kind endpoint handles; invalid and non-subset rights
+and an endpoint without grant; subject-budget, frame-budget, subject-identity,
+object-identity, and control-generation exhaustion; and a kernel grant to a
+spawned child. They cover stale control words before and after child-table
+slot reuse, a stale memory handle after its slot is reused, child isolation
+(the child's slots are exactly the inheritance set, and no state of the family
+changes what the bystander subject 1 holds), the bystander presenting the
+parent's control word, and termination cleanup: the child's identity,
+capabilities, address space, records, and table entry are gone, its frame is
+committed to the parent again, free and scrubbed, and the parent allocates it
+again under a never-issued object identity. The child cannot run before a
+loader exists, so reclamation of memory the child itself allocated
+(`reclaimChildFrames`) is covered by `terminateChild_releases_everything`, not
+by a vector. The slot-table-full and identity-rejection failures need seeds
+the bounded table does not name; the hosted `SpawnOracle` vectors cover them.
+
+The hosted generated-C replay (`check-oracle-host.sh`) and every normal
+image's boot-time oracle replay run all 63 spawn vectors (49 edges and 14
+hostile encodings) through the generated dispatcher.
 
 ## Diagnostic and trusted boundary
 

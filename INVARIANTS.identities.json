@@ -3087,6 +3087,18 @@
     },
     {
       "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.spawnEdge_tags_covered",
+      "display": "spawnEdge_tags_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
+      "qualified": "LeanOS.BoundaryVocabulary.spawnStateId_covered",
+      "display": "spawnStateId_covered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/BoundaryVocabulary.lean",
       "qualified": "LeanOS.BoundaryVocabulary.stateId_covered",
       "display": "stateId_covered",
       "kind": "theorem"
@@ -16118,6 +16130,54 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.allCommands_complete",
+      "display": "allCommands_complete",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.allStates_complete",
+      "display": "allStates_complete",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.budget_tokens_simulated",
+      "display": "budget_tokens_simulated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.compositeOf_edge",
+      "display": "compositeOf_edge",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.counterpart_matches_reply",
+      "display": "counterpart_matches_reply",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.paths_follow_edges",
+      "display": "paths_follow_edges",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.runCommands_append",
+      "display": "runCommands_append",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameBudgetComposite.lean",
+      "qualified": "LeanOS.FrameBudgetComposite.views_agree",
+      "display": "views_agree",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FrameBudgetScenario.lean",
       "qualified": "LeanOS.FrameBudgetScenario.a_retry_is_budgetExhausted_and_unchanged",
       "display": "a_retry_is_budgetExhausted_and_unchanged",
@@ -20085,6 +20145,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_spawn_vectors_exact",
+      "display": "hosted_spawn_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_timer_server_vectors_exact",
       "display": "hosted_timer_server_vectors_exact",
       "kind": "theorem"
@@ -20243,6 +20309,24 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.resumable_scenario_agrees",
       "display": "resumable_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.spawn_edge_vectors_cover",
+      "display": "spawn_edge_vectors_cover",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.spawn_edge_vectors_match_model",
+      "display": "spawn_edge_vectors_match_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.spawn_negative_vectors_reject",
+      "display": "spawn_negative_vectors_reject",
       "kind": "theorem"
     },
     {
@@ -23405,6 +23489,228 @@
       "source": "LeanOS/SpawnAccountingOracle.lean",
       "qualified": "LeanOS.SpawnAccountingOracle.frameGrantErrorCodes_distinct",
       "display": "frameGrantErrorCodes_distinct",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.childStatus_accepted_or_rejected",
+      "display": "childStatus_accepted_or_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.decodeChild_not_kernel",
+      "display": "decodeChild_not_kernel",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.decodeChild_spawn",
+      "display": "decodeChild_spawn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.decodeFamily_encodeFamily",
+      "display": "decodeFamily_encodeFamily",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.decodeState_encodeState",
+      "display": "decodeState_encodeState",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.dispatcher_refines",
+      "display": "dispatcher_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edge_refines",
+      "display": "edge_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edges_decode",
+      "display": "edges_decode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edges_dispatch",
+      "display": "edges_dispatch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edges_match_hosted_oracle",
+      "display": "edges_match_hosted_oracle",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edges_model",
+      "display": "edges_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edges_rejections_stay",
+      "display": "edges_rejections_stay",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.edges_shape",
+      "display": "edges_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.encodeFamily_decodeFamily",
+      "display": "encodeFamily_decodeFamily",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.encodeState_injective",
+      "display": "encodeState_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.familyStep_state",
+      "display": "familyStep_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.familyStep_stutter",
+      "display": "familyStep_stutter",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.memoryErrorCode_injective",
+      "display": "memoryErrorCode_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.memoryStatus_accepted_or_rejected",
+      "display": "memoryStatus_accepted_or_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.ofNat_ne_zero",
+      "display": "ofNat_ne_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.okIs_iff",
+      "display": "okIs_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.rejected_edge_unchanged",
+      "display": "rejected_edge_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.runFamily_append",
+      "display": "runFamily_append",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundary.lean",
+      "qualified": "LeanOS.SpawnBoundary.toNat_ofNat_of_lt",
+      "display": "toNat_ofNat_of_lt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryChecks.lean",
+      "qualified": "LeanOS.SpawnBoundary.boundary_checks_pass",
+      "display": "boundary_checks_pass",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.admissibleAlong_family",
+      "display": "admissibleAlong_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.authoritative_issuers_frameBudgets_unsupported",
+      "display": "authoritative_issuers_frameBudgets_unsupported",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.dispatcherSeed_issuedObject",
+      "display": "dispatcherSeed_issuedObject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.dispatcherSeed_issuedSubjects",
+      "display": "dispatcherSeed_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.familySeed_authoritativeRuntimeWellFormed",
+      "display": "familySeed_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.familySeed_childAccounting",
+      "display": "familySeed_childAccounting",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.familySeed_resourceRuntimeWellFormed",
+      "display": "familySeed_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.familySeed_spawnTree",
+      "display": "familySeed_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.runFamily_runChildSteps",
+      "display": "runFamily_runChildSteps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.seedState_familySeed",
+      "display": "seedState_familySeed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.spawn_boundary_trace",
+      "display": "spawn_boundary_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnBoundaryTraces.lean",
+      "qualified": "LeanOS.SpawnBoundary.toStep_admissible",
+      "display": "toStep_admissible",
       "kind": "theorem"
     },
     {
