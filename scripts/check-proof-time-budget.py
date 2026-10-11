@@ -12,7 +12,14 @@ A run fails when, after normalization, either
   * a module among the TOP_N slowest baseline modules regresses by more than
     REGRESSION_FRACTION and by more than FLOOR_SECONDS; or
   * a module outside that set (or new) exceeds both the TOP_N-th baseline
-    time and CEILING_SECONDS, i.e. it enters the slowest set above a ceiling.
+    time and CEILING_SECONDS, i.e. it enters the slowest set above a ceiling; or
+  * a module among the TOP_N slowest baseline modules drops below
+    STALE_FRACTION of its baseline and by more than FLOOR_SECONDS. No runner
+    noise does that: the module was split, renamed into an aggregator, or
+    sped up, and its row must be re-measured in the same PR. Otherwise the
+    stale row holds a slot in the slowest set while the moved proofs go
+    untracked and later fail the ceiling on unrelated PRs, as the split of
+    LeanOS.FailStop did.
 
 Only rebuilt modules are compared, since Lake replays cached modules without
 elaborating them. A run with fewer than MIN_SAMPLE rebuilt reference modules
@@ -35,6 +42,7 @@ TOP_N = 15
 REGRESSION_FRACTION = 0.35
 FLOOR_SECONDS = 15.0
 CEILING_SECONDS = 60.0
+STALE_FRACTION = 0.25
 MIN_FACTOR_SECONDS = 2.0
 MIN_SAMPLE = 20
 
@@ -127,6 +135,11 @@ def evaluate(current: dict[str, float], baseline: dict[str, float]) -> tuple[lis
             failures.append(
                 f"module={module} baseline={baseline[module]:.1f} normalized={normalized:.1f} "
                 f"regression>{REGRESSION_FRACTION:.0%}+{FLOOR_SECONDS:.0f}s"
+            )
+        if -delta > FLOOR_SECONDS and normalized < STALE_FRACTION * baseline[module]:
+            failures.append(
+                f"module={module} baseline={baseline[module]:.1f} normalized={normalized:.1f} "
+                f"stale-row<{STALE_FRACTION:.0%}: re-measure the rows of a split, renamed or sped-up module"
             )
     for module in sorted(set(current) - set(slowest)):
         normalized = current[module] / factor
