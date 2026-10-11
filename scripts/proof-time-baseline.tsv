@@ -1,4 +1,4 @@
-# reason: #550 sped up LeanOS.FailStop.Evidence (kernel_rfl) and LeanOS.IOMMU; re-measured both at their normalized CI times in run 38138788498 (Evidence 14.8 s, IOMMU 61.8 s), so the stale-row check (#549) passes. Earlier: the FailStop split re-measure (#549) and the CompositeState projection raises.
+# reason: LeanOS.Oracle checks every oracle vector, and the spawn boundary (#547) grew the corpus to 627+ vectors; record its measured normalized time on main (45.0 s, run 38151927204; 44.2 s on #553's run). Earlier: #550's Evidence/IOMMU re-measure, the FailStop split (#549) and the CompositeState projection raises.
 module	seconds
 LeanOS.BootPageTablePlan	139.8
 LeanOS.CompositeDispatcher	137.0
@@ -8,13 +8,13 @@ LeanOS.BootMemoryMapStreamPipeline	62.9
 LeanOS.IOMMU	61.8
 LeanOS.ResumablePreemption	55.4
 LeanOS.DeviceProgramConfinement	54.4
+LeanOS.Oracle	45.0
 LeanOS.BlockingIPC	44.4
 LeanOS.QotomMadtStream	41.9
 LeanOS.Interrupt	38.4
 LeanOS.InterruptEntry	37.0
 LeanOS.Wifi.ExecRefinement	30.0
 LeanOS.SecurityClaims	21.0
-LeanOS.Oracle	17.9
 LeanOS.FailStop.BlockingIPC	17.5
 LeanOS.PCIHeaderObservation	17.0
 LeanOS.CompositeObservation	16.0

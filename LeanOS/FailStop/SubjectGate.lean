@@ -17,8 +17,11 @@ admitted to the ready queue, the subject whose wait is cancelled, and the
 subject whose deferred cancellation is drained.  When a subject is scheduled
 and the operation names another subject, the gate refuses with one fixed
 result, `crossSubjectRefused`, before reading anything of the target, and
-changes nothing (`CompositeState.refusesCrossSubject`).  Otherwise it is
-exactly `authoritativeGate`.
+changes nothing (`CompositeState.refusesCrossSubject`).  It also refuses a
+receipt that carries another endpoint with a sealed transfer of its own
+pending (`CompositeState.refusesNestedTransfer`, result
+`nestedTransferRefused`).
+Otherwise it is exactly `authoritativeGate`.
 
 Why.  The ordinary family has no authority relation over another subject: a
 delegation could fill any subject's empty slot, a revocation could clear any
@@ -59,48 +62,111 @@ def CompositeState.refusesCrossSubject (state : CompositeState)
   | .running, some caller, some target => target != caller
   | _, _, _ => false
 
+/-- A scheduled subject asks to accept a sealed transfer that carries another
+endpoint, which itself has a sealed transfer pending.  The refusal reads only
+the endpoint the caller's own handle names, the sealed record pending on it,
+and the sealed record pending on the endpoint it carries; it changes nothing.
+Receipt would otherwise make the second carried object reachable in the same
+step, so a subject could learn, by accepting, the state of an object that no
+offer to it carried.  A transfer that carries the endpoint it is pending on is
+not refused: receipt consumes that very record. -/
+def CompositeState.refusesNestedTransfer (state : CompositeState) :
+    AuthoritativeOperation → Bool
+  | .ordinary (.transferAccept endpointWord _) =>
+      match state.execution.mode with
+      | .running =>
+          match CapabilityHandle.resolveCurrent state.transfers.capabilities
+              { caller := state.execution.core.context.currentSubject } endpointWord
+              .endpoint with
+          | .ok resolution =>
+              match state.transfers.pending resolution.capability.object with
+              | some transfer =>
+                  transfer.object != resolution.capability.object &&
+                    (state.transfers.pending transfer.object).isSome
+              | none => false
+          | .error _ => false
+      | _ => false
+  | _ => false
+
 /-- The result a subject observes. -/
 inductive SubjectGateResult where
   /-- The kernel performed the operation; its exact gate result. -/
   | gate (result : AuthoritativeGateResult)
   /-- The one fixed refusal of a cross-subject request. -/
   | crossSubjectRefused
+  /-- The fixed refusal of a receipt whose carried endpoint has a sealed
+  transfer pending. -/
+  | nestedTransferRefused
   deriving DecidableEq, Repr
 
 structure SubjectGateOutcome where
   state : CompositeState
   result : SubjectGateResult
 
+/-- The subject gate's refusal of a request, if any. -/
+def CompositeState.refusal (state : CompositeState) (operation : AuthoritativeOperation) :
+    Option SubjectGateResult :=
+  if state.refusesCrossSubject operation then some .crossSubjectRefused
+  else if state.refusesNestedTransfer operation then some .nestedTransferRefused
+  else none
+
 /-- **The subject-facing gate.** -/
 def subjectGate (state : CompositeState) (operation : AuthoritativeOperation) :
     SubjectGateOutcome :=
-  if state.refusesCrossSubject operation then { state, result := .crossSubjectRefused }
-  else
-    let outcome := authoritativeGate state operation
-    { state := outcome.state, result := .gate outcome.result }
+  match state.refusal operation with
+  | some refused => { state, result := refused }
+  | none =>
+      let outcome := authoritativeGate state operation
+      { state := outcome.state, result := .gate outcome.result }
 
-theorem subjectGate_refused {state : CompositeState} {operation : AuthoritativeOperation}
-    (h : state.refusesCrossSubject operation = true) :
-    subjectGate state operation = { state, result := .crossSubjectRefused } := by
+theorem subjectGate_of_refusal {state : CompositeState} {operation : AuthoritativeOperation}
+    {refused : SubjectGateResult} (h : state.refusal operation = some refused) :
+    subjectGate state operation = { state, result := refused } := by
   simp [subjectGate, h]
 
-theorem subjectGate_of_not_refused {state : CompositeState} {operation : AuthoritativeOperation}
-    (h : state.refusesCrossSubject operation = false) :
+theorem subjectGate_of_no_refusal {state : CompositeState} {operation : AuthoritativeOperation}
+    (h : state.refusal operation = none) :
     subjectGate state operation =
       { state := (authoritativeGate state operation).state
         result := .gate (authoritativeGate state operation).result } := by
   simp [subjectGate, h]
 
+theorem subjectGate_refused {state : CompositeState} {operation : AuthoritativeOperation}
+    (h : state.refusesCrossSubject operation = true) :
+    subjectGate state operation = { state, result := .crossSubjectRefused } :=
+  subjectGate_of_refusal (by simp [CompositeState.refusal, h])
+
+theorem subjectGate_of_not_refused {state : CompositeState} {operation : AuthoritativeOperation}
+    (h : state.refusesCrossSubject operation = false)
+    (hnested : state.refusesNestedTransfer operation = false) :
+    subjectGate state operation =
+      { state := (authoritativeGate state operation).state
+        result := .gate (authoritativeGate state operation).result } :=
+  subjectGate_of_no_refusal (by simp [CompositeState.refusal, h, hnested])
+
 /-- The gate either refuses without effect or is the authoritative gate. -/
 theorem subjectGate_cases (state : CompositeState) (operation : AuthoritativeOperation) :
-    ((subjectGate state operation).state = state ∧
-        (subjectGate state operation).result = .crossSubjectRefused) ∨
-      ((subjectGate state operation).state = (authoritativeGate state operation).state ∧
+    (∃ refused, state.refusal operation = some refused ∧
+        (subjectGate state operation).state = state ∧
+        (subjectGate state operation).result = refused) ∨
+      (state.refusal operation = none ∧
+        (subjectGate state operation).state = (authoritativeGate state operation).state ∧
         (subjectGate state operation).result =
           .gate (authoritativeGate state operation).result) := by
-  cases h : state.refusesCrossSubject operation
-  · rw [subjectGate_of_not_refused h]; exact .inr ⟨rfl, rfl⟩
-  · rw [subjectGate_refused h]; exact .inl ⟨rfl, rfl⟩
+  cases h : state.refusal operation with
+  | none => rw [subjectGate_of_no_refusal h]; exact .inr ⟨rfl, rfl, rfl⟩
+  | some refused => rw [subjectGate_of_refusal h]; exact .inl ⟨refused, rfl, rfl, rfl⟩
+
+/-- An operation other than receipt is never refused as a nested transfer. -/
+theorem refusesNestedTransfer_eq_false {state : CompositeState} {operation : AuthoritativeOperation}
+    (hnot : ∀ endpointWord destinationSlot,
+      operation ≠ .ordinary (.transferAccept endpointWord destinationSlot)) :
+    state.refusesNestedTransfer operation = false := by
+  cases operation with
+  | ordinary operation =>
+      cases operation <;> simp_all [CompositeState.refusesNestedTransfer]
+  | blocking operation => rfl
+  | drainDeferred subject => rfl
 
 /-- Refusal reads only the latch mode, the scheduled subject and the
 operation. -/
@@ -139,7 +205,7 @@ theorem refusesCrossSubject_true {state : CompositeState} {operation : Authorita
 theorem subjectGate_preserves_authoritativeRuntimeWellFormed (state : CompositeState)
     (operation : AuthoritativeOperation) (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed (subjectGate state operation).state := by
-  rcases subjectGate_cases state operation with ⟨hsame, _⟩ | ⟨hgate, _⟩
+  rcases subjectGate_cases state operation with ⟨_, _, hsame, _⟩ | ⟨_, hgate, _⟩
   · rw [hsame]; exact hstate
   · rw [hgate]
     exact authoritativeGate_preserves_authoritativeRuntimeWellFormed state operation hstate

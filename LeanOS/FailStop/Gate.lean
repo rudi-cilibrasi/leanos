@@ -51,8 +51,7 @@ def operationReply (state : CompositeState) : Operation → OperationReply
           else .interruptIdentityRejected subject
       | action => .interrupt action
   | .nmi raw context => .nmi (dispatchNmi state.execution raw context).action
-  | .selectUserReturn purpose =>
-      .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
+  | .selectUserReturn _ => .returnSelection
   | .userReturn request =>
       let execution :=
         if state.ReturnPlanLive then state.execution

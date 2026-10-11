@@ -1,0 +1,41 @@
+# The observer's own steps that change its authority
+
+Five of the observer's own requests change what the full view adds beyond the ordinary view: copying a permission into its own row, offering a permission on an endpoint, accepting a handover, revoking a permission of its own together with everything copied from it, and terminating itself. These theorems show each one changes the full view the same way in two runs that agree on it. A new permission's chain is its source's chain plus the public counter; an accepted handover's chain and object were part of the offer the observer saw; and revocation removes exactly the permissions and handovers whose chains, which the full view contains, include the revoked one.
+
+- `lineage_of_parent` — A recorded parent link extends a chain by one permission.
+- `mem_row_of_lookup` — A permission the observer looks up is in its row.
+- `copied_extends` — Copying a permission only adds history at the next number.
+- `copied_lineage` — Copying a permission keeps the chain of every permission issued before.
+- `copied_fresh_lineage` — The copy's chain is its own number followed by its source's chain.
+- `mem_row_copied` — After copying into its own row, each of the observer's permissions is the new copy or was there before.
+- `agree_copy_self` — The observer's copy into its own row keeps two runs in agreement on the extra authority.
+- `offerCheck_found` — An accepted offer check found the endpoint permission and the source permission in the caller's slots.
+- `offerWordsCheck_found` — An accepted handle-based offer check found both permissions in the caller's slots.
+- `offerAccepted_pending` — An accepted offer puts exactly the new handover on its endpoint.
+- `offerAccepted_mailbox_other` — An accepted offer changes no other endpoint's mailbox.
+- `offerAccepted_extends` — An accepted offer only adds history at the next number.
+- `offerAccepted_fresh` — The new handover's history records its source as parent.
+- `lineage_after` — After steps that only add history, two runs still agree on the chain of every issued permission they agreed on before.
+- `agree_offer` — The observer's offer keeps two runs in agreement on the extra authority.
+- `nestedFree_of_not_refused` — When the subject gate lets an acceptance through, the offered object is the endpoint itself or has no handover of its own pending.
+- `agree_accept` — The observer's acceptance keeps two runs in agreement on the extra authority, because the accepted permission and its object were part of the offer it saw.
+- `descendsFrom_issued` — Revocation's ancestry walk on an issued permission asks whether the revoked one is in its chain.
+- `revoked_capabilities` — After revoking a tree, the permission table is the table with that tree cleared.
+- `revoked_slots` — After revoking a tree, a slot keeps its permission exactly when the revoked permission is not in that permission's chain.
+- `revoked_pending` — After revoking a tree, a handover stays pending exactly when the revoked permission is not in its chain.
+- `revoked_mailbox` — After revoking a tree, a mailbox is cleared exactly when its pending handover was cancelled.
+- `revoked_objectView` — After revoking a tree, an object's view changes only in its mailbox and pending handover, as cancellation decides.
+- `revoked_lineage` — Revoking a tree keeps every chain.
+- `revoked_current` — Revoking a tree keeps the scheduled program.
+- `revoked_subjects` — Revoking a tree keeps which programs are live.
+- `revoked_slotCapacity` — Revoking a tree keeps every program's slot count.
+- `revoked_virtualMemory_owner` — Revoking a tree keeps who owns each address space.
+- `revoked_virtualMemory_mappings` — Revoking a tree keeps every mapping.
+- `revoked_waiterEndpoint` — Revoking a tree keeps which endpoint each program waits on.
+- `revoked_completion` — Revoking a tree keeps every program's pending delivery.
+- `revoked_row` — After revoking a tree, the observer's row is its old row with every permission whose chain contains the revoked one removed.
+- `mem_revoked_row` — Every permission left in the observer's row was there before and does not descend from the revoked one.
+- `cancel_congr` — Two states that agree on an object's view and its pending handover's chain cancel it the same way.
+- `revoked_objectView_congr` — Two such states show the object the same way after the revocation.
+- `full_revoked` — Revoking a tree of the observer's own permission leaves two runs that agree on the full view in agreement on the full view.
+- `apply_revokeSubtree_self` — The observer's request to revoke a tree in its own row either changes nothing in both runs or revokes the same permission in both.

@@ -517,6 +517,18 @@ if [[ "$(grep -c 'tests/negative/CompositeCrossSubjectReopened.lean:.*error: (ke
   exit 1
 fi
 
+if lake env lean tests/negative/CompositeFullSubtreeReopened.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: reopened subtree-revocation channel unexpectedly type-checked" >&2
+  exit 1
+fi
+if [[ "$(grep -c 'tests/negative/CompositeFullSubtreeReopened.lean:.*error: (kernel) application type mismatch' \
+    "$negative_log")" != 1 ]]; then
+  echo "error: subtree-revocation fixture lacked the expected kernel evaluation failure" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 rm -f "$negative_log"
 negative_log=""
 record_check_phase proof-integrity-and-negative-fixtures
