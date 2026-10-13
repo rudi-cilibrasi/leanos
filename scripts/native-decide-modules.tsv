@@ -61,6 +61,12 @@ LeanOS/NegativeFixtures/UserFaultClass.lean	negative-fixture
 LeanOS/NegativeFixtures/VTdBootPlan.lean	negative-fixture
 LeanOS/NegativeFixtures/WrappingIssuerReuse.lean	negative-fixture
 LeanOS/Oracle.lean	bounded-model
+LeanOS/Oracle/Composite.lean	bounded-model
+LeanOS/Oracle/FrameBudget.lean	bounded-model
+LeanOS/Oracle/IOTLB.lean	bounded-model
+LeanOS/Oracle/Interrupt.lean	bounded-model
+LeanOS/Oracle/Scalar.lean	bounded-model
+LeanOS/Oracle/Spawn.lean	bounded-model
 LeanOS/Preemption.lean	bounded-model
 LeanOS/PrivilegeEntryControl.lean	bounded-model
 LeanOS/PrivilegeEntryStack.lean	bounded-model
