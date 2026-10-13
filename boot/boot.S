@@ -1,5 +1,24 @@
 #include "serial-protocol.h"
-#include "../include/leanos/isr80-path.h"
+/* isr80's typed path selector codes (#560).  boot.S is also assembled from
+   copies outside the tree, so it repeats include/leanos/isr80-path.h here;
+   scripts/check-isr80-path-selector.py requires both to equal
+   LeanOS.Isr80PathSelector.Path.code. */
+#define LEANOS_ISR80_PATH_REPLY 0
+#define LEANOS_ISR80_PATH_DISPATCH_FRESH_B 1
+#define LEANOS_ISR80_PATH_BLOCK_B_ENTER_A 2
+#define LEANOS_ISR80_PATH_WAKE_B 3
+#define LEANOS_ISR80_PATH_BLOCK_B_RESUME_A 4
+#define LEANOS_ISR80_PATH_BLOCK_C_ENTER_B 5
+#define LEANOS_ISR80_PATH_REPORT_B_ENTER_A 6
+#define LEANOS_ISR80_PATH_WAKE_C 7
+#define LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT 8
+#define LEANOS_ISR80_PATH_TIMER_C_RESUMES_A 9
+#define LEANOS_ISR80_PATH_TIMER_A_WAITS 10
+#define LEANOS_ISR80_PATH_FRAME_C_RESUMES_A 11
+#define LEANOS_ISR80_PATH_FRAME_B_WAKES_C 12
+#define LEANOS_ISR80_PATH_FRAME_C_RESUMES_B 13
+#define LEANOS_ISR80_PATH_LOADER_ENTER_CHILD 14
+#define LEANOS_ISR80_PATH_LOADER_CHILD_SENT 15
 
 .set MB2_MAGIC, 0xe85250d6
 .set MB2_ARCH, 0

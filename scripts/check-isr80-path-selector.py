@@ -8,7 +8,7 @@ Lean model `LeanOS.Isr80PathSelector` proves that a ladder of
 ties that model to the sources and to a final ELF:
 
 * the Lean table (`Path.code`, `Path.macroName`, `Path.label`) equals
-  include/leanos/isr80-path.h;
+  include/leanos/isr80-path.h and the codes boot/boot.S defines;
 * in boot.S, isr80 stores LEANOS_ISR80_PATH_REPLY before the call, loads the
   selector into RDX once after it, and then runs only reviewed
   `cmp $LEANOS_ISR80_PATH_*, %rdx; je <label>` rungs before `ud2`; no
@@ -71,11 +71,12 @@ def lean_table(text: str) -> dict[str, tuple[int, str, int]]:
     return table
 
 
-def check_header(text: str, table: dict[str, tuple[int, str, int]]) -> None:
+def check_header(text: str, table: dict[str, tuple[int, str, int]],
+                 reason: str = "header-differs-from-lean-model") -> None:
     defines = {name: int(value, 0) for name, value in re.findall(
         r"^#define (LEANOS_ISR80_PATH_\w+) (\S+)$", text, re.MULTILINE)}
     if defines != {name: entry[0] for name, entry in table.items()}:
-        fail("header-differs-from-lean-model")
+        fail(reason)
 
 
 def instruction_lines(lines: list[str]) -> list[str]:
@@ -246,7 +247,11 @@ def main() -> int:
     options = parser.parse_args()
     table = lean_table(Path(options.lean).read_text())
     check_header(Path(options.header).read_text(), table)
-    check_boot(Path(options.boot).read_text(), table)
+    boot = Path(options.boot).read_text()
+    # boot.S repeats the codes (it is also assembled from copies outside the
+    # tree, where the header is not reachable); they must equal the model too.
+    check_header(boot, table, "boot-codes-differ-from-lean-model")
+    check_boot(boot, table)
     check_kernel(Path(options.kernel).read_text(), table)
     print(f"ISR80-PATH-SELECTOR source paths={len(table)} model=LeanOS.Isr80PathSelector "
           "header=agrees ladder=rdx-only kernel-writer=isr80_select result=PASS")

@@ -13,8 +13,9 @@
  * image does not handle stops the machine (ud2) in isr80.
  *
  * The codes and their names are LeanOS.Isr80PathSelector.Path.code and
- * Path.macroName; scripts/check-entry-policy.sh requires the two tables to
- * agree.  This header holds only object-like macros so boot.S can include it.
+ * Path.macroName.  boot/boot.S repeats these definitions because it is also
+ * assembled from copies outside the tree; scripts/check-isr80-path-selector.py
+ * (run by scripts/check-entry-policy.sh) requires all three to agree.
  */
 #define LEANOS_ISR80_PATH_REPLY 0
 #define LEANOS_ISR80_PATH_DISPATCH_FRESH_B 1

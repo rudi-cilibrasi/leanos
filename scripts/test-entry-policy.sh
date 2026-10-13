@@ -299,6 +299,10 @@ header_code_drift() {
   sed -i 's/^#define LEANOS_ISR80_PATH_WAKE_B 3$/#define LEANOS_ISR80_PATH_WAKE_B 0xcafe/' \
     "$tmp/isr80-path.h"
 }
+boot_code_drift() {
+  sed -i 's/^#define LEANOS_ISR80_PATH_WAKE_B 3$/#define LEANOS_ISR80_PATH_WAKE_B 0xcafe/' \
+    "$tmp/boot.S"
+}
 model_label_drift() {
   sed -i 's/^  | \.wakeB => 9$/  | .wakeB => 8/' "$tmp/Isr80PathSelector.lean"
 }
@@ -326,6 +330,9 @@ run_fixture kernel-second-selector-writer \
 run_selector_model_fixture isr80-header-code-drift \
   'vector=128 field=typed-path-selector violated=header-differs-from-lean-model' \
   header_code_drift
+run_fixture isr80-boot-code-drift \
+  'vector=128 field=typed-path-selector violated=boot-codes-differ-from-lean-model' \
+  boot_code_drift
 run_selector_model_fixture isr80-model-label-drift \
   'vector=128 field=typed-path-selector violated=lean-table-not-injective' \
   model_label_drift
