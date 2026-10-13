@@ -5,8 +5,9 @@ INVARIANTS.md explains, for a non-technical reader, every theorem that the
 default Lean build proves (all of them, and only them).  This script keeps that
 promise machine-checked:
 
-  extract   Parse LeanOS.lean, LeanOS/*.lean, and the split fail-stop model in
-            LeanOS/FailStop/*.lean and list every `theorem` declaration (JSON
+  extract   Parse LeanOS.lean, LeanOS/*.lean, the split fail-stop model in
+            LeanOS/FailStop/*.lean, and the split oracle corpus in
+            LeanOS/Oracle/*.lean, and list every `theorem` declaration (JSON
             on stdout or --json PATH).
   generate  Call a language model (OpenAI or Anthropic API) with the prompt in
             scripts/invariants-prompt.md to write one per-file section at a
@@ -88,6 +89,9 @@ def source_files():
     # modules are part of the default build and are indexed like top-level
     # LeanOS modules.
     files.extend(sorted((REPO_ROOT / "LeanOS" / "FailStop").glob("*.lean")))
+    # The model-oracle corpus checks are split by adapter family the same way
+    # (issue #558).
+    files.extend(sorted((REPO_ROOT / "LeanOS" / "Oracle").glob("*.lean")))
     return files
 
 
