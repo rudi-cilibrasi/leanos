@@ -10,9 +10,7 @@
 #endif
 
 #ifdef LEANOS_QOTOM_NETWORK_SUBJECT
-/* Retained for the reviewed Broadcom assignment variant. */
-static uint16_t lab_retained_pci_final_commands[16];
-static uint32_t lab_retained_pci_final_match;
+#include "qotom-broadcom-assign-state.h"
 #endif
 static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
         const struct lab_ecam_root_view *view) {

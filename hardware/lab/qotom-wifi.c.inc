@@ -373,7 +373,9 @@ static uint64_t *lab_stream_leaf_table;
 static uint32_t lab_stream_bar, lab_stream_pages, lab_stream_ended;
 static uint64_t lab_stream_invocations;
 
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+/* The assignment variant needs the retained PCI diagnostic stages, which only
+   the Qotom PCI diagnostic kernel variant compiles. */
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) && defined(LEANOS_QOTOM_PCI_DIAGNOSTIC)
 #include "qotom-broadcom-assign.c.inc"
 #endif
 
@@ -389,7 +391,11 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
     /* The audited trust contract leaves the BCM43224 (02:00.0) in D3hot with
        Command=0. Only the reviewed assignment variant returns it to D0, and
        only for an assignable program policy; any mismatch fails closed. */
+#ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
     lab_broadcom_assign(&lab_dev_target, &policy);
+#else
+    pre_admission_fail("qotom-broadcom-assign");
+#endif
 #endif
     uint32_t id = wifi_hook_cfg_read32(0);
     uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);

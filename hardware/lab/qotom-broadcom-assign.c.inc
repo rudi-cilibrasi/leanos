@@ -16,6 +16,7 @@
  * D0 recovery and the quiet-sample spacing use the ACPI PM timer delay of
  * the device-program hooks. */
 #include "qotom-broadcom-assign-arm.h"
+#include "qotom-broadcom-assign-state.h"
 
 static int lab_broadcom_assign_read(void *opaque,uint8_t bus,uint8_t device,
         uint8_t function,uint8_t offset,uint32_t *value) {

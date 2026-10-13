@@ -4,10 +4,7 @@
 #endif
 
 #ifdef LEANOS_QOTOM_NETWORK_SUBJECT
-/* Retained for the reviewed assignment variant (qotom-broadcom-assign.c.inc). */
-static uint32_t lab_retained_broadcom_d3_status=12;
-static struct qotom_broadcom_d3_result lab_retained_broadcom_d3;
-static struct pci_enumeration_header lab_retained_broadcom_endpoint;
+#include "qotom-broadcom-assign-state.h"
 #endif
 static __attribute__((noreturn)) void lab_broadcom_d3_fault(void *opaque);
 static struct lab_broadcom_d3_window lab_broadcom_d3_writer={

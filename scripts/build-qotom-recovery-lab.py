@@ -845,6 +845,7 @@ if a.network_subject:
     files += [root / name for name in ('boot/qotom-broadcom-assign.h',
               'hardware/lab/qotom-broadcom-assign-window.h',
               'hardware/lab/qotom-broadcom-assign-arm.h',
+              'hardware/lab/qotom-broadcom-assign-state.h',
               'hardware/lab/qotom-broadcom-assign.c.inc',
               'LeanOS/QotomBroadcomAssignment.lean',
               '.lake/build/ir/LeanOS/QotomBroadcomAssignment.c')]
