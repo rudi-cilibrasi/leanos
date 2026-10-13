@@ -21453,86 +21453,8 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.blocking_ipc_scenario_agrees",
-      "display": "blocking_ipc_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.boot_accept_agrees",
-      "display": "boot_accept_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.boot_decoder_roundtrip_cold",
-      "display": "boot_decoder_roundtrip_cold",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.boot_phase_adapter_agrees_with_model",
-      "display": "boot_phase_adapter_agrees_with_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.boot_phase_corpus_id_inventory",
-      "display": "boot_phase_corpus_id_inventory",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.boot_phase_corpus_shape",
-      "display": "boot_phase_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.boot_phase_expected_classes_agree",
-      "display": "boot_phase_expected_classes_agree",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.capability_reuse_scenario_agrees",
-      "display": "capability_reuse_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_negatives_reject",
-      "display": "composite_inFlight_revocation_negatives_reject",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_trace_agrees",
-      "display": "composite_inFlight_revocation_trace_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.composite_inFlight_revocation_values_zero",
       "display": "composite_inFlight_revocation_values_zero",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.composite_invalidation_same_effect_replay_rejected",
-      "display": "composite_invalidation_same_effect_replay_rejected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.composite_invalidation_trace_agrees",
-      "display": "composite_invalidation_trace_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.composite_mixed_trace_agrees",
-      "display": "composite_mixed_trace_agrees",
       "kind": "theorem"
     },
     {
@@ -21549,26 +21471,8 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.direct_port_io_adapter_agrees_with_model",
-      "display": "direct_port_io_adapter_agrees_with_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.direct_port_io_corpus_shape",
-      "display": "direct_port_io_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.every_rejection_agrees",
-      "display": "every_rejection_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.extended_state_dispatch_scenario_agrees",
-      "display": "extended_state_dispatch_scenario_agrees",
+      "qualified": "LeanOS.Oracle.drop_lengths_flatten",
+      "display": "drop_lengths_flatten",
       "kind": "theorem"
     },
     {
@@ -21579,20 +21483,8 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.general_protection_entry_scenario_agrees",
-      "display": "general_protection_entry_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_boot_transition_class_vectors_exact",
       "display": "hosted_boot_transition_class_vectors_exact",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_budget_canonical_sequence",
-      "display": "hosted_budget_canonical_sequence",
       "kind": "theorem"
     },
     {
@@ -21605,6 +21497,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_capability_transfer_boot_vectors_exact",
       "display": "hosted_capability_transfer_boot_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_composite_scenario_vectors_exact",
+      "display": "hosted_composite_scenario_vectors_exact",
       "kind": "theorem"
     },
     {
@@ -21651,26 +21549,14 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_inFlight_revocation_vectors_refine",
-      "display": "hosted_inFlight_revocation_vectors_refine",
+      "qualified": "LeanOS.Oracle.hosted_interrupt_vectors_exact",
+      "display": "hosted_interrupt_vectors_exact",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_invalidation_vectors_exact",
       "display": "hosted_invalidation_vectors_exact",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_invalidation_vectors_refine",
-      "display": "hosted_invalidation_vectors_refine",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_iotlb_publication_adapter_agrees",
-      "display": "hosted_iotlb_publication_adapter_agrees",
       "kind": "theorem"
     },
     {
@@ -21693,14 +21579,14 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_mixed_vectors_refine",
-      "display": "hosted_mixed_vectors_refine",
+      "qualified": "LeanOS.Oracle.hosted_notify_reply_vectors_exact",
+      "display": "hosted_notify_reply_vectors_exact",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_notify_reply_vectors_exact",
-      "display": "hosted_notify_reply_vectors_exact",
+      "qualified": "LeanOS.Oracle.hosted_scalar_vectors_exact",
+      "display": "hosted_scalar_vectors_exact",
       "kind": "theorem"
     },
     {
@@ -21735,224 +21621,8 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.interrupt_entry_scenario_agrees",
-      "display": "interrupt_entry_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.ipc_scenario_agrees",
-      "display": "ipc_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.loader_vectors_expected",
-      "display": "loader_vectors_expected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.malformed_budget_state_is_wrong_version",
-      "display": "malformed_budget_state_is_wrong_version",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.nmi_accepted_modes_agree",
-      "display": "nmi_accepted_modes_agree",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.nmi_adapter_agrees_with_model",
-      "display": "nmi_adapter_agrees_with_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.nmi_corpus_id_inventory",
-      "display": "nmi_corpus_id_inventory",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.nmi_corpus_shape",
-      "display": "nmi_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.nmi_noncanonical_context_codes_rejected",
-      "display": "nmi_noncanonical_context_codes_rejected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.nmi_rejection_codes_agree",
-      "display": "nmi_rejection_codes_agree",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_adapter_agrees_with_model",
-      "display": "page_fault_adapter_agrees_with_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_authority_mutations_attested",
-      "display": "page_fault_authority_mutations_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_corpus_shape",
-      "display": "page_fault_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_cr3_mutation_attested",
-      "display": "page_fault_cr3_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_nxe_mutation_attested",
-      "display": "page_fault_nxe_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_smap_mutation_attested",
-      "display": "page_fault_smap_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_smep_mutation_attested",
-      "display": "page_fault_smep_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_space_mutation_attested",
-      "display": "page_fault_space_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_subject_mutation_attested",
-      "display": "page_fault_subject_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.page_fault_wp_mutation_attested",
-      "display": "page_fault_wp_mutation_attested",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.preemption_scenario_agrees",
-      "display": "preemption_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.privilege_entry_control_adapter_agrees_with_model",
-      "display": "privilege_entry_control_adapter_agrees_with_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.privilege_entry_control_corpus_shape",
-      "display": "privilege_entry_control_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.privilege_entry_control_scenario_agrees",
-      "display": "privilege_entry_control_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.resumable_scenario_agrees",
-      "display": "resumable_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.spawn_edge_vectors_cover",
-      "display": "spawn_edge_vectors_cover",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.spawn_edge_vectors_match_model",
-      "display": "spawn_edge_vectors_match_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.spawn_negative_vectors_reject",
-      "display": "spawn_negative_vectors_reject",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.spawn_syscall_vectors_expected",
-      "display": "spawn_syscall_vectors_expected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.stale_translation_adapter_agrees_with_model",
-      "display": "stale_translation_adapter_agrees_with_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.stale_translation_corpus_shape",
-      "display": "stale_translation_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.stale_translation_scenario_agrees",
-      "display": "stale_translation_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.syscall_accept_agrees",
-      "display": "syscall_accept_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.user_copy_policy_vectors_agree",
-      "display": "user_copy_policy_vectors_agree",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.user_fault_class_corpus_shape",
-      "display": "user_fault_class_corpus_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.user_fault_class_dispatch_scenario_agrees",
-      "display": "user_fault_class_dispatch_scenario_agrees",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.user_fault_class_entry_scenario_agrees",
-      "display": "user_fault_class_entry_scenario_agrees",
+      "qualified": "LeanOS.Oracle.rows_at",
+      "display": "rows_at",
       "kind": "theorem"
     },
     {
@@ -21962,9 +21632,369 @@
       "kind": "theorem"
     },
     {
-      "source": "LeanOS/Oracle.lean",
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_negatives_reject",
+      "display": "composite_inFlight_revocation_negatives_reject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_trace_agrees",
+      "display": "composite_inFlight_revocation_trace_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.composite_invalidation_same_effect_replay_rejected",
+      "display": "composite_invalidation_same_effect_replay_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.composite_invalidation_trace_agrees",
+      "display": "composite_invalidation_trace_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.composite_mixed_trace_agrees",
+      "display": "composite_mixed_trace_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.hosted_inFlight_revocation_vectors_refine",
+      "display": "hosted_inFlight_revocation_vectors_refine",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.hosted_invalidation_vectors_refine",
+      "display": "hosted_invalidation_vectors_refine",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Composite.lean",
+      "qualified": "LeanOS.Oracle.hosted_mixed_vectors_refine",
+      "display": "hosted_mixed_vectors_refine",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/FrameBudget.lean",
+      "qualified": "LeanOS.Oracle.hosted_budget_canonical_sequence",
+      "display": "hosted_budget_canonical_sequence",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/FrameBudget.lean",
+      "qualified": "LeanOS.Oracle.malformed_budget_state_is_wrong_version",
+      "display": "malformed_budget_state_is_wrong_version",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/IOTLB.lean",
+      "qualified": "LeanOS.Oracle.hosted_iotlb_publication_adapter_agrees",
+      "display": "hosted_iotlb_publication_adapter_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.boot_phase_adapter_agrees_with_model",
+      "display": "boot_phase_adapter_agrees_with_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.boot_phase_corpus_id_inventory",
+      "display": "boot_phase_corpus_id_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.boot_phase_corpus_shape",
+      "display": "boot_phase_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.boot_phase_expected_classes_agree",
+      "display": "boot_phase_expected_classes_agree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.direct_port_io_adapter_agrees_with_model",
+      "display": "direct_port_io_adapter_agrees_with_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.direct_port_io_corpus_shape",
+      "display": "direct_port_io_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.extended_state_dispatch_scenario_agrees",
+      "display": "extended_state_dispatch_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.general_protection_entry_scenario_agrees",
+      "display": "general_protection_entry_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.interrupt_entry_scenario_agrees",
+      "display": "interrupt_entry_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.nmi_accepted_modes_agree",
+      "display": "nmi_accepted_modes_agree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.nmi_adapter_agrees_with_model",
+      "display": "nmi_adapter_agrees_with_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.nmi_corpus_id_inventory",
+      "display": "nmi_corpus_id_inventory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.nmi_corpus_shape",
+      "display": "nmi_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.nmi_noncanonical_context_codes_rejected",
+      "display": "nmi_noncanonical_context_codes_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.nmi_rejection_codes_agree",
+      "display": "nmi_rejection_codes_agree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_adapter_agrees_with_model",
+      "display": "page_fault_adapter_agrees_with_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_authority_mutations_attested",
+      "display": "page_fault_authority_mutations_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_corpus_shape",
+      "display": "page_fault_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_cr3_mutation_attested",
+      "display": "page_fault_cr3_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_nxe_mutation_attested",
+      "display": "page_fault_nxe_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_smap_mutation_attested",
+      "display": "page_fault_smap_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_smep_mutation_attested",
+      "display": "page_fault_smep_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_space_mutation_attested",
+      "display": "page_fault_space_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_subject_mutation_attested",
+      "display": "page_fault_subject_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.page_fault_wp_mutation_attested",
+      "display": "page_fault_wp_mutation_attested",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.privilege_entry_control_adapter_agrees_with_model",
+      "display": "privilege_entry_control_adapter_agrees_with_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.privilege_entry_control_corpus_shape",
+      "display": "privilege_entry_control_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.privilege_entry_control_scenario_agrees",
+      "display": "privilege_entry_control_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.stale_translation_adapter_agrees_with_model",
+      "display": "stale_translation_adapter_agrees_with_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.stale_translation_corpus_shape",
+      "display": "stale_translation_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.stale_translation_scenario_agrees",
+      "display": "stale_translation_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.user_fault_class_corpus_shape",
+      "display": "user_fault_class_corpus_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.user_fault_class_dispatch_scenario_agrees",
+      "display": "user_fault_class_dispatch_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Interrupt.lean",
+      "qualified": "LeanOS.Oracle.user_fault_class_entry_scenario_agrees",
+      "display": "user_fault_class_entry_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.blocking_ipc_scenario_agrees",
+      "display": "blocking_ipc_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.boot_accept_agrees",
+      "display": "boot_accept_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.boot_decoder_roundtrip_cold",
+      "display": "boot_decoder_roundtrip_cold",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.capability_reuse_scenario_agrees",
+      "display": "capability_reuse_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.every_rejection_agrees",
+      "display": "every_rejection_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.ipc_scenario_agrees",
+      "display": "ipc_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.preemption_scenario_agrees",
+      "display": "preemption_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.resumable_scenario_agrees",
+      "display": "resumable_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
+      "qualified": "LeanOS.Oracle.syscall_accept_agrees",
+      "display": "syscall_accept_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Scalar.lean",
       "qualified": "LeanOS.Oracle.user_return_scenario_agrees",
       "display": "user_return_scenario_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Services.lean",
+      "qualified": "LeanOS.Oracle.user_copy_policy_vectors_agree",
+      "display": "user_copy_policy_vectors_agree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.loader_vectors_expected",
+      "display": "loader_vectors_expected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.spawn_edge_vectors_cover",
+      "display": "spawn_edge_vectors_cover",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.spawn_edge_vectors_match_model",
+      "display": "spawn_edge_vectors_match_model",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.spawn_negative_vectors_reject",
+      "display": "spawn_negative_vectors_reject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.spawn_syscall_vectors_expected",
+      "display": "spawn_syscall_vectors_expected",
       "kind": "theorem"
     },
     {

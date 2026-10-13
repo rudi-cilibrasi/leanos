@@ -51,6 +51,22 @@ that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
 
+The records and their checks live with their adapter family (issue #558):
+`LeanOS.Oracle.Scalar` (boot, syscall, IPC, preemption, boot allocation, user
+return, blocking IPC, capability reuse), `LeanOS.Oracle.Interrupt` (entry,
+extended state, entry control, fault dispatch, direct ports, NMI, boot phase,
+stale translation, page faults), `LeanOS.Oracle.Composite` (the stateful
+dispatcher's scenario, mixed, invalidation, boot capability-transfer, and
+in-flight revocation edges), `LeanOS.Oracle.FrameBudget`,
+`LeanOS.Oracle.IOTLB`, `LeanOS.Oracle.Services` (notification/reply,
+user copy, and the user-level servers), and `LeanOS.Oracle.Spawn` (spawn
+edges, the spawn syscall, and the loader). The family modules elaborate in
+parallel. `LeanOS.Oracle` remains the umbrella import and the `leanos-oracle`
+root: `blocks` lists the families' blocks in their stable order, `vectors` is
+their concatenation, and the layout theorems pin each block's first row. A new
+adapter adds its records and checks to its family module and appends a block
+to `blocks`.
+
 The composite-dispatch records include the version-one traces
 for the shared stateful boundary. Six input words carry a canonical state token,
 command tag, and four scalar arguments. Two logical result words carry the

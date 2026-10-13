@@ -28,6 +28,13 @@ import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.BoundaryVocabulary
 import LeanOS.SerialProtocol
+import LeanOS.Oracle.Scalar
+import LeanOS.Oracle.Interrupt
+import LeanOS.Oracle.Composite
+import LeanOS.Oracle.FrameBudget
+import LeanOS.Oracle.IOTLB
+import LeanOS.Oracle.Services
+import LeanOS.Oracle.Spawn
 
 /-!
 # Bounded scalar boundary oracle
@@ -36,19 +43,15 @@ This is the canonical, version-two corpus for the currently exported
 fixed-width adapters.  Expected words are evaluated from the adapter
 definitions, not copied into a C harness.  The corpus is deliberately finite;
 it is differential integration evidence, not a refinement theorem.
+
+The corpus checks live with their adapter families in the
+`LeanOS.Oracle.*` modules (issue #558) so the families elaborate in parallel;
+this module fixes their stable order, the row layout, and the emitter.
 -/
 namespace LeanOS.Oracle
 
 open LeanOS
 set_option maxRecDepth 4096
-
-structure Vector where
-  id : String
-  adapter : String
-  words : List UInt64
-  expected : UInt64
-  expectedValue : UInt64 := 0
-  deriving Repr
 
 structure AdapterSpec where
   name : String
@@ -98,1147 +101,96 @@ def adapters : List AdapterSpec := [
   adapter "ChildLoader.source" 32 "leanos_loader_source" 5,
   adapter "ChildLoader.decide" 33 "leanos_loader_decide" 6]
 
-private def boot (id : String) (state command : UInt64) : Vector :=
-  { id, adapter := "KernelTransition", words := [state, command],
-    expected := KernelTransition.bootTransition state command }
-
-private def syscall (id : String) (number arg0 arg1 arg2 : UInt64) : Vector :=
-  { id, adapter := "Syscall.scalar", words := [number, arg0, arg1, arg2],
-    expected := Syscall.syscallDemo number arg0 arg1 arg2 }
-
-private def ipc (id : String) (caller operation word0 word1 : UInt64) : Vector :=
-  { id, adapter := "IPCSyscall.scalar", words := [caller, operation, word0, word1],
-    expected := IPCSyscall.ipcDemo caller operation word0 word1 }
-
-private def preemption (id : String) (vector current queued armed : UInt64) : Vector :=
-  { id, adapter := "Preemption.scalar", words := [vector, current, queued, armed],
-    expected := Preemption.preemptionDemo vector current queued armed }
-
-private def resumable (id : String) (leg targetDescriptor savedDescriptor
-    targetRegisterMarker savedRegisterMarker : UInt64) : Vector :=
-  { id, adapter := "Preemption.resumable",
-    words := [leg, targetDescriptor, savedDescriptor, targetRegisterMarker,
-      savedRegisterMarker],
-    expected := Preemption.resumableDemo leg targetDescriptor savedDescriptor
-      targetRegisterMarker savedRegisterMarker }
-
-private def bootAllocation (id : String)
-    (current candidate status usable blocked manifest : UInt64) :
-    Vector :=
-  { id, adapter := "BootAllocation.scalar",
-    words := [current, candidate, status, usable, blocked, manifest],
-    expected := BootMemoryMapStreamAuthority.selectFrame
-      current candidate status usable blocked manifest }
-
-private def userReturn (id : String) (mode rip rsp selectors flags : UInt64) : Vector :=
-  { id, adapter := "Interrupt.userReturn", words := [mode, rip, rsp, selectors, flags],
-    expected := Interrupt.userReturnModelExpected mode rip rsp selectors flags }
-
-private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt64) : Vector :=
-  { id, adapter := "BlockingIPC.scalar", words := [phase, operation, caller, word0, word1],
-    expected := if 10 ≤ operation then
-      BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
-    else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
-
-private def notifyReplyEvent (id : String) (script step operation subject : UInt64) : Vector :=
-  { id, adapter := "NotifyReply.event", words := [script, step, operation, subject],
-    expected := NotifyReply.notifyReplyEvent script step operation subject }
-
-/-- A user-copy range check. The expected word is `UserCopy.validate` on the
-boot mapping state (`UserCopyPolicy.model`), not the generated adapter. -/
-private def userCopy (id : String) (flags start length : UInt64) : Vector :=
-  let text := UserCopyPolicy.bootText
-  let stack := UserCopyPolicy.bootStack
-  let top := UserCopyPolicy.bootStackTop
-  { id, adapter := "UserCopy.policy", words := [flags, start, length, text, stack, top],
-    expected := UserCopyPolicy.model flags start length text stack top }
-
-private def consoleAuthorize (id : String) (subject operation : UInt64) : Vector :=
-  { id, adapter := "ConsoleServer.authorize", words := [subject, operation],
-    expected := ConsoleServer.consoleAuthorize subject operation }
-
-private def directoryResolve (id : String) (registered held : UInt64) : Vector :=
-  { id, adapter := "EndpointDirectory.resolve", words := [registered, held],
-    expected := EndpointDirectory.directoryResolve registered held }
-
-private def faultHandlerRoute (id : String) (event vector subject word : UInt64) : Vector :=
-  { id, adapter := "FaultHandler.route", words := [event, vector, subject, word],
-    expected := FaultHandler.faultHandlerRoute event vector subject word }
-
-private def deviceAuthorize (id : String) (subject device : UInt64) : Vector :=
-  { id, adapter := "KeyboardEcho.deviceAuthorize", words := [subject, device],
-    expected := KeyboardEcho.deviceAuthorize subject device }
-
-private def timerServerDecide (id : String) (event subject word : UInt64) : Vector :=
-  { id, adapter := "TimerServer.decide", words := [event, subject, word],
-    expected := TimerServer.timerServerDecide event subject word }
-private def frameServerCheck (id : String) (op view usage limit requested held : UInt64) :
-    Vector :=
-  { id, adapter := "FrameServer.check", words := [op, view, usage, limit, requested, held],
-    expected := FrameServer.frameServerCheck op view usage limit requested held }
-
-private def frameServerView (id : String) (op index poolSize holder client free : UInt64) :
-    Vector :=
-  { id, adapter := "FrameServer.view", words := [op, index, poolSize, holder, client, free],
-    expected := FrameServer.frameServerView op index poolSize holder client free }
-
-private def spawnSyscallStep (id : String) (state actor number rbx rcx rdx : UInt64) :
-    Vector :=
-  { id, adapter := "SpawnSyscall.step", words := [state, actor, number, rbx, rcx, rdx],
-    expected := SpawnSyscall.spawnSyscall state actor number rbx rcx rdx }
-
-private def spawnSyscallValue (id : String) (state actor number rbx rcx rdx : UInt64) :
-    Vector :=
-  { id, adapter := "SpawnSyscall.value", words := [state, actor, number, rbx, rcx, rdx],
-    expected := SpawnSyscall.spawnSyscallValue state actor number rbx rcx rdx }
-
-private def loaderSource (id : String) (source start stop fileOffset span : UInt64) : Vector :=
-  { id, adapter := "ChildLoader.source", words := [source, start, stop, fileOffset, span],
-    expected := ChildLoader.loaderSource source start stop fileOffset span }
-
-private def loaderDecide (id : String) (op flags sourceCode pages frames used : UInt64) :
-    Vector :=
-  { id, adapter := "ChildLoader.decide", words := [op, flags, sourceCode, pages, frames, used],
-    expected := ChildLoader.loaderDecide op flags sourceCode pages frames used }
-
-private def blockingIPCEvent (id : String) (step operation caller : UInt64) : Vector :=
-  { id, adapter := "BlockingIPC.event", words := [step, operation, caller],
-    expected := BlockingIPC.blockingIpcEvent step operation caller }
-
-private def capabilityReuse (id : String) (phase caller word word0 word1 : UInt64) : Vector :=
-  { id, adapter := "CapabilityReuse.scalar", words := [phase, caller, word, word0, word1],
-    expected := CapabilityReuse.modelExpected phase caller word word0 word1 }
-
-private def interruptEntry (id : String) (descriptor frame stack context cleanup : UInt64) :
-    Vector :=
-  { id, adapter := "Interrupt.entry", words := [descriptor, frame, stack, context, cleanup],
-    expected := InterruptEntry.entryModelExpected descriptor frame stack context cleanup }
-
-private def pageFault (id : String) (error address mode context controls : UInt64) :
-    Vector :=
-  { id, adapter := "Interrupt.pageFault",
-    words := [error, address, mode, context, controls],
-    expected := InterruptEntry.pageFaultModelExpected error address mode context controls }
-
-private def extendedState (id : String) (policy mode vector current active normalized : UInt64) :
-    Vector :=
-  { id, adapter := "ExtendedState.denialDispatch",
-    words := [policy, mode, vector, current, active, normalized],
-    expected := ExtendedState.denialMachineGateModel policy mode vector current active normalized }
-
-private def privilegeEntryControl (id : String) (cpu control event vector normalized cr3 : UInt64) :
-    Vector :=
-  { id, adapter := "PrivilegeEntryControl.scalar",
-    words := [cpu, control, event, vector, normalized, cr3],
-    expected := PrivilegeEntryControl.controlModelExpected cpu control event vector normalized cr3 }
-
-private def faultDispatch (id : String) (vector origin current active ready context : UInt64) :
-    Vector :=
-  { id, adapter := "FaultDispatch.scalar",
-    words := [vector, origin, current, active, ready, context],
-    expected := FaultDispatch.faultDispatchModelExpected
-      vector origin current active ready context }
-
-private def directPortIO (id : String) (stored live originPurpose port directionWidth
-    value : UInt64) : Vector :=
-  { id, adapter := "DirectPortIO.scalar",
-    words := [stored, live, originPurpose, port, directionWidth, value],
-    expected := DirectPortIO.directPortIOModelExpected
-      stored live originPurpose port directionWidth value }
-
-private def nmi (id : String) (descriptor frame stack context control : UInt64) : Vector :=
-  { id, adapter := "Interrupt.nmi", words := [descriptor, frame, stack, context, control],
-    expected := InterruptEntry.nmiModelExpected descriptor frame stack context control }
-
-private def staleTranslation (id : String) (kind actor addressSpace page aux selector : UInt64) :
-    Vector :=
-  { id, adapter := "StaleTranslation.scalar",
-    words := [kind, actor, addressSpace, page, aux, selector],
-    expected := StaleTranslation.staleTranslationModelExpected
-      kind actor addressSpace page aux selector }
-
-private def iotlbPublication (id : String)
-    (action ticket source domain mapping iova : UInt64) : Vector :=
-  { id, adapter := "IOTLB.scalar",
-    words := [action, ticket, source, domain, mapping, iova],
-    expected := IOMMU.IOTLB.iotlbPublicationDemo
-      action ticket source domain mapping iova }
-
-private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : Vector :=
-  { id, adapter := "CompositeDispatcher.stateful",
-    words := [state, tag, arg0, arg1, arg2, arg3],
-    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3,
-    expectedValue := CompositeDispatcher.dispatchValue state tag arg0 arg1 arg2 arg3 }
-
-private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
-  | .transferOffered => "composite.mixed-transfer-offer"
-  | .transferAccepted => "composite.mixed-transfer-accept"
-  | .sealedHandleRejected => "composite.mixed-transfer-pre-receipt-denial"
-  | .delegatedSendAccepted => "composite.mixed-transfer-delegated-send"
-  | .delegatedReceiveRejected =>
-      "composite.mixed-transfer-excess-receive-denial"
-  | .transferredCapabilityRevoked => "composite.mixed-capability-revoke"
-  | .staleHandleRejected => "composite.mixed-stale-handle-reject"
-  | .freshCapabilityCopied => "composite.mixed-capability-copy"
-  | .syscallMapped => "composite.mixed-syscall-map"
-  | .directMapped => "composite.mixed-direct-map"
-  | .unknownSyscallRejected => "composite.mixed-unknown-syscall-reject"
-  | .nonblockingSent => "composite.mixed-nonblocking-send"
-  | .nonblockingReceived => "composite.mixed-nonblocking-receive"
-  | .blockingReceiverBlocked => "composite.mixed-blocking-receive"
-  | .blockingReceiverWoken => "composite.mixed-blocking-send"
-  | .timerSwitched => "composite.mixed-timer-switch"
-  | .userFaultCleaned => "composite.mixed-user-fault-cleanup"
-  | .fatalEntered => "composite.mixed-fatal-entry"
-  | .postFatalRejected => "composite.mixed-post-fatal-reject"
-  | .pageUnmapped => "composite.mixed-page-unmapped"
-  | .unmappedPageRejected => "composite.mixed-unmapped-page-reject"
-  | .pageProtected => "composite.mixed-page-protected"
-  | .protectAmplificationRejected => "composite.mixed-protect-amplification-reject"
-
-/-- The hosted representation of one canonical accepted mixed edge.  State,
-command arguments, and expected reply all come from the same edge definition
-used by `mixedCanonicalEdges_refine`. -/
-def mixedEdgeVector (edge : CompositeDispatcher.CanonicalMixedEdge) : Vector :=
-  let words := CompositeDispatcher.encodeMixedCommand edge.command
-  composite (mixedEdgeId edge.reply)
-    (CompositeDispatcher.encodeMixedState edge.state)
-    words.tag words.arg0 words.arg1 words.arg2 words.arg3
-
-def mixedVectors : List Vector :=
-  CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector
-
-private def capabilityTransferBootEdgeId :
-    CompositeDispatcher.CapabilityTransferBootCommandId → String
-  | .offer => "composite.boot-transfer-subject-one-offer"
-  | .switchToSubjectTwo => "composite.boot-transfer-switch-subject-two"
-  | .rejectSealedHandle => "composite.boot-transfer-sealed-denial"
-  | .accept => "composite.boot-transfer-subject-two-accept"
-  | .delegatedSend => "composite.boot-transfer-delegated-send"
-  | .rejectDelegatedReceive => "composite.boot-transfer-receive-denial"
-
-def capabilityTransferBootEdgeVector
-    (edge : CompositeDispatcher.CanonicalCapabilityTransferBootEdge) : Vector :=
-  let words :=
-    CompositeDispatcher.encodeCapabilityTransferBootCommand edge.command
-  composite (capabilityTransferBootEdgeId edge.command)
-    (CompositeDispatcher.encodeCapabilityTransferBootState edge.state)
-    words.tag words.arg0 words.arg1 words.arg2 words.arg3
-
-def capabilityTransferBootVectors : List Vector :=
-  CompositeDispatcher.capabilityTransferBootEdges.map
-    capabilityTransferBootEdgeVector
-
-private def inFlightRevocationEdgeId :
-    CompositeDispatcher.InFlightRevocationReplyId → String
-  | .childOffered => "composite.inflight-revocation-offer"
-  | .revocationWithoutAuthorityRejected =>
-      "composite.inflight-revocation-missing-authority-denial"
-  | .wrongLineageRootRejected => "composite.inflight-revocation-wrong-root-denial"
-  | .lineageRevoked => "composite.inflight-revocation-revoke"
-  | .repeatedRevocationRejected => "composite.inflight-revocation-repeat-denial"
-  | .offerAfterRevocationRejected => "composite.inflight-revocation-stale-offer-denial"
-  | .subjectTwoRestored => "composite.inflight-revocation-switch-subject-two"
-  | .canceledReceiptRejected => "composite.inflight-revocation-canceled-receipt-denial"
-  | .destinationReplaced => "composite.inflight-revocation-replace-slot"
-  | .canceledHandleReplayRejected =>
-      "composite.inflight-revocation-canceled-handle-denial"
-  | .replacementUsed => "composite.inflight-revocation-fresh-send"
-
-def inFlightRevocationEdgeVector
-    (edge : CompositeDispatcher.CanonicalInFlightRevocationEdge) : Vector :=
-  let words := CompositeDispatcher.encodeInFlightRevocationCommand edge.command
-  composite (inFlightRevocationEdgeId edge.reply)
-    (CompositeDispatcher.encodeInFlightRevocationState edge.state)
-    words.tag words.arg0 words.arg1 words.arg2 words.arg3
-
-def inFlightRevocationVectors : List Vector :=
-  CompositeDispatcher.inFlightRevocationCanonicalEdges.map inFlightRevocationEdgeVector
-
-/-- Hostile records for the in-flight revocation family: the revocation words
-replayed against the pre-offer seed token, the mixed corpus's post-receipt
-revocation spliced into this family's subject-2 state, and subject 2's receipt
-words presented while subject 1 is still the current subject.  None can select
-an edge; the state token, not the caller, decides who is acting. -/
-def inFlightRevocationNegativeVectors : List Vector := [
-  composite "composite.inflight-revocation-stale-state-replay" 0x6001 0x5201 2 1 1 0,
-  composite "composite.inflight-revocation-cross-trace-splice" 0x6301 0x2201 0 2 3 0,
-  composite "composite.inflight-revocation-receipt-before-switch" 0x6201 0x2101
-    0x30000 3 0 0]
-
-private def invalidationEdgeId :
-    CompositeDispatcher.InvalidationReplyId → String
-  | .wrongOwnerRejected => "composite.invalidation-wrong-owner-reject"
-  | .protectPending => "composite.invalidation-protect-pending"
-  | .protectMismatchRejected => "composite.invalidation-protect-effect-mismatch"
-  | .protectedState => "composite.invalidation-protect-ack"
-  | .releasePending => "composite.invalidation-release-pending"
-  | .releaseMismatchRejected => "composite.invalidation-release-effect-mismatch"
-  | .released => "composite.invalidation-release-ack"
-  | .staleReleaseRejected => "composite.invalidation-stale-release-reject"
-  | .destroyPending => "composite.invalidation-destroy-pending"
-  | .destroyed => "composite.invalidation-destroy-ack"
-  | .switchPending => "composite.invalidation-switch-pending"
-  | .switched => "composite.invalidation-switch-ack"
-  | .reused => "composite.invalidation-reuse-published"
-  | .unmapPending => "composite.invalidation-unmap-pending"
-  | .unmappedState => "composite.invalidation-unmap-ack"
-  | .switchAwayPending => "composite.invalidation-switch-away-pending"
-  | .switchedAway => "composite.invalidation-switch-away-ack"
-  | .switchBackPending => "composite.invalidation-switch-back-pending"
-  | .switchedBack => "composite.invalidation-switch-back-ack"
-
-def invalidationEdgeVector
-    (edge : CompositeDispatcher.CanonicalInvalidationEdge) : Vector :=
-  let words := CompositeDispatcher.encodeInvalidationCommand edge.command
-  composite (invalidationEdgeId edge.reply)
-    (CompositeDispatcher.encodeInvalidationState edge.state)
-    words.tag words.arg0 words.arg1 words.arg2 words.arg3
-
-def invalidationVectors : List Vector :=
-  CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector
-
-def invalidationNegativeVectors : List Vector :=
-  [composite "composite.invalidation-malformed-effect"
-      0x1d01 0x3501 1 1 7 1,
-   composite "composite.invalidation-mismatched-state"
-      0x1f01 0x3501 1 1 7 0,
-   composite "composite.invalidation-stale-ticket-replay"
-      0x2501 0x3d01 3 0 0 1]
-/-- Issue-112's canonical budget sequence and hostile encodings use the same
-stateful export as the mixed composite trace. -/
-def budgetVectors : List Vector := [
-  composite "frame-budget.a-allocate" 0x4001 0x4001 10 0 0 0,
-  composite "frame-budget.a-at-limit" 0x4101 0x4101 11 1 0 0,
-  composite "frame-budget.select-b" 0x4201 0x4201 0 0 0 0,
-  composite "frame-budget.b-peer-allocate" 0x4301 0x4301 20 0 0 0,
-  composite "frame-budget.terminate-a" 0x4401 0x4401 0 0 0 0,
-  composite "frame-budget.b-fresh-publication" 0x4501 0x4501 21 1 0 0,
-  composite "frame-budget.stale-a-handle-denied" 0x4601 0x4601 0x10000 0 0 0,
-  composite "frame-budget.complete" 0x4701 0x4701 0 0 0 0,
-  composite "frame-budget.release-a" 0x4101 0x4801 0 0 0 0,
-  composite "frame-budget.repeated-release" 0x4901 0x4901 0 0 0 0,
-  composite "frame-budget.release-complete" 0x4a01 0x4a01 0 0 0 0,
-  composite "frame-budget.repeated-a-retry" 0x4201 0x4101 11 1 0 0,
-  composite "frame-budget.occupied-slot" 0x4101 0x4001 10 0 0 0,
-  composite "frame-budget.repeated-termination" 0x4501 0x4401 0 0 0 0,
-  composite "frame-budget.aggregate-global-inconsistency" 0x4c01 0x4301 20 0 0 0,
-  composite "frame-budget.malformed-budget-state" 0x4002 0x4001 10 0 0 0,
-  composite "frame-budget.caller-context-forgery" 0x4201 0x4201 1 2 0 0,
-  composite "frame-budget.user-selects-charge-owner" 0x4001 0x4001 10 0 1 0,
-  composite "frame-budget.stale-generation" 0x4601 0x4601 0x20000 0 0 0,
-  composite "frame-budget.output-state-replay" 0x4101 0x4301 20 0 0 0,
-  composite "frame-budget.cross-trace-splice" 0x1001 0x4501 21 1 0 0,
-  composite "frame-budget.unknown-operation" 0x4001 0x3f01 0 0 0 0,
-  composite "frame-budget.reserved-command" 0x4001 0x5001 0 0 0 0,
-  composite "frame-budget.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
-
-/-- The spawn family (ADR 0010 gate item 5): one vector per edge of
-`SpawnBoundary.edges`, in table order. -/
-def spawnEdgeNames : List String :=
-  [ "composite.spawn-seed-spawn"
-  , "composite.spawn-seed-grant-first-control"
-  , "composite.spawn-seed-kernel-grant-parent"
-  , "composite.spawn-seed-kernel-grant-child"
-  , "composite.spawn-authorized-spawn"
-  , "composite.spawn-authorized-spawn-generation-two"
-  , "composite.spawn-authorized-spawn-malformed-endpoint"
-  , "composite.spawn-authorized-spawn-stale-endpoint"
-  , "composite.spawn-authorized-spawn-endpoint-out-of-range"
-  , "composite.spawn-authorized-spawn-address-space-as-endpoint"
-  , "composite.spawn-authorized-spawn-invalid-rights"
-  , "composite.spawn-authorized-terminate-first-control"
-  , "composite.spawn-authorized-kernel-revoke-parent"
-  , "composite.spawn-authorized-allocate-slot-3"
-  , "composite.spawn-authorized-copy-send-only"
-  , "composite.spawn-authorized-copy-send-grant"
-  , "composite.spawn-spawned-spawn"
-  , "composite.spawn-spawned-grant-first-control"
-  , "composite.spawn-spawned-grant-second-control"
-  , "composite.spawn-spawned-grant-malformed-control"
-  , "composite.spawn-spawned-release-slot-2"
-  , "composite.spawn-spawned-timer-switch"
-  , "composite.spawn-spawned-kernel-grant-child"
-  , "composite.spawn-released-release-slot-2"
-  , "composite.spawn-released-grant-two-frames"
-  , "composite.spawn-released-grant-first-control"
-  , "composite.spawn-granted-allocate-slot-2"
-  , "composite.spawn-granted-terminate-first-control"
-  , "composite.spawn-terminated-terminate-first-control"
-  , "composite.spawn-terminated-grant-first-control"
-  , "composite.spawn-terminated-allocate-slot-2"
-  , "composite.spawn-reallocated-spawn"
-  , "composite.spawn-respawned-terminate-first-control"
-  , "composite.spawn-respawned-grant-first-control"
-  , "composite.spawn-respawned-spawn"
-  , "composite.spawn-respawned-terminate-second-control"
-  , "composite.spawn-other-subject-terminate-first-control"
-  , "composite.spawn-other-subject-grant-first-control"
-  , "composite.spawn-other-subject-spawn-bystander-endpoint"
-  , "composite.spawn-other-subject-allocate-slot-2"
-  , "composite.spawn-revoked-spawn"
-  , "composite.spawn-revoked-kernel-grant-parent"
-  , "composite.spawn-regranted-spawn"
-  , "composite.spawn-regranted-spawn-generation-two"
-  , "composite.spawn-subjects-exhausted-spawn"
-  , "composite.spawn-objects-exhausted-spawn"
-  , "composite.spawn-controls-exhausted-spawn"
-  , "composite.spawn-narrowed-send-spawn-narrowed-endpoint"
-  , "composite.spawn-narrowed-grant-spawn-rights-not-subset"
-  , "composite.spawn-terminated-spawn-into-reused-slot"
-  , "composite.spawn-loader-respawned-grant-second-control"
-  , "composite.spawn-loader-respawned-grant-first-control"
-  , "composite.spawn-loader-granted-terminate-second-control"
-  , "composite.spawn-loader-granted-terminate-first-control"
-  ]
-
-def spawnEdgeVector (name : String) (edge : SpawnBoundary.Edge) : Vector :=
-  let words := edge.words
-  composite name (SpawnBoundary.encodeState edge.state)
-    words.tag words.arg0 words.arg1 words.arg2 words.arg3
-
-def spawnEdgeVectors : List Vector :=
-  List.zipWith spawnEdgeVector spawnEdgeNames SpawnBoundary.edges
-
-/-- Hostile encodings against the spawn family's tokens: noncanonical and
-reserved arguments, accepted words replayed at the wrong state, splices from
-other families, and wrong versions.  Each rejects with an error word before
-any gate runs. -/
-def spawnNegativeVectors : List Vector := [
-  composite "composite.spawn-reserved-rights-bit" 0x7101 0x7001 1 0x30000 64 0,
-  composite "composite.spawn-reserved-argument" 0x7101 0x7001 1 0x30000 4 1,
-  composite "composite.spawn-zero-spawn-word" 0x7101 0x7001 0 0x30000 4 0,
-  composite "composite.spawn-accepted-words-at-wrong-state" 0x7301 0x7001 1 0x30000 4 0,
-  composite "composite.spawn-grant-replayed-after-grant" 0x7401 0x7101 0x10000 1 0 0,
-  composite "composite.spawn-termination-before-spawn-replay" 0x7001 0x7201 0x10000 0 0 0,
-  composite "composite.spawn-caller-forged-in-grant" 0x7201 0x7101 0x10000 1 2 0,
-  composite "composite.spawn-release-unnamed-slot" 0x7201 0x7401 9 0 0 0,
-  composite "composite.spawn-switch-with-argument" 0x7201 0x7701 1 0 0 0,
-  composite "composite.spawn-cross-family-splice" 0x7201 0x0101 1 0 0 0,
-  composite "composite.spawn-reserved-command" 0x7201 0x7901 0 0 0 0,
-  composite "composite.spawn-wrong-command-version" 0x7201 0x7002 1 0x30000 4 0,
-  composite "composite.spawn-wrong-state-version" 0x7102 0x7001 1 0x30000 4 0,
-  composite "composite.spawn-state-above-family" 0x8501 0x7001 1 0x30000 4 0]
-
-/-- The ring-3 spawn syscall (#489, #491): the `spawn-child` image's thirteen
-calls at their tokens, then every refusal (not a family token, not the current
-subject, not a spawn-family number, noncanonical registers for each number,
-a decodable command outside the bounded table, maximum words), the bystander
-presenting the parent's control word, and the value words of the accepted
-calls and of a refusal. -/
-def spawnSyscallVectors : List Vector := [
-  spawnSyscallStep "spawn-syscall.spawn" 0x7101 2 100 1 0x30000 4,
-  spawnSyscallStep "spawn-syscall.reserved-rights-bit" 0x7201 2 100 1 0x30000 0x40,
-  spawnSyscallStep "spawn-syscall.subject-budget-exhausted" 0x7201 2 100 1 0x30000 4,
-  spawnSyscallStep "spawn-syscall.grant-frame-in-use" 0x7201 2 101 0x10000 1 0,
-  spawnSyscallStep "spawn-syscall.release" 0x7201 2 104 2 0 0,
-  spawnSyscallStep "spawn-syscall.grant" 0x7301 2 101 0x10000 1 0,
-  spawnSyscallStep "spawn-syscall.terminate" 0x7401 2 102 0x10000 0 0,
-  spawnSyscallStep "spawn-syscall.terminate-stale" 0x7501 2 102 0x10000 0 0,
-  spawnSyscallStep "spawn-syscall.allocate" 0x7501 2 103 2 0 0,
-  spawnSyscallStep "spawn-syscall.respawn-same-slot" 0x7601 2 100 1 0x30000 4,
-  spawnSyscallStep "spawn-syscall.old-handle-terminate" 0x7701 2 102 0x10000 0 0,
-  spawnSyscallStep "spawn-syscall.old-handle-grant" 0x7701 2 101 0x10000 1 0,
-  spawnSyscallStep "spawn-syscall.terminate-new-child" 0x7701 2 102 0x20000 0 0,
-  spawnSyscallStep "spawn-syscall.not-family-state" 0x0101 2 100 1 0x30000 4,
-  spawnSyscallStep "spawn-syscall.not-current-subject" 0x7101 1 100 1 0x30000 4,
-  spawnSyscallStep "spawn-syscall.parent-after-switch" 0x7901 2 102 0x10000 0 0,
-  spawnSyscallStep "spawn-syscall.bystander-presents-control" 0x7901 1 102 0x10000 0 0,
-  spawnSyscallStep "spawn-syscall.kernel-grant-not-a-syscall" 0x7101 2 105 2 1 0,
-  spawnSyscallStep "spawn-syscall.number-below-family" 0x7101 2 99 1 0x30000 4,
-  spawnSyscallStep "spawn-syscall.zero-spawn-word" 0x7101 2 100 0 0x30000 4,
-  spawnSyscallStep "spawn-syscall.grant-zero-frames" 0x7301 2 101 0x10000 0 0,
-  spawnSyscallStep "spawn-syscall.grant-reserved-rdx" 0x7301 2 101 0x10000 1 1,
-  spawnSyscallStep "spawn-syscall.terminate-reserved-rcx" 0x7401 2 102 0x10000 1 0,
-  spawnSyscallStep "spawn-syscall.allocate-reserved-rdx" 0x7501 2 103 2 0 1,
-  spawnSyscallStep "spawn-syscall.release-reserved-rcx" 0x7201 2 104 2 1 0,
-  spawnSyscallStep "spawn-syscall.outside-table-allocate" 0x7101 2 103 5 0 0,
-  spawnSyscallStep "spawn-syscall.outside-table-empty-rights" 0x7101 2 100 1 0x30000 0,
-  spawnSyscallStep "spawn-syscall.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
-  spawnSyscallValue "spawn-syscall-value.spawn" 0x7101 2 100 1 0x30000 4,
-  spawnSyscallValue "spawn-syscall-value.grant" 0x7301 2 101 0x10000 1 0,
-  spawnSyscallValue "spawn-syscall-value.terminate" 0x7401 2 102 0x10000 0 0,
-  spawnSyscallValue "spawn-syscall-value.respawn-same-slot" 0x7601 2 100 1 0x30000 4,
-  spawnSyscallValue "spawn-syscall-value.terminate-new-child" 0x7701 2 102 0x20000 0 0,
-  spawnSyscallValue "spawn-syscall-value.old-handle-terminate" 0x7701 2 102 0x10000 0 0,
-  spawnSyscallValue "spawn-syscall-value.refusal" 0x7201 2 100 1 0x30000 0x40,
-  spawnSyscallValue "spawn-syscall-value.outside-table" 0x7101 2 103 5 0 0]
-
-/-- The run-time loader's witnesses (#492), on a reserved range of four
-pages at `0x400000` holding a text segment at file offset `0x1000` and a data
-segment at `0x2000`, one page each: the source check inside, below, past and
-across the end of the range, at the wrong placement, and with a span larger
-than the range; then every decision: in place, by copy, the two refusals
-without effect, every rollback, a started child, an incomplete start, an
-unknown request, and maximum words. -/
-def loaderVectors : List Vector := [
-  loaderSource "loader-source.text-in-place" 0x401000 0x400000 0x404000 0x1000 0x1000,
-  loaderSource "loader-source.data-copy" 0x402000 0x400000 0x404000 0x2000 0x1000,
-  loaderSource "loader-source.below-range" 0x3ff000 0x400000 0x404000 0x1000 0x1000,
-  loaderSource "loader-source.past-range" 0x404000 0x400000 0x404000 0x1000 0x1000,
-  loaderSource "loader-source.across-end" 0x403800 0x400000 0x404000 0x1000 0x1000,
-  loaderSource "loader-source.wrong-placement" 0x402000 0x400000 0x404000 0x1000 0x1000,
-  loaderSource "loader-source.span-beyond-range" 0x401000 0x400000 0x800 0 0x1000,
-  loaderSource "loader-source.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
-  loaderDecide "loader-decide.load-in-place" 1 5 0 1 1 0,
-  loaderDecide "loader-decide.load-copy" 1 21 0 1 1 0,
-  loaderDecide "loader-decide.refused-no-child" 1 0 0 1 1 0,
-  loaderDecide "loader-decide.refused-started" 1 2 0 1 1 0,
-  loaderDecide "loader-decide.rollback-bad-index" 1 1 0 0 1 0,
-  loaderDecide "loader-decide.rollback-already-loaded" 1 13 0 1 1 0,
-  loaderDecide "loader-decide.rollback-outside-authority" 1 5 5 1 1 0,
-  loaderDecide "loader-decide.rollback-wrong-source" 1 5 6 1 1 0,
-  loaderDecide "loader-decide.rollback-in-place-zero-fill" 1 37 0 1 1 0,
-  loaderDecide "loader-decide.rollback-no-frames" 1 21 0 1 0 0,
-  loaderDecide "loader-decide.rollback-frames-used" 1 21 0 1 1 1,
-  loaderDecide "loader-decide.start" 2 65 0 0 0 0,
-  loaderDecide "loader-decide.rollback-incomplete" 2 1 0 0 0 0,
-  loaderDecide "loader-decide.start-refused-no-child" 2 64 0 0 0 0,
-  loaderDecide "loader-decide.unknown-request" 3 65 0 0 0 0,
-  loaderDecide "loader-decide.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
-
-/-- The first hosted IOTLB corpus keeps one exact filled-cache trace together
-with stale-ticket and every lifetime-bearing scope mismatch. -/
-def iotlbPublicationVectors : List Vector := [
-  iotlbPublication "iotlb.observe-filled" 0 0 0 0 0 0,
-  iotlbPublication "iotlb.prepare-retains-live" 1 0 0 0 0 0,
-  iotlbPublication "iotlb.reject-stale-ticket" 2 6 1 3 4 0x1000,
-  iotlbPublication "iotlb.reject-wrong-source" 2 7 9 3 4 0x1000,
-  iotlbPublication "iotlb.reject-wrong-domain" 2 7 1 9 4 0x1000,
-  iotlbPublication "iotlb.reject-wrong-mapping" 2 7 1 3 9 0x1000,
-  iotlbPublication "iotlb.reject-wrong-iova" 2 7 1 3 4 0x2000,
-  iotlbPublication "iotlb.ack-exact" 2 7 1 3 4 0x1000,
-  iotlbPublication "iotlb.reject-completion-replay" 3 7 1 3 4 0x1000]
-
-/-- A malformed budget-state ABI version is rejected before range routing, so
-the differential corpus cannot silently bless a continuity misclassification. -/
-theorem malformed_budget_state_is_wrong_version :
-    (budgetVectors[15]).id = "frame-budget.malformed-budget-state" ∧
-    (budgetVectors[15]).expected = 0xff01 := by
-  native_decide
-
-private def nmiUserFrame : UInt64 :=
-  0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
-
-private def nmiKernelFrame : UInt64 :=
-  0x08 + 0x10 * 256 + 0x10000 + 0x20000
-
-private def nmiContextRunning : UInt64 := 1 + 1 * 256 + 2 * 0x10000
-private def nmiContextHandling : UInt64 := nmiContextRunning + 0x4000000
-private def nmiContextHalted : UInt64 := nmiContextRunning + 0x8000000
-
-private def nmiControl : UInt64 :=
-  2 + 40 * 512 + 0x20000 + 0x40000 + 1 * 0x80000 + 1 * 0x8000000
-
-private def nmiFrameAddress : UInt64 := 0x903fd8
-
-/-- Opaque business token; every boot-phase result must carry it unchanged. -/
-private def bootPhaseBusiness : UInt64 := 0x5a
-
-private def bootPhase (id : String)
-    (phase operation detail latchWord : UInt64) : Vector :=
-  { id, adapter := "Interrupt.bootPhase",
-    words := [phase, operation, detail, latchWord, bootPhaseBusiness],
-    expected := BootInterruptPhase.bootPhaseModelExpected phase operation detail
-      latchWord bootPhaseBusiness }
-
-/-- The repeating event-exchange witness: its four accepted edges and three
-refusals (wrong caller, wrong step, a step outside 0–3). -/
-def blockingIpcEventVectors : List Vector := [
-  blockingIPCEvent "blocking-ipc-event.block-b" 0 1 2,
-  blockingIPCEvent "blocking-ipc-event.send-wake-b" 1 2 1,
-  blockingIPCEvent "blocking-ipc-event.dispatch-b" 2 3 1,
-  blockingIPCEvent "blocking-ipc-event.deliver-b" 3 4 2,
-  blockingIPCEvent "blocking-ipc-event.wrong-caller" 1 2 2,
-  blockingIPCEvent "blocking-ipc-event.wrong-step" 0 2 1,
-  blockingIPCEvent "blocking-ipc-event.out-of-cycle" 4 1 2]
-
-/-- Notification and reply-capability edges (#471): the machine scenario,
-the rejected edges (signal without the right, copying a reply capability,
-reply after the caller terminated, a double reply), and off-script refusals. -/
-def notifyReplyVectors : List Vector := [
-  notifyReplyEvent "notify-reply.wait-blocks" 0 0 2 2,
-  notifyReplyEvent "notify-reply.signal" 0 1 1 1,
-  notifyReplyEvent "notify-reply.wait-wakes" 0 2 2 2,
-  notifyReplyEvent "notify-reply.call" 0 3 3 1,
-  notifyReplyEvent "notify-reply.reply" 0 4 4 2,
-  notifyReplyEvent "notify-reply.double-reply" 0 5 4 2,
-  notifyReplyEvent "notify-reply.signal-without-right" 1 0 1 2,
-  notifyReplyEvent "notify-reply.negative-call" 1 1 3 1,
-  notifyReplyEvent "notify-reply.copy-reply" 1 2 5 2,
-  notifyReplyEvent "notify-reply.caller-terminates" 1 3 6 1,
-  notifyReplyEvent "notify-reply.reply-after-termination" 1 4 4 2,
-  notifyReplyEvent "notify-reply.off-script-step" 0 9 4 2,
-  notifyReplyEvent "notify-reply.unknown-script" 2 0 2 2]
-
-/-- User-copy range checks (#478) on the boot layout: one text page at
-0x29a000 and two stack pages at 0x29b000. Flags: bit 0 write, bit 1 current
-lifetime, bits 8 and up the subject. -/
-def userCopyPolicyVectors : List Vector := [
-  userCopy "user-copy.zero-length" 0x102 0x29b000 0,
-  userCopy "user-copy.stack-read" 0x102 0x29b000 16,
-  userCopy "user-copy.stack-write" 0x103 0x29cff0 16,
-  userCopy "user-copy.stack-top-unmapped" 0x102 0x29d000 1,
-  userCopy "user-copy.straddles-stack-top" 0x102 0x29cff8 16,
-  userCopy "user-copy.text-read" 0x102 0x29a000 1,
-  userCopy "user-copy.text-write-read-only" 0x103 0x29a000 1,
-  userCopy "user-copy.text-into-stack-write" 0x103 0x29aff8 16,
-  userCopy "user-copy.too-long" 0x102 0x29b000 17,
-  userCopy "user-copy.overflow" 0x102 0xfffffffffffffff9 16,
-  userCopy "user-copy.end-at-2-pow-64" 0x102 0xfffffffffffffff8 8,
-  userCopy "user-copy.noncanonical" 0x102 0x800000000000 1,
-  userCopy "user-copy.wrong-subject" 0x202 0x29b000 1,
-  userCopy "user-copy.stale" 0x100 0x29b000 1]
-
-/-- Console-server authority decisions (#472): every subject (A 1, B 2,
-server C 3) against every operation (send 1, console write 2, console read 3,
-serve 4, receive 5), then codes outside the ABI. -/
-def consoleAuthorizeVectors : List Vector := [
-  consoleAuthorize "console-authorize.a-send" 1 1,
-  consoleAuthorize "console-authorize.a-write" 1 2,
-  consoleAuthorize "console-authorize.a-read" 1 3,
-  consoleAuthorize "console-authorize.a-serve" 1 4,
-  consoleAuthorize "console-authorize.a-receive" 1 5,
-  consoleAuthorize "console-authorize.b-send" 2 1,
-  consoleAuthorize "console-authorize.b-write" 2 2,
-  consoleAuthorize "console-authorize.b-read" 2 3,
-  consoleAuthorize "console-authorize.b-serve" 2 4,
-  consoleAuthorize "console-authorize.b-receive" 2 5,
-  consoleAuthorize "console-authorize.server-send" 3 1,
-  consoleAuthorize "console-authorize.server-write" 3 2,
-  consoleAuthorize "console-authorize.server-read" 3 3,
-  consoleAuthorize "console-authorize.server-serve" 3 4,
-  consoleAuthorize "console-authorize.server-receive" 3 5,
-  consoleAuthorize "console-authorize.unknown-subject" 4 2,
-  consoleAuthorize "console-authorize.zero-operation" 3 0,
-  consoleAuthorize "console-authorize.unknown-operation" 3 6,
-  consoleAuthorize "console-authorize.maximum-words" 0xffffffffffffffff
-    0xffffffffffffffff]
-
-/-- Endpoint-directory rights decisions (#485): an unregistered name, then a
-registered name over every endpoint-rights word (send 1, receive 2, grant 4,
-revoke 8), then words outside the four bits. -/
-def directoryResolveVectors : List Vector :=
-  [directoryResolve "directory-resolve.unregistered" 0 0,
-   directoryResolve "directory-resolve.unregistered-full-rights" 0 15] ++
-  (List.range 16).map (fun held =>
-    directoryResolve s!"directory-resolve.held-{held}" 1 held.toUInt64) ++
-  [directoryResolve "directory-resolve.held-out-of-range" 1 16,
-   directoryResolve "directory-resolve.maximum-words" 0xffffffffffffffff
-     0xffffffffffffffff]
-
-/-- Fault-handler routes (#488): the bound `#DE` delivery from A to C, the
-default for another class, a page fault, a busy handler, a fault from B and
-one from the handler C itself, the bound handler's terminate, and the refused
-replies (wrong subject, nothing suspended, another decision, unknown event). -/
-def faultHandlerVectors : List Vector := [
-  faultHandlerRoute "fault-handler.deliver" 0 0 1 1,
-  faultHandlerRoute "fault-handler.other-class" 0 3 1 1,
-  faultHandlerRoute "fault-handler.page-fault" 0 14 1 1,
-  faultHandlerRoute "fault-handler.handler-busy" 0 0 1 0,
-  faultHandlerRoute "fault-handler.other-subject" 0 0 2 1,
-  faultHandlerRoute "fault-handler.handler-faults" 0 0 3 1,
-  faultHandlerRoute "fault-handler.reply-terminate" 1 1 3 1,
-  faultHandlerRoute "fault-handler.reply-wrong-subject" 1 1 2 1,
-  faultHandlerRoute "fault-handler.reply-nothing-suspended" 1 0 3 1,
-  faultHandlerRoute "fault-handler.reply-other-decision" 1 1 3 2,
-  faultHandlerRoute "fault-handler.unknown-event" 2 0 1 1]
-
-/-- Keyboard-echo device authority (#493): every subject code 0--4 against the
-assigned device 0 and another device 1, then the holder against the maximum
-device word and the maximum words. -/
-def deviceAuthorizeVectors : List Vector :=
-  ((List.range 5).flatMap fun subject => (List.range 2).map fun device =>
-    deviceAuthorize s!"device-authorize.subject-{subject}-device-{device}"
-      subject.toUInt64 device.toUInt64) ++
-  [deviceAuthorize "device-authorize.holder-maximum-device" 1 0xffffffffffffffff,
-   deviceAuthorize "device-authorize.maximum-words" 0xffffffffffffffff 0xffffffffffffffff]
-
-/-- Timer-server kernel decisions (#487): C's arm at and around the bound,
-arms from A and B, sends to the server from each subject, the expiry with and
-without an armed alarm, C's wake of A and refused wakes, and an unknown
-event. -/
-def timerServerVectors : List Vector := [
-  timerServerDecide "timer-server.arm-holder-max" 0 3 65535,
-  timerServerDecide "timer-server.arm-holder-min" 0 3 1,
-  timerServerDecide "timer-server.arm-holder-zero" 0 3 0,
-  timerServerDecide "timer-server.arm-holder-over" 0 3 65536,
-  timerServerDecide "timer-server.arm-holder-maximum-word" 0 3 0xffffffffffffffff,
-  timerServerDecide "timer-server.arm-client" 0 1 1000,
-  timerServerDecide "timer-server.arm-other" 0 2 1000,
-  timerServerDecide "timer-server.send-client" 1 1 0,
-  timerServerDecide "timer-server.send-other" 1 2 0,
-  timerServerDecide "timer-server.send-server" 1 3 0,
-  timerServerDecide "timer-server.expire-armed" 2 0 1,
-  timerServerDecide "timer-server.expire-idle" 2 0 0,
-  timerServerDecide "timer-server.wake-holder" 3 3 1,
-  timerServerDecide "timer-server.wake-other-signaller" 3 2 1,
-  timerServerDecide "timer-server.wake-other-client" 3 3 2,
-  timerServerDecide "timer-server.unknown-event" 4 3 1]
-/-- Frame-server decision checks (#486): the image's four decisions (grant
-to A, A's over-budget refusal, A's revocation, the republished grant to B),
-then every rejection of a hostile decision (outside the pool, frame in use,
-amplified or empty rights, over budget, untruthful refusals, reclaim of a
-frame the client does not hold), an accepted reclaim and pool-exhausted
-refusal, an unknown op, and maximum words. -/
-def frameServerVectors : List Vector := [
-  frameServerCheck "frame-server.grant-a" 1 1 0 1 3 3,
-  frameServerCheck "frame-server.refuse-a-over-budget" 2 0 1 1 0 3,
-  frameServerCheck "frame-server.revoke-a" 5 0 1 1 0 3,
-  frameServerCheck "frame-server.grant-b-republished" 1 1 0 2 3 3,
-  frameServerCheck "frame-server.grant-outside-pool" 1 0 0 1 3 3,
-  frameServerCheck "frame-server.grant-frame-in-use" 1 3 0 1 3 3,
-  frameServerCheck "frame-server.grant-amplified-rights" 1 1 0 1 4 3,
-  frameServerCheck "frame-server.grant-empty-rights" 1 1 0 1 0 3,
-  frameServerCheck "frame-server.grant-over-budget" 1 1 1 1 3 3,
-  frameServerCheck "frame-server.refuse-within-budget" 2 0 0 1 0 3,
-  frameServerCheck "frame-server.refuse-pool-with-free-frame" 3 1 0 1 0 3,
-  frameServerCheck "frame-server.refuse-pool-exhausted" 3 0 0 1 0 3,
-  frameServerCheck "frame-server.reclaim-held" 4 2 1 1 0 3,
-  frameServerCheck "frame-server.reclaim-not-holder" 4 3 0 1 0 3,
-  frameServerCheck "frame-server.unknown-op" 0 1 0 1 3 3,
-  frameServerCheck "frame-server.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
-
-/-- Frame-server view words (#486): a free pool frame for A and for B, a frame
-outside the pool, a frame held by another client, a frame held by the
-client, the pool-exhausted bit, ops without a frame, and maximum words. -/
-def frameServerViewVectors : List Vector := [
-  frameServerView "frame-server-view.free-for-a" 1 0 2 0 1 2,
-  frameServerView "frame-server-view.free-for-b" 1 0 2 0 2 1,
-  frameServerView "frame-server-view.outside-pool" 1 2 2 0 1 2,
-  frameServerView "frame-server-view.held-by-other" 1 1 2 2 1 1,
-  frameServerView "frame-server-view.held-by-client" 4 0 2 1 1 1,
-  frameServerView "frame-server-view.pool-exhausted" 3 0 2 0 1 0,
-  frameServerView "frame-server-view.refuse-budget" 2 0 2 1 1 1,
-  frameServerView "frame-server-view.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
-
-/-- Rung 2 of the #470 ladder: `leanos_boot_transition` over the whole input
-classification. Each argument ranges over the boundary words 0, 1, 2 and
-2^64 − 1, which cover its equivalence classes (the accepting word, the
-other model encoding, words that encode nothing, and the maximum word). -/
-def bootTransitionClassWords : List UInt64 := [0, 1, 2, 0xffffffffffffffff]
-
-def bootTransitionClassVectors : List Vector :=
-  bootTransitionClassWords.flatMap fun state =>
-    bootTransitionClassWords.map fun command =>
-      boot s!"boot.class.state-{state}.command-{command}" state command
+/-- The corpus blocks in their stable order.  Each family module owns its
+blocks; a new adapter appends a block here and nothing else moves. -/
+def blocks : List (List Vector) :=
+  [scalarVectors, interruptVectors, compositeScenarioVectors, mixedVectors,
+    invalidationVectors, invalidationNegativeVectors, budgetVectors,
+    iotlbPublicationVectors, capabilityTransferBootVectors, inFlightRevocationVectors,
+    inFlightRevocationNegativeVectors, blockingIpcEventVectors,
+    bootTransitionClassVectors, notifyReplyVectors, userCopyPolicyVectors,
+    consoleAuthorizeVectors, directoryResolveVectors, faultHandlerVectors,
+    deviceAuthorizeVectors, timerServerVectors, frameServerVectors,
+    frameServerViewVectors, spawnEdgeVectors, spawnNegativeVectors,
+    spawnSyscallVectors, loaderVectors]
 
 /-- Stable ordering is part of schema version one. -/
-def vectors : List Vector := [
-  boot "boot.accept" 0 1,
-  boot "boot.ready-reject" 1 1,
-  boot "boot.bad-state" 2 1,
-  boot "boot.bad-command" 0 18446744073709551615,
-  syscall "syscall.accept" 0 (12 * 65536) 7 1,
-  syscall "syscall.unknown" 99 0 0 0,
-  syscall "syscall.bad-permission" 0 (12 * 65536) 7 4,
-  syscall "syscall.boundary" 18446744073709551615 18446744073709551615
-    18446744073709551615 18446744073709551615,
-  ipc "ipc.sender-receive-denied" 1 4 1279607118 20307,
-  ipc "ipc.sender-send" 1 3 1279607118 20307,
-  ipc "ipc.receiver-send-denied" 2 3 1279607118 20307,
-  ipc "ipc.receiver-receive" 2 4 1279607118 20307,
-  ipc "ipc.malformed-boundary" 18446744073709551615 18446744073709551615
-    18446744073709551615 18446744073709551615,
-  preemption "preemption.accept" 32 1 2 1,
-  preemption "preemption.masked" 32 1 2 0,
-  preemption "preemption.wrong-vector" 14 1 2 1,
-  preemption "preemption.resume" 32 2 1 1,
-  preemption "preemption.forged-current" 32 2 3 1,
-  resumable "resumable.a-to-b" 1 0x202 0x101 0xde 0x1c,
-  resumable "resumable.b-to-a" 2 0x101 0x202 0x1c 0xde,
-  resumable "resumable.cross-restored" 2 0x102 0x202 0x1c 0xde,
-  bootAllocation "boot-allocation.accept" 4096 512 1 1 0 1,
-  bootAllocation "boot-allocation.parser-rejected" 4096 512 2 1 0 1,
-  bootAllocation "boot-allocation.parser-incomplete" 4096 512 0 1 0 1,
-  bootAllocation "boot-allocation.no-usable-coverage" 4096 512 1 0 0 1,
-  bootAllocation "boot-allocation.nonusable-overlap" 4096 512 1 1 1 1,
-  bootAllocation "boot-allocation.no-eligible-frame" 4096 4096 1 1 0 1,
-  bootAllocation "boot-allocation.manifest-rejected" 4096 512 1 1 0 0,
-  bootAllocation "boot-allocation.first-selection-stable" 511 512 1 1 0 1,
-  userReturn "user-return.initial" 1 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.syscall-resume" 2 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.scheduler-restore" 3 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.empty-stack-cursor" 1 0x400100 0x501000 0x1b0023 0x202,
-  userReturn "user-return.zero-purpose" 0 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.unsupported-contained-fault" 4 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.max-purpose" 18446744073709551615 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.noncanonical-rip" 1 0x800000000000 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.noncanonical-rsp" 1 0x400100 0x800000000000 0x1b0023 0x202,
-  userReturn "user-return.wrong-cs" 1 0x400100 0x500ff8 0x1b0008 0x202,
-  userReturn "user-return.wrong-ss" 1 0x400100 0x500ff8 0x100023 0x202,
-  userReturn "user-return.kernel-origin" 7 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.iopl" 1 0x400100 0x500ff8 0x1b0023 0x1202,
-  userReturn "user-return.nt" 1 0x400100 0x500ff8 0x1b0023 0x4202,
-  userReturn "user-return.vm" 1 0x400100 0x500ff8 0x1b0023 0x20202,
-  userReturn "user-return.ac" 1 0x400100 0x500ff8 0x1b0023 0x40202,
-  userReturn "user-return.df" 1 0x400100 0x500ff8 0x1b0023 0x602,
-  userReturn "user-return.if-cleared" 1 0x400100 0x500ff8 0x1b0023 0x2,
-  userReturn "user-return.stale-subject" 8 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.stale-address-space" 9 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.wrong-cr3" 10 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.wrong-frame-subject" 11 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.wrong-frame-address-space" 12 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.fatal-mode" 6 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.code-outside-subject" 1 0x401000 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.stack-outside-subject" 1 0x400100 0x501001 0x1b0023 0x202,
-  userReturn "user-return.diagnostic-recovery" 5 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202,
-  blockingIPC "blocking-ipc.block-b" 0 1 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.send-wake-b" 1 2 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.dispatch-b" 2 3 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.deliver-b" 3 4 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.wrong-caller" 1 2 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.wrong-phase" 0 2 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.forged-payload" 3 4 2 0 0x4f53,
-  blockingIPC "blocking-ipc.empty-wrong-subject" 0 10 9 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.missing-receive" 0 11 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.missing-send" 1 12 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.stale-endpoint" 0 13 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.full-wait-queue" 0 14 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.full-ready-queue" 1 15 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.duplicate-block" 0 16 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.duplicate-wake" 1 17 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.wrong-endpoint" 0 18 2 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.forged-sender" 3 19 2 1 0x4f53,
-  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53,
-  capabilityReuse "capability-reuse.initial" 0 1 (2 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.cleared-slot" 1 1 (2 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.stale-generation" 2 1 (2 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.fresh-generation" 3 1 (3 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.wrong-subject" 2 0 (3 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.malformed-generation" 2 1 18446744073709551615
-    0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.high-generation-alias" 2 1
-    ((4294967296 + 2) * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.wrong-kind" 4 1 (4 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.invalid-state-five" 5 1 (3 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.generation-exhausted" 6 1 0 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.boundary-payload" 3 1 (3 * 65536)
-    18446744073709551615 18446744073709551615,
-  interruptEntry "entry.syscall" 32896 291 0x800000 257 3,
-  interruptEntry "entry.user-invalid-opcode" 1542 291 0x800000 257 3,
-  interruptEntry "entry.user-device-not-available" 1799 291 0x800000 257 3,
-  interruptEntry "entry.user-page-fault" 69134 291 0x800000 257 3,
-  interruptEntry "entry.timer" 8224 291 0x800000 257 3,
-  interruptEntry "entry.kernel-diagnostic" 69134 8 0x800000 257 3,
-  interruptEntry "entry.wrong-stub" 32640 291 0x800000 257 3,
-  interruptEntry "entry.wrong-dpl-vector" 32846 291 0x800000 257 3,
-  interruptEntry "entry.missing-error" 3598 291 0x800000 257 3,
-  interruptEntry "entry.spurious-error" 98464 291 0x800000 257 3,
-  interruptEntry "entry.truncated" 32896 803 0x800000 257 3,
-  interruptEntry "entry.misaligned" 32896 291 0x800008 257 3,
-  interruptEntry "entry.forged-user-words-kernel-shape" 32896 35 0x800000 257 3,
-  interruptEntry "entry.unexpected-user-shape" 69134 264 0x800000 257 3,
-  interruptEntry "entry.stack-low" 32896 291 0x7ffff0 257 3,
-  interruptEntry "entry.stack-high" 32896 291 0x803ff0 257 3,
-  interruptEntry "entry.nested" 32896 291 0x800000 257 7,
-  interruptEntry "entry.ac-uncleared" 32896 291 0x800000 257 2,
-  interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1,
-  extendedState "extended-state.dispatch-peer" 1 0 7 1 1 1,
-  extendedState "extended-state.policy-mismatch" 0 0 7 1 1 1,
-  extendedState "extended-state.kernel-origin" 1 2 7 1 1 1,
-  extendedState "extended-state.dispatch-invariant" 1 3 7 1 1 1,
-  extendedState "extended-state.idle" 1 4 7 1 1 1,
-  extendedState "extended-state.stale-binding" 1 0 7 1 1 2,
-  extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1,
-  privilegeEntryControl "entry-control.accepted" 1 0 0 0 0 0,
-  privilegeEntryControl "entry-control.cpu-intel" 2 0 0 0 0 0,
-  privilegeEntryControl "entry-control.cpu-unsupported" 3 0 0 0 0 0,
-  privilegeEntryControl "entry-control.mode-protected32" 4 0 0 0 0 0,
-  privilegeEntryControl "entry-control.mode-compatibility" 5 0 0 0 0 0,
-  privilegeEntryControl "entry-control.syscall-unexposed" 6 0 0 0 0 0,
-  privilegeEntryControl "entry-control.sysenter-unexposed" 7 0 0 0 0 0,
-  privilegeEntryControl "entry-control.efer-sce-set" 1 1 0 0 0 0,
-  privilegeEntryControl "entry-control.star-mutated" 1 2 0 0 0 0,
-  privilegeEntryControl "entry-control.lstar-mutated" 1 3 0 0 0 0,
-  privilegeEntryControl "entry-control.cstar-mutated" 1 4 0 0 0 0,
-  privilegeEntryControl "entry-control.sfmask-mutated" 1 5 0 0 0 0,
-  privilegeEntryControl "entry-control.sysenter-cs-mutated" 1 6 0 0 0 0,
-  privilegeEntryControl "entry-control.sysenter-esp-mutated" 1 7 0 0 0 0,
-  privilegeEntryControl "entry-control.sysenter-eip-mutated" 1 8 0 0 0 0,
-  privilegeEntryControl "entry-control.writes-incomplete" 1 9 0 0 0 0,
-  privilegeEntryControl "entry-control.readback-mismatch" 1 10 0 0 0 0,
-  privilegeEntryControl "entry-control.manifest-missing" 1 11 0 0 0 0,
-  privilegeEntryControl "entry-control.extended-policy-relaxed" 1 12 0 0 0 0,
-  privilegeEntryControl "entry-control.return-accepted" 1 0 1 0 0 0,
-  privilegeEntryControl "entry-control.user-syscall-ud" 1 0 2 6 1 1,
-  privilegeEntryControl "entry-control.user-sysenter-ud" 1 0 3 6 1 1,
-  privilegeEntryControl "entry-control.user-syscall-gp" 1 0 2 13 1 1,
-  privilegeEntryControl "entry-control.kernel-syscall-ud" 1 0 4 6 1 1,
-  privilegeEntryControl "entry-control.stale-subject" 1 0 2 6 2 1,
-  privilegeEntryControl "entry-control.stale-cr3" 1 0 2 6 1 2,
-  privilegeEntryControl "entry-control.live-policy-relaxed" 1 0 8 6 1 1,
-  privilegeEntryControl "entry-control.alternate-target" 1 0 9 6 1 1,
-  privilegeEntryControl "entry-control.user-stack" 1 0 10 6 1 1,
-  privilegeEntryControl "entry-control.error-shape" 1 0 11 6 1 1,
-  privilegeEntryControl "entry-control.int80-as-denial" 1 0 6 128 1 1,
-  privilegeEntryControl "entry-control.post-fatal" 1 0 7 6 1 1,
-  faultDispatch "fault-dispatch.accept-a-to-b" 14 3 1 1 2 2,
-  faultDispatch "fault-dispatch.kernel-origin" 14 0 1 1 2 2,
-  faultDispatch "fault-dispatch.malformed-frame" 14 4 1 1 2 2,
-  faultDispatch "fault-dispatch.wrong-vector" 13 3 1 1 2 2,
-  faultDispatch "fault-dispatch.stale-current" 14 3 3 1 2 2,
-  faultDispatch "fault-dispatch.wrong-address-space" 14 3 1 3 2 2,
-  faultDispatch "fault-dispatch.empty-ready" 14 3 1 1 0 0,
-  faultDispatch "fault-dispatch.already-terminated" 14 3 0 1 2 2,
-  faultDispatch "fault-dispatch.stale-context" 14 3 1 1 2 3,
-  faultDispatch "fault-dispatch.peer-context-resource-witness" 14 3 1 1 2 2,
-  directPortIO "direct-port.user-denied" 0 0 0 0x3f8 1 65,
-  directPortIO "direct-port.nonzero-iopl" 1 1 0 0x3f8 1 65,
-  directPortIO "direct-port.short-tss-limit" 2 2 0 0x3f8 1 65,
-  directPortIO "direct-port.extended-tss-limit" 3 3 0 0x3f8 1 65,
-  directPortIO "direct-port.in-range-map-base" 4 4 0 0x3f8 1 65,
-  directPortIO "direct-port.exposed-bitmap" 5 5 0 0x3f8 1 65,
-  directPortIO "direct-port.not-kernel-configured" 6 6 0 0x3f8 1 65,
-  directPortIO "direct-port.readback-missing" 7 7 0 0x3f8 1 65,
-  directPortIO "direct-port.stale-readback" 0 7 0 0x3f8 1 65,
-  directPortIO "direct-port.kernel-serial-output" 0 0 1 0x3f8 1 65,
-  directPortIO "direct-port.kernel-serial-input" 0 0 1 0x3fd 0 0,
-  directPortIO "direct-port.kernel-pic-output" 0 0 2 0x20 1 0x20,
-  directPortIO "direct-port.kernel-pit-output" 0 0 3 0x43 1 0x36,
-  directPortIO "direct-port.kernel-debug-exit" 0 0 4 0xf4 1 0x11,
-  directPortIO "direct-port.wrong-purpose" 0 0 1 0x20 1 0x20,
-  directPortIO "direct-port.wrong-port" 0 0 1 0x3f7 1 65,
-  directPortIO "direct-port.wrong-direction" 0 0 1 0x3f8 0 0,
-  directPortIO "direct-port.wrong-word-width" 0 0 1 0x3f8 3 65,
-  directPortIO "direct-port.wrong-dword-width" 0 0 1 0x3f8 5 65,
-  directPortIO "direct-port.byte-normalization" 0 0 1 0x3f8 1 0x100,
-  directPortIO "direct-port.user-input-word" 0 0 0 0x3f8 2 0,
-  directPortIO "direct-port.user-input-dword" 0 0 0 0x3f8 4 0,
-  directPortIO "direct-port.invalid-origin" 0 0 5 0x3f8 1 65,
-  directPortIO "direct-port.invalid-direction-width" 0 0 1 0x3f8 6 65,
-  directPortIO "direct-port.invalid-stored-control" 0xffffffffffffffff 0 1 0x3f8 1 65,
-  directPortIO "direct-port.invalid-live-control" 0 0xffffffffffffffff 1 0x3f8 1 65,
-  directPortIO "direct-port.invalid-port" 0 0 1 0xffffffffffffffff 1 65,
-  directPortIO "direct-port.post-validation-relaxation" 0 5 0 0x3f8 1 65,
-  interruptEntry "entry.user-general-protection" 68877 291 0x800000 257 3,
-  nmi "nmi.user-running" 0 nmiUserFrame nmiFrameAddress nmiContextRunning nmiControl,
-  nmi "nmi.kernel-handling" 0 nmiKernelFrame nmiFrameAddress nmiContextHandling nmiControl,
-  nmi "nmi.kernel-halted-normalized" 0 nmiKernelFrame nmiFrameAddress
-    nmiContextHalted nmiControl,
-  nmi "nmi.wrong-descriptor" 1 nmiUserFrame nmiFrameAddress nmiContextRunning nmiControl,
-  nmi "nmi.wrong-target" 0 nmiUserFrame nmiFrameAddress nmiContextRunning (nmiControl + 1),
-  nmi "nmi.spurious-error" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
-    (nmiControl + 0x100),
-  nmi "nmi.wrong-frame-bytes" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
-    (nmiControl - 0x200),
-  nmi "nmi.misaligned" 0 nmiUserFrame 0x903fd0 nmiContextRunning nmiControl,
-  nmi "nmi.wrong-stack-identity" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 0x10000) nmiControl,
-  nmi "nmi.frame-not-at-stack-top" 0 nmiUserFrame 0x903fc8
-    nmiContextRunning nmiControl,
-  nmi "nmi.wrong-origin" 0 (nmiUserFrame - 0x40000) nmiFrameAddress
-    nmiContextRunning nmiControl,
-  nmi "nmi.wrong-selectors" 0 (nmiUserFrame + 4) nmiFrameAddress
-    nmiContextRunning nmiControl,
-  nmi "nmi.noncanonical" 0 (nmiUserFrame - 0x10000) nmiFrameAddress
-    nmiContextRunning nmiControl,
-  nmi "nmi.privileged-state" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
-    (nmiControl - 0x20000),
-  nmi "nmi.stale-context" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 1) nmiControl,
-  nmi "nmi.invalid-bounds-code" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 3 * 0x1000000) nmiControl,
-  nmi "nmi.invalid-mode-code" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 3 * 0x4000000) nmiControl,
-  interruptEntry "entry.user-divide-error" 0 291 0x800000 257 3,
-  interruptEntry "entry.user-breakpoint" 771 291 0x800000 257 3,
-  interruptEntry "entry.kernel-divide-error" 0 8 0x800000 257 3,
-  interruptEntry "entry.kernel-breakpoint" 771 8 0x800000 257 3,
-  interruptEntry "entry.spurious-error-divide-error" 65536 291 0x800000 257 3,
-  interruptEntry "entry.spurious-error-breakpoint" 66307 291 0x800000 257 3,
-  interruptEntry "entry.wrong-restart-breakpoint" 771 1315 0x800000 257 3,
-  interruptEntry "entry.wrong-restart-page-fault" 69134 1315 0x800000 257 3,
-  faultDispatch "fault-dispatch.accept-divide-error" 0 3 1 1 2 2,
-  faultDispatch "fault-dispatch.accept-breakpoint" 3 3 1 1 2 2,
-  faultDispatch "fault-dispatch.divide-error-idle" 0 3 1 1 0 0,
-  faultDispatch "fault-dispatch.breakpoint-multi-survivor" 3 3 1 1 3 2,
-  faultDispatch "fault-dispatch.page-fault-multi-survivor" 14 3 1 1 3 2,
-  faultDispatch "fault-dispatch.kernel-origin-divide-error" 0 0 1 1 2 2,
-  faultDispatch "fault-dispatch.kernel-origin-breakpoint" 3 0 1 1 2 2,
-  faultDispatch "fault-dispatch.malformed-divide-error" 0 4 1 1 2 2,
-  faultDispatch "fault-dispatch.wrong-restart-breakpoint" 3 5 1 1 2 2,
-  faultDispatch "fault-dispatch.wrong-restart-page-fault" 14 5 1 1 2 2,
-  faultDispatch "fault-dispatch.swapped-reason-divide-error" 0 6 1 1 2 2,
-  faultDispatch "fault-dispatch.swapped-reason-page-fault" 14 6 1 1 2 2,
-  faultDispatch "fault-dispatch.stale-current-divide-error" 0 3 3 1 2 2,
-  faultDispatch "fault-dispatch.stale-address-space-breakpoint" 3 3 1 3 2 2,
-  faultDispatch "fault-dispatch.stale-context-breakpoint" 3 3 1 1 2 3,
-  bootPhase "bootphase.publish-bootstrap32" 0 1 0 0,
-  bootPhase "bootphase.publish-bootstrap64" 1 2 0 0,
-  bootPhase "bootphase.publish-runtime" 2 3 7 0,
-  bootPhase "bootphase.runtime-missing-tss" 2 3 6 0,
-  bootPhase "bootphase.skip-bootstrap32" 0 2 0 0,
-  bootPhase "bootphase.backward-bootstrap32" 2 1 0 0,
-  bootPhase "bootphase.premature-runtime" 1 3 7 0,
-  bootPhase "bootphase.nmi-bootstrap32" 1 4 2 0,
-  bootPhase "bootphase.nmi-bootstrap64" 2 4 2 0,
-  bootPhase "bootphase.error-fault-bootstrap64" 2 4 (13 + 256) 0,
-  bootPhase "bootphase.noerror-fault-bootstrap32" 1 4 6 0,
-  bootPhase "bootphase.double-fault-bootstrap64" 2 4 (8 + 256) 0,
-  bootPhase "bootphase.user-claim-early" 1 4 (14 + 256 + 512) 0,
-  bootPhase "bootphase.inherited-window" 0 4 2 0,
-  bootPhase "bootphase.runtime-delegated" 3 4 2 0,
-  bootPhase "bootphase.repeated-after-latch" 4 4 2 1,
-  bootPhase "bootphase.publish-after-latch" 4 1 0 1,
-  bootPhase "bootphase.invalid-phase-code" 9 4 2 0,
-  staleTranslation "stale-translation.unmap-accept" 0 0 1 7 0 0,
-  staleTranslation "stale-translation.protect-downgrade" 1 0 1 7 1 0,
-  staleTranslation "stale-translation.unmap-wrong-owner" 0 1 1 7 0 0,
-  staleTranslation "stale-translation.protect-wrong-owner" 1 1 1 7 1 0,
-  staleTranslation "stale-translation.release-flush" 2 0 0 0 0 0,
-  staleTranslation "stale-translation.destroy-space" 3 0 0 0 1 0,
-  staleTranslation "stale-translation.switch-away" 4 0 2 0 0 0,
-  staleTranslation "stale-translation.switch-back" 4 0 1 0 0 0,
-  staleTranslation "stale-translation.unmap-unmapped" 0 0 1 9 0 0,
-  staleTranslation "stale-translation.reuse-old-page-absent" 0 0 1 7 0 1,
-  staleTranslation "stale-translation.protect-write-amplify" 1 0 1 7 2 0,
-  staleTranslation "stale-translation.destroy-wrong-subject" 3 1 0 0 1 0,
-  staleTranslation "stale-translation.release-wrong-slot" 2 0 0 0 1 0,
-  staleTranslation "stale-translation.switch-unknown-space" 4 0 99 0 0 0,
-  staleTranslation "stale-translation.malformed-kind" 9 0 1 7 0 0,
-  pageFault "page-fault.user-read-not-present" 4 0x400123 0 0x10000101 123,
-  pageFault "page-fault.user-write-not-present" 6 0x400123 0 0x10000101 123,
-  pageFault "page-fault.user-execute-not-present" 20 0x400123 0 0x10000101 123,
-  pageFault "page-fault.user-read-protection" 5 0x400123 0 0x10000101 123,
-  pageFault "page-fault.user-write-protection" 7 0x400123 0 0x10000101 123,
-  pageFault "page-fault.user-execute-protection" 21 0x400123 0 0x10000101 123,
-  pageFault "page-fault.kernel-read" 0 0xffff800000001234 1 0x10000101 123,
-  pageFault "page-fault.reserved-bit" 12 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-5-pk" 36 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-6-shadow-stack" 68 0x400123 0
-    0x10000101 123,
-  pageFault "page-fault.unsupported-bit-7" 132 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-8" 260 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-9" 516 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-10" 1028 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-11" 2052 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-12" 4100 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-13" 8196 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-14" 16388 0x400123 0 0x10000101 123,
-  pageFault "page-fault.unsupported-bit-15-sgx" 32772 0x400123 0
-    0x10000101 123,
-  pageFault "page-fault.wrong-cr2" 4 0x401123 0 0x10000101 123,
-  pageFault "page-fault.wrong-vector" 4 0x400123 2 0x10000101 123,
-  pageFault "page-fault.wrong-stub" 4 0x400123 3 0x10000101 123,
-  pageFault "page-fault.missing-error" 4 0x400123 4 0x10000101 123,
-  pageFault "page-fault.malformed-frame" 4 0x400123 5 0x10000101 123,
-  pageFault "page-fault.privilege-mismatch" 0 0x400123 0 0x10000101 123,
-  pageFault "page-fault.nested" 4 0x400123 0 0x10000101 127,
-  pageFault "page-fault.low-canonical-boundary" 4 0x7fffffffffff 0 0x10000101 123,
-  pageFault "page-fault.upper-canonical-boundary" 4 0xffff800000000000 0
-    0x10000101 123,
-  pageFault "page-fault.noncanonical-boundary" 4 0x800000000000 0 0x10000101 123,
-  pageFault "page-fault.authority-subject-mutated" 4 0x400123 0 0x10000102 123,
-  pageFault "page-fault.authority-space-mutated" 4 0x400123 0 0x10000201 123,
-  pageFault "page-fault.authority-cr3-mutated" 4 0x400123 0 0x10010101 123,
-  pageFault "page-fault.authority-wp-mutated" 4 0x400123 0 0x10000101 115,
-  pageFault "page-fault.authority-nxe-mutated" 4 0x400123 0 0x10000101 107,
-  pageFault "page-fault.authority-smep-mutated" 4 0x400123 0 0x10000101 91,
-  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59,
-  composite "composite.create-subject" 0x0001 0x0101 1 0 0 0,
-  composite "composite.reject-unknown-syscall" 0x0101 0x0201 99 0 0 0,
-  composite "composite.reject-malformed-map" 0x0201 0x0301 0 0 0 0,
-  composite "composite.observe-scheduler" 0x0301 0x0401 0 0 0 0,
-  composite "composite.terminate-subject" 0x0401 0x0501 1 0 0 0,
-  composite "composite.enter-fatal-kernel-fault" 0x0501 0x0601 0 0 0 0,
-  composite "composite.reject-post-fatal-schedule" 0x0601 0x0701 0 0 0 0,
-  composite "composite.reject-stale-map-handle" 0x0101 0x0801 0x10000 7 1 0,
-  composite "composite.reject-nonblocking-receive-handle" 0x0101 0x0901
-    0x10000 0 0 0,
-  composite "composite.reject-capability-copy" 0x0101 0x0a01 0 0 1 0,
-  composite "composite.reject-blocking-cancel" 0x0101 0x0b01 0 0 0 0,
-  composite "composite.reject-deferred-drain" 0x0101 0x0c01 0 0 0 0,
-  composite "composite.stale-state-replay" 0x0001 0x0201 99 0 0 0,
-  composite "composite.cross-trace-splice" 0x0201 0x0401 0 0 0 0,
-  composite "composite.noncanonical-argument" 0x0101 0x0201 99 1 0 0,
-  composite "composite.wrong-state-version" 0x0002 0x0101 1 0 0 0,
-  composite "composite.reserved-state-bits" 0x10001 0x0101 1 0 0 0,
-  composite "composite.wrong-command-version" 0x0001 0x0102 1 0 0 0,
-  composite "composite.reserved-command-bits" 0x0001 0x10001 1 0 0 0,
-  composite "composite.forged-context-argument" 0x0001 0x0101 1 1 0 0,
-  composite "composite.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
-    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
-  composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
-  mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
-    budgetVectors ++ iotlbPublicationVectors ++ capabilityTransferBootVectors ++
-    inFlightRevocationVectors ++
-    inFlightRevocationNegativeVectors ++ blockingIpcEventVectors ++
-    bootTransitionClassVectors ++ notifyReplyVectors ++ userCopyPolicyVectors ++
-    consoleAuthorizeVectors ++ directoryResolveVectors ++ faultHandlerVectors ++
-    deviceAuthorizeVectors ++ timerServerVectors ++ frameServerVectors ++
-    frameServerViewVectors ++ spawnEdgeVectors ++ spawnNegativeVectors ++ spawnSyscallVectors ++
-    loaderVectors
+def vectors : List Vector := blocks.flatten
 
 theorem corpus_shape : vectors.length = 692 := by decide
+
+/-- Dropping the first `k` blocks' rows from a concatenation leaves the
+concatenation of the remaining blocks. -/
+theorem drop_lengths_flatten {α : Type} :
+    ∀ (bs : List (List α)) (k : Nat),
+      bs.flatten.drop ((bs.take k).map List.length).sum = (bs.drop k).flatten
+  | [], _ => by simp
+  | _ :: _, 0 => by simp
+  | b :: bs, k + 1 => by
+      simp only [List.take_succ_cons, List.map_cons, List.sum_cons, List.flatten_cons,
+        List.drop_succ_cons, ← List.drop_drop, List.drop_left]
+      exact drop_lengths_flatten bs k
+
+/-- The oracle rows from the start of block `k` are that block followed by the
+blocks after it, so each layout theorem below checks one block's offset and
+identity instead of re-reducing the whole corpus. -/
+theorem rows_at {k n : Nat} {l : List Vector} {rest : List (List Vector)}
+    (offset : ((blocks.take k).map List.length).sum = n)
+    (block : blocks.drop k = l :: rest) :
+    vectors.drop n = l ++ rest.flatten := by
+  rw [← offset, vectors, drop_lengths_flatten, block, List.flatten_cons]
 
 /-- Oracle indices 419--434 are the boot-transition classification grid. -/
 theorem hosted_boot_transition_class_vectors_exact :
     (vectors.drop 419).take bootTransitionClassVectors.length =
       bootTransitionClassVectors := by
-  rfl
+  rw [rows_at (k := 12) (n := 419) rfl rfl, List.take_left]
 
 /-- Oracle indices 435--447 are the notification/reply corpus (#471). -/
 theorem hosted_notify_reply_vectors_exact :
     (vectors.drop 435).take notifyReplyVectors.length = notifyReplyVectors := by
-  rfl
+  rw [rows_at (k := 13) (n := 435) rfl rfl, List.take_left]
 
 /-- Oracle indices 448--461 are the user-copy range checks (#478). -/
 theorem hosted_user_copy_policy_vectors_exact :
     (vectors.drop 448).take userCopyPolicyVectors.length = userCopyPolicyVectors := by
-  rfl
-
-/-- On every user-copy vector, the generated adapter's Lean definition gives
-the model's answer. -/
-theorem user_copy_policy_vectors_agree :
-    userCopyPolicyVectors.all (fun v => match v.words with
-      | [flags, start, length, text, stack, top] =>
-        UserCopyPolicy.copyPolicy flags start length text stack top == v.expected
-      | _ => false) = true := by
-  decide
+  rw [rows_at (k := 14) (n := 448) rfl rfl, List.take_left]
 
 /-- Oracle indices 462--480 are the console-server authority corpus (#472). -/
 theorem hosted_console_authorize_vectors_exact :
     (vectors.drop 462).take consoleAuthorizeVectors.length = consoleAuthorizeVectors := by
-  rfl
+  rw [rows_at (k := 15) (n := 462) rfl rfl, List.take_left]
 
 /-- Oracle indices 481--500 are the endpoint-directory rights corpus (#485). -/
 theorem hosted_directory_resolve_vectors_exact :
     (vectors.drop 481).take directoryResolveVectors.length = directoryResolveVectors := by
-  rfl
+  rw [rows_at (k := 16) (n := 481) rfl rfl, List.take_left]
 
 /-- Oracle indices 501--511 are the fault-handler route corpus (#488). -/
 theorem hosted_fault_handler_vectors_exact :
     (vectors.drop 501).take faultHandlerVectors.length = faultHandlerVectors := by
-  rfl
+  rw [rows_at (k := 17) (n := 501) rfl rfl, List.take_left]
 
 /-- Oracle indices 512--523 are the keyboard-echo device-authority corpus
 (#493). -/
 theorem hosted_device_authorize_vectors_exact :
     (vectors.drop 512).take deviceAuthorizeVectors.length = deviceAuthorizeVectors := by
-  rfl
+  rw [rows_at (k := 18) (n := 512) rfl rfl, List.take_left]
 
 /-- Oracle indices 524--539 are the timer-server decision corpus (#487). -/
 theorem hosted_timer_server_vectors_exact :
     (vectors.drop 524).take timerServerVectors.length = timerServerVectors := by
-  rfl
+  rw [rows_at (k := 19) (n := 524) rfl rfl, List.take_left]
 
 /-- Oracle indices 540--555 are the frame-server decision-check corpus (#486). -/
 theorem hosted_frame_server_vectors_exact :
     (vectors.drop 540).take frameServerVectors.length = frameServerVectors := by
-  rfl
+  rw [rows_at (k := 20) (n := 540) rfl rfl, List.take_left]
 
 /-- Oracle indices 556--563 are the frame-server view corpus (#486). -/
 theorem hosted_frame_server_view_vectors_exact :
     (vectors.drop 556).take frameServerViewVectors.length = frameServerViewVectors := by
-  rfl
+  rw [rows_at (k := 21) (n := 556) rfl rfl, List.take_left]
 
 /-- Oracle indices 564--617 are the spawn family's edges, in the order of
 `SpawnBoundary.edges`, and 618--631 its hostile encodings (ADR 0010 gate
@@ -1246,98 +198,41 @@ item 5). -/
 theorem hosted_spawn_vectors_exact :
     (vectors.drop 564).take (spawnEdgeVectors.length + spawnNegativeVectors.length) =
       spawnEdgeVectors ++ spawnNegativeVectors := by
-  rfl
+  rw [rows_at (k := 22) (n := 564) rfl rfl, List.flatten_cons, ← List.append_assoc]
+  exact List.take_left' List.length_append
 
 /-- Oracle indices 632--667 are the ring-3 spawn syscall's corpus (#489). -/
 theorem hosted_spawn_syscall_vectors_exact :
     (vectors.drop 632).take spawnSyscallVectors.length = spawnSyscallVectors := by
-  rfl
+  rw [rows_at (k := 24) (n := 632) rfl rfl, List.take_left]
 
 /-- Oracle indices 668--691 are the run-time loader's corpus (#492). -/
 theorem hosted_loader_vectors_exact :
     vectors.drop 668 = loaderVectors := by
-  rfl
-
-/-- The loader corpus's expected words. -/
-theorem loader_vectors_expected :
-    loaderVectors.map (·.expected) =
-      [0, 0, 5, 5, 5, 6, 5, 5,
-        1, 2, 0x101, 0x102, 0x203, 0x204, 0x205, 0x206, 0x207, 0x208, 0x208, 3, 0x209, 0x101,
-        0x1ff, 0x1ff] := by
-  decide
-
-/-- The syscall corpus's expected words: the image's thirteen calls answer as
-the boot assembly checks (`SpawnSyscall.image_run`), and every refusal vector
-answers with its refusal word before any gate. -/
-theorem spawn_syscall_vectors_expected :
-    spawnSyscallVectors.map (·.expected) =
-      [0x017201, 0xfe23, 0x8c7201, 0xc57201, 0x017301, 0x017401, 0x017501, 0xc37501,
-        0x017601, 0x017701, 0xc37701, 0xc37701, 0x017801,
-        0xfe20, 0xfe21, 0xfe21, 0xc37901, 0xfe22, 0xfe22, 0xfe23, 0xfe23, 0xfe23, 0xfe23,
-        0xfe23, 0xfe23, 0xfe24, 0xfe24, 0xfe20,
-        0x10000, 1, 1, 0x20000, 0, 0, 0, 0] := by
-  decide
-
-/-- Each spawn edge vector carries its edge's words and expects its edge's
-reply and value words. -/
-theorem spawn_edge_vectors_cover :
-    spawnEdgeVectors.length = SpawnBoundary.edges.length ∧
-      (List.zip spawnEdgeVectors SpawnBoundary.edges).all (fun pair =>
-        let words := pair.2.words
-        pair.1.adapter == "CompositeDispatcher.stateful" &&
-          pair.1.words == [SpawnBoundary.encodeState pair.2.state, words.tag, words.arg0,
-            words.arg1, words.arg2, words.arg3] &&
-          pair.1.expected == SpawnBoundary.replyWord pair.2.next pair.2.status &&
-          pair.1.expectedValue == pair.2.value) = true := by
-  native_decide
-
-/-- **The generated-boundary replay matches the model on every spawn edge
-vector.**  The hosted replay compares the generated C of
-`leanos_composite_dispatch` and `leanos_composite_dispatch_value` with each
-vector's expected words; those are the reply and value words of the family
-step (`childGate`, `memoryGate`, or the authoritative gate) on the complete
-state the vector's state token names, and that step's post-state is the state
-the reply's next-state selector names. -/
-theorem spawn_edge_vectors_match_model (plan : BootPageTablePlan.Plan)
-    (compiled : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan)
-    (vector : Vector) (edge : SpawnBoundary.Edge)
-    (pair : (vector, edge) ∈ List.zip spawnEdgeVectors SpawnBoundary.edges) :
-    let outcome := SpawnBoundary.familyStep (SpawnBoundary.stateOf plan edge.state) edge.command
-    vector.expected = SpawnBoundary.replyWord edge.next outcome.status ∧
-      vector.expectedValue = outcome.value ∧
-      outcome.state = SpawnBoundary.stateOf plan edge.next := by
-  intro outcome
-  have refines := SpawnBoundary.edge_refines plan compiled edge (List.of_mem_zip pair).2
-  have covered := List.all_eq_true.1 spawn_edge_vectors_cover.2 _ pair
-  simp only [Bool.and_eq_true, beq_iff_eq] at covered
-  obtain ⟨⟨⟨_, _⟩, expected⟩, value⟩ := covered
-  simp only [outcome, refines]
-  exact ⟨expected, value, trivial⟩
-
-/-- Every hostile spawn-family encoding is rejected with an error word and no
-value word, before any gate runs. -/
-theorem spawn_negative_vectors_reject :
-    spawnNegativeVectors.all (fun vector =>
-      decide (0xff00 ≤ vector.expected) && vector.expectedValue == 0) = true := by
-  native_decide
+  rw [rows_at (k := 25) (n := 668) rfl rfl]
+  simp only [List.flatten_nil, List.append_nil]
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
     (vectors.drop 314).take 23 =
       CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector := by
-  rfl
+  rw [rows_at (k := 3) (n := 314) rfl rfl]
+  exact List.take_left' rfl
 
 theorem hosted_budget_vectors_exact :
-    (vectors.drop 359).take budgetVectors.length = budgetVectors := by rfl
+    (vectors.drop 359).take budgetVectors.length = budgetVectors := by
+  rw [rows_at (k := 6) (n := 359) rfl rfl, List.take_left]
 
 theorem hosted_iotlb_publication_vectors_exact :
     (vectors.drop 383).take iotlbPublicationVectors.length =
-      iotlbPublicationVectors := by rfl
+      iotlbPublicationVectors := by
+  rw [rows_at (k := 7) (n := 383) rfl rfl, List.take_left]
 
 theorem hosted_capability_transfer_boot_vectors_exact :
     (vectors.drop 392).take capabilityTransferBootVectors.length =
-      capabilityTransferBootVectors := by rfl
+      capabilityTransferBootVectors := by
+  rw [rows_at (k := 8) (n := 392) rfl rfl, List.take_left]
 
 /-- Oracle indices 398--408 are definitionally the in-flight revocation
 corpus: offer, two revocation-authority denials, accepted lineage revocation,
@@ -1351,63 +246,30 @@ theorem hosted_inFlight_revocation_vectors_exact :
         faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
           frameServerVectors ++ frameServerViewVectors ++ spawnEdgeVectors ++
             spawnNegativeVectors ++ spawnSyscallVectors ++ loaderVectors := by
-  rfl
+  rw [rows_at (k := 9) (n := 398) rfl rfl]
+  simp only [List.flatten_cons, List.flatten_nil, List.append_nil, List.append_assoc]
+/-- Oracle rows 0--85 are the scheduler, syscall, and IPC family's rows. -/
+theorem hosted_scalar_vectors_exact :
+    vectors.take scalarVectors.length = scalarVectors := by
+  show (vectors.drop 0).take scalarVectors.length = scalarVectors
+  rw [rows_at (k := 0) (n := 0) rfl rfl, List.take_left]
 
-theorem hosted_inFlight_revocation_vectors_refine :
-    ∀ edge ∈ CompositeDispatcher.inFlightRevocationCanonicalEdges, edge.Refines :=
-  CompositeDispatcher.inFlightRevocationCanonicalEdges_refine
+/-- Oracle rows 86--291 are the interrupt, entry, and fault family's rows. -/
+theorem hosted_interrupt_vectors_exact :
+    (vectors.drop 86).take interruptVectors.length = interruptVectors := by
+  rw [rows_at (k := 1) (n := 86) rfl rfl, List.take_left]
 
-theorem composite_inFlight_revocation_trace_agrees :
-    (vectors[398]).expected = 0x206101 ∧
-    (vectors[399]).expected = 0x506101 ∧
-    (vectors[400]).expected = 0x516101 ∧
-    (vectors[401]).expected = 0x526201 ∧
-    (vectors[402]).expected = 0x536201 ∧
-    (vectors[403]).expected = 0x546201 ∧
-    (vectors[404]).expected = 0x556301 ∧
-    (vectors[405]).expected = 0x216301 ∧
-    (vectors[406]).expected = 0x246401 ∧
-    (vectors[407]).expected = 0x566401 ∧
-    (vectors[408]).expected = 0x576501 := by
-  native_decide
-
-/-- Indices 409--411 reject the pre-offer replay of the revocation words as a
-wrong sequence, the spliced mixed-corpus revocation as an unknown command for
-this family, and the premature receipt as a wrong sequence. -/
-theorem composite_inFlight_revocation_negatives_reject :
-    (vectors[409]).expected = 0xff06 ∧
-    (vectors[410]).expected = 0xff04 ∧
-    (vectors[411]).expected = 0xff06 := by
-  native_decide
+/-- Oracle rows 292--313 are the composite scenario and hostile-encoding rows. -/
+theorem hosted_composite_scenario_vectors_exact :
+    (vectors.drop 292).take compositeScenarioVectors.length =
+      compositeScenarioVectors := by
+  rw [rows_at (k := 2) (n := 292) rfl rfl, List.take_left]
 
 /-- The canceled child never reaches result word one: every in-flight
 revocation record publishes the no-value word, including the denied receipt. -/
 theorem composite_inFlight_revocation_values_zero :
     ((vectors.drop 398).take 166).all (fun vector => vector.expectedValue = 0) = true := by
   native_decide
-
-private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "IOTLB.scalar", [action, ticket, source, domain, mapping, iova] =>
-      IOMMU.IOTLB.iotlbPublicationDemo action ticket source domain mapping iova =
-        vector.expected
-  | _, _ => true
-
-theorem hosted_iotlb_publication_adapter_agrees :
-    ((vectors.drop 383).take iotlbPublicationVectors.length).all
-      iotlbPublicationAdapterAgrees = true := by
-  native_decide
-
-theorem hosted_budget_canonical_sequence :
-    FrameBudgetScenario.run .initial FrameBudgetScenario.canonicalCommands =
-      some .complete :=
-  FrameBudgetScenario.canonical_sequence_complete
-
-/-- Consequently every hosted mixed vector is backed by the non-circular
-scalar-to-authoritative refinement theorem for its source edge. -/
-theorem hosted_mixed_vectors_refine :
-    ∀ edge ∈ CompositeDispatcher.mixedCanonicalEdges, edge.Refines :=
-  CompositeDispatcher.mixedCanonicalEdges_refine
 
 /-- Oracle indices 337--355 are the exact stateful invalidation publication
 corpus, including independent accepted-unmap and switch-away/back branches;
@@ -1416,49 +278,8 @@ theorem hosted_invalidation_vectors_exact :
     (vectors.drop 337).take 22 =
       CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector ++
         invalidationNegativeVectors := by
-  rfl
-
-theorem hosted_invalidation_vectors_refine :
-    ∀ edge ∈ CompositeDispatcher.invalidationCanonicalEdges, edge.Refines :=
-  CompositeDispatcher.invalidationCanonicalEdges_refine
-
-theorem composite_invalidation_trace_agrees :
-    (vectors[337]).expected = 0x321b01 ∧
-    (vectors[338]).expected = 0x331c01 ∧
-    (vectors[341]).expected = 0x361f01 ∧
-    (vectors[345]).expected = 0x3a2301 ∧
-    (vectors[347]).expected = 0x3c2501 ∧
-    (vectors[349]).expected = 0x3e2701 ∧
-    (vectors[350]).expected = 0x3f2801 ∧
-    (vectors[351]).expected = 0x402901 ∧
-    (vectors[352]).expected = 0x412a01 ∧
-    (vectors[353]).expected = 0x422b01 ∧
-    (vectors[354]).expected = 0x432c01 ∧
-    (vectors[355]).expected = 0x442d01 ∧
-    (vectors[356]).expected = 0xff05 ∧
-    (vectors[357]).expected = 0xff06 ∧
-    (vectors[358]).expected = 0xff05 := by
-  native_decide
-
-/-- The hosted scalar ABI rejects replaying release ticket 1 as the later
-switch acknowledgement even though both require the same `.flush` effect. -/
-theorem composite_invalidation_same_effect_replay_rejected :
-    (vectors[358]).expected = 0xff05 := by
-  native_decide
-
-theorem composite_mixed_trace_agrees :
-    (vectors[314]).expected = 0x200901 ∧
-    (vectors[315]).expected = 0x470901 ∧
-    (vectors[317]).expected = 0x482f01 ∧
-    (vectors[318]).expected = 0x492f01 ∧
-    (vectors[322]).expected = 0x250e01 ∧
-    (vectors[327]).expected = 0x2a1301 ∧
-    (vectors[329]).expected = 0x2c1501 ∧
-    (vectors[330]).expected = 0x2d1601 ∧
-    (vectors[332]).expected = 0x2f1801 ∧
-    (vectors[335]).expected = 0x452e01 ∧
-    (vectors[336]).expected = 0x462e01 := by
-  native_decide
+  rw [rows_at (k := 4) (n := 337) rfl rfl, List.flatten_cons, ← List.append_assoc]
+  exact List.take_left' List.length_append
 
 /-- Before the spawn family, only the accepted hosted-mixed receipt and the
 independently modeled machine A-to-B receipt publish a value word. All
@@ -1475,69 +296,6 @@ theorem composite_result_values_exact :
     ((vectors.drop 564).filter (fun vector => vector.expectedValue ≠ 0)).length = 10 := by
   native_decide
 
-theorem boot_decoder_roundtrip_cold :
-    KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
-theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
-theorem every_rejection_agrees :
-    (vectors[1]).expected = 0 ∧ (vectors[2]).expected = 0 ∧
-    (vectors[3]).expected = 0 ∧ (vectors[5]).expected = 0 ∧
-    (vectors[6]).expected = 0 ∧ (vectors[7]).expected = 0 ∧
-    (vectors[8]).expected = 0 ∧ (vectors[10]).expected = 0 ∧
-    (vectors[12]).expected = 0 := by native_decide
-theorem syscall_accept_agrees : (vectors[4]).expected = 1 := by native_decide
-theorem ipc_scenario_agrees :
-    (vectors[8]).expected = 0 ∧ (vectors[9]).expected = 1 ∧
-    (vectors[10]).expected = 0 ∧ (vectors[11]).expected = 2 := by native_decide
-theorem preemption_scenario_agrees :
-    (vectors[13]).expected = 0x0000000200000002 ∧
-    (vectors[14]).expected = 0 ∧ (vectors[15]).expected = 0 ∧
-    (vectors[16]).expected = 0x0000000100000001 ∧
-    (vectors[17]).expected = 0 := by native_decide
-theorem resumable_scenario_agrees :
-    (vectors[18]).expected = 0x1c0101de020202 ∧
-    (vectors[19]).expected = 0xde02021c010101 ∧
-    (vectors[20]).expected = 0 := by native_decide
-theorem user_return_scenario_agrees :
-    (vectors[29]).expected = 1 ∧ (vectors[30]).expected = 1 ∧
-    (vectors[31]).expected = 1 ∧ (vectors[32]).expected = 1 ∧
-    ((vectors.drop 33).take 24).all (fun vector => vector.expected = 0) = true := by
-  native_decide
-
-theorem blocking_ipc_scenario_agrees :
-    (vectors[57]).expected = BlockingIPC.encodeBootEvent 1 1 1 1 0 ∧
-    (vectors[58]).expected = BlockingIPC.encodeBootEvent 2 2 1 1 0 ∧
-    (vectors[59]).expected = BlockingIPC.encodeBootEvent 3 3 2 2 0 ∧
-    (vectors[60]).expected = BlockingIPC.encodeBootEvent 4 4 2 2 1 ∧
-    (vectors[61]).expected = 0 ∧ (vectors[62]).expected = 0 ∧
-    (vectors[63]).expected = 0 ∧
-    ((vectors.drop 64).take 11).all (fun vector => vector.expected ≠ 0) = true := by
-  native_decide
-
-theorem capability_reuse_scenario_agrees :
-    (vectors[75]).expected = CapabilityReuse.encodeScenarioEvent 1 1 11
-      CapabilityReuse.staleHandle 10 ∧
-    (vectors[76]).expected = CapabilityReuse.encodeScenarioEvent 2 2 15
-      CapabilityReuse.currentHandle 11 ∧
-    (vectors[77]).expected = CapabilityReuse.encodeScenarioEvent 3 3 8
-      CapabilityReuse.staleHandle 11 ∧
-    (vectors[78]).expected = CapabilityReuse.encodeScenarioEvent 4 4 5
-      CapabilityReuse.currentHandle 11 ∧
-    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 ∧
-    (vectors[81]).expected = 0 ∧
-    (vectors[82]).expected = CapabilityReuse.encodeScenarioEvent 5 0 8
-      { slot := 0, identity := 4 } 7 ∧
-    (vectors[83]).expected = 0 ∧
-    (vectors[84]).expected = CapabilityReuse.encodeScenarioEvent 6 0 1
-      { slot := 1, identity := 0 } 12 ∧
-    (vectors[85]).expected = CapabilityReuse.encodeScenarioEvent 4 4 5
-      CapabilityReuse.currentHandle 11 := by
-  native_decide
-
-theorem interrupt_entry_scenario_agrees :
-    ((vectors.drop 86).take 6).all (fun vector => vector.expected ≠ 0) = true ∧
-    ((vectors.drop 92).take 13).all (fun vector => vector.expected = 0) = true := by
-  native_decide
-
 private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=
   match vector.adapter, vector.words with
   | "Interrupt.entry", [descriptor, frame, stack, context, cleanup] =>
@@ -1546,51 +304,6 @@ private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=
 
 theorem interrupt_entry_adapter_agrees_with_model :
     vectors.all interruptEntryAdapterAgrees = true := by
-  native_decide
-
-theorem general_protection_entry_scenario_agrees :
-    (vectors[182]).adapter = "Interrupt.entry" ∧
-    (vectors[182]).expected ≠ 0 := by
-  native_decide
-
-theorem extended_state_dispatch_scenario_agrees :
-    (vectors[105]).expected = 0x3f00000000000102 ∧
-    (vectors[106]).expected = 0 ∧
-    (vectors[107]).expected = 0 ∧
-    (vectors[108]).expected = 0 ∧
-    (vectors[109]).expected = 1 ∧
-    (vectors[110]).expected = 0 ∧
-    (vectors[111]).expected = 0x3f00000000000102 := by
-  native_decide
-
-theorem privilege_entry_control_scenario_agrees :
-    (vectors[112]).expected = 1 ∧
-    ((vectors.drop 113).take 18).all (fun vector => vector.expected = 0) = true ∧
-    (vectors[131]).expected = 0xa001 ∧
-    (vectors[132]).expected = 0xd001 ∧
-    (vectors[133]).expected = 0xd001 ∧
-    ((vectors.drop 134).take 9).all (fun vector =>
-      vector.expected ≥ 0xf000) = true ∧
-    (vectors[143]).expected = 0xff00 := by
-  native_decide
-
-private def privilegeEntryControlAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "PrivilegeEntryControl.scalar", [cpu, control, event, vectorWord, normalized, cr3] =>
-      PrivilegeEntryControl.controlDemo cpu control event vectorWord normalized cr3 =
-        vector.expected
-  | _, _ => true
-
-/-- The entry-control differential corpus is the 32-vector block beginning at
-index 112, immediately before the fault-dispatch block. -/
-theorem privilege_entry_control_corpus_shape :
-    ((vectors.drop 112).take 32).length = 32 := by
-  decide
-
-/-- Every entry-control scalar result agrees with the independently evaluated
-rich control model on the complete finite entry-control corpus. -/
-theorem privilege_entry_control_adapter_agrees_with_model :
-    ((vectors.drop 112).take 32).all privilegeEntryControlAdapterAgrees = true := by
   native_decide
 
 private def faultDispatchAdapterAgrees (vector : Vector) : Bool :=
@@ -1607,149 +320,6 @@ theorem fault_dispatch_adapter_agrees_with_model :
     vectors.all faultDispatchAdapterAgrees = true := by
   native_decide
 
-private def directPortIOAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "DirectPortIO.scalar", [stored, live, originPurpose, port, directionWidth, value] =>
-      DirectPortIO.directPortIODemo stored live originPurpose port directionWidth value =
-        vector.expected
-  | _, _ => true
-
-/-- The canonical direct-port block covers accepted controls, every named
-control mutation, stale live state, all direction/width classes, exact and
-wrong kernel purposes, malformed scalar words, and post-validation relaxation. -/
-theorem direct_port_io_corpus_shape :
-    ((vectors.drop 154).take 28).length = 28 := by
-  decide
-
-theorem direct_port_io_adapter_agrees_with_model :
-    ((vectors.drop 154).take 28).all directPortIOAdapterAgrees = true := by
-  native_decide
-
-private def nmiAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "Interrupt.nmi", [descriptor, frame, stack, context, control] =>
-      InterruptEntry.nmiDemo descriptor frame stack context control = vector.expected
-  | _, _ => true
-
-/-- The generated-C NMI block contains three normalized interrupted modes and
-one vector for every rejection constructor reachable from the reviewed,
-compile-time-valid terminal manifest or canonical scalar decoder.
-`invalidManifest` is intentionally not runtime-selectable through this scalar
-boundary.  The accepted halted snapshot tests normalization only: the
-authoritative dispatcher short-circuits an already-halted state before calling
-the normalizer and retains its original terminal record. -/
-theorem nmi_corpus_shape : ((vectors.drop 183).take 17).length = 17 := by
-  decide
-
-theorem nmi_corpus_id_inventory :
-    List.map (fun vector => vector.id) ((vectors.drop 183).take 17) =
-      ["nmi.user-running", "nmi.kernel-handling", "nmi.kernel-halted-normalized",
-        "nmi.wrong-descriptor", "nmi.wrong-target", "nmi.spurious-error",
-        "nmi.wrong-frame-bytes", "nmi.misaligned", "nmi.wrong-stack-identity",
-        "nmi.frame-not-at-stack-top", "nmi.wrong-origin", "nmi.wrong-selectors",
-        "nmi.noncanonical", "nmi.privileged-state", "nmi.stale-context",
-        "nmi.invalid-bounds-code", "nmi.invalid-mode-code"] := by
-  native_decide
-
-theorem nmi_adapter_agrees_with_model :
-    ((vectors.drop 183).take 17).all nmiAdapterAgrees = true := by
-  native_decide
-
-theorem nmi_accepted_modes_agree :
-    (vectors[183]).expected = 0x101000101 ∧
-    (vectors[184]).expected = 0x101010001 ∧
-    (vectors[185]).expected = 0x101020001 := by
-  native_decide
-
-theorem nmi_noncanonical_context_codes_rejected :
-    (vectors[198]).expected = 0x800000000000000e ∧
-      (vectors[199]).expected = 0x800000000000000f := by
-  native_decide
-
-theorem nmi_rejection_codes_agree :
-    List.map (fun vector => vector.expected) ((vectors.drop 186).take 14) =
-      List.map (fun reason => 0x8000000000000000 + reason.code)
-        InterruptEntry.NmiRejectReason.runtimeInventory := by
-  native_decide
-
-/-- The contained user-fault class block appended for vectors 0 and 3: two
-accepted CPL3 entry vectors, kernel-origin/spurious-error/wrong-restart entry
-rejections, and the composite fault-dispatch corpus binding the typed reason
-codes into the encoded outcome. -/
-theorem user_fault_class_corpus_shape :
-    ((vectors.drop 200).take 23).length = 23 := by
-  decide
-
-theorem user_fault_class_entry_scenario_agrees :
-    (vectors[200]).expected ≠ 0 ∧ (vectors[201]).expected ≠ 0 ∧
-      ((vectors.drop 202).take 6).all (fun vector => vector.expected = 0) = true := by
-  native_decide
-
-/-- Accepted #DE/#BP dispatch words carry the exact reason code in bits
-40--47 over the unchanged version-one witness layout; kernel-origin,
-malformed, and wrong-restart forms are terminal words while swapped-shape and
-stale bindings reject to zero. -/
-theorem user_fault_class_dispatch_scenario_agrees :
-    (vectors[208]).expected = 0x100ff020202 ∧
-      (vectors[209]).expected = 0x200ff020202 ∧
-      (vectors[210]).expected = 0x10000000001 ∧
-      (vectors[211]).expected = 0x2003f020202 ∧
-      (vectors[212]).expected = 0x3f020202 ∧
-      ((vectors.drop 213).take 5).all
-        (fun vector => vector.expected = 0x8000000000000002) = true ∧
-      ((vectors.drop 218).take 5).all (fun vector => vector.expected = 0) = true := by
-  native_decide
-
-private def bootPhaseAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "Interrupt.bootPhase", [phase, operation, detail, latchWord, business] =>
-      InterruptEntry.bootPhaseDemo phase operation detail latchWord business =
-        vector.expected
-  | _, _ => true
-
-/-- The generated-C boot-phase block covers every publication step, each wrong
-or premature publication, bootstrap NMI and representative error-code shapes in
-both bootstrap phases, the typed unowned inherited window, runtime delegation,
-repeated terminal events, attempted progress after the latch, and a malformed
-phase code. -/
-theorem boot_phase_corpus_shape : ((vectors.drop 223).take 18).length = 18 := by
-  decide
-
-theorem boot_phase_corpus_id_inventory :
-    List.map (fun vector => vector.id) ((vectors.drop 223).take 18) =
-      ["bootphase.publish-bootstrap32", "bootphase.publish-bootstrap64",
-        "bootphase.publish-runtime", "bootphase.runtime-missing-tss",
-        "bootphase.skip-bootstrap32", "bootphase.backward-bootstrap32",
-        "bootphase.premature-runtime", "bootphase.nmi-bootstrap32",
-        "bootphase.nmi-bootstrap64", "bootphase.error-fault-bootstrap64",
-        "bootphase.noerror-fault-bootstrap32", "bootphase.double-fault-bootstrap64",
-        "bootphase.user-claim-early", "bootphase.inherited-window",
-        "bootphase.runtime-delegated", "bootphase.repeated-after-latch",
-        "bootphase.publish-after-latch", "bootphase.invalid-phase-code"] := by
-  native_decide
-
-/-- Every boot-phase scalar result agrees with the expectation evaluated from
-the rich finite phase model on the complete boot-phase corpus. -/
-theorem boot_phase_adapter_agrees_with_model :
-    ((vectors.drop 223).take 18).all bootPhaseAdapterAgrees = true := by
-  native_decide
-
-/-- The three orderly publications are the only accepted rows; both bootstrap
-NMI rows latch the absorbing terminal record; delegation and the post-latch
-rows carry the unchanged business token. -/
-theorem boot_phase_expected_classes_agree :
-    (vectors[223]).expected = 0x5a0101 ∧
-    (vectors[224]).expected = 0x5a0201 ∧
-    (vectors[225]).expected = 0x5a0301 ∧
-    (vectors[226]).expected = 0x18005a0202 ∧
-    (vectors[230]).expected = 0x25a0102 ∧
-    (vectors[231]).expected = 0x25a0202 ∧
-    (vectors[237]).expected = 0x25a0004 ∧
-    (vectors[238]).expected = 0x5a0003 ∧
-    (vectors[239]).expected = 0x5a0003 ∧
-    (vectors[240]).expected = 0x8000000000000021 := by
-  native_decide
-
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
   match vector.adapter, vector.words with
   | "Interrupt.userReturn", [mode, rip, rsp, selectors, flags] =>
@@ -1761,84 +331,6 @@ to an expectation evaluated through the authoritative validator. -/
 theorem user_return_adapter_agrees_with_model :
     vectors.all userReturnAdapterAgrees = true := by
   native_decide
-
-private def staleTranslationAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "StaleTranslation.scalar", [kind, actor, addressSpace, page, aux, selector] =>
-      StaleTranslation.staleTranslationDemo kind actor addressSpace page aux selector =
-        vector.expected
-  | _, _ => true
-
-/-- The stale-translation block is the 15-vector tail appended for issue #126:
-accepted unmap/protect, wrong-owner rejections, release/destroy/switch effects,
-unmapped-page and post-reuse rejections, permission amplification, and a
-malformed encoding. -/
-theorem stale_translation_corpus_shape :
-    ((vectors.drop 241).take 15).length = 15 := by decide
-
-/-- Every stale-translation scalar result agrees with the independently
-evaluated authoritative `step` over the exact 15-vector block. -/
-theorem stale_translation_adapter_agrees_with_model :
-    ((vectors.drop 241).take 15).all staleTranslationAdapterAgrees = true := by native_decide
-
-/-- Accepted transitions carry their exact effect word (accepted bit 32,
-affected-absent bit 33, effect tag/space/page), wrong-owner and post-reuse
-requests request no invalidation, and the malformed encoding is a no-op. -/
-theorem stale_translation_scenario_agrees :
-    (vectors[241]).expected = 0x300070101 ∧
-    (vectors[242]).expected = 0x300070101 ∧
-    (vectors[243]).expected = 0x200000000 ∧
-    (vectors[244]).expected = 0x200000000 ∧
-    (vectors[245]).expected = 0x300000003 ∧
-    (vectors[246]).expected = 0x300000102 ∧
-    (vectors[247]).expected = 0x300000003 ∧
-    (vectors[248]).expected = 0x300000003 ∧
-    (vectors[249]).expected = 0x200000000 ∧
-    (vectors[250]).expected = 0x200000000 ∧
-    (vectors[255]).expected = 0 := by native_decide
-
-private def pageFaultAdapterAgrees (vector : Vector) : Bool :=
-  match vector.adapter, vector.words with
-  | "Interrupt.pageFault", [error, address, mode, context, controls] =>
-      InterruptEntry.pageFaultDemo error address mode context controls = vector.expected
-  | _, _ => true
-
-theorem page_fault_corpus_shape : ((vectors.drop 256).take 36).length = 36 := by
-  decide
-
-theorem page_fault_adapter_agrees_with_model :
-    ((vectors.drop 256).take 36).all pageFaultAdapterAgrees = true := by
-  native_decide
-
-/-- Dropping any authority-bearing input changes the accepted executable
-witness, so the rich-model corpus cannot agree with an erasing adapter. -/
-theorem page_fault_subject_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[285]).expected := by native_decide
-theorem page_fault_space_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[286]).expected := by native_decide
-theorem page_fault_cr3_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[287]).expected := by native_decide
-theorem page_fault_wp_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[288]).expected := by native_decide
-theorem page_fault_nxe_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[289]).expected := by native_decide
-theorem page_fault_smep_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[290]).expected := by native_decide
-theorem page_fault_smap_mutation_attested :
-    (vectors[256]).expected ≠ (vectors[291]).expected := by native_decide
-
-theorem page_fault_authority_mutations_attested :
-    (vectors[256]).expected ≠ (vectors[285]).expected ∧
-    (vectors[256]).expected ≠ (vectors[286]).expected ∧
-    (vectors[256]).expected ≠ (vectors[287]).expected ∧
-    (vectors[256]).expected ≠ (vectors[288]).expected ∧
-    (vectors[256]).expected ≠ (vectors[289]).expected ∧
-    (vectors[256]).expected ≠ (vectors[290]).expected ∧
-    (vectors[256]).expected ≠ (vectors[291]).expected :=
-  ⟨page_fault_subject_mutation_attested, page_fault_space_mutation_attested,
-    page_fault_cr3_mutation_attested, page_fault_wp_mutation_attested,
-    page_fault_nxe_mutation_attested, page_fault_smep_mutation_attested,
-    page_fault_smap_mutation_attested⟩
 
 private def wordsText : List UInt64 → String
   | [] => ""
