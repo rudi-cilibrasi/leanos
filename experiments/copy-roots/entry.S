@@ -375,8 +375,24 @@ qotom_blocking_user_a_fault_recovered:
     /* Network subject (issue #450): after the fixed first exchange A runs
        the ring-3 network subject built from subjects/net (its C entry,
        renamed by scripts/build-qotom-recovery-lab.py); it never returns. */
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+    /* Issue #556: A first runs the ring-3 DHCP subject built from
+       subjects/dhcp.  When it hands its lease over endpoint 13 the kernel
+       scrubs A's stack pages and restarts A at qotom_echo_subject_entry,
+       the echo subject built from subjects/echo. */
+    call qotom_dhcp_subject_main
+    ud2
+.global qotom_echo_subject_entry
+.type qotom_echo_subject_entry,@function
+qotom_echo_subject_entry:
+    call qotom_echo_subject_main
+    ud2
+.Lqotom_echo_subject_entry_end:
+.size qotom_echo_subject_entry, .Lqotom_echo_subject_entry_end-qotom_echo_subject_entry
+#else
     call qotom_network_subject_main
     ud2
+#endif
 #elif defined(LEANOS_QOTOM_IPC_DEVICE_STREAM)
     /* Device stream: ask the kernel-hosted keyboard program for a key
        (60), send it to B over endpoint 10 (8), until the program ends (61). */

@@ -3,9 +3,10 @@
 Issue #450 moves the WiFi responder out of the ring-0 device program. The
 BCM43224 driver used to answer ARP, ICMP echo and UDP echo itself
 (`LeanOS/Wifi/Responder.lean`). Now a separate ring-3 *network subject*
-answers them. The driver subject keeps the device, the network key and the
-DHCP client. The network subject holds no device capability and never sees a
-key.
+answers them. The driver subject keeps the device, the network key and, in
+the issue #450 image, the DHCP client. The network subject holds no device
+capability and never sees a key. Issue #556 then moves the DHCP client into
+a ring-3 subject of its own: see [DHCP as its own subject](#dhcp-as-its-own-subject).
 
 This page covers the design, the model, the generated code, and the q35
 `network-subject` scenario. The scenario runs the whole path without WiFi
@@ -145,14 +146,147 @@ edges. The exact transcript is
 LEANOS_BOOT_SCENARIO=network-subject ./scripts/run-image.sh
 ```
 
+## DHCP as its own subject
+
+In the `network-subject` image the driver leases the address and tells the
+network subject in the configuration record, so the driver chooses the
+address the network subject answers for. Issue #556 takes that policy out of
+the driver. Three ring-3 subjects share the frame endpoint:
+
+- **A**, the driver subject, holds the device capability. Its program keeps
+  the PMK and the frame transport and nothing else. It never yields an
+  address. Its first record is the 6-byte **link record**, the hardware
+  address. It also yields a 1-byte **tick** after each second of TSF time
+  (`LeanOS.Wifi.Endpoint.serveLink`).
+- **B**, the DHCP subject (`subjects/dhcp`), holds one frame port. It runs
+  the DHCP client: DISCOVER, OFFER, REQUEST, ACK and NAK, with a
+  retransmission on every third tick without an answer.
+- **C**, the echo subject (`subjects/echo`), holds another frame port. It is
+  the network subject's responder (`leanos_net_reply`), but it takes its
+  address only from the DHCP subject.
+
+Each port has its own window: the holder's own stack page. The endpoint
+serves one port at a time, its *route*. It serves B's port until B has a
+lease. B then **hands the lease off** to C over endpoint 13, as two IPC words:
+the hardware address and the leased IPv4 address. From then on the kernel
+delivers every record to C, and B's next receive never returns.
+
+### The client logic is generated from Lean
+
+`LeanOS/Net/DhcpClient.lean` writes the client once, generic over the frame
+hooks of `LeanOS.Net.Echo` and two register hooks, in the same token
+discipline. It builds exactly the packets of `LeanOS.Wifi.Dhcp` (`discover`
+and `request`) inside an Ethernet header. It parses replies with the checks
+of `Wifi.Dhcp.parseReply`: IPv4 version, header length and checksum, no
+fragment, UDP from port 67 to port 68, BOOTREPLY, the magic cookie and
+well-formed options. It then follows `Wifi.Dhcp.Client.handle`.
+
+`leanos_dhcp_step` (`LeanOS/Net/DhcpClientC.lean`) is the generated C. It
+makes no allocation and no runtime call. Its only loops are the bounded zero
+fill, the header checksum and the option scan. `subjects/dhcp/main.c`
+defines the five hooks over its own frame buffer and registers, and includes
+it (`--generated NetDhcp`). The client is about 3.5 KiB of the 4 KiB text
+page.
+
+`scripts/check-dhcp-subject-host.sh` is the hosted generated-boundary row
+`dhcp-subject`. It does two things:
+
+1. `tests/NetDhcpVectors.lean` requires the model reading to send exactly
+   `Wifi.Dhcp`'s frames on the frame source's records. It also requires the
+   model to agree with `Wifi.Dhcp.Client.handle` on 12818 OFFER, ACK and NAK
+   variants, from both waiting states. The variants are single-byte
+   corruptions of every byte and truncations.
+2. `tests/net-dhcp-host.c` runs the generated C over the same vectors
+   against the model. It checks the frame sent, the registers, and that no
+   byte past the record or the frame is touched. It also checks the port
+   witness on fixed requests.
+
+### The shared-endpoint model
+
+`LeanOS/DhcpSubject.lean` models the shared endpoint: both windows, the
+route, the echo subject's lease, and six transitions. They are `deliver`,
+`fetch`, `send`, `transmit`, `write` and the lease `handoff`.
+
+| Theorem | Statement |
+| --- | --- |
+| `nonholder_refused`, `driver_refused` | A fetch or send by a subject holding no port, the driver included, is refused and changes nothing |
+| `unrouted_refused` | A fetch or send by the port holder the endpoint does not serve is refused and changes nothing |
+| `step_mem_changed`, `run_mem_outside_windows`, `run_driver_mem`, `run_port_holder_mem` | Across any run, a byte its owner did not store changes only inside that owner's own window |
+| `step_tx_changed` | The transmit slot changes only by the program taking it, or by the routed holder's accepted send of exactly bytes of its own window |
+| `handoff_refused`, `step_lease_changed`, `step_route_changed` | Only the DHCP subject can hand a lease off, and only while it is served; the echo subject's lease is exactly what it handed |
+| `run_routed_leased`, `echo_fetch_leased` | From boot, the endpoint serves the echo subject only once it holds a lease |
+| `replyFrame_for_ip`, `echo_answers_only_lease` | The responder answers a frame only when the frame asks for the address it is given; so the echo subject answers only for the lease |
+| `dhcp_no_device_effects`, `echo_no_device_effects`, `deviceAuthorize_ports` | Neither subject is granted a device; every bind or invoke either attempts is denied without effect |
+| `framePortCheck_own_window`, `framePortCheck_nonholder`, `framePortCheck_fetch`, `framePortCheck_send` | The generated witness `leanos_frame_port_check` admits only a port holder, only for a window labelled its own, only while it is served, and accepts exactly what the model accepts |
+
+`SecurityClaims.dhcp_subject_separation` restates these as claim
+SC-DHCP-SUBJECT-SEPARATION ([security-claims.md](security-claims.md)).
+
+### The `dhcp-subject` scenario
+
+The image is the three-subject image with B built from `subjects/dhcp` and C
+from `subjects/echo`. B is a template slot here: boot.S omits its
+handwritten B under `LEANOS_SUBJECT_B_OBJECT`, and the build rule takes
+`--slot b`. A's frame source is the Lean device program `net-q35-dhcp`
+(`LeanOS.Net.DhcpSource`). Like `net-q35-frames`, it drives no device. It
+yields 17 records:
+
+1. the link record, which draws a DISCOVER;
+2. an OFFER for another transaction, which is ignored;
+3. an OFFER of 10.0.2.15, which draws a REQUEST;
+4. a NAK, which draws a DISCOVER with the next transaction id;
+5. two ticks without an answer, then a third that draws a retransmitted
+   DISCOVER;
+6. an OFFER of 10.0.2.16 for another hardware address, which is ignored;
+7. the OFFER of 10.0.2.16, which draws a REQUEST;
+8. an ACK from another server, which is ignored;
+9. the ACK. B is now bound and hands 10.0.2.16 off to C.
+
+Then C gets:
+
+- an ARP request, an ICMP echo request and a UDP datagram to port 7 for
+  10.0.2.16, which draw replies;
+- the same ARP and ICMP requests for 10.0.2.15, the NAKed address (the
+  address the issue #450 fixture answered for), which draw none;
+- a tick, which draws none.
+
+At its next invocation the program checks every frame B or C sent, byte for
+byte. Before the hand-off it checks them against `Wifi.Dhcp`. After it, it
+checks them against `Echo.replyFrame` for the leased address.
+
+The kernel checks these too:
+
+- its device table against `leanos_device_authorize`;
+- its port table at boot, and every copy, against `leanos_frame_port_check`.
+  At boot, each holder is refused the other's window and the unrouted port;
+- every exchange on endpoints 12 and 13 against `leanos_blocking_ipc_event`.
+
+Four requests are refused: C's device invocation, C's fetch before the
+hand-off (`not-routed`), B's device invocation, and A's fetch
+(`not-holder`). The exact transcript is
+`scripts/expectations/dhcp-subject.transcript`.
+
+```sh
+LEANOS_BOOT_SCENARIO=dhcp-subject ./scripts/run-image.sh
+```
+
+On the Qotom the same two subjects run in turn in subject A, the only slot
+the audited copy roots alias. The kernel zeroes A's stack pages at the
+hand-off and restarts A at the echo subject's entry
+([wifi-driver.md](wifi-driver.md#dhcp-subject-on-the-qotom)).
+
 ## Not covered
 
 - The q35 frames come from a program, not from a radio.
 - The protocol logic is checked against a Lean reference, not proved against
   an RFC model.
-- The DHCP client stays in the driver program for this change. Moving it to
-  its own subject is a follow-up.
+- In the `network-subject` image the DHCP client still runs in the driver
+  program (`LEANOS_WIFI_DRIVER_DHCP`). The `dhcp-subject` image moves it to
+  its own subject.
+- The DHCP subject renews nothing. It takes one lease and hands it off; its
+  transaction id is derived from the hardware address, a lab-grade choice.
+- On the Qotom the DHCP subject and the echo subject are separated in time
+  (a scrub of one slot), not in address space as on q35.
 - The legacy ring-0 responder (`LeanOS.Wifi.Responder.respond`, `connect`
   with `LEANOS_WIFI_SERVE_SECONDS` but no `LEANOS_WIFI_NETWORK_SUBJECT`)
-  remains as the lab baseline until the Qotom capture of the ring-3 path
-  replaces it.
+  remains as the lab baseline.

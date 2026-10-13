@@ -1,0 +1,44 @@
+# The address-leasing program and the echo program share the network, each in its own space
+
+These theorems describe the step after the network program: the program that asks the local network for an address (DHCP) now runs in user mode on its own, separate from the WiFi driver and from the echo program that answers ARP, ping and UDP echo. Both get frames from the driver the same way the network program did, through kernel copies, but each through its own permission and into its own memory window, and the kernel serves one of them at a time: the address-leasing program first, then, once it has handed its lease to the echo program in a message, the echo program. The model says who may ask for a copy, where the kernel may write and how the lease changes hands, and the theorems show that the driver and any other program are refused, that each program receives frame bytes only in its own window, that the echo program's address comes only from the address-leasing program, that the echo program answers only requests for that leased address, and that neither program can touch any device. The kernel checks each copy request with a small generated checker that these theorems tie to the model; no theorem here says the booted code follows the model step by step.
+
+- `window_some` — Only the address-leasing program and the echo program have a frame window.
+- `window_none` — Any other program has no frame window.
+- `fetchOk_route` — A copy-in the model accepts comes from the program the kernel is currently serving, and lands wholly inside that program's own window.
+- `sendOk_route` — A copy-out the model accepts comes from the program the kernel is currently serving, and is taken wholly from that program's own window.
+- `nonholder_refused` — A request to copy a frame in or out from any program other than the two frame programs is refused and changes nothing.
+- `driver_refused` — In particular the driver program's own copy requests are refused and change nothing.
+- `unrouted_refused` — A copy request from the frame program the kernel is not currently serving is refused and changes nothing.
+- `step_mem_changed` — When one step changes a byte of some program's memory, either that program stored to its own memory, or the kernel copied a frame into that same program inside its own window.
+- `run_mem_outside_windows` — Over any run, a byte that its owner never stored to changes only if it lies inside that owner's own frame window: the kernel copies no frame byte anywhere else.
+- `run_driver_mem` — The driver program's memory changes only by its own stores: it never receives a frame byte from the kernel.
+- `run_port_holder_mem` — Either frame program's memory outside its own window never receives a frame byte, so neither receives the other's frames there.
+- `step_rx_changed` — The slot holding a received frame changes only when the driver's device program delivers a new one.
+- `step_tx_changed` — The slot holding an outgoing frame changes only when the device program takes it, or when the program the kernel is serving sends exactly the bytes of a range inside its own window.
+- `handoff_refused` — An attempt by any program other than the address-leasing program to hand over a lease is refused and changes nothing.
+- `step_lease_changed` — The echo program's address changes only when the address-leasing program hands over its lease while it is being served, and then it is exactly the handed address.
+- `step_route_changed` — Which program the kernel serves changes only by that hand-over, and only from the address-leasing program to the echo program.
+- `boot_routed` — At start-up the kernel serves the address-leasing program and the echo program holds no lease.
+- `step_routed` — Every step keeps the rule that the kernel serves the echo program only when it holds a lease.
+- `run_routed` — Over any run, that rule keeps holding.
+- `run_routed_leased` — From start-up, whenever the kernel serves the echo program, the echo program holds a lease.
+- `echo_fetch_leased` — The echo program can receive a frame only once it holds a lease.
+- `reply_for_ip` — The reference answering logic produces an answer only for a frame that asks for the address it was given.
+- `replyFrame_for_ip` — The reference answerer, against which the echo program's generated code is checked, answers only frames asking for its own address.
+- `echo_answers_only_lease` — Once the kernel serves the echo program, it holds the lease the address-leasing program handed over, and it answers only frames that ask for that leased address.
+- `dhcp_no_device_effects` — The address-leasing program is never given a device permission, so every attempt it makes to load or run a device program is refused and leaves every device exactly as it was.
+- `echo_no_device_effects` — The echo program is never given a device permission either, so it cannot make any device do anything.
+- `deviceAuthorize_ports` — The generated device checker the kernel uses refuses both frame programs every device.
+- `framePortDecide_accept` — The checker's decision accepts only a frame program, only for a window labelled as its own, and only while the kernel is serving it, for bytes wholly inside that window.
+- `framePortDecide_fetch_iff` — The checker's decision accepts a copy-in exactly from a frame program being served, for its own window, with a frame waiting, of at most a full frame, into a range inside the window.
+- `framePortDecide_send_iff` — The checker's decision accepts a copy-out exactly from a frame program being served, for its own window, with no outgoing frame already waiting, of a valid frame length, from a range inside the window.
+- `framePortDecide_nonholder` — The checker's decision refuses any other program whatever it asks, naming it as holding no frame permission.
+- `request_fields` — The request word the kernel builds carries the operation, the waiting flag, the program being served and the window's owner, each readable back exactly.
+- `framePortCheck_request` — The exported checker reads such a request word as exactly the decision over those fields.
+- `framePortCheck_own_window` — Whatever it is asked, the checker built into the kernel accepts a copy only from a frame program, for a window labelled as that program's own, while the kernel serves it.
+- `framePortCheck_nonholder` — The checker built into the kernel refuses every other program, whatever it asks.
+- `port_toUInt64` — The two frame programs' numbers keep their values as machine words.
+- `port_toUInt64_eq` — Two frame programs' numbers are equal as machine words exactly when they are the same program.
+- `Routed.port` — In every state the rule allows, the kernel serves one of the two frame programs.
+- `framePortCheck_fetch` — For either frame program and its own window, the checker built into the kernel accepts a copy-in exactly when the model does.
+- `framePortCheck_send` — For either frame program and its own window, the checker built into the kernel accepts a copy-out exactly when the model does.

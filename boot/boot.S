@@ -1416,6 +1416,36 @@ boot_idt64_pointer:
     pop %r15; pop %r14; pop %r13; pop %r12; pop %r11; pop %r10; pop %r9; pop %r8
     pop %rdi; pop %rsi; pop %rbp; pop %rdx; pop %rcx; pop %rbx; pop %rax
 .endm
+#ifdef LEANOS_DHCP_SUBJECT_SCENARIO
+/* The dhcp-subject image (#556): preserve subject \from's exact
+   continuation, then restore subject \to's saved one under its own root;
+   the kernel sets the restored subject's payload or result words in
+   switch_complete. */
+.macro DHCP_SUBJECT_SWITCH from, to
+    mov %rsp, %rsi
+    lea saved_context_\from(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_\from+120(%rip), %rax
+    mov %rax, saved_context_\from\()_original_rip(%rip)
+    mov saved_context_\from+136(%rip), %rax
+    mov %rax, saved_context_\from\()_original_flags(%rip)
+    mov saved_context_\from+144(%rip), %rax
+    mov %rax, saved_context_\from\()_original_rsp(%rip)
+    lea saved_context_\to(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_\to, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_\to(%rip), %rsi
+    mov saved_context_owner_\from(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+.endm
+#endif
 /* All ordinary gates execute this protocol after AC/DF cleanup and SAVE.
    No operation-specific handler reads the architectural frame until the
    kernel-owned manifest adapter has authorized its vector/stub/shape/context. */
@@ -1557,6 +1587,20 @@ isr80_cld:
     je 31f
     cmp $0x3c03, %rax
     je 32f
+#ifdef LEANOS_DHCP_SUBJECT_SCENARIO
+    cmp $0x3c11, %rax
+    je 61f
+    cmp $0x3c12, %rax
+    je 62f
+    cmp $0x3c13, %rax
+    je 63f
+    cmp $0x3c14, %rax
+    je 64f
+    cmp $0x3c15, %rax
+    je 65f
+    cmp $0x3c16, %rax
+    je 66f
+#endif
 #if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || \
     defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) || \
     defined(LEANOS_FAULT_HANDLER_SCENARIO) || \
@@ -1963,6 +2007,21 @@ isr80_cld:
     call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
+#endif
+#ifdef LEANOS_DHCP_SUBJECT_SCENARIO
+61: /* A's record notice woke the DHCP subject B. */
+    DHCP_SUBJECT_SWITCH a, b
+62: /* B blocked on endpoint 12 again: resume A. */
+    DHCP_SUBJECT_SWITCH b, a
+63: /* B's lease on endpoint 13 woke the echo subject C. */
+    DHCP_SUBJECT_SWITCH b, c
+64: /* C blocked on endpoint 12 for the first time: resume B after its
+       lease send. */
+    DHCP_SUBJECT_SWITCH c, b
+65: /* A's record notice woke the echo subject C. */
+    DHCP_SUBJECT_SWITCH a, c
+66: /* C blocked on endpoint 12 again: resume A. */
+    DHCP_SUBJECT_SWITCH c, a
 #endif
 #endif
 .global isr14
@@ -2432,8 +2491,9 @@ user_a_entry:
     int $0x80
 9:  ud2
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
-#ifdef LEANOS_NETWORK_SUBJECT_SCENARIO
-    /* Driver subject (#450).  It holds the device capability for the frame
+#if defined(LEANOS_NETWORK_SUBJECT_SCENARIO) || defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+    /* Driver subject (#450; in the dhcp-subject image #556 the kernel
+       delivers each notice to the frame port it serves, B's or C's).  It holds the device capability for the frame
        source but not the frame endpoint: its frame fetch (64) is refused
        (bit 63 | 1, not the holder).  It then loops: the next frame from the
        bound device program (60: the sequence number in the high half, the
@@ -3058,6 +3118,10 @@ page_fault_probe_class:
     .quad 0
 #endif
 
+/* An image that defines LEANOS_SUBJECT_B_OBJECT (dhcp-subject, #556) links
+   B's text and stack from a separately built subjects/ object instead
+   (scripts/build-subject.sh --slot b, docs/subjects.md). */
+#ifndef LEANOS_SUBJECT_B_OBJECT
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
@@ -3871,6 +3935,7 @@ user_b_stack:
     .skip 4096
 .global user_b_stack_top
 user_b_stack_top:
+#endif
 
 /* An image that defines LEANOS_SUBJECT_C_OBJECT (example-subject) links C's
    text and stack from a separately built subjects/ object instead

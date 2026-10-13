@@ -327,8 +327,11 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 # 6 in the frame-server switches (save C + restore A, save B + restore C, save
 # C + restore B; LEANOS_FRAME_SERVER_SCENARIO only), plus 2 in the loader's
 # child switches (save B + enter the loaded child, restore B after the
-# child's send; LEANOS_SPAWN_LOADER_SCENARIO only).
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 39 ]] || {
+# child's send; LEANOS_SPAWN_LOADER_SCENARIO only), plus 2 in the one macro
+# every dhcp-subject switch expands (save the current subject, restore the
+# target's saved continuation; DHCP_SUBJECT_SWITCH,
+# LEANOS_DHCP_SUBJECT_SCENARIO only).
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 41 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
@@ -486,8 +489,10 @@ expected_pre_restore='andq $0xfffffffffffbfbff,0x88(%rsp);mov %rsp,%rdi;call <va
 # A subject built from subjects/ (#484) marks its slot with
 # user_<slot>_template_text.  Re-check the linked slot text in this final ELF
 # against the same instruction policy the build rule applied to the object.
-if grep -Eq '[[:space:]]user_c_template_text$' <<<"$symbols"; then
-  ./scripts/check-subject-policy.py elf "$elf" c
-fi
+for slot in b c; do
+  if grep -Eq "[[:space:]]user_${slot}_template_text$" <<<"$symbols"; then
+    ./scripts/check-subject-policy.py elf "$elf" "$slot"
+  fi
+done
 
 echo "ELF sections, policy symbols, and constructed page-table policy passed"

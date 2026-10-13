@@ -234,6 +234,11 @@
         "-DLEANOS_NETWORK_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-network-subject.h\""
       ],
+      "kernel-dhcp-subject": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-dhcp-subject.h\""
+      ],
       "kernel-endpoint-directory": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_ENDPOINT_DIRECTORY_SCENARIO=1",
@@ -571,6 +576,15 @@
           "-DLEANOS_SUBJECT_C_OBJECT=1"
         ]
       },
+      "boot-dhcp-subject": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+          "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
+          "-DLEANOS_SUBJECT_B_OBJECT=1",
+          "-DLEANOS_SUBJECT_C_OBJECT=1"
+        ]
+      },
       "boot-endpoint-directory": {
         "source": "boot/boot.S",
         "definitions": [
@@ -656,6 +670,16 @@
       },
       "subject-net": {
         "source": "subjects/net",
+        "slot": "c",
+        "generated": "NetEcho"
+      },
+      "subject-dhcp": {
+        "source": "subjects/dhcp",
+        "slot": "b",
+        "generated": "NetDhcp"
+      },
+      "subject-echo": {
+        "source": "subjects/echo",
         "slot": "c",
         "generated": "NetEcho"
       },
@@ -1012,6 +1036,17 @@
         ],
         "final_link": true,
         "prelink_plan": "boot-page-plan-network-subject.h",
+        "plan_equal_to": null
+      },
+      "leanos-dhcp-subject": {
+        "boot": "boot-dhcp-subject",
+        "kernel": "kernel-dhcp-subject",
+        "extra_objects": [
+          "subject-dhcp",
+          "subject-echo"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-dhcp-subject.h",
         "plan_equal_to": null
       },
       "leanos-endpoint-directory": {
@@ -1449,6 +1484,13 @@
           "key": "network-subject"
         }
       },
+      "leanos-dhcp-subject": {
+        "iso": "leanos-@VERSION@-x86_64-dhcp-subject.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "dhcp-subject"
+        }
+      },
       "leanos-endpoint-directory": {
         "iso": "leanos-@VERSION@-x86_64-endpoint-directory.iso",
         "grub": "boot/grub.cfg",
@@ -1834,6 +1876,16 @@
         "description": "network-subject",
         "targets": [
           "leanos-network-subject"
+        ]
+      },
+      {
+        "image": "leanos-dhcp-subject",
+        "check": "converge",
+        "expected": "boot-page-plan-dhcp-subject.h",
+        "final": "boot-page-plan-dhcp-subject.final.h",
+        "description": "dhcp-subject",
+        "targets": [
+          "leanos-dhcp-subject"
         ]
       },
       {
@@ -3698,6 +3750,34 @@
         "SC-IPC-EVENT-STREAM"
       ],
       "does_not_prove": "Not a refinement of SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of six synthesized frames from a device program that drives no device, not the BCM43224 or any radio; the kernel checks its endpoint and device tables and every copy and device decision against the generated witnesses leanos_frame_copy_check and leanos_device_authorize, and each frame exchange against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models, the frame source checks the replies against the reference responder rather than a proof of the protocol logic, and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
+    },
+    "dhcp-subject": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/dhcp-subject.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "60",
+        "image": "leanos-@VERSION@-x86_64-dhcp-subject.iso",
+        "elf": "leanos-dhcp-subject.elf",
+        "serial_log": "dhcp-subject.serial.log",
+        "scenario": "dhcp-subject",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DHCP-SUBJECT-SEPARATION",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT",
+        "SC-IPC-EVENT-STREAM"
+      ],
+      "does_not_prove": "Not a refinement of SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of seventeen synthesized records (a link record, ticks, DHCP OFFER, NAK and ACK frames, then ARP, ICMP and UDP frames) from a device program that drives no device, not the BCM43224, any radio or any DHCP server; the kernel checks its port and device tables and every copy and device decision against the generated witnesses leanos_frame_port_check and leanos_device_authorize, and every exchange on endpoints 12 and 13 against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models; the frame source checks each sent frame against the reference DHCP client and the reference responder rather than a proof of the protocol logic; and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
     },
     "endpoint-directory": {
       "release_artifacts": [

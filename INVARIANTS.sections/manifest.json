@@ -51,6 +51,7 @@
     "LeanOS/DeviceCapability.lean",
     "LeanOS/DeviceProgramConfinement.lean",
     "LeanOS/DeviceProgramExecutor.lean",
+    "LeanOS/DhcpSubject.lean",
     "LeanOS/DirectPortContainment.lean",
     "LeanOS/DirectPortIO.lean",
     "LeanOS/ElfAdmission.lean",

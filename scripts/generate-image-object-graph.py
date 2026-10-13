@@ -49,6 +49,7 @@ GENERATED_MODULES = (
     "ChildLoader",
     "WifiExec",
     "NetworkSubject",
+    "DhcpSubject",
 )
 
 BOOT_ALLOCATION_PARTS = (
@@ -78,6 +79,7 @@ FAULT_DISPATCH_PARTS = (
     "ChildLoader",
     "WifiExec",
     "NetworkSubject",
+    "DhcpSubject",
 )
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "scenario-manifest.json"
@@ -130,7 +132,7 @@ def load_build_manifest(path: Path = DEFAULT_MANIFEST) -> dict:
             or not re.fullmatch(r"[A-Z][A-Za-z0-9]*", str(entry.get("generated", "X")))
             or not isinstance(entry["source"], str)
             or not re.fullmatch(r"subjects/[a-z][a-z0-9-]*", entry["source"])
-            or entry["slot"] not in ("c", "admitted")
+            or entry["slot"] not in ("b", "c", "admitted")
             # An admitted-only subject (#492) has no slot: only its admitted
             # bytes are linked, so it must be admitted.
             or (entry["slot"] == "admitted" and entry.get("admitted") is not True)

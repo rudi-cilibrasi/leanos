@@ -127,6 +127,12 @@ ABI.
 | 62 | network-subject | 2 | B reports its canaries and its refused frame fetch (RDX) |
 | 64 | network-subject | 1, 2, 3 | frame fetch: copy the pending frame into the caller's buffer at RBX, checked against the generated witness leanos_frame_copy_check (C only, the whole range inside C's own page); returns the length, or bit 63 or the reason |
 | 65 | network-subject | 3 | frame send: copy RCX bytes (14-1514) at RBX out as the reply, under the same check; returns 0, or bit 63 or the reason |
+| 7 | dhcp-subject | 2, 3 | B (subjects/dhcp) blocks on endpoint 12 (RDX) for the next record, C (subjects/echo) first on endpoint 13 for the lease, then on endpoint 12; woken with the two payload words (RAX, RBX) and the delivery flag (RCX); after the hand-off B's receive never returns |
+| 8 | dhcp-subject | 1, 2 | A sends a record's length (RBX) and sequence number (RCX) on endpoint 12 (RDX), delivered to the port the endpoint serves (B, then C); B sends its lease, the hardware address (RBX) and the leased IPv4 address (RCX), to C on endpoint 13, after which the endpoint serves C |
+| 60 | dhcp-subject | 1, 2, 3 | next record from the bound frame-source program, for the device-capability holder A only: sequence number in the high half, length in the low half (0 = end); B's and C's attempts are refused (no device capability: bit 63 or 7) |
+| 61 | dhcp-subject | 1 | A's final check of the record, copy, send, hand-off and edge counts (final record) |
+| 64 | dhcp-subject | 1, 2, 3 | record fetch: copy the pending record into the caller's buffer at RBX, checked against the generated witness leanos_frame_port_check (only the port the endpoint serves, the whole range inside the caller's own page); returns the length, or bit 63 or the reason |
+| 65 | dhcp-subject | 2, 3 | frame send: copy RCX bytes (14-1514) at RBX out to the driver, under the same check; returns 0, or bit 63 or the reason |
 | 70 | notify-reply | 1 | signal notification 20 with RBX bits (the script signals 5) |
 | 71 | notify-reply | 2 | wait on notification 20 (blocks until signalled) |
 | 72 | notify-reply | 1 | call endpoint 10 with RBX; creates a one-shot reply capability for the caller |

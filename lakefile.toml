@@ -82,6 +82,11 @@ root = "tests.NetEchoVectors"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-net-dhcp-vectors"
+root = "tests.NetDhcpVectors"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-wifi-vectors"
 root = "tests.WifiVectors"
 moreLeanArgs = ["-DwarningAsError=true"]

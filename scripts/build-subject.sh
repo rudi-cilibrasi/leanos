@@ -2,7 +2,7 @@
 # Build one ring-3 subject from a subjects/ directory into a relocatable
 # object for one slot of the boot image (#484).
 #
-#   build-subject.sh --cc CC --slot c|admitted --output OBJ
+#   build-subject.sh --cc CC --slot b|c|admitted --output OBJ
 #     [--admit-tool EXE --admitted-elf ELF --admitted-plan TSV]
 #     [--generated C_FILE --lean-include DIR] SUBJECT_DIR
 #
@@ -69,7 +69,7 @@ while (($#)); do
   esac
 done
 (($# == 1)) && [[ -n "$output" ]] || {
-  echo "usage: build-subject.sh [--cc CC] --slot c|admitted --output OBJ" \
+  echo "usage: build-subject.sh [--cc CC] --slot b|c|admitted --output OBJ" \
     "[--admit-tool EXE --admitted-elf ELF --admitted-plan TSV]" \
     "[--generated C_FILE --lean-include DIR] SUBJECT_DIR" >&2
   exit 2
@@ -88,12 +88,14 @@ if [[ -n "$generated" ]] && [[ ! -f "$generated" || ! -f "$lean_include/lean/lea
   exit 2
 fi
 subject_dir="${1%/}"
-# Only slot C is linked from a separate object today; A and B are still the
-# handwritten boot.S subjects every image shares.  Slot `admitted` (#492)
-# links no slot at all: the object holds only the admitted executable's bytes
-# (.user.admitted), for an image whose loader loads them into a spawned child.
-[[ "$slot" == c || "$slot" == admitted ]] || {
-  echo "error: build-subject: unsupported slot '$slot' (only c or admitted)" >&2; exit 2;
+# Slot C and (issue #556, for the dhcp-subject image, whose boot.S omits its
+# handwritten B under LEANOS_SUBJECT_B_OBJECT) slot B are linked from a
+# separate object; A is still the handwritten boot.S subject every image
+# shares.  Slot `admitted` (#492) links no slot at all: the object holds only
+# the admitted executable's bytes (.user.admitted), for an image whose loader
+# loads them into a spawned child.
+[[ "$slot" == b || "$slot" == c || "$slot" == admitted ]] || {
+  echo "error: build-subject: unsupported slot '$slot' (only b, c or admitted)" >&2; exit 2;
 }
 if [[ "$slot" == admitted && -z "$admit_tool" ]]; then
   echo "error: build-subject: slot admitted needs --admit-tool" >&2; exit 2

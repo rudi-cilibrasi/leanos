@@ -250,6 +250,16 @@ program takes it at the next invocation. On q35 the source is the deviceless
 in its endpoint form (`LeanOS.Wifi.Endpoint`). The executor, its hooks and
 the budgeted resumable invocation are unchanged.
 
+Issue #556 moves the DHCP client out of that program too. In the
+`dhcp-subject` image the driver program yields a 6-byte link record (the
+hardware address) and 1-byte ticks besides frames, and leases nothing; two
+ring-3 subjects, the DHCP subject and the echo subject, each hold a frame
+port with their own window, and the kernel serves the DHCP subject's port
+until it hands its lease to the echo subject. Every copy is checked against
+`leanos_frame_port_check` (`LeanOS.DhcpSubject`). On q35 the source is
+`net-q35-dhcp`; on the Qotom it is the `connect` program serving the
+link-only endpoint (`LeanOS.Wifi.Endpoint.serveLink`).
+
 ## Consequences
 
 * The executor gains `yield` and resumption; the differential fuzzer and its
