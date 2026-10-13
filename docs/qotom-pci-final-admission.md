@@ -79,3 +79,12 @@ reached `qotom-nosmap-pending`. The watchdog then recovered FreeBSD, changed
 the boot timestamp, and left the one-shot request consumed. This satisfies the
 conditional PCI boundary for the initial profile; it does not convert any of
 the three trusted premises into measurements.
+
+The [assigned-Broadcom variant](qotom-broadcom-assignment.md)
+`qotom-j1900-pci-trust-v1-bcm43224-assign-v1`
+([ADR 0027](adr/0027-qotom-broadcom-assignment-contract.md)) extends this
+contract for the network-subject lab image. It consumes the generated
+contract result for the retained final vector, permits one PMCSR store that
+returns `02:00.0` from D3hot to D0, and assigns the device only to a program
+that can never set Bus Master. The final vector and its records are
+unchanged.

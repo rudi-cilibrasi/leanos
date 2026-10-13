@@ -22298,6 +22298,54 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.admission_one_iff",
+      "display": "admission_one_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.admission_policy_no_bus_master",
+      "display": "admission_policy_no_bus_master",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.admission_post_state",
+      "display": "admission_post_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.admission_requires_write",
+      "display": "admission_requires_write",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.qotomBcm43224Policy_assignable",
+      "display": "qotomBcm43224Policy_assignable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.write_exact",
+      "display": "write_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.write_one_iff",
+      "display": "write_one_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomBroadcomAssignment.lean",
+      "qualified": "LeanOS.QotomBroadcomAssignment.write_requires_contract",
+      "display": "write_requires_contract",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/QotomBspTopology.lean",
       "qualified": "LeanOS.QotomBspTopology.authoritative_q35_cannot_supply_candidate",
       "display": "authoritative_q35_cannot_supply_candidate",
@@ -24587,6 +24635,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.qotom_blocking_ipc_authority_requires_whole_profile",
       "display": "qotom_blocking_ipc_authority_requires_whole_profile",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.qotom_broadcom_assignment_confined",
+      "display": "qotom_broadcom_assignment_confined",
       "kind": "theorem"
     },
     {

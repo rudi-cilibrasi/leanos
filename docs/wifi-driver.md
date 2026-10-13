@@ -119,10 +119,14 @@ After the fixed first exchange:
 
 The trust contract leaves the BCM43224 in D3hot with Command=0
 ([qotom-broadcom-d3.md](qotom-broadcom-d3.md)). Before binding, the lab
-returns it to D0: its PMCSR advertises No_Soft_Reset, so the BARs survive. It
-then requires Command to be still 0. This is a lab-only assignment step
-outside the reviewed contract. A reviewed contract variant that admits the
-Broadcom as assigned is still open.
+applies the reviewed assignment variant
+`qotom-j1900-pci-trust-v1-bcm43224-assign-v1`
+([qotom-broadcom-assignment.md](qotom-broadcom-assignment.md)). One PMCSR
+store returns the device to D0. After the recovery delay the header, BARs,
+PCIe status and Transactions Pending must match, and the program policy must
+be assignable (no DMA, never Bus Master). Two generated checks decide; any
+mismatch stops at `qotom-broadcom-assign`. The builder therefore requires
+`--broadcom-d3` and `--pci-trust-contract` with `--network-subject`.
 
 None of this has run on the hardware yet. The q35 `network-subject` scenario
 exercises the same subject, endpoint layout and witnesses.
@@ -150,7 +154,8 @@ set recorded in
      --lab-program build/net/net-bcm-frames.bin --ipc-device-stream --network-subject
    ```
 
-   The image touches no Broadcom register. It feeds the six q35 frames
+   The program touches no Broadcom register; the only Broadcom store is the
+   assignment variant's PMCSR write. The program feeds the six q35 frames
    through the real Qotom path: copy roots, IPC, and the network subject in
    ring 3. Install and run it as in [Booting the image from the
    SSD](#booting-the-image-from-the-ssd):
@@ -163,7 +168,15 @@ set recorded in
    ```
 
    Expect the following in `build/wifi/net450-smoke/cycle-1/serial.raw`:
-   * `SERVICE assign device=2:0.0 pmcsr=d3hot,d0`;
+   * `BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1
+     device=2:0.0 status=0 contract=1 pmcsr-before=16395 command-before=0
+     d0-attempted=1 pmcsr-after=16392 command-after=0 bar0=3497000964 bar1=0
+     polls=2 device-status=25 admitted=1` (`polls` may be higher), then
+     `SERVICE grant subject=1 ... bind=accepted`. This record is the
+     hardware validation of the assignment variant (issue #559). A nonzero
+     `status` ends at `FINAL status=FAIL reason=qotom-broadcom-assign`; keep
+     that serial stream, since its fields show which check refused (status
+     table in [qotom-broadcom-assignment.md](qotom-broadcom-assignment.md));
    * one `NET event=deliver`/`fetch` pair per frame, and a `send` for the
      three replies;
    * `WIFI 5101`/`5102` records from the frame source (each reply matched

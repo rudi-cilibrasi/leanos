@@ -3,6 +3,12 @@
 #include "qotom-graphics-state.c.inc"
 #endif
 
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+/* Retained for the reviewed assignment variant (qotom-broadcom-assign.c.inc). */
+static uint32_t lab_retained_broadcom_d3_status=12;
+static struct qotom_broadcom_d3_result lab_retained_broadcom_d3;
+static struct pci_enumeration_header lab_retained_broadcom_endpoint;
+#endif
 static __attribute__((noreturn)) void lab_broadcom_d3_fault(void *opaque);
 static struct lab_broadcom_d3_window lab_broadcom_d3_writer={
     .controls=lab_ecam_native_controls,.invalidate=lab_ecam_native_invalidate,
@@ -46,6 +52,10 @@ static __attribute__((noinline)) void lab_capture_broadcom_d3(
                 QOTOM_PCIE_PENDING_OK,&lab_retained_pcie_pending[1],&result);
     }
     lab_broadcom_d3_disarm();
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+    lab_retained_broadcom_d3_status=status;lab_retained_broadcom_d3=result;
+    if(snapshot->count==16)lab_retained_broadcom_endpoint=snapshot->headers[14];
+#endif
     serial_puts("LEANOS-LAB/1 BROADCOM-D3 profile=qotom-broadcom-d3-v1 index=14 status=");
     serial_u64(status);serial_puts(" command-attempted=");serial_u64(result.command_attempted);
     serial_puts(" command-before=");serial_u64(result.before_command);

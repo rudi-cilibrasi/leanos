@@ -9,6 +9,11 @@
 #include "qotom-nosmap-control.c.inc"
 #endif
 
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+/* Retained for the reviewed Broadcom assignment variant. */
+static uint16_t lab_retained_pci_final_commands[16];
+static uint32_t lab_retained_pci_final_match;
+#endif
 static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
         const struct lab_ecam_root_view *view) {
     static struct pci_enumeration_snapshot final_snapshot;
@@ -57,6 +62,10 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
     serial_u64(result.status==QOTOM_PCI_FINAL_MATCH);serial_putc('\n');
 #else
     serial_puts("0\n");
+#endif
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+    for(unsigned i=0;i<16;++i)lab_retained_pci_final_commands[i]=result.commands[i];
+    lab_retained_pci_final_match=result.status==QOTOM_PCI_FINAL_MATCH;
 #endif
     if(result.status==QOTOM_PCI_FINAL_ASSUMPTIONS)
         pre_admission_fail("qotom-pci-assumptions");

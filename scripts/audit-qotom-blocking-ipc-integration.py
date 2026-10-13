@@ -256,7 +256,20 @@ NETWORK_EXPECTED = {
     'network_witnesses': {'leanos_blocking_ipc_event': True,
                           'leanos_frame_copy_check': True,
                           'leanos_device_authorize': True},
+    # Issue #559: binding goes through the reviewed Broadcom assignment
+    # variant once, which consults both generated checks and the generated
+    # initial trust contract; the lab-only D3hot -> D0 step is gone.
+    'broadcom_assign_calls': 1,
+    'broadcom_assign_witnesses': {'leanos_qotom_broadcom_assign_write': True,
+                                  'leanos_qotom_broadcom_assign_admission': True,
+                                  'leanos_qotom_pci_initial_trust_contract': True},
+    'adhoc_broadcom_assign': False,
 }
+
+
+def references(rows, target):
+    return sum(re.search(rf'<{re.escape(target)}(?:>|[.+])', row[2]) is not None
+               for row in rows)
 
 
 def network_facts(elf):
@@ -271,7 +284,15 @@ def network_facts(elf):
                '.' not in name and name not in ('qotom_net_operands', 'qotom_net_ipc_words')
                and any(row[0] == symbols[name][0] for row in rows)]
     code = [row for rows_ in bodies for row in rows_]
+    assign = body(symbols, rows, 'lab_broadcom_assign')
     return {
+        'broadcom_assign_calls': calls(body(symbols, rows, 'lab_stream_bind'),
+                                       'lab_broadcom_assign'),
+        'broadcom_assign_witnesses': {name: references(assign, name) > 0 for name in (
+            'leanos_qotom_broadcom_assign_write',
+            'leanos_qotom_broadcom_assign_admission',
+            'leanos_qotom_pci_initial_trust_contract')},
+        'adhoc_broadcom_assign': b'pmcsr=d3hot,d0' in Path(elf).read_bytes(),
         'network_entry_calls': calls(user_a, 'qotom_network_subject_main'),
         'network_witnesses': {name: calls(code, name) > 0 for name in (
             'leanos_blocking_ipc_event', 'leanos_frame_copy_check',
@@ -363,6 +384,33 @@ def self_test():
             rejected += 1
             continue
         raise ValueError(f'unsafe mutation accepted: {name}')
+    network = {key: (value.copy() if isinstance(value, (list, dict)) else value)
+               for key, value in NETWORK_EXPECTED.items()}
+    validate(network, NETWORK_EXPECTED)
+    network_mutations = {
+        'no-broadcom-assignment': ('broadcom_assign_calls', 0),
+        'adhoc-broadcom-step': ('adhoc_broadcom_assign', True),
+        'unchecked-broadcom-store': ('broadcom_assign_witnesses', {
+            'leanos_qotom_broadcom_assign_write': False,
+            'leanos_qotom_broadcom_assign_admission': True,
+            'leanos_qotom_pci_initial_trust_contract': True}),
+        'unchecked-broadcom-binding': ('broadcom_assign_witnesses', {
+            'leanos_qotom_broadcom_assign_write': True,
+            'leanos_qotom_broadcom_assign_admission': False,
+            'leanos_qotom_pci_initial_trust_contract': True}),
+        'no-trust-contract': ('broadcom_assign_witnesses', {
+            'leanos_qotom_broadcom_assign_write': True,
+            'leanos_qotom_broadcom_assign_admission': True,
+            'leanos_qotom_pci_initial_trust_contract': False}),
+    }
+    for name, (key, value) in network_mutations.items():
+        candidate = dict(network); candidate[key] = value
+        try:
+            validate(candidate, NETWORK_EXPECTED)
+        except ValueError:
+            rejected += 1
+            continue
+        raise ValueError(f'unsafe network mutation accepted: {name}')
     print(f'Qotom blocking IPC: baseline PASS; {rejected} mutations rejected')
 
 
