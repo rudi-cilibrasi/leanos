@@ -49,6 +49,18 @@ static struct boot_text_console early_text_console;
 #define LEANOS_ORACLE_DISPATCH_ATTRIBUTES __attribute__((noinline, noipa))
 #include "leanos/oracle-dispatch.h"
 #undef LEANOS_ORACLE_DISPATCH_ATTRIBUTES
+#include "leanos/isr80-path.h"
+/* isr80's typed return-path selector (#560; include/leanos/isr80-path.h).
+   isr80 stores LEANOS_ISR80_PATH_REPLY here before every call and reads the
+   word back to pick its path; isr80_select is its only writer in C, and a
+   handler calls it only after its model step has been checked.  The reply
+   word a handler returns is data and never selects a path. */
+uint64_t isr80_return_path;
+static inline __attribute__((always_inline, unused)) uint64_t
+isr80_select(uint64_t path) {
+    isr80_return_path = path;
+    return 0;
+}
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -4476,7 +4488,7 @@ static void frame_budget_retire_mapping(
     ((uint64_t)(event) + (uint64_t)(phase) * 0x100u +                        \
      (uint64_t)(current) * 0x10000u + (uint64_t)(space) * 0x100000000ull +   \
      (uint64_t)(sender) * 0x1000000000000ull)
-#define IPC_STREAM_RESUME_A 0xa55au
+#define IPC_STREAM_RESUME_A LEANOS_ISR80_PATH_BLOCK_B_RESUME_A
 static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
     uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
 static unsigned ipc_stream_step;          /* 0 block, 1 send, 3 deliver */
@@ -4539,7 +4551,7 @@ static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
         notify_step = 1; ipc_stream_step = 1; ipc_stream_started = 1;
         current_subject = 1;
         serial_puts(LEANOS_SERIAL_10_IPC " event=wait subject=2 notification=20 pending=0 blocked=1\n");
-        return 0xbeef;
+        return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_ENTER_A);
     }
     if (number == 70 && current_subject == 1 && notify_step == 1) {
         if (arg0 != 5) fail("notify-signal-bits");
@@ -4547,7 +4559,7 @@ static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
         NOTIFY_EDGE(2, 2, 2, 0x105, "notify-wake");
         notify_step = 2; ipc_stream_step = 3; current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=signal subject=1 notification=20 bits=5 accepted=1\n");
-        return 0xcafe;
+        return isr80_select(LEANOS_ISR80_PATH_WAKE_B);
     }
     if (number == 73 && current_subject == 2 && notify_step == 2) {
         if (arg0 != 5) fail("notify-woken-bits");
@@ -4559,7 +4571,7 @@ static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
         notify_step = 3; ipc_stream_step = 1; current_subject = 1;
         ipc_resume_word = 0;
         serial_puts(LEANOS_SERIAL_10_IPC " event=receive subject=2 endpoint=10 blocked=1\n");
-        return 0xa55a;
+        return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_RESUME_A);
     }
     if (number == 72 && current_subject == 1 && notify_step == 3) {
         NOTIFY_EDGE(3, 3, 1, 0x200, "notify-call");
@@ -4568,7 +4580,7 @@ static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
         serial_puts(LEANOS_SERIAL_10_IPC " event=call caller=1 endpoint=10 server=2 word=");
         serial_u64(arg0);
         serial_puts(" reply-slot=0 caller-generation=0\n");
-        return 0xcafe;
+        return isr80_select(LEANOS_ISR80_PATH_WAKE_B);
     }
     if (number == 75 && current_subject == 2 && notify_step == 4) {
         if (arg0 != notify_call_word + 1) fail("notify-reply-word");
@@ -4591,7 +4603,7 @@ static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
         notify_step = 7; ipc_stream_step = 1; current_subject = 1;
         ipc_resume_word = notify_reply_word;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 round=done\n");
-        return 0xa55a;
+        return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_RESUME_A);
     }
     if (number == 76 && current_subject == 1 && notify_step == 7) {
         if (arg0 != notify_reply_word) fail("notify-reply-delivery");
@@ -4616,9 +4628,9 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
         serial_u64(ipc_stream_events); serial_putc('\n');
         if (!ipc_stream_started) {
             ipc_stream_started = 1;
-            return 0xbeef;
+            return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_ENTER_A);
         }
-        return IPC_STREAM_RESUME_A;
+        return isr80_select(IPC_STREAM_RESUME_A);
     }
 #ifdef LEANOS_AHCI_SERVICE_SCENARIO
     /* Device invocation is mediated by the generated device witness: subject
@@ -4657,7 +4669,7 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
         serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=10 payload0=");
         serial_u64(arg0); serial_puts(" payload1="); serial_u64(arg1);
         serial_puts(" accepted=1\n");
-        return 0xcafe;
+        return isr80_select(LEANOS_ISR80_PATH_WAKE_B);
     }
     if (number == 9 && current_subject == 2 && ipc_stream_step == 3) {
         if (leanos_blocking_ipc_event(3, 4, 2) != IPC_EVENT_WORD(4, 4, 2, 2, 1))
@@ -4751,9 +4763,9 @@ static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
    owners, and preserved continuations.  This slice adds no new authority:
    the console capability and the server loop are later slices. */
 #define THREE_SUBJECT_ENDPOINT 12u
-#define THREE_SUBJECT_C_BLOCKED 0x3c01u
-#define THREE_SUBJECT_B_RAN 0x3c02u
-#define THREE_SUBJECT_A_SENT 0x3c03u
+#define THREE_SUBJECT_C_BLOCKED LEANOS_ISR80_PATH_BLOCK_C_ENTER_B
+#define THREE_SUBJECT_B_RAN LEANOS_ISR80_PATH_REPORT_B_ENTER_A
+#define THREE_SUBJECT_A_SENT LEANOS_ISR80_PATH_WAKE_C
 static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
     uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
 static void check_initial_b_frame(const volatile uint64_t *frame);
@@ -4797,7 +4809,7 @@ static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
         three_subject_step = 1;
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
-        return THREE_SUBJECT_C_BLOCKED;
+        return isr80_select(THREE_SUBJECT_C_BLOCKED);
     }
     if (number == 62 && current_subject == 2 && three_subject_step == 1) {
         three_subject_require_root(page_map_level_4_b);
@@ -4806,7 +4818,7 @@ static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
         three_subject_step = 2;
         current_subject = 1;
         serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact result=PASS\n");
-        return THREE_SUBJECT_B_RAN;
+        return isr80_select(THREE_SUBJECT_B_RAN);
     }
     if (number == 8 && current_subject == 1 && three_subject_step == 2) {
         three_subject_require_root(page_map_level_4_a);
@@ -4818,7 +4830,7 @@ static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
         serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=12 payload0=");
         serial_u64(arg0); serial_puts(" payload1="); serial_u64(arg1);
         serial_puts(" receiver=3 accepted=1\n");
-        return THREE_SUBJECT_A_SENT;
+        return isr80_select(THREE_SUBJECT_A_SENT);
     }
     if (number == 9 && current_subject == 3 && three_subject_step == 3) {
         three_subject_require_root(page_map_level_4_c);
@@ -4885,7 +4897,7 @@ static void three_subject_switch(uint64_t *target, uint64_t target_owner,
    only printable bytes and newline are accepted, so a line-anchored reader
    can tell the object's bytes from the kernel's own diagnostic records. */
 #define CONSOLE_SERVER_ENDPOINT 12u
-#define CONSOLE_SERVER_C_RESUME_A 0x3c04u
+#define CONSOLE_SERVER_C_RESUME_A LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT
 #define CONSOLE_SYSCALL_WRITE 70u
 #define CONSOLE_SYSCALL_READ 71u
 #define CAP_KIND_EMPTY 0u
@@ -5213,11 +5225,14 @@ static uint64_t keyboard_echo_syscall(uint64_t number, uint64_t arg0,
     /* A real call for the same reason as in syscall_handler. */
     uint64_t result = console_server_syscall(number, arg0, arg1, arg2);
     __asm__ volatile ("" ::: "memory");
+    /* The accepted edges are the ones that selected a switch path; the
+       reply word is data and is not consulted (#560). */
     if (number == 7 && caller == 3 &&
-        (result == THREE_SUBJECT_C_BLOCKED || result == CONSOLE_SERVER_C_RESUME_A)) {
+        (isr80_return_path == THREE_SUBJECT_C_BLOCKED ||
+         isr80_return_path == CONSOLE_SERVER_C_RESUME_A)) {
         keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_RECEIVER);
     } else if (number == 8 && caller == KEYBOARD_ECHO_DEVICE_HOLDER &&
-               result == THREE_SUBJECT_A_SENT) {
+               isr80_return_path == THREE_SUBJECT_A_SENT) {
         keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_SENDER);
         keyboard_echo_ipc_edge(KEYBOARD_ECHO_MODEL_SENDER);
     }
@@ -5274,7 +5289,7 @@ static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" endpoint=12 payload0="); serial_u64(arg0);
         serial_puts(" payload1="); serial_u64(arg1);
         serial_puts(" receiver=3 accepted=1\n");
-        return THREE_SUBJECT_A_SENT;
+        return isr80_select(THREE_SUBJECT_A_SENT);
     }
     if (number == 7) {
         reason = console_decide(CONSOLE_OP_RECEIVE, arg2, CAP_KIND_ENDPOINT,
@@ -5294,11 +5309,11 @@ static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
         if (console_phase == 0) {
             console_phase = 1;
             current_subject = 2;
-            return THREE_SUBJECT_C_BLOCKED;
+            return isr80_select(THREE_SUBJECT_C_BLOCKED);
         }
         console_phase = 4;
         current_subject = 1;
-        return CONSOLE_SERVER_C_RESUME_A;
+        return isr80_select(CONSOLE_SERVER_C_RESUME_A);
     }
     if (number == 62 && current_subject == 2 && console_phase == 1) {
         /* B reports its canaries and the three results it observed. */
@@ -5309,7 +5324,7 @@ static uint64_t console_server_syscall(uint64_t number, uint64_t arg0,
         console_phase = 2;
         current_subject = 1;
         serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact observed=refused,refused,refused result=PASS\n");
-        return THREE_SUBJECT_B_RAN;
+        return isr80_select(THREE_SUBJECT_B_RAN);
     }
     if (number == 61 && current_subject == 1 && console_phase == 4) {
         if (console_deliveries != 2 || console_lines != 2 || console_bytes != 12 ||
@@ -5394,8 +5409,8 @@ extern char user_c_template_text[];
 #define DIRECTORY_REQUEST_ENDPOINT 12u
 #define DIRECTORY_SERVER_ENDPOINT 14u
 #define DIRECTORY_STACK_BYTES 2048u
-#define DIRECTORY_C_RESUME_A 0x3c04u
-#define DIRECTORY_A_SENT_B 0xcafeu
+#define DIRECTORY_C_RESUME_A LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT
+#define DIRECTORY_A_SENT_B LEANOS_ISR80_PATH_WAKE_B
 #define DIRECTORY_SLOTS 4u
 #define DIRECTORY_NO_SLOT 0xffu
 #define DIRECTORY_KIND_EMPTY 0u
@@ -5650,7 +5665,7 @@ static uint64_t directory_reply_receive(uint64_t source, uint64_t offered,
     serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 slot=");
     serial_u64(slot);
     serial_puts(" endpoint=12 empty=1 result=PASS\n");
-    return DIRECTORY_C_RESUME_A;
+    return isr80_select(DIRECTORY_C_RESUME_A);
 }
 
 static uint64_t directory_syscall(uint64_t number, uint64_t arg0,
@@ -5665,7 +5680,7 @@ static uint64_t directory_syscall(uint64_t number, uint64_t arg0,
             directory_phase = 1;
             current_subject = 2;
             serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 slot=0 endpoint=12 empty=1 result=PASS\n");
-            return THREE_SUBJECT_C_BLOCKED;
+            return isr80_select(THREE_SUBJECT_C_BLOCKED);
         }
         if (current_subject == 3 && directory_phase == 3 && directory_call_queued) {
             directory_call_queued = 0;
@@ -5681,7 +5696,7 @@ static uint64_t directory_syscall(uint64_t number, uint64_t arg0,
             directory_phase = 2;
             current_subject = 1;
             serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 slot=0 endpoint=14 empty=1 result=PASS\n");
-            return THREE_SUBJECT_B_RAN;
+            return isr80_select(THREE_SUBJECT_B_RAN);
         }
         fail("directory-receive-sequence");
     }
@@ -5720,7 +5735,7 @@ static uint64_t directory_syscall(uint64_t number, uint64_t arg0,
             fail("directory-call-schedule");
         }
         current_subject = 3;
-        return THREE_SUBJECT_A_SENT;
+        return isr80_select(THREE_SUBJECT_A_SENT);
     }
     if (number == 83) {
         if (current_subject != 3 || (directory_phase != 3 && directory_phase != 5))
@@ -5746,7 +5761,7 @@ static uint64_t directory_syscall(uint64_t number, uint64_t arg0,
         serial_u64(arg2);
         serial_puts(" endpoint=14 rights=send payload0="); serial_u64(arg0);
         serial_puts(" receiver=2 accepted=1\n");
-        return DIRECTORY_A_SENT_B;
+        return isr80_select(DIRECTORY_A_SENT_B);
     }
     if (number == 9 && current_subject == 2 && directory_phase == 7) {
         if (arg0 != directory_sent_word || arg1 != 0xc0dec0dec0dec0deull)
@@ -5881,7 +5896,7 @@ static uint64_t example_subject_syscall(uint64_t number, uint64_t arg0,
         three_subject_step = 1;
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS\n");
-        return THREE_SUBJECT_C_BLOCKED;
+        return isr80_select(THREE_SUBJECT_C_BLOCKED);
     }
     /* B's single report is the three-subject step, unchanged. */
     if (number == 62) return three_subject_syscall(number, arg0, arg1, arg2);
@@ -5946,7 +5961,7 @@ static uint64_t example_subject_syscall(uint64_t number, uint64_t arg0,
 extern char user_c_template_text[];
 #define NETWORK_ENDPOINT 12u
 #define NETWORK_STACK_BYTES 2048u
-#define NETWORK_C_RESUMES_A 0x3c04u
+#define NETWORK_C_RESUMES_A LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT
 #define NETWORK_DRIVER 1u
 #define NETWORK_HOLDER 3u
 /* The model's device index of the frame source, and one other index. */
@@ -6306,7 +6321,7 @@ static uint64_t network_subject_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" payload1=");
         serial_u64(arg1);
         serial_puts(" receiver=3 accepted=1\n");
-        return THREE_SUBJECT_A_SENT;
+        return isr80_select(THREE_SUBJECT_A_SENT);
     }
     if (number == 7 && current_subject == 3 &&
         (network_phase == 0 || network_phase == 3)) {
@@ -6318,11 +6333,11 @@ static uint64_t network_subject_syscall(uint64_t number, uint64_t arg0,
         if (network_phase == 0) {
             network_phase = 1;
             current_subject = 2;
-            return THREE_SUBJECT_C_BLOCKED;
+            return isr80_select(THREE_SUBJECT_C_BLOCKED);
         }
         network_phase = 4;
         current_subject = 1;
-        return NETWORK_C_RESUMES_A;
+        return isr80_select(NETWORK_C_RESUMES_A);
     }
     if (number == 62 && current_subject == 2 && network_phase == 1) {
         if (arg0 != 0xc0dec0dec0dec0deull || arg1 != 0x51a7e51a7e51a7e5ull)
@@ -6332,7 +6347,7 @@ static uint64_t network_subject_syscall(uint64_t number, uint64_t arg0,
         network_phase = 2;
         current_subject = 1;
         serial_puts(LEANOS_SERIAL_10_IPC " event=run subject=2 address-space=2 context=initial canaries=exact observed=refused result=PASS\n");
-        return THREE_SUBJECT_B_RAN;
+        return isr80_select(THREE_SUBJECT_B_RAN);
     }
     if (number == 61 && current_subject == NETWORK_DRIVER && network_phase == 4) {
         if (!network_ended || network_seq < 2 || network_fetches != network_seq ||
@@ -6422,7 +6437,7 @@ extern char user_a_fault_handler_divide[];
 #define FAULT_HANDLER_ENDPOINT 14u
 #define FAULT_HANDLER_IDLE_ENDPOINT 13u
 #define FAULT_HANDLER_STACK_BYTES 2048u
-#define FAULT_HANDLER_C_RESUMES_B 0x3c04u
+#define FAULT_HANDLER_C_RESUMES_B LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT
 #define FAULT_HANDLER_DELIVER UINT64_C(0x01010301)
 #define FAULT_HANDLER_TERMINATE UINT64_C(0x01000003)
 /* 0 C runs, 1 C blocked on 14, 2 B ran, 3 A suspended and record delivered,
@@ -6504,7 +6519,7 @@ static uint64_t fault_handler_syscall(uint64_t number, uint64_t arg0,
         three_subject_step = 1;
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=14 empty=1 role=fault-handler result=PASS\n");
-        return THREE_SUBJECT_C_BLOCKED;
+        return isr80_select(THREE_SUBJECT_C_BLOCKED);
     }
     if (number == 62 && current_subject == 2 && fault_handler_step == 1) {
         fault_handler_step = 2;
@@ -6544,7 +6559,7 @@ static uint64_t fault_handler_syscall(uint64_t number, uint64_t arg0,
         fault_handler_step = 6;
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=13 empty=1 forever=1 result=PASS\n");
-        return FAULT_HANDLER_C_RESUMES_B;
+        return isr80_select(FAULT_HANDLER_C_RESUMES_B);
     }
     if (number == 63 && current_subject == 2 && fault_handler_step == 6) {
         three_subject_require_root(page_map_level_4_b);
@@ -6604,8 +6619,8 @@ extern char user_c_template_text[];
 #define TIMER_SERVER_ENDPOINT 12u
 #define TIMER_SERVER_WAKE 13u
 #define TIMER_SERVER_STACK_BYTES 2048u
-#define TIMER_SERVER_C_RESUMES_A 0x3c04u
-#define TIMER_SERVER_A_WAITS 0x3c05u
+#define TIMER_SERVER_C_RESUMES_A LEANOS_ISR80_PATH_TIMER_C_RESUMES_A
+#define TIMER_SERVER_A_WAITS LEANOS_ISR80_PATH_TIMER_A_WAITS
 #define TIMER_SERVER_EXPIRY_TO_C 4u
 /* TimerServer.timerServerDecide events and answers (kernelCode). */
 #define TIMER_EVENT_ARM 0u
@@ -6759,7 +6774,7 @@ static uint64_t timer_server_send(uint64_t arg0, uint64_t arg1, uint64_t arg2) {
     serial_u64(arg0);
     serial_puts(" word1="); serial_u64(arg1);
     serial_puts(" receiver=3 accepted=1\n");
-    return THREE_SUBJECT_A_SENT;
+    return isr80_select(THREE_SUBJECT_A_SENT);
 }
 
 static uint64_t timer_server_syscall(uint64_t number, uint64_t arg0,
@@ -6794,7 +6809,7 @@ static uint64_t timer_server_syscall(uint64_t number, uint64_t arg0,
                     : " decision=other");
         serial_puts(" policy=ring3\n");
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
-        return TIMER_SERVER_C_RESUMES_A;
+        return isr80_select(TIMER_SERVER_C_RESUMES_A);
     }
     if (number == 93 && current_subject == 1 && timer_server_step == 2) {
         if (arg2 != TIMER_SERVER_WAKE || timer_server_requests != 3 ||
@@ -6803,7 +6818,7 @@ static uint64_t timer_server_syscall(uint64_t number, uint64_t arg0,
         timer_server_step = 4;
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=wait subject=1 notification=13 pending=0 blocked=1\n");
-        return TIMER_SERVER_A_WAITS;
+        return isr80_select(TIMER_SERVER_A_WAITS);
     }
     if (number == 92 && current_subject == 3) {
         uint64_t word = leanos_timer_server_decide(TIMER_EVENT_WAKE, current_subject, arg0);
@@ -6823,7 +6838,7 @@ static uint64_t timer_server_syscall(uint64_t number, uint64_t arg0,
         timer_server_step = 6;
         current_subject = 1;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
-        return TIMER_SERVER_C_RESUMES_A;
+        return isr80_select(TIMER_SERVER_C_RESUMES_A);
     }
     if (number == 94 && current_subject == 1 && timer_server_step == 6) {
         uint64_t replies = timer_server_replies[0] | timer_server_replies[1] << 16 |
@@ -6949,9 +6964,9 @@ extern char user_c_template_text[];
 #define FRAME_SERVER_POOL_RIGHTS 3u          /* read 1 | write 2 */
 #define FRAME_SERVER_RESIDUE 0xffu
 #define FRAME_SERVER_CANARY 0xa5u
-#define FRAME_SERVER_C_RESUMES_A 0x3c05u
-#define FRAME_SERVER_B_WAKES_C 0x3c06u
-#define FRAME_SERVER_C_RESUMES_B 0x3c07u
+#define FRAME_SERVER_C_RESUMES_A LEANOS_ISR80_PATH_FRAME_C_RESUMES_A
+#define FRAME_SERVER_B_WAKES_C LEANOS_ISR80_PATH_FRAME_B_WAKES_C
+#define FRAME_SERVER_C_RESUMES_B LEANOS_ISR80_PATH_FRAME_C_RESUMES_B
 #define FRAME_SERVER_REQUEST_FRAME 1u
 #define FRAME_SERVER_REQUEST_RELEASE 2u
 /* FrameServer.opWord and encodeReply. */
@@ -7159,11 +7174,12 @@ static uint64_t frame_server_decide(uint64_t word, uint64_t client, uint64_t ind
     if (frame_server_step == 7) {
         frame_server_step = 8;
         current_subject = 2;
-        return FRAME_SERVER_C_RESUMES_B;
+        return isr80_select(FRAME_SERVER_C_RESUMES_B);
     }
     frame_server_step = frame_server_step + 1;
     current_subject = frame_server_client;
-    return frame_server_step == 10 ? FRAME_SERVER_C_RESUMES_B : FRAME_SERVER_C_RESUMES_A;
+    return isr80_select(frame_server_step == 10 ? FRAME_SERVER_C_RESUMES_B
+                                               : FRAME_SERVER_C_RESUMES_A);
 }
 
 /* A client's request on endpoint 12 (syscall 90).  C receives the request
@@ -7190,7 +7206,7 @@ static uint64_t frame_server_call(uint64_t request, uint64_t endpoint) {
     frame_server_step++;
     uint64_t sender = current_subject;
     current_subject = 3;
-    return sender == 1 ? THREE_SUBJECT_A_SENT : FRAME_SERVER_B_WAKES_C;
+    return isr80_select(sender == 1 ? THREE_SUBJECT_A_SENT : FRAME_SERVER_B_WAKES_C);
 }
 
 static uint64_t frame_server_syscall(uint64_t number, uint64_t arg0,
@@ -7202,7 +7218,7 @@ static uint64_t frame_server_syscall(uint64_t number, uint64_t arg0,
         three_subject_step = 1;
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 role=frame-server result=PASS\n");
-        return THREE_SUBJECT_C_BLOCKED;
+        return isr80_select(THREE_SUBJECT_C_BLOCKED);
     }
     if (number == 62 && current_subject == 2 && frame_server_step == 1) {
         frame_server_step = 2;
@@ -7751,7 +7767,7 @@ static uint64_t loader_syscall(uint64_t number, uint64_t arg0, uint64_t arg1,
         serial_puts(" stack=");
         serial_u64(loader_child_stack);
         serial_puts(" context=fresh\n");
-        return UINT64_C(0x5c01);
+        return isr80_select(LEANOS_ISR80_PATH_LOADER_ENTER_CHILD);
     }
     if (number == 108) {
         if (spawn_state != LEANOS_COMPOSITE_STATE_SPAWN_LOADER_TERMINATED ||
@@ -7901,7 +7917,7 @@ static uint64_t loader_child_syscall(uint64_t number, uint64_t arg0, uint64_t ar
     serial_puts(" receiver=2 data=copied bss=zero result=PASS\n");
     if (arg0 != LOADER_CHILD_WORD) fail("loader-child-word");
     serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 context=saved woken=1\n");
-    return UINT64_C(0x5c02);
+    return isr80_select(LEANOS_ISR80_PATH_LOADER_CHILD_SENT);
 }
 #endif
 
@@ -8124,7 +8140,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 switch_control & UINT64_C(0xffff);
             current_subject = 2;
             serial_puts(LEANOS_SERIAL_22_DISPATCH " subject=2 address-space=2 source=authoritative-resumable-context control=4870913 value=0 result=PASS\n");
-            return UINT64_C(0xfeed);
+            return isr80_select(LEANOS_ISR80_PATH_DISPATCH_FRESH_B);
         }
         if (number == 27) {
             if (control !=
@@ -8264,7 +8280,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             inflight_revocation_state = switch_control & UINT64_C(0xffff);
             current_subject = 2;
             serial_puts(LEANOS_SERIAL_23_DISPATCH " subject=2 address-space=2 source=authoritative-resumable-context control=5595905 value=0 result=PASS\n");
-            return UINT64_C(0xfeed);
+            return isr80_select(LEANOS_ISR80_PATH_DISPATCH_FRESH_B);
         } else if (number == 37) {
             serial_puts(LEANOS_SERIAL_23_ENTER " subject=2 address-space=2 origin=cpl3 context=fresh result=PASS\n");
             serial_puts(LEANOS_SERIAL_23_CANCELED_RECEIPT " subject=2 address-space=2 origin=cpl3 transfer-endpoint=196608 destination-slot=3 reason=empty delivered=0 installed=0 handle=none control=2188033 value=0 result=PASS\n");
@@ -8334,7 +8350,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_SELECTED;
             current_subject = 2;
             serial_puts(LEANOS_SERIAL_20_DISPATCH " subject=2 address-space=2 source=generated-current result=PASS\n");
-            return 0xfeed;
+            return isr80_select(LEANOS_ISR80_PATH_DISPATCH_FRESH_B);
         }
         if (number == 23 && current_subject == 2) {
             if (arg0 != UINT64_C(0xb2b2f11251a7e55e) ||
@@ -8665,7 +8681,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         blocking_ipc_step = 1;
         current_subject = 1;
         serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\n");
-        return 0xbeef;
+        return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_ENTER_A);
     }
     if (current_subject == 1 && number == 4) {
         if ((saved_flags & (1u << 10)) == 0) fail("copy-df-not-set");
@@ -8718,7 +8734,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         current_subject = 2;
         serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\n");
         serial_puts(LEANOS_SERIAL_10_IPC " event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\n");
-        return 0xcafe;
+        return isr80_select(LEANOS_ISR80_PATH_WAKE_B);
     }
     if (blocking_ipc_step == 4 && current_subject == 2 && number == 9) {
         uint64_t got = leanos_blocking_ipc_demo(3, 4, 2, arg0, arg1);

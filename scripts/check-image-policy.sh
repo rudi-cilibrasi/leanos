@@ -345,7 +345,7 @@ if grep -Eq '[[:space:]]console_capabilities$' <<<"$symbols"; then
   }
 fi
 frame_budget_switch="$(
-  sed -n '/cmp \$0xfeed, %rax/,/^7:/p' boot/boot.S
+  sed -n '/cmp \$LEANOS_ISR80_PATH_DISPATCH_FRESH_B, %rdx/,/^7:/p' boot/boot.S
 )"
 grep -Fq 'lea initial_context_b(%rip), %rsi' <<< "$frame_budget_switch" &&
   grep -Fq 'mov $20, %ecx' <<< "$frame_budget_switch" &&
@@ -357,8 +357,8 @@ grep -Fq 'lea initial_context_b(%rip), %rsi' <<< "$frame_budget_switch" &&
 grep -Fq 'extended_state_restore_peer:' boot/boot.S
 grep -Fq 'call complete_interrupt_entry' boot/boot.S
 grep -Fq 'jmp user_return_epilogue' boot/boot.S
-grep -Fq 'cmp $0xbeef, %rax' boot/boot.S
-grep -Fq 'cmp $0xcafe, %rax' boot/boot.S
+grep -Fq 'cmp $LEANOS_ISR80_PATH_BLOCK_B_ENTER_A, %rdx' boot/boot.S
+grep -Fq 'cmp $LEANOS_ISR80_PATH_WAKE_B, %rdx' boot/boot.S
 grep -Fq 'lea saved_context_b(%rip), %rsi' boot/boot.S
 grep -Fq 'movq $user_a_entry, 120(%rsp)' boot/boot.S
 grep -Fq 'movq $0x4c45414e, 112(%rsp)' boot/boot.S

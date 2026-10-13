@@ -109,6 +109,7 @@
     "LeanOS/Interrupt.lean",
     "LeanOS/InterruptEntry.lean",
     "LeanOS/InvalidationPublication.lean",
+    "LeanOS/Isr80PathSelector.lean",
     "LeanOS/J1900CpuControlPolicy.lean",
     "LeanOS/J1900CpuProfile.lean",
     "LeanOS/J1900EntryControl.lean",

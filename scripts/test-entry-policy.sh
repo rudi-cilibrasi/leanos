@@ -68,6 +68,30 @@ run_nx_page_fault_fixture() {
   echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
 }
 
+run_selector_model_fixture() {
+  local name="$1" expected="$2"
+  shift 2
+  cp boot/kernel.c "$tmp/kernel.c"
+  cp boot/boot.S "$tmp/boot.S"
+  cp include/leanos/isr80-path.h "$tmp/isr80-path.h"
+  cp LeanOS/Isr80PathSelector.lean "$tmp/Isr80PathSelector.lean"
+  "$@"
+  if LEANOS_ENTRY_KERNEL_SOURCE="$tmp/kernel.c" \
+      LEANOS_ENTRY_BOOT_SOURCE="$tmp/boot.S" \
+      LEANOS_ENTRY_ISR80_HEADER="$tmp/isr80-path.h" \
+      LEANOS_ENTRY_ISR80_MODEL="$tmp/Isr80PathSelector.lean" \
+      ./scripts/check-entry-policy.sh "$elf" >"$tmp/$name.log" 2>&1; then
+    echo "error: entry-policy fixture '$name' unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$tmp/$name.log" || {
+    echo "error: entry-policy fixture '$name' lacked '$expected'" >&2
+    cat "$tmp/$name.log" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
+}
+
 wrong_target() { sed -i 's/set_gate(14, isr14,/set_gate(14, isr32,/' "$tmp/kernel.c"; }
 ambient_initial_rflags() {
   sed -i 's/pushq \$0x216/pushfq/' "$tmp/boot.S"
@@ -230,6 +254,81 @@ de_before_normalize() { sed -i '/NORMALIZE_ENTRY 0, 0/i\    call divide_error_ha
 bp_before_normalize() { sed -i '/NORMALIZE_ENTRY 3, 0/i\    call breakpoint_handler' "$tmp/boot.S"; }
 de_branch_cleanup() { sed -i '/^isr0:/,/^\.global isr3/ s/^[[:space:]]*clac$/    nop/' "$tmp/boot.S"; }
 
+# isr80's typed path selector (#560).  Each fixture reintroduces one way a
+# reply word, or anything other than the kernel's own selection, could pick
+# the path.  The first restores a rung comparing the reply word with each
+# former magic value; none may pass.
+isr80_magic=""
+isr80_magic_rung() {
+  sed -i "/cmp \\\$LEANOS_ISR80_PATH_BLOCK_B_ENTER_A, %rdx/i\\    cmp \$${isr80_magic}, %rax\\n    je 8f" \
+    "$tmp/boot.S"
+}
+for isr80_magic in 0xfeed 0xbeef 0xcafe 0xa55a 0x3c01 0x3c02 0x3c03 0x3c04 \
+    0x3c05 0x3c06 0x3c07 0x5c01 0x5c02; do
+  run_fixture "isr80-reply-word-rung-$isr80_magic" \
+    'vector=128 field=typed-path-selector violated=source-reply-word-compared' \
+    isr80_magic_rung
+done
+isr80_selector_from_reply() {
+  sed -i 's/mov isr80_return_path(%rip), %rdx/mov %rax, %rdx/' "$tmp/boot.S"
+}
+isr80_selector_not_reset() {
+  sed -i '/movq \$LEANOS_ISR80_PATH_REPLY, isr80_return_path(%rip)/d' "$tmp/boot.S"
+}
+isr80_selector_wrong_label() {
+  sed -i '/cmp \$LEANOS_ISR80_PATH_BLOCK_B_ENTER_A, %rdx/{n;s/je 8f/je 9f/}' \
+    "$tmp/boot.S"
+}
+isr80_unknown_selector_returns() {
+  sed -i '/A selector this image does not handle/{n;s/ud2/jmp 7f/}' "$tmp/boot.S"
+}
+kernel_magic_reply() {
+  sed -i '0,/return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_ENTER_A);/s//return 0xbeef;/' \
+    "$tmp/kernel.c"
+}
+kernel_selector_from_subject() {
+  sed -i '0,/return isr80_select(THREE_SUBJECT_A_SENT);/s//return isr80_select(arg0);/' \
+    "$tmp/kernel.c"
+}
+kernel_second_selector_writer() {
+  sed -i '/^uint64_t syscall_handler(uint64_t number/i\
+static void isr80_forged_path(uint64_t word) { isr80_return_path = word; }' \
+    "$tmp/kernel.c"
+}
+header_code_drift() {
+  sed -i 's/^#define LEANOS_ISR80_PATH_WAKE_B 3$/#define LEANOS_ISR80_PATH_WAKE_B 0xcafe/' \
+    "$tmp/isr80-path.h"
+}
+model_label_drift() {
+  sed -i 's/^  | \.wakeB => 9$/  | .wakeB => 8/' "$tmp/Isr80PathSelector.lean"
+}
+run_fixture isr80-selector-from-reply \
+  'vector=128 field=typed-path-selector violated=source-selector-not-loaded-after-call' \
+  isr80_selector_from_reply
+run_fixture isr80-selector-not-reset \
+  'vector=128 field=typed-path-selector violated=source-selector-not-reset-before-call' \
+  isr80_selector_not_reset
+run_fixture isr80-selector-wrong-label \
+  'vector=128 field=typed-path-selector violated=source-selector-label:LEANOS_ISR80_PATH_BLOCK_B_ENTER_A' \
+  isr80_selector_wrong_label
+run_fixture isr80-unknown-selector-returns \
+  'vector=128 field=typed-path-selector violated=source-unreviewed-ladder-instruction:jmp 7f' \
+  isr80_unknown_selector_returns
+run_fixture kernel-former-magic-reply \
+  'vector=128 field=typed-path-selector violated=kernel-former-magic-reply' \
+  kernel_magic_reply
+run_fixture kernel-selector-from-subject \
+  'vector=128 field=typed-path-selector violated=kernel-selector-argument:arg0' \
+  kernel_selector_from_subject
+run_fixture kernel-second-selector-writer \
+  'vector=128 field=typed-path-selector violated=kernel-selector-writer' \
+  kernel_second_selector_writer
+run_selector_model_fixture isr80-header-code-drift \
+  'vector=128 field=typed-path-selector violated=header-differs-from-lean-model' \
+  header_code_drift
+run_selector_model_fixture isr80-model-label-drift \
+  'vector=128 field=typed-path-selector violated=lean-table-not-injective' \
+  model_label_drift
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
 run_fixture ambient-initial-rflags \
   'initial-user-rflags source is not the canonical 0x216 word' \
