@@ -550,6 +550,14 @@ source_handler="$(grep -n -m1 'call syscall_handler' <<<"$source_path" | cut -d:
    "$source_cleanup" -lt "$source_normalize" && "$source_normalize" -lt "$source_handler" ]] || {
   echo "error: vector=128 path=normalization" >&2; exit 1;
 }
+# isr80 picks its switch/return path from the kernel-owned typed selector
+# isr80_return_path, never from the reply word (#560): the Lean ladder model,
+# the shared header, the boot.S ladder, kernel.c's sole writer and this final
+# ELF's ladder must agree.
+python3 ./scripts/check-isr80-path-selector.py \
+  --lean "${LEANOS_ENTRY_ISR80_MODEL:-LeanOS/Isr80PathSelector.lean}" \
+  --header "${LEANOS_ENTRY_ISR80_HEADER:-include/leanos/isr80-path.h}" \
+  --boot "$boot_source" --kernel "$kernel_source" --elf "$elf"
 source_path="$(sed -n '/^isr32:/,/^\/\* The only boot-reachable CPL3 return/p' "$boot_source")"
 grep -q '^[[:space:]]*clac$' <<<"$source_path" || {
   echo "error: vector=32 path=cleanup" >&2; exit 1;

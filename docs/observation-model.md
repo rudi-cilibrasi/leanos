@@ -355,7 +355,8 @@ values. A few replies carry a word a subject chose, so a chosen word equal to
 one of them would select another path. Each such path then fails closed
 (`switch_complete` or `validate_user_return` stops the machine before
 `iretq`), so nothing leaks. Separating the path selector from the reply word
-would remove the coincidence altogether.
+would remove the coincidence altogether; the 2026-10-13 amendment below does
+that.
 
 **Decision.** The replies now name a subject and nothing else:
 
@@ -558,3 +559,55 @@ SC-COMPOSITE-OBSERVER-ISOLATION states all of this as conjunct (22).
 - Receipt had no counterexample on the canonical seed (every object a transfer
   there can carry is already named by S). It is closed by proof:
   `agree_accept` derives what `CarriedAgree` assumed from the full view.
+
+### 2026-10-13: isr80 selects its path from a typed selector (#560)
+
+The 2026-10-10 audit above found that `isr80` chose its switch path by
+comparing the reply word with fixed values (`0xfeed`, `0xbeef`, `0xcafe`,
+`0xa55a`, `0x3c01` to `0x3c07`, `0x5c01`, `0x5c02`). A subject that got the
+kernel to reply with one of them steered `isr80` onto another path, which
+then stopped the machine. That was not a leak, but it let a subject stop the
+kernel on purpose.
+
+**Change.** The path is now chosen by a separate selector that subjects
+cannot write:
+
+- `isr80` stores `LEANOS_ISR80_PATH_REPLY` in the kernel-owned word
+  `isr80_return_path` before calling `syscall_handler`;
+- a handler that switches subjects calls `isr80_select` in `boot/kernel.c`,
+  the selector's only writer, after its model step has been checked;
+- after the call, `isr80` loads the selector into `rdx` and compares only
+  `rdx`, one rung per path the image handles; a selector the image does not
+  handle runs `ud2`.
+
+The reply word is data only. The codes are in
+`include/leanos/isr80-path.h`.
+
+**Proof and gates.** `LeanOS.Isr80PathSelector` describes the ladder as
+data:
+
+- `dispatch_reads_selector_only`: the ladder reads `rdx` and nothing else;
+- `dispatch_function_of_step_path`: the selected path is a function of the
+  model's step result alone, and of its path field only;
+- `former_magic_inert`: a reply word equal to each former magic value does
+  not change the path;
+- `legacy_reply_steered`: the old ladder was steered by each of those values.
+
+`scripts/check-isr80-path-selector.py` runs from `check-entry-policy.sh` on
+every final ELF. It requires:
+
+- the Lean table, the header and the `cmp`/`je` rungs of `isr80` to agree;
+- `isr80_select` to be the only writer of the selector;
+- no handler to return a former magic value;
+- the ELF ladder to compare only `rdx`, and nothing in `isr80` to compare
+  `rax`.
+
+The negative fixture `LeanOS/NegativeFixtures/Isr80PathSelector.lean` claims
+that a reply equal to a former magic value changes the path; the kernel
+refutes it. `scripts/test-entry-policy.sh` reintroduces a reply-word rung for
+each former magic value, and the other bypasses; the gate rejects each one.
+
+**ABI.** The ring-3 syscall encoding is unchanged. A switch path never
+delivered its reply word to the caller, so the words handlers now return
+there (zero) are not observable. No oracle vector, adapter or export
+changes.

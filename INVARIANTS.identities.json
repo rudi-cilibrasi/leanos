@@ -20978,6 +20978,72 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.code_injective",
+      "display": "code_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.dispatch_enter",
+      "display": "dispatch_enter",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.dispatch_function_of_step_path",
+      "display": "dispatch_function_of_step_path",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.dispatch_reads_selector_only",
+      "display": "dispatch_reads_selector_only",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.dispatch_unhandled_fail_stop",
+      "display": "dispatch_unhandled_fail_stop",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.dispatch_unknown_selector_fail_stop",
+      "display": "dispatch_unknown_selector_fail_stop",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.former_magic_inert",
+      "display": "former_magic_inert",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.former_magic_reply_returns",
+      "display": "former_magic_reply_returns",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.legacy_reply_steered",
+      "display": "legacy_reply_steered",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.run_ladder_code",
+      "display": "run_ladder_code",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Isr80PathSelector.lean",
+      "qualified": "LeanOS.Isr80PathSelector.run_reads_rdx_only",
+      "display": "run_reads_rdx_only",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/J1900CpuControlPolicy.lean",
       "qualified": "LeanOS.J1900CpuControlPolicy.acceptance_iff",
       "display": "acceptance_iff",
