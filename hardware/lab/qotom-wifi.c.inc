@@ -373,6 +373,12 @@ static uint64_t *lab_stream_leaf_table;
 static uint32_t lab_stream_bar, lab_stream_pages, lab_stream_ended;
 static uint64_t lab_stream_invocations;
 
+/* The assignment variant needs the retained PCI diagnostic stages, which only
+   the Qotom PCI diagnostic kernel variant compiles. */
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) && defined(LEANOS_QOTOM_PCI_DIAGNOSTIC)
+#include "qotom-broadcom-assign.c.inc"
+#endif
+
 static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_table) {
     uint32_t hdr = 0;
     struct wifi_policy policy;
@@ -383,22 +389,13 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
         pre_admission_fail("qotom-stream-policy");
 #ifdef LEANOS_QOTOM_NETWORK_SUBJECT
     /* The audited trust contract leaves the BCM43224 (02:00.0) in D3hot with
-       Command=0 (docs/qotom-broadcom-d3.md). Its PMCSR advertises
-       No_Soft_Reset, so the lab returns it to D0 with its BARs intact before
-       binding the WiFi program, and requires Command to still be 0: only the
-       program's admitted cmdSet enables Memory Space. Lab-only assignment
-       step, outside the reviewed contract (issue #450). */
-    if (lab_dev_target.bus == 2 && lab_dev_target.dev == 0 && lab_dev_target.fn == 0) {
-        uint32_t pm = wifi_hook_cfg_read32(0x44);
-        if ((pm & 0xffffu) != 0x400bu || (uint16_t)wifi_hook_cfg_read32(0x04) != 0)
-            pre_admission_fail("qotom-stream-broadcom-d3");
-        wifi_hook_cfg_write32(0x44, (pm & 0xffff0000u) | 0x4008u);
-        wifi_hook_delay_us(10000);
-        if ((wifi_hook_cfg_read32(0x44) & 0xffffu) != 0x4008u ||
-            (uint16_t)wifi_hook_cfg_read32(0x04) != 0)
-            pre_admission_fail("qotom-stream-broadcom-d0");
-        serial_puts("LEANOS-LAB/1 SERVICE assign device=2:0.0 pmcsr=d3hot,d0 command=0 result=PASS\n");
-    }
+       Command=0. Only the reviewed assignment variant returns it to D0, and
+       only for an assignable program policy; any mismatch fails closed. */
+#ifdef LEANOS_QOTOM_PCI_DIAGNOSTIC
+    lab_broadcom_assign(&lab_dev_target, &policy);
+#else
+    pre_admission_fail("qotom-broadcom-assign");
+#endif
 #endif
     uint32_t id = wifi_hook_cfg_read32(0);
     uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);

@@ -24,6 +24,10 @@ PY
   -Ibuild/boundary-abi tests/qotom-pci-final-admission.c \
   "$build/native-pci/native-pci.o" -o "$build/test"
 "$build/test"
+"${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror -Iboot \
+  -Ibuild/boundary-abi tests/qotom-broadcom-assign-admission.c \
+  "$build/native-pci/native-pci.o" -o "$build/broadcom-assign-test"
+"$build/broadcom-assign-test"
 "${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
   -Ibuild/boundary-abi tests/qotom-nosmap-control.c \
   "$build/native-pci/native-pci.o" -o "$build/nosmap-control-test"

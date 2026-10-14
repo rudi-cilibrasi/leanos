@@ -67,3 +67,8 @@ Build the opt-in image with `--broadcom-d3` after the complete
 `--pcie-pending` dependency chain. The builder selects
 `build/qotom-broadcom-d3-lab`; the runner uses the matching `--broadcom-d3`
 flag and writes `broadcom-d3.json`.
+
+The network-subject lab image later returns the device to D0 for the WiFi
+driver subject, only under the reviewed
+[assignment variant](qotom-broadcom-assignment.md). That variant consumes
+this stage's exact success record.
