@@ -26,6 +26,7 @@ import LeanOS.CompositeSubjectGate
 import LeanOS.CompositeFullChannels
 import LeanOS.DMAQuarantine
 import LeanOS.QotomPCIFinalAdmission
+import LeanOS.QotomBroadcomAssignment
 import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
 import LeanOS.QotomEntryIntegration
@@ -151,6 +152,35 @@ theorem qotom_pci_initial_trust_contract_confined
         c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 = true :=
   QotomPCIFinalAdmission.initial_trust_contract_one_iff
     c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15
+
+/-- SC-QOTOM-BROADCOM-ASSIGNMENT-CONDITIONAL: the named assigned-Broadcom
+variant admits a binding only after the permitted single PMCSR store under the
+accepted initial trust contract, leaves the device in D0 with Command zero and
+Transactions Pending clear, and only for a program that declares no DMA and
+can never set Bus Master. The observations' fidelity stays outside. -/
+theorem qotom_broadcom_assignment_confined
+    (contract d3Status d3CommandBefore d3CommandAfter d3PmcsrBefore d3PmcsrAfter
+      preCommand prePmcsr preBar0 preBar1 offset width value
+      postCommand postPmcsr postBar0 postBar1 deviceControlStatus quietPolls
+      quietDeviceStatus bus device function identity dma cfgWrite cmdSet : UInt64)
+    (h : QotomBroadcomAssignment.exportedAdmission contract d3Status d3CommandBefore
+      d3CommandAfter d3PmcsrBefore d3PmcsrAfter preCommand prePmcsr preBar0 preBar1
+      offset width value postCommand postPmcsr postBar0 postBar1
+      deviceControlStatus quietPolls quietDeviceStatus
+      bus device function identity dma cfgWrite cmdSet = 1) :
+    contract = 1 ∧ offset = 0x44 ∧ width = 2 ∧ value = 0x4008 ∧
+      postCommand = 0 ∧ postPmcsr = 0x4008 ∧
+      deviceControlStatus &&& QotomBroadcomAssignment.transactionsPendingBit = 0 ∧
+      dma = 0 ∧ cmdSet &&& 0x4 = 0 := by
+  have hw := QotomBroadcomAssignment.admission_requires_write _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ h
+  have he := QotomBroadcomAssignment.write_exact _ _ _ _ _ _ _ _ _ _ _ _ _ hw.1
+  have hp := QotomBroadcomAssignment.admission_post_state _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ h
+  have hb := QotomBroadcomAssignment.admission_policy_no_bus_master _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h
+  exact ⟨hw.2, he.1, he.2.1, he.2.2, hp.1, hp.2.1, hp.2.2.2.2.1, hb.2.2.2.2.1,
+    hb.2.2.2.2.2.1⟩
 
 /-- SC-SINGLE-CORE-BOOT-ADMISSION: accepted topology admission exposes exactly
 one enabled processor with BSP/executing-CPU agreement; the admitted runtime

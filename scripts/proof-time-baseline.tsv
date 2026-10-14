@@ -1,10 +1,9 @@
-# reason: LeanOS.Oracle checks every oracle vector; the spawn syscall and loader adapters (#554/#555, adapters 30-33, 60 vectors) grew the corpus again, so record its measured normalized time (71.6 s, run 38166757901). Earlier: 45.0 s after the spawn boundary (#547), #550's Evidence/IOMMU re-measure, the FailStop split (#549).
+# reason: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
 module	seconds
 LeanOS.BootPageTablePlan	139.8
 LeanOS.CompositeDispatcher	137.0
 LeanOS.CapabilityTransfer	103.9
 LeanOS.FaultDispatch	74.3
-LeanOS.Oracle	71.6
 LeanOS.BootMemoryMapStreamPipeline	62.9
 LeanOS.IOMMU	61.8
 LeanOS.ResumablePreemption	55.4
@@ -38,6 +37,7 @@ LeanOS.BootTopology	9.6
 LeanOS.EndpointDirectory	9.0
 LeanOS.FailStop.ReadSets	8.5
 LeanOS.EndpointIPC	8.3
+LeanOS.Oracle.Interrupt	8.0
 LeanOS.BootMemoryMapStreamAuthority	7.2
 LeanOS.Scheduler	7.2
 LeanOS.CompositeSwitchedChannels	7.0
@@ -106,17 +106,22 @@ LeanOS.BootReservation	2.1
 LeanOS.ExtendedState	2.1
 LeanOS.FailStop.Scheduler	2.1
 LeanOS.FailStop.SpawnAccounting	2.1
+LeanOS.Oracle	2.1
+LeanOS.Oracle.Composite	2.1
 LeanOS.CompositeOwnTermination	2.0
 LeanOS.FailStop.SpawnAuthority	2.0
 LeanOS.IPCSyscall	2.0
+LeanOS.QotomBroadcomAssignment	2.0
 LeanOS.Wifi.DevCrypto	2.0
 LeanOS.ConsoleServer	1.9
+LeanOS.Oracle.Scalar	1.9
 LeanOS.FrameScrub	1.8
 LeanOS.NotifyReply	1.8
 LeanOS.FailStop.SpawnAccountingTraces	1.7
 LeanOS.Wifi.NPhyRssiCal	1.7
 LeanOS.Wifi.Sim	1.7
 LeanOS.FailStop.SpawnTree	1.6
+LeanOS.Oracle.IOTLB	1.6
 LeanOS.QotomNativePCIFields	1.6
 LeanOS.ResumableContext	1.6
 LeanOS.SpawnBoundary	1.6
@@ -130,6 +135,7 @@ LeanOS.J1900CpuProfile	1.4
 LeanOS.KeyboardEcho	1.4
 LeanOS.Refinement.CSubset	1.4
 LeanOS.UserCopyWindow	1.4
+LeanOS.Oracle.Spawn	1.3
 LeanOS.Preemption	1.3
 LeanOS.QotomNativePCISnapshot	1.3
 LeanOS.Wifi.DevDhcp	1.3
@@ -140,6 +146,7 @@ LeanOS.Wifi.DevCcmp	1.2
 LeanOS.Wifi.NPhyInit	1.2
 LeanOS.BootTextConsole	1.1
 LeanOS.FrameBudgetComposite	1.1
+LeanOS.Oracle.FrameBudget	1.1
 LeanOS.QotomNativePCIInventory	1.1
 LeanOS.Usb.Keyboard	1.1
 LeanOS.BootHandoffUefiReplay	1.0
@@ -166,6 +173,7 @@ LeanOS.CompositeFootprint	0.8
 LeanOS.FailStop.SpawnTraces	0.8
 LeanOS.FrameAllocator	0.8
 LeanOS.J1900MsrReadback	0.8
+LeanOS.Oracle.Vector	0.8
 LeanOS.QotomBootstrapABI	0.8
 LeanOS.QotomEntryIntegration	0.8
 LeanOS.QotomPCIFinalAdmission	0.8
@@ -184,6 +192,7 @@ LeanOS.FailStop.Memory	0.6
 LeanOS.FailStop.OperationRegistry	0.6
 LeanOS.FailStop.SpawnInvariants	0.6
 LeanOS.NegativeFixtures.SpawnAccounting	0.6
+LeanOS.Oracle.Services	0.6
 LeanOS.PostStateProjection	0.6
 LeanOS.QotomPCIQuarantineTransition	0.6
 LeanOS.Storage.AhciRead	0.6
