@@ -305,6 +305,10 @@ if a.device_service and not a.lab_program:
     raise SystemExit('--device-service needs --lab-program images')
 if a.network_subject and not a.ipc_device_stream:
     raise SystemExit('--network-subject needs --ipc-device-stream')
+if a.network_subject and not (a.broadcom_d3 and a.pci_trust_contract):
+    # The reviewed assignment variant (issue #559) starts from the D3hot
+    # record and the accepted qotom-j1900-pci-trust-v1 contract.
+    raise SystemExit('--network-subject needs --broadcom-d3 and --pci-trust-contract')
 if a.ipc_device_stream and (not a.blocking_ipc_integration or len(a.lab_program) != 1 or
                             a.wifi_program or a.device_service or a.q35_device_lab):
     raise SystemExit('--ipc-device-stream needs --blocking-ipc-integration and exactly one --lab-program')
@@ -837,6 +841,14 @@ if a.txe_bme:
     files += [root / name for name in ('boot/qotom-txe-bme.h', 'hardware/lab/qotom-txe-bme-window.h', 'hardware/lab/qotom-txe-bme-arm.h', 'hardware/lab/qotom-txe-bme.c.inc')]
 if a.pci_final_admission:
     files += [root / name for name in ('boot/qotom-pci-final-admission.h', 'hardware/lab/qotom-pci-final-admission.c.inc')]
+if a.network_subject:
+    files += [root / name for name in ('boot/qotom-broadcom-assign.h',
+              'hardware/lab/qotom-broadcom-assign-window.h',
+              'hardware/lab/qotom-broadcom-assign-arm.h',
+              'hardware/lab/qotom-broadcom-assign-state.h',
+              'hardware/lab/qotom-broadcom-assign.c.inc',
+              'LeanOS/QotomBroadcomAssignment.lean',
+              '.lake/build/ir/LeanOS/QotomBroadcomAssignment.c')]
 if a.nosmap_control:
     files += [root / 'LeanOS/QotomNoSmapControl.lean',
               root / '.lake/build/ir/LeanOS/QotomNoSmapControl.c',

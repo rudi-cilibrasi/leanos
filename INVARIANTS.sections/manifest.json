@@ -139,6 +139,7 @@
     "LeanOS/PrivilegeEntryStack.lean",
     "LeanOS/QotomBlockingIPCIntegration.lean",
     "LeanOS/QotomBootstrapABI.lean",
+    "LeanOS/QotomBroadcomAssignment.lean",
     "LeanOS/QotomBspTopology.lean",
     "LeanOS/QotomCopyRootPublication.lean",
     "LeanOS/QotomEntryIntegration.lean",

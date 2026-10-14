@@ -128,6 +128,7 @@ import LeanOS.QotomPCIInventory
 import LeanOS.QotomNativePCIInventory
 import LeanOS.QotomNativePCIFields
 import LeanOS.QotomPCIFinalAdmission
+import LeanOS.QotomBroadcomAssignment
 import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
 import LeanOS.QotomEntryIntegration
