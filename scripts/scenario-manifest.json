@@ -234,6 +234,12 @@
         "-DLEANOS_NETWORK_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-network-subject.h\""
       ],
+      "kernel-gtk-rekey": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_NETWORK_SUBJECT_SCENARIO=1",
+        "-DLEANOS_GTK_REKEY_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-gtk-rekey.h\""
+      ],
       "kernel-dhcp-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
@@ -1038,6 +1044,16 @@
         "prelink_plan": "boot-page-plan-network-subject.h",
         "plan_equal_to": null
       },
+      "leanos-gtk-rekey": {
+        "boot": "boot-network-subject",
+        "kernel": "kernel-gtk-rekey",
+        "extra_objects": [
+          "subject-net"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-gtk-rekey.h",
+        "plan_equal_to": null
+      },
       "leanos-dhcp-subject": {
         "boot": "boot-dhcp-subject",
         "kernel": "kernel-dhcp-subject",
@@ -1484,6 +1500,13 @@
           "key": "network-subject"
         }
       },
+      "leanos-gtk-rekey": {
+        "iso": "leanos-@VERSION@-x86_64-gtk-rekey.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "gtk-rekey"
+        }
+      },
       "leanos-dhcp-subject": {
         "iso": "leanos-@VERSION@-x86_64-dhcp-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1876,6 +1899,16 @@
         "description": "network-subject",
         "targets": [
           "leanos-network-subject"
+        ]
+      },
+      {
+        "image": "leanos-gtk-rekey",
+        "check": "converge",
+        "expected": "boot-page-plan-gtk-rekey.h",
+        "final": "boot-page-plan-gtk-rekey.final.h",
+        "description": "gtk-rekey",
+        "targets": [
+          "leanos-gtk-rekey"
         ]
       },
       {
@@ -3750,6 +3783,34 @@
         "SC-IPC-EVENT-STREAM"
       ],
       "does_not_prove": "Not a refinement of SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of six synthesized frames from a device program that drives no device, not the BCM43224 or any radio; the kernel checks its endpoint and device tables and every copy and device decision against the generated witnesses leanos_frame_copy_check and leanos_device_authorize, and each frame exchange against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models, the frame source checks the replies against the reference responder rather than a proof of the protocol logic, and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
+    },
+    "gtk-rekey": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/gtk-rekey.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "60",
+        "image": "leanos-@VERSION@-x86_64-gtk-rekey.iso",
+        "elf": "leanos-gtk-rekey.elf",
+        "serial_log": "gtk-rekey.serial.log",
+        "scenario": "gtk-rekey",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-WIFI-GROUP-KEY-ROTATION",
+        "SC-NETWORK-SUBJECT-CONFINEMENT",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-WIFI-GROUP-KEY-ROTATION, SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run of fifteen synthesized CCMP-protected frames, built with test keys from the model's scenario (two group-key rotations, 1 to 2 and back to 1, with stale, replayed and forged frames), fed to the BCM43224 driver's own receive and transmit paths by a device program that drives no device, not the BCM43224, any radio or any access point; the program checks each frame's outcome and the driver's key state against LeanOS.GtkRekey.step and every transmitted MPDU against the reference library, rather than a proof that the driver program refines the model, the kernel checks every copy and device decision against the generated witnesses leanos_frame_copy_check and leanos_device_authorize and each frame exchange against leanos_blocking_ipc_event, and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted; the access point's rekey interval and real-air behaviour are left to the Qotom capture"
     },
     "dhcp-subject": {
       "release_artifacts": [

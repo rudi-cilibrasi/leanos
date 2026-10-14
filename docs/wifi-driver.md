@@ -93,8 +93,9 @@ endpoint after DHCP (`LeanOS.Wifi.Endpoint.serve`):
 * It answers nothing itself.
 
 The driver keeps the PMK, the TK and the GTK, and it handles group-key
-rotation. Since issue #556 the driver in this mode runs no DHCP client: it
-serves the link-only endpoint (`LeanOS.Wifi.Endpoint.serveLink`) and the
+rotation ([Group-key rotation](#group-key-rotation-issue-557)). Since
+issue #556 the driver in this mode runs no DHCP client: it serves the
+link-only endpoint (`LeanOS.Wifi.Endpoint.serveLink`) and the
 ring-3 DHCP subject leases the address ([DHCP subject on the
 Qotom](#dhcp-subject-on-the-qotom)). `LEANOS_WIFI_DRIVER_DHCP=1` keeps the
 issue #450 compatibility path, in which the driver leases the address and
@@ -348,6 +349,278 @@ board boots legacy BIOS.
      with the leased address.
 
    If the box resets before `FINAL`, shorten the serve window; never
-   lengthen it past 45 seconds. The retained serial stream contains
+   lengthen it past 45 seconds without a long-session image ([Long
+   sessions](#long-sessions)). The retained serial stream contains
    decrypted payloads. Redact them before committing an observation, and
    never commit `dhcp556.bin`.
+
+## Group-key rotation (issue #557)
+
+An access point rotates its group temporal key (GTK) on a fixed interval,
+often an hour. It sends each station an EAPOL-Key group message 1,
+protected with the station's TK, that carries the new GTK (wrapped with the
+KEK), an EAPOL replay counter and the new key's Key RSC; the station answers
+with group message 2. The new key alternates between key ids 1 and 2.
+
+The driver keeps this exchange to itself. Both the ring-0 responder and the
+frame endpoint use the same code (`LeanOS.Wifi.Responder.respond.groupKey`
+inside `LeanOS.Wifi.Endpoint.handleFrame`):
+
+* a message 1 is accepted only with a replay counter above the last one and
+  a valid MIC (KCK), which then advances the counter;
+* its key data is unwrapped with the KEK; a GTK KDE with key id 1–3 is
+  installed (`Handshake.installGtk` refuses key id 0, the TK's);
+* the new key's packet-number floor is the message's Key RSC, so a group
+  frame under it is accepted only with a larger PN (as FreeBSD's net80211
+  seeds `wk_keyrsc`);
+* message 2 (MIC | secure, the same replay counter) is sent;
+* the driver keeps one GTK: from then on a frame under the previous key id
+  is dropped, and so is one under stale material for the new key id.
+
+Records: `WIFI 0d05` (a GTK installed; value: its key id, also printed for
+the 4-way handshake's GTK), `WIFI 0f09` (message 2 sent; key id), `WIFI
+0f0a` (a message 1 dropped: stale counter, bad MIC, no usable GTK), `WIFI
+0f06` (a frame dropped as a replay) and `WIFI 0f18` (a group frame accepted;
+its key id). The Qotom lab also renders `0d05` and `0f09` as `LEANOS-LAB/1
+WIFI-GTK installed key-id=N` and `LEANOS-LAB/1 WIFI-GTK rekeyed msg2=sent
+key-id=N`.
+
+**Model.** `LeanOS.GtkRekey` models one received frame against the driver's
+key state (claim SC-WIFI-GROUP-KEY-ROTATION, `wifi_group_key_rotation`):
+
+* the EAPOL replay counter never decreases, and the counters answered with
+  message 2 strictly increase across any number of rotations, so a message
+  1 is answered at most once (`run_replay_mono`, `run_msg2_sorted`,
+  `msg2_once`);
+* an answered message 1 installs exactly its key, key id (never 0) and Key
+  RSC (`msg2_installs`);
+* after a rotation, a frame under the new key id and key above the Key RSC
+  is delivered (`delivered_after_rekey`); a frame under the previous key id
+  (`stale_id_dropped`), under stale material (`stale_material_dropped`) or
+  at or below its key's floor (`replayed_pn_dropped`) is dropped and changes
+  nothing; delivered packet numbers raise their key's floor (`deliver_pn`,
+  `step_pnTk_mono`, `step_pnGtk_mono`).
+
+**Tests.** `tests/WifiRekeySim.lean` (`leanos-wifi-rekeysim`) runs
+`handleFrame` and `takeTx` in the simulator on 1920 random frames (rotations
+1↔2↔3, retransmitted, stale and forged message 1s, key id 0, failed
+unwraps, packet numbers around every floor and across the 32-bit boundary)
+and requires the model's outcome for each frame and its key state after
+each frame. It also runs the q35 frame source below. `tests/WifiResponderSim.lean`
+covers the same exchange on the ring-0 responder.
+
+**q35 scenario `gtk-rekey`.** The network-subject image with the frame
+source `net-q35-rekey` (`LeanOS.Net.RekeySource`): the driver's own
+`handleFrame` and `takeTx` run on the model's fifteen CCMP-protected frames
+(`GtkRekey.scenario`, test keys), with the radio replaced by a check of
+every transmitted MPDU against the reference library. The key rotates 1 → 2
+→ 1; broadcast ARP under each new key and a unicast ping reach the ring-3
+echo subject and are answered; the stale, replayed and forged frames are
+dropped. See [network-subject.md](network-subject.md#the-gtk-rekey-scenario).
+`net-bcm-rekey` is the same program for the Broadcom target: a keyless
+smoke test of the rotation on the Qotom's `--network-subject` path.
+
+### Long sessions
+
+A rotation is observed only by a session longer than the access point's
+rekey interval, while the lab watchdog resets the board 120 seconds after
+GRUB arms it. `build-qotom-recovery-lab.py --long-session SECONDS` (with
+`--dhcp-subject`) builds an image in which the kernel **reloads** that
+watchdog while the WiFi driver subject makes progress. `SECONDS` is 1–3600
+and should be the program's `LEANOS_WIFI_SERVE_SECONDS`, which
+`leanos-wifi-gen` accepts up to 4294 (the serve window is measured in
+microseconds of the TSF's low 32-bit word).
+
+How it works (`hardware/lab/qotom-network-subject.c.inc`):
+
+* GRUB arms the timer exactly as before: 120 TCO v3 ticks, only after its
+  board and register checks, digest- and minute-bound, and stopped again if
+  the image does not load ([qotom-watchdog-lab.md](qotom-watchdog-lab.md)).
+* The kernel reloads on two kinds of driver record: the link record (the
+  join and the 4-way handshake completed) and every 40th tick the endpoint
+  yields (`LeanOS.Wifi.Endpoint.serveLink`: one tick per second of the
+  radio's TSF time).
+* Before each reload it reads TCO1_CNT and TCO_TMR and asks the generated
+  check `leanos_qotom_watchdog_kick` (`LeanOS.QotomWatchdogKick.kickDecide`).
+  The check admits a reload only if the timer is still exactly as GRUB left
+  it (TCO1_CNT 0, TCO_TMR 120), the session's budget is not used up, and the
+  record is the link record (first reload) or a tick at least 40 ticks after
+  the last reload. The budget is `2 + ceil(SECONDS / 40)`
+  (`QotomWatchdogKick.budgetOf`), at most 92.
+* A reload is one 16-bit write of 1 to TCO_RLD (port `0x460`), as FreeBSD's
+  `ichwd` reloads. The kernel writes no other watchdog register: the
+  timeout, the halt bit, NO_REBOOT and SMI routing stay GRUB's.
+* Once the check refuses for any reason but "not due", the kernel never
+  reloads again and prints `WATCHDOG-KICK stopped reason=N`. Every reload
+  prints `LEANOS-LAB/1 WATCHDOG-KICK n=K budget=B event=...`, and the final
+  record adds `watchdog-kicks=K`.
+* The driver program's step bound rises from 4·10¹⁰ to 4·10¹² for the long
+  session (`LAB_DEV_STEP_LIMIT`); the serve window and the reload budget
+  bound the session instead.
+
+Why the box still recovers to FreeBSD:
+
+* **A LeanOS hang stops the reloads.** A tick reaches the kernel only when
+  the executor ran the driver program, the radio's TSF advanced, the ring-3
+  subject took the previous record (the kernel fails closed on an unfetched
+  one) and the kernel's IPC path cycled. If the kernel hangs, faults or
+  stops scheduling, or the driver, the radio or the subject stalls, no
+  reload follows and the timer resets the board at most 120 seconds after
+  the last one, into GRUB, which sees the consumed request and chains
+  FreeBSD as in every protected run.
+* **A run that keeps "progressing" is still bounded.** Reloads are at least
+  40 ticks apart and at most the budget in number (`run_kicks_le_budget`,
+  `run_kicks_le_cap`, `kick_needs_ticks`), and each comes before the running
+  deadline, so the board resets at most `(budget + 1) · 120` seconds after
+  GRUB's arm (`reset_bound`): 96 minutes for a 30-minute session
+  (`session_1800_reset_seconds`), at most 3 h 6 min for any image
+  (`cap_reset_seconds`).
+* **A completed run resets as before.** When the serve window ends the
+  driver program halts, the kernel prints `FINAL` and halts, and the board
+  resets at most 120 seconds after the last reload.
+* **A timer GRUB did not arm is never reloaded** (`unarmed_never_kicked`,
+  `changed_never_kicked`), so an unprotected boot is not turned into a
+  protected-looking one.
+
+What this does not cover: the reset path itself and the one-shot request's
+durability across a watchdog reset, which the earlier protected trials
+established ([qotom-watchdog-lab.md](qotom-watchdog-lab.md)); SMM firmware
+reloading or disabling the timer (GRUB found TCO SMI disabled); the C around
+the check (the event classification, the two reads and the one write),
+which is reviewed, not proved.
+
+`run-qotom-recovery-lab.py --long-session SECONDS` observes for `SECONDS +
+120` seconds more than a normal run, raises the capture limit from 1 MiB to
+64 MiB, and writes `cycle-N/watchdog-kicks.json` before the scenario
+classification: the reloads numbered from 1, within the budget, each less
+than 120 seconds after the previous one (or GRUB's arm), and the FreeBSD
+chain at most 150 seconds after the last reload.
+
+### Maintainer steps for the long-session capture
+
+Run these on the development host in a checkout of the merged branch, with
+the `<flag set>` of
+`hardware/lab/observations/qotom-device-stream-20261007/manifest.json`. The
+board boots legacy BIOS.
+
+1. **Find the access point's GTK interval.** Look in the router's settings
+   for "Group Key Update Interval", "GTK rekey interval" or "WPA group
+   rekey" (seconds). If it is longer than an hour or disabled, set it to 600
+   seconds for the trial and restore it afterwards. The session must be
+   longer than the interval plus the join (about 55 seconds); with 600
+   seconds, `S = 900` covers at least one rotation. If the interval is
+   unknown, use `S = 3600`: the capture then shows it (step 6).
+
+2. **Build the canonical inputs and run the keyless smoke test.** It feeds
+   the q35 rotation frames through the real Qotom path (the
+   `--network-subject` image, no `--dhcp-subject`) and touches no Broadcom
+   register:
+
+   ```sh
+   ./scripts/build-image.sh
+   .lake/build/bin/leanos-wifi-gen net-bcm-rekey build/net/net-bcm-rekey.bin
+   python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
+     --lab-program build/net/net-bcm-rekey.bin --ipc-device-stream --network-subject
+   ```
+
+   Install and run it as in [Maintainer steps for the
+   capture](#maintainer-steps-for-the-capture), step 2. Expect two
+   `LEANOS-LAB/1 WIFI-GTK rekeyed msg2=sent` records (key ids 2, then 1),
+   `WIFI 5105` for each of the fifteen frames (the key state matched the
+   model), `WIFI 5103` for each transmitted MPDU (the reference matched),
+   four `NET event=deliver` frames after the configuration record, and
+   `FINAL status=PASS network-subject=1 ... frames=5 fetches=5 replies=4`.
+
+3. **Build the long-session image.** The program embeds the PMK: keep it
+   under `build/`, never commit it, never print the passphrase, and do not
+   set `LEANOS_WIFI_DHCP` or `LEANOS_WIFI_DRIVER_DHCP`.
+
+   ```sh
+   S=900
+   LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" \
+     LEANOS_WIFI_SERVE_SECONDS=$S LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     .lake/build/bin/leanos-wifi-gen connect build/wifi/gtk557.bin
+   python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
+     --lab-program build/wifi/gtk557.bin --ipc-device-stream \
+     --network-subject --dhcp-subject --long-session $S
+   ```
+
+   `build/qotom-wifi-lab/manifest.json` records `long_session_seconds` and
+   `watchdog_kick_budget` (`2 + ceil(S / 40)`, 25 for 900 seconds).
+
+4. **Install and run it** with the runner's long-session mode (`lab-trial.sh`
+   with `--long-session $S` added to its runner command):
+
+   ```sh
+   scp build/qotom-wifi-lab/leanos-qotom-lab.elf freebsd@192.168.6.21:/var/tmp/leanos-wifi.elf
+   sha256sum build/qotom-wifi-lab/leanos-qotom-lab.elf
+   ssh freebsd@192.168.6.21 sudo sh /var/tmp/install-ssd.sh <sha256>
+   python3 scripts/run-qotom-recovery-lab.py --host freebsd@192.168.6.21 \
+     --host-key-alias freebsd.lan --usb-serial <stick serial> \
+     --serial-device <FTDI by-id path> \
+     --elf build/qotom-wifi-lab/leanos-qotom-lab.elf --image-on-ssd \
+     --output build/wifi/gtk557 --cycles 1 --scenario watchdog-leanos \
+     --long-session $S
+   ```
+
+5. **Drive traffic from a LAN host for the whole session**, once `NET
+   event=handoff ... lease=<leased address>` appears. Keep a slow ping
+   running, and make the LAN host re-ask for the Qotom's hardware address
+   every minute, so that broadcast ARP requests reach the Qotom under
+   whichever GTK is current:
+
+   ```sh
+   ping -i 10 <leased address> &
+   while sleep 60; do
+     sudo ip neigh del <leased address> dev eno1
+     ping -c 2 <leased address>
+   done
+   ```
+
+   Optionally record the wired side with `sudo tcpdump -i eno1 'arp or icmp'`
+   (the EAPOL exchange stays on the air and is not visible there).
+
+6. **Read the capture.** In `build/wifi/gtk557/cycle-1/serial.raw`:
+   * `WATCHDOG-ARMED ticks=120`, then `WATCHDOG-KICK n=1 budget=B
+     event=link` once the link is up, then a reload about every 40 seconds
+     (`event=ticks ticks=40`), and no `WATCHDOG-KICK stopped` before
+     `FINAL`;
+   * the 4-way handshake's `WIFI-GTK installed key-id=1` (or 2);
+   * **the rotation**: `WIFI-GTK installed key-id=2` and the message 2
+     transmit status (`WIFI 0e10`–`0e13`), then `WIFI-GTK rekeyed msg2=sent
+     key-id=2`: group message 1 arrived and message 2 was sent;
+   * **broadcast ARP under the new key answered**: after the rotation, `WIFI
+     0f18 0x00000002` (a group frame accepted under key id 2), its `NET
+     event=deliver`/`fetch`, the echo subject's 42-byte `NET event=send` and
+     `WIFI 0f13 0x0000002a` (the ARP reply transmitted); no `WIFI 0f18`
+     with the old key id after the rotation;
+   * **ping still working**: ICMP `NET event=send` records and `WIFI 0f13`
+     after the rotation, and on the LAN host echo replies whose timestamps
+     follow it;
+   * `FINAL status=PASS dhcp-subject=1 echo-subject=1 ... watchdog-kicks=K`,
+     then a reset at most 120 seconds after the last reload and the FreeBSD
+     chain.
+
+   `cycle-1/watchdog-kicks.json` must show no `error`. The access point's
+   interval is the time between consecutive rotations: list the GTK records
+   with their capture times from `cycle-1/events.jsonl`, for example
+
+   ```sh
+   python3 - build/wifi/gtk557/cycle-1/events.jsonl <<'PY'
+   import json, sys
+   for line in open(sys.argv[1]):
+       e = json.loads(line)
+       for rec in bytes.fromhex(e['hex']).split(b'\n'):
+           if b'WIFI-GTK' in rec:
+               print(f"{e['elapsed']:9.1f}", rec.decode(errors='replace'))
+   PY
+   ```
+
+   The first rotation after the join can come anywhere within one interval
+   (the access point's timer does not start at our association); the gap
+   between two rotations in one capture is the interval itself. If no
+   `rekeyed` record appears, the interval is longer than the session:
+   shorten it on the router and repeat.
+
+The retained serial stream contains decrypted payloads: redact them before
+committing an observation, and never commit `gtk557.bin`.

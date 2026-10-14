@@ -66,6 +66,7 @@ import LeanOS.DhcpSubject
 import LeanOS.Net.DhcpClient
 import LeanOS.Net.DhcpClientC
 import LeanOS.Net.DhcpSource
+import LeanOS.GtkRekey
 import LeanOS.Refinement.CSubset
 import LeanOS.Refinement.BootTransitionC
 import LeanOS.LifetimeIssuer
@@ -133,6 +134,7 @@ import LeanOS.QotomNativePCIInventory
 import LeanOS.QotomNativePCIFields
 import LeanOS.QotomPCIFinalAdmission
 import LeanOS.QotomBroadcomAssignment
+import LeanOS.QotomWatchdogKick
 import LeanOS.QotomNoSmapControl
 import LeanOS.QotomCopyRootPublication
 import LeanOS.QotomEntryIntegration

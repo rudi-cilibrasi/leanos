@@ -49,6 +49,8 @@ elif [[ "$scenario" == example-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-example-subject.iso"
 elif [[ "$scenario" == network-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-network-subject.iso"
+elif [[ "$scenario" == gtk-rekey ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-gtk-rekey.iso"
 elif [[ "$scenario" == dhcp-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-dhcp-subject.iso"
 elif [[ "$scenario" == fault-handler ]]; then

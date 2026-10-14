@@ -191,6 +191,68 @@ def classify_protected(events, digest, expected=EXPECTED, boot_record=None,
     return result
 
 
+def classify_watchdog_kicks(events, budget, timeout=120, recovery_slack=30):
+    """Check the long-session watchdog reloads (issue #557) in a capture.
+
+    The reloads must be numbered 1..n with n at most the image's budget, the
+    first must follow GRUB's single 120-tick arm and every reload must come
+    less than `timeout` seconds after the previous one (or the arm): the
+    timer never expired while LeanOS made progress. The FreeBSD chain marker
+    must follow the last reload (or the arm) by at most `timeout` plus
+    `recovery_slack` seconds of firmware and loader time: LeanOS stopped
+    reloading and the watchdog, or the completed run, reset the board."""
+    if not 1 <= budget <= 92:
+        raise ValueError('invalid watchdog kick budget')
+    if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
+           or e['elapsed'] < 0 for e in events):
+        raise ValueError('invalid capture timestamp')
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    data = b''.join(bytes.fromhex(e['hex']) for e in events)
+    starts, offset = [], 0
+    for e in events:
+        starts.append((offset, e['elapsed']))
+        offset += len(bytes.fromhex(e['hex']))
+
+    def time_at(position):
+        elapsed = None
+        for begin, when in starts:
+            if begin > position:
+                break
+            elapsed = when
+        return elapsed
+
+    armed = b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120'
+    if data.count(armed) != 1:
+        raise ValueError('missing or repeated watchdog arm')
+    arm_at = time_at(data.find(armed))
+    kicks = list(re.finditer(rb'LEANOS-LAB/1 WATCHDOG-KICK n=([0-9]+) budget=([0-9]+) ', data))
+    if data.count(b'LEANOS-LAB/1 WATCHDOG-KICK n=') != len(kicks):
+        raise ValueError('malformed watchdog kick record')
+    if [int(m.group(1)) for m in kicks] != list(range(1, len(kicks) + 1)):
+        raise ValueError('watchdog kicks out of sequence')
+    if any(int(m.group(2)) != budget for m in kicks) or len(kicks) > budget:
+        raise ValueError('watchdog kicks exceed or disagree with the budget')
+    if kicks and kicks[0].start() < data.find(armed):
+        raise ValueError('watchdog kick before the arm')
+    times = [arm_at] + [time_at(m.start()) for m in kicks]
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    if any(gap >= timeout for gap in gaps):
+        raise ValueError('watchdog reload later than its timeout')
+    chain = data.find(CHAIN, kicks[-1].end() if kicks else 0)
+    if chain < 0:
+        raise ValueError('missing FreeBSD chain marker after the last reload')
+    recovery = time_at(chain) - times[-1]
+    if recovery > timeout + recovery_slack:
+        raise ValueError('recovery later than the watchdog bound after the last reload')
+    stopped = re.search(rb'LEANOS-LAB/1 WATCHDOG-KICK stopped reason=([0-9]+)', data)
+    return {'watchdog_kicks': len(kicks), 'watchdog_kick_budget': budget,
+            'longest_reload_gap_seconds': max(gaps, default=0.0),
+            'protected_seconds': times[-1] - arm_at,
+            'recovery_after_last_reload_seconds': recovery,
+            'kicks_stopped_reason': int(stopped.group(1)) if stopped else None}
+
+
 def decode_qotom_lvt_observation(data):
     prefix = b'LEANOS-LAB/1 APIC-LVT '
     pattern = re.compile(
@@ -942,6 +1004,9 @@ def main():
     parser.add_argument('--ehci-handoff', action='store_true')
     parser.add_argument('--ehci-capabilities', action='store_true')
     parser.add_argument('--ehci-legacy', action='store_true')
+    parser.add_argument('--long-session', type=int, metavar='SECONDS',
+                        help='a --long-session lab image (issue #557): observe for SECONDS more, '
+                             'allow a larger capture, and check its watchdog reloads')
     parser.add_argument('--bsp-replay', type=Path, help='enable native BSP capture and provide its generated replay executable')
     parser.add_argument('--bsp-production', action='store_true',
                         help='classify the production memory/topology checkpoint')
@@ -950,6 +1015,9 @@ def main():
     parser.add_argument('--bsp-lvt-policy', action='store_true',
                         help='classify the inherited masked local-APIC LINT policy')
     args = parser.parse_args()
+    if args.long_session is not None:
+        if args.scenario != 'watchdog-leanos' or not 1 <= args.long_session <= 3600:
+            parser.error('--long-session needs --scenario watchdog-leanos and 1..3600 seconds')
     if args.pci_final_admission and not args.txe_bme:
         parser.error('--pci-final-admission requires --txe-bme')
     if args.pci_trust_contract and not args.pci_final_admission:
@@ -1163,6 +1231,8 @@ grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
         attrs[6][termios.VMIN] = attrs[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, attrs)
         events, errors = [], []
+        # A long session prints a few records per second for up to an hour.
+        capture_limit = (64 if args.long_session else 1) * 1024 * 1024
         stop = threading.Event()
         started = time.monotonic()
 
@@ -1173,7 +1243,7 @@ grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
                         if select.select([fd], [], [], 0.1)[0]:
                             chunk = os.read(fd, 65536)
                             if chunk:
-                                if raw.tell() + len(chunk) > 1024 * 1024:
+                                if raw.tell() + len(chunk) > capture_limit:
                                     raise ValueError('capture byte limit')
                                 event = {'elapsed': time.monotonic() - started,
                                          'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'hex': chunk.hex()}
@@ -1195,7 +1265,10 @@ grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
             (directory / 'reboot.txt').write_text(reboot.stdout + reboot.stderr)
             if reboot.returncode:
                 raise ValueError('SSH reboot request failed')
-            while time.monotonic() - started < (420 if args.scenario.startswith('watchdog-') else 180):
+            bound = 420 if args.scenario.startswith('watchdog-') else 180
+            if args.long_session:
+                bound += args.long_session + 120
+            while time.monotonic() - started < bound:
                 if errors:
                     raise ValueError(errors)
                 if CHAIN in b''.join(bytes.fromhex(e['hex']) for e in events):
@@ -1224,6 +1297,15 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         # Preserve recovery evidence even when an unfamiliar serial format fails
         # classification. Replaying a parser fix must not require another boot.
         (directory / 'recovery.json').write_text(json.dumps(recovery, indent=2) + '\n')
+        if args.long_session:
+            # Kept apart from the scenario classification, so the reload
+            # evidence survives an unfamiliar serial format.
+            budget = 2 + (args.long_session + 40 - 1) // 40
+            try:
+                kicks = classify_watchdog_kicks(events, budget)
+            except ValueError as error:
+                kicks = {'error': str(error), 'watchdog_kick_budget': budget}
+            (directory / 'watchdog-kicks.json').write_text(json.dumps(kicks, indent=2) + '\n')
         if verify.returncode:
             raise ValueError('one-shot request was not verified consumed')
         if args.scenario == 'watchdog-kernel':

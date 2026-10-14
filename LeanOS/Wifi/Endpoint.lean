@@ -31,6 +31,19 @@ EAPOL group-key messages stay with the driver (`Responder.respond.groupKey`).
 The loop ends after `us` microseconds of TSF time; the program then halts and
 the driver subject's next invocation returns 0.
 
+## Group-key rotation (issue #557)
+
+The per-frame work is `handleFrame`, apart from the radio: the serve loop
+calls it on each MPDU the receive FIFO delivers and transmits through the
+device (`Responder.Radio.device`), and the deviceless frame source of the
+q35 `gtk-rekey` image (`LeanOS.Net.RekeySource`) calls the same code on
+synthesized MPDUs and checks what it would transmit. A group message 1
+installs the new GTK and its Key RSC and is answered with message 2; from
+then on a group frame under the new key id is delivered (and recorded,
+`Tag.groupFrame`), and a frame under the previous key id, stale key
+material or an old packet number is dropped. `LeanOS.GtkRekey` models this
+and `tests/WifiRekeySim.lean` checks `handleFrame` against the model.
+
 ## The link-only endpoint (issue #556)
 
 `serveLink` is the same endpoint for a driver that runs no DHCP client
@@ -75,11 +88,14 @@ def summaryRx : UInt32 := 0x0F15
 def summaryTx : UInt32 := 0x0F16
 /-- The link-only endpoint is up (issue #556); value: 0, no address. -/
 def linkReady : UInt32 := 0x0F17
+/-- A frame protected with the GTK decapsulated and passed the replay check
+(issue #557); value: its key id. -/
+def groupFrame : UInt32 := 0x0F18
 end Tag
 
-/-- Transmit the reply the kernel left at `txAt`, if any, and clear its
-length word. -/
-def takeTx (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) : ProgM Unit := do
+/-- Transmit the reply the kernel left at `txAt`, if any, through `radio`,
+and clear its length word. -/
+def takeTx (C : DevCcmp.CcmpLib) (radio : Radio) : ProgM Unit := do
   let none ← newLabel
   let bad ← newLabel
   li 0 0
@@ -101,7 +117,7 @@ def takeTx (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) : ProgM Unit :
   li 1 (txAt + 14)
   copyR 2 1 3
   addi 12 32
-  sendReply C data
+  sendReply C radio
   li 0 0
   emit (.memLoad 4 3 0 txLenAt)
   print Tag.sent 3
@@ -115,59 +131,16 @@ def takeTx (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) : ProgM Unit :
   li 0 0
   emit (.memStore 4 0 txLenAt (.imm 0))
 
-/-- Serve the frame endpoint for `us` microseconds: with `link` the
-link-only endpoint of issue #556 (the link record, then frames and ticks),
-otherwise the issue #450 endpoint (the host configuration record with the
-driver's leased address, then frames). -/
-def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
-    (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32) : ProgM Unit := do
-  li 1 0
-  r32 2 0x180
-  emit (.memStore 4 1 startAt (.reg 2))
-  emit (.memStore 4 1 rxCount (.imm 0))
-  emit (.memStore 4 1 txCount (.imm 0))
-  emit (.memStore 4 1 txLenAt (.imm 0))
-  if link then
-    -- link record: our hardware address only; the driver leases nothing
-    emit (.memStore 4 1 lastTickAt (.reg 2))
-    li 2 rxAt
-    storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
-    printImm Tag.linkReady 0
-    emit (.yield (.imm linkLen))
-  else
-    -- host configuration record: our hardware address and the leased address
-    li 2 rxAt
-    storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
-    copyFixed (rxAt + 6) DevDhcp.yiaddrAt 4
-    li 1 0
-    emit (.memLoad 4 2 1 DevDhcp.yiaddrAt)
-    print Tag.ready 2
-    emit (.yield (.imm configLen))
-  let top ← newLabel
-  let skip ← newLabel
-  let out ← newLabel
-  place top
-  takeTx C data
-  r32 6 0x180
-  li 1 0
-  emit (.memLoad 4 7 1 startAt)
-  emit (.alu .sub 6 (.reg 7))
-  emit (.branch .geu 6 (.imm us) out)
-  if link then
-    -- a tick once a second of TSF time has passed since the last one
-    let noTick ← newLabel
-    r32 6 0x180
-    mov 8 6
-    li 1 0
-    emit (.memLoad 4 7 1 lastTickAt)
-    emit (.alu .sub 6 (.reg 7))
-    emit (.branch .ltu 6 (.imm tickUs) noTick)
-    emit (.memStore 4 1 lastTickAt (.reg 8))
-    emit (.memStore 1 1 rxAt (.imm 0))
-    emit (.yield (.imm tickLen))
-    emit (.jump top)
-    place noTick
-  Mlme.rxFrame 100
+/-- One received MPDU, at `Mlme.rxMpdu` with its length (FCS included) in
+r5: a protected data frame from the BSSID that decapsulates under the TK or
+the installed GTK (key id at `Handshake.gtkIdAt`) and passes the replay
+check is either an EAPOL group-key message, which the driver handles itself
+(`Responder.respond.groupKey`: install the new GTK and answer with message 2
+through `radio`), or is handed to the endpoint as Ethernet II at `rxAt` and
+yielded as its length, after which control continues at `next`. Anything
+else jumps to `skip` without a yield. -/
+def handleFrame (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (radio : Radio)
+    (next skip : Nat) : ProgM Unit := do
   emit (.branch .ltu 5 (.imm (24 + 16 + 4)) skip)
   -- protected data from the BSSID
   li 0 0
@@ -190,6 +163,11 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
   emit (.memStore 4 0 bodyAt (.reg 1))
   emit (.memStore 4 0 lenAt (.reg 2))
   replayCheck skip
+  -- a group-addressed frame: record the key id it was protected under
+  let pairwise ← newLabel
+  emit (.branch .eq 3 (.imm 0) pairwise)
+  print Tag.groupFrame 3
+  place pairwise
   li 0 0
   emit (.memLoad 4 1 0 bodyAt)
   -- LLC/SNAP
@@ -201,8 +179,8 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
   emit (.alu .or 3 (.reg 4))
   let notEapol ← newLabel
   emit (.branch .ne 3 (.imm 0x888E) notEapol)
-  respond.groupKey L C data skip
-  emit (.jump top)
+  respond.groupKey L C radio skip
+  emit (.jump skip)
   place notEapol
   -- Ethernet II: 14 + (body length - 8) bytes, at most 1514
   li 0 0
@@ -233,7 +211,63 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
   li 0 0
   emit (.memLoad 4 2 0 rxCount); addi 2 1; emit (.memStore 4 0 rxCount (.reg 2))
   emit (.yield (.reg 13))
-  emit (.jump top)
+  emit (.jump next)
+
+/-- Serve the frame endpoint for `us` microseconds: with `link` the
+link-only endpoint of issue #556 (the link record, then frames and ticks),
+otherwise the issue #450 endpoint (the host configuration record with the
+driver's leased address, then frames). -/
+def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
+    (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32) : ProgM Unit := do
+  let radio := Radio.device data
+  li 1 0
+  r32 2 0x180
+  emit (.memStore 4 1 startAt (.reg 2))
+  emit (.memStore 4 1 rxCount (.imm 0))
+  emit (.memStore 4 1 txCount (.imm 0))
+  emit (.memStore 4 1 txLenAt (.imm 0))
+  if link then
+    -- link record: our hardware address only; the driver leases nothing
+    emit (.memStore 4 1 lastTickAt (.reg 2))
+    li 2 rxAt
+    storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
+    printImm Tag.linkReady 0
+    emit (.yield (.imm linkLen))
+  else
+    -- host configuration record: our hardware address and the leased address
+    li 2 rxAt
+    storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
+    copyFixed (rxAt + 6) DevDhcp.yiaddrAt 4
+    li 1 0
+    emit (.memLoad 4 2 1 DevDhcp.yiaddrAt)
+    print Tag.ready 2
+    emit (.yield (.imm configLen))
+  let top ← newLabel
+  let skip ← newLabel
+  let out ← newLabel
+  place top
+  takeTx C radio
+  r32 6 0x180
+  li 1 0
+  emit (.memLoad 4 7 1 startAt)
+  emit (.alu .sub 6 (.reg 7))
+  emit (.branch .geu 6 (.imm us) out)
+  if link then
+    -- a tick once a second of TSF time has passed since the last one
+    let noTick ← newLabel
+    r32 6 0x180
+    mov 8 6
+    li 1 0
+    emit (.memLoad 4 7 1 lastTickAt)
+    emit (.alu .sub 6 (.reg 7))
+    emit (.branch .ltu 6 (.imm tickUs) noTick)
+    emit (.memStore 4 1 lastTickAt (.reg 8))
+    emit (.memStore 1 1 rxAt (.imm 0))
+    emit (.yield (.imm tickLen))
+    emit (.jump top)
+    place noTick
+  Mlme.rxFrame 100
+  handleFrame L C radio top skip
   place skip
   emit (.jump top)
   place out

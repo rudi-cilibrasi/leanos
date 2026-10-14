@@ -264,6 +264,8 @@ NETWORK_EXPECTED = {
                                   'leanos_qotom_broadcom_assign_admission': True,
                                   'leanos_qotom_pci_initial_trust_contract': True},
     'adhoc_broadcom_assign': False,
+    # Issue #557: only a --long-session image reloads the lab watchdog.
+    'watchdog_reload_present': False,
 }
 
 
@@ -287,6 +289,40 @@ DHCP_EXPECTED = {
                           'leanos_frame_port_check': True,
                           'leanos_device_authorize': True},
 }
+
+
+# Issue #557: a long-session image reloads the TCO watchdog GRUB armed. The
+# reload is one out-of-line function holding the image's only reload store, a
+# 16-bit write to TCO_RLD (port 0x460); it is called from exactly one site,
+# the progress handler, which consults the generated kick check. The
+# dispatcher itself still performs no direct I/O (checked by facts()).
+LONG_SESSION_EXPECTED = {
+    **DHCP_EXPECTED,
+    'watchdog_reload_present': True,
+    'watchdog_reload_out_sites': 1,
+    'watchdog_reload_port': True,
+    'watchdog_reload_calls': 1,
+    'watchdog_reload_callers': 1,
+    'watchdog_kick_witness': True,
+}
+
+
+def watchdog_facts(elf):
+    symbols, rows = load(elf)
+    present = any(key == 'qotom_watchdog_reload' or key.startswith('qotom_watchdog_reload.')
+                  for key in symbols)
+    facts = {'watchdog_reload_present': present}
+    if present:
+        reload = body(symbols, rows, 'qotom_watchdog_reload')
+        progress = body(symbols, rows, 'qotom_watchdog_progress')
+        facts.update({
+            'watchdog_reload_out_sites': sum(row[1] == 'out' for row in reload),
+            'watchdog_reload_port': any('$0x460' in row[2] for row in reload),
+            'watchdog_reload_calls': calls(progress, 'qotom_watchdog_reload'),
+            'watchdog_reload_callers': calls(rows, 'qotom_watchdog_reload'),
+            'watchdog_kick_witness': calls(progress, 'leanos_qotom_watchdog_kick') > 0,
+        })
+    return facts
 
 
 def references(rows, target):
@@ -348,17 +384,22 @@ def validate(observed, expected_facts=EXPECTED):
         raise ValueError('blocking profile retains PIT programming')
 
 
-def check(elf, device_stream=False, network_subject=False, dhcp_subject=False):
+def check(elf, device_stream=False, network_subject=False, dhcp_subject=False,
+          long_session=False):
     runpy.run_path(str(ROOT / 'scripts/audit-qotom-entry-integration.py'))['check'](
         elf, exception_integration=True, blocking_ipc_integration=True)
     observed = facts(elf)
+    if long_session and not dhcp_subject:
+        raise ValueError('a long-session image is a DHCP-subject image')
     if dhcp_subject:
         observed.update(stream_facts(elf))
         observed.update(network_facts(elf, dhcp_subject=True))
-        validate(observed, DHCP_EXPECTED)
+        observed.update(watchdog_facts(elf))
+        validate(observed, LONG_SESSION_EXPECTED if long_session else DHCP_EXPECTED)
     elif network_subject:
         observed.update(stream_facts(elf))
         observed.update(network_facts(elf))
+        observed.update(watchdog_facts(elf))
         validate(observed, NETWORK_EXPECTED)
     elif device_stream:
         observed.update(stream_facts(elf))
@@ -444,6 +485,34 @@ def self_test():
             rejected += 1
             continue
         raise ValueError(f'unsafe network mutation accepted: {name}')
+    network_mutations = {'network-watchdog-reload': ('watchdog_reload_present', True)}
+    for name, (key, value) in network_mutations.items():
+        for contract in (NETWORK_EXPECTED, DHCP_EXPECTED):
+            candidate = dict(contract); candidate[key] = value
+            try:
+                validate(candidate, contract)
+            except ValueError:
+                rejected += 1
+                continue
+            raise ValueError(f'unsafe network mutation accepted: {name}')
+    long_session = dict(LONG_SESSION_EXPECTED)
+    validate(long_session, LONG_SESSION_EXPECTED)
+    long_mutations = {
+        'second-reload-store': ('watchdog_reload_out_sites', 2),
+        'other-port': ('watchdog_reload_port', False),
+        'second-reload-caller': ('watchdog_reload_callers', 2),
+        'reload-outside-progress': ('watchdog_reload_calls', 0),
+        'unchecked-reload': ('watchdog_kick_witness', False),
+        'no-reload': ('watchdog_reload_present', False),
+    }
+    for name, (key, value) in long_mutations.items():
+        candidate = dict(long_session); candidate[key] = value
+        try:
+            validate(candidate, LONG_SESSION_EXPECTED)
+        except ValueError:
+            rejected += 1
+            continue
+        raise ValueError(f'unsafe long-session mutation accepted: {name}')
     print(f'Qotom blocking IPC: baseline PASS; {rejected} mutations rejected')
 
 
@@ -457,12 +526,14 @@ if __name__ == '__main__':
                         help='audit the issue #450 network-subject continuation')
     parser.add_argument('--dhcp-subject', action='store_true',
                         help='audit the issue #556 DHCP-subject continuation')
+    parser.add_argument('--long-session', action='store_true',
+                        help='with --dhcp-subject: audit the issue #557 watchdog reload')
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.elf:
         print(json.dumps(check(args.elf, args.device_stream, args.network_subject,
-                               args.dhcp_subject),
+                               args.dhcp_subject, args.long_session),
                          indent=2, sort_keys=True))
     else:
         parser.error('provide an ELF or --self-test')

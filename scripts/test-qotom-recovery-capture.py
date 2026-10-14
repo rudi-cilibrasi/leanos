@@ -206,6 +206,56 @@ class CaptureTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 lab.classify(events)
 
+    def long_session(self, kicks=4, gap=45.0, recovery=110.0, budget=47):
+        """Arm at 10 s, the link reload at 70 s, then reloads `gap` apart."""
+        events = [event(b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n', 10.0)]
+        when = 70.0
+        for n in range(1, kicks + 1):
+            what = b' event=link' if n == 1 else b' event=ticks ticks=40'
+            events.append(event(b'LEANOS-LAB/1 WATCHDOG-KICK n=%d budget=%d' % (n, budget) +
+                                what + b' ticks-timeout=120\n', when))
+            when += gap
+        last = events[-1]['elapsed']
+        events.append(event(lab.CHAIN + b'(hd1,gpt2)\n', last + recovery))
+        return events
+
+    def test_watchdog_kick_classification(self):
+        result = lab.classify_watchdog_kicks(self.long_session(), 47)
+        self.assertEqual(result['watchdog_kicks'], 4)
+        self.assertEqual(result['longest_reload_gap_seconds'], 60.0)
+        self.assertEqual(result['protected_seconds'], 195.0)
+        self.assertEqual(result['recovery_after_last_reload_seconds'], 110.0)
+        self.assertIsNone(result['kicks_stopped_reason'])
+        stopped = self.long_session()
+        stopped.insert(-1, event(b'LEANOS-LAB/1 WATCHDOG-KICK stopped reason=2 kicks=4 count=0 '
+                                 b'timer=120\n', stopped[-2]['elapsed'] + 1))
+        self.assertEqual(lab.classify_watchdog_kicks(stopped, 47)['kicks_stopped_reason'], 2)
+        # no reload at all: the arm alone bounds the run
+        self.assertEqual(lab.classify_watchdog_kicks(self.long_session(kicks=0), 47)
+                         ['watchdog_kicks'], 0)
+        valid = self.long_session()
+        mutations = {
+            'late reload': self.long_session(gap=120.0),
+            'late recovery': self.long_session(recovery=151.0),
+            'over budget': self.long_session(kicks=4, budget=3),
+            'wrong budget': [valid[0], valid[1]] + [
+                event(bytes.fromhex(e['hex']).replace(b'budget=47', b'budget=46'), e['elapsed'])
+                for e in valid[2:]],
+            'skipped number': valid[:2] + valid[3:],
+            'repeated arm': valid[:1] + valid,
+            'missing arm': valid[1:],
+            'missing chain': valid[:-1],
+            'malformed kick': valid[:-1] + [event(b'LEANOS-LAB/1 WATCHDOG-KICK n=x\n', 400.0),
+                                            valid[-1]],
+            'nonmonotonic time': valid[:2] + [event(b'x\n', 1.0)] + valid[2:],
+        }
+        for name, events in mutations.items():
+            budget = 3 if name == 'over budget' else 47
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                lab.classify_watchdog_kicks(events, budget)
+        with self.assertRaises(ValueError):
+            lab.classify_watchdog_kicks(valid, 93)
+
 
 if __name__ == '__main__':
     unittest.main()

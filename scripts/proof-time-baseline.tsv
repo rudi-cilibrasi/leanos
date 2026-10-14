@@ -1,4 +1,4 @@
-# reason: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
+# reason: LeanOS.GtkRekey and LeanOS.QotomWatchdogKick (#557, the group-key rotation model and the long-session watchdog kick check) are new; record their measured local times (1.7 s, 1.5 s). Earlier: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
 module	seconds
 LeanOS.BootPageTablePlan	139.8
 LeanOS.CompositeDispatcher	137.0
@@ -118,6 +118,7 @@ LeanOS.Oracle.Scalar	1.9
 LeanOS.FrameScrub	1.8
 LeanOS.NotifyReply	1.8
 LeanOS.FailStop.SpawnAccountingTraces	1.7
+LeanOS.GtkRekey	1.7
 LeanOS.Wifi.NPhyRssiCal	1.7
 LeanOS.Wifi.Sim	1.7
 LeanOS.FailStop.SpawnTree	1.6
@@ -125,6 +126,7 @@ LeanOS.Oracle.IOTLB	1.6
 LeanOS.QotomNativePCIFields	1.6
 LeanOS.ResumableContext	1.6
 LeanOS.SpawnBoundary	1.6
+LeanOS.QotomWatchdogKick	1.5
 LeanOS.SpawnAccountingOracle	1.5
 LeanOS.SpawnConfinement	1.5
 LeanOS.Wifi.Radio2056	1.5

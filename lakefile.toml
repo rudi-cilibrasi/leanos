@@ -145,3 +145,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-wifi-respsim"
 root = "tests.WifiResponderSim"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-wifi-rekeysim"
+root = "tests.WifiRekeySim"
+moreLeanArgs = ["-DwarningAsError=true"]

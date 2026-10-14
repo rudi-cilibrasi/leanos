@@ -146,6 +146,57 @@ edges. The exact transcript is
 LEANOS_BOOT_SCENARIO=network-subject ./scripts/run-image.sh
 ```
 
+## The `gtk-rekey` scenario
+
+Issue #557 keeps a session alive across the access point's group-key
+rotation. The driver handles the rotation itself, and the network subject
+must keep receiving broadcast frames under each new key
+([wifi-driver.md](wifi-driver.md#group-key-rotation-issue-557)). The
+`gtk-rekey` image is the `network-subject` image with another frame source,
+`net-q35-rekey` (`LeanOS.Net.RekeySource`). It drives no device either, but
+it does not make up Ethernet frames: it runs the BCM43224 driver's own
+receive path (`LeanOS.Wifi.Endpoint.handleFrame`) on CCMP-protected 802.11
+frames and its transmit path (`Endpoint.takeTx`) on C's replies. Only the
+radio is replaced: a frame is stored where the receive FIFO would leave it,
+and every MPDU the driver transmits is compared with the one the reference
+library builds.
+
+The frames are the model's scenario (`LeanOS.GtkRekey.scenario`) under test
+keys:
+
+1. a broadcast ARP request under the first GTK (key id 1), delivered;
+2. group message 1 rotating to key id 2 (replay counter 3, Key RSC 4),
+   answered with message 2;
+3. a broadcast under the retired key id 1, a broadcast at the new key's Key
+   RSC, and (after the next frame) the same broadcast replayed: dropped;
+4. a broadcast ARP request under key id 2, delivered;
+5. message 1 retransmitted with the same counter, and one with a bad MIC:
+   dropped;
+6. a unicast ICMP echo request under the TK, delivered;
+7. group message 1 rotating back to key id 1 with a third GTK, answered;
+8. broadcasts under the old key-id-1 material and the retired key id 2:
+   dropped;
+9. a broadcast ARP request under the third GTK, delivered;
+10. message 1 for key id 0 (the counter advances, nothing is installed),
+    then one with that counter again: dropped.
+
+For every frame the program checks the outcome the model gives
+(`GtkRekey.scenario_outcomes`: delivered, answered with message 2, or
+dropped) and, afterwards, the driver's whole key state (key id, GTK, TK,
+replay counter, both packet-number floors). For every delivered frame it
+checks C's reply against `Echo.replyFrame` and the protected MPDU the driver
+transmits for it against the reference. The kernel logs the driver's
+records as `NET event=driver` lines; the four delivered frames, the
+configuration record and the kernel's checks are those of the
+`network-subject` scenario. The final record adds the frames checked against
+the model (`mpdus=15`), the rotations (`rekeys=2`), the frames rightly not
+delivered (`not-delivered=11`) and the MPDUs matched (`transmitted=6`). The
+exact transcript is `scripts/expectations/gtk-rekey.transcript`.
+
+```sh
+LEANOS_BOOT_SCENARIO=gtk-rekey ./scripts/run-image.sh
+```
+
 ## DHCP as its own subject
 
 In the `network-subject` image the driver leases the address and tells the
@@ -290,3 +341,8 @@ hand-off and restarts A at the echo subject's entry
 - The legacy ring-0 responder (`LeanOS.Wifi.Responder.respond`, `connect`
   with `LEANOS_WIFI_SERVE_SECONDS` but no `LEANOS_WIFI_NETWORK_SUBJECT`)
   remains as the lab baseline.
+- The `gtk-rekey` frames are protected with test keys by a program; the
+  driver program is tested, not proved, against the rotation model
+  (`LeanOS.GtkRekey`), and the driver keeps one GTK, so frames the access
+  point still sends under the previous key after a rotation are dropped.
+  The Qotom long-session capture that shows a real rotation is pending.

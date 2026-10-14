@@ -139,7 +139,8 @@ def msg4 : Eapol.KeyFrame :=
 
 /-- Walk the unwrapped key data at `plainAt` (wrapped length at
 `eapolPtrAt + 8`) for the GTK KDE (dd len 00 0f ac 01 id rsvd gtk) and
-install it (`gtkIdAt`, `gtkAt`); run `onNone` when there is none. Used by
+install it (`gtkIdAt`, `gtkAt`); run `onNone` (which must not fall through)
+when there is none or its key id is 0, the pairwise key's. Used by
 message 3 of the 4-way handshake and by the group-key handshake. -/
 def installGtk (onNone : ProgM Unit) : ProgM Unit := do
   li 7 plainAt
@@ -173,6 +174,8 @@ def installGtk (onNone : ProgM Unit) : ProgM Unit := do
   place found
   emit (.memLoad 1 1 7 6)
   andi 1 3
+  -- key id 0 is the pairwise key's (`DevCcmp.ccmpDecap`): never a GTK
+  emit (.branch .eq 1 (.imm 0) none_)
   li 0 0
   emit (.memStore 1 0 gtkIdAt (.reg 1))
   print Tag.gtkId 1

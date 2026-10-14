@@ -203,6 +203,14 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         serial_puts("LEANOS-LAB/1 WIFI-PING echo-replies=");
         serial_u64(value);
         serial_putc('\n');
+    } else if (tag == 0x0D05 || tag == 0x0F09) {
+        /* Group keys (LeanOS/Wifi/Handshake.lean Tag.gtkId,
+           LeanOS/Wifi/Responder.lean Tag.rekeyed; issue #557): a GTK was
+           installed, and a group-key message 2 was sent for it. */
+        serial_puts(tag == 0x0D05 ? "LEANOS-LAB/1 WIFI-GTK installed key-id="
+                                  : "LEANOS-LAB/1 WIFI-GTK rekeyed msg2=sent key-id=");
+        serial_u64(value);
+        serial_putc('\n');
     } else if (tag == 0x2100) {
         /* USB keyboard (LeanOS/Usb/Keyboard.lean): one typed character.
            Printable ASCII is echoed as itself, others by name or code. */
@@ -244,7 +252,15 @@ static void lab_dev_restore(unsigned pages) {
     }
 }
 
+#ifdef LEANOS_QOTOM_LONG_SESSION
+/* A long WiFi session (issue #557) outlives the default bound on the
+   driver program's steps; the session is bounded instead by its serve
+   window and, independently, by the reviewed watchdog kick budget
+   (qotom-network-subject.c.inc, LeanOS.QotomWatchdogKick). */
+#define LAB_DEV_STEP_LIMIT UINT64_C(4000000000000)
+#else
 #define LAB_DEV_STEP_LIMIT UINT64_C(40000000000)
+#endif
 
 #ifdef LAB_DEVICE_SERVICE
 /* Device service (LeanOS/DeviceCapability.lean, ADR 0022), exercised in the
