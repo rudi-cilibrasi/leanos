@@ -1,4 +1,24 @@
 #include "serial-protocol.h"
+/* isr80's typed path selector codes (#560).  boot.S is also assembled from
+   copies outside the tree, so it repeats include/leanos/isr80-path.h here;
+   scripts/check-isr80-path-selector.py requires both to equal
+   LeanOS.Isr80PathSelector.Path.code. */
+#define LEANOS_ISR80_PATH_REPLY 0
+#define LEANOS_ISR80_PATH_DISPATCH_FRESH_B 1
+#define LEANOS_ISR80_PATH_BLOCK_B_ENTER_A 2
+#define LEANOS_ISR80_PATH_WAKE_B 3
+#define LEANOS_ISR80_PATH_BLOCK_B_RESUME_A 4
+#define LEANOS_ISR80_PATH_BLOCK_C_ENTER_B 5
+#define LEANOS_ISR80_PATH_REPORT_B_ENTER_A 6
+#define LEANOS_ISR80_PATH_WAKE_C 7
+#define LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT 8
+#define LEANOS_ISR80_PATH_TIMER_C_RESUMES_A 9
+#define LEANOS_ISR80_PATH_TIMER_A_WAITS 10
+#define LEANOS_ISR80_PATH_FRAME_C_RESUMES_A 11
+#define LEANOS_ISR80_PATH_FRAME_B_WAKES_C 12
+#define LEANOS_ISR80_PATH_FRAME_C_RESUMES_B 13
+#define LEANOS_ISR80_PATH_LOADER_ENTER_CHILD 14
+#define LEANOS_ISR80_PATH_LOADER_CHILD_SENT 15
 
 .set MB2_MAGIC, 0xe85250d6
 .set MB2_ARCH, 0
@@ -1500,6 +1520,11 @@ isr80_cld:
 #else
     mov 136(%rsp), %r9
 #endif
+    /* The typed path selector (#560): the kernel-owned word that alone picks
+       the path below.  It starts as the ordinary reply for every call; only
+       a handler's isr80_select changes it.  The reply word in RAX is data
+       and is never compared. */
+    movq $LEANOS_ISR80_PATH_REPLY, isr80_return_path(%rip)
     call syscall_handler
 #if defined(LEANOS_SPAWN_CHILD_SCENARIO) || defined(LEANOS_SPAWN_LOADER_SCENARIO)
     /* The spawn syscall's result word one (the generated value word) goes
@@ -1507,88 +1532,56 @@ isr80_cld:
     mov spawn_syscall_value(%rip), %rcx
     mov %rcx, 104(%rsp)
 #endif
+    mov isr80_return_path(%rip), %rdx
+    cmp $LEANOS_ISR80_PATH_REPLY, %rdx
+    je 7f
 #ifdef LEANOS_SPAWN_LOADER_SCENARIO
-    cmp $0x5c01, %rax
+    cmp $LEANOS_ISR80_PATH_LOADER_ENTER_CHILD, %rdx
     je 50f
-    cmp $0x5c02, %rax
-    jne 52f
-51: /* The loaded child sent its word (#492): its frame is discarded, it is
-       never resumed, and B's saved continuation is restored with the word
-       in RAX. */
-    lea saved_context_b(%rip), %rsi
-    mov %rsp, %rdi
-    mov $20, %ecx
-    rep movsq
-    mov loader_child_word(%rip), %rax
-    mov %rax, 112(%rsp)
-    movq $page_map_level_4_b, %rax
-    mov %rax, %cr3
-    mov $2, %esi
-    jmp user_return_epilogue
-50: /* B waits for the started child: preserve B's continuation and enter
-       the loaded child fresh at its admitted entry, on its own root, with
-       every general register zero. */
-    mov %rsp, %rsi
-    lea saved_context_b(%rip), %rdi
-    mov $20, %ecx
-    rep movsq
-    xor %eax, %eax
-    mov %rsp, %rdi
-    mov $15, %ecx
-    rep stosq
-    mov loader_child_entry(%rip), %rax
-    mov %rax, 120(%rsp)
-    movq $0x23, 128(%rsp)
-    movq $0x202, 136(%rsp)
-    mov loader_child_stack(%rip), %rax
-    mov %rax, 144(%rsp)
-    movq $0x1b, 152(%rsp)
-    lea spawn_child_pml4(%rip), %rax
-    mov %rax, %cr3
-    xor %eax, %eax
-    mov $1, %esi
-    jmp user_return_epilogue
-52:
+    cmp $LEANOS_ISR80_PATH_LOADER_CHILD_SENT, %rdx
+    je 51f
 #endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
-    cmp $0x3c01, %rax
+    cmp $LEANOS_ISR80_PATH_BLOCK_C_ENTER_B, %rdx
     je 30f
-    cmp $0x3c02, %rax
+    cmp $LEANOS_ISR80_PATH_REPORT_B_ENTER_A, %rdx
     je 31f
-    cmp $0x3c03, %rax
+    cmp $LEANOS_ISR80_PATH_WAKE_C, %rdx
     je 32f
 #if defined(LEANOS_CONSOLE_SERVER_SCENARIO) || \
     defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) || \
     defined(LEANOS_FAULT_HANDLER_SCENARIO) || \
     defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
-    cmp $0x3c04, %rax
+    cmp $LEANOS_ISR80_PATH_SERVER_C_RESUMES_CLIENT, %rdx
     je 33f
 #endif
 #ifdef LEANOS_TIMER_SERVER_SCENARIO
-    cmp $0x3c04, %rax
+    cmp $LEANOS_ISR80_PATH_TIMER_C_RESUMES_A, %rdx
     je 34f
-    cmp $0x3c05, %rax
+    cmp $LEANOS_ISR80_PATH_TIMER_A_WAITS, %rdx
     je 35f
 #elif defined(LEANOS_FRAME_SERVER_SCENARIO)
-    cmp $0x3c05, %rax
+    cmp $LEANOS_ISR80_PATH_FRAME_C_RESUMES_A, %rdx
     je 40f
-    cmp $0x3c06, %rax
+    cmp $LEANOS_ISR80_PATH_FRAME_B_WAKES_C, %rdx
     je 41f
-    cmp $0x3c07, %rax
+    cmp $LEANOS_ISR80_PATH_FRAME_C_RESUMES_B, %rdx
     je 42f
 #endif
 #endif
-    cmp $0xbeef, %rax
+    cmp $LEANOS_ISR80_PATH_BLOCK_B_ENTER_A, %rdx
     je 8f
-    cmp $0xcafe, %rax
+    cmp $LEANOS_ISR80_PATH_WAKE_B, %rdx
     je 9f
 #ifdef LEANOS_IPC_STREAM_SCENARIO
-    cmp $0xa55a, %rax
+    cmp $LEANOS_ISR80_PATH_BLOCK_B_RESUME_A, %rdx
     je 10f
 #endif
-    cmp $0xfeed, %rax
-    jne 7f
-    /* The scheduler selected fresh subject B.  Replace A's complete saved
+    cmp $LEANOS_ISR80_PATH_DISPATCH_FRESH_B, %rdx
+    je 11f
+    /* A selector this image does not handle: fail-stop, never a guess. */
+    ud2
+11: /* The scheduler selected fresh subject B.  Replace A's complete saved
        GPR/iret bank with the kernel-owned B context before changing CR3;
        patching only RIP/RSP/RAX would disclose A's remaining registers. */
     lea initial_context_b(%rip), %rsi
@@ -1964,6 +1957,44 @@ isr80_cld:
     mov $2, %esi
     jmp user_return_epilogue
 #endif
+#endif
+#ifdef LEANOS_SPAWN_LOADER_SCENARIO
+51: /* The loaded child sent its word (#492): its frame is discarded, it is
+       never resumed, and B's saved continuation is restored with the word
+       in RAX. */
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    mov loader_child_word(%rip), %rax
+    mov %rax, 112(%rsp)
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov $2, %esi
+    jmp user_return_epilogue
+50: /* B waits for the started child: preserve B's continuation and enter
+       the loaded child fresh at its admitted entry, on its own root, with
+       every general register zero. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    mov loader_child_entry(%rip), %rax
+    mov %rax, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    mov loader_child_stack(%rip), %rax
+    mov %rax, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    lea spawn_child_pml4(%rip), %rax
+    mov %rax, %cr3
+    xor %eax, %eax
+    mov $1, %esi
+    jmp user_return_epilogue
 #endif
 .global isr14
 isr14:
@@ -3469,7 +3500,7 @@ user_b_stale_translation_fault_instruction:
     ud2
 #elif defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO)
     /* A complete fresh B register bank and B's CR3 were installed by the
-       existing 0xfeed scheduler return path before any transfer operation. */
+       existing fresh-B scheduler return path before any transfer operation. */
     cmp $B_INITIAL_RAX, %rax
     jne 2f
     cmp $B_INITIAL_RBX, %rbx
@@ -3516,7 +3547,7 @@ user_b_stale_translation_fault_instruction:
 user_b_capability_transfer_end:
 #elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
     /* A complete fresh B register bank and B's CR3 were installed by the
-       existing 0xfeed scheduler return path after A's lineage revocation. */
+       existing fresh-B scheduler return path after A's lineage revocation. */
     cmp $B_INITIAL_RAX, %rax
     jne 2f
     cmp $B_INITIAL_RBX, %rbx

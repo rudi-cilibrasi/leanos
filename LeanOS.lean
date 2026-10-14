@@ -140,3 +140,4 @@ import LeanOS.QotomPCIQuarantineTransition
 
 import LeanOS.QotomBootstrapABI
 import LeanOS.SmapWindowPlan
+import LeanOS.Isr80PathSelector

@@ -147,7 +147,9 @@ elf_publish="$(elf_line "$retire_elf" \
 }
 
 isr80="$(sed -n '/<isr80>:/,/<isr14>:/p' "$kernel_dump")"
-feed_line="$(grep -n -m1 'cmp[[:space:]]\+\$0xfeed,%rax' <<< "$isr80" |
+# The fresh-B rung of isr80's typed selector ladder (#560):
+# LEANOS_ISR80_PATH_DISPATCH_FRESH_B is 1 in include/leanos/isr80-path.h.
+feed_line="$(grep -n -m1 'cmp[[:space:]]\+\$0x1,%rdx' <<< "$isr80" |
   cut -d: -f1 || true)"
 [[ -n "$feed_line" ]] || {
   echo "error: frame-budget ELF lacks the subject-B dispatch result" >&2
