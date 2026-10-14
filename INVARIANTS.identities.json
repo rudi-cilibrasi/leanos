@@ -23049,6 +23049,24 @@
     },
     {
       "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.accepted_inventory_exact",
+      "display": "accepted_inventory_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.base_inventory_publishes",
+      "display": "base_inventory_publishes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.dhcp_subject_inventory_publishes",
+      "display": "dhcp_subject_inventory_publishes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
       "qualified": "LeanOS.QotomCopyRootPublication.publication_requires_acceptance",
       "display": "publication_requires_acceptance",
       "kind": "theorem"
@@ -23057,6 +23075,12 @@
       "source": "LeanOS/QotomCopyRootPublication.lean",
       "qualified": "LeanOS.QotomCopyRootPublication.query_never_authorizes_cpl3",
       "display": "query_never_authorizes_cpl3",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.variants_reject_each_others_inventory",
+      "display": "variants_reject_each_others_inventory",
       "kind": "theorem"
     },
     {

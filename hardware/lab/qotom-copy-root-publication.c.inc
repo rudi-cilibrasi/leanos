@@ -1,5 +1,23 @@
 #include "../../include/qotom_copy_root_builder.h"
 
+/* The protected inventory is A's text, A's two stack pages, B's text and B's
+ * stack. Exactly two audited inventories exist
+ * (LeanOS.QotomCopyRootPublication): the ordinary one, where A's text is one
+ * page (five frames), and the DHCP-subject one (issue #556), where A's text
+ * holds both the generated DHCP client and the echo responder and spans two
+ * pages (six frames). The variant is passed to the generated check, which
+ * accepts only that variant's counts. */
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+#define QOTOM_ROOT_INVENTORY_VARIANT UINT64_C(1)
+#define QOTOM_ROOT_A_TEXT_PAGES 2u
+#else
+#define QOTOM_ROOT_INVENTORY_VARIANT UINT64_C(0)
+#define QOTOM_ROOT_A_TEXT_PAGES 1u
+#endif
+#define QOTOM_ROOT_PROTECTED_PAGES (QOTOM_ROOT_A_TEXT_PAGES + 4u)
+_Static_assert(QOTOM_ROOT_PROTECTED_PAGES <= QOTOM_ROOT_MAX_PROTECTED,
+               "Qotom protected inventory must fit the builder bound");
+
 struct qotom_copy_operand { uint64_t source, destination; };
 extern uint64_t leanos_copy_root_transfer(
     uint64_t closed_root, uint64_t copy_root,
@@ -113,9 +131,24 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         (uintptr_t)__user_b_text_end,&protected_count);
     qotom_add_protected_range((uintptr_t)__user_b_stack_start,
         (uintptr_t)__user_b_stack_end,&protected_count);
-    if(protected_count!=5 ||
+    uintptr_t a_text_pages=((uintptr_t)__user_a_text_end-
+        (uintptr_t)__user_a_text_start+4095u)/4096u;
+    if(protected_count!=QOTOM_ROOT_PROTECTED_PAGES ||
+       a_text_pages!=QOTOM_ROOT_A_TEXT_PAGES ||
        (uintptr_t)__user_a_stack_end-(uintptr_t)__user_a_stack_start!=8192u)
         pre_admission_fail("qotom-root-inventory-count");
+    /* The Qotom path never reaches the q35 boot-plan comparison, so check
+     * here that every page of A's text is the plan's user text leaf
+     * (present, user, read-only, executable): a CPL3 fetch from a second
+     * text page that kept the supervisor default would fault. */
+    for(uintptr_t address=(uintptr_t)__user_a_text_start;
+        address<(uintptr_t)__user_a_text_end;address+=4096u) {
+        uint64_t page=address>>12;
+        if(page>=QOTOM_ROOT_LEAVES ||
+           (source->pt[page]&~(QOTOM_ROOT_ACCESSED|QOTOM_ROOT_DIRTY))!=
+               ((address&~(uintptr_t)4095u)|QOTOM_ROOT_PRESENT|QOTOM_ROOT_USER))
+            pre_admission_fail("qotom-root-user-text");
+    }
     if(!qotom_root_storage_mapped(source,&qotom_closed_root) ||
        !qotom_root_storage_mapped(source,&qotom_copy_root)
 #ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
@@ -178,11 +211,13 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     for(size_t i=0;i<16;++i)
         if(qotom_copy_destination[i]!=(uint8_t)(0xa0u+i))bytes_match=0;
     uint64_t accepted=leanos_qotom_copy_root_publication_query(
+        QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
         (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
         closed_scan,copy_scan,transferred,bytes_match,active_root,1);
     uint64_t errors=leanos_qotom_copy_root_publication_query(
+        QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
         (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
@@ -203,12 +238,14 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     serial_puts(" error-mask=");serial_u64(errors);
     serial_puts(" closed-root-published=");
     serial_u64(leanos_qotom_copy_root_publication_query(
+        QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
         (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
         closed_scan,copy_scan,transferred,bytes_match,active_root,3));
     serial_puts(" copy-root-published=");
     serial_u64(leanos_qotom_copy_root_publication_query(
+        QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
         (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,

@@ -87,6 +87,7 @@ python3 scripts/check-closed-root-return.py --self-test
 python3 scripts/test-closed-root-return-qemu.py
 python3 scripts/check-copy-root-transfer.py --self-test
 python3 scripts/test-copy-root-transfer-qemu.py
+python3 scripts/test-qotom-copy-root-publication-capture.py
 python3 scripts/audit-qotom-entry-integration.py --self-test
 python3 scripts/test-qotom-entry-integration-capture.py
 python3 scripts/test-qotom-exception-integration-capture.py

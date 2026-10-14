@@ -719,7 +719,11 @@ if a.copy_root_publication:
     subprocess.run(['python3', 'scripts/audit-qotom-copy-root-publication.py', '--self-test'],
                    cwd=root, check=True, capture_output=True)
     publication_audit = out / 'copy-root-publication-audit.json'
-    checked = subprocess.run(['python3', 'scripts/audit-qotom-copy-root-publication.py', str(elf)],
+    # The linked inventory must be the one the kernel names to the generated
+    # check (LEANOS_QOTOM_DHCP_SUBJECT selects the six-frame variant).
+    checked = subprocess.run(['python3', 'scripts/audit-qotom-copy-root-publication.py',
+                              '--inventory', 'dhcp-subject' if a.dhcp_subject else 'base',
+                              str(elf)],
                              cwd=root, check=True, capture_output=True)
     publication_audit.write_bytes(checked.stdout)
     subprocess.run(['python3', 'scripts/check-copy-root-transfer.py', '--self-test'],

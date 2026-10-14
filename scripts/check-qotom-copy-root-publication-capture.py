@@ -4,9 +4,17 @@ import re
 
 PREFIX = b'LEANOS-LAB/1 COPY-ROOTS '
 DEC = rb'(0|[1-9][0-9]{0,19})'
+# The two audited protected inventories (LeanOS.QotomCopyRootPublication):
+# (protected frames, removed source aliases, retained present leaves).
+# 'base' is the ordinary image, whose A text is one page; 'dhcp-subject' is
+# the --dhcp-subject image (issue #556), whose A text is two pages.
+INVENTORIES = {'base': (5, 3, 4088), 'dhcp-subject': (6, 4, 4087)}
 
 
-def extract(raw, protocol):
+def extract(raw, protocol, inventory='base'):
+    if inventory not in INVENTORIES:
+        raise ValueError('copy-root publication inventory variant')
+    expected_protected, expected_removed, expected_retained = INVENTORIES[inventory]
     if len(raw) > 131072 or not raw.endswith(b'\n'):
         raise ValueError('copy-root publication capture bounds')
     lines = raw.splitlines(keepends=True)
@@ -42,7 +50,8 @@ def extract(raw, protocol):
                    active_root == closed_root)
     if ((status, protected, removed, retained, aliases, closed_scan, copy_scan,
          transferred, bytes_match, errors, closed_published, copy_published,
-         cpl3) != (0, 5, 3, 4088, 2, 1, 1, 16, 1, 0, 1, 1, 0)
+         cpl3) != (0, expected_protected, expected_removed, expected_retained,
+                   2, 1, 1, 16, 1, 0, 1, 1, 0)
             or not roots_valid):
         raise ValueError('copy-root publication result')
     metadata = {

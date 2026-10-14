@@ -7,6 +7,41 @@ import sys
 
 SYMBOL = 'lab_publish_qotom_copy_roots'
 ROOT_BYTES = 11 * 4096
+PAGE = 4096
+# The two audited protected inventories (LeanOS.QotomCopyRootPublication):
+# A text pages, protected frames, removed source aliases. 'dhcp-subject' is
+# the --dhcp-subject image (issue #556), whose A text holds the DHCP client
+# and the echo responder. Retained present leaves depend on the whole page
+# plan and are checked only by the generated boundary on the machine.
+INVENTORIES = {'base': (1, 5, 3), 'dhcp-subject': (2, 6, 4)}
+RANGES = ('__user_a_text', '__user_a_stack', '__user_b_text', '__user_b_stack')
+
+
+def inventory(symbols, variant):
+    """The linked inventory the wrapper will derive, before any hardware run:
+    the protected frames of A's and B's text and stack, of which the source
+    root A maps A's text and stack (B's are omitted from it)."""
+    if variant not in INVENTORIES:
+        raise ValueError('unknown copy-root inventory variant')
+    text_pages, protected, removed = INVENTORIES[variant]
+    addresses = {}
+    for line in symbols.splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and fields[-1].startswith(RANGES):
+            addresses[fields[-1]] = int(fields[0], 16)
+    pages = {}
+    for name in RANGES:
+        start, end = addresses.get(name + '_start'), addresses.get(name + '_end')
+        if start is None or end is None or start % PAGE or end <= start:
+            raise ValueError(f'copy-root inventory range {name}')
+        pages[name] = (end - start + PAGE - 1) // PAGE
+    observed = (pages['__user_a_text'], sum(pages.values()),
+                pages['__user_a_text'] + pages['__user_a_stack'])
+    if pages['__user_a_stack'] != 2 or observed != (text_pages, protected, removed):
+        raise ValueError(f'copy-root inventory differs from variant {variant}: '
+                         f'A text pages, protected, removed = {observed}')
+    return {'inventory_variant': variant, 'user_a_text_pages': observed[0],
+            'protected_frames': observed[1], 'removed_aliases': observed[2]}
 
 
 def audit(disassembly, symbols):
@@ -77,16 +112,39 @@ def selftest():
         except ValueError:
             continue
         raise SystemExit('copy-root publication audit accepted bad storage')
+    ranges = ('00200000 T __user_a_text_start\n00201000 T __user_a_text_end\n'
+              '00201000 B __user_a_stack_start\n00203000 B __user_a_stack_end\n'
+              '00203000 T __user_b_text_start\n00203800 T __user_b_text_end\n'
+              '00204000 B __user_b_stack_start\n00205000 B __user_b_stack_end\n')
+    two_page = ranges.replace('00201000 T __user_a_text_end', '00201620 T __user_a_text_end')
+    assert inventory(ranges, 'base')['protected_frames'] == 5
+    assert inventory(two_page, 'dhcp-subject')['removed_aliases'] == 4
+    for symbols, variant in ((two_page, 'base'), (ranges, 'dhcp-subject'),
+                             (ranges, 'six-page'),
+                             (ranges.replace('00203000 B __user_a_stack_end',
+                                             '00202000 B __user_a_stack_end'), 'base'),
+                             (ranges.replace('00203000 T __user_b_text_start', ''), 'base')):
+        try:
+            inventory(symbols, variant)
+        except ValueError:
+            continue
+        raise SystemExit('copy-root publication audit accepted a wrong inventory')
 
 
 if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == '--self-test':
         selftest()
         print('Qotom copy-root publication audit mutations rejected')
-    elif len(sys.argv) == 2:
+    elif len(sys.argv) in (2, 4) and (len(sys.argv) == 2 or sys.argv[1] == '--inventory'):
+        elf = sys.argv[-1]
         disassembly = subprocess.check_output(
-            ['objdump', '-d', '--disassemble=' + SYMBOL, sys.argv[1]], text=True)
-        symbols = subprocess.check_output(['nm', '-S', sys.argv[1]], text=True)
-        print(json.dumps(audit(disassembly, symbols), sort_keys=True))
+            ['objdump', '-d', '--disassemble=' + SYMBOL, elf], text=True)
+        symbols = subprocess.check_output(['nm', '-S', elf], text=True)
+        result = audit(disassembly, symbols)
+        if len(sys.argv) == 4:
+            result.update(inventory(subprocess.check_output(['nm', elf], text=True),
+                                    sys.argv[2]))
+        print(json.dumps(result, sort_keys=True))
     else:
-        raise SystemExit('usage: audit-qotom-copy-root-publication.py ELF | --self-test')
+        raise SystemExit('usage: audit-qotom-copy-root-publication.py '
+                         '[--inventory base|dhcp-subject] ELF | --self-test')

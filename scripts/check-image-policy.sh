@@ -284,10 +284,13 @@ for suffix in a b; do
   }
 done
 
-# The runtime page-table constructor must keep U/S limited to the two reviewed
-# leaves, make instruction leaves read-only, and enable NX for all other leaves.
+# The runtime page-table constructor must keep U/S limited to the reviewed
+# subject text and stack leaves, make instruction leaves read-only, and enable
+# NX for all other leaves. A's text is marked page by page over its linked
+# range (one page, or two in the Qotom DHCP-subject lab image).
 [[ "$(grep -Fc 'orl $4, page_table_a(%eax)' boot/boot.S)" -eq 2 ]]
 [[ "$(grep -Fc 'orl $4, page_table_a+8(%eax)' boot/boot.S)" -eq 1 ]]
+grep -Fq 'mov $__user_a_text_end, %ecx' boot/boot.S
 [[ "$(grep -Fc 'orl $4, page_table_b(%eax)' boot/boot.S)" -eq 2 ]]
 grep -Fq 'andl $~2, page_table_a(%eax)' boot/boot.S
 grep -Fq 'andl $~2, page_table_b(%eax)' boot/boot.S

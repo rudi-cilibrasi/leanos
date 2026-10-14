@@ -263,6 +263,21 @@ DHCP subject and the echo subject take turns in subject A:
   exchange is not, because the kernel holds it across the restart.
 * The blocking-IPC audit runs with its `--dhcp-subject` contract. It counts
   one more copy-out site than `--network-subject`: the scrub.
+* A's text now holds the asm subjects, the DHCP client and the echo
+  responder, about 5.5 KiB, so it spans **two pages**. The copy roots
+  therefore protect six frames, not five. The image uses the DHCP-subject
+  inventory variant of `LeanOS.QotomCopyRootPublication` (variant 1:
+  `protected=6 removed-aliases=4 retained-present=4087 aliases=2`), and the
+  `COPY-ROOTS` record must show exactly those counts. The ordinary variant
+  (`protected=5 removed-aliases=3 retained-present=4088`) is rejected for
+  this image, and the reverse holds for every other image. The kernel also
+  requires A's text to span exactly two pages here and one page otherwise,
+  and the lab build refuses an ELF whose inventory differs from its variant.
+  `boot/boot.S` marks every page of A's text user read-only executable, as
+  the generated boot plan classifies it; it used to mark only the first,
+  which would have left the DHCP and echo code on a supervisor page. The
+  Qotom path never reaches the q35 boot-plan comparison, so the copy-root
+  step checks those leaves itself (`qotom-root-user-text`). See [ADR 0017](adr/0017-qotom-kernel-copy-roots.md#production-bound-root-construction-checkpoint).
 
 On the Qotom the two subjects are separated in time, not in address space.
 The q35 `dhcp-subject` image gives each its own address space. None of this
