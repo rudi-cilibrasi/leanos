@@ -93,11 +93,15 @@ endpoint after DHCP (`LeanOS.Wifi.Endpoint.serve`):
 * It answers nothing itself.
 
 The driver keeps the PMK, the TK and the GTK, and it handles group-key
-rotation. The DHCP client stays in the driver program for now; moving it to a
-subject of its own is a follow-up. Without `LEANOS_WIFI_NETWORK_SUBJECT`,
-`connect` with `LEANOS_WIFI_SERVE_SECONDS` still runs the ring-0 responder.
-That is the baseline of the 2026-09-30 capture, kept until the ring-3 capture
-replaces it.
+rotation. Since issue #556 the driver in this mode runs no DHCP client: it
+serves the link-only endpoint (`LeanOS.Wifi.Endpoint.serveLink`) and the
+ring-3 DHCP subject leases the address ([DHCP subject on the
+Qotom](#dhcp-subject-on-the-qotom)). `LEANOS_WIFI_DRIVER_DHCP=1` keeps the
+issue #450 compatibility path, in which the driver leases the address and
+hands it to the network subject in the configuration record; the
+`--network-subject` lab image without `--dhcp-subject` needs it. Without
+`LEANOS_WIFI_NETWORK_SUBJECT`, `connect` with `LEANOS_WIFI_SERVE_SECONDS`
+still runs the ring-0 responder, the baseline of the 2026-09-30 capture.
 
 `scripts/build-qotom-recovery-lab.py --network-subject` extends the
 `--ipc-device-stream` flow of the audited `qotom-blocking-ipc-v1` profile.
@@ -128,8 +132,9 @@ be assignable (no DMA, never Bus Master). Two generated checks decide; any
 mismatch stops at `qotom-broadcom-assign`. The builder therefore requires
 `--broadcom-d3` and `--pci-trust-contract` with `--network-subject`.
 
-None of this has run on the hardware yet. The q35 `network-subject` scenario
-exercises the same subject, endpoint layout and witnesses.
+The 2026-10-12 capture ran this path on the Qotom (issue #450). The q35
+`network-subject` scenario exercises the same subject, endpoint layout and
+witnesses.
 
 ### Maintainer steps for the capture
 
@@ -187,9 +192,12 @@ set recorded in
 3. Run the WiFi capture. This image embeds the PMK: keep it under `build/`,
    never commit it, and never print the passphrase.
 
+   The serve window must stay at most 45 seconds: the lab watchdog is armed
+   for 120 ticks and the join takes about 55 seconds.
+
    ```sh
-   LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" LEANOS_WIFI_DHCP=1 \
-     LEANOS_WIFI_SERVE_SECONDS=90 LEANOS_WIFI_NETWORK_SUBJECT=1 \
+   LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" LEANOS_WIFI_DRIVER_DHCP=1 \
+     LEANOS_WIFI_SERVE_SECONDS=45 LEANOS_WIFI_NETWORK_SUBJECT=1 \
      .lake/build/bin/leanos-wifi-gen connect build/wifi/net450.bin
    python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
      --lab-program build/wifi/net450.bin --ipc-device-stream --network-subject
@@ -214,3 +222,132 @@ set recorded in
 
    The retained serial stream contains decrypted payloads. Redact them before
    committing an observation, and never commit `net450.bin`.
+
+## DHCP subject on the Qotom
+
+Issue #556 moves the DHCP client out of the driver
+([network-subject.md](network-subject.md#dhcp-as-its-own-subject)). With
+`LEANOS_WIFI_NETWORK_SUBJECT` and without `LEANOS_WIFI_DRIVER_DHCP`, the
+`connect` program joins, runs the 4-way handshake, and then serves the
+link-only endpoint (`LeanOS.Wifi.Endpoint.connectAndServeLink`):
+
+* Its first record is the 6-byte link record, our hardware address. It
+  chooses no IPv4 address, and `WIFI 0F17` marks the endpoint up.
+* It yields every decapsulated data frame as Ethernet II, and a 1-byte tick
+  after each second of TSF time.
+* It transmits whatever frame the kernel leaves in its scratch.
+
+The driver keeps the PMK, the TK, the GTK and the frame transport, and
+nothing else.
+
+`scripts/build-qotom-recovery-lab.py --dhcp-subject` extends
+`--network-subject`. The audited `qotom-blocking-ipc-v1` profile has two
+subjects, and the bounded copy roots alias only A's stack pages. So the
+DHCP subject and the echo subject take turns in subject A:
+
+* Subject 2 (B) is the WiFi driver subject, as before.
+* Subject 1 (A) first runs the DHCP subject: `subjects/dhcp/main.c` with the
+  generated client (`NetDhcp.c`), the same sources as the q35 subject B. Its
+  frame buffer and registers are the bottom of A's stack range.
+* When the DHCP subject sends its lease on endpoint 13, the kernel holds it.
+  It zeroes both of A's stack pages through the writable copy-out root, then
+  restarts A fresh at `qotom_echo_subject_entry`. That is the echo subject:
+  `subjects/echo/main.c` with `NetEcho.c`, the same sources as the q35
+  subject C. The echo subject receives the lease on endpoint 13 and answers
+  only for it.
+* Every copy is checked against `leanos_frame_port_check`, with A's current
+  occupant as the caller, the window's owner and the served port. Every
+  device request is checked against `leanos_device_authorize`. Every frame
+  exchange is checked against `leanos_blocking_ipc_event`. The lease
+  exchange is not, because the kernel holds it across the restart.
+* The blocking-IPC audit runs with its `--dhcp-subject` contract. It counts
+  one more copy-out site than `--network-subject`: the scrub.
+
+On the Qotom the two subjects are separated in time, not in address space.
+The q35 `dhcp-subject` image gives each its own address space. None of this
+has run on the hardware yet.
+
+### Maintainer steps for the DHCP-subject capture
+
+Run these on the development host in a checkout of the merged branch, with
+the `<flag set>` of
+`hardware/lab/observations/qotom-device-stream-20261007/manifest.json`, as in
+[Maintainer steps for the capture](#maintainer-steps-for-the-capture). The
+board boots legacy BIOS.
+
+1. Build the canonical inputs:
+
+   ```sh
+   ./scripts/build-image.sh
+   ```
+
+2. Run the keyless smoke test first. The program touches no Broadcom
+   register (the only Broadcom store is the assignment variant's PMCSR
+   write). It feeds the 17 q35 records through the real Qotom path: the copy roots,
+   IPC, the DHCP subject, the scrub and the echo subject.
+
+   ```sh
+   .lake/build/bin/leanos-wifi-gen net-bcm-dhcp build/net/net-bcm-dhcp.bin
+   python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
+     --lab-program build/net/net-bcm-dhcp.bin --ipc-device-stream \
+     --network-subject --dhcp-subject
+   scp build/qotom-wifi-lab/leanos-qotom-lab.elf freebsd@192.168.6.21:/var/tmp/leanos-wifi.elf
+   sha256sum build/qotom-wifi-lab/leanos-qotom-lab.elf
+   ssh freebsd@192.168.6.21 sudo sh /var/tmp/install-ssd.sh <sha256>
+   build/wifi/lab-trial.sh build/wifi/dhcp556-smoke
+   ```
+
+   Expect the following in `build/wifi/dhcp556-smoke/cycle-1/serial.raw`:
+   * the `BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1
+     ... admitted=1` record and `SERVICE grant subject=1 ... bind=accepted`,
+     as in step 2 of the issue #450 steps;
+   * 17 `NET event=deliver` records, the first of 6 bytes;
+   * `NET event=handoff from=dhcp-subject to=echo-subject frame=11
+     lease=10.0.2.16 scrubbed=8192`, then `IPC event=deliver receiver=1
+     endpoint=13 role=echo-subject payload=lease`;
+   * `WIFI 5101`/`5102` records from the frame source: every frame matched
+     the reference;
+   * `LEANOS/10 FINAL status=PASS dhcp-subject=1 echo-subject=1
+     device-holder=2 dhcp-frames=11 lease=10.0.2.16 frames=17 fetches=17
+     replies=8 refusals=4`.
+
+3. Run the WiFi capture. The image embeds the PMK: keep it under `build/`,
+   never commit it, and never print the passphrase. Do not set
+   `LEANOS_WIFI_DHCP` or `LEANOS_WIFI_DRIVER_DHCP`: the driver must lease
+   nothing. Keep the serve window at most 45 seconds. The lab watchdog is
+   armed for 120 ticks and the join takes about 55 seconds. DHCP now runs
+   inside the serve window.
+
+   ```sh
+   LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" \
+     LEANOS_WIFI_SERVE_SECONDS=45 LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     .lake/build/bin/leanos-wifi-gen connect build/wifi/dhcp556.bin
+   python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
+     --lab-program build/wifi/dhcp556.bin --ipc-device-stream \
+     --network-subject --dhcp-subject
+   ```
+
+   Install it as in step 2 and start `build/wifi/lab-trial.sh
+   build/wifi/dhcp556`. Expect `WIFI 0F17` (the link-only endpoint is up),
+   then the DHCP subject's DISCOVER and REQUEST as `NET event=send` records
+   and `WIFI 0F13` transmissions. Once `NET event=handoff ... lease=<leased
+   address>` appears, run these from a LAN host:
+
+   ```sh
+   ping -c 10 <leased address>
+   printf 'ring 3 echo\n' | nc -u -w 2 <leased address> 7
+   ```
+
+   Optionally record the air side with `sudo tcpdump -i eno1 'port 67 or
+   port 68 or host <leased address>'`. Expect:
+   * the DHCP exchange on the wire, with the Qotom's hardware address as
+     the client identifier;
+   * echo replies, with losses only on the radio link;
+   * the UDP payload echoed back;
+   * a final `LEANOS/10 FINAL status=PASS dhcp-subject=1 echo-subject=1 ...`
+     with the leased address.
+
+   If the box resets before `FINAL`, shorten the serve window; never
+   lengthen it past 45 seconds. The retained serial stream contains
+   decrypted payloads. Redact them before committing an observation, and
+   never commit `dhcp556.bin`.

@@ -19,3 +19,4 @@ platform-admission	scripts/check-boot-handoff-host.sh	tests/platform-admission.c
 poststate	scripts/check-poststate-host.sh	tests/poststate-host.c	lake-ir	LeanOS.PostStateProjection	PostStateProjection	leanos_frame_scrub_projection,leanos_frame_budget_capability_row,leanos_mixed_capability_row	lines=18
 device-program-step	scripts/check-generated-executor-host.sh	tests/device-program-exec-host.c	lake-ir	LeanOS.Wifi.Exec	Wifi/Exec	leanos_device_program_step	contains=Generated_device-program_executor:
 network-subject	scripts/check-network-subject-host.sh	tests/net-echo-host.c	lake-ir	LeanOS.NetworkSubject	NetworkSubject,Net/EchoC	leanos_frame_copy_check,leanos_net_reply	contains=generated_responder:
+dhcp-subject	scripts/check-dhcp-subject-host.sh	tests/net-dhcp-host.c	lake-ir	LeanOS.DhcpSubject	DhcpSubject,Net/DhcpClientC	leanos_frame_port_check,leanos_dhcp_step	contains=generated_client:

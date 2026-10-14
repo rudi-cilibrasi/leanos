@@ -30,6 +30,19 @@ The endpoint layout is `LeanOS.Net.FrameSource`'s:
 EAPOL group-key messages stay with the driver (`Responder.respond.groupKey`).
 The loop ends after `us` microseconds of TSF time; the program then halts and
 the driver subject's next invocation returns 0.
+
+## The link-only endpoint (issue #556)
+
+`serveLink` is the same endpoint for a driver that runs no DHCP client
+(`Connect.connectThen`): the driver keeps the PMK, the TK, the GTK and the
+frame transport, and nothing else. Its first record is the 6-byte **link
+record**, our hardware address, instead of the host configuration record:
+the driver chooses no IPv4 address. The ring-3 DHCP subject leases one and
+hands it to the echo subject over IPC (`LeanOS.DhcpSubject`). Because the
+DHCP subject has no clock of its own, the endpoint also yields a 1-byte
+**tick** whenever a second of TSF time has passed since the last one; the
+DHCP subject retransmits on every third tick without an answer
+(`LeanOS.Net.DhcpClient`).
 -/
 namespace LeanOS.Wifi.Endpoint
 
@@ -39,6 +52,15 @@ open LeanOS.Net.FrameSource (rxAt txAt txLenAt configLen)
 /-! Scratch counters (beside the responder's 0x0C10–0x0C44). -/
 def rxCount : UInt32 := 0x0C48
 def txCount : UInt32 := 0x0C4C
+/-- TSF time of the last tick (`serveLink`). -/
+def lastTickAt : UInt32 := 0x0C50
+
+/-- Bytes of the link record: our hardware address. -/
+def linkLen : UInt32 := 6
+/-- Bytes of a tick record. -/
+def tickLen : UInt32 := 1
+/-- TSF microseconds between ticks. -/
+def tickUs : UInt32 := 1000000
 
 namespace Tag
 /-- The endpoint is up; value: the leased address. -/
@@ -51,6 +73,8 @@ def sent : UInt32 := 0x0F13
 def oversize : UInt32 := 0x0F14
 def summaryRx : UInt32 := 0x0F15
 def summaryTx : UInt32 := 0x0F16
+/-- The link-only endpoint is up (issue #556); value: 0, no address. -/
+def linkReady : UInt32 := 0x0F17
 end Tag
 
 /-- Transmit the reply the kernel left at `txAt`, if any, and clear its
@@ -91,23 +115,34 @@ def takeTx (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig) : ProgM Unit :
   li 0 0
   emit (.memStore 4 0 txLenAt (.imm 0))
 
-/-- Serve the frame endpoint for `us` microseconds. -/
-def serve (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
-    (us : UInt32) : ProgM Unit := do
+/-- Serve the frame endpoint for `us` microseconds: with `link` the
+link-only endpoint of issue #556 (the link record, then frames and ticks),
+otherwise the issue #450 endpoint (the host configuration record with the
+driver's leased address, then frames). -/
+def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
+    (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32) : ProgM Unit := do
   li 1 0
   r32 2 0x180
   emit (.memStore 4 1 startAt (.reg 2))
   emit (.memStore 4 1 rxCount (.imm 0))
   emit (.memStore 4 1 txCount (.imm 0))
   emit (.memStore 4 1 txLenAt (.imm 0))
-  -- host configuration record: our hardware address and the leased address
-  li 2 rxAt
-  storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
-  copyFixed (rxAt + 6) DevDhcp.yiaddrAt 4
-  li 1 0
-  emit (.memLoad 4 2 1 DevDhcp.yiaddrAt)
-  print Tag.ready 2
-  emit (.yield (.imm configLen))
+  if link then
+    -- link record: our hardware address only; the driver leases nothing
+    emit (.memStore 4 1 lastTickAt (.reg 2))
+    li 2 rxAt
+    storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
+    printImm Tag.linkReady 0
+    emit (.yield (.imm linkLen))
+  else
+    -- host configuration record: our hardware address and the leased address
+    li 2 rxAt
+    storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
+    copyFixed (rxAt + 6) DevDhcp.yiaddrAt 4
+    li 1 0
+    emit (.memLoad 4 2 1 DevDhcp.yiaddrAt)
+    print Tag.ready 2
+    emit (.yield (.imm configLen))
   let top ← newLabel
   let skip ← newLabel
   let out ← newLabel
@@ -118,6 +153,20 @@ def serve (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxCon
   emit (.memLoad 4 7 1 startAt)
   emit (.alu .sub 6 (.reg 7))
   emit (.branch .geu 6 (.imm us) out)
+  if link then
+    -- a tick once a second of TSF time has passed since the last one
+    let noTick ← newLabel
+    r32 6 0x180
+    mov 8 6
+    li 1 0
+    emit (.memLoad 4 7 1 lastTickAt)
+    emit (.alu .sub 6 (.reg 7))
+    emit (.branch .ltu 6 (.imm tickUs) noTick)
+    emit (.memStore 4 1 lastTickAt (.reg 8))
+    emit (.memStore 1 1 rxAt (.imm 0))
+    emit (.yield (.imm tickLen))
+    emit (.jump top)
+    place noTick
   Mlme.rxFrame 100
   emit (.branch .ltu 5 (.imm (24 + 16 + 4)) skip)
   -- protected data from the BSSID
@@ -192,10 +241,29 @@ def serve (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxCon
   emit (.memLoad 4 2 1 rxCount); print Tag.summaryRx 2
   emit (.memLoad 4 2 1 txCount); print Tag.summaryTx 2
 
-/-- Connect, lease an address, then serve the frame endpoint for `us`
-microseconds. The image embeds the PMK: never commit it. -/
+/-- Serve the issue #450 endpoint (host configuration record) for `us`
+microseconds. -/
+def serve (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
+    (us : UInt32) : ProgM Unit :=
+  serveWith false L C data us
+
+/-- Serve the link-only endpoint of issue #556 for `us` microseconds. -/
+def serveLink (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
+    (us : UInt32) : ProgM Unit :=
+  serveWith true L C data us
+
+/-- Connect, lease an address with the driver's own DHCP client, then serve
+the frame endpoint for `us` microseconds (issue #450; the compatibility path
+of `LEANOS_WIFI_DRIVER_DHCP`). The image embeds the PMK: never commit it. -/
 def connectAndServe (fw : Bcm43224.Firmware) (cfg : LeanOS.Wifi.NPhy.PhyCfg)
     (bssid pmk : ByteArray) (us : UInt32) : ProgM Unit :=
   Connect.connectDhcpThen fw cfg bssid pmk fun L C data => serve L C data us
+
+/-- Connect without a DHCP client, then serve the link-only endpoint for
+`us` microseconds (issue #556): the ring-3 DHCP subject leases the address.
+The image embeds the PMK: never commit it. -/
+def connectAndServeLink (fw : Bcm43224.Firmware) (cfg : LeanOS.Wifi.NPhy.PhyCfg)
+    (bssid pmk : ByteArray) (us : UInt32) : ProgM Unit :=
+  Connect.connectThen fw cfg bssid pmk fun L C data => serveLink L C data us
 
 end LeanOS.Wifi.Endpoint

@@ -267,12 +267,34 @@ NETWORK_EXPECTED = {
 }
 
 
+# Issue #556: the DHCP-subject continuation. A first calls the ring-3 DHCP
+# subject's C entry; the kernel restarts it at the echo subject's entry,
+# whose trampoline calls the echo subject's C entry. Frames still cross
+# through the audited copy roots; the zeroing of A's stack pages at the
+# hand-off reuses the frame copy-out, which the compiler then keeps out of
+# line, so the transfer sites are counted over the dispatcher and the
+# out-of-line qotom_net_* helpers together: the first exchange's two, one
+# frame copy-out (shared with the scrub) and one reply copy-in. Copies are
+# checked against the frame port witness instead of the single-holder copy
+# witness.
+DHCP_EXPECTED = {
+    **NETWORK_EXPECTED,
+    'copy_transfer_calls': 4,
+    'network_entry_calls': 0,
+    'dhcp_entry_calls': 1,
+    'echo_entry_calls': 1,
+    'network_witnesses': {'leanos_blocking_ipc_event': True,
+                          'leanos_frame_port_check': True,
+                          'leanos_device_authorize': True},
+}
+
+
 def references(rows, target):
     return sum(re.search(rf'<{re.escape(target)}(?:>|[.+])', row[2]) is not None
                for row in rows)
 
 
-def network_facts(elf):
+def network_facts(elf, dhcp_subject=False):
     symbols, rows = load(elf)
     user_a = body(symbols, rows, 'qotom_blocking_user_a')
     # The dispatcher and the qotom_net_* helpers the compiler kept out of
@@ -285,7 +307,7 @@ def network_facts(elf):
                and any(row[0] == symbols[name][0] for row in rows)]
     code = [row for rows_ in bodies for row in rows_]
     assign = body(symbols, rows, 'lab_broadcom_assign')
-    return {
+    facts = {
         'broadcom_assign_calls': calls(body(symbols, rows, 'lab_stream_bind'),
                                        'lab_broadcom_assign'),
         'broadcom_assign_witnesses': {name: references(assign, name) > 0 for name in (
@@ -295,9 +317,16 @@ def network_facts(elf):
         'adhoc_broadcom_assign': b'pmcsr=d3hot,d0' in Path(elf).read_bytes(),
         'network_entry_calls': calls(user_a, 'qotom_network_subject_main'),
         'network_witnesses': {name: calls(code, name) > 0 for name in (
-            'leanos_blocking_ipc_event', 'leanos_frame_copy_check',
+            'leanos_blocking_ipc_event',
+            'leanos_frame_port_check' if dhcp_subject else 'leanos_frame_copy_check',
             'leanos_device_authorize')},
     }
+    if dhcp_subject:
+        facts['copy_transfer_calls'] = calls(code, 'leanos_copy_root_transfer')
+        facts['dhcp_entry_calls'] = calls(user_a, 'qotom_dhcp_subject_main')
+        facts['echo_entry_calls'] = calls(
+            body(symbols, rows, 'qotom_echo_subject_entry'), 'qotom_echo_subject_main')
+    return facts
 
 
 def stream_facts(elf):
@@ -319,11 +348,15 @@ def validate(observed, expected_facts=EXPECTED):
         raise ValueError('blocking profile retains PIT programming')
 
 
-def check(elf, device_stream=False, network_subject=False):
+def check(elf, device_stream=False, network_subject=False, dhcp_subject=False):
     runpy.run_path(str(ROOT / 'scripts/audit-qotom-entry-integration.py'))['check'](
         elf, exception_integration=True, blocking_ipc_integration=True)
     observed = facts(elf)
-    if network_subject:
+    if dhcp_subject:
+        observed.update(stream_facts(elf))
+        observed.update(network_facts(elf, dhcp_subject=True))
+        validate(observed, DHCP_EXPECTED)
+    elif network_subject:
         observed.update(stream_facts(elf))
         observed.update(network_facts(elf))
         validate(observed, NETWORK_EXPECTED)
@@ -422,11 +455,14 @@ if __name__ == '__main__':
                         help='audit the issue #449 keyboard stream continuation')
     parser.add_argument('--network-subject', action='store_true',
                         help='audit the issue #450 network-subject continuation')
+    parser.add_argument('--dhcp-subject', action='store_true',
+                        help='audit the issue #556 DHCP-subject continuation')
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.elf:
-        print(json.dumps(check(args.elf, args.device_stream, args.network_subject),
+        print(json.dumps(check(args.elf, args.device_stream, args.network_subject,
+                               args.dhcp_subject),
                          indent=2, sort_keys=True))
     else:
         parser.error('provide an ELF or --self-test')

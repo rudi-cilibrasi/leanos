@@ -1397,6 +1397,16 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
                         "}\n",
                         encoding="utf-8",
                     )
+                elif entry.get("generated") == "NetDhcp":
+                    # The DHCP subject's client (#556) over its five hooks.
+                    (build / "NetDhcp.c").write_text(
+                        "uint64_t leanos_dhcp_step(uint64_t t, uint64_t len) {\n"
+                        "    uint64_t v = dhcp_gen_ld(t, 0) ^ dhcp_gen_rd8(t, 0);\n"
+                        "    v = dhcp_gen_st(dhcp_gen_wr8(t, 0, (uint32_t)v), 0, v);\n"
+                        "    return dhcp_gen_value(v, len) & 0;\n"
+                        "}\n",
+                        encoding="utf-8",
+                    )
                 elif entry.get("generated"):
                     self.fail(f"no fixture stub for generated module {entry['generated']}")
             graph = Path(directory) / "objects.mk"

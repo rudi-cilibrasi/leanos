@@ -51,6 +51,7 @@ import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
 import LeanOS.NetworkSubject
+import LeanOS.DhcpSubject
 
 /-! # Stable security-claim contract
 
@@ -4159,6 +4160,70 @@ theorem network_subject_confinement {σ : Type} (models : Nat → Wifi.Sim.Devic
   ⟨NetworkSubject.nonholder_refused, NetworkSubject.run_mem_outside_window,
    NetworkSubject.step_tx_changed, NetworkSubject.frameCopyCheck_nonholder,
    fun sys hcaps ts hg => NetworkSubject.network_no_device_effects models sys hcaps ts hg⟩
+
+/-- SC-DHCP-SUBJECT-SEPARATION: the DHCP client is a ring-3 subject of its
+own, separate from the echo subject and from the driver. A fetch or send by
+a subject holding no frame port, the driver included, is refused without
+effect, and so is one by the port holder the endpoint does not serve; across
+any run, memory a subject did not store to itself changes only inside that
+subject's own window; the echo subject's lease changes only by the DHCP
+subject's hand-off, the endpoint serves the echo subject only once it holds
+that lease, and the responder answers only frames that ask for the leased
+address; the generated port witness admits only a port holder, only for a
+window labelled its own, and refuses every other subject; and neither the
+DHCP subject nor the echo subject, never granted a device capability, can
+cause any device effect. -/
+theorem dhcp_subject_separation {σ : Type} (models : Nat → Wifi.Sim.Device σ) :
+    (∀ (p : DhcpSubject.Ports) (s : DhcpSubject.State) (who : Nat),
+      who ≠ DhcpSubject.dhcp → who ≠ DhcpSubject.echo →
+        (∀ addr, DhcpSubject.step p s (.fetch who addr) = (s, .refused)) ∧
+        (∀ addr len, DhcpSubject.step p s (.send who addr len) = (s, .refused))) ∧
+    (∀ (p : DhcpSubject.Ports) (s : DhcpSubject.State) (who : Nat), who ≠ s.route →
+        (∀ addr, DhcpSubject.step p s (.fetch who addr) = (s, .refused)) ∧
+        (∀ addr len, DhcpSubject.step p s (.send who addr len) = (s, .refused))) ∧
+    (∀ (p : DhcpSubject.Ports) (s : DhcpSubject.State) (ops : List DhcpSubject.Op) (x a : Nat),
+      (∀ op ∈ ops, ∀ addr bytes, op ≠ .write x addr bytes) →
+      ¬ DhcpSubject.inOwnWindow p x a →
+      (DhcpSubject.run p s ops).mem x a = s.mem x a) ∧
+    (∀ (p : DhcpSubject.Ports) (s : DhcpSubject.State) (op : DhcpSubject.Op),
+      (DhcpSubject.step p s op).1.lease ≠ s.lease →
+        ∃ mac ip, op = .handoff DhcpSubject.dhcp mac ip ∧ s.route = DhcpSubject.dhcp ∧
+          (DhcpSubject.step p s op).1.lease = some (mac, ip)) ∧
+    (∀ (p : DhcpSubject.Ports) (mem : Nat → Nat → UInt8) (ops : List DhcpSubject.Op),
+      (DhcpSubject.run p (DhcpSubject.State.boot mem) ops).route = DhcpSubject.echo →
+        ∃ mac ip, (DhcpSubject.run p (DhcpSubject.State.boot mem) ops).lease = some (mac, ip) ∧
+          ∀ f r, Net.Echo.replyFrame f mac ip = some r → DhcpSubject.askedFor f = ip) ∧
+    (∀ subject req addr len base limit : UInt64,
+      DhcpSubject.framePortCheck subject req addr len base limit = 0 →
+        (subject = 2 ∨ subject = 3) ∧ (req >>> 24) &&& 0xff = subject ∧
+          (req >>> 16) &&& 0xff = subject ∧
+          NetworkSubject.Window.covers ⟨base.toNat, limit.toNat⟩ addr.toNat len.toNat = true) ∧
+    (∀ subject req addr len base limit : UInt64, subject ≠ 2 → subject ≠ 3 →
+      DhcpSubject.framePortCheck subject req addr len base limit = 1) ∧
+    (∀ (sys : DeviceCapability.System σ), sys.deviceCaps = KeyboardEcho.bootDeviceCaps →
+      ∀ ts : List DeviceCapability.Transition,
+        (∀ d, DeviceCapability.Transition.grant DhcpSubject.dhcp d ∉ ts) →
+        (∀ program, DeviceCapability.step models (DeviceCapability.run models sys ts)
+            (.bind DhcpSubject.dhcp program) =
+              (DeviceCapability.run models sys ts, .denied)) ∧
+        (∀ fuel, DeviceCapability.step models (DeviceCapability.run models sys ts)
+            (.invoke DhcpSubject.dhcp fuel) =
+              (DeviceCapability.run models sys ts, .denied))) ∧
+    (∀ (sys : DeviceCapability.System σ), sys.deviceCaps = KeyboardEcho.bootDeviceCaps →
+      ∀ ts : List DeviceCapability.Transition,
+        (∀ d, DeviceCapability.Transition.grant DhcpSubject.echo d ∉ ts) →
+        (∀ program, DeviceCapability.step models (DeviceCapability.run models sys ts)
+            (.bind DhcpSubject.echo program) =
+              (DeviceCapability.run models sys ts, .denied)) ∧
+        (∀ fuel, DeviceCapability.step models (DeviceCapability.run models sys ts)
+            (.invoke DhcpSubject.echo fuel) =
+              (DeviceCapability.run models sys ts, .denied))) :=
+  ⟨DhcpSubject.nonholder_refused, DhcpSubject.unrouted_refused,
+   DhcpSubject.run_mem_outside_windows, DhcpSubject.step_lease_changed,
+   DhcpSubject.echo_answers_only_lease, DhcpSubject.framePortCheck_own_window,
+   DhcpSubject.framePortCheck_nonholder,
+   fun sys hcaps ts hg => DhcpSubject.dhcp_no_device_effects models sys hcaps ts hg,
+   fun sys hcaps ts hg => DhcpSubject.echo_no_device_effects models sys hcaps ts hg⟩
 
 /-- SC-TIMER-CAPABILITY: the PIT alarm is armed only by an accepted arm from
 the timer-capability holder with a count in `1 .. 65535`; an arm from any

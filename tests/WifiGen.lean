@@ -5,6 +5,7 @@ import LeanOS.Storage.Ahci
 import LeanOS.Storage.AhciRead
 import LeanOS.Net.Rtl8168
 import LeanOS.Net.FrameSource
+import LeanOS.Net.DhcpSource
 import LeanOS.Wifi.Endpoint
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
@@ -125,11 +126,19 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
         | some c => { base with txChainOverride := some c }
         | none => base
       -- LEANOS_WIFI_NETWORK_SUBJECT: serve the frame endpoint of the ring-3
-      -- network subject (issue #450) instead of answering in the driver.
+      -- subjects instead of answering in the driver. The driver runs no DHCP
+      -- client and serves the link-only endpoint (issue #556): the ring-3
+      -- DHCP subject leases the address. LEANOS_WIFI_DRIVER_DHCP keeps the
+      -- issue #450 compatibility path, where the driver leases the address
+      -- and hands it to the network subject in a configuration record.
       let endpoint := (← IO.getEnv "LEANOS_WIFI_NETWORK_SUBJECT").isSome
+      let driverDhcp := (← IO.getEnv "LEANOS_WIFI_DRIVER_DHCP").isSome
       return if let some secs := serve then
-               if endpoint then
+               if endpoint && driverDhcp then
                  LeanOS.Wifi.Endpoint.connectAndServe fw cfg6 bssid pmk
+                   (secs * 1000000).toUInt32
+               else if endpoint then
+                 LeanOS.Wifi.Endpoint.connectAndServeLink fw cfg6 bssid pmk
                    (secs * 1000000).toUInt32
                else
                  LeanOS.Wifi.Responder.connectAndServe fw cfg6 bssid pmk
@@ -139,6 +148,8 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("ahci-identify", pure LeanOS.Storage.Ahci.program),
    ("net-q35-frames", pure LeanOS.Net.FrameSource.program),
    ("net-bcm-frames", pure LeanOS.Net.FrameSource.bcmProgram),
+   ("net-q35-dhcp", pure LeanOS.Net.DhcpSource.program),
+   ("net-bcm-dhcp", pure LeanOS.Net.DhcpSource.bcmProgram),
    ("ahci-q35-service", pure LeanOS.Storage.AhciRead.program),
    ("rtl8168-arp", pure LeanOS.Net.Rtl8168.program),
    ("kbd", do

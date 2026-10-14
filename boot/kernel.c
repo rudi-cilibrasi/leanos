@@ -153,6 +153,11 @@ extern uint64_t page_directory_b[], page_table_b[];
      defined(LEANOS_CONSOLE_SERVER_SCENARIO))
 #error "the network-subject image is the three-subject image with a frame source and no assigned device"
 #endif
+#if defined(LEANOS_DHCP_SUBJECT_SCENARIO) && \
+    (!defined(LEANOS_THREE_SUBJECT_SCENARIO) || defined(LEANOS_DEVICE_SERVICE_SCENARIO) || \
+     defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_NETWORK_SUBJECT_SCENARIO))
+#error "the dhcp-subject image is the three-subject image with a frame source, B and C built from subjects/, and no assigned device"
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 /* Third subject C (issue #472), linked only into the three-subject image. */
 extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
@@ -4770,7 +4775,7 @@ static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
     uint64_t original_flags, uint64_t original_rsp, uint64_t owner);
 static void check_initial_b_frame(const volatile uint64_t *frame);
 #if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO) && \
-    !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+    !defined(LEANOS_NETWORK_SUBJECT_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
 static unsigned three_subject_step;  /* 0 C, 1 B, 2 A, 3 C woken */
 static uint64_t three_subject_sent0, three_subject_sent1;
 #endif
@@ -4799,8 +4804,9 @@ static void three_subject_require_root(const uint64_t *root) {
 }
 
 #if !defined(LEANOS_CONSOLE_SERVER_SCENARIO) && !defined(LEANOS_ENDPOINT_DIRECTORY_SCENARIO)
-/* The network-subject image has its own dispatcher (network_subject_syscall). */
-#ifndef LEANOS_NETWORK_SUBJECT_SCENARIO
+/* The network-subject and dhcp-subject images have their own dispatchers
+   (network_subject_syscall, dhcp_subject_syscall). */
+#if !defined(LEANOS_NETWORK_SUBJECT_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
 static uint64_t three_subject_syscall(uint64_t number, uint64_t arg0,
                                       uint64_t arg1, uint64_t arg2) {
     if (number == 7 && current_subject == 3 && three_subject_step == 0) {
@@ -6412,6 +6418,687 @@ static void network_switch(uint64_t *target, uint64_t target_owner,
         return;
     }
     fail("network-switch");
+}
+#endif
+
+#ifdef LEANOS_DHCP_SUBJECT_SCENARIO
+/* DHCP subject (issue #556; docs/network-subject.md, "DHCP as its own
+   subject", LeanOS.DhcpSubject).  This image is the three-subject image with
+   subject B built from subjects/dhcp and subject C from subjects/echo by the
+   subject template.
+
+   A, the driver subject, holds the device capability for the frame source:
+   the Lean device program `net-q35-dhcp` (LeanOS.Net.DhcpSource), which
+   drives no device and stands in for the WiFi driver program serving the
+   link-only endpoint (LeanOS.Wifi.Endpoint.serveLink).  Each invocation
+   (syscall 60) resumes it until it yields the next record: the 6-byte link
+   record (the hardware address), a 1-byte tick, or an Ethernet frame.  The
+   kernel returns the record's length and a sequence number to A, never the
+   record, and A sends both words on endpoint 12.  The driver gives no IPv4
+   address.
+
+   B, the DHCP subject, and C, the echo subject, each hold one frame port
+   with its own window, the subject's own stack page, and no device
+   capability.  The endpoint serves one port at a time, its route: B's,
+   until B hands its lease to C over endpoint 13; from then on C's.  The
+   kernel delivers A's send on endpoint 12 to the routed holder, and decides
+   every copy request (64 fetch, 65 send) from its own port table, checked
+   against the generated witness `leanos_frame_port_check`
+   (DhcpSubject.framePortCheck_fetch, _send, _nonholder, _own_window): only
+   the routed holder, only for its own window, only in the right endpoint
+   state and only for a record or frame length.  Accepted copies go through
+   the SMAP user-copy window under the caller's address space.  A frame a
+   holder sends lands in the scratch's transmit slot, which the frame source
+   checks at its next invocation: against the reference DHCP client before
+   the hand-off, against the reference responder for the leased address
+   after it.
+
+   The device table is checked at boot against `leanos_device_authorize`
+   (KeyboardEcho.deviceAuthorize: only A holds device 0), and every exchange
+   on endpoints 12 and 13 against `leanos_blocking_ipc_event`, the woken
+   subject in the model's receiver role. */
+extern char user_b_template_text[], user_c_template_text[];
+#define DHCP_FRAME_ENDPOINT 12u
+#define DHCP_LEASE_ENDPOINT 13u
+#define DHCP_STACK_BYTES 2048u
+#define DHCP_DRIVER 1u
+#define DHCP_CLIENT 2u
+#define DHCP_ECHO 3u
+/* isr80's typed paths (include/leanos/isr80-path.h); THREE_SUBJECT_C_BLOCKED
+   and _B_RAN start B and A fresh. */
+#define DHCP_A_TO_B LEANOS_ISR80_PATH_DHCP_A_WAKES_B
+#define DHCP_B_TO_A LEANOS_ISR80_PATH_DHCP_B_RESUMES_A
+#define DHCP_B_TO_C LEANOS_ISR80_PATH_DHCP_B_WAKES_C
+#define DHCP_C_TO_B LEANOS_ISR80_PATH_DHCP_C_RESUMES_B
+#define DHCP_A_TO_C LEANOS_ISR80_PATH_DHCP_A_WAKES_C
+#define DHCP_C_TO_A LEANOS_ISR80_PATH_DHCP_C_RESUMES_A
+/* Phases: who runs, and why. */
+#define DHCP_PHASE_C_FRESH 0u
+#define DHCP_PHASE_B_FRESH 1u
+#define DHCP_PHASE_A_FRESH 2u
+#define DHCP_PHASE_B_SERVES 3u
+#define DHCP_PHASE_A_RESUMED 4u
+#define DHCP_PHASE_C_LEASED 5u
+#define DHCP_PHASE_B_HANDED 6u
+#define DHCP_PHASE_C_SERVES 7u
+/* The model's device index of the frame source, and one other index. */
+#define DHCP_DEVICE 0u
+#define DHCP_OTHER_DEVICE 1u
+#define DHCP_WITNESS_ACCEPT 1u
+#define DHCP_WITNESS_REFUSE 2u
+/* A refused request: bit 63 and the reason. */
+#define DHCP_REFUSED (UINT64_C(1) << 63)
+#define DHCP_NO_DEVICE 7u
+/* LeanOS.Net.FrameSource's endpoint layout in executor scratch. */
+#define DHCP_RX_AT 0x3E000u
+#define DHCP_TX_AT 0x3E800u
+#define DHCP_TX_LEN_AT 0x3F000u
+#define DHCP_LINK_BYTES 6u
+#define DHCP_TICK_BYTES 1u
+#define DHCP_FRAME_MIN 14u
+#define DHCP_FRAME_MAX 1514u
+/* LeanOS.DhcpSubject: operations of the request word. */
+#define DHCP_OP_FETCH 1u
+#define DHCP_OP_SEND 2u
+#define DHCP_BUDGET 200000u
+#define DHCP_STEP_LIMIT UINT64_C(8000000)
+/* The frame source's records (LeanOS.Net.FrameSource.Tag). */
+#define DHCP_TAG_REPLY_MATCHED 0x5101u
+#define DHCP_TAG_NO_REPLY_MATCHED 0x5102u
+#define DHCP_MODEL_SENDER 1u
+#define DHCP_MODEL_RECEIVER 2u
+
+#define WIFI_HOOKS_DIRECT 1
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#include "../hardware/wifi/wifi-gen-exec.h"
+#pragma GCC diagnostic pop
+#include "dhcp-subject-program.h"
+
+static const char *const dhcp_reasons[] = {
+    "none", "not-holder", "not-own-window", "not-routed", "endpoint-state",
+    "frame-length", "outside-window", "unknown-operation"
+};
+
+/* The widest policy the frame source may declare (`q35FrameSourcePolicy`). */
+static const struct wifi_policy dhcp_source_profile = {
+    1, 0, 0x200u, 0, 0, 0, 0, 0, { 0 }, 0, { { 0, 0, 0, 0 } } };
+
+/* Indexed by subject: 1 when the subject holds the device capability for
+   the frame source. */
+static const uint8_t dhcp_device_capabilities[4] = {
+    [DHCP_DRIVER] = 1,
+};
+/* Indexed by subject: 1 when the subject holds a frame port. */
+static const uint8_t dhcp_port_holders[4] = {
+    [DHCP_CLIENT] = 1,
+    [DHCP_ECHO] = 1,
+};
+
+static const uint64_t dhcp_ipc_words[4] = {
+    0x0000000100010101ull, 0x0000000100010202ull,
+    0x0000000200020303ull, 0x0001000200020404ull,
+};
+
+static struct wifi_vm dhcp_vm;
+static unsigned dhcp_bound, dhcp_ended, dhcp_phase;
+/* The port the endpoint serves: B's until the hand-off, then C's. */
+static uint64_t dhcp_route = DHCP_CLIENT;
+static uint64_t dhcp_seq, dhcp_rx_len, dhcp_rx_pending, dhcp_tx_pending;
+static uint64_t dhcp_tx_len, dhcp_sent_len, dhcp_sent_seq, dhcp_record_port;
+static uint64_t dhcp_fetches, dhcp_sends, dhcp_checked, dhcp_refusals;
+static uint64_t dhcp_lease_mac, dhcp_lease_ip, dhcp_handoff_seq;
+static uint64_t dhcp_client_records, dhcp_echo_records;
+/* Blocking-IPC cycles: B on endpoint 12, C on endpoint 13, C on endpoint
+   12 (LeanOS.BlockingIPC's four edges each). */
+static uint64_t dhcp_cycle_b12, dhcp_cycle_c13, dhcp_cycle_c12, dhcp_ipc_edges;
+static unsigned dhcp_b_waiting, dhcp_c_waiting_lease, dhcp_c_waiting;
+
+/* The frame source drives no device: every configuration and MMIO hook
+   fail-stops (its policy admits none), it has no DMA, and it never waits. */
+__attribute__((noinline, noipa)) uint32_t wifi_hook_cfg_read32(uint32_t off) {
+    (void)off; fail("dhcp-source-config");
+}
+__attribute__((noinline, noipa)) void wifi_hook_cfg_write32(uint32_t off, uint32_t value) {
+    (void)off; (void)value; fail("dhcp-source-config");
+}
+uint32_t wifi_hook_mmio_read32(uint32_t off) { (void)off; fail("dhcp-source-mmio"); }
+uint16_t wifi_hook_mmio_read16(uint32_t off) { (void)off; fail("dhcp-source-mmio"); }
+uint8_t wifi_hook_mmio_read8(uint32_t off) { (void)off; fail("dhcp-source-mmio"); }
+void wifi_hook_mmio_write32(uint32_t off, uint32_t value) {
+    (void)off; (void)value; fail("dhcp-source-mmio");
+}
+void wifi_hook_mmio_write16(uint32_t off, uint16_t value) {
+    (void)off; (void)value; fail("dhcp-source-mmio");
+}
+void wifi_hook_mmio_write8(uint32_t off, uint8_t value) {
+    (void)off; (void)value; fail("dhcp-source-mmio");
+}
+uint32_t wifi_hook_phys(uint32_t off) { (void)off; return 0; }
+__attribute__((noinline, noipa)) void wifi_hook_delay_us(uint32_t us) {
+    (void)us; fail("dhcp-source-delay");
+}
+
+/* The frame source's one record per record: the frame the routed holder
+   sent matched the reference (the reference DHCP client before the
+   hand-off, the reference responder for the lease after it), or there was
+   rightly none.  The kernel also requires it to name the record just
+   delivered and the length the holder sent. */
+void wifi_hook_print(uint32_t tag, uint32_t value) {
+    uint64_t record = (value >> 16) + 1u;
+    uint64_t bytes = value & 0xffffu;
+    if (tag == DHCP_TAG_NO_REPLY_MATCHED) {
+        record = (uint64_t)value + 1u;
+        bytes = 0;
+    } else if (tag != DHCP_TAG_REPLY_MATCHED) {
+        fail("dhcp-source-record");
+    }
+    if (record != dhcp_seq || bytes != dhcp_sent_len ||
+        (bytes != 0 && dhcp_sent_seq != dhcp_seq))
+        fail("dhcp-source-check");
+    dhcp_checked++;
+    serial_puts(LEANOS_SERIAL_10_NET " event=checked frame=");
+    serial_u64(record);
+    serial_puts(dhcp_record_port == DHCP_CLIENT ? " port=2" : " port=3");
+    if (bytes != 0) {
+        serial_puts(" sent-bytes=");
+        serial_u64(bytes);
+    } else {
+        serial_puts(" sent=none");
+    }
+    serial_puts(dhcp_record_port == DHCP_CLIENT ? " reference=dhcp-client\n"
+                                                : " reference=echo-responder\n");
+}
+
+/* The slots the build rule produced: entry and template marker at the first
+   text byte, a 2048-byte stack at the bottom of the one-page stack range,
+   text within one page. */
+static void check_dhcp_subject_slots(void) {
+    if ((uint64_t)user_b_entry != (uint64_t)__user_b_text_start ||
+        (uint64_t)user_b_template_text != (uint64_t)__user_b_text_start ||
+        (uint64_t)user_b_stack != (uint64_t)__user_b_stack_start ||
+        (uint64_t)user_b_stack_top - (uint64_t)user_b_stack != DHCP_STACK_BYTES ||
+        (uint64_t)__user_b_stack_end - (uint64_t)__user_b_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_b_text_end - (uint64_t)__user_b_text_start > PAGE_BYTES)
+        fail("dhcp-subject-slot");
+    if ((uint64_t)user_c_entry != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_template_text != (uint64_t)__user_c_text_start ||
+        (uint64_t)user_c_stack != (uint64_t)__user_c_stack_start ||
+        (uint64_t)user_c_stack_top - (uint64_t)user_c_stack != DHCP_STACK_BYTES ||
+        (uint64_t)__user_c_stack_end - (uint64_t)__user_c_stack_start != PAGE_BYTES ||
+        (uint64_t)__user_c_text_end - (uint64_t)__user_c_text_start > PAGE_BYTES)
+        fail("echo-subject-slot");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=2 source=subjects/dhcp generated=NetDhcp entry=text-start stack=2048 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_10_IPC " event=subject subject=3 source=subjects/echo generated=NetEcho entry=text-start stack=2048 result=PASS\n");
+}
+
+/* Subject `who`'s window, the stack page its address space maps writable
+   for it alone; 0 for a subject holding no port. */
+static uint64_t dhcp_window_base(uint64_t who) {
+    return who == DHCP_CLIENT ? (uint64_t)__user_b_stack_start :
+        who == DHCP_ECHO ? (uint64_t)__user_c_stack_start : 0;
+}
+static uint64_t dhcp_window_limit(uint64_t who) {
+    return who == DHCP_CLIENT ? (uint64_t)__user_b_stack_end :
+        who == DHCP_ECHO ? (uint64_t)__user_c_stack_end : 0;
+}
+
+static uint64_t dhcp_request(uint64_t op, uint64_t pending, uint64_t route, uint64_t owner) {
+    return op | pending << 8 | (route & 0xffu) << 16 | (owner & 0xffu) << 24;
+}
+
+static uint64_t dhcp_device_expected(uint64_t subject, uint64_t device) {
+    return dhcp_device_capabilities[subject] && device == DHCP_DEVICE
+        ? DHCP_WITNESS_ACCEPT : DHCP_WITNESS_REFUSE;
+}
+
+/* Before any subject runs: the device table names exactly one holder, A,
+   and grants exactly what the generated device witness accepts; the two
+   port holders hold no device capability and own disjoint windows; and the
+   port witness admits each holder only for its own window, only while the
+   endpoint serves it, and refuses the driver every copy. */
+static void dhcp_install(void) {
+    uint64_t holders = 0;
+    if (dhcp_device_capabilities[0] != 0 || dhcp_port_holders[0] != 0 ||
+        dhcp_port_holders[DHCP_DRIVER] != 0 ||
+        leanos_device_authorize(0, DHCP_DEVICE) != 0)
+        fail("dhcp-device-subject-domain");
+    if (dhcp_window_limit(DHCP_CLIENT) > dhcp_window_base(DHCP_ECHO) &&
+        dhcp_window_limit(DHCP_ECHO) > dhcp_window_base(DHCP_CLIENT))
+        fail("dhcp-port-windows-overlap");
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        if (leanos_device_authorize(subject, DHCP_DEVICE) !=
+                dhcp_device_expected(subject, DHCP_DEVICE) ||
+            leanos_device_authorize(subject, DHCP_OTHER_DEVICE) !=
+                dhcp_device_expected(subject, DHCP_OTHER_DEVICE))
+            fail("dhcp-device-model-authority");
+        if (dhcp_device_capabilities[subject]) {
+            holders++;
+            if (dhcp_port_holders[subject]) fail("dhcp-device-port-overlap");
+        }
+        for (uint64_t owner = DHCP_CLIENT; owner <= DHCP_ECHO; ++owner) {
+            for (uint64_t route = DHCP_CLIENT; route <= DHCP_ECHO; ++route) {
+                uint64_t got = leanos_frame_port_check(subject,
+                    dhcp_request(DHCP_OP_FETCH, 1, route, owner),
+                    dhcp_window_base(owner), DHCP_LINK_BYTES,
+                    dhcp_window_base(owner), dhcp_window_limit(owner));
+                uint64_t want = !dhcp_port_holders[subject] ? 1u :
+                    owner != subject ? 2u : route != subject ? 3u : 0u;
+                if (got != want) fail("dhcp-port-model-authority");
+            }
+        }
+    }
+    if (holders != 1 || !dhcp_device_capabilities[DHCP_DRIVER])
+        fail("dhcp-device-install");
+    serial_puts(LEANOS_SERIAL_10_NET " event=install device=frame-source device-holders=1 holder=1 port-holders=2,3 windows=own-pages,disjoint route=2 driver-ports=refused other-window=refused unrouted=refused port-holder-device=refused model=agree result=PASS\n");
+}
+
+static void dhcp_require_caller(void) {
+    if (current_subject == 1) three_subject_require_root(page_map_level_4_a);
+    else if (current_subject == 2) three_subject_require_root(page_map_level_4_b);
+    else if (current_subject == 3) three_subject_require_root(page_map_level_4_c);
+    else fail("dhcp-subject");
+}
+
+/* One edge of the model's exchange cycle `cycle`, taken in role `role`. */
+static void dhcp_ipc_edge(uint64_t *cycle, uint64_t role) {
+    if (leanos_blocking_ipc_event(*cycle, *cycle + 1, role) != dhcp_ipc_words[*cycle])
+        fail("dhcp-ipc-model");
+    *cycle = (*cycle + 1) & 3u;
+    dhcp_ipc_edges++;
+}
+
+static int dhcp_source_admitted(const struct wifi_target *target,
+                                const struct wifi_policy *policy) {
+    const struct wifi_policy *max = &dhcp_source_profile;
+    if (target->bus != 0 || target->dev != 0 || target->fn != 0 ||
+        target->id != UINT32_C(0xffffffff) || target->window != max->window ||
+        !policy->present || policy->sink_count != 0 || policy->desc_count != 0)
+        return 0;
+    return policy->window <= max->window && !policy->dma && policy->cfg_read == 0 &&
+        policy->cfg_write == 0 && policy->cmd_clear == 0 && policy->cmd_set == 0;
+}
+
+static void dhcp_bind(void) {
+    /* Static: the policy stays off the syscall entry stack. */
+    static struct wifi_target target;
+    static struct wifi_policy policy;
+    uint32_t header = 0;
+    if (wifi_image_header(dhcp_subject_program,
+            (uint32_t)sizeof dhcp_subject_program, &target, &policy, &header))
+        fail("dhcp-source-image");
+    if (!dhcp_source_admitted(&target, &policy)) fail("dhcp-source-policy");
+    if (wifi_start(&dhcp_vm, dhcp_subject_program, (uint32_t)sizeof dhcp_subject_program))
+        fail("dhcp-source-bind");
+    dhcp_bound = 1;
+    serial_puts(LEANOS_SERIAL_10_DEVICE " event=bind subject=1 device=frame-source image-bytes=");
+    serial_u64(sizeof dhcp_subject_program);
+    serial_puts(" policy=admitted window=512 config=none dma=none result=PASS\n");
+}
+
+/* One invocation on behalf of A: hand the pending frame (already in the
+   transmit slot) to the frame source, resume it in bounded slices until it
+   yields the next record, and return the record's sequence number and
+   length (0 once it has halted). */
+static uint64_t dhcp_next_record(void) {
+    if (!dhcp_bound) dhcp_bind();
+    if (dhcp_ended) return 0;
+    if (dhcp_rx_pending) fail("dhcp-record-unfetched");
+    volatile uint32_t *tx_len = (volatile uint32_t *)(wifi_scratch + DHCP_TX_LEN_AT);
+    if (*tx_len != (dhcp_tx_pending ? dhcp_tx_len : 0)) fail("dhcp-transmit-slot");
+    dhcp_tx_pending = 0;
+    for (;;) {
+        uint32_t code = 0;
+        int status = wifi_gen_resume(&dhcp_vm, 0, dhcp_vm.steps + DHCP_BUDGET, &code);
+        if (status == WIFI_YIELD) {
+            if (*tx_len != 0) fail("dhcp-transmit-not-taken");
+            if (dhcp_seq == 0 ? code != DHCP_LINK_BYTES
+                : code != DHCP_TICK_BYTES && (code < DHCP_FRAME_MIN || code > DHCP_FRAME_MAX))
+                fail("dhcp-record-length");
+            dhcp_rx_len = code;
+            dhcp_rx_pending = 1;
+            dhcp_sent_len = 0;
+            dhcp_record_port = dhcp_route;
+            ++dhcp_seq;
+            serial_puts(LEANOS_SERIAL_10_NET " event=deliver subject=1 frame=");
+            serial_u64(dhcp_seq);
+            serial_puts(" bytes=");
+            serial_u64(code);
+            serial_puts(dhcp_seq == 1 ? " kind=link" :
+                code == DHCP_TICK_BYTES ? " kind=tick" : " kind=ethernet");
+            serial_puts(dhcp_route == DHCP_CLIENT ? " port=2\n" : " port=3\n");
+            return dhcp_seq << 32 | code;
+        }
+        if (status == WIFI_STEP_LIMIT && dhcp_vm.steps < DHCP_STEP_LIMIT)
+            continue;
+        dhcp_ended = 1;
+        serial_puts(LEANOS_SERIAL_10_DEVICE " event=end subject=1 status=");
+        serial_u64((uint64_t)status);
+        serial_puts(" code=");
+        serial_u64(code);
+        serial_putc('\n');
+        if (status != WIFI_HALT) fail("dhcp-source-program");
+        if (*tx_len != 0) fail("dhcp-transmit-not-taken");
+        return 0;
+    }
+}
+
+static uint64_t dhcp_refuse(const char *operation, uint64_t reason) {
+    if (reason == 0 || reason >= sizeof dhcp_reasons / sizeof dhcp_reasons[0])
+        fail("dhcp-refusal-reason");
+    dhcp_refusals++;
+    serial_puts(LEANOS_SERIAL_10_NET " event=refuse subject=");
+    serial_u64(current_subject);
+    serial_puts(" op="); serial_puts(operation);
+    serial_puts(" reason="); serial_puts(dhcp_reasons[reason]);
+    serial_puts(" model=refused\n");
+    return DHCP_REFUSED | reason;
+}
+
+/* A frame copy (64 fetch, 65 send) decided from the port table and checked
+   against the generated witness.  The window passed is the caller's own,
+   labelled with the caller. */
+static uint64_t dhcp_copy(uint64_t number, uint64_t addr, uint64_t len) {
+    const uint64_t who = current_subject;
+    const uint64_t base = dhcp_window_base(who);
+    const uint64_t limit = dhcp_window_limit(who);
+    uint64_t op = number == 64 ? DHCP_OP_FETCH : DHCP_OP_SEND;
+    uint64_t pending = op == DHCP_OP_FETCH ? dhcp_rx_pending : dhcp_tx_pending;
+    if (op == DHCP_OP_FETCH) len = dhcp_rx_len;
+    uint64_t witness = leanos_frame_port_check(who, dhcp_request(op, pending, dhcp_route, who),
+        addr, len, base, limit);
+    unsigned accept = dhcp_port_holders[who] && who == dhcp_route &&
+        (op == DHCP_OP_FETCH ? pending == 1 : pending == 0) &&
+        (op == DHCP_OP_FETCH || len >= DHCP_FRAME_MIN) &&
+        len <= DHCP_FRAME_MAX && addr >= base && addr <= limit && len <= limit - addr;
+    if ((witness == 0) != accept) fail("dhcp-port-model-decision");
+    const char *name = op == DHCP_OP_FETCH ? "fetch" : "send";
+    if (!accept) return dhcp_refuse(name, witness);
+    /* Only the routed holder gets here, and it serves only between A's send
+       and its own next receive. */
+    if (!(who == DHCP_CLIENT && dhcp_phase == DHCP_PHASE_B_SERVES) &&
+        !(who == DHCP_ECHO && dhcp_phase == DHCP_PHASE_C_SERVES))
+        fail("dhcp-copy-sequence");
+    if (op == DHCP_OP_FETCH) {
+        smap_copy_to((void *)addr, wifi_scratch + DHCP_RX_AT, len);
+        if (ac_is_set()) fail("dhcp-fetch-ac-set");
+        dhcp_rx_pending = 0;
+        dhcp_fetches++;
+    } else {
+        smap_copy_from(wifi_scratch + DHCP_TX_AT, (const void *)addr, len);
+        if (ac_is_set()) fail("dhcp-send-ac-set");
+        *(volatile uint32_t *)(wifi_scratch + DHCP_TX_LEN_AT) = (uint32_t)len;
+        dhcp_tx_pending = 1;
+        dhcp_tx_len = len;
+        dhcp_sent_len = len;
+        dhcp_sent_seq = dhcp_seq;
+        dhcp_sends++;
+    }
+    serial_puts(LEANOS_SERIAL_10_NET " event=");
+    serial_puts(name);
+    serial_puts(" subject=");
+    serial_u64(who);
+    serial_puts(" frame=");
+    serial_u64(dhcp_seq);
+    serial_puts(" bytes=");
+    serial_u64(len);
+    serial_puts(" window=own-page model=accepted\n");
+    return op == DHCP_OP_FETCH ? len : 0;
+}
+
+/* The receiver's wake edge is taken when it next enters the kernel. */
+static void dhcp_wake_edges(void) {
+    if (current_subject == DHCP_CLIENT && dhcp_cycle_b12 == 3)
+        dhcp_ipc_edge(&dhcp_cycle_b12, DHCP_MODEL_RECEIVER);
+    if (current_subject == DHCP_ECHO && dhcp_cycle_c13 == 3)
+        dhcp_ipc_edge(&dhcp_cycle_c13, DHCP_MODEL_RECEIVER);
+    if (current_subject == DHCP_ECHO && dhcp_cycle_c12 == 3)
+        dhcp_ipc_edge(&dhcp_cycle_c12, DHCP_MODEL_RECEIVER);
+}
+
+static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
+                                     uint64_t arg1, uint64_t arg2) {
+    dhcp_require_caller();
+    dhcp_wake_edges();
+    if (number == 60) {
+        if (leanos_device_authorize(current_subject, DHCP_DEVICE) !=
+            dhcp_device_expected(current_subject, DHCP_DEVICE))
+            fail("dhcp-device-model-decision");
+        if (!dhcp_device_capabilities[current_subject]) {
+            dhcp_refusals++;
+            serial_puts(LEANOS_SERIAL_10_CAP " event=refuse subject=");
+            serial_u64(current_subject);
+            serial_puts(" op=device-invoke device=frame-source reason=no-device-capability model=refused\n");
+            return DHCP_REFUSED | DHCP_NO_DEVICE;
+        }
+        if (current_subject != DHCP_DRIVER ||
+            (dhcp_phase != DHCP_PHASE_A_FRESH && dhcp_phase != DHCP_PHASE_A_RESUMED))
+            fail("dhcp-device-sequence");
+        return dhcp_next_record();
+    }
+    if (number == 64 || number == 65) return dhcp_copy(number, arg0, arg1);
+    if (number == 8 && current_subject == DHCP_DRIVER &&
+        (dhcp_phase == DHCP_PHASE_A_FRESH || dhcp_phase == DHCP_PHASE_A_RESUMED)) {
+        /* A's record notice goes to the routed holder, which must be
+           waiting on endpoint 12. */
+        unsigned to_echo = dhcp_route == DHCP_ECHO;
+        if (arg2 != DHCP_FRAME_ENDPOINT || !dhcp_rx_pending ||
+            arg0 != dhcp_rx_len || arg1 != dhcp_seq ||
+            (to_echo ? !dhcp_c_waiting : !dhcp_b_waiting))
+            fail("dhcp-send-record");
+        uint64_t *cycle = to_echo ? &dhcp_cycle_c12 : &dhcp_cycle_b12;
+        dhcp_ipc_edge(cycle, DHCP_MODEL_SENDER);
+        dhcp_ipc_edge(cycle, DHCP_MODEL_SENDER);
+        if (to_echo) {
+            dhcp_c_waiting = 0;
+            dhcp_echo_records++;
+            dhcp_phase = DHCP_PHASE_C_SERVES;
+            current_subject = DHCP_ECHO;
+        } else {
+            dhcp_b_waiting = 0;
+            dhcp_client_records++;
+            dhcp_phase = DHCP_PHASE_B_SERVES;
+            current_subject = DHCP_CLIENT;
+        }
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=1 endpoint=12 payload0=");
+        serial_u64(arg0);
+        serial_puts(" payload1=");
+        serial_u64(arg1);
+        serial_puts(to_echo ? " receiver=3 accepted=1\n" : " receiver=2 accepted=1\n");
+        return isr80_select(to_echo ? DHCP_A_TO_C : DHCP_A_TO_B);
+    }
+    if (number == 8 && current_subject == DHCP_CLIENT && dhcp_phase == DHCP_PHASE_B_SERVES) {
+        /* The hand-off: B's lease (hardware address, IPv4 address) to C,
+           waiting on endpoint 13.  From now on the endpoint serves C. */
+        if (arg2 != DHCP_LEASE_ENDPOINT || dhcp_route != DHCP_CLIENT ||
+            !dhcp_c_waiting_lease || dhcp_rx_pending || dhcp_tx_pending ||
+            arg0 >> 48 != 0 || arg1 >> 32 != 0)
+            fail("dhcp-handoff");
+        dhcp_ipc_edge(&dhcp_cycle_c13, DHCP_MODEL_SENDER);
+        dhcp_ipc_edge(&dhcp_cycle_c13, DHCP_MODEL_SENDER);
+        dhcp_c_waiting_lease = 0;
+        dhcp_lease_mac = arg0;
+        dhcp_lease_ip = arg1;
+        dhcp_handoff_seq = dhcp_seq;
+        dhcp_route = DHCP_ECHO;
+        dhcp_phase = DHCP_PHASE_C_LEASED;
+        current_subject = DHCP_ECHO;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=2 endpoint=13 payload0=");
+        serial_u64(arg0);
+        serial_puts(" payload1=");
+        serial_u64(arg1);
+        serial_puts(" receiver=3 accepted=1\n");
+        serial_puts(LEANOS_SERIAL_10_NET " event=handoff from=2 to=3 frame=");
+        serial_u64(dhcp_seq);
+        serial_puts(" lease=");
+        serial_u64(arg1 >> 24 & 0xffu); serial_putc('.');
+        serial_u64(arg1 >> 16 & 0xffu); serial_putc('.');
+        serial_u64(arg1 >> 8 & 0xffu); serial_putc('.');
+        serial_u64(arg1 & 0xffu);
+        serial_puts(" route=3 model=accepted\n");
+        return isr80_select(DHCP_B_TO_C);
+    }
+    if (number == 7) {
+        if (current_subject == DHCP_ECHO && dhcp_phase == DHCP_PHASE_C_FRESH) {
+            if (arg2 != DHCP_LEASE_ENDPOINT || dhcp_c_waiting_lease)
+                fail("dhcp-echo-lease-receive");
+            dhcp_c_waiting_lease = 1;
+            dhcp_ipc_edge(&dhcp_cycle_c13, DHCP_MODEL_RECEIVER);
+            dhcp_phase = DHCP_PHASE_B_FRESH;
+            current_subject = DHCP_CLIENT;
+            serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=13 empty=1 result=PASS\n");
+            return isr80_select(THREE_SUBJECT_C_BLOCKED);
+        }
+        if (current_subject == DHCP_CLIENT &&
+            (dhcp_phase == DHCP_PHASE_B_FRESH || dhcp_phase == DHCP_PHASE_B_SERVES ||
+             dhcp_phase == DHCP_PHASE_B_HANDED)) {
+            if (arg2 != DHCP_FRAME_ENDPOINT || dhcp_b_waiting || dhcp_rx_pending)
+                fail("dhcp-client-receive");
+            dhcp_b_waiting = 1;
+            dhcp_ipc_edge(&dhcp_cycle_b12, DHCP_MODEL_RECEIVER);
+            serial_puts(dhcp_route == DHCP_CLIENT
+                ? LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=12 empty=1 result=PASS\n"
+                : LEANOS_SERIAL_10_IPC " event=block subject=2 endpoint=12 empty=1 routed=3 parked=1 result=PASS\n");
+            unsigned fresh = dhcp_phase == DHCP_PHASE_B_FRESH;
+            dhcp_phase = fresh ? DHCP_PHASE_A_FRESH : DHCP_PHASE_A_RESUMED;
+            current_subject = DHCP_DRIVER;
+            return isr80_select(fresh ? THREE_SUBJECT_B_RAN : DHCP_B_TO_A);
+        }
+        if (current_subject == DHCP_ECHO &&
+            (dhcp_phase == DHCP_PHASE_C_LEASED || dhcp_phase == DHCP_PHASE_C_SERVES)) {
+            if (arg2 != DHCP_FRAME_ENDPOINT || dhcp_c_waiting || dhcp_rx_pending ||
+                dhcp_route != DHCP_ECHO)
+                fail("dhcp-echo-receive");
+            dhcp_c_waiting = 1;
+            dhcp_ipc_edge(&dhcp_cycle_c12, DHCP_MODEL_RECEIVER);
+            serial_puts(LEANOS_SERIAL_10_IPC " event=block subject=3 endpoint=12 empty=1 result=PASS\n");
+            unsigned leased = dhcp_phase == DHCP_PHASE_C_LEASED;
+            dhcp_phase = leased ? DHCP_PHASE_B_HANDED : DHCP_PHASE_A_RESUMED;
+            current_subject = leased ? DHCP_CLIENT : DHCP_DRIVER;
+            return isr80_select(leased ? DHCP_C_TO_B : DHCP_C_TO_A);
+        }
+        fail("dhcp-receive-sequence");
+    }
+    if (number == 61 && current_subject == DHCP_DRIVER && dhcp_phase == DHCP_PHASE_A_RESUMED) {
+        if (!dhcp_ended || dhcp_seq < 2 || dhcp_fetches != dhcp_seq ||
+            dhcp_checked != dhcp_seq || dhcp_rx_pending || dhcp_tx_pending ||
+            dhcp_route != DHCP_ECHO || dhcp_handoff_seq == 0 ||
+            dhcp_client_records != dhcp_handoff_seq ||
+            dhcp_echo_records != dhcp_seq - dhcp_handoff_seq ||
+            !dhcp_b_waiting || !dhcp_c_waiting || dhcp_c_waiting_lease ||
+            dhcp_refusals != 4 || dhcp_cycle_b12 != 1 || dhcp_cycle_c13 != 0 ||
+            dhcp_cycle_c12 != 1 ||
+            dhcp_ipc_edges != 4 * dhcp_seq + 1 + 1 + 4)
+            fail("dhcp-subject-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 dhcp-subject=2 echo-subject=3 device-holder=1 frames=");
+        serial_u64(dhcp_seq);
+        serial_puts(" dhcp-frames="); serial_u64(dhcp_client_records);
+        serial_puts(" echo-frames="); serial_u64(dhcp_echo_records);
+        serial_puts(" fetches="); serial_u64(dhcp_fetches);
+        serial_puts(" sends="); serial_u64(dhcp_sends);
+        serial_puts(" checked="); serial_u64(dhcp_checked);
+        serial_puts(" refusals="); serial_u64(dhcp_refusals);
+        serial_puts(" ipc-edges="); serial_u64(dhcp_ipc_edges);
+        serial_putc('\n');
+        finish(0x10);
+    }
+    fail("dhcp-subject-sequence");
+}
+
+/* Every switch restores a subject's exact saved continuation (or B's and
+   A's fresh initial context) and checks every other blocked continuation is
+   unchanged; a woken receiver gets exactly the two payload words and the
+   delivery flag, a resumed sender the result 0.  SAVE layout: RAX at word
+   14, RBX 13, RCX 12. */
+static void dhcp_check_saved(uint64_t who) {
+    if (who == DHCP_DRIVER)
+        check_original_frame(saved_context_a, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+    else if (who == DHCP_CLIENT)
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+    else
+        check_original_frame(saved_context_c, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+}
+
+static void dhcp_check_restored(uint64_t *target, uint64_t who) {
+    if (who == DHCP_DRIVER)
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags, saved_context_a_original_rsp, 1);
+    else if (who == DHCP_CLIENT)
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+    else
+        check_original_frame(target, saved_context_c_original_rip,
+            saved_context_c_original_flags, saved_context_c_original_rsp, 3);
+}
+
+static void dhcp_switch(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
+    if (target_owner != current_subject) fail("dhcp-switch-owner");
+    if (current_subject == DHCP_CLIENT && dhcp_phase == DHCP_PHASE_B_FRESH) {
+        check_selected_root_b();
+        if (saved_owner != DHCP_ECHO) fail("dhcp-switch-b-owner");
+        check_initial_b_frame(target);
+        dhcp_check_saved(DHCP_ECHO);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 blocked-subject=3 context=initial capabilities=frame-port\n");
+        return;
+    }
+    if (current_subject == DHCP_DRIVER && dhcp_phase == DHCP_PHASE_A_FRESH) {
+        check_selected_root_a();
+        if (saved_owner != DHCP_CLIENT) fail("dhcp-switch-a-owner");
+        dhcp_check_saved(DHCP_CLIENT);
+        dhcp_check_saved(DHCP_ECHO);
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subjects=2,3 capabilities=device\n");
+        return;
+    }
+    if ((current_subject == DHCP_CLIENT && dhcp_phase == DHCP_PHASE_B_SERVES) ||
+        (current_subject == DHCP_ECHO && dhcp_phase == DHCP_PHASE_C_SERVES)) {
+        if (current_subject == DHCP_CLIENT) check_selected_root_b();
+        else check_selected_root_c();
+        if (saved_owner != DHCP_DRIVER) fail("dhcp-switch-serve-owner");
+        dhcp_check_restored(target, current_subject);
+        dhcp_check_saved(current_subject == DHCP_CLIENT ? DHCP_ECHO : DHCP_CLIENT);
+        target[14] = dhcp_rx_len;
+        target[13] = dhcp_seq;
+        target[12] = 1;
+        serial_puts(current_subject == DHCP_CLIENT
+            ? LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 woken=1 payload=exact\n"
+            : LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 payload=exact\n");
+        return;
+    }
+    if (current_subject == DHCP_ECHO && dhcp_phase == DHCP_PHASE_C_LEASED) {
+        check_selected_root_c();
+        if (saved_owner != DHCP_CLIENT) fail("dhcp-switch-lease-owner");
+        dhcp_check_restored(target, DHCP_ECHO);
+        dhcp_check_saved(DHCP_DRIVER);
+        target[14] = dhcp_lease_mac;
+        target[13] = dhcp_lease_ip;
+        target[12] = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=3 address-space=3 woken=1 endpoint=13 payload=lease\n");
+        return;
+    }
+    if (current_subject == DHCP_CLIENT && dhcp_phase == DHCP_PHASE_B_HANDED) {
+        check_selected_root_b();
+        if (saved_owner != DHCP_ECHO) fail("dhcp-switch-handed-owner");
+        dhcp_check_restored(target, DHCP_CLIENT);
+        dhcp_check_saved(DHCP_DRIVER);
+        target[14] = 0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 resumed=1 result=0\n");
+        return;
+    }
+    if (current_subject == DHCP_DRIVER && dhcp_phase == DHCP_PHASE_A_RESUMED) {
+        check_selected_root_a();
+        if (saved_owner != DHCP_CLIENT && saved_owner != DHCP_ECHO)
+            fail("dhcp-switch-resume-a-owner");
+        dhcp_check_restored(target, DHCP_DRIVER);
+        dhcp_check_saved(DHCP_CLIENT);
+        dhcp_check_saved(DHCP_ECHO);
+        target[14] = 0;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 resumed=1\n");
+        return;
+    }
+    fail("dhcp-switch");
 }
 #endif
 
@@ -8062,6 +8749,14 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         __asm__ volatile ("" : "+r"(network_result));
         return network_result;
     }
+#elif defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+    (void)saved_flags;
+    {
+        /* A real call, as for the network subject. */
+        uint64_t dhcp_result = dhcp_subject_syscall(number, arg0, arg1, arg2);
+        __asm__ volatile ("" : "+r"(dhcp_result));
+        return dhcp_result;
+    }
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
 #ifdef LEANOS_EXAMPLE_SUBJECT_SCENARIO
     (void)saved_flags;
@@ -8875,6 +9570,9 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
 #elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
     network_switch(target, target_owner, saved_owner);
     return;
+#elif defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+    dhcp_switch(target, target_owner, saved_owner);
+    return;
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     three_subject_switch(target, target_owner, saved_owner);
     return;
@@ -9667,6 +10365,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=endpoint-directory controls=wp,smep,smap\n");
 #elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=network-subject controls=wp,smep,smap\n");
+#elif defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=dhcp-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=example-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_FAULT_HANDLER_SCENARIO)
@@ -9896,6 +10596,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=12 role=network-subject\n");
+    enter_user(user_c_entry, user_c_stack_top);
+#elif defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+    check_boot_page_table_c();
+    check_dhcp_subject_slots();
+    dhcp_install();
+    current_subject = 3;
+    activate_user_address_space(page_map_level_4_c);
+    check_selected_root_c();
+    serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=3 address-space=3 cpl=3 endpoint=13 role=echo-subject\n");
     enter_user(user_c_entry, user_c_stack_top);
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
     check_boot_page_table_c();

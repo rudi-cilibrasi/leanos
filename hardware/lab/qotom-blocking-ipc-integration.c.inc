@@ -10,10 +10,10 @@
 
 static uint64_t qotom_blocking_step;
 /* The lab harness hosting the stream is absent from the canonical
-   device-service and network-subject kernel variants, which the same
-   overlay also builds. */
+   device-service, network-subject and dhcp-subject kernel variants, which
+   the same overlay also builds. */
 #if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && \
-    !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+    !defined(LEANOS_NETWORK_SUBJECT_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
 #define QOTOM_IPC_DEVICE_STREAM 1
 #endif
 #if defined(QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)

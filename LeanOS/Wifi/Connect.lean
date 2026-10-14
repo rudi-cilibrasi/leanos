@@ -170,13 +170,17 @@ def waitDhcpSoft (L : DevCrypto.Lib) (mgmt : LeanOS.Wifi.Tx.TxConfig) (C : DevCc
     (D : DevDhcp.DhcpLib) (frames tries : UInt32) : ProgM Unit :=
   waitDhcpWith L mgmt C D frames tries true
 
-/-- Associate, authenticate with WPA2-PSK and lease an address. -/
-def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
+/-- Associate and authenticate with WPA2-PSK, then, with `dhcp`, lease an
+address with the driver's own DHCP client; then run `after`. Without `dhcp`
+(issue #556) the program installs no DHCP client and chooses no address:
+the ring-3 DHCP subject leases one through the frame endpoint
+(`LeanOS.Wifi.Endpoint.serveLink`). -/
+def connectWith (dhcp : Bool) (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
     (after : DevCrypto.Lib → DevCcmp.CcmpLib → LeanOS.Wifi.Tx.TxConfig → ProgM Unit) :
     ProgM Unit := do
   let L ← DevCrypto.install
   let C ← DevCcmp.install L
-  let D ← DevDhcp.install
+  let D? ← if dhcp then some <$> DevDhcp.install else pure none
   bringUp
   ucodeStart fw
   Mac.coreInitTail
@@ -211,6 +215,10 @@ def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
   place giveUp
   fail Fail.join
   place joined
+  let some D := D? | do
+    after L C data
+    printImm Bcm43224.Tag.done 0
+    halt
   Handshake.copyFrom 0 (Handshake.entropy2At + 12) DevDhcp.xidAt 4
   delay 200000
   -- DHCP client: up to three DISCOVER rounds; within a round, up to three
@@ -251,6 +259,19 @@ def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
   after L C data
   printImm Bcm43224.Tag.done 0
   halt
+
+/-- Associate, authenticate with WPA2-PSK and lease an address. -/
+def connectDhcpThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
+    (after : DevCrypto.Lib → DevCcmp.CcmpLib → LeanOS.Wifi.Tx.TxConfig → ProgM Unit) :
+    ProgM Unit :=
+  connectWith true fw cfg bssid pmk after
+
+/-- Associate and authenticate with WPA2-PSK, with no DHCP client (issue
+#556), then run `after`. -/
+def connectThen (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray)
+    (after : DevCrypto.Lib → DevCcmp.CcmpLib → LeanOS.Wifi.Tx.TxConfig → ProgM Unit) :
+    ProgM Unit :=
+  connectWith false fw cfg bssid pmk after
 
 def connectDhcp (fw : Firmware) (cfg : PhyCfg) (bssid pmk : ByteArray) : ProgM Unit :=
   connectDhcpThen fw cfg bssid pmk fun _ _ _ => pure ()

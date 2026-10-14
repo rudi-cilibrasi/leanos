@@ -193,6 +193,9 @@ check_phase="image-and-emulator-contracts"
 # The network subject's generated responder and frame copy witness (#450):
 # reference vectors and the differential test of the generated C.
 ./scripts/check-network-subject-host.sh
+# The DHCP subject's generated client and frame port witness (#556): the
+# reference client's agreement and the differential test of the generated C.
+./scripts/check-dhcp-subject-host.sh
 
 ./scripts/test-run-malformed-handoff.sh
 

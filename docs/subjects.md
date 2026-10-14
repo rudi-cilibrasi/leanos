@@ -3,7 +3,9 @@
 A subject is a ring-3 program linked into the boot image. Subjects A and B are
 still handwritten assembly in `boot/boot.S`. Issue #484 adds a way to write a
 subject in freestanding C, build it on its own, check it, and link it into a
-reserved slot. Today that slot is subject C. Together with the ring-3 ABI
+reserved slot. Today that slot is subject C; the `dhcp-subject` image (#556)
+also builds subject B this way (`--slot b`, with `LEANOS_SUBJECT_B_OBJECT`
+dropping boot.S's handwritten B). Together with the ring-3 ABI
 note, [userspace-abi.md](userspace-abi.md) (#483), this page is enough to
 start a new subject.
 
@@ -21,6 +23,8 @@ the image at build time, like every other byte of it.
 | `subjects/directory/` | The endpoint directory booted by the `endpoint-directory` image ([endpoint-directory.md](endpoint-directory.md), #485) |
 | `subjects/frame-server/` | The frame server booted by the `frame-server` image ([frame-server.md](frame-server.md), #486) |
 | `subjects/net/` | The network subject booted by the `network-subject` image ([network-subject.md](network-subject.md), #450); it includes a Lean-generated responder |
+| `subjects/dhcp/` | The DHCP subject, subject B of the `dhcp-subject` image ([network-subject.md](network-subject.md#dhcp-as-its-own-subject), #556); it includes the Lean-generated DHCP client |
+| `subjects/echo/` | The echo subject, subject C of the `dhcp-subject` image (#556): the network subject's responder for the address the DHCP subject leases |
 | `subjects/loaded/` | The child the `spawn-loader` image's loader loads from its admitted bytes (#492); built only as an admitted executable |
 | `subjects/runtime/entry.S` | The entry stub linked first into every subject |
 | `subjects/include/leanos/subject.h` | The only kernel interface: `int $0x80` wrappers |

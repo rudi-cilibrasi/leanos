@@ -9344,6 +9344,246 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.Routed.port",
+      "display": "Routed.port",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.boot_routed",
+      "display": "boot_routed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.deviceAuthorize_ports",
+      "display": "deviceAuthorize_ports",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.dhcp_no_device_effects",
+      "display": "dhcp_no_device_effects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.driver_refused",
+      "display": "driver_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.echo_answers_only_lease",
+      "display": "echo_answers_only_lease",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.echo_fetch_leased",
+      "display": "echo_fetch_leased",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.echo_no_device_effects",
+      "display": "echo_no_device_effects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.fetchOk_route",
+      "display": "fetchOk_route",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortCheck_fetch",
+      "display": "framePortCheck_fetch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortCheck_nonholder",
+      "display": "framePortCheck_nonholder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortCheck_own_window",
+      "display": "framePortCheck_own_window",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortCheck_request",
+      "display": "framePortCheck_request",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortCheck_send",
+      "display": "framePortCheck_send",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortDecide_accept",
+      "display": "framePortDecide_accept",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortDecide_fetch_iff",
+      "display": "framePortDecide_fetch_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortDecide_nonholder",
+      "display": "framePortDecide_nonholder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.framePortDecide_send_iff",
+      "display": "framePortDecide_send_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.handoff_refused",
+      "display": "handoff_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.nonholder_refused",
+      "display": "nonholder_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.port_toUInt64",
+      "display": "port_toUInt64",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.port_toUInt64_eq",
+      "display": "port_toUInt64_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.replyFrame_for_ip",
+      "display": "replyFrame_for_ip",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.reply_for_ip",
+      "display": "reply_for_ip",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.request_fields",
+      "display": "request_fields",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_driver_mem",
+      "display": "run_driver_mem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_mem_outside_windows",
+      "display": "run_mem_outside_windows",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_port_holder_mem",
+      "display": "run_port_holder_mem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_routed",
+      "display": "run_routed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_routed_leased",
+      "display": "run_routed_leased",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.sendOk_route",
+      "display": "sendOk_route",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_lease_changed",
+      "display": "step_lease_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_mem_changed",
+      "display": "step_mem_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_route_changed",
+      "display": "step_route_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_routed",
+      "display": "step_routed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_rx_changed",
+      "display": "step_rx_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_tx_changed",
+      "display": "step_tx_changed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.unrouted_refused",
+      "display": "unrouted_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.window_none",
+      "display": "window_none",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.window_some",
+      "display": "window_some",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/DirectPortContainment.lean",
       "qualified": "LeanOS.DirectPortContainment.attacker_registers_cannot_relabel",
       "display": "attacker_registers_cannot_relabel",
@@ -24371,6 +24611,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.device_program_static_confinement",
       "display": "device_program_static_confinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.dhcp_subject_separation",
+      "display": "dhcp_subject_separation",
       "kind": "theorem"
     },
     {

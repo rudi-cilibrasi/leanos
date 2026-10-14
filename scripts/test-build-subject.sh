@@ -79,6 +79,28 @@ if ./scripts/build-subject.sh --cc "$cc" --slot c --output "$work/net-bare.o" \
   exit 1
 fi
 
+# The DHCP subject (#556) builds into slot B with its generated client, and
+# the echo subject into slot C with the generated responder; neither object
+# has an undefined symbol, and each has its slot's layout.
+lake build LeanOS.Net.DhcpClientC >/dev/null
+cp .lake/build/ir/LeanOS/Net/DhcpClientC.c "$work/generated/NetDhcp.c"
+./scripts/build-subject.sh --cc "$cc" --slot b --output "$work/dhcp.o" \
+  --generated "$work/generated/NetDhcp.c" \
+  --lean-include "$(lake env lean --print-prefix)/include" subjects/dhcp
+./scripts/build-subject.sh --cc "$cc" --slot c --output "$work/echo.o" \
+  --generated "$work/generated/NetEcho.c" \
+  --lean-include "$(lake env lean --print-prefix)/include" subjects/echo
+for slot_object in b:dhcp c:echo; do
+  slot="${slot_object%%:*}" object="$work/${slot_object#*:}.o"
+  [[ -z "$(nm -u "$object")" ]] || {
+    echo "error: $object has undefined symbols" >&2; exit 1;
+  }
+  grep -Eq "\.user\.${slot}\.bss +(PROGBITS|NOBITS) +[0-9a-f]+ [0-9a-f]+ 001000 .* WA " \
+      <<<"$(readelf -SW "$object")" || {
+    echo "error: $object sections are not slot ${slot}'s layout" >&2; exit 1;
+  }
+done
+
 # fixture <TAB> reason the rule must report
 fixtures=(
   $'privileged-cli\t[privileged or system instruction]'

@@ -232,7 +232,7 @@ def main() -> int:
     obj.add_argument("path")
     elf = sub.add_parser("elf")
     elf.add_argument("path")
-    elf.add_argument("slot", choices=["c"])
+    elf.add_argument("slot", choices=["b", "c"])
     args = parser.parse_args()
     try:
         errors = (check_object(args.path) if args.mode == "object"

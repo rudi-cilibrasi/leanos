@@ -21,7 +21,24 @@
  * leanos_device_authorize with B in the model's subject 1, and every frame
  * exchange against leanos_blocking_ipc_event with B in the model's sender
  * role and A in its receiver role.  The endpoint layout in the executor
- * scratch is LeanOS.Net.FrameSource's. */
+ * scratch is LeanOS.Net.FrameSource's.
+ *
+ * With --dhcp-subject (issue #556, LEANOS_QOTOM_DHCP_SUBJECT) the driver
+ * serves the link-only endpoint (LeanOS.Wifi.Endpoint.serveLink: the 6-byte
+ * link record, then frames and 1-byte ticks) and leases nothing.  A runs two
+ * subjects in turn, because the audited copy roots alias only A's stack
+ * pages: first the DHCP subject (subjects/dhcp, the model's subject 2), which
+ * leases an address and sends it on endpoint 13; the kernel then zeroes both
+ * of A's stack pages through the writable copy-out root, holds the lease, and
+ * restarts A fresh at qotom_echo_subject_entry, the echo subject
+ * (subjects/echo, the model's subject 3), which receives the lease on
+ * endpoint 13 and answers only for it.  Every copy is checked against
+ * leanos_frame_port_check (DhcpSubject.framePortCheck) with the current
+ * occupant as the caller, the window's owner and the port the endpoint
+ * serves.  The separation of the two subjects is in time (the scrub), not in
+ * address space as on q35; the lease exchange is not checked against
+ * leanos_blocking_ipc_event, because the kernel holds it across the
+ * restart. */
 #define QOTOM_NET_RX_AT 0x3E000u
 #define QOTOM_NET_TX_AT 0x3E800u
 #define QOTOM_NET_TX_LEN_AT 0x3F000u
@@ -32,6 +49,18 @@
 #define QOTOM_NET_MODEL_DRIVER 1u
 #define QOTOM_NET_MODEL_NETWORK 3u
 #define QOTOM_NET_STACK_BYTES 8192u
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+#define QOTOM_NET_LINK_BYTES 6u
+#define QOTOM_NET_TICK_BYTES 1u
+#define QOTOM_NET_LEASE_ENDPOINT 13u
+#define QOTOM_NET_MODEL_DHCP 2u
+extern char qotom_echo_subject_entry[];
+/* The model subject A runs as: the DHCP subject, then the echo subject. */
+static uint64_t qotom_net_a_model = QOTOM_NET_MODEL_DHCP;
+static uint64_t qotom_net_lease_mac, qotom_net_lease_ip, qotom_net_lease_held;
+static uint64_t qotom_net_handoff_seq;
+static const uint8_t qotom_net_zeros[16];
+#endif
 
 static uint64_t qotom_net_seq, qotom_net_rx_len, qotom_net_rx_pending;
 static uint64_t qotom_net_tx_pending, qotom_net_tx_len;
@@ -47,6 +76,9 @@ static struct qotom_copy_operand qotom_net_operands[16];
 static uint8_t *qotom_net_scratch(void);
 
 static uint64_t qotom_net_model_subject(void) {
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+    if (current_subject == 1) return qotom_net_a_model;
+#endif
     return current_subject == 1 ? QOTOM_NET_MODEL_NETWORK :
         current_subject == 2 ? QOTOM_NET_MODEL_DRIVER : 0;
 }
@@ -107,8 +139,17 @@ static uint64_t qotom_net_copy(uint64_t *saved, uint64_t number) {
     uint64_t fetch = number == 64;
     uint64_t pending = fetch ? qotom_net_rx_pending : qotom_net_tx_pending;
     if (fetch) length = qotom_net_rx_len;
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+    /* The caller's own window, labelled with the caller; the endpoint
+       serves A's current occupant. */
+    uint64_t model = qotom_net_model_subject();
+    uint64_t witness = leanos_frame_port_check(model,
+        (fetch ? 1u : 2u) | pending << 8 | (qotom_net_a_model & 0xffu) << 16 |
+            (model & 0xffu) << 24, address, length, base, limit);
+#else
     uint64_t witness = leanos_frame_copy_check(qotom_net_model_subject(),
         (fetch ? 1u : 2u) | pending << 8, address, length, base, limit);
+#endif
     if (witness != 0) return qotom_net_refuse(fetch ? "fetch" : "send", witness);
     if (current_subject != 1 || qotom_blocking_step != 32)
         qotom_blocking_fail("qotom-net-copy-sequence");
@@ -145,9 +186,16 @@ static uint64_t qotom_net_next_frame(void) {
         qotom_net_ended = 1;
         return 0;
     }
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+    if (qotom_net_seq == 0 ? code != QOTOM_NET_LINK_BYTES
+        : code != QOTOM_NET_TICK_BYTES &&
+          (code < QOTOM_NET_FRAME_MIN || code > QOTOM_NET_FRAME_MAX))
+        qotom_blocking_fail("qotom-net-frame-length");
+#else
     if (qotom_net_seq == 0 ? code != QOTOM_NET_CONFIG_BYTES
         : code < QOTOM_NET_FRAME_MIN || code > QOTOM_NET_FRAME_MAX)
         qotom_blocking_fail("qotom-net-frame-length");
+#endif
     qotom_net_rx_len = code;
     qotom_net_rx_pending = 1;
     ++qotom_net_seq;
@@ -157,6 +205,37 @@ static uint64_t qotom_net_next_frame(void) {
     serial_putc('\n');
     return qotom_net_seq << 32 | code;
 }
+
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+/* The hand-off (issue #556): the DHCP subject, serving a record, sends its
+   lease (hardware address in RBX, IPv4 address in RCX) on endpoint 13.  The
+   kernel holds it, zeroes both of A's stack pages through the writable
+   copy-out root, and restarts A fresh at the echo subject's entry. */
+static uint64_t qotom_net_handoff(uint64_t *saved) {
+    if (qotom_net_a_model != QOTOM_NET_MODEL_DHCP || qotom_blocking_step != 32 ||
+        qotom_net_rx_pending || qotom_net_tx_pending ||
+        saved[13] >> 48 != 0 || saved[12] >> 32 != 0)
+        qotom_blocking_fail("qotom-net-handoff");
+    qotom_net_lease_mac = saved[13];
+    qotom_net_lease_ip = saved[12];
+    qotom_net_lease_held = 1;
+    qotom_net_handoff_seq = qotom_net_seq;
+    for (uint64_t done = 0; done < QOTOM_NET_STACK_BYTES; done += 16)
+        qotom_net_copy_out((uint64_t)user_a_stack + done, qotom_net_zeros, 16);
+    qotom_net_a_model = QOTOM_NET_MODEL_NETWORK;
+    qotom_initial_a_frame(saved);
+    saved[15] = (uint64_t)qotom_echo_subject_entry;
+    serial_puts("LEANOS-LAB/1 NET event=handoff from=dhcp-subject to=echo-subject frame=");
+    serial_u64(qotom_net_seq);
+    serial_puts(" lease=");
+    serial_u64(qotom_net_lease_ip >> 24 & 0xffu); serial_putc('.');
+    serial_u64(qotom_net_lease_ip >> 16 & 0xffu); serial_putc('.');
+    serial_u64(qotom_net_lease_ip >> 8 & 0xffu); serial_putc('.');
+    serial_u64(qotom_net_lease_ip & 0xffu);
+    serial_puts(" scrubbed=8192 restart=echo-entry model=accepted\n");
+    return qotom_entry_subject_root;
+}
+#endif
 
 /* The network-subject continuation after the fixed first exchange.  Steps:
    30 A runs (its send returned), 31 B drives, 32 A serves a frame. */
@@ -183,6 +262,21 @@ static uint64_t qotom_net_dispatch(uint64_t *saved, uint64_t number) {
         saved[14] = qotom_net_copy(saved, number);
         return qotom_entry_subject_root;
     }
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+    if (number == 8 && current_subject == 1 && saved[11] == QOTOM_NET_LEASE_ENDPOINT)
+        return qotom_net_handoff(saved);
+    if (number == 7 && current_subject == 1 && saved[11] == QOTOM_NET_LEASE_ENDPOINT) {
+        /* The echo subject takes the held lease. */
+        if (qotom_net_a_model != QOTOM_NET_MODEL_NETWORK || !qotom_net_lease_held)
+            qotom_blocking_fail("qotom-net-lease-receive");
+        qotom_net_lease_held = 0;
+        saved[14] = qotom_net_lease_mac;
+        saved[13] = qotom_net_lease_ip;
+        saved[12] = 1;
+        serial_puts(LEANOS_SERIAL_10_IPC " event=deliver receiver=1 endpoint=13 role=echo-subject payload=lease\n");
+        return qotom_entry_subject_root;
+    }
+#endif
     if (number == 7 && current_subject == 1 &&
         (qotom_blocking_step == 30 || qotom_blocking_step == 32)) {
         if (qotom_net_waiting || qotom_net_rx_pending)
@@ -224,7 +318,21 @@ static uint64_t qotom_net_dispatch(uint64_t *saved, uint64_t number) {
             qotom_net_rx_pending || qotom_net_tx_pending || !qotom_net_waiting ||
             qotom_net_ipc_step != 1)
             qotom_blocking_fail("qotom-net-count");
+#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+        if (qotom_net_a_model != QOTOM_NET_MODEL_NETWORK || qotom_net_lease_held ||
+            qotom_net_handoff_seq == 0)
+            qotom_blocking_fail("qotom-net-lease-count");
+        serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS dhcp-subject=1 echo-subject=1 device-holder=2 dhcp-frames=");
+        serial_u64(qotom_net_handoff_seq);
+        serial_puts(" lease=");
+        serial_u64(qotom_net_lease_ip >> 24 & 0xffu); serial_putc('.');
+        serial_u64(qotom_net_lease_ip >> 16 & 0xffu); serial_putc('.');
+        serial_u64(qotom_net_lease_ip >> 8 & 0xffu); serial_putc('.');
+        serial_u64(qotom_net_lease_ip & 0xffu);
+        serial_puts(" frames=");
+#else
         serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS network-subject=1 device-holder=2 frames=");
+#endif
         serial_u64(qotom_net_seq);
         serial_puts(" fetches="); serial_u64(qotom_net_fetches);
         serial_puts(" replies="); serial_u64(qotom_net_replies);

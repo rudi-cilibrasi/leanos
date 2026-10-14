@@ -84,6 +84,18 @@ inductive Path where
   | loaderEnterChild
   /-- The loaded child sent its word: discard it and restore B. -/
   | loaderChildSent
+  /-- A's record notice woke the DHCP subject B: save A and restore B (dhcp-subject). -/
+  | dhcpAWakesB
+  /-- B blocked on endpoint 12 again: save B and resume A (dhcp-subject). -/
+  | dhcpBResumesA
+  /-- B's lease on endpoint 13 woke the echo subject C: save B and restore C (dhcp-subject). -/
+  | dhcpBWakesC
+  /-- C blocked on endpoint 12 first: save C and resume B after its lease send (dhcp-subject). -/
+  | dhcpCResumesB
+  /-- A's record notice woke the echo subject C: save A and restore C (dhcp-subject). -/
+  | dhcpAWakesC
+  /-- C blocked on endpoint 12 again: save C and resume A (dhcp-subject). -/
+  | dhcpCResumesA
   deriving DecidableEq, Repr
 
 /-- The selector word for each path (`include/leanos/isr80-path.h`). -/
@@ -104,6 +116,12 @@ def Path.code : Path → UInt64
   | .frameCResumesB => 13
   | .loaderEnterChild => 14
   | .loaderChildSent => 15
+  | .dhcpAWakesB => 16
+  | .dhcpBResumesA => 17
+  | .dhcpBWakesC => 18
+  | .dhcpCResumesB => 19
+  | .dhcpAWakesC => 20
+  | .dhcpCResumesA => 21
 
 /-- The C and assembler name of each selector word. -/
 def Path.macroName : Path → String
@@ -123,6 +141,12 @@ def Path.macroName : Path → String
   | .frameCResumesB => "LEANOS_ISR80_PATH_FRAME_C_RESUMES_B"
   | .loaderEnterChild => "LEANOS_ISR80_PATH_LOADER_ENTER_CHILD"
   | .loaderChildSent => "LEANOS_ISR80_PATH_LOADER_CHILD_SENT"
+  | .dhcpAWakesB => "LEANOS_ISR80_PATH_DHCP_A_WAKES_B"
+  | .dhcpBResumesA => "LEANOS_ISR80_PATH_DHCP_B_RESUMES_A"
+  | .dhcpBWakesC => "LEANOS_ISR80_PATH_DHCP_B_WAKES_C"
+  | .dhcpCResumesB => "LEANOS_ISR80_PATH_DHCP_C_RESUMES_B"
+  | .dhcpAWakesC => "LEANOS_ISR80_PATH_DHCP_A_WAKES_C"
+  | .dhcpCResumesA => "LEANOS_ISR80_PATH_DHCP_C_RESUMES_A"
 
 /-- The local label in `isr80` that each path's `je` targets. -/
 def Path.label : Path → Nat
@@ -142,13 +166,20 @@ def Path.label : Path → Nat
   | .frameCResumesB => 42
   | .loaderEnterChild => 50
   | .loaderChildSent => 51
+  | .dhcpAWakesB => 61
+  | .dhcpBResumesA => 62
+  | .dhcpBWakesC => 63
+  | .dhcpCResumesB => 64
+  | .dhcpAWakesC => 65
+  | .dhcpCResumesA => 66
 
 /-- Every path. -/
 def allPaths : List Path :=
   [.reply, .dispatchFreshB, .blockBEnterA, .wakeB, .blockBResumeA,
    .blockCEnterB, .reportBEnterA, .wakeC, .serverCResumesClient,
    .timerCResumesA, .timerAWaits, .frameCResumesA, .frameBWakesC,
-   .frameCResumesB, .loaderEnterChild, .loaderChildSent]
+   .frameCResumesB, .loaderEnterChild, .loaderChildSent, .dhcpAWakesB,
+   .dhcpBResumesA, .dhcpBWakesC, .dhcpCResumesB, .dhcpAWakesC, .dhcpCResumesA]
 
 /-- Distinct paths have distinct selector words. -/
 theorem code_injective (a b : Path) (h : a.code = b.code) : a = b := by

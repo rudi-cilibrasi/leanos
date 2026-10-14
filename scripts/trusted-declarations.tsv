@@ -50,3 +50,8 @@ LeanOS/Wifi/Exec.lean	wifi_gen_done
 LeanOS/Net/EchoC.lean	net_gen_value
 LeanOS/Net/EchoC.lean	net_gen_rd8
 LeanOS/Net/EchoC.lean	net_gen_wr8
+LeanOS/Net/DhcpClientC.lean	dhcp_gen_value
+LeanOS/Net/DhcpClientC.lean	dhcp_gen_rd8
+LeanOS/Net/DhcpClientC.lean	dhcp_gen_wr8
+LeanOS/Net/DhcpClientC.lean	dhcp_gen_ld
+LeanOS/Net/DhcpClientC.lean	dhcp_gen_st
