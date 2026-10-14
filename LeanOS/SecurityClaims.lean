@@ -52,6 +52,7 @@ import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
 import LeanOS.NetworkSubject
 import LeanOS.DhcpSubject
+import LeanOS.GtkRekey
 
 /-! # Stable security-claim contract
 
@@ -4224,6 +4225,50 @@ theorem dhcp_subject_separation {σ : Type} (models : Nat → Wifi.Sim.Device σ
    DhcpSubject.framePortCheck_nonholder,
    fun sys hcaps ts hg => DhcpSubject.dhcp_no_device_effects models sys hcaps ts hg,
    fun sys hcaps ts hg => DhcpSubject.echo_no_device_effects models sys hcaps ts hg⟩
+
+/-- SC-WIFI-GROUP-KEY-ROTATION: the BCM43224 driver keeps a session across
+the access point's group-key rotation without accepting replays. No frame
+lowers the EAPOL replay counter, and across any run the counters answered
+with group message 2 strictly increase, so a group message is answered at
+most once; an answered message 1 installs exactly its GTK, key id (1–3,
+never the TK's 0) and Key RSC, leaving the TK alone; after the rotation a
+frame under the new key id and key with a packet number above the Key RSC
+is delivered, while a frame under the previous key id, under stale material
+for the new key id, or with a packet number at or below its key's floor is
+dropped without changing anything; and a delivered frame's packet number
+exceeds its key's floor and becomes the new floor. -/
+theorem wifi_group_key_rotation :
+    (∀ (s : GtkRekey.State) (fs : List GtkRekey.Frame),
+      s.replay ≤ (GtkRekey.run s fs).1.replay ∧
+        (GtkRekey.msg2s (GtkRekey.run s fs).2).Pairwise (· < ·)) ∧
+    (∀ (s : GtkRekey.State) (f : GtkRekey.Frame) (r : Nat),
+      (GtkRekey.step s f).2 = .msg2 r →
+        ∃ m, f.body = .groupMsg1 m ∧ r = m.replay ∧ m.micOk = true ∧ m.unwrapOk = true ∧
+          (m.keyId = 1 ∨ m.keyId = 2 ∨ m.keyId = 3) ∧
+          (GtkRekey.step s f).1.gtkId = m.keyId ∧ (GtkRekey.step s f).1.gtk = m.gtk ∧
+          (GtkRekey.step s f).1.pnGtk = m.rsc ∧ (GtkRekey.step s f).1.tk = s.tk) ∧
+    (∀ (s : GtkRekey.State) (f g : GtkRekey.Frame) (r : Nat) (m : GtkRekey.GroupMsg1) (p : Nat),
+      (GtkRekey.step s f).2 = .msg2 r → f.body = .groupMsg1 m →
+        g.keyId = m.keyId → g.key = m.gtk → m.rsc < g.pn → g.body = .data p →
+          (GtkRekey.step (GtkRekey.step s f).1 g).2 = .deliver p) ∧
+    (∀ (s : GtkRekey.State) (f g : GtkRekey.Frame) (r : Nat) (m : GtkRekey.GroupMsg1),
+      (GtkRekey.step s f).2 = .msg2 r → f.body = .groupMsg1 m →
+        g.keyId ≠ 0 → g.keyId ≠ m.keyId →
+          GtkRekey.step (GtkRekey.step s f).1 g = ((GtkRekey.step s f).1, .drop .unknownKey)) ∧
+    (∀ (s : GtkRekey.State) (f g : GtkRekey.Frame) (r : Nat) (m : GtkRekey.GroupMsg1),
+      (GtkRekey.step s f).2 = .msg2 r → f.body = .groupMsg1 m →
+        g.keyId = m.keyId → g.key ≠ m.gtk →
+          GtkRekey.step (GtkRekey.step s f).1 g = ((GtkRekey.step s f).1, .drop .mic)) ∧
+    (∀ (s : GtkRekey.State) (g : GtkRekey.Frame),
+      GtkRekey.keyFor s g.keyId = some g.key → g.pn ≤ GtkRekey.lastPn s g.keyId →
+        GtkRekey.step s g = (s, .drop .replayedPn)) ∧
+    (∀ (s : GtkRekey.State) (f : GtkRekey.Frame) (p : Nat),
+      (GtkRekey.step s f).2 = .deliver p →
+        GtkRekey.lastPn s f.keyId < f.pn ∧ GtkRekey.lastPn (GtkRekey.step s f).1 f.keyId = f.pn) :=
+  ⟨fun s fs => ⟨GtkRekey.run_replay_mono s fs, GtkRekey.run_msg2_sorted s fs⟩,
+   GtkRekey.msg2_installs, GtkRekey.delivered_after_rekey, GtkRekey.stale_id_dropped,
+   GtkRekey.stale_material_dropped, GtkRekey.replayed_pn_dropped,
+   fun s f p h => ⟨(GtkRekey.deliver_pn s f p h).2.2.1, (GtkRekey.deliver_pn s f p h).2.2.2⟩⟩
 
 /-- SC-TIMER-CAPABILITY: the PIT alarm is armed only by an accepted arm from
 the timer-capability holder with a count in `1 .. 65535`; an arm from any

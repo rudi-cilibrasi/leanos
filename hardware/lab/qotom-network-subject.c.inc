@@ -38,7 +38,17 @@
  * serves.  The separation of the two subjects is in time (the scrub), not in
  * address space as on q35; the lease exchange is not checked against
  * leanos_blocking_ipc_event, because the kernel holds it across the
- * restart. */
+ * restart.
+ *
+ * With --long-session (issue #557, LEANOS_QOTOM_LONG_SESSION; requires
+ * --dhcp-subject) the kernel reloads the TCO watchdog GRUB armed for 120
+ * ticks while the driver subject makes progress: on the link record, and
+ * after every 40 ticks the endpoint yields, at most
+ * LEANOS_QOTOM_WATCHDOG_KICKS times, each reload decided by the generated
+ * check leanos_qotom_watchdog_kick (LeanOS.QotomWatchdogKick).  The only
+ * watchdog write is the reload, TCO_RLD, as FreeBSD's ichwd reloads; the
+ * timeout, the halt bit, NO_REBOOT and SMI routing stay GRUB's.  The safety
+ * argument is in docs/wifi-driver.md, "Long sessions". */
 #define QOTOM_NET_RX_AT 0x3E000u
 #define QOTOM_NET_TX_AT 0x3E800u
 #define QOTOM_NET_TX_LEN_AT 0x3F000u
@@ -72,6 +82,72 @@ static const uint64_t qotom_net_ipc_words[4] = {
     0x0000000200020303ull, 0x0001000200020404ull,
 };
 static struct qotom_copy_operand qotom_net_operands[16];
+
+#ifdef LEANOS_QOTOM_LONG_SESSION
+#ifndef LEANOS_QOTOM_DHCP_SUBJECT
+#error "a long session needs the link-only endpoint's ticks (--dhcp-subject)"
+#endif
+#ifndef LEANOS_QOTOM_WATCHDOG_KICKS
+#error "a long session needs its watchdog kick budget"
+#endif
+/* Bay Trail TCO v3 at ACPI base 0x400 + 0x60, the registers GRUB checked
+   and armed (hardware/lab/grub-qotom-watchdog.cfg). */
+#define QOTOM_TCO_RLD 0x460u
+#define QOTOM_TCO1_CNT 0x468u
+#define QOTOM_TCO_TMR 0x472u
+#define QOTOM_WATCHDOG_LINK 1u
+#define QOTOM_WATCHDOG_TICK 2u
+static uint64_t qotom_wd_ticks, qotom_wd_kicks, qotom_wd_stopped;
+
+static inline uint16_t qotom_wd_in16(uint16_t port) {
+    uint16_t value;
+    __asm__ volatile("inw %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+/* The image's one watchdog store: reload the running countdown (TCO_RLD,
+   any value; FreeBSD ichwd_tmr_reload writes 1 on TCO v2/v3).  Out of line,
+   so the audit finds it and its single caller. */
+static __attribute__((noinline)) void qotom_watchdog_reload(void) {
+    __asm__ volatile("outw %0, %1" : : "a"((uint16_t)1), "d"((uint16_t)QOTOM_TCO_RLD));
+}
+
+/* A driver record that shows progress: the link record (the join and the
+   4-way handshake are done) or a tick (one second of the radio's TSF time,
+   yielded by the driver program and reaching the kernel only after the
+   subject took the previous record).  Reload the timer when the generated
+   check admits it; once it refuses for any reason but "not due", never
+   reload again, so the board resets at most 120 seconds after the last
+   reload. */
+static __attribute__((noinline)) void qotom_watchdog_progress(uint64_t event) {
+    if (qotom_wd_stopped) return;
+    if (event == QOTOM_WATCHDOG_TICK) qotom_wd_ticks++;
+    uint64_t count = qotom_wd_in16(QOTOM_TCO1_CNT);
+    uint64_t timer = qotom_wd_in16(QOTOM_TCO_TMR);
+    uint64_t decision = leanos_qotom_watchdog_kick(event, qotom_wd_ticks, qotom_wd_kicks,
+        LEANOS_QOTOM_WATCHDOG_KICKS, count, timer);
+    if (decision == 1) return;
+    if (decision != 0) {
+        qotom_wd_stopped = 1;
+        serial_puts("LEANOS-LAB/1 WATCHDOG-KICK stopped reason=");
+        serial_u64(decision);
+        serial_puts(" kicks="); serial_u64(qotom_wd_kicks);
+        serial_puts(" count="); serial_u64(count);
+        serial_puts(" timer="); serial_u64(timer);
+        serial_putc('\n');
+        return;
+    }
+    qotom_watchdog_reload();
+    qotom_wd_kicks++;
+    serial_puts("LEANOS-LAB/1 WATCHDOG-KICK n=");
+    serial_u64(qotom_wd_kicks);
+    serial_puts(" budget="); serial_u64(LEANOS_QOTOM_WATCHDOG_KICKS);
+    serial_puts(event == QOTOM_WATCHDOG_LINK ? " event=link" : " event=ticks ticks=");
+    if (event == QOTOM_WATCHDOG_TICK) serial_u64(qotom_wd_ticks);
+    serial_puts(" ticks-timeout=120\n");
+    qotom_wd_ticks = 0;
+}
+#endif
 /* The executor scratch (hardware/wifi/wifi-exec.h, spliced after this file). */
 static uint8_t *qotom_net_scratch(void);
 
@@ -195,6 +271,10 @@ static uint64_t qotom_net_next_frame(void) {
     if (qotom_net_seq == 0 ? code != QOTOM_NET_CONFIG_BYTES
         : code < QOTOM_NET_FRAME_MIN || code > QOTOM_NET_FRAME_MAX)
         qotom_blocking_fail("qotom-net-frame-length");
+#endif
+#ifdef LEANOS_QOTOM_LONG_SESSION
+    if (qotom_net_seq == 0) qotom_watchdog_progress(QOTOM_WATCHDOG_LINK);
+    else if (code == QOTOM_NET_TICK_BYTES) qotom_watchdog_progress(QOTOM_WATCHDOG_TICK);
 #endif
     qotom_net_rx_len = code;
     qotom_net_rx_pending = 1;
@@ -338,6 +418,9 @@ static uint64_t qotom_net_dispatch(uint64_t *saved, uint64_t number) {
         serial_puts(" replies="); serial_u64(qotom_net_replies);
         serial_puts(" refusals="); serial_u64(qotom_net_refusals);
         serial_puts(" ipc-edges="); serial_u64(qotom_net_ipc_edges);
+#ifdef LEANOS_QOTOM_LONG_SESSION
+        serial_puts(" watchdog-kicks="); serial_u64(qotom_wd_kicks);
+#endif
         serial_putc('\n');
         for (;;) __asm__ volatile("cli; hlt");
     }

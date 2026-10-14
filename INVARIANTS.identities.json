@@ -18224,6 +18224,180 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.deliver_pn",
+      "display": "deliver_pn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.delivered_after_rekey",
+      "display": "delivered_after_rekey",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.group_msg2",
+      "display": "group_msg2",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.group_pnTk",
+      "display": "group_pnTk",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.group_replay_mono",
+      "display": "group_replay_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.lastPn_recordPn",
+      "display": "lastPn_recordPn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.msg2_installs",
+      "display": "msg2_installs",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.msg2_once",
+      "display": "msg2_once",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.msg2_replay",
+      "display": "msg2_replay",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.recordPn_pnGtk",
+      "display": "recordPn_pnGtk",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.recordPn_pnTk",
+      "display": "recordPn_pnTk",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.recordPn_replay",
+      "display": "recordPn_replay",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.recordPn_tk",
+      "display": "recordPn_tk",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.replayed_pn_dropped",
+      "display": "replayed_pn_dropped",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.run_msg2_gt",
+      "display": "run_msg2_gt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.run_msg2_sorted",
+      "display": "run_msg2_sorted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.run_replay_mono",
+      "display": "run_replay_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.scenario_final",
+      "display": "scenario_final",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.scenario_outcomes",
+      "display": "scenario_outcomes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.stale_id_dropped",
+      "display": "stale_id_dropped",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.stale_material_dropped",
+      "display": "stale_material_dropped",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_accepts",
+      "display": "step_accepts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_mic",
+      "display": "step_mic",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_msg2",
+      "display": "step_msg2",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_pnGtk_mono",
+      "display": "step_pnGtk_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_pnTk_mono",
+      "display": "step_pnTk_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_rejects",
+      "display": "step_rejects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_replay_mono",
+      "display": "step_replay_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/GtkRekey.lean",
+      "qualified": "LeanOS.GtkRekey.step_unknown",
+      "display": "step_unknown",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/IOMMU.lean",
       "qualified": "LeanOS.IOMMU.AuthoritativeMemoryOutcome.invariant",
       "display": "AuthoritativeMemoryOutcome.invariant",
@@ -23642,6 +23816,108 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.budgetOf_le_cap",
+      "display": "budgetOf_le_cap",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.budget_1800",
+      "display": "budget_1800",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.budget_le_iff",
+      "display": "budget_le_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.capKicks_eq",
+      "display": "capKicks_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.cap_reset_seconds",
+      "display": "cap_reset_seconds",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.changed_never_kicked",
+      "display": "changed_never_kicked",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.deadline_le",
+      "display": "deadline_le",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.kickDecide_zero_iff",
+      "display": "kickDecide_zero_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.kick_needs_ticks",
+      "display": "kick_needs_ticks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.reset_bound",
+      "display": "reset_bound",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.run_kicks_le_budget",
+      "display": "run_kicks_le_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.run_kicks_le_cap",
+      "display": "run_kicks_le_cap",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.session_1800_reset_seconds",
+      "display": "session_1800_reset_seconds",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.step_kicks",
+      "display": "step_kicks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.step_kicks_mono",
+      "display": "step_kicks_mono",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.ticks_ge_iff",
+      "display": "ticks_ge_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.unarmed_never_kicked",
+      "display": "unarmed_never_kicked",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/ReplayUnwinding.lean",
       "qualified": "LeanOS.ReplayUnwinding.finite_trace_lowEquiv",
       "display": "finite_trace_lowEquiv",
@@ -25307,6 +25583,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.user_return_syscall_entry_cannot_skip_body",
       "display": "user_return_syscall_entry_cannot_skip_body",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.wifi_group_key_rotation",
+      "display": "wifi_group_key_rotation",
       "kind": "theorem"
     },
     {

@@ -153,6 +153,9 @@ extern uint64_t page_directory_b[], page_table_b[];
      defined(LEANOS_CONSOLE_SERVER_SCENARIO))
 #error "the network-subject image is the three-subject image with a frame source and no assigned device"
 #endif
+#if defined(LEANOS_GTK_REKEY_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
+#error "the gtk-rekey image is the network-subject image with the rekeying frame source"
+#endif
 #if defined(LEANOS_DHCP_SUBJECT_SCENARIO) && \
     (!defined(LEANOS_THREE_SUBJECT_SCENARIO) || defined(LEANOS_DEVICE_SERVICE_SCENARIO) || \
      defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_NETWORK_SUBJECT_SCENARIO))
@@ -6001,7 +6004,15 @@ extern char user_c_template_text[];
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "../hardware/wifi/wifi-gen-exec.h"
 #pragma GCC diagnostic pop
+#ifdef LEANOS_GTK_REKEY_SCENARIO
+/* The gtk-rekey image (issue #557): the same subjects and endpoint, with the
+   frame source LeanOS.Net.RekeySource, which runs the BCM43224 driver's own
+   receive and transmit paths (LeanOS.Wifi.Endpoint.handleFrame, takeTx) on
+   CCMP-protected frames that rotate the group key. */
+#include "gtk-rekey-program.h"
+#else
 #include "network-subject-program.h"
+#endif
 
 static const char *const network_reasons[] = {
     "none", "not-holder", "endpoint-state", "frame-length", "outside-window",
@@ -6035,6 +6046,21 @@ static unsigned network_waiting;
 static uint64_t network_seq, network_rx_len, network_rx_pending, network_tx_pending;
 static uint64_t network_tx_len, network_sent_len, network_sent_seq;
 static uint64_t network_fetches, network_replies, network_checked;
+#ifdef LEANOS_GTK_REKEY_SCENARIO
+/* The driver's records (LeanOS.Net.RekeySource, LeanOS.Wifi.Responder,
+   LeanOS.Wifi.Endpoint, LeanOS.Wifi.Handshake tags). */
+#define GTK_TAG_GTK_INSTALLED 0x0D05u
+#define GTK_TAG_REPLAY_DROPPED 0x0F06u
+#define GTK_TAG_GROUP_MSG2_SENT 0x0F09u
+#define GTK_TAG_GROUP_MSG1_DROPPED 0x0F0Au
+#define GTK_TAG_TO_ENDPOINT 0x0F12u
+#define GTK_TAG_TRANSMITTED 0x0F13u
+#define GTK_TAG_GROUP_FRAME 0x0F18u
+#define GTK_TAG_TRANSMIT_MATCHED 0x5103u
+#define GTK_TAG_NOT_DELIVERED 0x5104u
+#define GTK_TAG_STATE_MATCHED 0x5105u
+static uint64_t gtk_mpdus, gtk_rekeys, gtk_not_delivered, gtk_transmits;
+#endif
 static uint64_t network_refusals, network_b_result;
 static uint64_t network_ipc_step, network_ipc_edges;
 
@@ -6067,9 +6093,42 @@ __attribute__((noinline, noipa)) void wifi_hook_delay_us(uint32_t us) {
    returned matched the reference responder, or there was rightly none. The
    kernel also requires it to name the frame just delivered and the reply
    length C sent. */
+#ifdef LEANOS_GTK_REKEY_SCENARIO
+/* A driver record of the rekeying frame source, or 0 if `tag` is not one. */
+static int gtk_driver_record(uint32_t tag, uint32_t value) {
+    const char *record;
+    switch (tag) {
+    case GTK_TAG_GTK_INSTALLED: record = "gtk-installed key-id="; break;
+    case GTK_TAG_REPLAY_DROPPED: record = "replayed-pn-dropped"; break;
+    case GTK_TAG_GROUP_MSG2_SENT: record = "group-msg2-sent key-id="; gtk_rekeys++; break;
+    case GTK_TAG_GROUP_MSG1_DROPPED: record = "group-msg1-dropped"; break;
+    case GTK_TAG_TO_ENDPOINT: record = "decapsulated-to-endpoint bytes="; break;
+    case GTK_TAG_TRANSMITTED: record = "reply-protected bytes="; break;
+    case GTK_TAG_GROUP_FRAME: record = "group-frame key-id="; break;
+    case GTK_TAG_TRANSMIT_MATCHED:
+        record = "mpdu-transmitted reference=match bytes="; gtk_transmits++; break;
+    case GTK_TAG_NOT_DELIVERED:
+        record = "not-delivered model=agree mpdu="; gtk_not_delivered++; break;
+    case GTK_TAG_STATE_MATCHED:
+        if (value != gtk_mpdus) fail("gtk-rekey-state-order");
+        record = "key-state model=agree mpdu="; gtk_mpdus++; break;
+    default: return 0;
+    }
+    serial_puts(LEANOS_SERIAL_10_NET " event=driver record=");
+    serial_puts(record);
+    if (tag != GTK_TAG_REPLAY_DROPPED && tag != GTK_TAG_GROUP_MSG1_DROPPED)
+        serial_u64(value);
+    serial_putc('\n');
+    return 1;
+}
+#endif
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
     uint64_t frame = (value >> 16) + 1u;
     uint64_t bytes = value & 0xffffu;
+#ifdef LEANOS_GTK_REKEY_SCENARIO
+    if (gtk_driver_record(tag, value)) return;
+#endif
     if (tag == NETWORK_TAG_NO_REPLY_MATCHED) {
         frame = (uint64_t)value + 1u;
         bytes = 0;
@@ -6362,6 +6421,14 @@ static uint64_t network_subject_syscall(uint64_t number, uint64_t arg0,
             network_b_result != (NETWORK_REFUSED | 1u) || network_ipc_step != 1 ||
             network_ipc_edges != 4 * network_seq + 1)
             fail("network-subject-count");
+#ifdef LEANOS_GTK_REKEY_SCENARIO
+        /* Every MPDU was checked against the model; each reached the
+           endpoint (one record each after the configuration record) or,
+           as the model says, did not. */
+        if (gtk_mpdus == 0 || gtk_not_delivered + network_seq - 1 != gtk_mpdus ||
+            gtk_rekeys == 0 || gtk_transmits < gtk_rekeys)
+            fail("gtk-rekey-count");
+#endif
         serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS subjects=3 network-subject=3 device-holder=1 frames=");
         serial_u64(network_seq);
         serial_puts(" fetches="); serial_u64(network_fetches);
@@ -6369,6 +6436,12 @@ static uint64_t network_subject_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" checked="); serial_u64(network_checked);
         serial_puts(" refusals="); serial_u64(network_refusals);
         serial_puts(" ipc-edges="); serial_u64(network_ipc_edges);
+#ifdef LEANOS_GTK_REKEY_SCENARIO
+        serial_puts(" mpdus="); serial_u64(gtk_mpdus);
+        serial_puts(" rekeys="); serial_u64(gtk_rekeys);
+        serial_puts(" not-delivered="); serial_u64(gtk_not_delivered);
+        serial_puts(" transmitted="); serial_u64(gtk_transmits);
+#endif
         serial_putc('\n');
         finish(0x10);
     }

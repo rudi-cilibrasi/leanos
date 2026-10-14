@@ -228,3 +228,20 @@ invalid ELF and wrong request digest. Successful loads and load failures use a
 marked mock timer in QEMU; physical evidence is recorded separately. Ten Python
 test methods pass, including both retained physical hang captures and protected
 normal-capture failure mutations. Three consecutive [protected physical cycles](../hardware/lab/observations/qotom-protected-normal-20260909/README.md) passed with 34.26-second quiet intervals, unchanged rejection traces, consumed requests, changed boot epochs, and authenticated FreeBSD SSH recovery. No operator intervention was needed.
+
+## Long WiFi sessions
+
+A WiFi session long enough to see the access point rotate its group key
+(issue #557) outlasts the 120-tick arm. `build-qotom-recovery-lab.py
+--long-session SECONDS` builds an image whose kernel reloads the armed timer
+while the WiFi driver subject makes progress: on the link record and after
+every 40 endpoint ticks, at most `2 + ceil(SECONDS / 40)` times, and only
+while TCO1_CNT and TCO_TMR still read as GRUB left them. Each reload is
+decided by the generated check `leanos_qotom_watchdog_kick`
+(`LeanOS.QotomWatchdogKick`) and is the single TCO_RLD write FreeBSD's
+`ichwd` uses to reload; arming, the timeout, the halt bit, NO_REBOOT and SMI
+routing stay GRUB's. A hang stops the reloads, so the board still resets at
+most 120 seconds after the last one, and at most `(budget + 1) · 120`
+seconds after the arm in any case. The design and its safety argument are
+in [wifi-driver.md](wifi-driver.md#long-sessions); the runner's
+`--long-session` mode checks the reloads in the capture.

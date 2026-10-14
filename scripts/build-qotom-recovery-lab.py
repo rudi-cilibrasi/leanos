@@ -64,6 +64,7 @@ p.add_argument('--wifi-program', type=Path, help='run a Lean-generated BCM43224 
 p.add_argument('--lab-program', type=Path, action='append', default=[], help='run a Lean-generated device program image (repeatable; after any --wifi-program)')
 p.add_argument('--ipc-device-stream', action='store_true', help='with --blocking-ipc-integration and one yield-per-key --lab-program: after the first exchange, subject 1 streams keys from the kernel-hosted program to subject 2 over the verified blocking IPC (issue #449 stage 3)')
 p.add_argument('--network-subject', action='store_true', help='with --ipc-device-stream (issue #450): after the first exchange, subject 2 is the WiFi driver subject and subject 1 runs the ring-3 network subject built from subjects/net with the generated responder; frames cross through the bounded copy roots, 16 bytes per transfer. Use the net-bcm-frames image for a keyless smoke test or a LEANOS_WIFI_NETWORK_SUBJECT connect image (embeds the PMK: never commit it)')
+p.add_argument('--long-session', type=int, metavar='SECONDS', help='with --dhcp-subject (issue #557): a WiFi session longer than the 120-tick lab watchdog allows. The kernel reloads the TCO watchdog GRUB armed (TCO_RLD only) on the link record and after every 40 endpoint ticks, each reload decided by the generated check leanos_qotom_watchdog_kick, at most 2 + ceil(SECONDS/40) times (LeanOS.QotomWatchdogKick.budgetOf); SECONDS is 1..3600 and should be the program\'s LEANOS_WIFI_SERVE_SECONDS. The box still resets to FreeBSD at most 120 s after the last reload. See docs/wifi-driver.md, "Long sessions"')
 p.add_argument('--dhcp-subject', action='store_true', help='with --network-subject (issue #556): subject 1 first runs the ring-3 DHCP subject built from subjects/dhcp with the generated client, which leases the address and hands it over endpoint 13; the kernel then scrubs subject 1\'s stack pages and starts the echo subject built from subjects/echo there, which answers only for the lease. Use the net-bcm-dhcp image for a keyless smoke test or a LEANOS_WIFI_NETWORK_SUBJECT connect image without LEANOS_WIFI_DRIVER_DHCP (link-only endpoint; embeds the PMK: never commit it)')
 p.add_argument('--copy-root-publication', action='store_true', help='construct, publish, and exercise the bounded Qotom copy roots')
 p.add_argument('--entry-integration', action='store_true', help='exercise a closed-root CPL3 entry and validated machine return')
@@ -308,6 +309,15 @@ if a.network_subject and not a.ipc_device_stream:
     raise SystemExit('--network-subject needs --ipc-device-stream')
 if a.dhcp_subject and not a.network_subject:
     raise SystemExit('--dhcp-subject needs --network-subject')
+# LeanOS.QotomWatchdogKick: kickPeriod 40, maxSessionSeconds 3600,
+# budgetOf seconds = 2 + ceil(seconds / 40).
+watchdog_kicks = None
+if a.long_session is not None:
+    if not a.dhcp_subject:
+        raise SystemExit('--long-session needs --dhcp-subject (the link-only endpoint ticks)')
+    if not 1 <= a.long_session <= 3600:
+        raise SystemExit('--long-session SECONDS must be 1..3600')
+    watchdog_kicks = 2 + (a.long_session + 40 - 1) // 40
 if a.network_subject and not (a.broadcom_d3 and a.pci_trust_contract):
     # The reviewed assignment variant (issue #559) starts from the D3hot
     # record and the accepted qotom-j1900-pci-trust-v1 contract.
@@ -348,6 +358,9 @@ if lab_programs:
             text = '#define LEANOS_QOTOM_NETWORK_SUBJECT 1\n' + text
         if a.dhcp_subject:
             text = '#define LEANOS_QOTOM_DHCP_SUBJECT 1\n' + text
+        if watchdog_kicks is not None:
+            text = ('#define LEANOS_QOTOM_LONG_SESSION 1\n'
+                    f'#define LEANOS_QOTOM_WATCHDOG_KICKS {watchdog_kicks}u\n') + text
         text = text.replace('\nstatic void lab_wifi_run(void);\n',
                             '\nstatic void lab_wifi_run(void) __attribute__((unused));\n')
     elif not a.q35_device_lab:
@@ -735,7 +748,8 @@ if a.blocking_ipc_integration:
         'python3', 'scripts/audit-qotom-blocking-ipc-integration.py',
         *(['--dhcp-subject'] if a.dhcp_subject else
           ['--network-subject'] if a.network_subject else
-          ['--device-stream'] if a.ipc_device_stream else []), str(elf)],
+          ['--device-stream'] if a.ipc_device_stream else []),
+        *(['--long-session'] if a.long_session is not None else []), str(elf)],
         cwd=root, check=True, capture_output=True)
     blocking_ipc_audit.write_bytes(checked.stdout)
     ap_start_audit = out / 'ap-start-audit.json'
@@ -908,7 +922,7 @@ if a.blocking_ipc_integration:
               build / 'qotom-platform-profile-inputs.h',
               root / 'scripts/expectations/blocking-ipc.transcript',
               blocking_profile_object, blocking_ipc_audit, ap_start_audit]
-manifest = {'wifi_program_sha256': hashlib.sha256(a.wifi_program.read_bytes()).hexdigest() if a.wifi_program else None, 'lab_program_sha256': [hashlib.sha256(f.read_bytes()).hexdigest() for f in a.lab_program], 'blocking_ipc_integration': a.blocking_ipc_integration, 'ipc_device_stream': a.ipc_device_stream, 'network_subject': a.network_subject, 'dhcp_subject': a.dhcp_subject, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+manifest = {'wifi_program_sha256': hashlib.sha256(a.wifi_program.read_bytes()).hexdigest() if a.wifi_program else None, 'lab_program_sha256': [hashlib.sha256(f.read_bytes()).hexdigest() for f in a.lab_program], 'blocking_ipc_integration': a.blocking_ipc_integration, 'ipc_device_stream': a.ipc_device_stream, 'network_subject': a.network_subject, 'dhcp_subject': a.dhcp_subject, 'long_session_seconds': a.long_session, 'watchdog_kick_budget': watchdog_kicks, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),

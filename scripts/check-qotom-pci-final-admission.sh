@@ -29,6 +29,10 @@ PY
   "$build/native-pci/native-pci.o" -o "$build/broadcom-assign-test"
 "$build/broadcom-assign-test"
 "${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
+  -Ibuild/boundary-abi tests/qotom-watchdog-kick.c \
+  "$build/native-pci/native-pci.o" -o "$build/watchdog-kick-test"
+"$build/watchdog-kick-test"
+"${CC:-gcc}" -no-pie -std=c11 -O2 -Wall -Wextra -Werror \
   -Ibuild/boundary-abi tests/qotom-nosmap-control.c \
   "$build/native-pci/native-pci.o" -o "$build/nosmap-control-test"
 "$build/nosmap-control-test"

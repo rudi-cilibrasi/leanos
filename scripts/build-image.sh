@@ -683,6 +683,10 @@ embed_device_program net-q35-frames network-subject-program network_subject_prog
 # The dhcp-subject image (issue #556) hosts the deviceless frame source of
 # link records, ticks and DHCP and echo frames (LeanOS.Net.DhcpSource).
 embed_device_program net-q35-dhcp dhcp-subject-program dhcp_subject_program
+# The gtk-rekey image (issue #557) hosts the frame source that runs the
+# BCM43224 driver's receive and transmit paths on frames rotating the group
+# key (LeanOS.Net.RekeySource), in the network-subject image's place.
+embed_device_program net-q35-rekey gtk-rekey-program network_subject_program
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
@@ -793,6 +797,7 @@ compute_graph_make_input_signature() {
       -name 'ahci-service-program.h' -o \
       -name 'network-subject-program.h' -o \
       -name 'dhcp-subject-program.h' -o \
+      -name 'gtk-rekey-program.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
       while IFS= read -r -d '' input; do
@@ -1268,7 +1273,7 @@ fi
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
     example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory \
-    network-subject dhcp-subject spawn-child spawn-loader; do
+    network-subject gtk-rekey dhcp-subject spawn-child spawn-loader; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \

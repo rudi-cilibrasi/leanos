@@ -6,6 +6,7 @@ import LeanOS.Storage.AhciRead
 import LeanOS.Net.Rtl8168
 import LeanOS.Net.FrameSource
 import LeanOS.Net.DhcpSource
+import LeanOS.Net.RekeySource
 import LeanOS.Wifi.Endpoint
 
 /-! Hosted generator: encodes a named Lean WiFi program into the binary image
@@ -117,6 +118,12 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       let fw ← loadFirmware fwDir
       let full := (← IO.getEnv "LEANOS_WIFI_DHCP").isSome
       let serve := (← IO.getEnv "LEANOS_WIFI_SERVE_SECONDS").bind String.toNat?
+      -- The serve window is measured in microseconds of the TSF's low
+      -- 32-bit word (one wrap is harmless): at most 4294 s. Long sessions
+      -- (issue #557, e.g. 1800 s to cover the AP's GTK rekey interval) fit.
+      if let some secs := serve then
+        if secs == 0 || secs * 1000000 ≥ 4294967296 then
+          throw (IO.userError "LEANOS_WIFI_SERVE_SECONDS must be 1..4294")
       let chain := (← IO.getEnv "LEANOS_WIFI_TXCHAIN").bind String.toNat?
       let cal := ((← IO.getEnv "LEANOS_WIFI_CAL").bind String.toNat?).getD
         (LeanOS.Wifi.NPhy.qotom 6).calLevel
@@ -150,6 +157,8 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("net-bcm-frames", pure LeanOS.Net.FrameSource.bcmProgram),
    ("net-q35-dhcp", pure LeanOS.Net.DhcpSource.program),
    ("net-bcm-dhcp", pure LeanOS.Net.DhcpSource.bcmProgram),
+   ("net-q35-rekey", pure LeanOS.Net.RekeySource.program),
+   ("net-bcm-rekey", pure LeanOS.Net.RekeySource.bcmProgram),
    ("ahci-q35-service", pure LeanOS.Storage.AhciRead.program),
    ("rtl8168-arp", pure LeanOS.Net.Rtl8168.program),
    ("kbd", do
