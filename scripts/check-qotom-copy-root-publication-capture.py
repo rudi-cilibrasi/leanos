@@ -8,6 +8,9 @@ DEC = rb'(0|[1-9][0-9]{0,19})'
 # (protected frames, removed source aliases, retained present leaves).
 # 'base' is the ordinary image, whose A text is one page; 'dhcp-subject' is
 # the --dhcp-subject image (issue #556), whose A text is two pages.
+# scripts/run-qotom-recovery-lab.py has no device-stream, network-subject or
+# DHCP-subject mode (those captures use the WiFi lab trial), so it always
+# decodes the 'base' inventory; a DHCP-subject replay passes 'dhcp-subject'.
 INVENTORIES = {'base': (5, 3, 4088), 'dhcp-subject': (6, 4, 4087)}
 
 
