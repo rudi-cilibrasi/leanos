@@ -136,7 +136,7 @@ grep -Fxq $'export\tleanos_qotom_broadcom_assign_write\t13\tLeanOS.QotomBroadcom
 grep -Fxq $'export\tleanos_qotom_broadcom_assign_admission\t27\tLeanOS.QotomBroadcomAssignment.exportedAdmission\tLeanOS.QotomBroadcomAssignment' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_watchdog_kick\t6\tLeanOS.QotomWatchdogKick.exportedKick\tLeanOS.QotomWatchdogKick' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_nosmap_control_query\t6\tLeanOS.QotomNoSmapControl.exportedQuery\tLeanOS.QotomNoSmapControl' "$tmp/out/boundary-abi.tsv"
-grep -Fxq $'export\tleanos_qotom_copy_root_publication_query\t13\tLeanOS.QotomCopyRootPublication.exportedQuery\tLeanOS.QotomCopyRootPublication' "$tmp/out/boundary-abi.tsv"
+grep -Fxq $'export\tleanos_qotom_copy_root_publication_query\t14\tLeanOS.QotomCopyRootPublication.exportedQuery\tLeanOS.QotomCopyRootPublication' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_entry_integration_query\t11\tLeanOS.QotomEntryIntegration.exportedQuery\tLeanOS.QotomEntryIntegration' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_qotom_blocking_ipc_integration_query\t16\tLeanOS.QotomBlockingIPCIntegration.exportedQuery\tLeanOS.QotomBlockingIPCIntegration' "$tmp/out/boundary-abi.tsv"
 grep -Fxq $'export\tleanos_platform_admission_query\t24\tLeanOS.PlatformAdmission.exportedQuery\tLeanOS.PlatformAdmission' "$tmp/out/boundary-abi.tsv"

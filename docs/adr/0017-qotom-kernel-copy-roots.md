@@ -127,8 +127,9 @@ root publication or CPL3 acceptance.
 
 ### Production-bound root construction checkpoint
 
-The opt-in `COPY-ROOTS profile=qotom-copy-roots-v1` step derives five protected
-frames from the linked user A/B text and stack ranges. It accepts only the exact
+The opt-in `COPY-ROOTS profile=qotom-copy-roots-v1` step derives the protected
+frames from the linked user A/B text and stack ranges: five for the ordinary
+image, six for the `--dhcp-subject` image (see below). It accepts only the exact
 4 KiB-leaf source hierarchy for the initial 16 MiB arena, rejects overlapping
 root storage and malformed ancestors, removes every present protected-frame
 alias from both output roots, and adds exactly two supervisor/NX aliases to the
@@ -142,9 +143,22 @@ and invokes the existing audited transfer helper through immutable byte operands
 Success requires all sixteen bytes to match and CR3 to read back as the closed
 root after the helper reloads closed, copy, then closed roots.
 
-The generated boundary requires the exact observed counts (five protected
-frames, three removed aliases, 4,088 retained present leaves and two temporary
-aliases), distinct aligned roots, both complete scans, the sixteen-byte result,
+The generated boundary requires the exact counts of one of two audited
+inventories, which the wrapper names with an explicit variant input
+(`QOTOM_ROOT_INVENTORY_VARIANT`):
+
+| Variant | Image | A text | Protected | Removed aliases | Retained present |
+| --- | --- | --- | --- | --- | --- |
+| 0 | ordinary | 1 page | 5 | 3 | 4,088 |
+| 1 | `--dhcp-subject` (issue #556) | 2 pages | 6 | 4 | 4,087 |
+
+In the DHCP-subject image A's text holds both the generated DHCP client and
+the echo responder, about 5.5 KiB, so it spans two pages. The wrapper also
+requires A's text to span exactly its variant's page count. An unknown
+variant is rejected (error bit 2048), and neither variant accepts the other's
+counts; `QotomCopyRootPublication.accepted_inventory_exact` proves that
+acceptance pins one of the two rows. Both variants require two temporary
+aliases, distinct aligned roots, both complete scans, the sixteen-byte result,
 and final closed-root readback. Only then may the serial record mark both roots
 published. Word six of the boundary always returns zero, so this checkpoint
 cannot authorize CPL3. A successful record terminates at

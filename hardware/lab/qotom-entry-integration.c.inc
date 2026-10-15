@@ -144,12 +144,13 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(v
     qotom_entry_observed_root=0;
     qotom_entry_completed_returns=0;
     if(active_root!=qotom_entry_closed_root ||
-       qotom_root_result.protected_count!=5 ||
+       qotom_root_result.protected_count!=QOTOM_ROOT_PROTECTED_PAGES ||
        (flags&(UINT64_C(1)<<9))!=0 || (cr4&UINT64_C(0x20080))!=0 ||
        qotom_entry_subject_root==0 || (qotom_entry_subject_root&UINT64_C(0xfff))!=0 ||
        qotom_entry_subject_root>=UINT64_C(0x1000000) ||
        qotom_entry_subject_root==qotom_entry_closed_root ||
-       !qotom_closed_root_exact(5) || !qotom_copy_root_exact(5))
+       !qotom_closed_root_exact(QOTOM_ROOT_PROTECTED_PAGES) ||
+       !qotom_copy_root_exact(QOTOM_ROOT_PROTECTED_PAGES))
         pre_admission_fail("qotom-entry-roots");
 
     privilege_init();

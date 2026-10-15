@@ -88,26 +88,26 @@ theorem qotom_nosmap_checkpoint_withholds_authority
 /-- SC-QOTOM-COPY-ROOT-NONAUTH: root-publication fields require the complete
 checkpoint predicate, while the checkpoint itself cannot grant CPL3 authority. -/
 theorem qotom_copy_root_publication_withholds_cpl3_and_gates_roots
-    (builderStatus protectedCount removed retained aliases closedRoot copyRoot
-      closedScan copyScan transferred bytesMatch activeRoot : UInt64) :
-    QotomCopyRootPublication.query builderStatus protectedCount removed retained
-        aliases closedRoot copyRoot closedScan copyScan transferred bytesMatch
-        activeRoot 6 = 0 ∧
-      (QotomCopyRootPublication.query builderStatus protectedCount removed retained
-          aliases closedRoot copyRoot closedScan copyScan transferred bytesMatch
-          activeRoot 3 = 1 →
-        QotomCopyRootPublication.accepted builderStatus protectedCount removed
-          retained aliases closedRoot copyRoot closedScan copyScan transferred
-          bytesMatch activeRoot = true) ∧
-      (QotomCopyRootPublication.query builderStatus protectedCount removed retained
-          aliases closedRoot copyRoot closedScan copyScan transferred bytesMatch
-          activeRoot 4 = 1 →
-        QotomCopyRootPublication.accepted builderStatus protectedCount removed
-          retained aliases closedRoot copyRoot closedScan copyScan transferred
-          bytesMatch activeRoot = true) := by
-  exact ⟨QotomCopyRootPublication.query_never_authorizes_cpl3 _ _ _ _ _ _ _ _ _ _ _ _,
-    QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _,
-    QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _⟩
+    (variant builderStatus protectedCount removed retained aliases closedRoot
+      copyRoot closedScan copyScan transferred bytesMatch activeRoot : UInt64) :
+    QotomCopyRootPublication.query variant builderStatus protectedCount removed
+        retained aliases closedRoot copyRoot closedScan copyScan transferred
+        bytesMatch activeRoot 6 = 0 ∧
+      (QotomCopyRootPublication.query variant builderStatus protectedCount
+          removed retained aliases closedRoot copyRoot closedScan copyScan
+          transferred bytesMatch activeRoot 3 = 1 →
+        QotomCopyRootPublication.accepted variant builderStatus protectedCount
+          removed retained aliases closedRoot copyRoot closedScan copyScan
+          transferred bytesMatch activeRoot = true) ∧
+      (QotomCopyRootPublication.query variant builderStatus protectedCount
+          removed retained aliases closedRoot copyRoot closedScan copyScan
+          transferred bytesMatch activeRoot 4 = 1 →
+        QotomCopyRootPublication.accepted variant builderStatus protectedCount
+          removed retained aliases closedRoot copyRoot closedScan copyScan
+          transferred bytesMatch activeRoot = true) := by
+  exact ⟨QotomCopyRootPublication.query_never_authorizes_cpl3 _ _ _ _ _ _ _ _ _ _ _ _ _,
+    QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _ _,
+    QotomCopyRootPublication.publication_requires_acceptance _ _ _ _ _ _ _ _ _ _ _ _ _⟩
 
 /-- SC-QOTOM-ENTRY-CHECKPOINT-NONAUTH: the first physical entry/return
 checkpoint is gated by its complete scalar result and grants no general CPL3

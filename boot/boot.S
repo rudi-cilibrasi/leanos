@@ -286,7 +286,7 @@ boot_cpu_gate_end:
 #endif
 
     /* Instruction pages are read-only and executable.  All other leaves
-       retain NX; only these two explicit pages receive U/S. */
+       retain NX; only each subject's own text and stack pages receive U/S. */
     mov $__kernel_text_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
@@ -307,12 +307,25 @@ boot_cpu_gate_end:
     cmp %ecx, %eax
     jb 4b
 
+    /* Every page of A's text range is user read-only executable, as the
+       generated boot plan classifies it (.userText for every page in
+       [__user_a_text_start, __user_a_text_end)).  The Qotom DHCP-subject lab
+       image links the DHCP client and the echo responder there, so its A text
+       spans two pages (issue #556); every other image's spans one. */
     mov $__user_a_text_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
+    mov $__user_a_text_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+26:
     orl $4, page_table_a(%eax)
     andl $~2, page_table_a(%eax)
     andl $0x7fffffff, page_table_a+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 26b
     mov $__user_a_stack_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
