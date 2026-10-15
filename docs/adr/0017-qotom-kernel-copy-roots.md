@@ -148,7 +148,7 @@ inventories, which the wrapper names with an explicit variant input
 (`QOTOM_ROOT_INVENTORY_VARIANT`):
 
 | Variant | Image | A text | Protected | Removed aliases | Retained present |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 0 | ordinary | 1 page | 5 | 3 | 4,088 |
 | 1 | `--dhcp-subject` (issue #556) | 2 pages | 6 | 4 | 4,087 |
 
