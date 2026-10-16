@@ -28,10 +28,12 @@ import LeanOS.FailStop.SpawnAccounting
 import LeanOS.FailStop.SpawnAccountingInvariants
 import LeanOS.FailStop.SpawnChildCleanup
 import LeanOS.FailStop.SpawnTree
+import LeanOS.FailStop.SpawnChildSend
 import LeanOS.FailStop.SpawnAccountingTraces
 import LeanOS.FailStop.CapabilityIdentities
 import LeanOS.FailStop.CapabilityIdentitySteps
 import LeanOS.FailStop.SpawnGate
+import LeanOS.FailStop.SpawnRollback
 import LeanOS.FailStop.AuthoritativeTraces
 import LeanOS.FailStop.SubjectGate
 import LeanOS.FailStop.Evidence

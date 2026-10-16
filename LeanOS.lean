@@ -84,6 +84,7 @@ import LeanOS.SpawnBoundaryTraces
 import LeanOS.SpawnBoundaryChecks
 import LeanOS.SpawnSyscall
 import LeanOS.ChildLoader
+import LeanOS.ChildLoaderJoint
 import LeanOS.FrameBudgetComposite
 import LeanOS.CompositeOwnSteps
 import LeanOS.CompositeChannels
