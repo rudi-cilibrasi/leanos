@@ -1,0 +1,9 @@
+{
+  "ipc_device_stream": true,
+  "network_subject": true,
+  "dhcp_subject": false,
+  "long_session_seconds": null,
+  "watchdog_kick_budget": null,
+  "mode": "completion",
+  "elf_sha256": "b78048a582a803ea338696ae00df95e4f080f5c3e6635ea21303c043477fab0d"
+}

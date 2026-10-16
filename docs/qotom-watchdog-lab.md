@@ -248,3 +248,13 @@ generated check `leanos_qotom_watchdog_session_end`), so a session that
 keeps making progress does not run out of reloads before `FINAL`. The design and its safety argument are
 in [wifi-driver.md](wifi-driver.md#long-sessions); the runner's
 `--long-session` mode checks the reloads in the capture.
+
+## Device-program results
+
+A device-program capture has no rejection trace, so the protected classifier
+above does not apply to it. For an image built with `--ipc-device-stream`,
+the runner reads the image's `manifest.json` and checks the scenario's
+records instead: the same protected launch and recovery, then `FINAL
+status=PASS` (issue #572). It writes `result.json` with `status` `PASS` or
+`FAIL` and the failed checks, and exits non-zero on a FAIL. See
+[wifi-driver.md](wifi-driver.md#lab-runner-results-for-device-programs).

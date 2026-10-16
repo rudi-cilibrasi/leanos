@@ -526,18 +526,22 @@ def run_fixtures() -> None:
         aggregate_path = evidence.ROOT / "scripts/check.sh"
         original_aggregate = aggregate_path.read_text(encoding="utf-8")
         failure_fixture = "./scripts/test-build-image.sh"
+        aggregate_run = '        run: ./scripts/check.sh --part "${{ matrix.part }}"\n'
         fixture_contract = (
             "CI must run the image-build failure fixture once through the required Lean aggregate"
         )
         for before, after in (
             ("  lean:\n", "  lean:\n    if: github.event_name == 'push'\n"),
             ("  lean:\n", "  lean:\n    continue-on-error: true\n"),
-            ("  lean:\n", "  lean:\n    strategy:\n      matrix:\n        copy: [0, 1]\n"),
-            ("        run: ./scripts/check.sh\n", "        run: 'true'\n"),
-            ("        run: ./scripts/check.sh\n",
-             "        if: github.event_name == 'push'\n        run: ./scripts/check.sh\n"),
-            ("        run: ./scripts/check.sh\n",
-             "        continue-on-error: true\n        run: ./scripts/check.sh\n"),
+            ("        part: [proofs, device-lab, platform, images]\n",
+             "        part: [proofs, device-lab, platform]\n"),
+            ("        part: [proofs, device-lab, platform, images]\n",
+             "        part: [proofs, device-lab, platform, images, images]\n"),
+            ("      fail-fast: false\n      matrix:\n        part:",
+             "      fail-fast: true\n      matrix:\n        part:"),
+            (aggregate_run, "        run: 'true'\n"),
+            (aggregate_run, "        if: github.event_name == 'push'\n" + aggregate_run),
+            (aggregate_run, "        continue-on-error: true\n" + aggregate_run),
             ("      - name: Download canonical image family\n",
              "      - name: Duplicated aggregate\n"
              "        run: ./scripts/check.sh\n\n"
@@ -555,6 +559,19 @@ def run_fixtures() -> None:
                 expect_failure(evidence.check_workflows, fixture_contract)
             finally:
                 ci_workflow.write_text(original_ci, encoding="utf-8")
+        # The CI matrix must name exactly the parts scripts/check.sh declares.
+        try:
+            aggregate_path.write_text(
+                original_aggregate.replace(
+                    "check_parts=(proofs device-lab platform images)",
+                    "check_parts=(proofs device-lab platform images extra)",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(evidence.check_workflows, fixture_contract)
+        finally:
+            aggregate_path.write_text(original_aggregate, encoding="utf-8")
         for replacement in ("", failure_fixture + " || true", (failure_fixture + "\n") * 2):
             try:
                 aggregate_path.write_text(
