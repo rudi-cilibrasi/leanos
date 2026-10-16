@@ -745,6 +745,11 @@ The first command requires Node.js/npm. `check.sh` also runs the controlled
 image-build compiler-failure fixture, so it requires the image-building tools
 listed below even though that fixture intentionally stops before packaging.
 CI runs this fixture once in the required Lean lane, not in each QEMU shard.
+`check.sh` is a fixed sequence of phases grouped into parts
+(`./scripts/check.sh --list-parts`). With no arguments it runs every part in
+order; `./scripts/check.sh --part images` runs one. CI runs the four parts as
+parallel jobs of the Lean lane, and its workflow contract requires the matrix
+to name every part, so together they still run every phase once.
 The final command writes one tarball
 whose internal manifest hashes the retained evidence and rejects missing
 report-bound files. Image building and QEMU prerequisites,
@@ -777,7 +782,12 @@ issue #498): one of the fifteen slowest modules may not regress by more than
 One of those fifteen that falls below a quarter of its baseline was split,
 renamed, or sped up, and fails until its rows are re-measured, so the moved
 proofs do not go untracked. A PR raises the baseline only by editing it, with
-its `# reason:` line updated. Controlled negative fixtures ensure
+its `# reason:` line updated. That gate runs in the `proofs` part, which restores
+a Lake cache only for exactly matching Lean inputs, so a Lean change rebuilds
+and times every affected module. Other lanes start from the newest Lake cache
+of the same platform and CI image, which Lake revalidates module by module,
+after `scripts/prune-lake-outputs.py` deletes outputs whose source is gone;
+the independent reproducibility build never restores a cache. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 
@@ -844,6 +854,35 @@ a pull request:
 Architecture-changing work should begin with a short issue or decision record.
 Proofs are part of the implementation: changes that invalidate them should fix
 or deliberately revise the associated specification in the same pull request.
+
+### Merging a pull request
+
+The `main` ruleset (`.github/main-ruleset-policy.json`) admits a pull request
+only when its branch is current with `main`, its review threads are resolved,
+and the required checks pass on its head commit. `Pre-merge full admission`
+is the required join: it passes only when a maintainer has applied the
+`ci:full-admission` label and every evidence lane of that run succeeded.
+
+1. Open the pull request. Unlabeled runs execute the bounded PR tier for quick
+   feedback, and `Pre-merge full admission` fails by design.
+2. After review, a maintainer applies `ci:full-admission` (or passes
+   `--label ci:full-admission` to `gh pr create`). The label starts a
+   complete-evidence run.
+3. If `main` has moved, update the branch (`gh pr update-branch`) and wait for
+   the new head's run. Admission is strict, so pull requests merge one at a
+   time: update, wait for green, merge, then update the next.
+4. Merge when `gh pr checks` shows every required check passing.
+
+GitHub judges a head commit by the check runs of its newest CI run. Each
+pull-request run therefore starts with `Supersede stale pull-request runs`,
+which cancels unfinished runs for older heads and older runs for the same
+head, and never the newest one; pull-request runs no longer cancel each other
+through workflow concurrency (issue #574). Do not cancel CI runs on a head you
+intend to merge. If GitHub still refuses a merge with every visible check
+green, list the head's runs (`gh run list --commit <sha> --workflow CI`) and
+re-run the newest cancelled one (`gh run rerun <id>`). A re-run reuses its
+original event, so a run that started before the label stays unpromoted;
+remove and re-apply the label to start a promoted run.
 
 ## Reading the evidence
 

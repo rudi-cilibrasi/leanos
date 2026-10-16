@@ -46,6 +46,7 @@ REQUIRED_CONTAINER_JOBS = {
         "repository-hygiene",
         "lean",
         "hosted-boundary",
+        "clang-hosted",
         "clang-image",
         "gcc-image-family",
         "reproducibility-plan",
