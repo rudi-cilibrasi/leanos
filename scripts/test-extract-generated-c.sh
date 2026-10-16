@@ -33,5 +33,5 @@ reject accept-word "= 1ULL;
 return" "= 2ULL;
 return"
 reject state-word "= 0ULL;" "= 5ULL;"
-reject unsupported "lean_uint64_dec_eq(v_state" "lean_uint64_dec_lt(v_state"
+reject unsupported "lean_uint64_dec_eq(v_state" "lean_uint64_mul(v_state"
 echo "generated-C drift check accepts the proved AST and rejects 3 mutations"

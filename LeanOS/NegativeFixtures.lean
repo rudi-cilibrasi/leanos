@@ -7,6 +7,7 @@ import LeanOS.NegativeFixtures.DirectPort
 import LeanOS.NegativeFixtures.DMAQuarantine
 import LeanOS.NegativeFixtures.ElfAdmission
 import LeanOS.NegativeFixtures.Example
+import LeanOS.NegativeFixtures.ExportRefinement
 import LeanOS.NegativeFixtures.FrameBudget
 import LeanOS.NegativeFixtures.Isr80PathSelector
 import LeanOS.NegativeFixtures.IOMMUConfinement

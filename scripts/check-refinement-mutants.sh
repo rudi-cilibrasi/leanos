@@ -5,13 +5,17 @@
 #   lean  — the export's Lean body, mutated and renamed, together with its
 #           agreement theorems and their unchanged proofs, fails to elaborate;
 #   c     — the emitted C, patched, fails the hosted oracle replay (and, for
-#           leanos_boot_transition, the rung-3 drift check);
+#           an export of scripts/refinement-exports.tsv, the rung-3 drift
+#           check);
+#   drift — the emitted C, patched, fails the rung-3 drift check against the
+#           AST its refinement theorem is about (issue #570; for exports
+#           outside the oracle harness);
 #   claim — a weakened claim statement fails the pinned contract
 #           tests/RefinementStatements.lean.
 # Needs a prior ordinary oracle replay (build/oracle, hosted sources).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-table=tests/fixtures/refinement-mutants.tsv
+table="${LEANOS_REFINEMENT_MUTANT_TABLE:-tests/fixtures/refinement-mutants.tsv}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 generated=build/hosted-generated-sources/oracle
@@ -70,21 +74,75 @@ PY
   lake env lean "$tmp/$id.lean" >"$tmp/$id.log" 2>&1
 }
 
-c_mutant() {
-  local id="$1" export="$2" old="$3" new="$4"
-  local module; module="$(c_source "$export")"
-  python3 - "$generated/$module.c" "$export" "$old" "$new" "$tmp/$module.c" <<'PY'
-import sys
+# The Lean file holding the proved AST of a refined C function, if any.
+refined_ast() {
+  awk -F'\t' -v fn="$1" '$1 !~ /^#/ && $2 == fn { print $3 }' scripts/refinement-exports.tsv
+}
+
+# The generated C module of a refined C function.
+refined_module() {
+  awk -F'\t' -v fn="$1" '$1 !~ /^#/ && $2 == fn { print $1 }' scripts/refinement-exports.tsv
+}
+
+# The claim theorem of LeanOS.SecurityClaims a `claim` mutant weakens.
+claim_theorem() {
+  case "$1" in
+    leanos_boot_transition) echo boot_transition_refinement ;;
+    leanos_spawn_syscall) echo spawn_syscall_refinement ;;
+    leanos_spawn_syscall_value) echo spawn_syscall_value_refinement ;;
+    leanos_loader_source) echo loader_source_refinement ;;
+    leanos_loader_decide) echo loader_decide_refinement ;;
+    leanos_frame_copy_check) echo frame_copy_check_refinement ;;
+    leanos_frame_port_check) echo frame_port_check_refinement ;;
+    *) echo "error: no refinement claim for $1" >&2; exit 1 ;;
+  esac
+}
+
+patch_export() {  # source export old new out: replace once inside the export
+  python3 - "$@" <<'PY'
+import re, sys
 from pathlib import Path
 source, export, old, new, out = sys.argv[1:6]
 text = Path(source).read_text()
-start = text.index(f"LEAN_EXPORT uint64_t {export}(uint64_t v_")
+# The definition (parameters named `v_…`), not the forward declaration.
+start = re.search(rf"^LEAN_EXPORT uint(?:64|8)_t {re.escape(export)}\(uint(?:64|8)_t v_",
+                  text, re.M).start()
 end = text.index("\nLEAN_EXPORT", start + 1)
 body = text[start:end]
 if old not in body:
     raise SystemExit(f"mutation anchor not found in {export}: {old!r}")
 Path(out).write_text(text[:start] + body.replace(old, new, 1) + text[end:])
 PY
+}
+
+drift_mutant() {
+  local id="$1" export="$2" old="$3" new="$4"
+  local module ast
+  module="$(refined_module "$export")"; ast="$(refined_ast "$export")"
+  [[ -n "$module" && -n "$ast" ]] || { echo "error: $export has no proved AST" >&2; exit 1; }
+  if [[ ! -f "$tmp/generated-$module.c" ]]; then
+    # The oracle replay's `lean --c` output when it has the module, else the
+    # same generation here (build-image.sh emits build/boot/*.c this way).
+    if [[ -f "$generated/$module.c" ]]; then
+      cp "$generated/$module.c" "$tmp/generated-$module.c"
+    else
+      lake env lean --c="$tmp/generated-$module.c" "LeanOS/$module.lean"
+    fi
+    # The unmutated C must pass, so a mutant fails because of its mutation.
+    python3 scripts/extract-generated-c.py --check "$tmp/generated-$module.c" "$export" "$ast" \
+      >/dev/null
+  fi
+  patch_export "$tmp/generated-$module.c" "$export" "$old" "$new" "$tmp/$id.c"
+  if python3 scripts/extract-generated-c.py --check "$tmp/$id.c" "$export" "$ast" \
+      >"$tmp/$id.log" 2>&1; then
+    echo "error: refinement mutant $id passed the rung-3 drift check" >&2; exit 1
+  fi
+}
+
+c_mutant() {
+  local id="$1" export="$2" old="$3" new="$4"
+  local module; module="$(c_source "$export")"
+  patch_export "$generated/$module.c" "$export" "$old" "$new" "$tmp/$module.c"
   local objects=()
   for object in build/oracle/*.o; do
     case "$(basename "$object")" in
@@ -101,37 +159,46 @@ PY
       >"$tmp/$id.log" 2>&1; then
     echo "error: refinement mutant $id passed the hosted oracle" >&2; exit 1
   fi
-  if [[ "$export" == leanos_boot_transition ]] &&
-      python3 scripts/extract-generated-c.py --check "$tmp/$module.c" "$export" \
-        LeanOS/Refinement/BootTransitionC.lean >/dev/null 2>&1; then
+  local ast; ast="$(refined_ast "$export")"
+  if [[ -n "$ast" ]] &&
+      python3 scripts/extract-generated-c.py --check "$tmp/$module.c" "$export" "$ast" \
+        >/dev/null 2>&1; then
     echo "error: refinement mutant $id passed the rung-3 drift check" >&2; exit 1
   fi
 }
 
-claim_mutant() {
-  local id="$1" old="$2" new="$3"
-  python3 - "$old" "$new" "$tmp/$id.lean" <<'PY'
-import sys
+claim_fixture() {  # id export old new: write the weakened-claim fixture
+  local id="$1" export="$2" old="$3" new="$4"
+  local theorem; theorem="$(claim_theorem "$export")"
+  python3 - "$theorem" "$old" "$new" "$tmp/$id.lean" <<'PY'
+import re, sys
 from pathlib import Path
-old, new, out = sys.argv[1:4]
+theorem, old, new, out = sys.argv[1:5]
 old = old.replace("\\n", "\n"); new = new.replace("\\n", "\n")
 claims = Path("LeanOS/SecurityClaims.lean").read_text()
-start = claims.index("theorem boot_transition_refinement")
-end = claims.index("\n\n", start)
-statement = claims[start:end]
+# The statement: from `theorem NAME` to the `:=` (or `:= by`) that ends its
+# line.
+match = re.search(rf"^theorem {theorem} (.*?):=(?: by)?[ ]*$", claims, re.S | re.M)
+if not match:
+    raise SystemExit(f"claim theorem not found: {theorem}")
+statement = f"theorem {theorem} " + match.group(1).rstrip()
 if old not in statement:
-    raise SystemExit(f"mutation anchor not found in boot_transition_refinement: {old!r}")
+    raise SystemExit(f"mutation anchor not found in {theorem}: {old!r}")
 weakened = statement.replace(old, new, 1).replace(
-    "theorem boot_transition_refinement", "theorem weakened_boot_transition_refinement")
-contract = Path("tests/RefinementStatements.lean").read_text().replace(
-    "LeanOS.SecurityClaims.boot_transition_refinement",
-    "LeanOS.SecurityClaims.weakened_boot_transition_refinement")
+    f"theorem {theorem} ", f"theorem weakened_{theorem} ", 1)
+contract = re.sub(rf"\bLeanOS\.SecurityClaims\.{theorem}\b",
+    f"LeanOS.SecurityClaims.weakened_{theorem}",
+    Path("tests/RefinementStatements.lean").read_text())
 Path(out).write_text(contract.replace(
     "\n/--\ninfo:", "\nnamespace LeanOS.SecurityClaims\nopen LeanOS\n" + weakened +
-    " := by\n  intro _\n  sorry\nend LeanOS.SecurityClaims\n\n/--\ninfo:", 1))
+    " := by\n  sorry\nend LeanOS.SecurityClaims\n\n/--\ninfo:", 1))
 PY
-  if lake env lean "$tmp/$id.lean" >"$tmp/$id.log" 2>&1; then
-    echo "error: refinement mutant $id was accepted (claim contract)" >&2; exit 1
+}
+
+claim_mutant() {
+  claim_fixture "$@"
+  if lake env lean "$tmp/$1.lean" >"$tmp/$1.log" 2>&1; then
+    echo "error: refinement mutant $1 was accepted (claim contract)" >&2; exit 1
   fi
 }
 
@@ -145,6 +212,18 @@ for export in leanos_boot_transition leanos_blocking_ipc_event; do
     cat "$tmp/identity-$export.log" >&2; exit 1
   fi
 done
+# Likewise every claim a `claim` mutant weakens: restated unchanged, its
+# fixture must satisfy the pinned contract.
+while IFS=$'\t' read -r id export kind _; do
+  [[ -z "$id" || "$id" == \#* || "$kind" != claim ]] && continue
+  theorem="$(claim_theorem "$export")"
+  [[ -f "$tmp/identity-$theorem.lean" ]] && continue
+  claim_fixture "identity-$theorem" "$export" "$theorem" "$theorem"
+  if ! lake env lean "$tmp/identity-$theorem.lean" >"$tmp/identity-$theorem.log" 2>&1; then
+    echo "error: unmutated claim fixture for $theorem fails the contract" >&2
+    cat "$tmp/identity-$theorem.log" >&2; exit 1
+  fi
+done <"$table"
 count=0
 while IFS=$'\t' read -r id export kind old new expected; do
   [[ -z "$id" || "$id" == \#* ]] && continue
@@ -154,7 +233,8 @@ while IFS=$'\t' read -r id export kind old new expected; do
         echo "error: refinement mutant $id was accepted (Lean)" >&2; exit 1
       fi ;;
     c) c_mutant "$id" "$export" "$old" "$new" ;;
-    claim) claim_mutant "$id" "$old" "$new" ;;
+    drift) drift_mutant "$id" "$export" "$old" "$new" ;;
+    claim) claim_mutant "$id" "$export" "$old" "$new" ;;
     *) echo "error: unknown mutant kind $kind ($id)" >&2; exit 1 ;;
   esac
   grep -q "$expected" "$tmp/$id.log" || {
