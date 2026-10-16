@@ -1,0 +1,11 @@
+{
+  "source_events_sha256": "1becdb0e77e8d7b7fff3ed99325b6020d4acb3b45ce4e0a5ddcf7742b0ac7fa5",
+  "source_raw_sha256": "67999795c0c9599f42b08a23c52a588c1f674f8ab14908273e64d81a8a502334",
+  "fragment": true,
+  "removed_lines": {
+    "payload": 0,
+    "fragment": 46841
+  },
+  "timing_tsv_sha256": "139d2b6725c20faa2974c4bfb8837a0e5e28cd97547488d9e59266f0d7251621",
+  "raw_sha256": "3dbac0b85ade7d90342ec29655a645699049e778bd24e9a17a412182304e92a5"
+}

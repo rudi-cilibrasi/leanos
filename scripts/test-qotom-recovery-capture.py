@@ -3,6 +3,7 @@
 import importlib.util
 import hashlib
 import json
+import re
 from pathlib import Path
 import unittest
 
@@ -304,6 +305,195 @@ class CaptureTests(unittest.TestCase):
                 lab.classify_watchdog_kicks(events, budget)
         with self.assertRaises(ValueError):
             lab.classify_watchdog_kicks(valid, 93)
+
+
+redact_spec = importlib.util.spec_from_file_location(
+    'redact', Path(__file__).with_name('redact-qotom-capture.py'))
+redact = importlib.util.module_from_spec(redact_spec)
+redact_spec.loader.exec_module(redact)
+FIXTURES = Path(__file__).with_name('fixtures') / 'qotom-device-captures'
+
+
+def replace_bytes(events, old, new, count=1):
+    """The events with `old` replaced by `new` in the one chunk holding it."""
+    out, done = [], 0
+    for e in events:
+        chunk = bytes.fromhex(e['hex'])
+        if done < count and old in chunk:
+            chunk = chunk.replace(old, new, count - done)
+            done = count
+        out.append({'elapsed': e['elapsed'], 'hex': chunk.hex()})
+    if not done:
+        raise AssertionError('mutation target not found: %r' % old)
+    return out
+
+
+class DeviceProgramTests(unittest.TestCase):
+    """Issue #572: device-program captures (device stream, network subject,
+    DHCP subject, long session) are classified PASS or FAIL from the
+    scenario flags of the lab image's manifest."""
+
+    def fixture(self, name):
+        root = FIXTURES / name
+        summary = json.loads((root / 'redaction.json').read_text())
+        self.assertTrue(summary['fragment'])
+        self.assertEqual(hashlib.sha256((root / 'serial.raw').read_bytes()).hexdigest(),
+                         summary['raw_sha256'])
+        self.assertEqual(hashlib.sha256((root / 'timing.tsv').read_bytes()).hexdigest(),
+                         summary['timing_tsv_sha256'])
+        raw = (root / 'serial.raw').read_bytes()
+        self.assertFalse(any(redact.PAYLOAD.match(raw[s:e]) for s, e in redact.lines(raw)))
+        events = redact.load(root)
+        self.assertEqual(b''.join(bytes.fromhex(e['hex']) for e in events), raw)
+        return events, json.loads((root / 'manifest.json').read_text())
+
+    def classify(self, name, events=None, manifest=None):
+        recorded, flags = self.fixture(name)
+        flags = flags if manifest is None else manifest
+        return lab.classify_device_program(recorded if events is None else events,
+                                           flags['elf_sha256'], flags)
+
+    def test_fixtures(self):
+        expected = {
+            'network-subject-pass': ('qotom-network-subject', 'PASS', []),
+            'wifi-dhcp-subject-pass': ('qotom-dhcp-subject', 'PASS', []),
+            'long-session-budget-end-pass': ('qotom-dhcp-subject', 'PASS', []),
+            'wifi-lease-count-fail': ('qotom-dhcp-subject', 'FAIL', [
+                'terminal: FINAL status=FAIL reason=qotom-net-lease-count',
+                'service-end: device program ended with status=1 code=0x00007e04']),
+            'long-session-budget-exhausted-fail': ('qotom-dhcp-subject', 'FAIL', [
+                'terminal: no FINAL record',
+                'long-session: budget-exhausted-before-final: budget exhausted before FINAL']),
+        }
+        self.assertEqual(sorted(p.name for p in FIXTURES.iterdir()), sorted(expected))
+        for name, (scenario, status, failures) in expected.items():
+            with self.subTest(name=name):
+                result = self.classify(name)
+                self.assertEqual((result['scenario'], result['status'], result['failures']),
+                                 (scenario, status, failures))
+                self.assertTrue(result['watchdog_protected'])
+                self.assertLessEqual(result['recovery_after_last_protection_seconds'], 150)
+                json.dumps(result)
+        result = self.classify('network-subject-pass')
+        self.assertEqual(result['terminal']['fields']['frames'], 7)
+        self.assertEqual(result['records']['net_refusals'], 2)
+        self.assertTrue(result['records']['broadcom_assign_admitted'])
+        result = self.classify('wifi-dhcp-subject-pass')
+        self.assertEqual((result['records']['lease'], result['wifi']['gtk_installed_key_ids']),
+                         ('192.168.6.30', [1]))
+        result = self.classify('wifi-lease-count-fail')
+        self.assertEqual(result['terminal']['reason'], 'qotom-net-lease-count')
+        self.assertGreaterEqual(result['quiet_seconds'], 30)
+        result = self.classify('long-session-budget-end-pass')
+        self.assertEqual((result['watchdog_kicks']['outcome'], result['watchdog_kicks']['watchdog_kicks'],
+                          result['terminal']['fields']['session-end']), ('final-budget', 3, 'budget'))
+        result = self.classify('long-session-budget-exhausted-fail')
+        self.assertEqual((result['watchdog_kicks']['watchdog_kicks'],
+                          result['watchdog_kicks']['kicks_stopped_reason'],
+                          result['wifi']['gtk_rotations']), (92, 2, 1))
+
+    def test_retained_device_stream(self):
+        # The 2026-10-07 keyboard stream: its records pass, but the retained
+        # serial stream stops at FINAL, before the recovery.
+        root = Path(__file__).resolve().parent.parent / 'hardware/lab/observations/qotom-device-stream-20261007'
+        events = [json.loads(line) for line in (root / 'cycle-1/events.jsonl').read_text().splitlines()]
+        digest = (root / 'leanos.sha256').read_text().split()[0]
+        result = lab.classify_device_program(events, digest, json.loads((root / 'manifest.json').read_text()))
+        self.assertEqual((result['scenario'], result['status']), ('qotom-device-stream', 'FAIL'))
+        self.assertEqual(result['failures'],
+                         ['recovery: missing consumed-request default or FreeBSD chain after the run'])
+        self.assertEqual(result['records']['ipc_deliveries'], 232)
+        self.assertEqual(result['terminal']['fields'], {'status': 'PASS', 'events': 231,
+                                                        'blocks': 233, 'deliveries': 232})
+
+    def test_mutations_fail(self):
+        events, _ = self.fixture('network-subject-pass')
+        dhcp, _ = self.fixture('wifi-dhcp-subject-pass')
+        final = re.search(rb'LEANOS/[0-9]+ FINAL [^\n]*\n',
+                          b''.join(bytes.fromhex(e['hex']) for e in events)).group(0)
+        mutations = {
+            'assignment refused': ('network-subject-pass', replace_bytes(
+                events, b'device-status=25 admitted=1\n', b'device-status=25 admitted=0\n'),
+                'broadcom-assign'),
+            'no service grant': ('network-subject-pass', replace_bytes(
+                events, b'SERVICE grant subject=1', b'SERVICE gone subject=1'), 'service-grant'),
+            'program failed': ('network-subject-pass', replace_bytes(
+                events, b'SERVICE end subject=1 status=0', b'SERVICE end subject=1 status=2'), 'service-end'),
+            'frame count': ('network-subject-pass', replace_bytes(
+                events, b' frames=7 fetches=7', b' frames=8 fetches=8'), 'net'),
+            'reply count': ('network-subject-pass', replace_bytes(
+                events, b' replies=3 ', b' replies=4 '), 'net'),
+            'refusal count': ('network-subject-pass', replace_bytes(
+                events, b' refusals=2 ', b' refusals=1 '), 'net'),
+            'changed FINAL': ('network-subject-pass', replace_bytes(
+                events, b'network-subject=1 device-holder=2', b'network-subject=1 device-holder=1'), 'terminal'),
+            'repeated FINAL': ('network-subject-pass', replace_bytes(events, final, final + final), 'terminal'),
+            'no arm': ('network-subject-pass', replace_bytes(
+                events, b'WATCHDOG-ARMED ticks=120', b'WATCHDOG-ARMED ticks=60'), 'watchdog-arm'),
+            'no chain': ('network-subject-pass', replace_bytes(
+                events, b'LEANOS-LAB/1 CHAIN freebsd', b'LEANOS-LAB/1 HALT freebsd'), 'recovery'),
+            'bytes after FINAL': ('network-subject-pass', replace_bytes(
+                events, final, final + b'x'), 'recovery'),
+            'handoff lease': ('wifi-dhcp-subject-pass', replace_bytes(
+                dhcp, b'frame=5 lease=192.168.6.30', b'frame=5 lease=192.168.6.31'), 'net-handoff'),
+            'no lease delivery': ('wifi-dhcp-subject-pass', replace_bytes(
+                dhcp, b'payload=lease', b'payload=other'), 'lease-delivery'),
+        }
+        for name, (fixture, mutated, check) in mutations.items():
+            with self.subTest(name=name):
+                result = self.classify(fixture, mutated)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertTrue(any(f.startswith(check + ':') for f in result['failures']),
+                                result['failures'])
+
+    def test_manifest_flags(self):
+        _, flags = self.fixture('network-subject-pass')
+        # The capture of another scenario's image fails its records.
+        for other in (dict(flags, network_subject=False),
+                      dict(flags, dhcp_subject=True),
+                      dict(flags, dhcp_subject=True, long_session_seconds=40, watchdog_kick_budget=3)):
+            with self.subTest(flags=other):
+                self.assertEqual(self.classify('network-subject-pass', manifest=other)['status'], 'FAIL')
+        for bad in (dict(flags, ipc_device_stream=False), dict(flags, mode='kernel-hang'),
+                    dict(flags, network_subject=False, dhcp_subject=True),
+                    dict(flags, long_session_seconds=40, watchdog_kick_budget=3),
+                    dict(flags, dhcp_subject=True, long_session_seconds=40, watchdog_kick_budget=4),
+                    dict(flags, watchdog_kick_budget=3)):
+            with self.subTest(flags=bad), self.assertRaises(ValueError):
+                self.classify('network-subject-pass', manifest=bad)
+        events = self.fixture('network-subject-pass')[0]
+        digest = flags['elf_sha256']
+        for bad_digest, bad_flags in (('b' * 63, flags), (digest, dict(flags, elf_sha256='b' * 64))):
+            with self.assertRaises(ValueError):
+                lab.classify_device_program(events, bad_digest, bad_flags)
+        # A manifest without the ELF binding (older builds) still classifies;
+        # a different image's digest fails the protected load.
+        unbound = {k: v for k, v in flags.items() if k != 'elf_sha256'}
+        self.assertEqual(lab.classify_device_program(events, digest, unbound)['status'], 'PASS')
+        result = lab.classify_device_program(events, 'b' * 64, unbound)
+        self.assertEqual(result['failures'], ['watchdog-load: missing or changed'])
+
+    def test_redaction(self):
+        payload = b'WIFI 0e24 0x45000054\nWIFI 0e26 0xc0a80601\n'
+        events = [event(b'LEANOS-LAB/1 NET event=deliver frame=1 bytes=60\nWIFI 0e2', 1.0),
+                  event(b'4 0x45000054\n', 1.2), event(b'WIFI 0e26 0xc0a80601\nWIFI 0f12 0x0000003c\n', 1.4),
+                  event(b'\rWIFI 0e26 0xdeadbeef\n', 2.6), event(payload, 5.0),
+                  event(b'LEANOS-LAB/1 NET event=fetch frame=1 bytes=60 copy-roots=bounded16 model=accepted\n', 5.1)]
+        out, raw, removed = redact.redact(events)
+        self.assertEqual(removed, {'payload': 5, 'fragment': 0})
+        self.assertEqual([e['elapsed'] for e in out], [1.0, 1.4, 5.1])
+        self.assertNotIn(b'0e24', raw)
+        self.assertNotIn(b'0e26', raw)
+        self.assertEqual(raw, b'LEANOS-LAB/1 NET event=deliver frame=1 bytes=60\nWIFI 0f12 0x0000003c\n'
+                              b'LEANOS-LAB/1 NET event=fetch frame=1 bytes=60 copy-roots=bounded16 model=accepted\n')
+        out, raw, removed = redact.redact(events, fragment=True)
+        self.assertEqual(removed, {'payload': 5, 'fragment': 2})
+        self.assertEqual([e['elapsed'] for e in out], [1.0])
+        self.assertEqual(raw, b'LEANOS-LAB/1 NET event=deliver frame=1 bytes=60\n')
+        # Events within a second join at the first one's time, never longer.
+        spread = [event(b'LEANOS-LAB/1 NET event=send frame=%d\n' % n, 0.4 * n) for n in range(6)]
+        self.assertEqual([round(e['elapsed'], 6) for e in redact.redact(spread, fragment=True)[0]],
+                         [0.0, 1.2])
 
 if __name__ == '__main__':
     unittest.main()
