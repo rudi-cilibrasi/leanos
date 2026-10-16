@@ -36,8 +36,12 @@ case "${1:-}" in
         > IMAGE_BUNDLE_SHA256SUMS
     )
     mkdir -p "$(dirname "$bundle")"
-    tar -C "$staging" -czf "$bundle" \
-      IMAGE_BUNDLE_MANIFEST.tsv IMAGE_BUNDLE_SHA256SUMS build/boot
+    # The CI image family is about 1.8 GB compressed. Default gzip took about
+    # five minutes on the critical path; level 1 trades size for speed, and
+    # the bundle's own SHA-256 inventory, not its compression, is the contract.
+    tar -C "$staging" -cf - \
+      IMAGE_BUNDLE_MANIFEST.tsv IMAGE_BUNDLE_SHA256SUMS build/boot |
+      gzip -1 > "$bundle"
     sha256sum "$bundle" | awk -v name="$(basename "$bundle")" \
       '{print $1 "  " name}' > "$bundle.sha256"
     ;;

@@ -24,7 +24,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from workflow_yaml import WorkflowYamlError, load_workflow
-from ci_hosted_topology import validate as validate_hosted_topology
+from ci_hosted_topology import AGGREGATE_CHECK_RUN, validate as validate_hosted_topology
 
 
 ROOT = SCRIPT_DIR.parent
@@ -1573,17 +1573,26 @@ def check_workflows() -> None:
     # check, which runs once in the required Lean lane on every CI event.
     # Emulator consumers must not repeat its Lean/C bootstrap after the image
     # producer has finished. Do not permit a conditional or advisory owner.
+    # The lane runs the aggregate as parallel parts (issue #574); its matrix
+    # must name every part of scripts/check.sh exactly once, so the parts
+    # together still run every phase.
     lean_job = workflow_job(ci_workflow, ".github/workflows/ci.yml", "lean")
     lean_steps = workflow_job_steps(lean_job, ".github/workflows/ci.yml", "lean")
     aggregate_steps = [
-        step for step in lean_steps if step.get("run") == "./scripts/check.sh"
+        step for step in lean_steps if step.get("run") == AGGREGATE_CHECK_RUN
     ]
     aggregate = (ROOT / "scripts/check.sh").read_text(encoding="utf-8")
+    declared_parts = re.findall(r"(?m)^check_parts=\(([^)]*)\)$", aggregate)
+    lean_strategy = lean_job.get("strategy")
     failure_fixture = "./scripts/test-build-image.sh"
     if (
         "if" in lean_job
         or "continue-on-error" in lean_job
-        or "strategy" in lean_job
+        or len(declared_parts) != 1
+        or lean_strategy != {
+            "fail-fast": False,
+            "matrix": {"part": declared_parts[0].split()},
+        }
         or len(aggregate_steps) != 1
         or any(
             key in step
@@ -1753,6 +1762,7 @@ def check_workflows() -> None:
         "repository-hygiene",
         "lean",
         "hosted-boundary",
+        "clang-hosted",
         "clang-image",
         "gcc-image-family",
         "reproducibility-plan",
@@ -1766,6 +1776,7 @@ def check_workflows() -> None:
         "REPOSITORY_HYGIENE": "${{ needs.repository-hygiene.result }}",
         "LEAN": "${{ needs.lean.result }}",
         "HOSTED_BOUNDARY": "${{ needs.hosted-boundary.result }}",
+        "CLANG_HOSTED": "${{ needs.clang-hosted.result }}",
         "CLANG_IMAGE": "${{ needs.clang-image.result }}",
         "GCC_IMAGE_FAMILY": "${{ needs.gcc-image-family.result }}",
         "REPRODUCIBILITY_PLAN": "${{ needs.reproducibility-plan.result }}",

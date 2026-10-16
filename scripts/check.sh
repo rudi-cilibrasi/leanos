@@ -4,6 +4,67 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# The aggregate check is a fixed sequence of phases grouped into parts. With no
+# arguments every part runs, in order. CI runs each part in its own parallel
+# job (issue #574); the union of the parts is the whole check, and
+# scripts/run-emulator-evidence.py requires the CI matrix to list every part.
+check_parts=(proofs device-lab platform images)
+check_part_phases() {
+  case "$1" in
+    proofs) echo lean-and-generated-contracts proof-integrity-and-negative-fixtures ;;
+    device-lab) echo device-program-lab ;;
+    platform) echo security-and-platform-contracts hosted-boundary-and-boot-contracts ;;
+    images) echo image-and-emulator-contracts ;;
+    *) return 1 ;;
+  esac
+}
+check_phase_order=(
+  lean-and-generated-contracts
+  device-program-lab
+  security-and-platform-contracts
+  hosted-boundary-and-boot-contracts
+  image-and-emulator-contracts
+  proof-integrity-and-negative-fixtures
+)
+
+# Every phase belongs to exactly one part, so the parts cover the whole check.
+all_part_phases="$(for part in "${check_parts[@]}"; do check_part_phases "$part"; done | tr ' ' '\n' | sort)"
+if [[ "$all_part_phases" != "$(printf '%s\n' "${check_phase_order[@]}" | sort)" ]]; then
+  echo "error: aggregate check parts do not cover each phase exactly once" >&2
+  exit 2
+fi
+
+selected_parts=()
+while (($#)); do
+  case "$1" in
+    --list-parts)
+      printf '%s\n' "${check_parts[@]}"
+      exit 0
+      ;;
+    --part)
+      [[ $# -ge 2 ]] && check_part_phases "$2" >/dev/null || {
+        echo "error: --part needs one of: ${check_parts[*]}" >&2
+        exit 2
+      }
+      selected_parts+=("$2")
+      shift 2
+      ;;
+    *)
+      echo "usage: $0 [--list-parts | --part NAME ...]" >&2
+      exit 2
+      ;;
+  esac
+done
+((${#selected_parts[@]})) || selected_parts=("${check_parts[@]}")
+selected_phase_words=" "
+for part in "${selected_parts[@]}"; do
+  selected_phase_words+="$(check_part_phases "$part") "
+done
+selected_phases=()
+for phase in "${check_phase_order[@]}"; do
+  [[ "$selected_phase_words" != *" $phase "* ]] || selected_phases+=("$phase")
+done
+
 check_timing_file="${LEANOS_CHECK_TIMING_FILE:-build/ci/check-phases.tsv}"
 check_failure_timing_file="${LEANOS_CHECK_FAILURE_TIMING_FILE:-build/ci/check-failure.tsv}"
 mkdir -p "$(dirname "$check_timing_file")"
@@ -12,7 +73,7 @@ rm -f "$check_failure_timing_file"
 printf 'phase\tphase_seconds\ttotal_seconds\n' >"$check_timing_file"
 check_started_at=$SECONDS
 check_phase_started_at=$SECONDS
-check_phase="lean-and-generated-contracts"
+check_phase=""
 negative_log=""
 
 record_check_failure() {
@@ -40,6 +101,27 @@ record_check_phase() {
   check_phase_started_at=$now
 }
 
+# A phase that does not follow lean-and-generated-contracts in the same run
+# (CI runs parts as parallel jobs) first builds the Lean outputs that phase
+# would have built. It does not gate proof times; only that phase does.
+lean_build_ready=false
+ensure_lean_build() {
+  [[ "$lean_build_ready" != true ]] || return 0
+  lake build
+  lake build leanos-boot-plan
+  lake build leanos-vtd-plan
+  lean_build_ready=true
+}
+
+# Later phases read the canonical image in build/boot. In a full run the
+# device-program lab builds it as a side effect (build-qotom-recovery-lab.py
+# runs build-image.sh when build/boot has no object graph); a part that runs
+# without that phase builds it the same way first.
+ensure_canonical_image() {
+  [[ -f build/boot/generated-image-objects.mk ]] || ./scripts/build-image.sh
+}
+
+phase_lean_and_generated_contracts() {
 ./scripts/test-generate-oracle-adapter-map.sh
 
 ./scripts/test-native-decide-policy.sh
@@ -52,6 +134,7 @@ mkdir -p "$(dirname "$lean_build_log")"
 lake build --no-ansi 2>&1 | tee "$lean_build_log"
 python3 scripts/check-proof-time-budget.py "$lean_build_log" \
   --record "$(dirname "$lean_build_log")/lean-module-times.tsv"
+lean_build_ready=true
 python3 scripts/test-qotom-bsp-capture.py
 python3 scripts/test-qotom-bsp-capture.py --native
 python3 scripts/test-qotom-bootstrap-binding.py
@@ -70,9 +153,6 @@ lake build leanos-wifi-respsim
 .lake/build/bin/leanos-wifi-respsim
 lake build leanos-wifi-rekeysim
 .lake/build/bin/leanos-wifi-rekeysim
-./scripts/check-device-programs.sh
-python3 scripts/run-q35-device-lab.py
-python3 scripts/run-q35-device-lab.py --service
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 lake build leanos-copy-root-construction
@@ -136,9 +216,20 @@ python3 ./scripts/test-intel-entry-qemu.py
 ./scripts/test-generate-invariants.sh
 
 ./scripts/check-invariants.sh
+}
 
-record_check_phase lean-and-generated-contracts
-check_phase="security-and-platform-contracts"
+# The device-program executor checks and the q35 device lab each build a
+# full lab image; they are the longest serial span of the aggregate check.
+phase_device_program_lab() {
+ensure_lean_build
+
+./scripts/check-device-programs.sh
+python3 scripts/run-q35-device-lab.py
+python3 scripts/run-q35-device-lab.py --service
+}
+
+phase_security_and_platform_contracts() {
+ensure_lean_build
 
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
@@ -174,18 +265,21 @@ if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
 fi
 
 ./scripts/check-firmware-corpus.sh
+}
 
-record_check_phase security-and-platform-contracts
-check_phase="hosted-boundary-and-boot-contracts"
+phase_hosted_boundary_and_boot_contracts() {
+ensure_lean_build
 
 ./scripts/check-boot-memory-full-projection.sh
 
 ./scripts/check-boot-handoff-stream.sh
 
 ./scripts/test-selected-compiler-propagation.sh
+}
 
-record_check_phase hosted-boundary-and-boot-contracts
-check_phase="image-and-emulator-contracts"
+phase_image_and_emulator_contracts() {
+ensure_lean_build
+ensure_canonical_image
 
 # Run the compiler-failure fixture once in the required proof lane, not in
 # every image-consuming QEMU shard. Keep it sequential with other build users.
@@ -260,6 +354,7 @@ python3 scripts/check-userspace-abi.py
 python3 scripts/test-workflow-yaml.py
 python3 scripts/test-ci-hosted-topology.py
 python3 scripts/test-setup-lean-cache.py
+python3 scripts/test-ci-supersede-runs.py
 
 ./scripts/test-main-ruleset-policy.py
 
@@ -284,9 +379,10 @@ python3 scripts/test-proof-time-budget.py
 ./scripts/test-image-bundle.sh
 
 ./scripts/run-emulator-evidence.py check
+}
 
-record_check_phase image-and-emulator-contracts
-check_phase="proof-integrity-and-negative-fixtures"
+phase_proof_integrity_and_negative_fixtures() {
+ensure_lean_build
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
@@ -541,8 +637,15 @@ fi
 
 rm -f "$negative_log"
 negative_log=""
-record_check_phase proof-integrity-and-negative-fixtures
-python3 scripts/check-check-timing.py "$check_timing_file"
+}
+
+for phase in "${selected_phases[@]}"; do
+  check_phase="$phase"
+  "phase_${phase//-/_}"
+  record_check_phase "$phase"
+done
+python3 scripts/check-check-timing.py "$check_timing_file" \
+  --phases "$(IFS=,; echo "${selected_phases[*]}")"
 trap - EXIT
 
-echo "Lean build, proof-integrity, and negative regression checks passed"
+echo "Aggregate check parts passed: ${selected_parts[*]}"
