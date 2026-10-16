@@ -126,7 +126,12 @@ def main() -> None:
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     if "LEANOS_TOOLCHAIN_PROFILE: gcc-reference" not in ci:
         raise AssertionError("CI lost its canonical default toolchain profile")
-    if ci.count("LEANOS_TOOLCHAIN_PROFILE: clang-reference") != 3:
+    # Each Clang lane (hosted replay, canonical image, independent
+    # reproducibility build, serial/graph parity) binds the Clang profile.
+    clang_lanes = ci.count("      LEANOS_CC: clang-18\n")
+    if clang_lanes != 4 or ci.count(
+        "      LEANOS_CC: clang-18\n      LEANOS_TOOLCHAIN_PROFILE: clang-reference\n"
+    ) != clang_lanes:
         raise AssertionError("CI does not bind every Clang image lane to its profile")
     digest = gcc["reference_environment"]["ci_image_digest"]
     if ci.count(f"leanos-ci@{digest}") < 5:

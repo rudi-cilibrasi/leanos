@@ -4,7 +4,7 @@
 from copy import deepcopy
 from pathlib import Path
 
-from ci_hosted_topology import validate
+from ci_hosted_topology import AGGREGATE_CHECK_RUN, validate
 from workflow_yaml import load_workflow
 
 
@@ -25,7 +25,7 @@ def rejects(change):
 rejects(lambda jobs: jobs['hosted-boundary'].update({'if': "github.event_name == 'pull_request'"}))
 rejects(lambda jobs: jobs['hosted-boundary'].update({'needs': ['lean']}))
 rejects(lambda jobs: jobs['hosted-boundary'].update({'continue-on-error': True}))
-rejects(lambda jobs: next(s for s in jobs['lean']['steps'] if s.get('run') == './scripts/check.sh')
+rejects(lambda jobs: next(s for s in jobs['lean']['steps'] if s.get('run') == AGGREGATE_CHECK_RUN)
         ['env'].update({'LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY': '0'}))
 rejects(lambda jobs: next(s for s in jobs['hosted-boundary']['steps']
                          if s.get('name') == 'Replay hosted generated boundaries')
