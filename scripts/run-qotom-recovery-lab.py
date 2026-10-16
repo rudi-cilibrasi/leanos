@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in Qotom lab capture/reboot loop. Requires the prepared USB-first setup."""
 import argparse
+import bisect
 import datetime
 import hashlib
 import importlib.util
@@ -296,6 +297,263 @@ def classify_watchdog_kicks(events, budget, timeout=120, recovery_slack=30):
     else:
         result.update(outcome='no-final', final_session_end=None,
                       error='no FINAL before the watchdog reset')
+    return result
+
+
+def device_program_scenario(manifest):
+    """Name the device-program scenario of a lab image from the flags in its
+    build manifest (issue #572), rejecting flag sets the builder refuses."""
+    if manifest.get('ipc_device_stream') is not True:
+        raise ValueError('not a device-program lab image (no ipc_device_stream)')
+    if manifest.get('mode') != 'completion':
+        raise ValueError('device-program lab image not built in completion mode')
+    network = manifest.get('network_subject') is True
+    dhcp = manifest.get('dhcp_subject') is True
+    if dhcp and not network:
+        raise ValueError('dhcp_subject without network_subject')
+    seconds = manifest.get('long_session_seconds')
+    budget = manifest.get('watchdog_kick_budget')
+    if seconds is not None:
+        if (not dhcp or type(seconds) is not int or not 1 <= seconds <= 3600
+                or budget != 2 + (seconds + 40 - 1) // 40):
+            raise ValueError('invalid long-session flags')
+    elif budget is not None:
+        raise ValueError('watchdog kick budget without a long session')
+    scenario = ('qotom-dhcp-subject' if dhcp else
+                'qotom-network-subject' if network else 'qotom-device-stream')
+    return scenario, seconds, budget
+
+
+# The terminal record of each device-program scenario; the serial-protocol
+# prefix is matched generically, as it is generated.
+_DEVICE_FINAL_FIELDS = {
+    'qotom-device-stream': rb'events=([0-9]+) blocks=([0-9]+) deliveries=([0-9]+)',
+    'qotom-network-subject': (rb'network-subject=1 device-holder=2 frames=([0-9]+) fetches=([0-9]+) '
+                              rb'replies=([0-9]+) refusals=([0-9]+) ipc-edges=([0-9]+)'),
+    'qotom-dhcp-subject': (rb'dhcp-subject=1 echo-subject=1 device-holder=2 dhcp-frames=([0-9]+) '
+                           rb'lease=([0-9]{1,3}(?:\.[0-9]{1,3}){3}) frames=([0-9]+) fetches=([0-9]+) '
+                           rb'replies=([0-9]+) refusals=([0-9]+) ipc-edges=([0-9]+)'),
+}
+_LONG_SESSION_FIELDS = rb' watchdog-kicks=([0-9]+)(?: session-end=(window|budget) unsent-replies=([01]))?'
+
+
+def classify_device_program(events, digest, manifest, timeout=120, recovery_slack=30):
+    """Classify a device-program capture (issue #572) as PASS or FAIL.
+
+    The lab image's manifest names the scenario: the device stream
+    (`ipc_device_stream`), the network subject (`network_subject`), the DHCP
+    subject (`dhcp_subject`) and a long session (`long_session_seconds`).
+    The capture passes when it has the protected launch (watchdog window,
+    the 120-tick arm, the digest-bound load, the recovery mode record), the
+    scenario's records in order (platform admission, the Broadcom
+    assignment with `admitted=1` for the network images, the service grant,
+    the IPC profile, the DHCP subject's handoff and lease delivery), one
+    passing FINAL whose counts agree with the records, a long session's
+    reloads and outcome, and the recovery (quiet after FINAL, the consumed
+    request's default, the FreeBSD chain within the watchdog bound).
+
+    Every failed check is collected rather than raised, so a FAIL capture
+    still yields a structured result. Only invalid inputs raise."""
+    scenario, seconds, budget = device_program_scenario(manifest)
+    if not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid protected image digest')
+    if manifest.get('elf_sha256') not in (None, digest):
+        raise ValueError('lab manifest names a different ELF')
+    if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
+           or e['elapsed'] < 0 for e in events):
+        raise ValueError('invalid capture timestamp')
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    chunks = [bytes.fromhex(e['hex']) for e in events]
+    offsets, total = [], 0
+    for chunk in chunks:
+        offsets.append(total)
+        total += len(chunk)
+    data = b''.join(chunks)
+
+    def time_at(position):
+        return events[bisect.bisect_right(offsets, position) - 1]['elapsed']
+
+    failures = []
+
+    def fail(check, detail):
+        failures.append(check + ': ' + detail)
+
+    def once(pattern, check, count_marker=None):
+        matches = list(re.finditer(pattern, data))
+        extra = data.count(count_marker) if count_marker else len(matches)
+        if len(matches) != 1 or extra != 1:
+            fail(check, 'missing or changed' if not matches else 'repeated')
+            return None
+        return matches[0]
+
+    # The protected launch.
+    accepted = once(rb'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1', 'watchdog-window')
+    armed = once(rb'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120', 'watchdog-arm',
+                 b'WATCHDOG-ARMED')
+    wrapped = rb'[\r\n]*'.join(bytes([ch]) for ch in digest.encode())
+    load = once(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' + wrapped + rb'(?=[\r\n])',
+                'watchdog-load', b'WATCHDOG-LEANOS-LOAD')
+    mode_record = EXPECTED[:-len(EXPECTED_KERNEL)]
+    mode = once(re.escape(mode_record), 'recovery-mode')
+    for marker in (b'WATCHDOG-LOAD-FAILED', b'WATCHDOG-STOP-FAILED', b'WATCHDOG-NO-RESET',
+                   b'WATCHDOG-ARM-REJECTED', b'KERNEL-HANG', b'WATCHDOG-KERNEL-LOAD'):
+        if marker in data:
+            fail('watchdog', marker.decode() + ' record')
+    if mode is not None and b'LEANOS/' in data[:mode.start()]:
+        fail('framing', 'kernel output before the recovery mode record')
+
+    # The terminal record.
+    terminals = list(re.finditer(rb'LEANOS/[0-9]+ FINAL ([^\r\n]*)\n', data))
+    terminal = terminals[0] if len(terminals) == 1 else None
+    terminal_info = None
+    if not terminals:
+        fail('terminal', 'no FINAL record')
+    elif terminal is None:
+        fail('terminal', 'repeated FINAL record')
+    else:
+        text = terminal.group(1).decode('ascii', 'replace')
+        fields = dict(item.split('=', 1) for item in text.split(' ') if '=' in item)
+        terminal_info = {'status': fields.get('status'), 'reason': fields.get('reason'),
+                         'fields': {k: int(v) if v.isdigit() else v for k, v in fields.items()}}
+        if fields.get('status') != 'PASS':
+            fail('terminal', 'FINAL ' + text)
+    passed = terminal_info is not None and terminal_info['status'] == 'PASS'
+
+    # The scenario's records, in order, on a passing FINAL.
+    network = scenario != 'qotom-device-stream'
+    platform = once(rb'LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 '
+                    rb'status=PASS ', 'platform-admission', b'PLATFORM-ADMISSION ')
+    assign = None
+    if network:
+        assign = once(rb'LEANOS-LAB/1 BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1 '
+                      rb'device=2:0\.0 status=0 [^\r\n]* admitted=1\n', 'broadcom-assign',
+                      b'BROADCOM-ASSIGN ')
+    elif b'BROADCOM-ASSIGN ' in data:
+        fail('broadcom-assign', 'record in an image without the network subject')
+    grant = once(rb'LEANOS-LAB/1 SERVICE grant subject=1 device=[0-9a-f]+:[0-9a-f]+\.[0-7] '
+                 rb'bind=accepted policy=admitted\n', 'service-grant', b'SERVICE grant ')
+    ready = once(rb'LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 ', 'ipc-ready')
+    service_end = list(re.finditer(
+        rb'LEANOS-LAB/1 SERVICE end subject=1 status=([0-9]+) code=(0x[0-9a-f]{8})\n', data))
+    if len(service_end) != data.count(b'SERVICE end ') or len(service_end) > 1:
+        fail('service-end', 'repeated or changed service end')
+    elif service_end and service_end[0].group(1) != b'0':
+        fail('service-end', 'device program ended with status=%s code=%s'
+             % (service_end[0].group(1).decode(), service_end[0].group(2).decode()))
+    records = {'broadcom_assign_admitted': assign is not None,
+               'service_grant': grant is not None, 'ipc_ready': ready is not None,
+               'service_end': ({'status': int(service_end[0].group(1)),
+                                'code': service_end[0].group(2).decode()}
+                               if len(service_end) == 1 else None)}
+    order = [accepted, armed, load, mode, platform, assign, grant, ready]
+
+    final_fields = None
+    if passed:
+        pattern = (rb'LEANOS/[0-9]+ FINAL status=PASS ' + _DEVICE_FINAL_FIELDS[scenario] +
+                   (_LONG_SESSION_FIELDS if seconds is not None else b'') + rb'\n')
+        final_fields = re.fullmatch(pattern, terminal.group(0))
+        if final_fields is None:
+            fail('terminal', 'FINAL differs from the ' + scenario + ' record')
+        budget_end = b'LEANOS-LAB/1 WATCHDOG-KICK session-end reason=budget ' in data
+        if not service_end and not budget_end:
+            fail('service-end', 'missing service end')
+    if final_fields is not None:
+        values = [int(v) if v.isdigit() else v.decode() for v in final_fields.groups()
+                  if v is not None]
+        if scenario == 'qotom-device-stream':
+            deliveries = len(re.findall(rb'LEANOS/[0-9]+ IPC event=deliver receiver=2 ', data))
+            records['ipc_deliveries'] = deliveries
+            if values[2] != deliveries:
+                fail('ipc', 'FINAL deliveries=%d, %d delivery records' % (values[2], deliveries))
+        else:
+            if scenario == 'qotom-dhcp-subject':
+                dhcp_frames, lease = values[:2]
+                values = values[2:]
+            frames, fetches, replies, refusals = values[:4]
+            delivered = [int(n) for n in re.findall(rb'LEANOS-LAB/1 NET event=deliver frame=([0-9]+) ', data)]
+            sent = len(re.findall(rb'LEANOS-LAB/1 NET event=send frame=', data))
+            refused = len(re.findall(rb'LEANOS-LAB/1 NET event=refuse ', data))
+            records.update(net_deliveries=len(delivered), net_sends=sent, net_refusals=refused)
+            if frames < 1 or fetches != frames or delivered != list(range(1, frames + 1)):
+                fail('net', 'FINAL frames=%d fetches=%d, %d delivery records'
+                     % (frames, fetches, len(delivered)))
+            if replies != sent:
+                fail('net', 'FINAL replies=%d, %d send records' % (replies, sent))
+            if refusals != refused:
+                fail('net', 'FINAL refusals=%d, %d refusal records' % (refusals, refused))
+            if scenario == 'qotom-dhcp-subject':
+                handoff = once(rb'LEANOS-LAB/1 NET event=handoff from=dhcp-subject to=echo-subject '
+                               rb'frame=([0-9]+) lease=([0-9.]+) scrubbed=8192 restart=echo-entry '
+                               rb'model=accepted\n', 'net-handoff', b'NET event=handoff ')
+                lease_ipc = once(rb'LEANOS/[0-9]+ IPC event=deliver receiver=1 endpoint=13 '
+                                 rb'role=echo-subject payload=lease\n', 'lease-delivery',
+                                 b'payload=lease')
+                if handoff is not None and (int(handoff.group(1)) != dhcp_frames
+                                            or handoff.group(2).decode() != lease):
+                    fail('net-handoff', 'handoff differs from FINAL dhcp-frames/lease')
+                if lease == '0.0.0.0':
+                    fail('net-handoff', 'no lease')
+                records['lease'] = lease
+                order += [handoff, lease_ipc]
+    order += [service_end[0] if service_end else None, terminal]
+    positions = [m.start() for m in order if m is not None]
+    if positions != sorted(positions):
+        fail('order', 'records out of order')
+
+    # A long session's reloads (issue #557) and outcome (issue #567).
+    kicks = None
+    if seconds is not None:
+        try:
+            kicks = classify_watchdog_kicks(events, budget, timeout, recovery_slack)
+        except ValueError as error:
+            fail('watchdog-kicks', str(error))
+        else:
+            if 'error' in kicks:
+                fail('long-session', kicks['outcome'] + ': ' + kicks['error'])
+    elif b'WATCHDOG-KICK' in data:
+        fail('watchdog-kicks', 'reload records in an image without a long session')
+
+    # The recovery: quiet after FINAL, then the consumed request and the chain.
+    default = list(re.finditer(rb'LEANOS-LAB/1 DEFAULT request=none', data))
+    if terminal is not None:
+        start = terminal.end()
+    else:
+        # Without FINAL the run ends at the kernel's last record.
+        last = data.rfind(b'LEANOS/')
+        start = data.find(b'\n', last) + 1 if last >= 0 else 0
+    chain = data.find(CHAIN, start)
+    quiet = recovery = None
+    if len(default) != 1 or chain < 0 or not start <= default[0].start() < chain:
+        fail('recovery', 'missing consumed-request default or FreeBSD chain after the run')
+    if b'LEANOS/' in data[start:] or b'LEANOS-LAB/1 SELECT leanos' in data[start:]:
+        fail('recovery', 'kernel output after the run')
+    if terminal is not None:
+        index = bisect.bisect_right(offsets, terminal.end() - 1) - 1
+        if offsets[index] + len(chunks[index]) != terminal.end():
+            fail('recovery', 'bytes after FINAL without a quiet interval')
+        elif index + 1 < len(events):
+            quiet = events[index + 1]['elapsed'] - events[index]['elapsed']
+            if quiet < 10:
+                fail('recovery', 'insufficient quiet after FINAL')
+    if chain >= 0 and armed is not None:
+        reloads = list(re.finditer(rb'LEANOS-LAB/1 WATCHDOG-KICK n=', data[:chain]))
+        protected = time_at(reloads[-1].start() if reloads else armed.start())
+        recovery = time_at(chain) - protected
+        if recovery > timeout + recovery_slack:
+            fail('recovery', 'FreeBSD chain later than the watchdog bound')
+
+    gtk = [int(k) for k in re.findall(rb'LEANOS-LAB/1 WIFI-GTK installed key-id=([0-9]+)', data)]
+    result = {'scenario': scenario, 'evidence': 'device-program',
+              'status': 'FAIL' if failures else 'PASS', 'failures': failures,
+              'terminal': terminal_info, 'records': records,
+              'long_session_seconds': seconds, 'watchdog_kick_budget': budget,
+              'watchdog_kicks': kicks,
+              'wifi': {'gtk_installed_key_ids': gtk,
+                       'gtk_rotations': data.count(b'LEANOS-LAB/1 WIFI-GTK rekeyed msg2=sent')},
+              'quiet_seconds': quiet, 'recovery_after_last_protection_seconds': recovery,
+              'watchdog_protected': armed is not None and load is not None,
+              'raw_sha256': hashlib.sha256(data).hexdigest()}
     return result
 
 
@@ -1060,7 +1318,29 @@ def main():
                         help='classify the inherited local-APIC LINT observation')
     parser.add_argument('--bsp-lvt-policy', action='store_true',
                         help='classify the inherited masked local-APIC LINT policy')
+    parser.add_argument('--lab-manifest', type=Path,
+                        help="the lab image's build manifest (default: manifest.json beside --elf); "
+                             'an --ipc-device-stream image is classified as a device program')
     args = parser.parse_args()
+    manifest_path = args.lab_manifest or args.elf.parent / 'manifest.json'
+    lab_manifest = None
+    if args.lab_manifest is not None or manifest_path.exists():
+        lab_manifest = json.loads(manifest_path.read_text())
+    device_program = lab_manifest is not None and lab_manifest.get('ipc_device_stream') is True
+    if device_program:
+        # Issue #572: the manifest's flags name the scenario and its records.
+        try:
+            _, manifest_seconds, _ = device_program_scenario(lab_manifest)
+        except ValueError as error:
+            parser.error('lab manifest: ' + str(error))
+        if lab_manifest.get('elf_sha256') not in (None, hashlib.sha256(args.elf.read_bytes()).hexdigest()):
+            parser.error('lab manifest names a different ELF')
+        if args.scenario != 'watchdog-leanos' or args.cpu_diagnostic or args.pci_diagnostic or args.bsp_production:
+            parser.error('a device-program image needs --scenario watchdog-leanos and no diagnostic modes')
+        if args.long_session is None:
+            args.long_session = manifest_seconds
+        elif args.long_session != manifest_seconds:
+            parser.error('--long-session differs from the lab manifest')
     if args.long_session is not None:
         if args.scenario != 'watchdog-leanos' or not 1 <= args.long_session <= 3600:
             parser.error('--long-session needs --scenario watchdog-leanos and 1..3600 seconds')
@@ -1205,6 +1485,8 @@ def main():
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
                                         '-o', 'HostKeyAlias=' + args.host_key_alias, args.host]
     args.output.mkdir(parents=True, exist_ok=False)
+    if device_program:
+        (args.output / 'lab-manifest.json').write_text(json.dumps(lab_manifest, indent=2) + '\n')
     if has_diagnostic:
         (args.output / 'diagnostic-protocol.tsv').write_bytes(args.diagnostic_protocol.read_bytes())
         (args.output / 'diagnostic-replay-inputs.json').write_text(
@@ -1354,9 +1636,14 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             (directory / 'watchdog-kicks.json').write_text(json.dumps(kicks, indent=2) + '\n')
         else:
             kicks = None
-        if verify.returncode:
+        if verify.returncode and not device_program:
             raise ValueError('one-shot request was not verified consumed')
-        if args.scenario == 'watchdog-kernel':
+        if device_program:
+            result = classify_device_program(events, digest, lab_manifest)
+            if verify.returncode:
+                result['failures'].append('recovery: one-shot request was not verified consumed')
+                result['status'] = 'FAIL'
+        elif args.scenario == 'watchdog-kernel':
             result = classify_watchdog(events, kernel_digest)
         elif args.scenario == 'watchdog-leanos':
             if args.bsp_production:
@@ -1577,6 +1864,10 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         if kicks is not None:
             result['long_session_outcome'] = kicks.get('outcome')
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+        if device_program and result['status'] != 'PASS':
+            # Issue #572: a device-program FAIL ends the run non-zero, with
+            # its result.json written.
+            raise SystemExit('FAIL cycle=' + str(cycle) + ' ' + json.dumps(result['failures']))
         if kicks is not None and 'error' in kicks:
             # A long session that did not reach FINAL (issue #567) fails the
             # cycle even when the board recovered.
