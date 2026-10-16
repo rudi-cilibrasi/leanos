@@ -60,6 +60,95 @@ image in `/leanos/previous/`), then run
 Program images for `connect` embed the network PMK (from `LEANOS_WIFI_PSK`)
 and must never be committed.
 
+### Lab runner results for device programs
+
+The runner classifies a device-program capture (issue #572). It reads the lab
+image's build manifest, `manifest.json` beside `--elf` (or `--lab-manifest
+PATH`). An image built with `--ipc-device-stream` is a device program, and
+the manifest's flags name its scenario:
+
+* `qotom-device-stream`: `--ipc-device-stream` alone (the keyboard stream).
+* `qotom-network-subject`: with `--network-subject`.
+* `qotom-dhcp-subject`: with `--dhcp-subject`.
+* A long session: with `--long-session`. The runner takes `SECONDS` and the
+  reload budget from the manifest. A `--long-session` argument must agree
+  with them.
+
+The manifest records the image's `elf_sha256`. The runner refuses a manifest
+that names a different ELF, or flags that the builder would refuse.
+
+`classify_device_program` passes a capture only when all of these hold:
+
+* The protected launch: the watchdog window, the single 120-tick arm, the
+  digest-bound load and the recovery mode record.
+* The scenario's records, in order:
+  * `PLATFORM-ADMISSION ... status=PASS`;
+  * for the network images, `BROADCOM-ASSIGN ... status=0 ... admitted=1`;
+  * `SERVICE grant ... bind=accepted`;
+  * `QOTOM-IPC-READY`;
+  * for the DHCP subject, the `NET event=handoff` and the lease's IPC
+    delivery, with the handoff's frame and lease equal to `FINAL`'s;
+  * `SERVICE end ... status=0`, unless the session ended at its budget.
+* One `FINAL status=PASS` in the scenario's exact form. Its counts must
+  agree with the records:
+  * `frames` and `fetches` with the numbered `NET event=deliver` records;
+  * `replies` with `NET event=send`;
+  * `refusals` with `NET event=refuse`;
+  * `deliveries` with the stream's IPC deliveries.
+* A long session's reloads, as in [Long sessions](#long-sessions), with the
+  outcome `final-window` or `final-budget`.
+* The recovery:
+  * no bytes for at least 10 seconds after `FINAL`;
+  * then the consumed request's default record and the FreeBSD chain, at
+    most 150 seconds after the last reload or the arm;
+  * the request verified consumed.
+
+Any other capture is a FAIL, and the runner collects every failed check, not
+only the first. For example, a capture that ends with `FINAL status=FAIL
+reason=qotom-net-lease-count` and one whose long session ran out of reloads
+both fail. `cycle-N/result.json` records the result:
+
+* `status` (`PASS` or `FAIL`) and `failures`;
+* the parsed `terminal`;
+* the record counts;
+* the long session's reloads and `long_session_outcome`;
+* the GTK key ids installed and the rotations;
+* the recovery timings.
+
+The runner then exits non-zero on a FAIL and prints `PASS cycle=N` otherwise.
+`watchdog-kicks.json` is still written before the classification.
+
+### Redacting a capture
+
+A WiFi capture can contain decrypted network payloads: the driver's dumps of
+decapsulated frame bodies (`WIFI 0e24`, `WIFI 0e26`), which hold other
+devices' LAN traffic. Redact a cycle before committing any of it:
+
+```sh
+python3 scripts/redact-qotom-capture.py build/wifi/dhcp556/cycle-1 <output directory>
+```
+
+The helper removes those lines from `serial.raw` and from the timed events.
+It writes the redacted `events.jsonl` and `serial.raw`, plus
+`redaction.json`, which holds the source and output hashes and the number of
+lines removed. It fails if a payload line survives. Inspect the output
+before committing it.
+
+`--fragment` also drops the records the classifier does not read (data
+dumps, PCI observations, `WIFI` value records, IPC block/send/dispatch and
+`NET event=fetch`). It joins events less than a second apart and stores the
+timing as `timing.tsv`. The runner's self-tests
+(`scripts/test-qotom-recovery-capture.py`) run over such fragments of five
+hardware captures, in `scripts/fixtures/qotom-device-captures/`:
+
+* a network-subject smoke test with the Broadcom assignment;
+* a WiFi DHCP-subject session;
+* a `qotom-net-lease-count` failure;
+* a long session that ended at its budget;
+* a one-hour session that ran out of reloads before `FINAL`.
+
+Each fragment's `manifest.json` holds the image's scenario flags.
+
 What runs beyond association: brcmsmac's full N-PHY calibration (RSSI, TX
 IQ/LO and RX IQ with the RC filter sweep; `calLevel := 3`, the Qotom default),
 DHCP, and a responder that answers ARP and ICMP echo for the leased address
@@ -222,7 +311,8 @@ set recorded in
    * a final `LEANOS/10 FINAL status=PASS network-subject=1 ...`.
 
    The retained serial stream contains decrypted payloads. Redact them before
-   committing an observation, and never commit `net450.bin`.
+   committing an observation ([Redacting a capture](#redacting-a-capture)),
+   and never commit `net450.bin`.
 
 ## DHCP subject on the Qotom
 
@@ -366,8 +456,9 @@ board boots legacy BIOS.
    If the box resets before `FINAL`, shorten the serve window; never
    lengthen it past 45 seconds without a long-session image ([Long
    sessions](#long-sessions)). The retained serial stream contains
-   decrypted payloads. Redact them before committing an observation, and
-   never commit `dhcp556.bin`.
+   decrypted payloads. Redact them before committing an observation
+   ([Redacting a capture](#redacting-a-capture)), and never commit
+   `dhcp556.bin`.
 
 ## Group-key rotation (issue #557)
 
@@ -627,8 +718,9 @@ board boots legacy BIOS.
    `build/qotom-wifi-lab/manifest.json` records `long_session_seconds` and
    `watchdog_kick_budget` (`2 + ceil(S / 40)`, 25 for 900 seconds).
 
-4. **Install and run it** with the runner's long-session mode (`lab-trial.sh`
-   with `--long-session $S` added to its runner command):
+4. **Install and run it** with the runner's long-session mode. The runner
+   reads `SECONDS` from the image's manifest; `--long-session $S` must agree
+   with it:
 
    ```sh
    scp build/qotom-wifi-lab/leanos-qotom-lab.elf freebsd@192.168.6.21:/var/tmp/leanos-wifi.elf
@@ -683,7 +775,9 @@ board boots legacy BIOS.
      FreeBSD chain.
 
    `cycle-1/watchdog-kicks.json` must show no `error`, with `outcome`
-   `final-window` or `final-budget`. The access point's
+   `final-window` or `final-budget`, and `cycle-1/result.json` must show
+   `status` `PASS` ([Lab runner results for device
+   programs](#lab-runner-results-for-device-programs)). The access point's
    interval is the time between consecutive rotations: list the GTK records
    with their capture times from `cycle-1/events.jsonl`, for example
 
@@ -705,4 +799,5 @@ board boots legacy BIOS.
    shorten it on the router and repeat.
 
 The retained serial stream contains decrypted payloads: redact them before
-committing an observation, and never commit `gtk557.bin`.
+committing an observation ([Redacting a capture](#redacting-a-capture)), and
+never commit `gtk557.bin`.
