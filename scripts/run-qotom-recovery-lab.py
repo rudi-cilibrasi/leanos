@@ -200,7 +200,16 @@ def classify_watchdog_kicks(events, budget, timeout=120, recovery_slack=30):
     timer never expired while LeanOS made progress. The FreeBSD chain marker
     must follow the last reload (or the arm) by at most `timeout` plus
     `recovery_slack` seconds of firmware and loader time: LeanOS stopped
-    reloading and the watchdog, or the completed run, reset the board."""
+    reloading and the watchdog, or the completed run, reset the board.
+
+    Those are the safety checks; a capture that fails one raises. The
+    session's outcome is reported apart (issue #567): `final-window` (the
+    serve window ended, FINAL with session-end=window), `final-budget` (the
+    kernel ended the session at its last reload, FINAL with
+    session-end=budget, all `budget` reloads made), and two failing outcomes
+    with an `error`: `budget-exhausted-before-final` (no FINAL, and the
+    budget was spent: every reload made or a `stopped reason=2` refusal) and
+    `no-final` (no FINAL otherwise, e.g. a hang the watchdog recovered)."""
     if not 1 <= budget <= 92:
         raise ValueError('invalid watchdog kick budget')
     if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
@@ -246,11 +255,48 @@ def classify_watchdog_kicks(events, budget, timeout=120, recovery_slack=30):
     if recovery > timeout + recovery_slack:
         raise ValueError('recovery later than the watchdog bound after the last reload')
     stopped = re.search(rb'LEANOS-LAB/1 WATCHDOG-KICK stopped reason=([0-9]+)', data)
-    return {'watchdog_kicks': len(kicks), 'watchdog_kick_budget': budget,
-            'longest_reload_gap_seconds': max(gaps, default=0.0),
-            'protected_seconds': times[-1] - arm_at,
-            'recovery_after_last_reload_seconds': recovery,
-            'kicks_stopped_reason': int(stopped.group(1)) if stopped else None}
+    result = {'watchdog_kicks': len(kicks), 'watchdog_kick_budget': budget,
+              'longest_reload_gap_seconds': max(gaps, default=0.0),
+              'protected_seconds': times[-1] - arm_at,
+              'recovery_after_last_reload_seconds': recovery,
+              'kicks_stopped_reason': int(stopped.group(1)) if stopped else None}
+    # The session's outcome (issue #567). FINAL is matched without its
+    # serial-protocol prefix.
+    finals = list(re.finditer(
+        rb'FINAL status=PASS dhcp-subject=1 [^\r\n]*? watchdog-kicks=([0-9]+)'
+        rb'(?: session-end=(window|budget) unsent-replies=([01]))?[\r\n]', data))
+    budget_end = data.count(b'LEANOS-LAB/1 WATCHDOG-KICK session-end reason=budget ')
+    if len(finals) > 1 or budget_end > 1:
+        raise ValueError('repeated session FINAL or budget end')
+    if finals:
+        final = finals[0]
+        if int(final.group(1)) != len(kicks):
+            raise ValueError('FINAL reload count differs from the reloads')
+        if kicks and final.start() < kicks[-1].end():
+            raise ValueError('watchdog reload after FINAL')
+        if final.start() > chain:
+            raise ValueError('FINAL after the chain')
+        if (final.group(2) and stopped is not None and int(stopped.group(1)) == 2
+                and stopped.start() < final.start()):
+            # An image that ends its session at the budget never refuses a
+            # reload for a spent budget while it serves (asked_never_exhausted).
+            raise ValueError('spent-budget refusal before a budget-aware FINAL')
+        session_end = (final.group(2) or b'window').decode()
+        if (session_end == 'budget') != (budget_end == 1):
+            raise ValueError('budget end record and FINAL disagree')
+        if session_end == 'budget' and len(kicks) != budget:
+            raise ValueError('session ended at its budget before the budget was spent')
+        result.update(outcome='final-' + session_end, final_session_end=session_end,
+                      unsent_replies=int(final.group(3)) if final.group(3) else None)
+    elif budget_end:
+        raise ValueError('budget end record without FINAL')
+    elif len(kicks) == budget or (stopped is not None and int(stopped.group(1)) == 2):
+        result.update(outcome='budget-exhausted-before-final', final_session_end=None,
+                      error='budget exhausted before FINAL')
+    else:
+        result.update(outcome='no-final', final_session_end=None,
+                      error='no FINAL before the watchdog reset')
+    return result
 
 
 def decode_qotom_lvt_observation(data):
@@ -1306,6 +1352,8 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             except ValueError as error:
                 kicks = {'error': str(error), 'watchdog_kick_budget': budget}
             (directory / 'watchdog-kicks.json').write_text(json.dumps(kicks, indent=2) + '\n')
+        else:
+            kicks = None
         if verify.returncode:
             raise ValueError('one-shot request was not verified consumed')
         if args.scenario == 'watchdog-kernel':
@@ -1526,7 +1574,13 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         result.update(recovery)
         if args.scenario == 'watchdog-leanos' and not args.bsp_production:
             result['hang_recovery'] = True
+        if kicks is not None:
+            result['long_session_outcome'] = kicks.get('outcome')
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+        if kicks is not None and 'error' in kicks:
+            # A long session that did not reach FINAL (issue #567) fails the
+            # cycle even when the board recovered.
+            raise ValueError('long session: ' + kicks['error'])
         print('PASS cycle=' + str(cycle), json.dumps(result), flush=True)
 
 

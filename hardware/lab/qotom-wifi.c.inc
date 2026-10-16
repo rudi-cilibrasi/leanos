@@ -255,8 +255,9 @@ static void lab_dev_restore(unsigned pages) {
 #ifdef LEANOS_QOTOM_LONG_SESSION
 /* A long WiFi session (issue #557) outlives the default bound on the
    driver program's steps; the session is bounded instead by its serve
-   window and, independently, by the reviewed watchdog kick budget
-   (qotom-network-subject.c.inc, LeanOS.QotomWatchdogKick). */
+   window and, independently, by the reviewed watchdog kick budget, at
+   which the kernel ends the session (qotom-network-subject.c.inc,
+   LeanOS.QotomWatchdogKick). */
 #define LAB_DEV_STEP_LIMIT UINT64_C(4000000000000)
 #else
 #define LAB_DEV_STEP_LIMIT UINT64_C(40000000000)

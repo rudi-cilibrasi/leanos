@@ -47,7 +47,11 @@
  * LEANOS_QOTOM_WATCHDOG_KICKS times, each reload decided by the generated
  * check leanos_qotom_watchdog_kick (LeanOS.QotomWatchdogKick).  The only
  * watchdog write is the reload, TCO_RLD, as FreeBSD's ichwd reloads; the
- * timeout, the halt bit, NO_REBOOT and SMI routing stay GRUB's.  The safety
+ * timeout, the halt bit, NO_REBOOT and SMI routing stay GRUB's.  Once the
+ * last reload in the budget is made, the kernel ends the session before it
+ * would resume the driver program again, decided by the generated check
+ * leanos_qotom_watchdog_session_end (issue #567), so FINAL (with
+ * session-end=budget) always comes before the budget runs out.  The safety
  * argument is in docs/wifi-driver.md, "Long sessions". */
 #define QOTOM_NET_RX_AT 0x3E000u
 #define QOTOM_NET_TX_AT 0x3E800u
@@ -98,6 +102,9 @@ static struct qotom_copy_operand qotom_net_operands[16];
 #define QOTOM_WATCHDOG_LINK 1u
 #define QOTOM_WATCHDOG_TICK 2u
 static uint64_t qotom_wd_ticks, qotom_wd_kicks, qotom_wd_stopped;
+/* The session ended at its kick budget (issue #567), and whether a reply
+   was left unsent then. */
+static uint64_t qotom_wd_budget_end, qotom_wd_unsent;
 
 static inline uint16_t qotom_wd_in16(uint16_t port) {
     uint16_t value;
@@ -146,6 +153,22 @@ static __attribute__((noinline)) void qotom_watchdog_progress(uint64_t event) {
     if (event == QOTOM_WATCHDOG_TICK) serial_u64(qotom_wd_ticks);
     serial_puts(" ticks-timeout=120\n");
     qotom_wd_ticks = 0;
+}
+
+/* Before the driver program is resumed for its next record (issue #567):
+   once the generated check says the budget is spent, i.e. the last reload
+   was just made, end the session here instead of serving on.  The serve
+   window is measured in the access point's TSF time, which LeanOS does not
+   control, so the window alone cannot keep the session inside its budget;
+   ending here puts FINAL inside the 120 seconds the last reload gave. */
+static __attribute__((noinline)) uint64_t qotom_watchdog_session_spent(void) {
+    if (leanos_qotom_watchdog_session_end(qotom_wd_kicks, LEANOS_QOTOM_WATCHDOG_KICKS) == 0)
+        return 0;
+    serial_puts("LEANOS-LAB/1 WATCHDOG-KICK session-end reason=budget kicks=");
+    serial_u64(qotom_wd_kicks);
+    serial_puts(" budget="); serial_u64(LEANOS_QOTOM_WATCHDOG_KICKS);
+    serial_putc('\n');
+    return 1;
 }
 #endif
 /* The executor scratch (hardware/wifi/wifi-exec.h, spliced after this file). */
@@ -256,6 +279,17 @@ static uint64_t qotom_net_next_frame(void) {
     if (*tx_len != (qotom_net_tx_pending ? qotom_net_tx_len : 0))
         qotom_blocking_fail("qotom-net-transmit-slot");
     qotom_net_tx_pending = 0;
+#ifdef LEANOS_QOTOM_LONG_SESSION
+    if (qotom_watchdog_session_spent()) {
+        /* A reply still in the slot is not sent: the program is not
+           resumed again.  FINAL reports it. */
+        qotom_wd_unsent = *tx_len != 0;
+        *tx_len = 0;
+        qotom_wd_budget_end = 1;
+        qotom_net_ended = 1;
+        return 0;
+    }
+#endif
     uint64_t code = lab_stream_next_key();
     if (*tx_len != 0) qotom_blocking_fail("qotom-net-transmit-not-taken");
     if (code == 0) {
@@ -420,6 +454,9 @@ static uint64_t qotom_net_dispatch(uint64_t *saved, uint64_t number) {
         serial_puts(" ipc-edges="); serial_u64(qotom_net_ipc_edges);
 #ifdef LEANOS_QOTOM_LONG_SESSION
         serial_puts(" watchdog-kicks="); serial_u64(qotom_wd_kicks);
+        serial_puts(qotom_wd_budget_end ? " session-end=budget unsent-replies="
+                                         : " session-end=window unsent-replies=");
+        serial_u64(qotom_wd_unsent);
 #endif
         serial_putc('\n');
         for (;;) __asm__ volatile("cli; hlt");

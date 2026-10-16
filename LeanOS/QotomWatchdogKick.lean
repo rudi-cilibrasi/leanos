@@ -49,11 +49,49 @@ What is proved:
   `(capKicks + 1) · 120 = 11160` seconds (`cap_reset_seconds`), and
   `budgetOf 1800 = 47` gives 5760 seconds (`budget_1800`).
 
-The decision is exported as `leanos_qotom_watchdog_kick`, linked into the
-freestanding `native-pci.o` of the lab image; its arguments and result are
-fixed-width `UInt64` and it allocates nothing. The lab kernel's reads of
-TCO1_CNT and TCO_TMR, its one reload write (TCO_RLD, as FreeBSD's `ichwd`
-reloads), and its event classification are C, reviewed and not proved.
+## Ending the session within its budget (issue #567)
+
+The serve window is measured in the radio's TSF time, and the TSF is the
+access point's clock: the station adopts the timestamps of its beacons, so
+neither the window nor the tick rate is under LeanOS's control. A session
+that kept making progress once yielded more ticks than its budget covers,
+and the budget ran out before the driver program reached its end: the board
+reset as proved, but the session never printed `FINAL`.
+
+So the kernel ends the session itself once the budget is spent. Before it
+resumes the driver program for the next record it asks `endDecide`, which
+answers 1 (end now) when the budget is invalid or every reload in it has
+been made, and 0 (serve on) otherwise. On 1 the kernel resumes the driver
+no more, prints `FINAL ... session-end=budget` and halts, inside the 120
+seconds the last reload gave it; the board then resets.
+
+What is proved:
+
+* `endDecide_zero_iff`: the session is served on exactly while the budget is
+  valid and not spent.
+* `serving_never_exhausted`: while the session is served, the kick check
+  never refuses for a spent (`exhausted`) or an invalid budget.
+* `asked_never_exhausted`: however the driver behaves, no kick decision the
+  kernel asks in a session (`serve`, `asked`) is `exhausted` or
+  `badBudget`, so the budget never runs out under a session still served.
+* `serve_spent_ends`: once the last reload is made, the very next kernel
+  turn ends the session: no further record is taken, nothing is reloaded.
+* `serve_budget_end_spent`: a session ends at its budget only with every
+  reload of a valid budget made; `serve_kicks_le_budget` and
+  `serve_kicks_le_cap` keep every session within its budget and within
+  `capKicks` reloads, so `reset_bound` and `cap_reset_seconds` still bound
+  the reset.
+
+The budget, the cap and the reset bound are unchanged: the change only puts
+`FINAL` before the budget runs out.
+
+The decisions are exported as `leanos_qotom_watchdog_kick` and
+`leanos_qotom_watchdog_session_end`, linked into the freestanding
+`native-pci.o` of the lab image; their arguments and results are fixed-width
+`UInt64` and they allocate nothing. The lab kernel's reads of TCO1_CNT and
+TCO_TMR, its one reload write (TCO_RLD, as FreeBSD's `ichwd` reloads), its
+event classification and the way it ends the session are C, reviewed and
+not proved.
 -/
 
 namespace LeanOS.QotomWatchdogKick
@@ -333,5 +371,173 @@ theorem reset_bound (ts : List Nat) (h : InTime timeoutTicks ts) :
 theorem cap_reset_seconds : (capKicks + 1) * timeoutTicks = 11160 := by decide
 
 theorem session_1800_reset_seconds : (budgetOf 1800 + 1) * timeoutTicks = 5760 := by decide
+
+/-! ## Ending the session within its budget (issue #567) -/
+
+/-- Should the kernel end the session now, instead of resuming the driver
+program for its next record? 1 ends it (the budget is invalid, or every
+reload in it was made); 0 serves on. -/
+def endDecide (kicks budget : UInt64) : UInt64 :=
+  if budget = 0 ∨ budget > 92 then 1
+  else if kicks ≥ budget then 1
+  else 0
+
+/-- The exported check, called by the lab kernel before it resumes the driver
+program. -/
+@[export leanos_qotom_watchdog_session_end]
+def exportedSessionEnd (kicks budget : UInt64) : UInt64 :=
+  endDecide kicks budget
+
+theorem endDecide_zero_iff (kicks budget : UInt64) :
+    endDecide kicks budget = 0 ↔ (budget ≠ 0 ∧ budget.toNat ≤ capKicks) ∧ kicks < budget := by
+  unfold endDecide
+  constructor
+  · intro h
+    split at h
+    · exact absurd h (by decide)
+    · rename_i h1
+      split at h
+      · exact absurd h (by decide)
+      · rename_i h2
+        simp only [not_or] at h1
+        exact ⟨⟨h1.1, (budget_le_iff _).mp h1.2⟩, UInt64.not_le.mp h2⟩
+  · intro ⟨⟨hb0, hbc⟩, hk⟩
+    have h1 : ¬(budget = 0 ∨ budget > 92) :=
+      fun h => h.elim hb0 ((budget_le_iff _).mpr hbc)
+    have h2 : ¬(kicks ≥ budget) := UInt64.not_le.mpr hk
+    simp only [h1, h2, ↓reduceIte]
+
+/-- The check answers only 0 or 1. -/
+theorem endDecide_cases (kicks budget : UInt64) :
+    endDecide kicks budget = 0 ∨ endDecide kicks budget = 1 := by
+  unfold endDecide
+  split
+  · exact Or.inr rfl
+  · split
+    · exact Or.inr rfl
+    · exact Or.inl rfl
+
+/-- While the session is served, the kick check never refuses for a spent or
+an invalid budget. -/
+theorem serving_never_exhausted (event ticks kicks budget count timer : UInt64)
+    (h : endDecide kicks budget = 0) :
+    kickDecide event ticks kicks budget count timer ≠ Reason.exhausted ∧
+      kickDecide event ticks kicks budget count timer ≠ Reason.badBudget := by
+  obtain ⟨⟨hb0, hbc⟩, hk⟩ := (endDecide_zero_iff _ _).mp h
+  have h1 : ¬(budget = 0 ∨ budget > 92) :=
+    fun h => h.elim hb0 ((budget_le_iff _).mpr hbc)
+  have h2 : ¬(kicks ≥ budget) := UInt64.not_le.mpr hk
+  unfold kickDecide
+  simp only [h1, h2, ↓reduceIte, Reason.exhausted, Reason.badBudget, Reason.kick, Reason.notDue,
+    Reason.notArmed, Reason.timeoutChanged, Reason.badEvent]
+  constructor <;>
+    (repeat' split) <;> decide
+
+/-- A session as the lab kernel serves it: before each record it asks
+`endDecide`; on 1 it ends the session (`FINAL ... session-end=budget`) and
+takes no further record; on 0 the driver yields the record and the kernel
+steps. The result is the final state and whether the session ended at its
+budget; a session whose records run out ended at its serve window (the
+driver program halted). -/
+def serve (budget : UInt64) : State → List Reading → State × Bool
+  | s, [] => (s, false)
+  | s, r :: rs =>
+    if endDecide s.kicks.toUInt64 budget ≠ 0 then (s, true)
+    else serve budget (step budget s r).1 rs
+
+/-- The kick decisions the kernel asks in such a session, in order. -/
+def asked (budget : UInt64) : State → List Reading → List UInt64
+  | _, [] => []
+  | s, r :: rs =>
+    if endDecide s.kicks.toUInt64 budget ≠ 0 then []
+    else kickDecide r.event (tickCount s r).toUInt64 s.kicks.toUInt64 budget r.count r.timer ::
+      asked budget (step budget s r).1 rs
+
+/-- However the driver behaves, no kick decision asked in a session is
+`exhausted` or `badBudget`: the budget never runs out under a session that
+is still served, so `FINAL` comes before any such refusal. -/
+theorem asked_never_exhausted (budget : UInt64) (s : State) (rs : List Reading) :
+    ∀ d ∈ asked budget s rs, d ≠ Reason.exhausted ∧ d ≠ Reason.badBudget := by
+  induction rs generalizing s with
+  | nil => intro d hd; cases hd
+  | cons r rs ih =>
+    intro d hd
+    unfold asked at hd
+    split at hd
+    · cases hd
+    · rename_i h
+      rcases List.mem_cons.mp hd with rfl | hd
+      · exact serving_never_exhausted _ _ _ _ _ _ (Decidable.not_not.mp h)
+      · exact ih _ d hd
+
+/-- Once the last reload is made, the next kernel turn ends the session: no
+record is taken and nothing more is reloaded. -/
+theorem serve_spent_ends (budget : UInt64) (s : State) (r : Reading) (rs : List Reading)
+    (hspent : s.kicks = budget.toNat) : serve budget s (r :: rs) = (s, true) := by
+  have hk : ¬(s.kicks.toUInt64 < budget) := by
+    rw [hspent, Nat.toUInt64_eq, UInt64.ofNat_toNat]
+    exact UInt64.lt_irrefl _
+  have h : endDecide s.kicks.toUInt64 budget ≠ 0 := fun h =>
+    hk ((endDecide_zero_iff _ _).mp h).2
+  simp only [serve, h, ne_eq, not_false_eq_true, ↓reduceIte]
+
+/-- A session reloads the timer at most its budget times. -/
+theorem serve_kicks_le_budget (budget : UInt64) (s : State) (rs : List Reading)
+    (hs : s.kicks ≤ budget.toNat) : (serve budget s rs).1.kicks ≤ budget.toNat := by
+  induction rs generalizing s with
+  | nil => exact hs
+  | cons r rs ih =>
+    simp only [serve]
+    split
+    · exact hs
+    · exact ih _ (step_kicks budget s r hs)
+
+/-- The state a session ends in is one a run over some of its records
+reaches. -/
+theorem serve_is_run (budget : UInt64) (s : State) (rs : List Reading) :
+    ∃ qs, (serve budget s rs).1 = run budget s qs := by
+  induction rs generalizing s with
+  | nil => exact ⟨[], rfl⟩
+  | cons r rs ih =>
+    simp only [serve]
+    split
+    · exact ⟨[], rfl⟩
+    · obtain ⟨qs, hq⟩ := ih (step budget s r).1
+      exact ⟨r :: qs, hq⟩
+
+/-- Whatever budget an image declares, a session from the start reloads the
+timer at most `capKicks` times, so `reset_bound` and `cap_reset_seconds`
+still bound its reset. -/
+theorem serve_kicks_le_cap (budget : UInt64) (rs : List Reading) :
+    (serve budget ⟨0, 0⟩ rs).1.kicks ≤ capKicks := by
+  obtain ⟨qs, hq⟩ := serve_is_run budget ⟨0, 0⟩ rs
+  rw [hq]
+  exact run_kicks_le_cap budget qs
+
+/-- With a valid budget, a session ends at its budget only once every reload
+in it was made. -/
+theorem serve_budget_end_spent (budget : UInt64) (hb0 : budget ≠ 0)
+    (hbc : budget.toNat ≤ capKicks) (s : State) (rs : List Reading)
+    (hs : s.kicks ≤ budget.toNat) (hend : (serve budget s rs).2 = true) :
+    (serve budget s rs).1.kicks = budget.toNat := by
+  induction rs generalizing s with
+  | nil => simp [serve] at hend
+  | cons r rs ih =>
+    simp only [serve] at hend ⊢
+    split at hend
+    · rename_i h
+      simp only [h, ne_eq, not_false_eq_true, ↓reduceIte]
+      have hsmall : s.kicks.toUInt64.toNat = s.kicks := by
+        rw [Nat.toUInt64_eq, UInt64.toNat_ofNat']
+        apply Nat.mod_eq_of_lt
+        unfold capKicks budgetOf maxSessionSeconds kickPeriod at hbc; omega
+      have : ¬(s.kicks.toUInt64 < budget) := fun hk =>
+        h ((endDecide_zero_iff _ _).mpr ⟨⟨hb0, hbc⟩, hk⟩)
+      rw [UInt64.lt_iff_toNat_lt, hsmall] at this
+      show s.kicks = budget.toNat
+      omega
+    · rename_i h
+      simp only [h, ↓reduceIte]
+      exact ih _ (step_kicks budget s r hs) hend
 
 end LeanOS.QotomWatchdogKick

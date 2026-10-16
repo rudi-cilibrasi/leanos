@@ -242,6 +242,9 @@ decided by the generated check `leanos_qotom_watchdog_kick`
 `ichwd` uses to reload; arming, the timeout, the halt bit, NO_REBOOT and SMI
 routing stay GRUB's. A hang stops the reloads, so the board still resets at
 most 120 seconds after the last one, and at most `(budget + 1) · 120`
-seconds after the arm in any case. The design and its safety argument are
+seconds after the arm in any case. Once the last reload in the budget is
+made, the kernel ends the session and prints `FINAL` (issue #567, the
+generated check `leanos_qotom_watchdog_session_end`), so a session that
+keeps making progress does not run out of reloads before `FINAL`. The design and its safety argument are
 in [wifi-driver.md](wifi-driver.md#long-sessions); the runner's
 `--long-session` mode checks the reloads in the capture.

@@ -19,6 +19,7 @@ ld -r --gc-sections -u leanos_qotom_native_pci_header_check \
   -u leanos_qotom_broadcom_assign_write \
   -u leanos_qotom_broadcom_assign_admission \
   -u leanos_qotom_watchdog_kick \
+  -u leanos_qotom_watchdog_session_end \
   -u leanos_qotom_nosmap_control_query \
   -u leanos_qotom_copy_root_publication_query \
   -u leanos_qotom_entry_integration_query \
@@ -49,8 +50,9 @@ allowed |= {'lp_leanos_LeanOS_QotomBroadcomAssignment_' + s
                       'exportedWrite', 'postAccepted', 'policyAccepted', 'accepted',
                       'exportedAdmission')}
 allowed |= {'leanos_qotom_broadcom_assign_write', 'leanos_qotom_broadcom_assign_admission'}
-allowed |= {'lp_leanos_LeanOS_QotomWatchdogKick_' + s for s in ('kickDecide', 'exportedKick')}
-allowed.add('leanos_qotom_watchdog_kick')
+allowed |= {'lp_leanos_LeanOS_QotomWatchdogKick_' + s
+            for s in ('kickDecide', 'exportedKick', 'endDecide', 'exportedSessionEnd')}
+allowed |= {'leanos_qotom_watchdog_kick', 'leanos_qotom_watchdog_session_end'}
 allowed |= {'lp_leanos_LeanOS_QotomNoSmapControl_' + s
             for s in ('preconditions', 'transitionAccepted', 'errorMask', 'query')}
 allowed.add('leanos_qotom_nosmap_control_query')
@@ -71,6 +73,7 @@ if not functions <= allowed or not {
         'leanos_qotom_broadcom_assign_write',
         'leanos_qotom_broadcom_assign_admission',
         'leanos_qotom_watchdog_kick',
+        'leanos_qotom_watchdog_session_end',
         'leanos_qotom_nosmap_control_query',
         'leanos_qotom_copy_root_publication_query',
         'leanos_qotom_entry_integration_query'} <= functions:

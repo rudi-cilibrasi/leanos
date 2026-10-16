@@ -206,8 +206,14 @@ class CaptureTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 lab.classify(events)
 
-    def long_session(self, kicks=4, gap=45.0, recovery=110.0, budget=47):
-        """Arm at 10 s, the link reload at 70 s, then reloads `gap` apart."""
+    def long_session(self, kicks=4, gap=45.0, recovery=110.0, budget=47, final='window',
+                     stopped=None):
+        """Arm at 10 s, the link reload at 70 s, then reloads `gap` apart;
+        then, 2 s after the last reload, `final`: the FINAL of a session that
+        ended at its serve window ('window') or at its budget ('budget', with
+        the kernel's budget-end record first), an older image's FINAL without
+        session-end ('legacy'), or none (None). `stopped` is a refusal
+        reason printed 1 s after the last reload."""
         events = [event(b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n', 10.0)]
         when = 70.0
         for n in range(1, kicks + 1):
@@ -216,6 +222,20 @@ class CaptureTests(unittest.TestCase):
                                 what + b' ticks-timeout=120\n', when))
             when += gap
         last = events[-1]['elapsed']
+        if stopped is not None:
+            events.append(event(b'LEANOS-LAB/1 WATCHDOG-KICK stopped reason=%d kicks=%d count=0 '
+                                b'timer=120\n' % (stopped, kicks), last + 1))
+        if final is not None:
+            head = (lab.record(10, 'FINAL') + b' status=PASS dhcp-subject=1 echo-subject=1 '
+                    b'device-holder=2 dhcp-frames=5 lease=192.168.6.40 frames=900 fetches=900 '
+                    b'replies=12 refusals=1 ipc-edges=3600 watchdog-kicks=%d' % kicks)
+            if final == 'budget':
+                events.append(event(b'LEANOS-LAB/1 WATCHDOG-KICK session-end reason=budget '
+                                    b'kicks=%d budget=%d\n' % (kicks, budget), last + 2))
+            tail = {'window': b' session-end=window unsent-replies=0\n',
+                    'budget': b' session-end=budget unsent-replies=0\n',
+                    'legacy': b'\n'}[final]
+            events.append(event(head + tail, last + 2))
         events.append(event(lab.CHAIN + b'(hd1,gpt2)\n', last + recovery))
         return events
 
@@ -226,14 +246,29 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(result['protected_seconds'], 195.0)
         self.assertEqual(result['recovery_after_last_reload_seconds'], 110.0)
         self.assertIsNone(result['kicks_stopped_reason'])
-        stopped = self.long_session()
-        stopped.insert(-1, event(b'LEANOS-LAB/1 WATCHDOG-KICK stopped reason=2 kicks=4 count=0 '
-                                 b'timer=120\n', stopped[-2]['elapsed'] + 1))
-        self.assertEqual(lab.classify_watchdog_kicks(stopped, 47)['kicks_stopped_reason'], 2)
+        self.assertEqual(result['outcome'], 'final-window')
+        self.assertNotIn('error', result)
+        legacy = lab.classify_watchdog_kicks(self.long_session(final='legacy'), 47)
+        self.assertEqual((legacy['outcome'], legacy['unsent_replies']), ('final-window', None))
+        # issue #567: the kernel ends the session at its last reload
+        spent = lab.classify_watchdog_kicks(self.long_session(kicks=5, budget=5, final='budget'), 5)
+        self.assertEqual((spent['outcome'], spent['final_session_end']), ('final-budget', 'budget'))
+        self.assertNotIn('error', spent)
+        # the #557 hardware run: the budget ran out before FINAL; safe, but failing
+        for events, budget in ((self.long_session(kicks=5, budget=5, final=None, stopped=2), 5),
+                               (self.long_session(kicks=5, budget=5, final=None), 5),
+                               (self.long_session(kicks=4, final=None, stopped=2), 47)):
+            exhausted = lab.classify_watchdog_kicks(events, budget)
+            self.assertEqual(exhausted['outcome'], 'budget-exhausted-before-final')
+            self.assertEqual(exhausted['error'], 'budget exhausted before FINAL')
+        stopped = lab.classify_watchdog_kicks(self.long_session(final=None, stopped=4), 47)
+        self.assertEqual((stopped['kicks_stopped_reason'], stopped['outcome']), (4, 'no-final'))
+        self.assertIn('error', stopped)
         # no reload at all: the arm alone bounds the run
-        self.assertEqual(lab.classify_watchdog_kicks(self.long_session(kicks=0), 47)
-                         ['watchdog_kicks'], 0)
+        bare = lab.classify_watchdog_kicks(self.long_session(kicks=0, final=None), 47)
+        self.assertEqual((bare['watchdog_kicks'], bare['outcome']), (0, 'no-final'))
         valid = self.long_session()
+        budget_end = self.long_session(kicks=5, budget=5, final='budget')
         mutations = {
             'late reload': self.long_session(gap=120.0),
             'late recovery': self.long_session(recovery=151.0),
@@ -248,14 +283,27 @@ class CaptureTests(unittest.TestCase):
             'malformed kick': valid[:-1] + [event(b'LEANOS-LAB/1 WATCHDOG-KICK n=x\n', 400.0),
                                             valid[-1]],
             'nonmonotonic time': valid[:2] + [event(b'x\n', 1.0)] + valid[2:],
+            'FINAL count differs': [event(bytes.fromhex(e['hex']).replace(
+                b'watchdog-kicks=4', b'watchdog-kicks=3'), e['elapsed']) for e in valid],
+            'repeated FINAL': valid[:-1] + [valid[-2], valid[-1]],
+            'reload after FINAL': valid[:-3] + [event(bytes.fromhex(valid[-2]['hex']),
+                                                     valid[-3]['elapsed']), valid[-3], valid[-1]],
+            'budget end early': self.long_session(kicks=4, budget=5, final='budget'),
+            'budget end without record': budget_end[:-3] + budget_end[-2:],
+            'budget record with window FINAL': budget_end[:-2] + [event(bytes.fromhex(
+                budget_end[-2]['hex']).replace(b'session-end=budget', b'session-end=window'),
+                budget_end[-2]['elapsed'])] + budget_end[-1:],
+            'budget record without FINAL': budget_end[:-2] + budget_end[-1:],
+            'spent-budget refusal before FINAL':
+                self.long_session(kicks=5, budget=5, final='budget', stopped=2),
         }
         for name, events in mutations.items():
-            budget = 3 if name == 'over budget' else 47
+            budget = {'over budget': 3, 'budget end early': 5}.get(
+                name, 5 if events and b'budget=5' in bytes.fromhex(events[1]['hex']) else 47)
             with self.subTest(name=name), self.assertRaises(ValueError):
                 lab.classify_watchdog_kicks(events, budget)
         with self.assertRaises(ValueError):
             lab.classify_watchdog_kicks(valid, 93)
-
 
 if __name__ == '__main__':
     unittest.main()
