@@ -83,6 +83,13 @@ import LeanOS.SpawnBoundary
 import LeanOS.SpawnBoundaryTraces
 import LeanOS.SpawnBoundaryChecks
 import LeanOS.SpawnSyscall
+import LeanOS.SpawnAllocator
+import LeanOS.SpawnAllocatorTheorems
+import LeanOS.SpawnAllocatorWords
+import LeanOS.SpawnAllocatorWordsFacts
+import LeanOS.SpawnAllocatorWordsRefinement
+import LeanOS.SpawnAllocatorWordsNext
+import LeanOS.SpawnAllocatorTable
 import LeanOS.ChildLoader
 import LeanOS.FrameBudgetComposite
 import LeanOS.CompositeOwnSteps
