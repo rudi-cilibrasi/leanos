@@ -1,5 +1,8 @@
 """Validate complete parallel hosted evidence for every CI trigger."""
 
+# The Lean lane runs the aggregate check as parallel parts (issue #574).
+AGGREGATE_CHECK_RUN = './scripts/check.sh --part "${{ matrix.part }}"'
+
 
 def validate(workflow):
     jobs = workflow['jobs']
@@ -7,7 +10,7 @@ def validate(workflow):
     for job in (lean, hosted):
         if 'if' in job or job.get('needs') or job.get('continue-on-error'):
             raise ValueError('proof and hosted jobs must independently run on every trigger')
-    proof = next(s for s in lean['steps'] if s.get('run') == './scripts/check.sh')
+    proof = next(s for s in lean['steps'] if s.get('run') == AGGREGATE_CHECK_RUN)
     if proof.get('env', {}).get('LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY') != '1':
         raise ValueError('aggregate check must delegate hosted replay on every trigger')
     if proof.get('if') or proof.get('continue-on-error'):

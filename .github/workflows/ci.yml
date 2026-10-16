@@ -40,11 +40,36 @@ defaults:
   run:
     shell: bash
 
+# Pushes, merge-queue candidates, and manual runs supersede earlier runs of the
+# same ref. Pull-request runs each get their own group: GitHub admits a head
+# commit by its highest check suite, and cancel-in-progress cancels whichever
+# run queued first, which can be that suite (#547). The supersede job below
+# cancels superseded pull-request runs instead (issue #574).
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-run-{0}', github.run_id) || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  supersede:
+    name: Supersede stale pull-request runs
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check out the supersession rule
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          sparse-checkout: scripts/ci-supersede-runs.py
+          sparse-checkout-cone-mode: false
+
+      - name: Cancel older heads and lower suites of this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-supersede-runs.py
+
   repository-hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
@@ -96,15 +121,18 @@ jobs:
         run: python3 scripts/test-proof-time-budget.py
 
   lean:
-    name: Lean build and proof checks
+    name: Lean build and proof checks (${{ matrix.part }})
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:af925e193385dd49622746927054d55d37edb4f6f670efe20055ef410bfa2d24
-    # The full proof lane crossed 40 minutes after the closed-root checks joined it.
-    # On slower hosted runners it takes ~60 minutes on main alone (2026-10-09/10
-    # main runs finished in 59m42s and 59m50s), so a 60-minute limit cancels
-    # healthy runs; 90 leaves headroom without hiding a real regression, which
-    # the proof-time and aggregate-phase timing gates still catch.
-    timeout-minutes: 90
+    # The serial aggregate check took 35 to 60+ minutes on hosted runners. Each
+    # part below runs one slice of it in parallel; together they run every
+    # phase exactly once (scripts/check.sh --list-parts). The device-program
+    # lab, the longest part, takes about 35 minutes with a cold Lake cache.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [proofs, device-lab, platform, images]
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -115,19 +143,38 @@ jobs:
           node-version: '22'
 
       - name: Restore immutable Lake build cache
+        # The proof-time gate measures the modules Lake rebuilds, so the proofs
+        # part keeps an exact-input cache: a Lean change rebuilds from scratch.
+        if: matrix.part == 'proofs'
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: .lake
           key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+
+      - name: Restore Lake build cache
+        if: matrix.part != 'proofs'
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+          # A pull request that changes Lean sources has no exact cache. Start
+          # from the newest cache of this platform and CI image (normally the
+          # base branch's); Lake rebuilds every module whose trace changed, and
+          # the next step removes outputs of deleted modules (issue #574).
+          restore-keys: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-
+
+      - name: Prune restored Lake outputs without sources
+        run: python3 scripts/prune-lake-outputs.py
 
       - name: Build and check proofs
         env:
           # Every trigger runs hosted evidence in the parallel job below.
           # Serial replay here pushed main runs past the 40-minute job limit.
           LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: '1'
-        run: ./scripts/check.sh
+        run: ./scripts/check.sh --part "${{ matrix.part }}"
 
       - name: Build Qotom BSP production boundary
+        if: matrix.part == 'platform'
         run: |
           python3 scripts/build-qotom-recovery-lab.py \
             --prepared-repo . --mode completion --pci-diagnostic --bsp-production
@@ -142,11 +189,11 @@ jobs:
           python3 scripts/test-qotom-apic-lvt-policy-image.py
 
       - name: Verify frame-budget negative evidence
-        if: always()
+        if: always() && matrix.part == 'images'
         run: ./scripts/verify-negative-evidence.sh frame-budget
 
       - name: Preserve frame-budget negative evidence
-        if: always()
+        if: always() && matrix.part == 'images'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: frame-budget-negatives-${{ github.sha }}
@@ -155,11 +202,11 @@ jobs:
           retention-days: 14
 
       - name: Verify capability-transfer negative evidence
-        if: always()
+        if: always() && matrix.part == 'images'
         run: ./scripts/verify-negative-evidence.sh capability-transfer
 
       - name: Preserve capability-transfer negative evidence
-        if: always()
+        if: always() && matrix.part == 'images'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: capability-transfer-negatives-${{ github.sha }}
@@ -168,11 +215,11 @@ jobs:
           retention-days: 14
 
       - name: Verify in-flight revocation negative evidence
-        if: always()
+        if: always() && matrix.part == 'images'
         run: ./scripts/verify-negative-evidence.sh inflight-revocation
 
       - name: Preserve in-flight revocation negative evidence
-        if: always()
+        if: always() && matrix.part == 'images'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: inflight-revocation-negatives-${{ github.sha }}
@@ -184,7 +231,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: aggregate-check-timing-${{ github.sha }}
+          name: aggregate-check-timing-${{ github.sha }}-${{ matrix.part }}
           path: |
             build/ci/check-*.tsv
             build/ci/lean-module-times.tsv
@@ -202,11 +249,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Restore immutable Lake build cache
+      - name: Restore Lake build cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: .lake
           key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+          # A pull request that changes Lean sources has no exact cache. Start
+          # from the newest cache of this platform and CI image (normally the
+          # base branch's); Lake rebuilds every module whose trace changed, and
+          # the next step removes outputs of deleted modules (issue #574).
+          restore-keys: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-
+
+      - name: Prune restored Lake outputs without sources
+        run: python3 scripts/prune-lake-outputs.py
 
       - name: Replay hosted generated boundaries
         run: |
@@ -272,13 +327,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  clang-image:
-    name: Clang canonical image evidence
+  clang-hosted:
+    name: Clang hosted generated-boundary replay
     needs: repository-hygiene
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:af925e193385dd49622746927054d55d37edb4f6f670efe20055ef410bfa2d24
-    # The independent reproducibility build runs in parallel below; this lane
-    # retains the canonical boot and full evidence bundle.
+    # Split from the Clang image lane (issue #574), which it preceded serially.
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
@@ -287,17 +341,22 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Restore immutable Lake build cache
+      - name: Restore Lake build cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: .lake
           key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+          # A pull request that changes Lean sources has no exact cache. Start
+          # from the newest cache of this platform and CI image (normally the
+          # base branch's); Lake rebuilds every module whose trace changed, and
+          # the next step removes outputs of deleted modules (issue #574).
+          restore-keys: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-
+
+      - name: Prune restored Lake outputs without sources
+        run: python3 scripts/prune-lake-outputs.py
 
       - name: Verify selected compiler propagation
         run: ./scripts/test-selected-compiler-propagation.sh
-
-      - name: Record independent-lane tool versions
-        run: ./scripts/record-tool-versions.sh build/ci/clang-tool-versions.txt
 
       - name: Replay hosted generated boundaries with Clang
         env:
@@ -307,6 +366,52 @@ jobs:
           lake build leanos-boot-plan
           lake build leanos-vtd-plan
           ./scripts/check-hosted-generated-boundaries.sh ordinary
+
+      - name: Preserve Clang hosted replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-clang-hosted-${{ github.sha }}
+          path: |
+            build/oracle/
+            build/boot-handoff-host/
+            build/boot-topology-host/
+            build/boot-handoff-stream/
+            scripts/hosted-generated-boundaries.tsv
+          if-no-files-found: error
+          retention-days: 14
+
+  clang-image:
+    name: Clang canonical image evidence
+    needs: repository-hygiene
+    runs-on: ubuntu-24.04
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:af925e193385dd49622746927054d55d37edb4f6f670efe20055ef410bfa2d24
+    # The independent reproducibility build and the Clang hosted replay run in
+    # parallel; this lane retains the canonical boot and full evidence bundle.
+    timeout-minutes: 60
+    env:
+      LEANOS_CC: clang-18
+      LEANOS_TOOLCHAIN_PROFILE: clang-reference
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Restore Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+          # A pull request that changes Lean sources has no exact cache. Start
+          # from the newest cache of this platform and CI image (normally the
+          # base branch's); Lake rebuilds every module whose trace changed, and
+          # the next step removes outputs of deleted modules (issue #574).
+          restore-keys: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-
+
+      - name: Prune restored Lake outputs without sources
+        run: python3 scripts/prune-lake-outputs.py
+
+      - name: Record independent-lane tool versions
+        run: ./scripts/record-tool-versions.sh build/ci/clang-tool-versions.txt
 
       - name: Build and boot the canonical image with Clang
         run: |
@@ -368,10 +473,6 @@ jobs:
             build/ci/clang-image-build-phases-bootstrap.tsv
             build/ci/clang-canonical-boot.log
             build/oracle/
-            build/boot-handoff-host/
-            build/boot-topology-host/
-            build/boot-handoff-stream/
-            scripts/hosted-generated-boundaries.tsv
           if-no-files-found: error
           retention-days: 14
 
@@ -395,11 +496,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Restore immutable Lake build cache
+      - name: Restore Lake build cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: .lake
           key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+          # A pull request that changes Lean sources has no exact cache. Start
+          # from the newest cache of this platform and CI image (normally the
+          # base branch's); Lake rebuilds every module whose trace changed, and
+          # the next step removes outputs of deleted modules (issue #574).
+          restore-keys: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-
+
+      - name: Prune restored Lake outputs without sources
+        run: python3 scripts/prune-lake-outputs.py
 
       - name: Build canonical GCC image family
         if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
@@ -545,11 +654,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Restore immutable Lake build cache
+      - name: Restore Lake build cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: .lake
           key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+          # A pull request that changes Lean sources has no exact cache. Start
+          # from the newest cache of this platform and CI image (normally the
+          # base branch's); Lake rebuilds every module whose trace changed, and
+          # the next step removes outputs of deleted modules (issue #574).
+          restore-keys: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-
+
+      - name: Prune restored Lake outputs without sources
+        run: python3 scripts/prune-lake-outputs.py
 
       - name: Record tool versions
         run: ./scripts/record-tool-versions.sh
@@ -790,6 +907,7 @@ jobs:
       - repository-hygiene
       - lean
       - hosted-boundary
+      - clang-hosted
       - clang-image
       - gcc-image-family
       - reproducibility-plan
@@ -805,6 +923,7 @@ jobs:
           REPOSITORY_HYGIENE: ${{ needs.repository-hygiene.result }}
           LEAN: ${{ needs.lean.result }}
           HOSTED_BOUNDARY: ${{ needs.hosted-boundary.result }}
+          CLANG_HOSTED: ${{ needs.clang-hosted.result }}
           CLANG_IMAGE: ${{ needs.clang-image.result }}
           GCC_IMAGE_FAMILY: ${{ needs.gcc-image-family.result }}
           REPRODUCIBILITY_PLAN: ${{ needs.reproducibility-plan.result }}
@@ -818,7 +937,8 @@ jobs:
           fi
           for result in \
             "$REPOSITORY_HYGIENE" "$LEAN" "$HOSTED_BOUNDARY" \
-            "$CLANG_IMAGE" "$GCC_IMAGE_FAMILY" "$REPRODUCIBILITY_PLAN" \
+            "$CLANG_HOSTED" "$CLANG_IMAGE" "$GCC_IMAGE_FAMILY" \
+            "$REPRODUCIBILITY_PLAN" \
             "$CLANG_REPRO_BUILD" \
             "$CLANG_REPRO_COMPARE" "$EMULATOR"; do
             if [[ "$result" != success ]]; then
