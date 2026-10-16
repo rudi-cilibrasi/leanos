@@ -174,7 +174,8 @@ jobs:
         run: ./scripts/check.sh --part "${{ matrix.part }}"
 
       - name: Build Qotom BSP production boundary
-        if: matrix.part == 'platform'
+        # Reuses the canonical image the device-program lab builds.
+        if: matrix.part == 'device-lab'
         run: |
           python3 scripts/build-qotom-recovery-lab.py \
             --prepared-repo . --mode completion --pci-diagnostic --bsp-production

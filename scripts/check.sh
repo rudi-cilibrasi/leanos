@@ -113,6 +113,14 @@ ensure_lean_build() {
   lean_build_ready=true
 }
 
+# Later phases read the canonical image in build/boot. In a full run the
+# device-program lab builds it as a side effect (build-qotom-recovery-lab.py
+# runs build-image.sh when build/boot has no object graph); a part that runs
+# without that phase builds it the same way first.
+ensure_canonical_image() {
+  [[ -f build/boot/generated-image-objects.mk ]] || ./scripts/build-image.sh
+}
+
 phase_lean_and_generated_contracts() {
 ./scripts/test-generate-oracle-adapter-map.sh
 
@@ -271,6 +279,7 @@ ensure_lean_build
 
 phase_image_and_emulator_contracts() {
 ensure_lean_build
+ensure_canonical_image
 
 # Run the compiler-failure fixture once in the required proof lane, not in
 # every image-consuming QEMU shard. Keep it sequential with other build users.
