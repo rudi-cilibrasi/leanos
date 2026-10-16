@@ -52,3 +52,5 @@ syscall	l_LeanOS_Wifi_Exec_step___at___00LeanOS_Wifi_Exec_deviceProgramStep_spec
 syscall	dhcp_wake_edges
 syscall	dhcp_check_saved
 syscall	dhcp_check_restored
+syscall	frame_window_copy
+syscall	l_LeanOS_FrameCopyWindow_geometryOk
