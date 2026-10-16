@@ -47,11 +47,39 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="leanos-check-timing-") as directory:
         path = Path(directory) / "timing.tsv"
         path.write_text(render(), encoding="utf-8")
-        if checker.validate(path) != 15:
+        if checker.validate(path) != 21:
             raise AssertionError("valid timing evidence lost its total")
+        # A CI part records only its own phases, in check order.
+        part = checker.selected_phases(
+            "lean-and-generated-contracts,proof-integrity-and-negative-fixtures"
+        )
+        path.write_text(render(part), encoding="utf-8")
+        if checker.validate(path, part) != 3:
+            raise AssertionError("valid part timing evidence lost its total")
+        try:
+            checker.validate(path)
+        except ValueError as error:
+            if "expected 6 phases" not in str(error):
+                raise AssertionError(f"part timing passed as a full run: {error}") from error
+        else:
+            raise AssertionError("part timing passed as a full run")
+        for selection, needle in (
+            ("proof-integrity-and-negative-fixtures,lean-and-generated-contracts", "order"),
+            ("device-program-lab,device-program-lab", "unique"),
+            ("unknown-phase", "unknown"),
+            ("", "unknown"),
+        ):
+            try:
+                checker.selected_phases(selection)
+            except ValueError as error:
+                if needle not in str(error):
+                    raise AssertionError(f"missing selection diagnostic {needle!r}: {error}") from error
+            else:
+                raise AssertionError(f"invalid phase selection passed: {selection!r}")
+        path.write_text(render(), encoding="utf-8")
         for content, needle in (
             (render()[6:], "header"),
-            (render(checker.PHASES[:-1]), "expected 5 phases"),
+            (render(checker.PHASES[:-1]), "expected 6 phases"),
             (render().replace("\t2\t3", "\ttwo\t3"), "integers"),
             (render().replace("\t3\t6", "\t3\t99"), "cumulative"),
         ):
