@@ -19,6 +19,16 @@ static uint64_t qotom_blocking_step;
 #if defined(QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
 #define QOTOM_NETWORK_SUBJECT 1
 #endif
+/* The production network profile (issue #569): three subjects in three
+   address spaces, frames through copy windows (qotom-production-network.c.inc). */
+#if defined(QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
+#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#error "the production network profile replaces the lab network-subject continuation"
+#endif
+#define QOTOM_PRODUCTION_NETWORK 1
+static uint64_t qotom_prod_root_c_address(void);
+extern char user_c_stack[], user_c_stack_top[];
+#endif
 #ifdef QOTOM_IPC_DEVICE_STREAM
 /* Device stream continuation (issue #449 stage 3): after the fixed first
    exchange, subject 1 repeatedly asks the kernel-hosted keyboard program for
@@ -54,11 +64,17 @@ static __attribute__((noreturn)) void qotom_blocking_fail(const char *reason) {
 }
 
 static uint64_t qotom_blocking_root(uint64_t subject) {
+#ifdef QOTOM_PRODUCTION_NETWORK
+    if(subject==3)return qotom_prod_root_c_address();
+#endif
     return subject==1?(uint64_t)page_map_level_4_a:
         subject==2?(uint64_t)page_map_level_4_b:0;
 }
 
 static uint64_t qotom_blocking_rsp(uint64_t subject) {
+#ifdef QOTOM_PRODUCTION_NETWORK
+    if(subject==3)return (uint64_t)user_c_stack_top;
+#endif
     return subject==1?(uint64_t)user_a_stack_top:
         subject==2?(uint64_t)user_b_stack_top:0;
 }
@@ -68,9 +84,15 @@ static uint64_t qotom_blocking_rsp(uint64_t subject) {
    fixed first exchange, so from then on its RSP need only lie in its own
    stack range. */
 static int qotom_blocking_rsp_ok(uint64_t rsp,uint64_t subject) {
-#ifdef QOTOM_NETWORK_SUBJECT
+#if defined(QOTOM_NETWORK_SUBJECT) || defined(QOTOM_PRODUCTION_NETWORK)
     if(subject==1 && qotom_blocking_step>=30)
         return rsp>(uint64_t)user_a_stack && rsp<=(uint64_t)user_a_stack_top;
+#endif
+#ifdef QOTOM_PRODUCTION_NETWORK
+    /* The echo subject (C, compiled C) runs only after the fixed exchange. */
+    if(subject==3)
+        return qotom_blocking_step>=30 &&
+            rsp>(uint64_t)user_c_stack && rsp<=(uint64_t)user_c_stack_top;
 #endif
     return rsp==qotom_blocking_rsp(subject);
 }
@@ -225,6 +247,9 @@ static uint64_t qotom_blocking_capability(uint64_t *saved,uint64_t number) {
 #ifdef QOTOM_NETWORK_SUBJECT
 #include "qotom-network-subject.c.inc"
 #endif
+#ifdef QOTOM_PRODUCTION_NETWORK
+#include "qotom-production-network.c.inc"
+#endif
 
 static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
     uint64_t number=saved?saved[14]:UINT64_MAX;
@@ -232,6 +257,13 @@ static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
 #ifdef QOTOM_NETWORK_SUBJECT
     if(qotom_blocking_step>=30) {
         uint64_t root=qotom_net_dispatch(saved,number);
+        saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
+        return root;
+    }
+#endif
+#ifdef QOTOM_PRODUCTION_NETWORK
+    if(qotom_blocking_step>=30) {
+        uint64_t root=qotom_prod_dispatch(saved,number);
         saved[17]&=~((UINT64_C(1)<<10)|(UINT64_C(1)<<18));
         return root;
     }
@@ -321,6 +353,10 @@ static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
         qotom_entry_subject_root=(uint64_t)page_map_level_4_a;
         serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 role=network-subject\n");
         return qotom_entry_subject_root;
+#elif defined(QOTOM_PRODUCTION_NETWORK)
+        /* Production network profile (issue #569): C starts fresh at the
+           echo subject's entry; A's send and B's report return later. */
+        return qotom_prod_begin(saved);
 #elif defined(QOTOM_IPC_DEVICE_STREAM)
         qotom_blocking_step=5;
         saved[14]=0;
@@ -331,7 +367,8 @@ static uint64_t qotom_blocking_dispatch(uint64_t *saved) {
         for(;;)__asm__ volatile("cli; hlt");
 #endif
     }
-#if defined(QOTOM_IPC_DEVICE_STREAM) && !defined(QOTOM_NETWORK_SUBJECT)
+#if defined(QOTOM_IPC_DEVICE_STREAM) && !defined(QOTOM_NETWORK_SUBJECT) && \
+    !defined(QOTOM_PRODUCTION_NETWORK)
     if(current_subject==2 && number==7 && qotom_blocking_step==5) {
         if(saved[13]!=0 || saved[12]!=0 || saved[11]!=0 ||
            leanos_blocking_ipc_event(0,1,2)!=QOTOM_STREAM_EVENT(1,1,1,1,0))
@@ -456,6 +493,12 @@ static __attribute__((noinline,noipa)) uint64_t qotom_platform_admission(
         qotom_copy_root_exact(qotom_root_result.protected_count) &&
         qotom_alias_root_exact(&qotom_copy_out_root, qotom_copy_out_aliases,
             qotom_root_result.protected_count);
+#ifdef QOTOM_PRODUCTION_NETWORK
+    /* The production profile's isolation also covers root C and the four
+       window roots. */
+    isolation_accepted = isolation_accepted && qotom_prod_root_c_exact() &&
+        qotom_prod_windows_exact();
+#endif
     return leanos_platform_admission_query(
         2,2,0x1901,firmware_accepted,0x1902,memory_map_accepted,
         0x1903,qotom_platform_live.pci_accepted,0x3f8,38400,
@@ -480,6 +523,12 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         qotom_blocking_fail("qotom-blocking-roots");
     qotom_blocking_step=0;qotom_capability_step=0;qotom_copy_step=0;
     for(unsigned i=0;i<20;++i)qotom_saved_a[i]=qotom_saved_b[i]=0;
+#ifdef QOTOM_PRODUCTION_NETWORK
+    /* Root C matches the boot plan and the copy windows exist before any
+       subject runs. */
+    qotom_prod_check_root_c();
+    qotom_prod_build_windows();
+#endif
     qotom_blocking_active=1;
     current_subject=2;
     set_gate(14,qotom_entry_isr14,0,0x8e);
@@ -524,6 +573,9 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
     lab_stream_bind(qotom_closed_root.pt);
 #endif
     serial_puts("LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 subjects=2 interrupts=masked timer-gate=absent pic=masked copy-in=readonly-root copy-out=writable-root cpl3-authority=1\n");
+#ifdef QOTOM_PRODUCTION_NETWORK
+    serial_puts("LEANOS-LAB/1 PRODUCTION-READY profile=qotom-network-v1 subjects=3 address-spaces=3 frames=copy-window watchdog=none final=halt\n");
+#endif
     serial_puts(LEANOS_SERIAL_10_IPC " event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     qotom_entry_start((uint64_t)page_map_level_4_b,qotom_entry_closed_root,
         qotom_blocking_user_b,user_b_stack_top);

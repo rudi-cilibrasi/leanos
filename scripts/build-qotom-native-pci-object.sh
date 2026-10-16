@@ -56,8 +56,10 @@ allowed |= {'leanos_qotom_watchdog_kick', 'leanos_qotom_watchdog_session_end'}
 allowed |= {'lp_leanos_LeanOS_QotomNoSmapControl_' + s
             for s in ('preconditions', 'transitionAccepted', 'errorMask', 'query')}
 allowed.add('leanos_qotom_nosmap_control_query')
+# The three-variant inventory checks (issue #569) may stay out of line.
 allowed |= {'lp_leanos_LeanOS_QotomCopyRootPublication_' + s
-            for s in ('alignedArenaRoot', 'errorMask', 'accepted', 'query')}
+            for s in ('alignedArenaRoot', 'errorMask', 'accepted', 'query',
+                      'protectedExact', 'countsExact', 'knownVariant')}
 allowed.add('leanos_qotom_copy_root_publication_query')
 allowed |= {'lp_leanos_LeanOS_QotomEntryIntegration_' + s
             for s in ('alignedArenaRoot', 'errorMask', 'accepted', 'query')}

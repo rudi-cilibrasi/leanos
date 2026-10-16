@@ -9,7 +9,7 @@
 #include "qotom-nosmap-control.c.inc"
 #endif
 
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
 #include "qotom-broadcom-assign-state.h"
 #endif
 static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
@@ -61,7 +61,7 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
 #else
     serial_puts("0\n");
 #endif
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
     for(unsigned i=0;i<16;++i)lab_retained_pci_final_commands[i]=result.commands[i];
     lab_retained_pci_final_match=result.status==QOTOM_PCI_FINAL_MATCH;
 #endif

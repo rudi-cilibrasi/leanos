@@ -1,20 +1,32 @@
 #include "../../include/qotom_copy_root_builder.h"
 
 /* The protected inventory is A's text, A's two stack pages, B's text and B's
- * stack. Exactly two audited inventories exist
+ * stack, and in the production profile also C's text and stack. Exactly three
+ * audited inventories exist
  * (LeanOS.QotomCopyRootPublication): the ordinary one, where A's text is one
  * page (five frames), and the DHCP-subject one (issue #556), where A's text
  * holds both the generated DHCP client and the echo responder and spans two
- * pages (six frames). The variant is passed to the generated check, which
+ * pages (six frames), and the production one (issue #569) below (eight
+ * frames). The variant is passed to the generated check, which
  * accepts only that variant's counts. */
-#ifdef LEANOS_QOTOM_DHCP_SUBJECT
+#if defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
+/* The production network profile (issue #569): A's text holds the asm
+ * subjects and the DHCP client, and the inventory adds subject C's text page
+ * and stack page. The image's boot plan has three roots, so A's root, the
+ * source, already omits C's pages and only root C maps them. */
+#define QOTOM_ROOT_INVENTORY_VARIANT UINT64_C(2)
+#define QOTOM_ROOT_A_TEXT_PAGES 2u
+#define QOTOM_ROOT_C_PAGES 2u
+#elif defined(LEANOS_QOTOM_DHCP_SUBJECT)
 #define QOTOM_ROOT_INVENTORY_VARIANT UINT64_C(1)
 #define QOTOM_ROOT_A_TEXT_PAGES 2u
+#define QOTOM_ROOT_C_PAGES 0u
 #else
 #define QOTOM_ROOT_INVENTORY_VARIANT UINT64_C(0)
 #define QOTOM_ROOT_A_TEXT_PAGES 1u
+#define QOTOM_ROOT_C_PAGES 0u
 #endif
-#define QOTOM_ROOT_PROTECTED_PAGES (QOTOM_ROOT_A_TEXT_PAGES + 4u)
+#define QOTOM_ROOT_PROTECTED_PAGES (QOTOM_ROOT_A_TEXT_PAGES + 4u + QOTOM_ROOT_C_PAGES)
 _Static_assert(QOTOM_ROOT_PROTECTED_PAGES <= QOTOM_ROOT_MAX_PROTECTED,
                "Qotom protected inventory must fit the builder bound");
 
@@ -38,6 +50,11 @@ static uint64_t qotom_protected_frames[QOTOM_ROOT_MAX_PROTECTED];
 static struct qotom_copy_alias qotom_aliases[QOTOM_ROOT_MAX_ALIASES];
 static struct qotom_copy_operand qotom_operands[16];
 static uint8_t qotom_copy_destination[16];
+
+#ifdef LEANOS_QOTOM_PRODUCTION_NETWORK
+extern char __user_c_text_start[], __user_c_text_end[];
+extern char __user_c_stack_start[], __user_c_stack_end[];
+#endif
 
 static void qotom_add_protected_range(
         uintptr_t first, uintptr_t past, size_t *count) {
@@ -131,6 +148,12 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         (uintptr_t)__user_b_text_end,&protected_count);
     qotom_add_protected_range((uintptr_t)__user_b_stack_start,
         (uintptr_t)__user_b_stack_end,&protected_count);
+#ifdef LEANOS_QOTOM_PRODUCTION_NETWORK
+    qotom_add_protected_range((uintptr_t)__user_c_text_start,
+        (uintptr_t)__user_c_text_end,&protected_count);
+    qotom_add_protected_range((uintptr_t)__user_c_stack_start,
+        (uintptr_t)__user_c_stack_end,&protected_count);
+#endif
     uintptr_t a_text_pages=((uintptr_t)__user_a_text_end-
         (uintptr_t)__user_a_text_start+4095u)/4096u;
     if(protected_count!=QOTOM_ROOT_PROTECTED_PAGES ||

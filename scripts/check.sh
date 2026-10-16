@@ -296,6 +296,9 @@ ensure_canonical_image
 # The frame copy window's generated operand (#569): fixed requests and a
 # differential against the documented semantics and the port witness.
 ./scripts/check-frame-window-host.sh
+# The Qotom production network dispatcher (#569) against the real witnesses:
+# a whole three-subject session and every broken precondition.
+./scripts/check-qotom-production-host.sh
 
 ./scripts/test-run-malformed-handoff.sh
 

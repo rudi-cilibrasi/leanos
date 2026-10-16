@@ -23235,6 +23235,12 @@
     },
     {
       "source": "LeanOS/QotomCopyRootPublication.lean",
+      "qualified": "LeanOS.QotomCopyRootPublication.production_inventory_publishes",
+      "display": "production_inventory_publishes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomCopyRootPublication.lean",
       "qualified": "LeanOS.QotomCopyRootPublication.publication_requires_acceptance",
       "display": "publication_requires_acceptance",
       "kind": "theorem"

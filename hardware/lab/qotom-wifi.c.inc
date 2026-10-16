@@ -259,6 +259,11 @@ static void lab_dev_restore(unsigned pages) {
    which the kernel ends the session (qotom-network-subject.c.inc,
    LeanOS.QotomWatchdogKick). */
 #define LAB_DEV_STEP_LIMIT UINT64_C(4000000000000)
+#elif defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
+/* The production network profile (issue #569) serves for the program's
+   whole serve window (at most 4294 seconds of TSF time) with no watchdog,
+   so the step bound is the long session's; the serve window bounds it. */
+#define LAB_DEV_STEP_LIMIT UINT64_C(4000000000000)
 #else
 #define LAB_DEV_STEP_LIMIT UINT64_C(40000000000)
 #endif
@@ -392,7 +397,8 @@ static uint64_t lab_stream_invocations;
 
 /* The assignment variant needs the retained PCI diagnostic stages, which only
    the Qotom PCI diagnostic kernel variant compiles. */
-#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) && defined(LEANOS_QOTOM_PCI_DIAGNOSTIC)
+#if (defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)) && \
+    defined(LEANOS_QOTOM_PCI_DIAGNOSTIC)
 #include "qotom-broadcom-assign.c.inc"
 #endif
 
@@ -404,7 +410,7 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
                           &lab_dev_target, &policy, &hdr) ||
         !lab_dev_policy_admitted(&lab_dev_target, &policy))
         pre_admission_fail("qotom-stream-policy");
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
     /* The audited trust contract leaves the BCM43224 (02:00.0) in D3hot with
        Command=0. Only the reviewed assignment variant returns it to D0, and
        only for an assignable program policy; any mismatch fails closed. */
@@ -438,7 +444,7 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
     serial_puts("LEANOS-LAB/1 SERVICE grant subject=1 device=0:20.0 bind=accepted policy=admitted\n");
 }
 
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
 static __attribute__((unused)) uint8_t *qotom_net_scratch(void) { return wifi_scratch; }
 #endif
 

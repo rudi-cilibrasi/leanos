@@ -3,7 +3,7 @@
 #include "qotom-graphics-state.c.inc"
 #endif
 
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
 #include "qotom-broadcom-assign-state.h"
 #endif
 static __attribute__((noreturn)) void lab_broadcom_d3_fault(void *opaque);
@@ -49,7 +49,7 @@ static __attribute__((noinline)) void lab_capture_broadcom_d3(
                 QOTOM_PCIE_PENDING_OK,&lab_retained_pcie_pending[1],&result);
     }
     lab_broadcom_d3_disarm();
-#ifdef LEANOS_QOTOM_NETWORK_SUBJECT
+#if defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
     lab_retained_broadcom_d3_status=status;lab_retained_broadcom_d3=result;
     if(snapshot->count==16)lab_retained_broadcom_endpoint=snapshot->headers[14];
 #endif
