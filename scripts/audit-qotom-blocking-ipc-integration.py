@@ -264,8 +264,10 @@ NETWORK_EXPECTED = {
                                   'leanos_qotom_broadcom_assign_admission': True,
                                   'leanos_qotom_pci_initial_trust_contract': True},
     'adhoc_broadcom_assign': False,
-    # Issue #557: only a --long-session image reloads the lab watchdog.
+    # Issue #557: only a --long-session image reloads the lab watchdog, and
+    # (issue #567) only it ends the session at the reload budget.
     'watchdog_reload_present': False,
+    'watchdog_session_end_present': False,
 }
 
 
@@ -296,6 +298,10 @@ DHCP_EXPECTED = {
 # 16-bit write to TCO_RLD (port 0x460); it is called from exactly one site,
 # the progress handler, which consults the generated kick check. The
 # dispatcher itself still performs no direct I/O (checked by facts()).
+# Issue #567: the session ends at the reload budget. One out-of-line
+# function consults the generated session-end check, and the frame path (the
+# dispatcher or its out-of-line qotom_net_* helpers) calls it before it
+# resumes the driver program.
 LONG_SESSION_EXPECTED = {
     **DHCP_EXPECTED,
     'watchdog_reload_present': True,
@@ -304,6 +310,9 @@ LONG_SESSION_EXPECTED = {
     'watchdog_reload_calls': 1,
     'watchdog_reload_callers': 1,
     'watchdog_kick_witness': True,
+    'watchdog_session_end_present': True,
+    'watchdog_session_end_witness': True,
+    'watchdog_session_end_on_frame_path': True,
 }
 
 
@@ -311,7 +320,17 @@ def watchdog_facts(elf):
     symbols, rows = load(elf)
     present = any(key == 'qotom_watchdog_reload' or key.startswith('qotom_watchdog_reload.')
                   for key in symbols)
-    facts = {'watchdog_reload_present': present}
+    end_present = any(key == 'qotom_watchdog_session_spent' or
+                      key.startswith('qotom_watchdog_session_spent.') for key in symbols)
+    facts = {'watchdog_reload_present': present, 'watchdog_session_end_present': end_present}
+    if end_present:
+        spent = body(symbols, rows, 'qotom_watchdog_session_spent')
+        facts.update({
+            'watchdog_session_end_witness':
+                calls(spent, 'leanos_qotom_watchdog_session_end') > 0,
+            'watchdog_session_end_on_frame_path':
+                calls(net_code(symbols, rows), 'qotom_watchdog_session_spent') > 0,
+        })
     if present:
         reload = body(symbols, rows, 'qotom_watchdog_reload')
         progress = body(symbols, rows, 'qotom_watchdog_progress')
@@ -330,18 +349,23 @@ def references(rows, target):
                for row in rows)
 
 
-def network_facts(elf, dhcp_subject=False):
-    symbols, rows = load(elf)
-    user_a = body(symbols, rows, 'qotom_blocking_user_a')
-    # The dispatcher and the qotom_net_* helpers the compiler kept out of
-    # line: each generated witness must be called somewhere in them (the
-    # compiler may duplicate a call site, so presence, not a count).
+def net_code(symbols, rows):
+    """The dispatcher and the qotom_net_* helpers the compiler kept out of
+    line, as one list of rows."""
     bodies = [body(symbols, rows, 'qotom_entry_dispatch')]
     bodies += [body(symbols, rows, name) for name in sorted(symbols)
                if name.startswith('qotom_net_') and symbols[name][1] > 0 and
                '.' not in name and name not in ('qotom_net_operands', 'qotom_net_ipc_words')
                and any(row[0] == symbols[name][0] for row in rows)]
-    code = [row for rows_ in bodies for row in rows_]
+    return [row for rows_ in bodies for row in rows_]
+
+
+def network_facts(elf, dhcp_subject=False):
+    symbols, rows = load(elf)
+    user_a = body(symbols, rows, 'qotom_blocking_user_a')
+    # Each generated witness must be called somewhere in the frame path (the
+    # compiler may duplicate a call site, so presence, not a count).
+    code = net_code(symbols, rows)
     assign = body(symbols, rows, 'lab_broadcom_assign')
     facts = {
         'broadcom_assign_calls': calls(body(symbols, rows, 'lab_stream_bind'),
@@ -485,7 +509,8 @@ def self_test():
             rejected += 1
             continue
         raise ValueError(f'unsafe network mutation accepted: {name}')
-    network_mutations = {'network-watchdog-reload': ('watchdog_reload_present', True)}
+    network_mutations = {'network-watchdog-reload': ('watchdog_reload_present', True),
+                         'network-session-end': ('watchdog_session_end_present', True)}
     for name, (key, value) in network_mutations.items():
         for contract in (NETWORK_EXPECTED, DHCP_EXPECTED):
             candidate = dict(contract); candidate[key] = value
@@ -504,6 +529,11 @@ def self_test():
         'reload-outside-progress': ('watchdog_reload_calls', 0),
         'unchecked-reload': ('watchdog_kick_witness', False),
         'no-reload': ('watchdog_reload_present', False),
+        # Issue #567: the session must end at the budget, by the generated
+        # check, on the frame path.
+        'no-session-end': ('watchdog_session_end_present', False),
+        'unchecked-session-end': ('watchdog_session_end_witness', False),
+        'session-end-off-frame-path': ('watchdog_session_end_on_frame_path', False),
     }
     for name, (key, value) in long_mutations.items():
         candidate = dict(long_session); candidate[key] = value

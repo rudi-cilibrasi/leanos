@@ -468,10 +468,54 @@ How it works (`hardware/lab/qotom-network-subject.c.inc`):
 * Once the check refuses for any reason but "not due", the kernel never
   reloads again and prints `WATCHDOG-KICK stopped reason=N`. Every reload
   prints `LEANOS-LAB/1 WATCHDOG-KICK n=K budget=B event=...`, and the final
-  record adds `watchdog-kicks=K`.
+  record adds `watchdog-kicks=K session-end=window|budget
+  unsent-replies=0|1`.
+* **The session ends at its budget** (issue #567). Before the kernel resumes
+  the driver program for its next record, it asks the generated check
+  `leanos_qotom_watchdog_session_end` (`QotomWatchdogKick.endDecide`). Once
+  every reload in the budget has been made, the check ends the session. The
+  kernel does not resume the driver again. It prints `WATCHDOG-KICK
+  session-end reason=budget kicks=B budget=B`, then `FINAL ...
+  session-end=budget`, and halts. A reply still waiting in the transmit
+  slot is not sent, and `unsent-replies=1` reports it. A session whose serve
+  window ends first prints `session-end=window`, as before.
 * The driver program's step bound rises from 4·10¹⁰ to 4·10¹² for the long
   session (`LAB_DEV_STEP_LIMIT`); the serve window and the reload budget
   bound the session instead.
+
+Why the session ends at the budget rather than at a larger budget. In the
+hardware run of issue #567, a one-hour image spent all 92 reloads before its
+serve window ended. The kernel printed `WATCHDOG-KICK stopped reason=2`, and
+the board reset 128 seconds after the last reload with no `FINAL`. The
+budget assumes about one tick per second of the serve window. But the
+window and the ticks are both measured in the radio's TSF time, which is
+the access point's clock: the station adopts the timestamps in its beacons,
+so neither is under LeanOS's control. No allowance added to the budget would
+cover a clock that the access point sets. A larger budget would also raise
+the reviewed reset bound past 3 h 6 min, because a one-hour session's budget
+is already the cap of 92. So the budget, the cap and the bound stay as
+reviewed, and the kernel ends the session when the budget is spent:
+
+* `endDecide_zero_iff`: the session is served on exactly while the budget is
+  valid and not spent.
+* `serving_never_exhausted` and `asked_never_exhausted`: while the session
+  is served, and so for every decision the kernel asks in a session
+  (`QotomWatchdogKick.serve`), the kick check never refuses for a spent or
+  an invalid budget. `stopped reason=2` cannot come before `FINAL`.
+* `serve_spent_ends`: the kernel turn after the last reload ends the
+  session, without taking another record. `FINAL` therefore follows the
+  last reload by one record's handling by the echo subject, well inside the
+  120 seconds that reload gave.
+* `serve_budget_end_spent`, `serve_kicks_le_budget` and `serve_kicks_le_cap`:
+  a session ends at its budget only once the budget is spent, and never
+  reloads more than its budget or `capKicks` times. `reset_bound` and
+  `cap_reset_seconds` still apply unchanged.
+
+A one-hour session normally makes about 88 reloads, because a tick follows
+the previous one after slightly more than a second. Its budget of 92 covers
+3640 ticks, so normal sessions still end at their serve window. Only a
+session whose ticks outrun the budget is cut short, and it is cut short with
+its `FINAL`.
 
 Why the box still recovers to FreeBSD:
 
@@ -492,7 +536,9 @@ Why the box still recovers to FreeBSD:
   (`cap_reset_seconds`).
 * **A completed run resets as before.** When the serve window ends the
   driver program halts, the kernel prints `FINAL` and halts, and the board
-  resets at most 120 seconds after the last reload.
+  resets at most 120 seconds after the last reload. When the budget is spent
+  first, the kernel ends the session itself, prints `FINAL` and halts, so
+  the reset follows the last reload in the same way.
 * **A timer GRUB did not arm is never reloaded** (`unarmed_never_kicked`,
   `changed_never_kicked`), so an unprotected boot is not turned into a
   protected-looking one.
@@ -501,15 +547,33 @@ What this does not cover: the reset path itself and the one-shot request's
 durability across a watchdog reset, which the earlier protected trials
 established ([qotom-watchdog-lab.md](qotom-watchdog-lab.md)); SMM firmware
 reloading or disabling the timer (GRUB found TCO SMI disabled); the C around
-the check (the event classification, the two reads and the one write),
-which is reviewed, not proved.
+the checks (the event classification, the two reads, the one write, and
+ending the session), which is reviewed, not proved; and how long the echo
+subject takes over the record after the last reload, which is not bounded
+by a proof (if it hangs, no `FINAL` follows and the board resets as for any
+hang).
 
 `run-qotom-recovery-lab.py --long-session SECONDS` observes for `SECONDS +
 120` seconds more than a normal run, raises the capture limit from 1 MiB to
 64 MiB, and writes `cycle-N/watchdog-kicks.json` before the scenario
 classification: the reloads numbered from 1, within the budget, each less
 than 120 seconds after the previous one (or GRUB's arm), and the FreeBSD
-chain at most 150 seconds after the last reload.
+chain at most 150 seconds after the last reload. It also records the
+session's `outcome`:
+
+* `final-window`: `FINAL` with `session-end=window`.
+* `final-budget`: `FINAL` with `session-end=budget`, after the kernel's
+  `session-end` record, with exactly the budget's reloads.
+* `budget-exhausted-before-final`: no `FINAL`, and the budget was spent
+  (every reload made, or a `stopped reason=2` refusal). This is the failure
+  of issue #567.
+* `no-final`: no `FINAL` for any other reason, for example a hang that the
+  watchdog recovered.
+
+The last two outcomes carry an `error` and fail the cycle after
+`result.json` is written. A `FINAL` whose `watchdog-kicks` differs from the
+reloads, a reload after `FINAL`, or a budget end that does not match its
+`FINAL` makes the capture fail as malformed.
 
 ### Maintainer steps for the long-session capture
 
@@ -599,7 +663,8 @@ board boots legacy BIOS.
    * `WATCHDOG-ARMED ticks=120`, then `WATCHDOG-KICK n=1 budget=B
      event=link` once the link is up, then a reload about every 40 seconds
      (`event=ticks ticks=40`), and no `WATCHDOG-KICK stopped` before
-     `FINAL`;
+     `FINAL`. If the budget was spent first, `WATCHDOG-KICK session-end
+     reason=budget kicks=B budget=B` comes right after the last reload;
    * the 4-way handshake's `WIFI-GTK installed key-id=1` (or 2);
    * **the rotation**: `WIFI-GTK installed key-id=2` and the message 2
      transmit status (`WIFI 0e10`–`0e13`), then `WIFI-GTK rekeyed msg2=sent
@@ -612,11 +677,13 @@ board boots legacy BIOS.
    * **ping still working**: ICMP `NET event=send` records and `WIFI 0f13`
      after the rotation, and on the LAN host echo replies whose timestamps
      follow it;
-   * `FINAL status=PASS dhcp-subject=1 echo-subject=1 ... watchdog-kicks=K`,
-     then a reset at most 120 seconds after the last reload and the FreeBSD
-     chain.
+   * `FINAL status=PASS dhcp-subject=1 echo-subject=1 ... watchdog-kicks=K
+     session-end=window unsent-replies=0` (or `session-end=budget` with
+     `K = B`), then a reset at most 120 seconds after the last reload and the
+     FreeBSD chain.
 
-   `cycle-1/watchdog-kicks.json` must show no `error`. The access point's
+   `cycle-1/watchdog-kicks.json` must show no `error`, with `outcome`
+   `final-window` or `final-budget`. The access point's
    interval is the time between consecutive rotations: list the GTK records
    with their capture times from `cycle-1/events.jsonl`, for example
 

@@ -23841,6 +23841,12 @@
     },
     {
       "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.asked_never_exhausted",
+      "display": "asked_never_exhausted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
       "qualified": "LeanOS.QotomWatchdogKick.budgetOf_le_cap",
       "display": "budgetOf_le_cap",
       "kind": "theorem"
@@ -23883,6 +23889,18 @@
     },
     {
       "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.endDecide_cases",
+      "display": "endDecide_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.endDecide_zero_iff",
+      "display": "endDecide_zero_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
       "qualified": "LeanOS.QotomWatchdogKick.kickDecide_zero_iff",
       "display": "kickDecide_zero_iff",
       "kind": "theorem"
@@ -23909,6 +23927,42 @@
       "source": "LeanOS/QotomWatchdogKick.lean",
       "qualified": "LeanOS.QotomWatchdogKick.run_kicks_le_cap",
       "display": "run_kicks_le_cap",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.serve_budget_end_spent",
+      "display": "serve_budget_end_spent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.serve_is_run",
+      "display": "serve_is_run",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.serve_kicks_le_budget",
+      "display": "serve_kicks_le_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.serve_kicks_le_cap",
+      "display": "serve_kicks_le_cap",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.serve_spent_ends",
+      "display": "serve_spent_ends",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/QotomWatchdogKick.lean",
+      "qualified": "LeanOS.QotomWatchdogKick.serving_never_exhausted",
+      "display": "serving_never_exhausted",
       "kind": "theorem"
     },
     {
