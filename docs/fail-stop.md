@@ -866,6 +866,63 @@ which writes only the mailbox of the endpoint spawn granted it
 (`childSend_confined`). The kernel's entry to the child is not a composite
 step.
 
+### The spawn allocator (#575)
+
+The spawn table above is fixed: each token names one complete state replayed
+from a hand-picked seed, and exhaustion needs a seed of its own.
+`LeanOS.SpawnAllocator` replaces its states with a **bounded allocator**: a
+small record holding exactly what the family's decisions read, and a step
+function that decides every command of the family on every record.
+
+| Field | Composite source |
+| --- | --- |
+| `subjectNext`, `objectNext` | the subject and object issuers |
+| `capabilityNext` | `capabilities.nextIdentity` |
+| `controlNext`, `authorityNext` | `spawn.nextChildGeneration`, `spawn.nextGeneration` |
+| `authority`, `budget` | the parent's spawn capability (generation, subject budget) |
+| `children` | the parent's child table, slots 0 to 3: generation and frame charge |
+| `memory` | the identity of the parent's memory capability in slots 2 and 3 |
+| `parentFrames` | the frames committed to the parent (`budgetLimit 2`) |
+
+Frames are counted: the parent's free frames are `parentFrames` minus its
+memory objects, and a grant moves frames to a child by count. The parent is
+subject 2, the latch's current subject, with the family's endpoint
+(identity 3) in slot 0 and its address-space root (identity 4) in slot 1.
+`SpawnAllocator.step` decides the public spawn family and the memory family in
+the order of `spawnCharged`, `spawn`, `grantFrames`, `terminateChild`,
+`allocateDecision` and `releaseDecision`, with the hosted oracles' status codes.
+It declines (`none`) only a kernel grant of spawn authority that would be
+accepted for the bystander or with a subject budget above four; every syscall
+command is decided (`syscall_commands_covered`).
+
+| Property, for every record and command | Theorems (module `SpawnAllocatorTheorems`) |
+| --- | --- |
+| Rollback | `step_rejected_unchanged`, `step_rejected_value` |
+| Frames conserved; representation and invariants kept | `step_frames_conserved`, `step_valid` |
+| Retired control words stay retired and are rejected | `step_retired_forever`, `retired_rejected`, `terminate_retires` |
+| A spawn records exactly one child and nothing else | `spawn_exact` |
+| A command about one child touches only that child | `step_confined` |
+| Each counter at its bound is a typed rejection, from any record | `spawn_subjects_exhausted`, `spawn_objects_exhausted`, `spawn_controls_exhausted`, `spawn_capabilities_exhausted`, `spawn_budget_exhausted`, `grant_frames_exhausted`, `allocate_capabilities_exhausted`, `allocate_objects_exhausted`, `allocate_frames_exhausted` |
+
+`LeanOS.SpawnAllocatorWords` is the reviewed bounded representation: thirteen
+64-bit words (the five counters, the spawn generation, four child words
+`generation << 16 | charge`, two memory identities, and `budget |
+parentFrames << 16`). Its generated functions `stepReply`, `stepValue` and
+`stepNextWord` take the thirteen state words and the five command words as
+`UInt64` scalars and are allocation-free and non-recursive. `words_refine`
+proves, for every input, that they compute decoding, `SpawnAllocator.step` and
+encoding (`encode_decode`, `decode_bounded`). They are not exported yet.
+
+`LeanOS.SpawnAllocatorTable` reads every token state of the fixed table as an
+allocator record (`abstraction`) and checks on the sample boot plan that the
+table is a fragment of the allocator: 18 of the 21 tokens are allocator
+records (`tokens_abstract`), and the 45 edges between them that run an
+allocator command are allocator steps, on the records and on the thirteen
+words (`edges_are_allocator_steps`, `edges_are_word_steps`). The three other
+tokens are the bystander after the dispatcher's timer switch and the two
+narrowed-endpoint states made by the dispatcher's capability copy; the switch
+and the copy are dispatcher-only commands the allocator does not take.
+
 ## Diagnostic and trusted boundary
 
 Boot-only WP/SMEP recovery remains a pre-runtime diagnostic behavior outside

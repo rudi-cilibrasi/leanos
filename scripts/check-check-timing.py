@@ -11,6 +11,7 @@ HEADER = "phase\tphase_seconds\ttotal_seconds"
 FAILURE_HEADER = "phase\tphase_seconds\ttotal_seconds\texit_code"
 PHASES = (
     "lean-and-generated-contracts",
+    "device-program-lab",
     "security-and-platform-contracts",
     "hosted-boundary-and-boot-contracts",
     "image-and-emulator-contracts",
@@ -18,14 +19,25 @@ PHASES = (
 )
 
 
-def validate(path: Path) -> int:
+def selected_phases(names: str) -> tuple[str, ...]:
+    """Return a comma-separated phase selection, which CI uses per part."""
+
+    phases = tuple(names.split(","))
+    if not phases or any(phase not in PHASES for phase in phases):
+        raise ValueError(f"unknown phase selection: {names}")
+    if list(phases) != sorted(set(phases), key=PHASES.index):
+        raise ValueError(f"phase selection must be unique and in check order: {names}")
+    return phases
+
+
+def validate(path: Path, phases: tuple[str, ...] = PHASES) -> int:
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0] != HEADER:
         raise ValueError("timing header is missing or unrecognized")
-    if len(lines) != len(PHASES) + 1:
-        raise ValueError(f"expected {len(PHASES)} phases, found {len(lines) - 1}")
+    if len(lines) != len(phases) + 1:
+        raise ValueError(f"expected {len(phases)} phases, found {len(lines) - 1}")
     previous_total = 0
-    for number, (line, expected) in enumerate(zip(lines[1:], PHASES, strict=True), 2):
+    for number, (line, expected) in enumerate(zip(lines[1:], phases, strict=True), 2):
         fields = line.split("\t")
         if len(fields) != 3 or fields[0] != expected:
             raise ValueError(f"line {number}: expected phase {expected}")
@@ -63,9 +75,14 @@ def validate_failure(path: Path) -> tuple[str, int, int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("timing_file", type=Path)
+    parser.add_argument(
+        "--phases",
+        default=",".join(PHASES),
+        help="comma-separated phases the run selected, in check order",
+    )
     args = parser.parse_args()
     try:
-        total = validate(args.timing_file)
+        total = validate(args.timing_file, selected_phases(args.phases))
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
