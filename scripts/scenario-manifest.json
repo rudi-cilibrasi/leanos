@@ -245,6 +245,12 @@
         "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-dhcp-subject.h\""
       ],
+      "kernel-frame-window": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
+        "-DLEANOS_FRAME_WINDOW_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-frame-window.h\""
+      ],
       "kernel-endpoint-directory": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_ENDPOINT_DIRECTORY_SCENARIO=1",
@@ -1065,6 +1071,17 @@
         "prelink_plan": "boot-page-plan-dhcp-subject.h",
         "plan_equal_to": null
       },
+      "leanos-frame-window": {
+        "boot": "boot-dhcp-subject",
+        "kernel": "kernel-frame-window",
+        "extra_objects": [
+          "subject-dhcp",
+          "subject-echo"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-frame-window.h",
+        "plan_equal_to": null
+      },
       "leanos-endpoint-directory": {
         "boot": "boot-endpoint-directory",
         "kernel": "kernel-endpoint-directory",
@@ -1514,6 +1531,13 @@
           "key": "dhcp-subject"
         }
       },
+      "leanos-frame-window": {
+        "iso": "leanos-@VERSION@-x86_64-frame-window.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "frame-window"
+        }
+      },
       "leanos-endpoint-directory": {
         "iso": "leanos-@VERSION@-x86_64-endpoint-directory.iso",
         "grub": "boot/grub.cfg",
@@ -1919,6 +1943,16 @@
         "description": "dhcp-subject",
         "targets": [
           "leanos-dhcp-subject"
+        ]
+      },
+      {
+        "image": "leanos-frame-window",
+        "check": "converge",
+        "expected": "boot-page-plan-frame-window.h",
+        "final": "boot-page-plan-frame-window.final.h",
+        "description": "frame-window",
+        "targets": [
+          "leanos-frame-window"
         ]
       },
       {
@@ -3839,6 +3873,34 @@
         "SC-IPC-EVENT-STREAM"
       ],
       "does_not_prove": "Not a refinement of SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of seventeen synthesized records (a link record, ticks, DHCP OFFER, NAK and ACK frames, then ARP, ICMP and UDP frames) from a device program that drives no device, not the BCM43224, any radio or any DHCP server; the kernel checks its port and device tables and every copy and device decision against the generated witnesses leanos_frame_port_check and leanos_device_authorize, and every exchange on endpoints 12 and 13 against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models; the frame source checks each sent frame against the reference DHCP client and the reference responder rather than a proof of the protocol logic; and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
+    },
+    "frame-window": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/frame-window.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "60",
+        "image": "leanos-@VERSION@-x86_64-frame-window.iso",
+        "elf": "leanos-frame-window.elf",
+        "serial_log": "frame-window.serial.log",
+        "scenario": "frame-window",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-FRAME-COPY-WINDOW",
+        "SC-DHCP-SUBJECT-SEPARATION",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT"
+      ],
+      "does_not_prove": "Not a refinement of SC-FRAME-COPY-WINDOW, SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT: one finite QEMU run of the dhcp-subject image's seventeen synthesized records from a device program that drives no device, not the BCM43224, any radio or any DHCP server, with every frame copied through the per-subject copy windows instead of the SMAP user-copy window; the kernel builds the closed root and the four window roots from A's boot root with the reviewed builder and checks every leaf, and checks every copy against the generated witnesses leanos_frame_port_check and leanos_frame_window_operand, but the protected inventory and the alias slot are named by the kernel, not derived from a model; on q35 the copy returns to the caller's own root, which still maps the caller's user pages, rather than to a closed root as on the Qotom; the string move, the CR3 loads and their readback, boot.S, the C kernel, the executor, the generated C, compiler and QEMU stay trusted; and nothing here ran on the Qotom"
     },
     "endpoint-directory": {
       "release_artifacts": [

@@ -53,6 +53,8 @@ elif [[ "$scenario" == gtk-rekey ]]; then
   default_image="build/boot/leanos-${version}-x86_64-gtk-rekey.iso"
 elif [[ "$scenario" == dhcp-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-dhcp-subject.iso"
+elif [[ "$scenario" == frame-window ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-frame-window.iso"
 elif [[ "$scenario" == fault-handler ]]; then
   default_image="build/boot/leanos-${version}-x86_64-fault-handler.iso"
 elif [[ "$scenario" == timer-server ]]; then

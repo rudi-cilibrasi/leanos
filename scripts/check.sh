@@ -199,6 +199,9 @@ check_phase="image-and-emulator-contracts"
 # The DHCP subject's generated client and frame port witness (#556): the
 # reference client's agreement and the differential test of the generated C.
 ./scripts/check-dhcp-subject-host.sh
+# The frame copy window's generated operand (#569): fixed requests and a
+# differential against the documented semantics and the port witness.
+./scripts/check-frame-window-host.sh
 
 ./scripts/test-run-malformed-handoff.sh
 
