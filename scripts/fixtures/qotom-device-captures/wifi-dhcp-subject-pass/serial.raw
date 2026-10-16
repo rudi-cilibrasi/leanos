@@ -1,0 +1,277 @@
+鐥搽1񥦞�[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1
+LEANOS-LAB/1 WATCHDOG-STATE pmc=10 smi=20073 count=800 timer=4
+LEANOS-LAB/1 WATCHDOG-ARMED ticks=120
+LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD
+sha256=7d29e75698c778abc29af8660b4
+707fb5fb81d5fbc562c577359a6e67ff97285
+leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS-LAB/1 HANDOFF status=0 magic=920085129 address=1048992 length=2680 apic=0
+LEANOS-LAB/1 HANDOFF-END
+LEANOS/25 BOOT target=qotom-j1900-candidate phase=pci-inventory-diagnostic platform-admitted=0 cpl3=0
+LEANOS/25 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/25 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS-LAB/1 BOOTSTRAP cpuid-edx=3219913727 available=1 apic-base=4276095232
+LEANOS-LAB/1 ECAM-MEMORY cpuid-edx=3219913727 available=1 pat=1974748653749254 cr0=2147549215 cr3=2424832 cr4=104
+LEANOS-LAB/1 ACPI-BEGIN root-kind=2 root-address=3111776376 tables=10 dsdt=1
+LEANOS-LAB/1 ACPI-TABLE index=0 address=3111776376 length=116
+LEANOS-LAB/1 ACPI-TABLE index=1 address=3111807440 length=268
+LEANOS-LAB/1 ACPI-TABLE index=2 address=3111807712 length=132
+LEANOS-LAB/1 ACPI-TABLE index=3 address=3111807848 length=68
+LEANOS-LAB/1 ACPI-TABLE index=4 address=3111807920 length=60
+LEANOS-LAB/1 ACPI-TABLE index=5 address=3111807984 length=260
+LEANOS-LAB/1 ACPI-TABLE index=6 address=3111808248 length=56
+LEANOS-LAB/1 ACPI-TABLE index=7 address=3111808304 length=1891
+LEANOS-LAB/1 ACPI-TABLE index=8 address=3111810200 length=656
+LEANOS-LAB/1 ACPI-TABLE index=9 address=3111810856 length=378
+LEANOS-LAB/1 ACPI-TABLE index=10 address=3111811240 length=66
+LEANOS-LAB/1 ACPI-TABLE index=11 address=3111776640 length=30800
+LEANOS-LAB/1 ACPI-END
+LEANOS-LAB/1 ECAM-ARM firmware=exact root=checked access=read32
+LEANOS-LAB/1 NATIVE-BSP profile=qotom-bsp-v1 madt=3111807712 length=132 executing=0 cpuid-edx=3219913727 available=1 apic-base=4276095232 sample-id=0 status=0 detail=0 offset=132 admitted-id=0 count=4 bound-base=4276095232 platform-admitted=0
+LEANOS/25 PCI-SCAN codec=1 status=0 count=16 bus=0 device=0 function=0 offset=0
+LEANOS-LAB/1 NATIVE-PCI profile=qotom-native-ecam-v1 status=0 index=0 count=16
+LEANOS-LAB/1 EHCI-CAPS profile=qotom-ehci-v1 index=10 status=0 capbase=16777248 structural=2097160 capability=223361
+LEANOS-LAB/1 EHCI-LEGACY profile=qotom-legacy-v1 index=10 status=0 count=1 offset=104 control=532485
+LEANOS-LAB/1 EHCI-EXT index=0 offset=104 raw=65537
+LEANOS-LAB/1 EHCI-HANDOFF profile=qotom-handoff-v1 index=10 status=0 attempted=1 polls=1 support=16777217 control=8192
+LEANOS-LAB/1 EHCI-SMI profile=qotom-smi-v1 index=10 status=0 attempted=1 before=8192 after=0
+LEANOS-LAB/1 EHCI-OPERATIONAL profile=qotom-operational-v1 index=10 status=0 command=524288 status_register=4096 interrupt_enable=0 configured=0
+LEANOS-LAB/1 EHCI-BME profile=qotom-bme-v1 index=10 status=0 attempted=1 before=1030 after=1026
+LEANOS-LAB/1 XHCI-CAPS profile=qotom-xhci-v1 index=3 status=0 words=16777344,117442592,2214592596,33554442,536901569,12288,8192
+LEANOS-LAB/1 XHCI-LEGACY profile=qotom-xhci-legacy-v1 index=3 status=0 count=6 offset=33888 control=8193
+LEANOS-LAB/1 XHCI-EXT index=0 offset=32768 raw=33556482
+LEANOS-LAB/1 XHCI-EXT index=1 offset=32800 raw=50333698
+LEANOS-LAB/1 XHCI-EXT index=2 offset=32832 raw=68801
+LEANOS-LAB/1 XHCI-EXT index=3 offset=32880 raw=64704
+LEANOS-LAB/1 XHCI-EXT index=4 offset=33888 raw=67585
+LEANOS-LAB/1 XHCI-EXT index=5 offset=33920 raw=327690
+LEANOS-LAB/1 XHCI-HANDOFF profile=qotom-xhci-handoff-v2 index=3 status=0 attempted=1 polls=1 support=16779265 control=8192 verify=0 verify-index=0 expected=0 observed=0
+LEANOS-LAB/1 XHCI-SMI profile=qotom-xhci-smi-v1 index=3 status=0 attempted=1 before=8192 after=0
+LEANOS-LAB/1 XHCI-OPERATIONAL profile=qotom-xhci-operational-v1 index=3 status=0 sampled=1 command=0 final=1
+LEANOS-LAB/1 XHCI-BME profile=qotom-xhci-bme-v1 index=3 status=0 attempted=1 before=6 after=2
+LEANOS-LAB/1 AHCI-CAPS profile=qotom-ahci-v1 index=2 status=0 capability=3340828417 control=2147483650 ports=2 version=66304 extended=56
+LEANOS-LAB/1 AHCI-PORT profile=qotom-ahci-port-v1 index=2 port=1 status=0 command-before=6 interrupt=0 task-file=80 sata-status=291 active=0 issued=0 command-after=6
+LEANOS-LAB/1 AHCI-INTERRUPTS profile=qotom-ahci-interrupts-v1 index=2 status=0 attempted=1 before=2147483650 after=2147483648
+LEANOS-LAB/1 AHCI-BME profile=qotom-ahci-bme-v1 index=2 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 HDA profile=qotom-hda-v1 index=5 status=0 before=1 capability=17409 minor=0 major=1 interrupt=0 after=1
+LEANOS-LAB/1 HDA-STATE profile=qotom-hda-state-v1 index=5 status=0 corb=0 rirb=0 position=0 stream0=262144 stream1=262144 stream2=262144 stream3=262144 stream4=262144 stream5=262144 stream6=262144 stream7=262144
+LEANOS-LAB/1 HDA-BME profile=qotom-hda-bme-v1 index=5 status=0 attempted=1 before=6 after=2
+LEANOS-LAB/1 TXE-STATUS profile=qotom-txe-status-v1 index=4 status=0 firmware0=520093909 firmware1=1761607680
+LEANOS-LAB/1 ROOTPORT-BME profile=qotom-rootport-bme-v1 index=6 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 ROOTPORT-BME profile=qotom-rootport-bme-v1 index=7 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 ROOTPORT-BME profile=qotom-rootport-bme-v1 index=8 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 ROOTPORT-BME profile=qotom-rootport-bme-v1 index=9 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 REALTEK-STATE profile=qotom-realtek-state-v1 index=13 status=0 transmit-before=797969664 command-before=0 interrupt-mask=0 receive=196366 command-after=0 transmit-after=797969664
+LEANOS-LAB/1 REALTEK-STATE profile=qotom-realtek-state-v1 index=15 status=0 transmit-before=797969664 command-before=0 interrupt-mask=0 receive=196366 command-after=0 transmit-after=797969664
+LEANOS-LAB/1 REALTEK-BME profile=qotom-realtek-bme-v1 index=13 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 REALTEK-BME profile=qotom-realtek-bme-v1 index=15 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 PCIE-PENDING profile=qotom-pcie-pending-v1 index=6 status=0 polls=2 device-status=17
+LEANOS-LAB/1 PCIE-PENDING profile=qotom-pcie-pending-v1 index=7 status=0 polls=2 device-status=17
+LEANOS-LAB/1 PCIE-PENDING profile=qotom-pcie-pending-v1 index=8 status=0 polls=2 device-status=17
+LEANOS-LAB/1 PCIE-PENDING profile=qotom-pcie-pending-v1 index=9 status=0 polls=2 device-status=16
+LEANOS-LAB/1 PCIE-PENDING profile=qotom-pcie-pending-v1 index=13 status=0 polls=2 device-status=25
+LEANOS-LAB/1 PCIE-PENDING profile=qotom-pcie-pending-v1 index=15 status=0 polls=2 device-status=25
+LEANOS-LAB/1 BROADCOM-D3 profile=qotom-broadcom-d3-v1 index=14 status=0 command-attempted=1 command-before=6 command-after=0 polls=2 device-status=25 pmcsr-before=16392 d3-attempted=1 pmcsr-after=16395
+LEANOS-LAB/1 GRAPHICS-STATE profile=qotom-valleyview-rings-v1 index=1 status=0 width=30 words=0,0,0,0,512,0,0,0,0,512,0,0,0,0,512,0,0,0,0,512,0,0,0,0,512,0,0,0,0,512
+LEANOS-LAB/1 GRAPHICS-BME profile=qotom-valleyview-bme-v1 index=1 status=0 attempted=1 before=7 after=3
+LEANOS-LAB/1 TXE-BME profile=qotom-txe-host-bme-v1 index=4 status=0 attempted=1 before=262 after=258
+LEANOS-LAB/1 PCI-FINAL profile=qotom-pci-final-v1 status=0 index=16 count=16 commands-accepted=1 assumption-mask=31 admitted=1 contract=qotom-j1900-pci-trust-v1 contract-accepted=1 commands=7,3,3,2,258,2,3,3,3,3,1026,7,3,3,0,3 vtd=not-applicable platform-admitted=1
+LEANOS-LAB/1 NO-SMAP-CONTROL profile=qotom-copy-roots-v1 status=0 cr0=2147549215 cr4-before=104 cr4-after=1048680 efer=3328 rflags=6 error-mask=0 strategy=qotom-copy-roots-v1 max-bytes=16 max-aliases=2 reload=mandatory cpl3-authority=0 closed-root-published=0 copy-root-published=0
+LEANOS-LAB/1 COPY-ROOTS profile=qotom-copy-roots-v1 status=0 protected=6 removed-aliases=4 retained-present=4087 aliases=2 closed-root=3112960 copy-root=3067904 closed-scan=1 copy-scan=1 transferred=16 bytes-match=1 active-root=3112960 error-mask=0 closed-root-published=1 copy-root-published=1 cpl3-authority=0
+LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS
+LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS
+LEANOS-LAB/1 QOTOM-ENTRY-READY profile=qotom-copy-roots-v1 subject=1 address-space=1 gates=2,6,8,13,14,128 root=closed cpl3-authority=0
+LEANOS-LAB/1 QOTOM-ENTRY profile=qotom-copy-roots-v1 status=0 entries=2 returns=1 incoming-root=2424832 closed-root=3112960 active-root=3112960 frame=1 user-if=0 gprs=15 close-readback=1 return-reload=1 error-mask=0 entry-contract=1 cpl3-authority=0
+LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 status=PASS cpl3-authority=1 vtd=not-applicable assigned-edu=not-applicable terminal=serial-final-halt
+LEANOS-LAB/1 BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1 device=2:0.0 status=0 contract=1 pmcsr-before=16395 command-before=0 d0-attempted=1 pmcsr-after=16392 command-after=0 bar0=3497000964 bar1=0 polls=2 device-status=25 admitted=1
+LEANOS-LAB/1 SERVICE grant subject=1 device=0:20.0 bind=accepted policy=admitted
+LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 subjects=2 interrupts=masked timer-gate=absent pic=masked copy-in=readonly-root copy-out=writable-root cpl3-authority=1
+LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10
+LEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1
+LEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS
+LEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS
+LEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1
+LEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS
+LEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1
+LEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1
+LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
+LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS
+LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS
+LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS
+LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS
+LEANOS/8 PAGING root=B selected=1 result=PASS
+LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved
+LEANOS-LAB/1 NET event=refuse subject=1 op=device-invoke reason=no-device-capability model=refused
+LEANOS-LAB/1 NET event=refuse subject=2 op=fetch reason=1 model=refused
+LEANOS-LAB/1 WIFI-GTK installed key-id=1
+LEANOS-LAB/1 NET event=deliver frame=1 bytes=6
+LEANOS-LAB/1 NET event=send frame=1 bytes=342 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=2 bytes=342
+LEANOS-LAB/1 NET event=deliver frame=3 bytes=342
+LEANOS-LAB/1 NET event=send frame=3 bytes=342 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=4 bytes=342
+LEANOS-LAB/1 NET event=deliver frame=5 bytes=342
+LEANOS-LAB/1 NET event=handoff from=dhcp-subject to=echo-subject frame=5 lease=192.168.6.30 scrubbed=8192 restart=echo-entry model=accepted
+LEANOS-LAB/1 NET event=refuse subject=1 op=device-invoke reason=no-device-capability model=refused
+LEANOS-LAB/1 NET event=refuse subject=1 op=fetch reason=4 model=refused
+LEANOS/10 IPC event=deliver receiver=1 endpoint=13 role=echo-subject payload=lease
+LEANOS-LAB/1 NET event=deliver frame=6 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=7 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=8 bytes=74
+LEANOS-LAB/1 NET event=send frame=8 bytes=42 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=9 bytes=98
+LEANOS-LAB/1 NET event=send frame=9 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=10 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=11 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=12 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=13 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=14 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=15 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=16 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=17 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=18 bytes=60
+LEANOS-LAB/1 NET event=send frame=18 bytes=54 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=19 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=20 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=21 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=22 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=23 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=24 bytes=98
+LEANOS-LAB/1 NET event=send frame=24 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=25 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=26 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=27 bytes=98
+LEANOS-LAB/1 NET event=send frame=27 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=28 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=29 bytes=98
+LEANOS-LAB/1 NET event=send frame=29 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=30 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=31 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=32 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=33 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=34 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=35 bytes=98
+LEANOS-LAB/1 NET event=send frame=35 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=36 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=37 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=38 bytes=98
+LEANOS-LAB/1 NET event=send frame=38 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=39 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=40 bytes=98
+LEANOS-LAB/1 NET event=send frame=40 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=41 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=42 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=43 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=44 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=45 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=46 bytes=98
+LEANOS-LAB/1 NET event=send frame=46 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=47 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=48 bytes=98
+LEANOS-LAB/1 NET event=send frame=48 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=49 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=50 bytes=98
+LEANOS-LAB/1 NET event=send frame=50 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=51 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=52 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=53 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=54 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=55 bytes=98
+LEANOS-LAB/1 NET event=send frame=55 bytes=98 copy-roots=bounded16 model=accepted
+LEANOS-LAB/1 NET event=deliver frame=56 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=57 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=58 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=59 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=60 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=61 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=62 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=63 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=64 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=65 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=66 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=67 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=68 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=69 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=70 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=71 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=72 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=73 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=74 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=75 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=76 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=77 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=78 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=79 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=80 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=81 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=82 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=83 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=84 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=85 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=86 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=87 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=88 bytes=86
+LEANOS-LAB/1 NET event=deliver frame=89 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=90 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=91 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=92 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=93 bytes=86
+LEANOS-LAB/1 NET event=deliver frame=94 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=95 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=96 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=97 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=98 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=99 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=100 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=101 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=102 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=103 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=104 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=105 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=106 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=107 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=108 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=109 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=110 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=111 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=112 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=113 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=114 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=115 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=116 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=117 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=118 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=119 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=120 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=121 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=122 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=123 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=124 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=125 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=126 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=127 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=128 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=129 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=130 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=131 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=132 bytes=198
+LEANOS-LAB/1 NET event=deliver frame=133 bytes=150
+LEANOS-LAB/1 NET event=deliver frame=134 bytes=74
+LEANOS-LAB/1 NET event=deliver frame=135 bytes=1
+LEANOS-LAB/1 NET event=deliver frame=136 bytes=127
+LEANOS-LAB/1 SERVICE end subject=1 status=0 code=0x00000000
+LEANOS/10 FINAL status=PASS dhcp-subject=1 echo-subject=1 device-holder=2 dhcp-frames=5 lease=192.168.6.30 frames=136 fetches=136 replies=15 refusals=4 ipc-edges=545
+�2c3-o�Z��[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+
+FreeBSD/amd64 (qotom) (ttyu0)
+
+login: 
