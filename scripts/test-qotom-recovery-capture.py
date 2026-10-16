@@ -496,5 +496,100 @@ class DeviceProgramTests(unittest.TestCase):
         self.assertEqual([round(e['elapsed'], 6) for e in redact.redact(spread, fragment=True)[0]],
                          [0.0, 1.2])
 
+class ProductionTests(unittest.TestCase):
+    """The production network capture (issue #569): no watchdog, an
+    absorbing halt after FINAL, and FreeBSD after the maintainer's power
+    cycle."""
+    DIGEST = 'c' * 64
+    MANIFEST = {'production_network': True, 'evidence_class': 'production-candidate',
+                'ipc_device_stream': True, 'mode': 'completion'}
+    WINDOWS = (b'LEANOS-LAB/1 PRODUCTION-WINDOWS profile=qotom-network-v1 holders=1,3 '
+               b'a-window-pages=2 c-window-pages=1 fetch-root=writable send-root=read-only '
+               b'protected=8 roots=5 scan=exact operand=agree root-c=exact\n')
+
+    def records(self):
+        lines = [b'LEANOS-LAB/1 SELECT leanos consumed=1\n',
+                 b'LEANOS-LAB/1 MODE qotom-production final=halt watchdog=none\n',
+                 b'LEANOS/3 BOOT target=x86_64-qotom\n', self.WINDOWS,
+                 b'LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 '
+                 b'status=PASS cpl3-authority=1\n',
+                 b'LEANOS-LAB/1 BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1 '
+                 b'device=2:0.0 status=0 contract=1 polls=2 admitted=1\n',
+                 b'LEANOS-LAB/1 SERVICE grant subject=1 device=0:20.0 bind=accepted policy=admitted\n',
+                 b'LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 subjects=2\n',
+                 b'LEANOS-LAB/1 PRODUCTION-READY profile=qotom-network-v1 subjects=3 '
+                 b'address-spaces=3 frames=copy-window watchdog=none final=halt\n',
+                 b'LEANOS-LAB/1 NET event=refuse subject=3 op=device-invoke '
+                 b'reason=no-device-capability model=refused\n',
+                 b'LEANOS-LAB/1 NET event=refuse subject=3 op=fetch reason=not-routed model=refused\n',
+                 b'LEANOS-LAB/1 NET event=refuse subject=1 op=device-invoke '
+                 b'reason=no-device-capability model=refused\n',
+                 b'LEANOS-LAB/1 NET event=refuse subject=2 op=fetch reason=not-holder model=refused\n']
+        for frame, size, sent in ((1, 6, 342), (2, 342, 342), (3, 342, 0)):
+            lines += [b'LEANOS-LAB/1 NET event=deliver frame=%d bytes=%d port=dhcp\n' % (frame, size),
+                      b'LEANOS-LAB/1 NET event=fetch subject=1 frame=%d bytes=%d copy=fetch-root '
+                      b'model=accepted\n' % (frame, size)]
+            if sent:
+                lines.append(b'LEANOS-LAB/1 NET event=send subject=1 frame=%d bytes=%d '
+                             b'copy=send-root model=accepted\n' % (frame, sent))
+        lines += [b'LEANOS-LAB/1 NET event=handoff from=1 to=3 frame=3 lease=192.168.6.57 '
+                  b'route=echo address-spaces=separate model=accepted\n',
+                  b'LEANOS-LAB/1 NET event=deliver frame=4 bytes=98 port=echo\n',
+                  b'LEANOS-LAB/1 NET event=fetch subject=3 frame=4 bytes=98 copy=fetch-root '
+                  b'model=accepted\n',
+                  b'LEANOS-LAB/1 NET event=send subject=3 frame=4 bytes=98 copy=send-root '
+                  b'model=accepted\n',
+                  b'LEANOS-LAB/1 SERVICE end subject=1 status=0 code=0x00000000\n',
+                  b'LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 '
+                  b'echo-subject=3 device-holder=2 address-spaces=3 lease=192.168.6.57 frames=4 '
+                  b'dhcp-frames=3 echo-frames=1 fetches=4 sends=3 refusals=4 ipc-edges=22 '
+                  b'window-copies=7\n']
+        return lines
+
+    def capture(self, lines=None, after=None):
+        lines = self.records() if lines is None else lines
+        events = [event(line, 1.0 + 0.002 * i) for i, line in enumerate(lines)]
+        tail = (b'LEANOS-LAB/1 DEFAULT request=none\nLEANOS-LAB/1 CHAIN freebsd disk=hd1\n'
+                if after is None else after)
+        return events + [event(tail, 400.0)]
+
+    def test_pass(self):
+        result = lab.classify_production(self.capture(), self.DIGEST, self.MANIFEST)
+        self.assertEqual(result['status'], 'PASS', result['failures'])
+        self.assertEqual(result['records']['lease'], '192.168.6.57')
+        self.assertEqual(result['echo_service_ms']['frames'], 1)
+        self.assertGreaterEqual(result['quiet_seconds'], 10)
+        self.assertFalse(result['watchdog_protected'])
+
+    def test_mutations_fail(self):
+        lines = self.records()
+        final = len(lines) - 1
+        cases = [
+            ('watchdog', lines[:1] + [b'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120\n'] + lines[1:]),
+            ('production-mode', [l for l in lines if b'MODE' not in l]),
+            ('copy-windows', [l.replace(b'scan=exact', b'scan=partial') for l in lines]),
+            ('broadcom-assign', [l.replace(b'admitted=1', b'admitted=0') for l in lines]),
+            ('net', [l.replace(b'refusals=4', b'refusals=5') for l in lines]),
+            ('net-handoff', [l.replace(b'frame=3 lease=', b'frame=2 lease=') for l in lines]),
+            ('terminal', lines[:final] + [lines[final].replace(b'address-spaces=3 ', b'')]),
+            ('net', lines[:final] + [lines[final].replace(b'window-copies=7', b'window-copies=6')]),
+            ('order', lines[:3] + lines[4:5] + lines[3:4] + lines[5:]),
+        ]
+        for check, mutated in cases:
+            with self.subTest(check=check):
+                result = lab.classify_production(self.capture(mutated), self.DIGEST, self.MANIFEST)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertTrue(any(f.startswith(check) for f in result['failures']),
+                                result['failures'])
+        result = lab.classify_production(self.capture(after=b''), self.DIGEST, self.MANIFEST)
+        self.assertTrue(any(f.startswith('recovery') for f in result['failures']))
+
+    def test_manifest(self):
+        for bad in (dict(self.MANIFEST, production_network=False),
+                    dict(self.MANIFEST, evidence_class='lab-recovery-experiment'),
+                    dict(self.MANIFEST, elf_sha256='d' * 64)):
+            with self.subTest(manifest=bad), self.assertRaises(ValueError):
+                lab.classify_production(self.capture(), self.DIGEST, bad)
+
 if __name__ == '__main__':
     unittest.main()

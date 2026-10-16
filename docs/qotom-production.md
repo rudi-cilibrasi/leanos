@@ -168,11 +168,172 @@ copy byte, and the final record:
 LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 echo-subject=3 device-holder=2 address-spaces=3 lease=10.0.2.16 frames=4 dhcp-frames=3 echo-frames=1 fetches=4 sends=3 refusals=5 ipc-edges=22 window-copies=7
 ```
 
+## Capturing a run on the Qotom
+
+### How the image boots and recovers
+
+The production image boots from the one-shot `leanos-<digest>` request of
+the SSD GRUB configuration ([Booting the image from the
+SSD](wifi-driver.md#booting-the-image-from-the-ssd)). That path verifies the
+ELF's digest, as the lab path does, but it arms no watchdog. GRUB consumes
+the request before it boots LeanOS.
+
+The image halts after `FINAL`. It also stays down if anything stops it
+earlier, since nothing resets it. **The maintainer power-cycles the board.**
+GRUB then finds the request consumed and chains FreeBSD.
+
+### The runner's production mode
+
+`scripts/run-qotom-recovery-lab.py --production-seconds SECONDS` runs a
+production image with `--scenario leanos`. The runner:
+
+1. arms the one-shot request and reboots the board;
+2. captures the serial line;
+3. prints `POWER-CYCLE cycle=1` once `FINAL` appears (or `SECONDS` + 180
+   seconds have passed);
+4. waits up to 15 minutes for FreeBSD to come back;
+5. checks the request was consumed, then classifies the capture with
+   `classify_production`.
+
+### What `classify_production` checks
+
+The capture passes when it has all of these:
+
+- the one-shot launch, and no `WATCHDOG` record;
+- the `MODE qotom-production` record before any kernel output;
+- these records in order:
+  - `PRODUCTION-WINDOWS ... scan=exact operand=agree root-c=exact`;
+  - `PLATFORM-ADMISSION ... status=PASS`;
+  - `BROADCOM-ASSIGN ... status=0 ... admitted=1`;
+  - the service grant;
+  - `QOTOM-IPC-READY`;
+  - `PRODUCTION-READY`;
+  - the hand-off from A to C;
+  - `SERVICE end ... status=0`;
+- one `FINAL status=PASS profile=qotom-network-v1 ...` whose counts agree
+  with the records:
+  - `frames` and `fetches` with the numbered deliveries and fetches;
+  - `sends` with the sends;
+  - four refusals;
+  - DHCP plus echo frames equal to all frames;
+  - window copies equal to fetches plus sends;
+  - IPC edges equal to 4 × frames + 6;
+  - the hand-off's frame and lease equal to `dhcp-frames` and `lease`;
+- quiet after `FINAL`, then the consumed request's default and the FreeBSD
+  chain.
+
+It also reports `echo_service_ms`: for each echo frame, the time from its
+delivery record to the echo subject's reply record, as the serial line saw
+them. At 38400 baud this is an upper bound on the time the image took, not a
+round-trip time. The ping round-trip time is measured on the LAN host.
+
+### Maintainer steps
+
+Run these on the development host in a checkout of the merged branch, with
+the maintainer at the board. Nothing here needs the watchdog scripts.
+
+1. Build the canonical inputs, then the keyless smoke image, and check it:
+
+   ```sh
+   ./scripts/build-image.sh
+   python3 scripts/build-qotom-production.py
+   python3 scripts/test-qotom-production-image.py
+   ```
+
+2. Run the keyless smoke test. The program touches no Broadcom register: the
+   only Broadcom store is the assignment variant's PMCSR write. It feeds the
+   17 q35 DHCP-subject records through the real Qotom path:
+   - three address spaces;
+   - the copy windows;
+   - IPC;
+   - the DHCP subject in A and the echo subject in C.
+
+   ```sh
+   scp build/qotom-production/leanos-qotom-production.elf freebsd@192.168.6.21:/var/tmp/leanos-wifi.elf
+   sha256sum build/qotom-production/leanos-qotom-production.elf
+   ssh freebsd@192.168.6.21 sudo sh /var/tmp/install-ssd.sh <sha256>
+   python3 scripts/run-qotom-recovery-lab.py --host freebsd@192.168.6.21 \
+     --host-key-alias freebsd.lan --usb-serial <stick serial> \
+     --serial-device <FTDI by-id path> \
+     --elf build/qotom-production/leanos-qotom-production.elf --image-on-ssd \
+     --output build/wifi/prod569-smoke --scenario leanos --production-seconds 120
+   ```
+
+   When the runner prints `POWER-CYCLE cycle=1`, power-cycle the board.
+   Expect `PASS cycle=1`. `build/wifi/prod569-smoke/cycle-1/result.json`
+   should show:
+
+   - `lease` `10.0.2.16`;
+   - `frames` 17;
+   - `refusals` 4;
+   - `window_copies` equal to fetches plus sends.
+
+   Any `FINAL status=FAIL reason=...` names the check that refused. Keep
+   that capture.
+
+3. Run the WiFi capture. The image embeds the PMK:
+   - keep it under `build/`;
+   - never commit it;
+   - never print the passphrase;
+   - do not set `LEANOS_WIFI_DHCP` or `LEANOS_WIFI_DRIVER_DHCP`: the driver
+     leases nothing.
+
+   No watchdog bounds the session, so the serve window may be longer than
+   the lab's 45 seconds. Five minutes leaves time to ping and to send UDP
+   echo by hand.
+
+   ```sh
+   S=300
+   LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" \
+     LEANOS_WIFI_SERVE_SECONDS=$S LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     .lake/build/bin/leanos-wifi-gen connect build/wifi/prod569.bin
+   python3 scripts/build-qotom-production.py --program build/wifi/prod569.bin
+   python3 scripts/test-qotom-production-image.py
+   ```
+
+   Install it as in step 2, then start the runner with `--output
+   build/wifi/prod569 --production-seconds $((S + 120))`.
+
+4. Drive traffic from a LAN host once `NET event=handoff ... lease=<leased
+   address>` appears on the serial line (`WIFI 0F17` marks the link-only
+   endpoint up before that):
+
+   ```sh
+   ping -c 20 <leased address> | tee build/wifi/prod569/ping.txt
+   printf 'ring 3 echo\n' | nc -u -w 2 <leased address> 7
+   ```
+
+   Optionally record the wired side with `sudo tcpdump -i eno1 'port 67 or
+   port 68 or host <leased address>'`. Expect:
+
+   - the DHCP exchange on the wire, with the Qotom's hardware address;
+   - echo replies, with losses only on the radio link;
+   - the UDP payload echoed back.
+
+5. When the serve window ends, the image prints `FINAL status=PASS
+   profile=qotom-network-v1 ... lease=<leased address>` and halts. Power-cycle
+   the board when the runner asks. Expect `PASS cycle=1`.
+
+6. Report latency against the lab baseline. The lab image answered ping in
+   about 125 ms through the 16-byte copy roots. The ring-0 responder of the
+   2026-09-29 capture took 6.5 to 23.2 ms. Record:
+   - `ping.txt`'s round-trip times (min/avg/max/mdev);
+   - `result.json`'s `echo_service_ms` (frames, median, max).
+
+7. Before committing an observation, redact the cycle ([Redacting a
+   capture](wifi-driver.md#redacting-a-capture)): the serial stream holds
+   decrypted payloads. Never commit `prod569.bin`.
+
+If the board does not come back after the power cycle, recover it as for any
+lab image. GRUB has already consumed the request, so its default boots
+FreeBSD.
+
 ## Not covered
 
-- The Qotom capture: a lease from the router, then ping and UDP echo
-  answered by the echo subject, with latency against the lab's ~125 ms.
-  The maintainer steps are in a later change.
+- The Qotom capture itself: a lease from the router, then ping and UDP
+  echo answered by the echo subject, with latency against the lab's
+  ~125 ms. It needs the maintainer at the board
+  ([Maintainer steps](#maintainer-steps)).
 - The image serves for the program's serve window, at most 4294 seconds,
   then prints `FINAL` and halts. A power cycle returns the board to
   FreeBSD.
