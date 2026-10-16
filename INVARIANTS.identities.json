@@ -26534,6 +26534,744 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_childAt",
+      "display": "abstraction_childAt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_childAt_family",
+      "display": "abstraction_childAt_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_childAt_lt",
+      "display": "abstraction_childAt_lt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_children",
+      "display": "abstraction_children",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_memoryAt",
+      "display": "abstraction_memoryAt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.availableFrames_committed",
+      "display": "availableFrames_committed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.availableFrames_length",
+      "display": "availableFrames_length",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.budgetLimit_committed",
+      "display": "budgetLimit_committed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.budgetUsage_committed",
+      "display": "budgetUsage_committed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.childCount_family",
+      "display": "childCount_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_notReserved",
+      "display": "family_notReserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_parentSlots",
+      "display": "family_parentSlots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.find_isSome_filter",
+      "display": "find_isSome_filter",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.firstAvailable_family",
+      "display": "firstAvailable_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.frameState_beq_free",
+      "display": "frameState_beq_free",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.freeChildSlot_family",
+      "display": "freeChildSlot_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.owner_live",
+      "display": "owner_live",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.resolveControl_family",
+      "display": "resolveControl_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.resolveControl_family_error",
+      "display": "resolveControl_family_error",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.resolveControl_family_ok",
+      "display": "resolveControl_family_ok",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.resolveEndpoint_parentSlots",
+      "display": "resolveEndpoint_parentSlots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.subjectBudget_family",
+      "display": "subjectBudget_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorFamily.lean",
+      "qualified": "LeanOS.SpawnAllocator.sum_range_of_zero",
+      "display": "sum_range_of_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.countP_contains_nodup",
+      "display": "countP_contains_nodup",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantFrames_abstraction",
+      "display": "grantFrames_abstraction",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantFrames_accepted",
+      "display": "grantFrames_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantFrames_family_preserved",
+      "display": "grantFrames_family_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantFrames_status_family",
+      "display": "grantFrames_status_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantedFrames_facts",
+      "display": "grantedFrames_facts",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.movedCount_family",
+      "display": "movedCount_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.resolved_entry",
+      "display": "resolved_entry",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.setChildEntry_children",
+      "display": "setChildEntry_children",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorGrantStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.usage_moveFree",
+      "display": "usage_moveFree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.allocateMemory_abstraction",
+      "display": "allocateMemory_abstraction",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.allocateMemory_accepted",
+      "display": "allocateMemory_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.allocateMemory_family_preserved",
+      "display": "allocateMemory_family_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.allocateMemory_status_family",
+      "display": "allocateMemory_status_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.allocatedState_fields",
+      "display": "allocatedState_fields",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.countP_flip",
+      "display": "countP_flip",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_frame_member",
+      "display": "family_frame_member",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_kind_object_ne",
+      "display": "family_kind_object_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_low_slots",
+      "display": "family_low_slots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_memoryActor",
+      "display": "family_memoryActor",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_memoryGate_invariants",
+      "display": "family_memoryGate_invariants",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_memory_slot",
+      "display": "family_memory_slot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.memory_list_update",
+      "display": "memory_list_update",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releaseMemory_abstraction",
+      "display": "releaseMemory_abstraction",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releaseMemory_accepted",
+      "display": "releaseMemory_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releaseMemory_family_preserved",
+      "display": "releaseMemory_family_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releaseMemory_status_family",
+      "display": "releaseMemory_status_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releasedOwnership_keep",
+      "display": "releasedOwnership_keep",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releasedOwnership_sub",
+      "display": "releasedOwnership_sub",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorMemoryStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.releasedState_fields",
+      "display": "releasedState_fields",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_seedState",
+      "display": "abstraction_seedState",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.familySeed_family",
+      "display": "familySeed_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.map_toCommand_filterMap",
+      "display": "map_toCommand_filterMap",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.recordToken_family",
+      "display": "recordToken_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.recordToken_simulates",
+      "display": "recordToken_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.recordTokens_decided",
+      "display": "recordTokens_decided",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seedState_family",
+      "display": "seedState_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_abstraction_memory",
+      "display": "seed_abstraction_memory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_budgetLimit",
+      "display": "seed_budgetLimit",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_budgetUsage",
+      "display": "seed_budgetUsage",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_commitment",
+      "display": "seed_commitment",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_endpointOwner",
+      "display": "seed_endpointOwner",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_memory_slot",
+      "display": "seed_memory_slot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_objects",
+      "display": "seed_objects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_ownedMemory",
+      "display": "seed_ownedMemory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_status_four",
+      "display": "seed_status_four",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_subjects",
+      "display": "seed_subjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSeeds.lean",
+      "qualified": "LeanOS.SpawnAllocator.seed_trace_simulates",
+      "display": "seed_trace_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.abstraction_withAuthority",
+      "display": "abstraction_withAuthority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.allocateStep_value",
+      "display": "allocateStep_value",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.child_simulates",
+      "display": "child_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.familyStep_child",
+      "display": "familyStep_child",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.familyStep_memory",
+      "display": "familyStep_memory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.familyStep_simulates",
+      "display": "familyStep_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.familyTrace_simulates",
+      "display": "familyTrace_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_child_recorded",
+      "display": "family_child_recorded",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_withAuthority",
+      "display": "family_withAuthority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantAuthority_simulates",
+      "display": "grantAuthority_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.grantBudgetedAuthority_eq",
+      "display": "grantBudgetedAuthority_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.memory_simulates",
+      "display": "memory_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.releaseStep_value",
+      "display": "releaseStep_value",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.revokeAuthority_simulates",
+      "display": "revokeAuthority_simulates",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.revokeSpawnAuthority_eq",
+      "display": "revokeSpawnAuthority_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSimulation.lean",
+      "qualified": "LeanOS.SpawnAllocator.step_undecided",
+      "display": "step_undecided",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.controlGenerationAvailable_eq",
+      "display": "controlGenerationAvailable_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.controlWord_eq",
+      "display": "controlWord_eq",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.copy_accepted_fields",
+      "display": "copy_accepted_fields",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.created_capabilities",
+      "display": "created_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.created_records",
+      "display": "created_records",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.endpointRights_subset",
+      "display": "endpointRights_subset",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_childGate_invariants",
+      "display": "family_childGate_invariants",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_dead_slots",
+      "display": "family_dead_slots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_issueSubject",
+      "display": "family_issueSubject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_lifecycleCapabilities",
+      "display": "family_lifecycleCapabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_live_object_ne",
+      "display": "family_live_object_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_next_dead",
+      "display": "family_next_dead",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_next_object",
+      "display": "family_next_object",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_owned_space_ne",
+      "display": "family_owned_space_ne",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_runtime",
+      "display": "family_runtime",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.family_spawnParent",
+      "display": "family_spawnParent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.freeSlot_none_count",
+      "display": "freeSlot_none_count",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.identityExhausted_issuer",
+      "display": "identityExhausted_issuer",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_authority",
+      "display": "installChild_authority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_budgetLimit",
+      "display": "installChild_budgetLimit",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_capabilities",
+      "display": "installChild_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_children",
+      "display": "installChild_children",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_issuers",
+      "display": "installChild_issuers",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_nextChildGeneration",
+      "display": "installChild_nextChildGeneration",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.installChild_nextGeneration",
+      "display": "installChild_nextGeneration",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.map_range_set",
+      "display": "map_range_set",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spaced_copy_accepted",
+      "display": "spaced_copy_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spaced_parentSlots",
+      "display": "spaced_parentSlots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawnAuthorize_family",
+      "display": "spawnAuthorize_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawnCharged_abstraction",
+      "display": "spawnCharged_abstraction",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawnCharged_accepted",
+      "display": "spawnCharged_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawnCharged_family",
+      "display": "spawnCharged_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawnCharged_family_preserved",
+      "display": "spawnCharged_family_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawnResultOf_spawned",
+      "display": "spawnResultOf_spawned",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawn_post",
+      "display": "spawn_post",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.spawn_result_family",
+      "display": "spawn_result_family",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/SpawnAllocatorTable.lean",
       "qualified": "LeanOS.SpawnAllocator.allocatorEdges_count",
       "display": "allocatorEdges_count",
@@ -26555,6 +27293,66 @@
       "source": "LeanOS/SpawnAllocatorTable.lean",
       "qualified": "LeanOS.SpawnAllocator.tokens_abstract",
       "display": "tokens_abstract",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.child_not_owner",
+      "display": "child_not_owner",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.reclaim_noop",
+      "display": "reclaim_noop",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminateChild_abstraction",
+      "display": "terminateChild_abstraction",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminateChild_accepted",
+      "display": "terminateChild_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminateChild_family_preserved",
+      "display": "terminateChild_family_preserved",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminateChild_status_family",
+      "display": "terminateChild_status_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminate_post",
+      "display": "terminate_post",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminatedChild_family",
+      "display": "terminatedChild_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.terminated_parentSlots",
+      "display": "terminated_parentSlots",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorTerminateStep.lean",
+      "qualified": "LeanOS.SpawnAllocator.usage_returned",
+      "display": "usage_returned",
       "kind": "theorem"
     },
     {
