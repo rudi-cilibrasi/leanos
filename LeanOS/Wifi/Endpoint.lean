@@ -54,19 +54,44 @@ the driver chooses no IPv4 address. The ring-3 DHCP subject leases one and
 hands it to the echo subject over IPC (`LeanOS.DhcpSubject`). Because the
 DHCP subject has no clock of its own, the endpoint also yields a 1-byte
 **tick** whenever a second of TSF time has passed since the last one; the
-DHCP subject retransmits on every third tick without an answer
-(`LeanOS.Net.DhcpClient`).
+DHCP subject retransmits on the RFC 2131 schedule counted in ticks
+(`LeanOS.Net.DhcpClient.retransmitDelay`).
+
+## The lease window and the serve window (issue #573)
+
+The link-only endpoint has two windows, both measured in TSF time:
+
+* the **lease window** (`leaseUs`), the time the DHCP subject has to obtain
+  a lease, from the link record on;
+* the **serve window** (`us`), the time the endpoint serves after the
+  lease, from the moment the driver sees the lease signal.
+
+The driver does not parse DHCP. The kernel stores 1 in the lease signal word
+(`LeanOS.Net.FrameSource.leaseSignalAt`) when the DHCP subject hands its
+lease to the echo subject, and the serve loop checks the word on every
+turn. When it first sees the bit it records `Tag.leaseSignalled` (value: the
+microseconds the lease took) and restarts its clock with the serve window.
+If the lease window ends without the bit it records `Tag.leaseWindowOver`
+and ends; the kernel then reports the missing lease. So a session lasts at
+most `leaseUs + us` of TSF time, plus one turn of the loop. A slow DHCP
+server uses up the lease window, never the serve window. The issue #450
+endpoint, whose driver leased the address before serving, has one window.
 -/
 namespace LeanOS.Wifi.Endpoint
 
 open LeanOS.Wifi.Bytecode LeanOS.Wifi.Bcm43224 LeanOS.Wifi.Connect LeanOS.Wifi.Responder
-open LeanOS.Net.FrameSource (rxAt txAt txLenAt configLen)
+open LeanOS.Net.FrameSource (rxAt txAt txLenAt configLen leaseSignalAt)
 
 /-! Scratch counters (beside the responder's 0x0C10–0x0C44). -/
 def rxCount : UInt32 := 0x0C48
 def txCount : UInt32 := 0x0C4C
 /-- TSF time of the last tick (`serveLink`). -/
 def lastTickAt : UInt32 := 0x0C50
+/-- 1 once the serve window runs (`serveLink`: the lease signal was seen). -/
+def servingAt : UInt32 := 0x0C54
+/-- The current window's length in TSF microseconds: the lease window, then
+the serve window (`serveLink`). -/
+def windowAt : UInt32 := 0x0C58
 
 /-- Bytes of the link record: our hardware address. -/
 def linkLen : UInt32 := 6
@@ -91,6 +116,12 @@ def linkReady : UInt32 := 0x0F17
 /-- A frame protected with the GTK decapsulated and passed the replay check
 (issue #557); value: its key id. -/
 def groupFrame : UInt32 := 0x0F18
+/-- The lease signal was seen and the serve window starts (issue #573);
+value: the TSF microseconds since the link record. -/
+def leaseSignalled : UInt32 := 0x0F19
+/-- The lease window ended without a lease signal (issue #573); value: the
+lease window in microseconds. -/
+def leaseWindowOver : UInt32 := 0x0F1A
 end Tag
 
 /-- Transmit the reply the kernel left at `txAt`, if any, through `radio`,
@@ -213,12 +244,13 @@ def handleFrame (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (radio : Radio)
   emit (.yield (.reg 13))
   emit (.jump next)
 
-/-- Serve the frame endpoint for `us` microseconds: with `link` the
-link-only endpoint of issue #556 (the link record, then frames and ticks),
-otherwise the issue #450 endpoint (the host configuration record with the
-driver's leased address, then frames). -/
+/-- Serve the frame endpoint: with `link` the link-only endpoint of issue
+#556 (the link record, then frames and ticks) for at most `leaseUs`
+microseconds until the lease signal and `us` microseconds after it (issue
+#573), otherwise the issue #450 endpoint (the host configuration record with
+the driver's leased address, then frames) for `us` microseconds. -/
 def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
-    (data : LeanOS.Wifi.Tx.TxConfig) (us : UInt32) : ProgM Unit := do
+    (data : LeanOS.Wifi.Tx.TxConfig) (leaseUs us : UInt32) : ProgM Unit := do
   let radio := Radio.device data
   li 1 0
   r32 2 0x180
@@ -226,9 +258,12 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
   emit (.memStore 4 1 rxCount (.imm 0))
   emit (.memStore 4 1 txCount (.imm 0))
   emit (.memStore 4 1 txLenAt (.imm 0))
+  emit (.memStore 4 1 servingAt (.imm (if link then 0 else 1)))
+  emit (.memStore 4 1 windowAt (.imm (if link then leaseUs else us)))
   if link then
     -- link record: our hardware address only; the driver leases nothing
     emit (.memStore 4 1 lastTickAt (.reg 2))
+    emit (.memStore 4 1 leaseSignalAt (.imm 0))
     li 2 rxAt
     storeBytes 2 0 (ByteArray.mk Mlme.ourMac.data)
     printImm Tag.linkReady 0
@@ -247,11 +282,29 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
   let out ← newLabel
   place top
   takeTx C radio
+  if link then
+    -- the lease signal starts the serve window, once
+    let notYet ← newLabel
+    li 1 0
+    emit (.memLoad 4 7 1 servingAt)
+    emit (.branch .ne 7 (.imm 0) notYet)
+    emit (.memLoad 4 7 1 leaseSignalAt)
+    emit (.branch .eq 7 (.imm 0) notYet)
+    r32 6 0x180
+    mov 8 6
+    emit (.memLoad 4 7 1 startAt)
+    emit (.alu .sub 8 (.reg 7))
+    emit (.memStore 4 1 startAt (.reg 6))
+    emit (.memStore 4 1 windowAt (.imm us))
+    emit (.memStore 4 1 servingAt (.imm 1))
+    print Tag.leaseSignalled 8
+    place notYet
   r32 6 0x180
   li 1 0
   emit (.memLoad 4 7 1 startAt)
   emit (.alu .sub 6 (.reg 7))
-  emit (.branch .geu 6 (.imm us) out)
+  emit (.memLoad 4 7 1 windowAt)
+  emit (.branch .geu 6 (.reg 7) out)
   if link then
     -- a tick once a second of TSF time has passed since the last one
     let noTick ← newLabel
@@ -272,6 +325,12 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
   emit (.jump top)
   place out
   li 1 0
+  if link then
+    let served ← newLabel
+    emit (.memLoad 4 2 1 servingAt)
+    emit (.branch .ne 2 (.imm 0) served)
+    printImm Tag.leaseWindowOver leaseUs
+    place served
   emit (.memLoad 4 2 1 rxCount); print Tag.summaryRx 2
   emit (.memLoad 4 2 1 txCount); print Tag.summaryTx 2
 
@@ -279,12 +338,14 @@ def serveWith (link : Bool) (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib)
 microseconds. -/
 def serve (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
     (us : UInt32) : ProgM Unit :=
-  serveWith false L C data us
+  serveWith false L C data us us
 
-/-- Serve the link-only endpoint of issue #556 for `us` microseconds. -/
+/-- Serve the link-only endpoint of issue #556: at most `leaseUs`
+microseconds for the lease, then `us` microseconds after the lease signal
+(issue #573). -/
 def serveLink (L : DevCrypto.Lib) (C : DevCcmp.CcmpLib) (data : LeanOS.Wifi.Tx.TxConfig)
-    (us : UInt32) : ProgM Unit :=
-  serveWith true L C data us
+    (leaseUs us : UInt32) : ProgM Unit :=
+  serveWith true L C data leaseUs us
 
 /-- Connect, lease an address with the driver's own DHCP client, then serve
 the frame endpoint for `us` microseconds (issue #450; the compatibility path
@@ -293,11 +354,12 @@ def connectAndServe (fw : Bcm43224.Firmware) (cfg : LeanOS.Wifi.NPhy.PhyCfg)
     (bssid pmk : ByteArray) (us : UInt32) : ProgM Unit :=
   Connect.connectDhcpThen fw cfg bssid pmk fun L C data => serve L C data us
 
-/-- Connect without a DHCP client, then serve the link-only endpoint for
-`us` microseconds (issue #556): the ring-3 DHCP subject leases the address.
-The image embeds the PMK: never commit it. -/
+/-- Connect without a DHCP client, then serve the link-only endpoint (issue
+#556): the ring-3 DHCP subject leases the address within `leaseUs`
+microseconds, and the endpoint serves `us` microseconds after the lease
+(issue #573). The image embeds the PMK: never commit it. -/
 def connectAndServeLink (fw : Bcm43224.Firmware) (cfg : LeanOS.Wifi.NPhy.PhyCfg)
-    (bssid pmk : ByteArray) (us : UInt32) : ProgM Unit :=
-  Connect.connectThen fw cfg bssid pmk fun L C data => serveLink L C data us
+    (bssid pmk : ByteArray) (leaseUs us : UInt32) : ProgM Unit :=
+  Connect.connectThen fw cfg bssid pmk fun L C data => serveLink L C data leaseUs us
 
 end LeanOS.Wifi.Endpoint

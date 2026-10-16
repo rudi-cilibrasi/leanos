@@ -245,6 +245,12 @@
         "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-dhcp-subject.h\""
       ],
+      "kernel-dhcp-backoff": [
+        "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
+        "-DLEANOS_DHCP_SUBJECT_SCENARIO=1",
+        "-DLEANOS_DHCP_BACKOFF_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-dhcp-backoff.h\""
+      ],
       "kernel-endpoint-directory": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_ENDPOINT_DIRECTORY_SCENARIO=1",
@@ -1065,6 +1071,17 @@
         "prelink_plan": "boot-page-plan-dhcp-subject.h",
         "plan_equal_to": null
       },
+      "leanos-dhcp-backoff": {
+        "boot": "boot-dhcp-subject",
+        "kernel": "kernel-dhcp-backoff",
+        "extra_objects": [
+          "subject-dhcp",
+          "subject-echo"
+        ],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-dhcp-backoff.h",
+        "plan_equal_to": null
+      },
       "leanos-endpoint-directory": {
         "boot": "boot-endpoint-directory",
         "kernel": "kernel-endpoint-directory",
@@ -1514,6 +1531,13 @@
           "key": "dhcp-subject"
         }
       },
+      "leanos-dhcp-backoff": {
+        "iso": "leanos-@VERSION@-x86_64-dhcp-backoff.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "dhcp-backoff"
+        }
+      },
       "leanos-endpoint-directory": {
         "iso": "leanos-@VERSION@-x86_64-endpoint-directory.iso",
         "grub": "boot/grub.cfg",
@@ -1919,6 +1943,16 @@
         "description": "dhcp-subject",
         "targets": [
           "leanos-dhcp-subject"
+        ]
+      },
+      {
+        "image": "leanos-dhcp-backoff",
+        "check": "converge",
+        "expected": "boot-page-plan-dhcp-backoff.h",
+        "final": "boot-page-plan-dhcp-backoff.final.h",
+        "description": "dhcp-backoff",
+        "targets": [
+          "leanos-dhcp-backoff"
         ]
       },
       {
@@ -3838,7 +3872,35 @@
         "SC-DEVICE-CAPABILITY-CONFINEMENT",
         "SC-IPC-EVENT-STREAM"
       ],
-      "does_not_prove": "Not a refinement of SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of seventeen synthesized records (a link record, ticks, DHCP OFFER, NAK and ACK frames, then ARP, ICMP and UDP frames) from a device program that drives no device, not the BCM43224, any radio or any DHCP server; the kernel checks its port and device tables and every copy and device decision against the generated witnesses leanos_frame_port_check and leanos_device_authorize, and every exchange on endpoints 12 and 13 against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models; the frame source checks each sent frame against the reference DHCP client and the reference responder rather than a proof of the protocol logic; and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
+      "does_not_prove": "Not a refinement of SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of nineteen synthesized records (a link record, ticks, DHCP OFFER, NAK and ACK frames, then ARP, ICMP and UDP frames) from a device program that drives no device, not the BCM43224, any radio or any DHCP server; the kernel checks its port and device tables and every copy and device decision against the generated witnesses leanos_frame_port_check and leanos_device_authorize, and every exchange on endpoints 12 and 13 against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models; the frame source checks each sent frame against the reference DHCP client and the reference responder rather than a proof of the protocol logic; and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
+    },
+    "dhcp-backoff": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/dhcp-backoff.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "60",
+        "image": "leanos-@VERSION@-x86_64-dhcp-backoff.iso",
+        "elf": "leanos-dhcp-backoff.elf",
+        "serial_log": "dhcp-backoff.serial.log",
+        "scenario": "dhcp-backoff",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DHCP-SUBJECT-SEPARATION",
+        "SC-DEVICE-CAPABILITY-CONFINEMENT",
+        "SC-IPC-EVENT-STREAM"
+      ],
+      "does_not_prove": "Not a refinement of SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM: one finite QEMU run of a synthesized slow DHCP server, whose OFFER arrives only after three retransmitted DISCOVERs and whose ACK only after two retransmitted REQUESTs, from a device program that drives no device and has no clock, not the BCM43224, any radio or any DHCP server; the ticks are records the frame source places at the waits LeanOS.Net.DhcpClient.retransmitDelay names, so the run checks the generated client against the proved schedule only on this one transaction id, not the RFC 2131 timing against real seconds or the driver's TSF-timed ticks and lease window, which are left to the hosted simulator and the Qotom capture; the frame source checks each sent frame against the reference DHCP client and the reference responder and the lease signal word after every record, rather than a proof of the protocol logic; the kernel checks every copy and device decision against the generated witnesses leanos_frame_port_check and leanos_device_authorize, and every exchange on endpoints 12 and 13 against leanos_blocking_ipc_event, but the tables are kernel-owned data checked against the witnesses rather than derived from the models; and the C kernel, boot.S, the SMAP copy window, the executor, the generated C, compiler and QEMU stay trusted"
     },
     "endpoint-directory": {
       "release_artifacts": [

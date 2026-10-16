@@ -246,7 +246,9 @@ page.
    `Wifi.Dhcp`'s frames on the frame source's records. It also requires the
    model to agree with `Wifi.Dhcp.Client.handle` on 12818 OFFER, ACK and NAK
    variants, from both waiting states. The variants are single-byte
-   corruptions of every byte and truncations.
+   corruptions of every byte and truncations. On ticks it requires the
+   RFC 2131 retransmission schedule (issue #573,
+   [wifi-driver.md](wifi-driver.md#dhcp-retransmission-and-the-lease-window-issue-573)).
 2. `tests/net-dhcp-host.c` runs the generated C over the same vectors
    against the model. It checks the frame sent, the registers, and that no
    byte past the record or the frame is touched. It also checks the port
@@ -266,6 +268,7 @@ route, the echo subject's lease, and six transitions. They are `deliver`,
 | `step_tx_changed` | The transmit slot changes only by the program taking it, or by the routed holder's accepted send of exactly bytes of its own window |
 | `handoff_refused`, `step_lease_changed`, `step_route_changed` | Only the DHCP subject can hand a lease off, and only while it is served; the echo subject's lease is exactly what it handed |
 | `run_routed_leased`, `echo_fetch_leased` | From boot, the endpoint serves the echo subject only once it holds a lease |
+| `leaseSignal_boot`, `step_leaseSignal_set`, `step_leaseSignal_stays`, `run_leaseSignal_iff_lease` | The one-bit lease signal the driver reads (issue #573) is set only by the DHCP subject's accepted hand-off, never unset, and set exactly when the echo subject holds a lease |
 | `replyFrame_for_ip`, `echo_answers_only_lease` | The responder answers a frame only when the frame asks for the address it is given; so the echo subject answers only for the lease |
 | `dhcp_no_device_effects`, `echo_no_device_effects`, `deviceAuthorize_ports` | Neither subject is granted a device; every bind or invoke either attempts is denied without effect |
 | `framePortCheck_own_window`, `framePortCheck_nonholder`, `framePortCheck_fetch`, `framePortCheck_send` | The generated witness `leanos_frame_port_check` admits only a port holder, only for a window labelled its own, only while it is served, and accepts exactly what the model accepts |
@@ -280,14 +283,15 @@ from `subjects/echo`. B is a template slot here: boot.S omits its
 handwritten B under `LEANOS_SUBJECT_B_OBJECT`, and the build rule takes
 `--slot b`. A's frame source is the Lean device program `net-q35-dhcp`
 (`LeanOS.Net.DhcpSource`). Like `net-q35-frames`, it drives no device. It
-yields 17 records:
+yields 19 records:
 
 1. the link record, which draws a DISCOVER;
 2. an OFFER for another transaction, which is ignored;
 3. an OFFER of 10.0.2.15, which draws a REQUEST;
 4. a NAK, which draws a DISCOVER with the next transaction id;
-5. two ticks without an answer, then a third that draws a retransmitted
-   DISCOVER;
+5. four ticks without an answer, then a fifth that draws a retransmitted
+   DISCOVER: the client's first wait for this transaction id, 4 ticks ±1
+   on the RFC 2131 schedule (issue #573);
 6. an OFFER of 10.0.2.16 for another hardware address, which is ignored;
 7. the OFFER of 10.0.2.16, which draws a REQUEST;
 8. an ACK from another server, which is ignored;
@@ -303,7 +307,9 @@ Then C gets:
 
 At its next invocation the program checks every frame B or C sent, byte for
 byte. Before the hand-off it checks them against `Wifi.Dhcp`. After it, it
-checks them against `Echo.replyFrame` for the leased address.
+checks them against `Echo.replyFrame` for the leased address. After every
+record it also checks the lease signal word, which the kernel sets at the
+hand-off (issue #573): unset until the ACK, set from then on.
 
 The kernel checks these too:
 

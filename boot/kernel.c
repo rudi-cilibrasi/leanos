@@ -156,6 +156,9 @@ extern uint64_t page_directory_b[], page_table_b[];
 #if defined(LEANOS_GTK_REKEY_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
 #error "the gtk-rekey image is the network-subject image with the rekeying frame source"
 #endif
+#if defined(LEANOS_DHCP_BACKOFF_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+#error "the dhcp-backoff image is the dhcp-subject image with the slow-server frame source"
+#endif
 #if defined(LEANOS_DHCP_SUBJECT_SCENARIO) && \
     (!defined(LEANOS_THREE_SUBJECT_SCENARIO) || defined(LEANOS_DEVICE_SERVICE_SCENARIO) || \
      defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_NETWORK_SUBJECT_SCENARIO))
@@ -6529,7 +6532,19 @@ static void network_switch(uint64_t *target, uint64_t target_owner,
    The device table is checked at boot against `leanos_device_authorize`
    (KeyboardEcho.deviceAuthorize: only A holds device 0), and every exchange
    on endpoints 12 and 13 against `leanos_blocking_ipc_event`, the woken
-   subject in the model's receiver role. */
+   subject in the model's receiver role.
+
+   The lease signal (issue #573): at the hand-off the kernel stores 1 in the
+   scratch word LeanOS.Net.FrameSource.leaseSignalAt, and at no other time.
+   It tells the driver program only that the route moved to the echo
+   subject (DhcpSubject.leaseSignal), never the leased address; the BCM43224
+   serve program starts its serve window on it.  The frame source checks the
+   word after every record and reports it once, for the record that drew
+   the hand-off.
+
+   The dhcp-backoff image (issue #573, LEANOS_DHCP_BACKOFF_SCENARIO) is this
+   image with the frame source `net-q35-dhcp-backoff`: a server that answers
+   only after the client has retransmitted on the RFC 2131 schedule. */
 extern char user_b_template_text[], user_c_template_text[];
 #define DHCP_FRAME_ENDPOINT 12u
 #define DHCP_LEASE_ENDPOINT 13u
@@ -6566,6 +6581,7 @@ extern char user_b_template_text[], user_c_template_text[];
 #define DHCP_RX_AT 0x3E000u
 #define DHCP_TX_AT 0x3E800u
 #define DHCP_TX_LEN_AT 0x3F000u
+#define DHCP_LEASE_SIGNAL_AT 0x3F004u
 #define DHCP_LINK_BYTES 6u
 #define DHCP_TICK_BYTES 1u
 #define DHCP_FRAME_MIN 14u
@@ -6578,6 +6594,7 @@ extern char user_b_template_text[], user_c_template_text[];
 /* The frame source's records (LeanOS.Net.FrameSource.Tag). */
 #define DHCP_TAG_REPLY_MATCHED 0x5101u
 #define DHCP_TAG_NO_REPLY_MATCHED 0x5102u
+#define DHCP_TAG_LEASE_SIGNAL 0x5106u
 #define DHCP_MODEL_SENDER 1u
 #define DHCP_MODEL_RECEIVER 2u
 
@@ -6586,7 +6603,11 @@ extern char user_b_template_text[], user_c_template_text[];
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "../hardware/wifi/wifi-gen-exec.h"
 #pragma GCC diagnostic pop
+#ifdef LEANOS_DHCP_BACKOFF_SCENARIO
+#include "dhcp-backoff-program.h"
+#else
 #include "dhcp-subject-program.h"
+#endif
 
 static const char *const dhcp_reasons[] = {
     "none", "not-holder", "not-own-window", "not-routed", "endpoint-state",
@@ -6622,6 +6643,9 @@ static uint64_t dhcp_tx_len, dhcp_sent_len, dhcp_sent_seq, dhcp_record_port;
 static uint64_t dhcp_fetches, dhcp_sends, dhcp_checked, dhcp_refusals;
 static uint64_t dhcp_lease_mac, dhcp_lease_ip, dhcp_handoff_seq;
 static uint64_t dhcp_client_records, dhcp_echo_records;
+/* The frame source's lease-signal records (issue #573), and the ticks the
+   DHCP subject was served and the frames it sent on them. */
+static uint64_t dhcp_lease_signals, dhcp_ticks, dhcp_tick_sends;
 /* Blocking-IPC cycles: B on endpoint 12, C on endpoint 13, C on endpoint
    12 (LeanOS.BlockingIPC's four edges each). */
 static uint64_t dhcp_cycle_b12, dhcp_cycle_c13, dhcp_cycle_c12, dhcp_ipc_edges;
@@ -6660,6 +6684,19 @@ __attribute__((noinline, noipa)) void wifi_hook_delay_us(uint32_t us) {
 void wifi_hook_print(uint32_t tag, uint32_t value) {
     uint64_t record = (value >> 16) + 1u;
     uint64_t bytes = value & 0xffffu;
+    if (tag == DHCP_TAG_LEASE_SIGNAL) {
+        /* The frame source saw the signal set after the record that drew
+           the hand-off, and unset after every record before it. */
+        if ((uint64_t)value + 1u != dhcp_seq || dhcp_handoff_seq != dhcp_seq ||
+            dhcp_route != DHCP_ECHO || dhcp_lease_signals != 0 ||
+            *(volatile uint32_t *)(wifi_scratch + DHCP_LEASE_SIGNAL_AT) != 1u)
+            fail("dhcp-lease-signal");
+        dhcp_lease_signals++;
+        serial_puts(LEANOS_SERIAL_10_NET " event=lease-signal frame=");
+        serial_u64(dhcp_seq);
+        serial_puts(" set=1 route=3 driver-sees=route-only model=agree\n");
+        return;
+    }
     if (tag == DHCP_TAG_NO_REPLY_MATCHED) {
         record = (uint64_t)value + 1u;
         bytes = 0;
@@ -6833,6 +6870,7 @@ static uint64_t dhcp_next_record(void) {
             dhcp_sent_len = 0;
             dhcp_record_port = dhcp_route;
             ++dhcp_seq;
+            if (code == DHCP_TICK_BYTES && dhcp_route == DHCP_CLIENT) dhcp_ticks++;
             serial_puts(LEANOS_SERIAL_10_NET " event=deliver subject=1 frame=");
             serial_u64(dhcp_seq);
             serial_puts(" bytes=");
@@ -6906,6 +6944,7 @@ static uint64_t dhcp_copy(uint64_t number, uint64_t addr, uint64_t len) {
         dhcp_sent_len = len;
         dhcp_sent_seq = dhcp_seq;
         dhcp_sends++;
+        if (dhcp_rx_len == DHCP_TICK_BYTES) dhcp_tick_sends++;
     }
     serial_puts(LEANOS_SERIAL_10_NET " event=");
     serial_puts(name);
@@ -6994,6 +7033,8 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
         dhcp_lease_ip = arg1;
         dhcp_handoff_seq = dhcp_seq;
         dhcp_route = DHCP_ECHO;
+        /* The lease signal: the route moved; the driver learns nothing else. */
+        *(volatile uint32_t *)(wifi_scratch + DHCP_LEASE_SIGNAL_AT) = 1u;
         dhcp_phase = DHCP_PHASE_C_LEASED;
         current_subject = DHCP_ECHO;
         serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=2 endpoint=13 payload0=");
@@ -7059,7 +7100,8 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
             dhcp_client_records != dhcp_handoff_seq ||
             dhcp_echo_records != dhcp_seq - dhcp_handoff_seq ||
             !dhcp_b_waiting || !dhcp_c_waiting || dhcp_c_waiting_lease ||
-            dhcp_refusals != 4 || dhcp_cycle_b12 != 1 || dhcp_cycle_c13 != 0 ||
+            dhcp_refusals != 4 || dhcp_lease_signals != 1 ||
+            dhcp_cycle_b12 != 1 || dhcp_cycle_c13 != 0 ||
             dhcp_cycle_c12 != 1 ||
             dhcp_ipc_edges != 4 * dhcp_seq + 1 + 1 + 4)
             fail("dhcp-subject-count");
@@ -7072,6 +7114,9 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" checked="); serial_u64(dhcp_checked);
         serial_puts(" refusals="); serial_u64(dhcp_refusals);
         serial_puts(" ipc-edges="); serial_u64(dhcp_ipc_edges);
+        serial_puts(" lease-signal="); serial_u64(dhcp_lease_signals);
+        serial_puts(" ticks="); serial_u64(dhcp_ticks);
+        serial_puts(" retransmits="); serial_u64(dhcp_tick_sends);
         serial_putc('\n');
         finish(0x10);
     }
