@@ -28,3 +28,11 @@ This section is about the loader: a user program that creates a child and has th
 - `loaderDecide_start` — The numeric decision for a start, read through its flags, is a fixed chain of the model's checks.
 - `loader_witness_agrees_start` — For a start request, the numeric decision the running kernel uses is exactly the model's encoded answer.
 - `loader_witness_agrees_load` — For a load request with small numbers, the numeric checks the running kernel uses give exactly the model's encoded answer.
+- `contents_rollback` — The discarded state trivially satisfies the rule that every page holds its piece's bytes.
+- `loadCheck_placed` — A load that passes every check claims exactly the accepted place of the piece in the reserved area.
+- `step_preserves_contents` — Every request keeps the rule that every page of the child holds the bytes of the file piece it belongs to: a copied page holds the piece's file bytes and then zeros, and a page mapped in place is the reserved page holding those file bytes.
+- `segment_of_page_unique` — With an accepted file, a page belongs to at most one piece.
+- `inSegment_of_address` — Every address inside a piece's page-rounded memory lies on one of that piece's pages.
+- `started_contents` — Once the child is started, every address of every piece reads, through the child's pages, exactly the byte the accepted file defines there.
+- `started_writable_bytes` — Once the child is started, a writable piece reads its file bytes up to the piece's file size and zeros after that, up to the end of its last page.
+- `runRequests_invariants` — From the "nothing loaded" state, any sequence of requests keeps the exactness, reserved-area and contents rules.
