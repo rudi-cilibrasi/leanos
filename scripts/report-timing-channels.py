@@ -34,13 +34,27 @@ usage: report-timing-channels.py [--strict] [--tolerance X]
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE = ROOT / "scripts/timing-channels-baseline.tsv"
-PREFIX = "LEANOS/26 CYCLES "
+
+
+def cycles_prefix(path: str) -> str:
+    """The CYCLES record's line prefix, from the generated serial vocabulary;
+    the report never spells a record identity itself."""
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t")
+        if fields[0] == "record" and fields[1:3] == ["26", "CYCLES"]:
+            return fields[4] + " "
+    raise SystemExit(f"error: serial protocol vocabulary {path} has no CYCLES record")
+
+
+PREFIX = cycles_prefix(
+    os.environ.get("LEANOS_SERIAL_PROTOCOL_TSV", "build/boot/serial-protocol.tsv"))
 SAMPLES = 64
 BUDGET = 100000
 PATHS = (

@@ -115,6 +115,21 @@ machine. `--write-baseline REASON` records the run's medians, with a
   and the budget only. Under KVM, or on hardware, the counts are the CPU's
   cycles.
 
+The recorded baseline comes from one local TCG run on a loaded host. In that
+run:
+
+- The padded refusals' medians were 100027 and 100021 cycles, a spread of
+  0.0001. Their unpadded work differed: medians of 2402 cycles naming the peer
+  and 268 naming subject 9, a spread of 0.89. The peer refusal is the first
+  request of each round, right after the IPC round trip, so its work carries
+  the state that round trip left behind. That is the kind of variation the
+  padding hides.
+- One refusal overran the budget, the first, while QEMU translated the path.
+- The 1-byte and 16-byte copies were not told apart: the 16-byte median was
+  2234 cycles lower, which is noise at this scale.
+- The wake round trip with the receiver running 4096 iterations took 24122
+  cycles longer at the median than with the receiver idle.
+
 ## On the Qotom
 
 Not yet built. The q35 image cannot run on the Qotom: its platform admission

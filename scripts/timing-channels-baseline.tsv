@@ -1,0 +1,14 @@
+# path	median-cycles
+# Medians of one timing-channels run (scripts/report-timing-channels.py
+# --write-baseline); a regression report compares each run's medians
+# with these.
+# reason: q35 TCG medians of one local timing-channels run (QEMU 8.2.2, GCC lane) on the shared 12-core build host at load average about 60; the counter follows the host's, so compare runs on one machine
+refusal.peer	100027
+refusal.unissued	100021
+refusal.peer.work	2402
+refusal.unissued.work	268
+own-request	393
+copy-in.1	10245
+copy-in.16	8011
+ipc.wake.idle	517461
+ipc.wake.busy	541583
