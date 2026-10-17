@@ -510,7 +510,7 @@ class ProductionTests(unittest.TestCase):
     def records(self):
         lines = [b'LEANOS-LAB/1 SELECT leanos consumed=1\n',
                  b'LEANOS-LAB/1 MODE qotom-production final=halt watchdog=none\n',
-                 b'LEANOS/3 BOOT target=x86_64-qotom\n', self.WINDOWS,
+                 lab.record(10, 'BOOT') + b' target=x86_64-qotom\n', self.WINDOWS,
                  b'LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 '
                  b'status=PASS cpl3-authority=1\n',
                  b'LEANOS-LAB/1 BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1 '
@@ -540,7 +540,7 @@ class ProductionTests(unittest.TestCase):
                   b'LEANOS-LAB/1 NET event=send subject=3 frame=4 bytes=98 copy=send-root '
                   b'model=accepted\n',
                   b'LEANOS-LAB/1 SERVICE end subject=1 status=0 code=0x00000000\n',
-                  b'LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 '
+                  lab.record(10, 'FINAL') + b' status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 '
                   b'echo-subject=3 device-holder=2 address-spaces=3 lease=192.168.6.57 frames=4 '
                   b'dhcp-frames=3 echo-frames=1 fetches=4 sends=3 refusals=4 ipc-edges=22 '
                   b'window-copies=7\n']
