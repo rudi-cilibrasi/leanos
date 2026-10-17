@@ -124,6 +124,18 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       if let some secs := serve then
         if secs == 0 || secs * 1000000 ≥ 4294967296 then
           throw (IO.userError "LEANOS_WIFI_SERVE_SECONDS must be 1..4294")
+      -- LEANOS_WIFI_LEASE_SECONDS (issue #573): with the link-only endpoint,
+      -- the time the ring-3 DHCP subject has to obtain a lease. The serve
+      -- window then starts at the lease, so a slow DHCP server does not
+      -- consume it; the session lasts at most LEASE + SERVE seconds of TSF
+      -- time. Required there, so no command silently gets a default.
+      let leaseVar := (← IO.getEnv "LEANOS_WIFI_LEASE_SECONDS")
+      let lease := leaseVar.bind String.toNat?
+      if let some secs := lease then
+        if secs == 0 || secs * 1000000 ≥ 4294967296 then
+          throw (IO.userError "LEANOS_WIFI_LEASE_SECONDS must be 1..4294")
+      else if leaseVar.isSome then
+        throw (IO.userError "LEANOS_WIFI_LEASE_SECONDS must be 1..4294")
       let chain := (← IO.getEnv "LEANOS_WIFI_TXCHAIN").bind String.toNat?
       let cal := ((← IO.getEnv "LEANOS_WIFI_CAL").bind String.toNat?).getD
         (LeanOS.Wifi.NPhy.qotom 6).calLevel
@@ -140,13 +152,20 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       -- and hands it to the network subject in a configuration record.
       let endpoint := (← IO.getEnv "LEANOS_WIFI_NETWORK_SUBJECT").isSome
       let driverDhcp := (← IO.getEnv "LEANOS_WIFI_DRIVER_DHCP").isSome
+      let leaseSecs ← match lease with
+        | some l => pure l
+        | none =>
+          if serve.isSome && endpoint && !driverDhcp then
+            throw (IO.userError
+              "set LEANOS_WIFI_LEASE_SECONDS: the link-only endpoint's lease window (issue #573)")
+          else pure 0
       return if let some secs := serve then
                if endpoint && driverDhcp then
                  LeanOS.Wifi.Endpoint.connectAndServe fw cfg6 bssid pmk
                    (secs * 1000000).toUInt32
                else if endpoint then
                  LeanOS.Wifi.Endpoint.connectAndServeLink fw cfg6 bssid pmk
-                   (secs * 1000000).toUInt32
+                   (leaseSecs * 1000000).toUInt32 (secs * 1000000).toUInt32
                else
                  LeanOS.Wifi.Responder.connectAndServe fw cfg6 bssid pmk
                    (secs * 1000000).toUInt32
@@ -157,6 +176,7 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("net-bcm-frames", pure LeanOS.Net.FrameSource.bcmProgram),
    ("net-q35-dhcp", pure LeanOS.Net.DhcpSource.program),
    ("net-bcm-dhcp", pure LeanOS.Net.DhcpSource.bcmProgram),
+   ("net-q35-dhcp-backoff", pure LeanOS.Net.DhcpSource.backoffProgram),
    ("net-q35-rekey", pure LeanOS.Net.RekeySource.program),
    ("net-bcm-rekey", pure LeanOS.Net.RekeySource.bcmProgram),
    ("ahci-q35-service", pure LeanOS.Storage.AhciRead.program),

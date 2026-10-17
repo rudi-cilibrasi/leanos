@@ -1,4 +1,5 @@
 import LeanOS.Net.FrameSource
+import LeanOS.Net.DhcpClient
 import LeanOS.Wifi.Dhcp
 
 /-!
@@ -28,11 +29,31 @@ the kernel left in `txAt`, byte for byte, against a reference computed here
 
 The records walk every transition of the client: a DISCOVER, an OFFER for
 another transaction (ignored), an OFFER, a REQUEST, a NAK, a DISCOVER with
-the next transaction id, two silent ticks and a retransmission on the third,
-an OFFER for another hardware address (ignored), an OFFER, a REQUEST, an ACK
-from another server (ignored), and the ACK. Then ARP, ICMP echo and UDP echo
-for the leased address draw replies, while the same requests for the address
-of the NAKed offer, and a tick, draw none.
+the next transaction id, silent ticks and a retransmission on the tick that
+ends the client's first wait (`DhcpClient.retransmitDelay`), an OFFER for
+another hardware address (ignored), an OFFER, a REQUEST, an ACK from another
+server (ignored), and the ACK. Then ARP, ICMP echo and UDP echo for the
+leased address draw replies, while the same requests for the address of the
+NAKed offer, and a tick, draw none.
+
+## A slow server (issue #573)
+
+`backoffProgram` (`net-q35-dhcp-backoff`, the q35 `dhcp-backoff` image) is a
+server that answers late: the OFFER arrives only after the client has
+retransmitted its DISCOVER three times, on the RFC 2131 schedule of 4, 8 and
+16 ticks ±1, and the ACK only after it has retransmitted its REQUEST twice.
+The ticks come from `DhcpClient.retransmitDelay`, so every expected
+retransmission falls exactly on the tick the schedule names
+(`DhcpClient.selecting_gap`, `DhcpClient.requesting_gap`) and every other
+tick must draw nothing.
+
+## The lease signal (issue #573)
+
+After every record each program checks the lease signal word
+(`FrameSource.leaseSignalAt`): 0 until the DHCP subject has handed its lease
+off, 1 from the record that drew the hand-off (the ACK) on. It prints
+`Tag.leaseSignal` once, for that record. The BCM43224 serve program starts
+its serve window on this bit.
 -/
 namespace LeanOS.Net.DhcpSource
 
@@ -91,6 +112,16 @@ def arr (l : List UInt8) : ByteArray := ⟨l.toArray⟩
 /-- A tick record. -/
 def tick : ByteArray := arr [0]
 
+/-- The ticks of the client's wait before retransmission `n` of transaction
+`xid` (`DhcpClient.retransmitDelay`): silent ticks, then one that draws
+`frame`. -/
+def waitThen (xid : UInt32) (n : Nat) (frame : ByteArray) : List (ByteArray × Option ByteArray) :=
+  let d := (DhcpClient.retransmitDelay xid.toUInt64 n.toUInt64).toNat
+  List.replicate (d - 1) (tick, none) ++ [(tick, some frame)]
+
+/-- `n` silent ticks, short of the client's wait. -/
+def silent (n : Nat) : List (ByteArray × Option ByteArray) := List.replicate n (tick, none)
+
 /-- The link record. -/
 def link : ByteArray := arr (macBytes mac)
 
@@ -102,15 +133,28 @@ def dhcpRecords : List (ByteArray × Option ByteArray) := [
   (arr (reply LeanOS.Wifi.Dhcp.MsgType.offer xid0 nakedIp serverIp mac),
     some (toEthernet (LeanOS.Wifi.Dhcp.request macArray xid0 nakedIp serverIp))),
   (arr (reply LeanOS.Wifi.Dhcp.MsgType.nak xid0 0 serverIp mac),
-    some (toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid1))),
-  (tick, none),
-  (tick, none),
-  (tick, some (toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid1))),
+    some (toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid1)))] ++
+  waitThen xid1 0 (toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid1)) ++ [
   (arr (reply LeanOS.Wifi.Dhcp.MsgType.offer xid1 leased serverIp 0x02004c454141), none),
   (arr (reply LeanOS.Wifi.Dhcp.MsgType.offer xid1 leased serverIp mac),
     some (toEthernet (LeanOS.Wifi.Dhcp.request macArray xid1 leased serverIp))),
   (arr (reply LeanOS.Wifi.Dhcp.MsgType.ack xid1 leased otherServerIp mac), none),
   (arr (reply LeanOS.Wifi.Dhcp.MsgType.ack xid1 leased serverIp mac), none)]
+
+/-- The slow server's records (issue #573): the client's DISCOVER, three
+retransmissions of it on the schedule's waits (4, 8 and 16 ticks ±1), five
+more silent ticks, the OFFER, the REQUEST, two retransmissions of it, two
+silent ticks, and the ACK. -/
+def backoffDhcpRecords : List (ByteArray × Option ByteArray) :=
+  let discover := toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid0)
+  let request := toEthernet (LeanOS.Wifi.Dhcp.request macArray xid0 leased serverIp)
+  [(link, some discover)] ++
+  waitThen xid0 0 discover ++ waitThen xid0 1 discover ++ waitThen xid0 2 discover ++
+  silent 5 ++
+  [(arr (reply LeanOS.Wifi.Dhcp.MsgType.offer xid0 leased serverIp mac), some request)] ++
+  waitThen xid0 0 request ++ waitThen xid0 1 request ++
+  silent 2 ++
+  [(arr (reply LeanOS.Wifi.Dhcp.MsgType.ack xid0 leased serverIp mac), none)]
 
 /-- The records the echo subject receives after the lease. -/
 def echoFrames : List ByteArray := List.map arr [
@@ -129,18 +173,52 @@ def records : List (ByteArray × Option ByteArray) := dhcpRecords ++ echoRecords
 /-- Records before the lease hand-off: the DHCP subject's. -/
 def dhcpRecordCount : Nat := dhcpRecords.length
 
+/-- The slow server's records, then the same echo records. -/
+def backoffRecords : List (ByteArray × Option ByteArray) := backoffDhcpRecords ++ echoRecords
+
 /-! ## The program -/
 
-/-- The frame source: every record with its expected reply, then halt. -/
-def programOf (t : Target) : ProgM Unit := do
+namespace Tag
+/-- The lease signal word was set after record `k` (the ACK), and was 0
+after every record before it; value: `k`. -/
+def leaseSignal : UInt32 := 0x5106
+end Tag
+
+/-- Fail code: the lease signal word after record `k` was wrong; `k` is
+added. -/
+def failLeaseSignal : UInt32 := 0x51800
+
+/-- After record `k`: the lease signal word must be 1 once the first
+`dhcpCount` records (the DHCP subject's, the last of which drew the
+hand-off) were served, and 0 before. -/
+def checkLeaseSignal (k dhcpCount : Nat) : ProgM Unit := do
+  let ok ← newLabel
+  let bad ← newLabel
+  li 0 0
+  emit (.memLoad 4 2 0 leaseSignalAt)
+  emit (.branch .ne 2 (.imm (if k + 1 ≥ dhcpCount then 1 else 0)) bad)
+  if k + 1 == dhcpCount then printImm Tag.leaseSignal k.toUInt32
+  emit (.jump ok)
+  place bad
+  fail (failLeaseSignal + k.toUInt32)
+  place ok
+
+/-- The frame source: every record of `dhcp ++ echo` with its expected
+reply and the lease signal, then halt. -/
+def programWith (t : Target) (dhcp : List (ByteArray × Option ByteArray)) : ProgM Unit := do
+  let rs := dhcp ++ echoRecords
   setTarget t
   li 0 0
   emit (.memStore 4 0 txLenAt (.imm 0))
-  for (k, f, r) in (List.range records.length).zip records do
+  for (k, f, r) in (List.range rs.length).zip rs do
     li 0 0
     storeAt rxAt f
     exchange k f.size.toUInt32 r
+    checkLeaseSignal k dhcp.length
   halt
+
+/-- The frame source of the issue #556 records. -/
+def programOf (t : Target) : ProgM Unit := programWith t dhcpRecords
 
 /-- The q35 frame source of the `dhcp-subject` image (`net-q35-dhcp`). -/
 def program : ProgM Unit := programOf FrameSource.target
@@ -149,5 +227,9 @@ def program : ProgM Unit := programOf FrameSource.target
 smoke test of the DHCP and echo subjects on the lab machine that touches no
 device register. -/
 def bcmProgram : ProgM Unit := programOf bcm43224Target
+
+/-- The q35 frame source of the slow server (`net-q35-dhcp-backoff`, issue
+#573). -/
+def backoffProgram : ProgM Unit := programWith FrameSource.target backoffDhcpRecords
 
 end LeanOS.Net.DhcpSource
