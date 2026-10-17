@@ -9567,6 +9567,12 @@
     },
     {
       "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.leaseSignal_boot",
+      "display": "leaseSignal_boot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
       "qualified": "LeanOS.DhcpSubject.nonholder_refused",
       "display": "nonholder_refused",
       "kind": "theorem"
@@ -9609,6 +9615,12 @@
     },
     {
       "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_leaseSignal_iff_lease",
+      "display": "run_leaseSignal_iff_lease",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
       "qualified": "LeanOS.DhcpSubject.run_mem_outside_windows",
       "display": "run_mem_outside_windows",
       "kind": "theorem"
@@ -9635,6 +9647,18 @@
       "source": "LeanOS/DhcpSubject.lean",
       "qualified": "LeanOS.DhcpSubject.sendOk_route",
       "display": "sendOk_route",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_leaseSignal_set",
+      "display": "step_leaseSignal_set",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_leaseSignal_stays",
+      "display": "step_leaseSignal_stays",
       "kind": "theorem"
     },
     {

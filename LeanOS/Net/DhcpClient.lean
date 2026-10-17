@@ -36,10 +36,17 @@ endpoint (`LeanOS.Net.FrameSource`'s layout, issue #556 variant):
 * `len = 6`: the **link record**, the interface's hardware address. In
   phase `init` it starts the client: transaction id `xidOf mac`, phase
   `selecting`, and a DISCOVER.
-* `len = 1`: a **tick**, which the driver yields when no frame arrived for a
-  second. Every third tick without an answer retransmits: DISCOVER while
-  selecting, REQUEST while requesting; the third unanswered REQUEST restarts
-  from DISCOVER with the next transaction id (RFC 2131 4.4.1, 3.1).
+* `len = 1`: a **tick**, which the driver yields once a second of its clock
+  has passed since the last tick. Ticks drive the retransmission schedule of
+  RFC 2131 section 4.1, read on the one-second tick: the wait before the
+  `n`-th retransmission (counting from 0) is `4 · 2^n` seconds, capped at 64
+  (4, 8, 16, 32, 64, 64, …), randomized by ±1 second. The client has no
+  random source, so the ±1 is derived deterministically from the transaction
+  id and `n` (`retransmitDelay`). While selecting the client retransmits the
+  DISCOVER for ever on this schedule; while requesting it retransmits the
+  REQUEST, and the timeout of the third unanswered REQUEST restarts from
+  DISCOVER with the next transaction id (RFC 2131 sections 3.1 and 4.4.1).
+  See [The retransmission schedule](#the-retransmission-schedule-issue-573).
 * `len ≥ 14`: an Ethernet II frame, handled as `Wifi.Dhcp.Client.handle`
   handles the IPv4 datagram it carries: an OFFER for our transaction and
   hardware address with a server identifier → REQUEST; then an ACK from the
@@ -106,10 +113,28 @@ def phaseBound : UInt64 := 3
 /-- Bytes of a DISCOVER or REQUEST frame: Ethernet 14, IPv4 20, UDP 8, and
 the 300-byte BOOTP minimum. -/
 def frameBytes : UInt32 := 342
-/-- Ticks without an answer before a retransmission. -/
-def ticksPerRetransmit : UInt64 := 3
+/-- Doublings of the retransmission wait: after 4 the wait stays at 64
+ticks (RFC 2131 section 4.1, "up to a maximum of 64 seconds"). -/
+def backoffSteps : UInt64 := 4
 /-- REQUEST transmissions before the client restarts from DISCOVER. -/
 def requestTries : UInt64 := 3
+
+/-- The base wait, in ticks, before retransmission `n` (counting from 0) of
+RFC 2131 section 4.1: 4, 8, 16, 32, then 64. -/
+@[inline] def backoffBase (n : UInt64) : UInt64 :=
+  if n < backoffSteps then (4 : UInt64) <<< n else 64
+
+/-- The jitter of retransmission `n` of transaction `xid`, 0, 1 or 2: the
+wait is the base wait minus one plus the jitter, so it lies within ±1 tick
+of the base wait, as RFC 2131 section 4.1 asks of "a uniform random number
+chosen from the range -1 to +1". The client has no random source; like its
+transaction id (`xidOf`), the jitter is lab grade and deterministic, so
+clients with different transaction ids still retransmit out of step. -/
+@[inline] def jitter (xid n : UInt64) : UInt64 := (xid + n) % 3
+
+/-- The ticks the client waits after a transmission before retransmission
+`n` of transaction `xid` (`retransmitDelay_bounds`). -/
+@[inline] def retransmitDelay (xid n : UInt64) : UInt64 := backoffBase n - 1 + jitter xid n
 
 /-- The transaction id of the first DISCOVER: derived from the hardware
 address (lab grade, like the driver's SNonce; RFC 2131 asks for a random
@@ -265,14 +290,18 @@ identifier) at `at_`, then END. -/
   let t := paramList t 306
   withVal t frameBytes.toUInt64
 
+/-- Transmit the DISCOVER of transaction `xid`. -/
+@[specialize] def discoverAgain (t : τ) (xid : UInt64) : τ :=
+  let t := ld t regMac
+  buildDiscover t (val t) xid
+
 /-- Enter `selecting` with transaction `xid` and transmit a DISCOVER. -/
 @[specialize] def discoverWith (t : τ) (xid : UInt64) : τ :=
   let t := st t regXid xid
   let t := st t regPhase phaseSelecting
   let t := st t regTicks 0
   let t := st t regTries 0
-  let t := ld t regMac
-  buildDiscover t (val t) xid
+  discoverAgain t xid
 
 /-- Transmit the REQUEST for the registers' offer. -/
 @[specialize] def requestAgain (t : τ) : τ :=
@@ -372,23 +401,24 @@ The first message-type option and the first server identifier are left in
 
 /-! ## The client -/
 
-/-- A tick in phase `phase`: count it, and retransmit on every third. -/
+/-- A tick in phase `phase`: count it, and retransmit once the ticks since
+the last transmission reach the wait `retransmitDelay xid tries`
+(`regTries` counts the retransmissions so far). -/
 @[inline] def onTick (t : τ) (phase : UInt64) : τ :=
   if phase != phaseSelecting && phase != phaseRequesting then drop t else
   let t := ld t regTicks
   let ticks := val t + 1
-  if ticks < ticksPerRetransmit then drop (st t regTicks ticks) else
+  let t := ld t regTries
+  let tries := val t
+  let t := ld t regXid
+  let xid := val t
+  if ticks < retransmitDelay xid tries then drop (st t regTicks ticks) else
   let t := st t regTicks 0
   if phase == phaseSelecting then
-    let t := ld t regXid
-    discoverWith t (val t)
-  else
-    let t := ld t regTries
-    let tries := val t + 1
-    if tries < requestTries then requestAgain (st t regTries tries)
-    else
-      let t := ld t regXid
-      discoverWith t ((val t + 1) &&& 0xffffffff)
+    let t := st t regTries (if tries < backoffSteps then tries + 1 else tries)
+    discoverAgain t xid
+  else if tries + 1 < requestTries then requestAgain (st t regTries (tries + 1))
+  else discoverWith t ((xid + 1) &&& 0xffffffff)
 
 /-- The link record: our hardware address; starts the client. -/
 @[inline] def onLink (t : τ) : τ :=
@@ -436,5 +466,373 @@ def stepRecord (regs : Array UInt64) (f : ByteArray) : Array UInt64 × Option By
 
 /-- The registers of a client that has not started. -/
 def initialRegs : Array UInt64 := Array.replicate registers 0
+
+/-! ## The retransmission schedule (issue #573)
+
+RFC 2131 section 4.1 asks a client that hears no answer to retransmit after
+a randomized exponential backoff: 4 seconds ±1 before the first
+retransmission, 8 ±1 before the next, doubling up to 64 ±1. The client
+counts the driver's one-second ticks, so the schedule is read in ticks:
+
+* `backoffBase_toNat`, `backoffBase_rfc`: the base wait before
+  retransmission `n` is `4 · 2^min n 4` ticks: 4, 8, 16, 32, 64, 64, ….
+* `retransmitDelay_bounds`, `retransmitDelay_range`: the wait lies within
+  ±1 tick of the base wait, and between 3 and 65 ticks, so the client never
+  retransmits on consecutive ticks.
+* `step_tick_buf`, `stepRecord_tick`: the client's `step` on a tick record
+  (the model reading, which the hosted vectors check the generated C
+  against) moves the timer registers exactly as `Timer.tick` says,
+  transmits a frame exactly when `Timer.tick` retransmits, and changes no
+  other register.
+* `tick_silent`, `run_silent`: before the wait is over a tick transmits
+  nothing.
+* `selecting_gap`: right after a DISCOVER, a client in `selecting` that
+  hears nothing stays silent for `retransmitDelay xid tries - 1` ticks and
+  retransmits the DISCOVER of the same transaction on the next, with the
+  next, doubled, wait.
+* `requesting_gap`: right after a REQUEST, a client in `requesting` that
+  hears nothing stays silent for its wait and then retransmits the REQUEST,
+  or, once three REQUESTs went unanswered, restarts from DISCOVER with the
+  next transaction id (RFC 2131 section 4.4.1).
+-/
+
+theorem backoffBase_toNat (n : UInt64) :
+    (backoffBase n).toNat = 4 * 2 ^ min n.toNat 4 := by
+  unfold backoffBase backoffSteps
+  by_cases h : n < 4
+  · have hn : n.toNat < 4 := h
+    simp only [h, ↓reduceIte]
+    have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 := by
+      have : n.toNat = 0 ∨ n.toNat = 1 ∨ n.toNat = 2 ∨ n.toNat = 3 := by omega
+      rcases this with h0 | h0 | h0 | h0
+      · exact Or.inl (UInt64.toNat_inj.mp h0)
+      · exact Or.inr (Or.inl (UInt64.toNat_inj.mp h0))
+      · exact Or.inr (Or.inr (Or.inl (UInt64.toNat_inj.mp h0)))
+      · exact Or.inr (Or.inr (Or.inr (UInt64.toNat_inj.mp h0)))
+    rcases this with rfl | rfl | rfl | rfl <;> decide
+  · have hn : ¬ n.toNat < 4 := h
+    simp only [h, ↓reduceIte]
+    rw [Nat.min_eq_right (by omega)]
+    rfl
+
+theorem jitter_lt (xid n : UInt64) : (jitter xid n).toNat < 3 := by
+  unfold jitter
+  rw [UInt64.toNat_mod]
+  exact Nat.mod_lt _ (by decide)
+
+theorem retransmitDelay_toNat (xid n : UInt64) :
+    (retransmitDelay xid n).toNat = (backoffBase n).toNat - 1 + (jitter xid n).toNat := by
+  have hb := backoffBase_toNat n
+  have hj := jitter_lt xid n
+  have : 4 ≤ (backoffBase n).toNat := by
+    rw [hb]; have := Nat.one_le_two_pow (n := min n.toNat 4); omega
+  have : (backoffBase n).toNat ≤ 64 := by
+    rw [hb]
+    have : 2 ^ min n.toNat 4 ≤ 2 ^ 4 := Nat.pow_le_pow_right (by decide) (Nat.min_le_right _ _)
+    omega
+  unfold retransmitDelay
+  rw [UInt64.toNat_add, UInt64.toNat_sub_of_le]
+  · simp only [UInt64.toNat_one]; omega
+  · rw [UInt64.le_iff_toNat_le]; simp only [UInt64.toNat_one]; omega
+
+
+/-! ### The model reading's registers -/
+
+section BufRegs
+open LeanOS.Net.Echo.Hooks Hooks
+
+theorem buf_wr_regs (b : Buf) (o x : UInt32) : (wr b o x).regs = b.regs := rfl
+theorem buf_withVal_regs (b : Buf) (x : UInt64) : (withVal b x).regs = b.regs := rfl
+theorem buf_withVal_v (b : Buf) (x : UInt64) : val (withVal b x) = x := rfl
+theorem buf_ld (b : Buf) (k : UInt32) : ld b k = { b with v := b.regs.getD k.toNat 0 } := rfl
+theorem buf_st (b : Buf) (k : UInt32) (x : UInt64) :
+    st b k x = { b with regs := b.regs.set! k.toNat x, v := 0 } := rfl
+
+theorem zeroFrom_regs (b : Buf) (i n : UInt32) : (zeroFrom b i n).regs = b.regs := by
+  fun_induction zeroFrom b i n with
+  | case1 t i h ih => rw [ih]; rfl
+  | case2 => rfl
+
+theorem buildDiscover_buf (b : Buf) (mac xid : UInt64) :
+    (buildDiscover b mac xid).regs = b.regs ∧ (buildDiscover b mac xid).v = 342 := by
+  refine ⟨?_, rfl⟩
+  simp only [buildDiscover, buildCommon, paramList, Echo.wrMac, Echo.wr32, Echo.wr16,
+    buf_wr_regs, buf_withVal_regs, zeroFrom_regs]
+
+
+theorem buildRequest_buf (b : Buf) (mac xid r s : UInt64) :
+    (buildRequest b mac xid r s).regs = b.regs ∧ (buildRequest b mac xid r s).v = 342 := by
+  refine ⟨?_, rfl⟩
+  simp only [buildRequest, buildCommon, paramList, Echo.wrMac, Echo.wr32, Echo.wr16,
+    buf_wr_regs, buf_withVal_regs, zeroFrom_regs]
+
+theorem buf_val (b : Buf) : val b = b.v := rfl
+
+theorem discoverAgain_regs (b : Buf) (xid : UInt64) : (discoverAgain b xid).regs = b.regs := by
+  simp only [discoverAgain, buf_ld]; exact (buildDiscover_buf _ _ _).1
+theorem discoverAgain_v (b : Buf) (xid : UInt64) : (discoverAgain b xid).v = 342 := by
+  simp only [discoverAgain, buf_ld]; exact (buildDiscover_buf _ _ _).2
+theorem requestAgain_regs (b : Buf) : (requestAgain b).regs = b.regs := by
+  simp only [requestAgain, buf_ld]; exact (buildRequest_buf _ _ _ _ _).1
+theorem requestAgain_v (b : Buf) : (requestAgain b).v = 342 := by
+  simp only [requestAgain, buf_ld]; exact (buildRequest_buf _ _ _ _ _).2
+theorem discoverWith_regs (b : Buf) (xid : UInt64) :
+    (discoverWith b xid).regs =
+      ((((b.regs.set! 1 xid).set! 0 phaseSelecting).set! 6 0).set! 7 0) := by
+  simp only [discoverWith, buf_st, discoverAgain_regs]; rfl
+theorem discoverWith_v (b : Buf) (xid : UInt64) : (discoverWith b xid).v = 342 := by
+  simp only [discoverWith, discoverAgain_v]
+
+theorem getD_set (a : Array UInt64) (i j : Nat) (x : UInt64) (hi : i < a.size) :
+    (a.set! i x).getD j 0 = if i = j then x else a.getD j 0 := by
+  simp only [Array.getD_eq_getD_getElem?, Array.set!_eq_setIfInBounds,
+    Array.getElem?_setIfInBounds, hi, ↓reduceIte]
+  split <;> rfl
+
+theorem size_set (a : Array UInt64) (i : Nat) (x : UInt64) : (a.set! i x).size = a.size := by
+  simp
+
+end BufRegs
+
+/-- The client's timer: its phase, its transaction, the ticks since its last
+transmission and the retransmissions so far (registers 0, 1, 6, 7). -/
+structure Timer where
+  phase : UInt64
+  xid : UInt64
+  ticks : UInt64
+  tries : UInt64
+  deriving DecidableEq, Repr
+
+/-- What a tick makes the client transmit. -/
+inductive Sent where
+  | none | discover | request
+  deriving DecidableEq, Repr
+
+/-- The timer in registers `r`. -/
+def Timer.ofRegs (r : Array UInt64) : Timer :=
+  ⟨r.getD 0 0, r.getD 1 0, r.getD 6 0, r.getD 7 0⟩
+
+/-- The retransmissions counted after one more: the wait doubles up to
+`backoffSteps` times. -/
+def nextTries (n : UInt64) : UInt64 := if n < backoffSteps then n + 1 else n
+
+/-- The retransmission schedule on a tick, read off `onTick`. -/
+def Timer.tick (c : Timer) : Timer × Sent :=
+  if c.phase != phaseSelecting && c.phase != phaseRequesting then (c, .none)
+  else if c.ticks + 1 < retransmitDelay c.xid c.tries then ({ c with ticks := c.ticks + 1 }, .none)
+  else if c.phase == phaseSelecting then
+    ({ c with ticks := 0, tries := nextTries c.tries }, .discover)
+  else if c.tries + 1 < requestTries then ({ c with ticks := 0, tries := c.tries + 1 }, .request)
+  else ({ phase := phaseSelecting, xid := (c.xid + 1) &&& 0xffffffff, ticks := 0, tries := 0 },
+      .discover)
+
+/-- **The client's tick is the schedule.** On a tick record, the model
+reading of `step` moves the timer registers exactly as `Timer.tick` says,
+transmits a frame (342 bytes) exactly when `Timer.tick` says it retransmits,
+and leaves every other register (the hardware address, the offer, its
+server, the lease) unchanged. The hosted vectors check the generated C
+against this reading, and the frames against `Wifi.Dhcp`. -/
+theorem step_tick_buf (b : Buf) (hs : b.regs.size = registers) :
+    Timer.ofRegs (step b 1).regs = (Timer.ofRegs b.regs).tick.1 ∧
+    (step b 1).v = (if (Timer.ofRegs b.regs).tick.2 = .none then 0 else frameBytes.toUInt64) ∧
+    ∀ k, k ≠ 0 → k ≠ 1 → k ≠ 6 → k ≠ 7 → (step b 1).regs.getD k 0 = b.regs.getD k 0 := by
+  obtain ⟨data, regs, v⟩ := b
+  simp only at hs
+  simp only [step, onTick, buf_ld, buf_val, buf_st, Echo.drop, regPhase, regTicks, regTries,
+    regXid, UInt32.reduceToNat]
+  simp only [show ((1 : UInt32) == 6) = false from rfl, show ((1 : UInt32) == 1) = true from rfl,
+    Bool.false_eq_true, ↓reduceIte]
+  simp only [Timer.tick, Timer.ofRegs]
+  by_cases a1 : (regs.getD 0 0 != phaseSelecting && regs.getD 0 0 != phaseRequesting) = true
+  · simp only [a1, ↓reduceIte, buf_withVal_regs]
+    exact ⟨trivial, rfl, fun _ _ _ _ _ => trivial⟩
+  · simp only [a1, Bool.false_eq_true, ↓reduceIte]
+    by_cases a2 : regs.getD 6 0 + 1 < retransmitDelay (regs.getD 1 0) (regs.getD 7 0)
+    · simp only [a2, ↓reduceIte, buf_withVal_regs]
+      refine ⟨?_, rfl, fun k _ _ h6 _ => ?_⟩
+      · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Nat.reduceEqDiff, ↓reduceIte]
+      · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Ne.symm h6, ↓reduceIte]
+    · simp only [a2, ↓reduceIte]
+      by_cases a3 : (regs.getD 0 0 == phaseSelecting) = true
+      · simp only [a3, ↓reduceIte, discoverAgain_regs, discoverAgain_v]
+        refine ⟨?_, rfl, fun k _ _ h6 h7 => ?_⟩
+        · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Nat.reduceEqDiff, ↓reduceIte]
+          rfl
+        · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Ne.symm h6, Ne.symm h7, ↓reduceIte]
+      · simp only [a3, Bool.false_eq_true, ↓reduceIte]
+        by_cases a4 : regs.getD 7 0 + 1 < requestTries
+        · simp only [a4, ↓reduceIte, requestAgain_regs, requestAgain_v]
+          refine ⟨?_, rfl, fun k _ _ h6 h7 => ?_⟩
+          · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Nat.reduceEqDiff, ↓reduceIte]
+          · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Ne.symm h6, Ne.symm h7, ↓reduceIte]
+        · simp only [a4, ↓reduceIte, discoverWith_regs, discoverWith_v]
+          refine ⟨?_, rfl, fun k h0 h1 h6 h7 => ?_⟩
+          · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Nat.reduceEqDiff, ↓reduceIte]
+          · simp (disch := (simp only [size_set, hs, registers]; decide)) only [getD_set, Ne.symm h0, Ne.symm h1, Ne.symm h6, Ne.symm h7,
+              ↓reduceIte]
+
+theorem retransmitDelay_bounds (xid n : UInt64) :
+    (backoffBase n).toNat - 1 ≤ (retransmitDelay xid n).toNat ∧
+      (retransmitDelay xid n).toNat ≤ (backoffBase n).toNat + 1 := by
+  rw [retransmitDelay_toNat]; have := jitter_lt xid n
+  have := Nat.one_le_two_pow (n := min n.toNat 4)
+  rw [backoffBase_toNat]; omega
+
+theorem retransmitDelay_range (xid n : UInt64) :
+    3 ≤ (retransmitDelay xid n).toNat ∧ (retransmitDelay xid n).toNat ≤ 65 := by
+  rw [retransmitDelay_toNat, backoffBase_toNat]
+  have := jitter_lt xid n
+  have h1 := Nat.one_le_two_pow (n := min n.toNat 4)
+  have h2 : 2 ^ min n.toNat 4 ≤ 2 ^ 4 := Nat.pow_le_pow_right (by decide) (Nat.min_le_right _ _)
+  omega
+
+/-- The base waits of RFC 2131 section 4.1: 4, 8, 16, 32, then 64 seconds. -/
+theorem backoffBase_rfc :
+    (List.range 7).map (fun n => (backoffBase n.toUInt64).toNat) = [4, 8, 16, 32, 64, 64, 64] := by
+  decide
+
+/-- A client waiting for an answer. -/
+def Timer.Waiting (c : Timer) : Prop := c.phase = phaseSelecting ∨ c.phase = phaseRequesting
+
+/-- `n` ticks: the timer after them, and what each made the client transmit. -/
+def Timer.run : Nat → Timer → Timer × List Sent
+  | 0, c => (c, [])
+  | n + 1, c =>
+    let r := c.tick
+    let rest := Timer.run n r.1
+    (rest.1, r.2 :: rest.2)
+
+theorem tick_waiting_cond {c : Timer} (h : c.Waiting) :
+    (c.phase != phaseSelecting && c.phase != phaseRequesting) = false := by
+  rcases h with h | h <;> simp [h, phaseSelecting, phaseRequesting]
+
+/-- A tick before the wait is over transmits nothing and counts. -/
+theorem tick_silent {c : Timer} (h : c.Waiting)
+    (hlt : c.ticks.toNat + 1 < (retransmitDelay c.xid c.tries).toNat) :
+    c.tick = ({ c with ticks := c.ticks + 1 }, .none) := by
+  have : c.ticks + 1 < retransmitDelay c.xid c.tries := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add, UInt64.toNat_one]
+    have := (retransmitDelay_range c.xid c.tries).2
+    rw [Nat.mod_eq_of_lt (by omega)]; exact hlt
+  simp [Timer.tick, tick_waiting_cond h, this]
+
+/-- While waiting, `n` ticks short of the wait transmit nothing. -/
+theorem run_silent {c : Timer} (h : c.Waiting) :
+    ∀ n, c.ticks.toNat + n < (retransmitDelay c.xid c.tries).toNat →
+      Timer.run n c = ({ c with ticks := c.ticks + n.toUInt64 }, List.replicate n .none)
+  | 0, _ => by simp [Timer.run]
+  | n + 1, hlt => by
+    have hd := (retransmitDelay_range c.xid c.tries).2
+    rw [Timer.run, tick_silent h (by omega)]
+    simp only
+    have hw : ({ c with ticks := c.ticks + 1 } : Timer).Waiting := h
+    have ht : (c.ticks + 1).toNat = c.ticks.toNat + 1 := by
+      rw [UInt64.toNat_add, UInt64.toNat_one, Nat.mod_eq_of_lt (by omega)]
+    rw [run_silent hw n (by simp only; omega)]
+    simp only [List.replicate_succ, Prod.mk.injEq, and_true]
+    congr 1
+    rw [UInt64.add_assoc]
+    congr 1
+    apply UInt64.toNat_inj.mp
+    simp [UInt64.toNat_add]
+    omega
+
+theorem run_add (m n : Nat) (c : Timer) :
+    Timer.run (m + n) c =
+      ((Timer.run n (Timer.run m c).1).1, (Timer.run m c).2 ++ (Timer.run n (Timer.run m c).1).2) := by
+  induction m generalizing c with
+  | zero => simp [Timer.run]
+  | succ m ih =>
+    rw [show m + 1 + n = (m + n) + 1 by omega, Timer.run, Timer.run, ih]
+    simp
+
+/-- The tick that ends the wait in `selecting` retransmits the DISCOVER of
+the same transaction, and the next wait is one doubling longer (up to 64). -/
+theorem tick_fires_selecting {c : Timer} (hp : c.phase = phaseSelecting)
+    (he : c.ticks.toNat + 1 = (retransmitDelay c.xid c.tries).toNat) :
+    c.tick = ({ c with ticks := 0, tries := nextTries c.tries }, .discover) := by
+  have hd := (retransmitDelay_range c.xid c.tries).2
+  have : ¬ c.ticks + 1 < retransmitDelay c.xid c.tries := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add, UInt64.toNat_one, Nat.mod_eq_of_lt (by omega)]
+    omega
+  simp [Timer.tick, this, hp, nextTries]
+
+/-- The tick that ends the wait in `requesting` retransmits the REQUEST, or,
+after the third, restarts from DISCOVER with the next transaction. -/
+theorem tick_fires_requesting {c : Timer} (hp : c.phase = phaseRequesting)
+    (he : c.ticks.toNat + 1 = (retransmitDelay c.xid c.tries).toNat) :
+    c.tick = if c.tries + 1 < requestTries then
+        ({ c with ticks := 0, tries := c.tries + 1 }, .request)
+      else ({ phase := phaseSelecting, xid := (c.xid + 1) &&& 0xffffffff, ticks := 0, tries := 0 },
+        .discover) := by
+  have hd := (retransmitDelay_range c.xid c.tries).2
+  have : ¬ c.ticks + 1 < retransmitDelay c.xid c.tries := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_add, UInt64.toNat_one, Nat.mod_eq_of_lt (by omega)]
+    omega
+  simp [Timer.tick, this, hp, phaseSelecting, phaseRequesting]
+
+/-- **The DISCOVER schedule.** Right after a DISCOVER (`ticks = 0`) with
+`tries` retransmissions so far, a client in `selecting` that hears nothing
+transmits nothing for `retransmitDelay xid tries - 1` ticks and retransmits
+the DISCOVER of the same transaction on the next: its wait lies within ±1
+tick of `4 · 2^min tries 4` (`retransmitDelay_bounds`, `backoffBase_toNat`). -/
+theorem selecting_gap {c : Timer} (hp : c.phase = phaseSelecting) (h0 : c.ticks = 0) :
+    Timer.run (retransmitDelay c.xid c.tries).toNat c =
+      ({ c with tries := nextTries c.tries },
+        List.replicate ((retransmitDelay c.xid c.tries).toNat - 1) .none ++ [.discover]) := by
+  have hr := retransmitDelay_range c.xid c.tries
+  obtain ⟨d, hd⟩ : ∃ d, (retransmitDelay c.xid c.tries).toNat = d + 1 := ⟨_, (Nat.succ_pred_eq_of_pos (by omega)).symm⟩
+  rw [hd, run_add, run_silent (Or.inl hp) d (by rw [h0]; simp; omega)]
+  simp only [Nat.add_sub_cancel, Timer.run]
+  rw [tick_fires_selecting (by simpa using hp) (by
+    simp only [h0, UInt64.zero_add]
+    rw [UInt64.toNat_ofNat_of_lt' (by rw [show UInt64.size = 18446744073709551616 from rfl]; omega)]
+    omega)]
+  cases c; simp_all
+
+/-- **The REQUEST schedule.** Right after a REQUEST (`ticks = 0`) with
+`tries` retransmissions so far, a client in `requesting` that hears nothing
+transmits nothing for `retransmitDelay xid tries - 1` ticks, then retransmits
+the REQUEST, or, once three were unanswered, restarts from DISCOVER with the
+next transaction id. -/
+theorem requesting_gap {c : Timer} (hp : c.phase = phaseRequesting) (h0 : c.ticks = 0) :
+    Timer.run (retransmitDelay c.xid c.tries).toNat c =
+      if c.tries + 1 < requestTries then
+        ({ c with tries := c.tries + 1 },
+          List.replicate ((retransmitDelay c.xid c.tries).toNat - 1) .none ++ [.request])
+      else ({ phase := phaseSelecting, xid := (c.xid + 1) &&& 0xffffffff, ticks := 0, tries := 0 },
+          List.replicate ((retransmitDelay c.xid c.tries).toNat - 1) .none ++ [.discover]) := by
+  have hr := retransmitDelay_range c.xid c.tries
+  obtain ⟨d, hd⟩ : ∃ d, (retransmitDelay c.xid c.tries).toNat = d + 1 := ⟨_, (Nat.succ_pred_eq_of_pos (by omega)).symm⟩
+  rw [hd, run_add, run_silent (Or.inr hp) d (by rw [h0]; simp; omega)]
+  simp only [Nat.add_sub_cancel, Timer.run]
+  rw [tick_fires_requesting (by simpa using hp) (by
+    simp only [h0, UInt64.zero_add]
+    rw [UInt64.toNat_ofNat_of_lt' (by rw [show UInt64.size = 18446744073709551616 from rfl]; omega)]
+    omega)]
+  cases c; simp_all
+  split <;> simp
+
+/-- `step_tick_buf` for the records the hosted vectors replay: a tick
+record (one byte) moves the timer as `Timer.tick` says, draws a frame
+exactly on a retransmission, and leaves the other registers alone. -/
+theorem stepRecord_tick (regs : Array UInt64) (hs : regs.size = registers) (f : ByteArray)
+    (hf : f.size = 1) :
+    Timer.ofRegs (stepRecord regs f).1 = (Timer.ofRegs regs).tick.1 ∧
+    ((stepRecord regs f).2.isSome = true ↔ (Timer.ofRegs regs).tick.2 ≠ .none) ∧
+    ∀ k, k ≠ 0 → k ≠ 1 → k ≠ 6 → k ≠ 7 → (stepRecord regs f).1.getD k 0 = regs.getD k 0 := by
+  dsimp only [stepRecord]
+  have hl : f.size.toUInt32 = 1 := by rw [hf]; rfl
+  rw [hl]
+  generalize hb : ({ data := f ++ ByteArray.mk (Array.replicate (bufferBytes - f.size) 0), regs } :
+    Buf) = b
+  have hbr : b.regs = regs := by rw [← hb]
+  obtain ⟨h1, h2, h3⟩ := step_tick_buf b (by rw [hbr]; exact hs)
+  rw [hbr] at h1 h2 h3
+  refine ⟨h1, ?_, h3⟩
+  rw [h2]
+  by_cases hn : (Timer.ofRegs regs).tick.2 = .none
+  · simp [hn]
+  · simp [hn, frameBytes]
 
 end LeanOS.Net.DhcpClient

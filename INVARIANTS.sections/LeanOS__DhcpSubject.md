@@ -23,6 +23,10 @@ These theorems describe the step after the network program: the program that ask
 - `run_routed` — Over any run, that rule keeps holding.
 - `run_routed_leased` — From start-up, whenever the kernel serves the echo program, the echo program holds a lease.
 - `echo_fetch_leased` — The echo program can receive a frame only once it holds a lease.
+- `leaseSignal_boot` — At start-up the one-bit lease signal the kernel shows the WiFi driver is off.
+- `step_leaseSignal_set` — The lease signal switches on only when the address-leasing program hands over its lease while the kernel is serving it.
+- `step_leaseSignal_stays` — Once on, the lease signal never switches off again.
+- `run_leaseSignal_iff_lease` — From start-up, the lease signal is on exactly when the echo program holds a lease, so the driver's serve window starts only after a lease was really handed over, and the signal tells the driver nothing but that one fact.
 - `reply_for_ip` — The reference answering logic produces an answer only for a frame that asks for the address it was given.
 - `replyFrame_for_ip` — The reference answerer, against which the echo program's generated code is checked, answers only frames asking for its own address.
 - `echo_answers_only_lease` — Once the kernel serves the echo program, it holds the lease the address-leasing program handed over, and it answers only frames that ask for that leased address.
