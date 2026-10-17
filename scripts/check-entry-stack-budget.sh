@@ -104,9 +104,23 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
       # (issue #494) passes its instruction fields and loop state to the
       # specialized descriptor-map scan, which takes more than six scalar
       # arguments, so its instruction dispatcher and that scan push
-      # arguments too.
+      # arguments too. The spawn allocator's exports (issue #575) take the
+      # thirteen state words with the command words, 18 or 19 scalars, so they,
+      # the generated step functions they call, and the kernel functions that
+      # call them push arguments as well.
       [[ "${usage_kind[$function_name]}" == dynamic,bounded &&
          ( "$function_name" == authorize_page_fault_snapshot ||
+           "$function_name" == spawn_child_syscall ||
+           "$function_name" == spawn_kernel_command ||
+           "$function_name" == leanos_spawn_allocator_syscall ||
+           "$function_name" == leanos_spawn_allocator_syscall_value ||
+           "$function_name" == leanos_spawn_allocator_syscall_next ||
+           "$function_name" == leanos_spawn_allocator_kernel ||
+           "$function_name" == leanos_spawn_allocator_kernel_value ||
+           "$function_name" == leanos_spawn_allocator_kernel_next ||
+           "$function_name" == l_LeanOS_SpawnAllocatorWords_stepReply ||
+           "$function_name" == l_LeanOS_SpawnAllocatorWords_stepValue ||
+           "$function_name" == l_LeanOS_SpawnAllocatorWords_stepNextWord ||
            "$function_name" == leanos_authorize_page_fault_snapshot ||
            "$function_name" == leanos_page_fault_dispatch_transition ||
            "$function_name" == frame_budget_require_publication_authority ||
