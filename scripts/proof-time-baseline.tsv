@@ -1,4 +1,4 @@
-# reason: LeanOS.TimingChannels, LeanOS.TimingBudget and LeanOS.Oracle.Timing (#576, the cross-subject refusal witness, the timing closures of ADR 0028 and the witness's oracle rows) are new; record their local times (1.0 s, 4.3 s, 1.0 s) normalized by the checker's median factor 6.98 over 64 unchanged modules on a loaded host (0.1 s, 0.6 s, 0.1 s). Earlier: LeanOS.GtkRekey and LeanOS.QotomWatchdogKick (#557, the group-key rotation model and the long-session watchdog kick check) are new; record their measured local times (1.7 s, 1.5 s). Earlier: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
+# reason: The fixed spawn table and its token syscall witness are deleted (#575): drop their rows (LeanOS.SpawnBoundary, LeanOS.SpawnBoundaryChecks, LeanOS.SpawnBoundaryTraces). Earlier: LeanOS.TimingChannels, LeanOS.TimingBudget and LeanOS.Oracle.Timing (#576, the cross-subject refusal witness, the timing closures of ADR 0028 and the witness's oracle rows) are new; record their local times (1.0 s, 4.3 s, 1.0 s) normalized by the checker's median factor 6.98 over 64 unchanged modules on a loaded host (0.1 s, 0.6 s, 0.1 s). Earlier: LeanOS.GtkRekey and LeanOS.QotomWatchdogKick (#557, the group-key rotation model and the long-session watchdog kick check) are new; record their measured local times (1.7 s, 1.5 s). Earlier: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
 module	seconds
 LeanOS.BootPageTablePlan	139.8
 LeanOS.CompositeDispatcher	137.0
@@ -125,7 +125,6 @@ LeanOS.FailStop.SpawnTree	1.6
 LeanOS.Oracle.IOTLB	1.6
 LeanOS.QotomNativePCIFields	1.6
 LeanOS.ResumableContext	1.6
-LeanOS.SpawnBoundary	1.6
 LeanOS.QotomWatchdogKick	1.5
 LeanOS.SpawnAccountingOracle	1.5
 LeanOS.SpawnConfinement	1.5
@@ -185,8 +184,6 @@ LeanOS.J1900CpuControlPolicy	0.7
 LeanOS.LifetimeIssuer	0.7
 LeanOS.NegativeFixtures.DeviceProgramConfinement	0.7
 LeanOS.ReplayUnwinding	0.7
-LeanOS.SpawnBoundaryChecks	0.7
-LeanOS.SpawnBoundaryTraces	0.7
 LeanOS.Storage.Ahci	0.7
 LeanOS.Wifi.Connect	0.7
 LeanOS.Wifi.Dhcp	0.7

@@ -126,14 +126,14 @@ theorem reclaim_noop (state : CompositeState) (child : Nat)
 and value.** -/
 theorem terminateChild_status_family (state : CompositeState) (family : Family state)
     (control : UInt64) :
-    SpawnBoundary.childStatus (FailStop.terminateChild state control).result =
+    SpawnFamily.childStatus (FailStop.terminateChild state control).result =
       ((terminateStep (abstraction state) control).status,
         (terminateStep (abstraction state) control).value) := by
   unfold FailStop.terminateChild terminateStep
   cases allocatorResolved : (abstraction state).resolveControl control with
   | error denial =>
       rw [resolveControl_family_error state family control denial allocatorResolved]
-      simp [rejectWith, SpawnBoundary.childStatus]
+      simp [rejectWith, SpawnFamily.childStatus]
   | ok found =>
       obtain ⟨slot, record⟩ := found
       obtain ⟨entry, resolved, recordEq⟩ :=
@@ -141,7 +141,7 @@ theorem terminateChild_status_family (state : CompositeState) (family : Family s
       rw [resolved]
       obtain ⟨_, _, _, limit⟩ := resolved_entry state family control slot entry resolved
       subst recordEq
-      simp [acceptWith, SpawnBoundary.childStatus, limit, recordOf]
+      simp [acceptWith, SpawnFamily.childStatus, limit, recordOf]
 
 /-! ## The post-state of an accepted termination -/
 

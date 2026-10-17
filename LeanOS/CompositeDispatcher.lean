@@ -551,222 +551,6 @@ def invalidationDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt6
   else if 0x4501 ≤ tag then 0xff02
   else 0xff04
 
-/-- The error word of a spawn-family input that matches no row at its state. -/
-def spawnFamilyMiss (tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
-  if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7501 && arg0 == 0x2 && arg1 == 0x1 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7501 && arg0 == 0x3 && arg1 == 0x1 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x2 && arg1 == 0x30000 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0xffff &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x40000 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30007 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x40001 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-      arg2 == 0x1 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7601 && arg0 == 0x2 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7301 && arg0 == 0x3 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7801 && arg0 == 0x0 && arg1 == 0x2 &&
-      arg2 == 0x3 && arg3 == 0x4 then 0xff06
-  else if tag == 0x7801 && arg0 == 0x0 && arg1 == 0x2 &&
-      arg2 == 0x3 && arg3 == 0x14 then 0xff06
-  else if tag == 0x7101 && arg0 == 0x20000 && arg1 == 0x1 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7101 && arg0 == 0xffff && arg1 == 0x1 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7401 && arg0 == 0x2 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7701 && arg0 == 0x0 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x2 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7301 && arg0 == 0x2 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7201 && arg0 == 0x20000 && arg1 == 0x0 &&
-      arg2 == 0x0 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x20001 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x60003 &&
-      arg2 == 0x4 && arg3 == 0x0 then 0xff06
-  else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x60003 &&
-      arg2 == 0x8 && arg3 == 0x0 then 0xff06
-  else if 0x7001 ≤ tag && tag ≤ 0x7801 && tag % 256 = abiVersion then 0xff05
-  else if tag % 256 != abiVersion then 0xff01
-  else if 0x7901 ≤ tag then 0xff02
-  else 0xff04
-
-/-- Allocation-free scalar table for the spawn family (ADR 0010 gate item 5,
-#489).  Every row is one edge of `LeanOS.SpawnBoundary.edges`, which proves
-that the row is exactly one `childGate`, `memoryGate`, or authoritative step on
-the complete state its token names.  Arguments are matched exactly; a known
-command at the wrong state is a continuity failure (`0xff06`), and a family
-tag with arguments of no row is noncanonical (`0xff05`). -/
-def spawnDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
-  if stateWord = 0x7001 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x817001
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37001
-    else if tag == 0x7501 && arg0 == 0x2 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17101
-    else if tag == 0x7501 && arg0 == 0x3 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x807001
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7101 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x17201
-    else if tag == 0x7001 && arg0 == 0x2 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x827101
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0xffff &&
-        arg2 == 0x4 && arg3 == 0x0 then 0xa07101
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x40000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0xa47101
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30007 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0xa37101
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x40001 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0xa57101
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x1 && arg3 == 0x0 then 0x8a7101
-    else if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37101
-    else if tag == 0x7601 && arg0 == 0x2 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17a01
-    else if tag == 0x7301 && arg0 == 0x3 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x877101
-    else if tag == 0x7801 && arg0 == 0x0 && arg1 == 0x2 &&
-        arg2 == 0x3 && arg3 == 0x4 then 0x18001
-    else if tag == 0x7801 && arg0 == 0x0 && arg1 == 0x2 &&
-        arg2 == 0x3 && arg3 == 0x14 then 0x18101
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7201 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x8c7201
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc57201
-    else if tag == 0x7101 && arg0 == 0x20000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37201
-    else if tag == 0x7101 && arg0 == 0xffff && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc17201
-    else if tag == 0x7401 && arg0 == 0x2 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17301
-    else if tag == 0x7701 && arg0 == 0x0 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17901
-    else if tag == 0x7501 && arg0 == 0x3 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x807201
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7301 then
-    if tag == 0x7401 && arg0 == 0x2 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x897301
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x2 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc57301
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17401
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7401 then
-    if tag == 0x7301 && arg0 == 0x2 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x877401
-    else if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17501
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7501 then
-    if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37501
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37501
-    else if tag == 0x7301 && arg0 == 0x2 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17601
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x18201
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7601 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x17701
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7701 then
-    if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37701
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37701
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x8c7701
-    else if tag == 0x7201 && arg0 == 0x20000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17801
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7801 then
-    spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7901 then
-    if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37901
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc37901
-    else if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x20001 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x817901
-    else if tag == 0x7301 && arg0 == 0x2 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x877901
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7a01 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x817a01
-    else if tag == 0x7501 && arg0 == 0x2 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x17b01
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7b01 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x827b01
-    else if tag == 0x7001 && arg0 == 0x2 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x17c01
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7c01 then
-    spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7d01 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x837d01
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7e01 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x877e01
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x7f01 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x30000 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x8d7f01
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x8001 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x60003 &&
-        arg2 == 0x4 && arg3 == 0x0 then 0x898001
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x8101 then
-    if tag == 0x7001 && arg0 == 0x1 && arg1 == 0x60003 &&
-        arg2 == 0x8 && arg3 == 0x0 then 0x8b8101
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x8201 then
-    if tag == 0x7101 && arg0 == 0x20000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x18301
-    else if tag == 0x7101 && arg0 == 0x10000 && arg1 == 0x1 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc38201
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x8301 then
-    if tag == 0x7201 && arg0 == 0x20000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0x18401
-    else if tag == 0x7201 && arg0 == 0x10000 && arg1 == 0x0 &&
-        arg2 == 0x0 && arg3 == 0x0 then 0xc38301
-    else spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else if stateWord = 0x8401 then
-    spawnFamilyMiss tag arg0 arg1 arg2 arg3
-  else 0xff03
-
 /-- Allocation-free generated entry point.  It validates every scalar before
 selecting one exact trace edge.  The proof below connects each success word to
 the full authoritative gate; this executable definition intentionally contains
@@ -785,9 +569,6 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if 0x6001 ≤ stateWord && stateWord ≤ 0x6501 then
     if stateWord % 256 != abiVersion then 0xff01
     else inFlightRevocationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
-  else if 0x7001 ≤ stateWord && stateWord ≤ 0x8401 then
-    if stateWord % 256 != abiVersion then 0xff01
-    else spawnDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
       stateWord = 0x0b01 || stateWord = 0x0c01 || stateWord = 0x0d01 ||
       stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||
@@ -882,30 +663,16 @@ structure DispatchResult where
 
 /-- Select the optional value word solely from the fully validated control
 word. Only the accepted attached-receipt selectors for the hosted and machine
-traces may publish a handle. The spawn family's accepted controls publish the
-hosted oracle's value word: the generation of a kernel grant (`0x017101`,
-`0x017b01`), the control word of an accepted spawn (`0x017201`, `0x017701`,
-`0x017c01`, `0x018201`), and the frames a grant moved or a termination returned
-(`0x017401`, `0x017501`, `0x018301`, `0x018401`). -/
+traces may publish a handle. (The spawn family left this dispatcher with #575:
+its value words come from the spawn allocator's exports.) -/
 def resultValue (control : UInt64) : UInt64 :=
   if control = 0x210a01 then 0x60003
   else if control = 0x215401 then 0x60003
-  else if control = 0x017101 then 1
-  else if control = 0x017201 then 0x10000
-  else if control = 0x017401 then 1
-  else if control = 0x017501 then 1
-  else if control = 0x017701 then 0x20000
-  else if control = 0x017b01 then 2
-  else if control = 0x017c01 then 0x10000
-  else if control = 0x018201 then 0x20000
-  else if control = 0x018301 then 1
-  else if control = 0x018401 then 1
   else 0
 
 /-- The controls whose value word is not zero. -/
 def valueControls : List UInt64 :=
-  [0x210a01, 0x215401, 0x017101, 0x017201, 0x017401, 0x017501, 0x017701, 0x017b01, 0x017c01,
-    0x018201, 0x018301, 0x018401]
+  [0x210a01, 0x215401]
 
 def dispatchResult (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : DispatchResult :=
   let control := dispatch stateWord tag arg0 arg1 arg2 arg3
@@ -940,10 +707,7 @@ private def handleProperty (control value : UInt64) : Prop :=
   value = 0x60003 ↔ control = 0x210a01 ∨ control = 0x215401
 
 private def zeroProperty (control value : UInt64) : Prop :=
-  value = 0 ↔ ¬(control = 0x210a01 ∨ control = 0x215401 ∨ control = 0x017101 ∨
-    control = 0x017201 ∨ control = 0x017401 ∨ control = 0x017501 ∨ control = 0x017701 ∨
-    control = 0x017b01 ∨ control = 0x017c01 ∨ control = 0x018201 ∨ control = 0x018301 ∨
-    control = 0x018401)
+  value = 0 ↔ ¬(control = 0x210a01 ∨ control = 0x215401)
 
 set_option linter.unusedSimpArgs false in
 /-- A returned handle is present exactly for the accepted receipt control
