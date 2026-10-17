@@ -96,6 +96,14 @@ structure State where
   /-- Frames already used for copies. -/
   used : Nat
   started : Bool
+  /-- The bytes of the admitted file, which the reserved range holds: the
+  byte at physical address `start + offset` is `file offset`. -/
+  file : Nat → UInt8
+  /-- The bytes of the frames given to the child, by frame slot and offset. -/
+  frameBytes : Nat → Nat → UInt8
+
+/-- The byte at a physical address of the reserved range. -/
+def reservedByte (state : State) (address : Nat) : UInt8 := state.file (address - state.start)
 
 /-! ## Segment pages -/
 
@@ -152,23 +160,42 @@ inductive Reply where
   | rolledBack (reason : Rejection)
   deriving DecidableEq, Repr
 
-/-- Discard the child being loaded: no child, no pages, nothing loaded. -/
+/-- Discard the child being loaded: no child, no pages, nothing loaded, and
+the frames it was given scrubbed. -/
 def rollback (state : State) : State :=
   { state with
     child := none
     loaded := fun _ => false
     leaves := fun _ => none
     used := 0
-    started := false }
+    started := false
+    frameBytes := fun _ _ => 0 }
 
-/-- Install one segment's pages. -/
+/-- The byte a copy writes at `offset` from the start of a segment's memory
+image: the byte at the claimed source plus `offset` while `offset` is below
+the segment's file size, and zero after it.  This is the kernel's copy loop. -/
+def copyByte (state : State) (segment : Segment) (source offset : Nat) : UInt8 :=
+  if offset < segment.fileBytes then reservedByte state (source + offset) else 0
+
+/-- The frames of a writable segment hold its copy: frame `used + k` holds
+page `k` of the segment's memory image. -/
+def copyFrames (state : State) (segment : Segment) (source : Nat) : Nat → Nat → UInt8 :=
+  fun slot offset =>
+    if state.used ≤ slot ∧ slot < state.used + pageCount segment then
+      copyByte state segment source ((slot - state.used) * pageBytes + offset)
+    else state.frameBytes slot offset
+
+/-- Install one segment's pages: a writable segment's pages are copied into
+the child's next frames. -/
 def install (state : State) (index : Nat) (segment : Segment) (source : Nat) : State :=
   { state with
     loaded := fun candidate => if candidate = index then true else state.loaded candidate
     leaves := fun page =>
       if inSegment segment page then some (leafOf segment source state.used page)
       else state.leaves page
-    used := if segment.writable then state.used + pageCount segment else state.used }
+    used := if segment.writable then state.used + pageCount segment else state.used
+    frameBytes := if segment.writable then copyFrames state segment source
+      else state.frameBytes }
 
 /-- The first failing check of a load for the live, unstarted child. -/
 def loadCheck (state : State) (child : Child) (index source : Nat) : Option Rejection :=
@@ -598,6 +625,277 @@ theorem started_exact_unique (state : State) (control : UInt64) (layout : PlanLa
     have := inSegment_disjoint (plan_aligned layout hi) (plan_aligned layout hj) disjoint page otherIn
     rw [this] at inside
     cases inside
+
+/-! ## Copied contents
+
+The model records the bytes behind every page.  A page mapped in place is the
+reserved page holding the segment's file bytes; a copied page is a frame the
+kernel filled with the segment's file bytes, then zeros (`copyByte`).
+`Contents` says every page holds the bytes of the admitted file the segment
+names at that page, and every request keeps it (`step_preserves_contents`).
+After `start`, the child reads exactly the admitted bytes: a writable
+segment's file bytes followed by zeros past `filesz` (`started_contents`,
+`started_writable_bytes`), and a read-only segment's file bytes in place. -/
+
+/-- The byte the child reads at a virtual address, through its pages. -/
+def childByte (state : State) (address : Nat) : Option UInt8 :=
+  match state.leaves (address / pageBytes) with
+  | none => none
+  | some leaf =>
+      match leaf.backing with
+      | .reserved base => some (reservedByte state (base + address % pageBytes))
+      | .copy slot => some (state.frameBytes slot (address % pageBytes))
+
+/-- The byte at `offset` into a segment's memory image as the admitted file
+defines it: the file byte below the segment's file size, and zero past it. -/
+def imageByte (file : Nat → UInt8) (segment : Segment) (offset : Nat) : UInt8 :=
+  if offset < segment.fileBytes then file (segment.fileOffset + offset) else 0
+
+/-- What a page of a segment holds: a copied page's frame holds the page's
+image bytes, and a page mapped in place is the reserved page holding the
+page's file bytes. -/
+def PageHolds (state : State) (segment : Segment) (page : Nat) (leaf : Leaf) : Prop :=
+  match leaf.backing with
+  | .copy slot => ∀ offset, offset < pageBytes →
+      state.frameBytes slot offset =
+        imageByte state.file segment ((page - firstPage segment) * pageBytes + offset)
+  | .reserved base =>
+      base = state.start + segment.fileOffset + (page - firstPage segment) * pageBytes
+
+/-- **Contents.**  Every page of the child lies in a segment of the plan and
+holds that segment's bytes. -/
+def Contents (state : State) : Prop :=
+  ∀ page leaf, state.leaves page = some leaf →
+    ∃ segment ∈ state.plan, inSegment segment page = true ∧ PageHolds state segment page leaf
+
+theorem contents_rollback (state : State) : Contents (rollback state) := by
+  intro page leaf found
+  simp [rollback] at found
+
+/-- A load that passes every check claims the segment's admitted placement. -/
+theorem loadCheck_placed {state : State} {child : Child} {index source : Nat} {segment : Segment}
+    (named : state.plan[index]? = some segment) (passed : loadCheck state child index source = none) :
+    source = state.start + segment.fileOffset := by
+  simp only [loadCheck, named] at passed
+  split at passed
+  · cases passed
+  split at passed
+  · cases passed
+  split at passed
+  · cases passed
+  next placed => simpa using placed
+
+/-- Every request keeps the contents, for a state whose copies use frames
+below `used` (`Inside`). -/
+theorem step_preserves_contents (state : State) (request : Request) (inside : Inside state)
+    (contents : Contents state) : Contents (step state request).1 := by
+  cases request with
+  | start control =>
+      simp only [step]
+      cases live : liveChild state control with
+      | none => exact contents
+      | some child =>
+          simp only
+          by_cases all : allLoaded state = true
+          · simp only [all, ↓reduceIte]
+            exact contents
+          · simp only [all, Bool.false_eq_true, ↓reduceIte]
+            exact contents_rollback state
+  | load control index source =>
+      simp only [step]
+      cases live : liveChild state control with
+      | none => exact contents
+      | some child =>
+          simp only
+          cases check : loadCheck state child index source with
+          | some reason => exact contents_rollback state
+          | none =>
+              cases named : state.plan[index]? with
+              | none => exact contents_rollback state
+              | some segment =>
+                  simp only
+                  have placed := loadCheck_placed named check
+                  have member : segment ∈ state.plan := List.mem_of_getElem? named
+                  intro page leaf found
+                  simp only [install] at found
+                  by_cases inS : inSegment segment page = true
+                  · simp only [inS, ↓reduceIte, Option.some.injEq] at found
+                    subst found
+                    refine ⟨segment, member, inS, ?_⟩
+                    have offset := pageCount_pos page inS
+                    cases writable : segment.writable
+                    · simp only [PageHolds, leafOf, writable, Bool.false_eq_true, ↓reduceIte,
+                        install]
+                      rw [placed]
+                    · simp only [PageHolds, leafOf, writable, ↓reduceIte, install, copyFrames]
+                      intro within small
+                      have range : state.used ≤ state.used + (page - firstPage segment) ∧
+                          state.used + (page - firstPage segment) <
+                            state.used + pageCount segment := by omega
+                      simp only [range, and_self, ↓reduceIte, Nat.add_sub_cancel_left, copyByte,
+                        imageByte, reservedByte, placed]
+                      split
+                      · congr 1; omega
+                      · rfl
+                  · simp only [inS, Bool.false_eq_true, ↓reduceIte] at found
+                    obtain ⟨other, otherMember, otherIn, holds⟩ := contents page leaf found
+                    refine ⟨other, otherMember, otherIn, ?_⟩
+                    have below := (inside page leaf found).2
+                    revert holds
+                    simp only [PageHolds, install]
+                    cases backing : leaf.backing with
+                    | reserved base => simp
+                    | copy slot =>
+                        simp only
+                        intro holds offset small
+                        have lower := below slot backing
+                        cases writable : segment.writable
+                        · simp only [Bool.false_eq_true, ↓reduceIte]
+                          exact holds offset small
+                        · simp only [↓reduceIte, copyFrames]
+                          have : ¬(state.used ≤ slot ∧ slot < state.used + pageCount segment) := by
+                            omega
+                          simp only [this, ↓reduceIte]
+                          exact holds offset small
+
+/-- With the admitted layout, a page lies in at most one segment of the plan. -/
+theorem segment_of_page_unique {plan : List Segment} (layout : PlanLayout plan)
+    {left right : Segment} (leftMember : left ∈ plan) (rightMember : right ∈ plan) (page : Nat)
+    (inLeft : inSegment left page = true) (inRight : inSegment right page = true) :
+    left = right := by
+  by_cases same : left = right
+  · exact same
+  · exfalso
+    obtain ⟨i, iLt, iEq⟩ := List.getElem_of_mem leftMember
+    obtain ⟨j, jLt, jEq⟩ := List.getElem_of_mem rightMember
+    have hi : plan[i]? = some left := by rw [List.getElem?_eq_getElem iLt, iEq]
+    have hj : plan[j]? = some right := by rw [List.getElem?_eq_getElem jLt, jEq]
+    have different : i ≠ j := by
+      intro eq; subst eq; rw [hi] at hj; cases hj; exact same rfl
+    have disjoint := plan_disjoint layout hi hj different
+    have := inSegment_disjoint (plan_aligned layout hi) (plan_aligned layout hj) disjoint page inLeft
+    rw [this] at inRight
+    cases inRight
+
+/-- An address of a segment's page-rounded memory image lies on a page of the
+segment. -/
+theorem inSegment_of_address {segment : Segment} (aligned : segment.vaddr % pageBytes = 0)
+    {address : Nat} (low : segment.vaddr ≤ address) (high : address < segment.pageEnd) :
+    inSegment segment (address / pageBytes) = true := by
+  have window : ∀ start stop : Nat, start % 4096 = 0 → stop % 4096 = 0 → start ≤ address →
+      address < stop →
+      start / 4096 ≤ address / 4096 ∧ address / 4096 < start / 4096 + (stop - start) / 4096 := by
+    intro start stop startAligned stopAligned below above
+    omega
+  have := window segment.vaddr segment.pageEnd aligned (pageEnd_aligned segment) low high
+  simp only [inSegment, firstPage, pageCount, Bool.and_eq_true]
+  exact ⟨decide_eq_true this.1, decide_eq_true this.2⟩
+
+/-- **The child reads exactly the admitted bytes.**  When `start` succeeds on
+a state that is exact and holds its contents, every address of every segment's
+page-rounded memory image reads, through the child's pages, the byte the
+admitted file defines there: for a writable (copied) segment its file byte
+below `filesz` and zero past it; for a read-only segment (mapped in place) the
+file byte at that offset. -/
+theorem started_contents (state : State) (control : UInt64) (layout : PlanLayout state.plan)
+    (exact : Exact state) (contents : Contents state)
+    (started : (step state (.start control)).2 = .started)
+    (segment : Segment) (member : segment ∈ state.plan) (address : Nat)
+    (low : segment.vaddr ≤ address) (high : address < segment.pageEnd) :
+    childByte (step state (.start control)).1 address =
+      some (if segment.writable then imageByte state.file segment (address - segment.vaddr)
+        else state.file (segment.fileOffset + (address - segment.vaddr))) := by
+  have aligned := layout.aligned segment member
+  have inS := inSegment_of_address aligned low high
+  obtain ⟨leaf, found, fits⟩ :=
+    started_exact_unique state control layout exact started (address / pageBytes) segment member inS
+  have afterEq : (step state (.start control)).1 = { state with started := true } := by
+    simp only [step] at started ⊢
+    cases live : liveChild state control with
+    | none => simp [live] at started
+    | some child =>
+        simp only [live] at started ⊢
+        by_cases all : allLoaded state = true
+        · simp [all]
+        · simp [all] at started
+  rw [afterEq] at found ⊢
+  have found' : state.leaves (address / pageBytes) = some leaf := found
+  obtain ⟨other, otherMember, otherIn, holds⟩ := contents _ leaf found'
+  have same := segment_of_page_unique layout otherMember member _ otherIn inS
+  subst same
+  obtain ⟨_, copied⟩ := fits
+  have offsetEq : (address / pageBytes - firstPage other) * pageBytes + address % pageBytes =
+      address - other.vaddr := by
+    simp only [firstPage, ElfAdmission.pageBytes] at aligned ⊢
+    omega
+  simp only [childByte, found']
+  revert holds
+  simp only [PageHolds]
+  cases backing : leaf.backing with
+  | reserved base =>
+      have notWritable : other.writable = false := by
+        cases writable : other.writable
+        · rfl
+        · obtain ⟨slot, isCopy⟩ := copied.1 writable
+          rw [backing] at isCopy; cases isCopy
+      intro holds
+      simp only [notWritable, Bool.false_eq_true, ↓reduceIte, reservedByte, Option.some.injEq]
+      rw [holds]
+      congr 1
+      rw [← offsetEq]
+      omega
+  | copy slot =>
+      have writable : other.writable = true := copied.2 ⟨slot, backing⟩
+      intro holds
+      simp only [writable, ↓reduceIte, Option.some.injEq]
+      rw [holds _ (Nat.mod_lt _ (by decide)), offsetEq]
+
+/-- **Copied contents, zero-filled past `filesz`.**  After `start`, every
+address of a writable segment's page-rounded memory image reads its admitted
+file byte while it is below the segment's file size, and zero from there to
+the page-rounded end of the segment. -/
+theorem started_writable_bytes (state : State) (control : UInt64)
+    (layout : PlanLayout state.plan) (exact : Exact state) (contents : Contents state)
+    (started : (step state (.start control)).2 = .started)
+    (segment : Segment) (member : segment ∈ state.plan) (writable : segment.writable = true)
+    (address : Nat) (low : segment.vaddr ≤ address) (high : address < segment.pageEnd) :
+    (address < segment.vaddr + segment.fileBytes →
+      childByte (step state (.start control)).1 address =
+        some (state.file (segment.fileOffset + (address - segment.vaddr)))) ∧
+      (segment.vaddr + segment.fileBytes ≤ address →
+        childByte (step state (.start control)).1 address = some 0) := by
+  have bytes := started_contents state control layout exact contents started segment member
+    address low high
+  simp only [writable, ↓reduceIte, imageByte] at bytes
+  refine ⟨fun below => ?_, fun past => ?_⟩
+  · have : address - segment.vaddr < segment.fileBytes := by omega
+    rw [bytes]; simp [this]
+  · have : ¬address - segment.vaddr < segment.fileBytes := by omega
+    rw [bytes]; simp [this]
+
+/-- Run requests in order. -/
+def runRequests (state : State) : List Request → State
+  | [] => state
+  | request :: rest => runRequests (step state request).1 rest
+
+/-- **The invariants along every run.**  From a state with no child (the
+state after any rollback), every finite sequence of requests keeps
+exactness, the reserved-range and frame bounds, and the contents. -/
+theorem runRequests_invariants (state : State) (requests : List Request) :
+    Exact (runRequests (rollback state) requests) ∧
+      Inside (runRequests (rollback state) requests) ∧
+      Contents (runRequests (rollback state) requests) := by
+  suffices general : ∀ current, Exact current → Inside current → Contents current →
+      Exact (runRequests current requests) ∧ Inside (runRequests current requests) ∧
+        Contents (runRequests current requests) from
+    general _ (exact_rollback state) (inside_rollback state) (contents_rollback state)
+  induction requests with
+  | nil => intro current exact inside contents; exact ⟨exact, inside, contents⟩
+  | cons request rest ih =>
+      intro current exact inside contents
+      exact ih _ (step_preserves_exact current request exact)
+        (step_preserves_inside current request inside)
+        (step_preserves_contents current request inside contents)
 
 /-! ## The generated witness
 

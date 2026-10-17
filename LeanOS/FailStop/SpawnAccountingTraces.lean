@@ -1,4 +1,4 @@
-import LeanOS.FailStop.SpawnTree
+import LeanOS.FailStop.SpawnChildSend
 
 /-!
 # Fail-stop composite: whole traces of the public spawn family
@@ -6,9 +6,10 @@ import LeanOS.FailStop.SpawnTree
 `ChildTraceStep` is one step of a trace that may run every composite step
 (`CompositeStep`: issued creation, authoritative operations, invalidation
 entry points), every operation of the public spawn family (`ChildOperation`,
-through `childGate`), and every operation of the composite memory family
+through `childGate`), every operation of the composite memory family
 (`MemoryOperation`, through `memoryGate`: budget-charged allocation and
-release).  `child_resource_trace` is the whole-trace resource theorem with
+release), and the started child's send (`childSend`, #571: syscall 8 through
+its slot-`0` endpoint).  `child_resource_trace` is the whole-trace resource theorem with
 charged spawn, frame slices, child termination, and memory allocation and
 release.  Along every admissible trace from a state satisfying the combined
 invariant, the accounting invariant, and the spawn-tree invariant:
@@ -40,11 +41,14 @@ inductive ChildTraceStep where
   | composite (step : CompositeStep)
   | child (operation : ChildOperation)
   | memory (operation : MemoryOperation)
+  /-- The started child `child` sends `word` through its slot-`0` endpoint. -/
+  | childSend (child : Nat) (word : UInt64)
 
 def ChildTraceStep.apply (state : CompositeState) : ChildTraceStep → CompositeState
   | .composite step => step.apply state
   | .child operation => (childGate state operation).state
   | .memory operation => (memoryGate state operation).state
+  | .childSend subject word => (FailStop.childSend state subject word).state
 
 /-- Spawn-family and memory steps need no premise; composite steps keep
 theirs. -/
@@ -52,6 +56,7 @@ def ChildTraceStep.Admissible (state : CompositeState) : ChildTraceStep → Prop
   | .composite step => step.Admissible state
   | .child _ => True
   | .memory _ => True
+  | .childSend _ _ => True
 
 /-- The subject identity a step adds to the issued history, by any creation
 path. -/
@@ -62,6 +67,7 @@ def ChildTraceStep.created (state : CompositeState) : ChildTraceStep → Option 
       | .completed (.spawned spawnedChild _ _) => some spawnedChild
       | _ => none
   | .memory _ => none
+  | .childSend _ _ => none
 
 def runChildSteps (state : CompositeState) : List ChildTraceStep → CompositeState
   | [] => state
@@ -341,6 +347,28 @@ theorem memoryGate_childKeeps (state : CompositeState) (operation : MemoryOperat
     exact ⟨parent, slot, entry, found, same⟩
   · rw [memoryGate_entitlement]; exact Nat.le_refl _
 
+/-- The child's send keeps every entitlement and everything else a trace
+step must keep: it writes only the two IPC views. -/
+theorem childSend_childKeeps (state : CompositeState) (child : Nat) (word : UInt64) :
+    ChildStepKeeps state (childSend state child word).state := by
+  obtain ⟨spawnEq, budgetsEq, vmEq, lifecycleEq, _⟩ := childSend_keeps state child word
+  have entitlementEq : ∀ subject, entitlement (childSend state child word).state subject =
+      entitlement state subject := by
+    intro subject
+    have children : (childSend state child word).state.spawn.children = state.spawn.children := by
+      rw [spawnEq]
+    simp only [entitlement, budgetLimit_of_frames _ _ subject budgetsEq (by rw [vmEq]),
+      (childTable_congr children subject).1]
+  refine ⟨by rw [vmEq], fun frame committed => by rw [budgetsEq] at committed; exact committed,
+    fun subject issued => by rw [lifecycleEq]; exact issued,
+    TableAdvances.of_spawn_eq spawnEq, fun subject _ uncharged => ⟨?_, ?_⟩⟩
+  · intro charged
+    apply uncharged
+    obtain ⟨parent, slot, entry, found, same⟩ := charged
+    rw [spawnEq] at found
+    exact ⟨parent, slot, entry, found, same⟩
+  · rw [entitlementEq]; exact Nat.le_refl _
+
 /-! ## Steps -/
 
 theorem ChildTraceStep.admissible_preserves (state : CompositeState) (step : ChildTraceStep)
@@ -362,6 +390,9 @@ theorem ChildTraceStep.admissible_preserves (state : CompositeState) (step : Chi
       exact ⟨memoryGate_preserves state operation holds,
         memoryGate_childAccounting state operation accounting,
         memoryGate_spawnTree state operation tree, memoryGate_childKeeps state operation⟩
+  | childSend subject word =>
+      obtain ⟨h1, h2, h3⟩ := childSend_preserves state subject word holds accounting tree
+      exact ⟨h1, h2, h3, childSend_childKeeps state subject word⟩
 
 /-- A created identity was not in the issued history before its step and is
 in it afterwards. -/
@@ -412,6 +443,7 @@ theorem ChildTraceStep.created_fresh (state : CompositeState) (step : ChildTrace
         | revokeAuthority subject => cases result
       · cases created
   | memory operation => cases created
+  | childSend subject word => cases created
 
 /-! ## Whole traces -/
 

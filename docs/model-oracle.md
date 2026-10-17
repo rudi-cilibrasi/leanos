@@ -22,7 +22,7 @@ ring-3 spawn syscall's `SpawnSyscall.spawnSyscall` and
 `SpawnSyscall.spawnSyscallValue` (adapters 30 and 31, #489), and the run-time
 loader's `ChildLoader.loaderSource` and `ChildLoader.loaderDecide` (adapters
 32 and 33, #492). Its stable
-692-vector order covers accepted calls,
+699-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -462,7 +462,7 @@ general statements are in `LeanOS.SpawnSyscall`: every input is a refusal or
 exactly one edge of the spawn table (`spawnSyscall_cases`), and that edge is
 one `childGate` or `memoryGate` step (`spawnSyscall_refines`).
 
-The last 24 vectors (indices 668--691, `hosted_loader_vectors_exact`) are the
+Indices 668--691 (24 vectors, `hosted_loader_vectors_exact`) are the
 run-time loader's witnesses (`LeanOS.ChildLoader`, #492, adapters 32 and 33).
 `loaderSource` checks a claimed source on a four-page reserved range: inside
 at the admitted placement, below, past and across the end of the range, at the
@@ -472,6 +472,19 @@ that rolls the spawn back, a start, an incomplete start, an unknown request,
 and maximum words. `loader_vectors_expected` lists every expected word, and
 `loader_witness_agrees_load` and `loader_witness_agrees_start` prove the
 witnesses answer exactly the model's reply.
+
+The last 7 vectors (indices 692--698, `hosted_loader_trace_vectors_exact`) are
+`loaderDecide` along the `spawn-loader` scenario's requests (#571), on the
+loader model's own states: the load claiming a source one page below the
+reserved range (rolled back), the same load with the old control word
+(refused), the text segment in place, the data segment by copy, the start,
+and a load and a stale start after the start (refused). Each vector carries the
+words the kernel computes from the model state, so
+`loader_trace_vectors_model` says the generated decision on them is the encoded
+reply of the model's step, and `loader_trace_replies` lists those replies
+(the scenario's decisions 517, 257, 1, 2 and 3). `loader_trace_contents` checks
+the started child's bytes through its pages: a text byte in place, a data byte
+copied, and the zero fill past the data segment's file size.
 
 ## Post-state corpus (hosted only)
 
