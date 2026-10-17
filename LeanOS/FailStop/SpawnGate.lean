@@ -82,6 +82,13 @@ theorem ChildTraceStep.identityStep (state : CompositeState) (step : ChildTraceS
   | composite step => exact step.identityStep state coherent
   | child operation => exact childGate_identityStep state operation coherent
   | memory operation => exact memoryGate_identityStep state operation
+  | childSend subject word =>
+      obtain ⟨_, _, _, _, caps⟩ := childSend_keeps state subject word
+      exact IdentityStep.of_eq caps (by
+        show (FailStop.childSend state subject word).state.transfers.pending = _
+        rcases childSend_shape state subject word with ⟨same, _⟩ | ⟨_, _, _, _, stateEq⟩
+        · rw [same]
+        · rw [stateEq]; rfl)
 
 /-- **Identity provenance of every admissible trace.**  Every capability
 identity at the end of the trace was present at the start, in a slot or a

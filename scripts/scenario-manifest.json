@@ -3991,9 +3991,12 @@
         "SC-SPAWN-SYSCALL",
         "SC-LOADER-EXACT",
         "SC-LOADER-RESERVED-RANGE",
-        "SC-LOADER-ROLLBACK"
+        "SC-LOADER-ROLLBACK",
+        "SC-LOADER-JOINT-ROLLBACK",
+        "SC-LOADER-CONTENTS",
+        "SC-LOADER-CHILD-SEND"
       ],
-      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's program-header read, page-table writes, byte copy and child switch, the child's one send (not a composite step: the composite model has no running children), boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
+      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK, SC-LOADER-JOINT-ROLLBACK, SC-LOADER-CONTENTS, SC-LOADER-CHILD-SEND: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's pairing of the loader's rollback with the composite termination, its program-header read, page-table writes, byte copy and child switch, its check of the child's one send, boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
     },
     "timer-server": {
       "expectations": "scripts/expectations/timer-server.transcript",

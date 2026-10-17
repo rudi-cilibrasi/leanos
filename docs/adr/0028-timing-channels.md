@@ -154,4 +154,4 @@ On the Qotom the procedure is documented but not yet built
   assembly that the claims trust.
 - **ABI.** Syscalls 110 to 115 exist only in the timing-channels image
   ([userspace ABI](../userspace-abi.md)). No dispatcher table changes. The
-  oracle corpus gains adapter 34 and its 10 vectors (702 in all).
+  oracle corpus gains adapter 34 and its 10 vectors (709 in all, after the loader trace rows of #588).

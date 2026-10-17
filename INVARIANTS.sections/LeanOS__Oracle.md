@@ -1,8 +1,8 @@
 # The frozen test corpus that cross-checks the generated C code
 
-LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 702 test rows — the "oracle" — where the control and optional value expected for each row are computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The rows and their checks live with their adapter families in the `LeanOS/Oracle/` files, which are checked in parallel; this file lays the families' blocks end to end in their fixed order and pins down where each block starts, so a fact about a position in a family's block is a fact about a fixed corpus row. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
+LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 709 test rows — the "oracle" — where the control and optional value expected for each row are computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The rows and their checks live with their adapter families in the `LeanOS/Oracle/` files, which are checked in parallel; this file lays the families' blocks end to end in their fixed order and pins down where each block starts, so a fact about a position in a family's block is a fact about a fixed corpus row. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
 
-- `corpus_shape` — The frozen corpus contains exactly 702 test rows.
+- `corpus_shape` — The frozen corpus contains exactly 709 test rows.
 - `drop_lengths_flatten` — Bookkeeping: dropping the rows of the first few blocks from a list of blocks laid end to end leaves exactly the remaining blocks laid end to end.
 - `rows_at` — Bookkeeping: the corpus rows from the start of any block are that block followed by the blocks after it, so each layout fact below checks one block's starting row instead of re-reading the whole corpus.
 - `hosted_boot_transition_class_vectors_exact` — The sixteen test cases at rows 419 through 434 are exactly the grid of boundary inputs for the boot entry point, so the generated code is checked on every combination of the words 0, 1, 2 and the largest 64-bit value.
@@ -17,8 +17,8 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `hosted_frame_server_view_vectors_exact` — The eight test cases at rows 556 through 563 are exactly the frame-server page-description cases: free pages, a page outside the pool, pages held by this or another program, the "no free page" bit, a decision that names no page, and maximum-size words.
 - `hosted_spawn_vectors_exact` — The rows from 564 on begin, by definition, with one row per edge of the spawn family's boot dispatcher table, in table order, followed by its fourteen hostile encodings.
 - `hosted_spawn_syscall_vectors_exact` — The rows from 632 on begin, by definition, with the spawn system call's rows: the demonstration image's calls, every kind of refusal, and the value words.
-- `hosted_loader_vectors_exact` — The 24 rows beginning at row 668 are by definition the loader's rows: its source checks and its decisions.
-- `hosted_timing_refusal_vectors_exact` — The last rows, from 692 on, are by definition the rows of the check that refuses a request about another program.
+- `hosted_loader_vectors_exact` — The rows from 668 to 691 are by definition the loader's rows: its source checks and its decisions.
+- `hosted_timing_refusal_vectors_exact` — The last rows, from 699 on, are by definition the rows of the check that refuses a request about another program.
 - `hosted_mixed_vectors_exact` — Rows 314 through 336 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario edge set itself — not a second hand-maintained table that could drift out of step.
 - `hosted_budget_vectors_exact` — The 24 rows beginning at row 359 are exactly the frame-budget scenario's row list.
 - `hosted_iotlb_publication_vectors_exact` — The nine rows beginning at row 383 are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
@@ -33,3 +33,4 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `interrupt_entry_adapter_agrees_with_model` — On every interrupt-entry row anywhere in the corpus, the exported adapter's answer equals the answer of the richer entry model.
 - `fault_dispatch_adapter_agrees_with_model` — Every fault-dispatch row couples the exported allocation-free adapter to an expectation computed by the authoritative chain of entry normalization, lifecycle cleanup, scheduler selection, saved-context banking, and translation-cache transition.
 - `user_return_adapter_agrees_with_model` — On every return-to-user row anywhere in the corpus, the exported adapter agrees with the authoritative validator.
+- `hosted_loader_trace_vectors_exact` — The rows from 692 to 698 are by definition the loader's answers along the loader demo.

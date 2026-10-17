@@ -1,0 +1,41 @@
+# The generated allocator updates like the allocator
+
+For every possible input, the generated fixed-width code also produces exactly the allocator's value word and successor words, so the kernel can keep the allocator's state as thirteen words.
+
+- `ofNat_add_toNat` — Bookkeeping: adding a count to a word's value and converting back is adding the count as a word.
+- `shiftLeft16_toNat` — Bookkeeping: shifting a word left by 16 bits multiplies its value by 65536, modulo 2^64.
+- `encodeChild_fresh` — The child word of a fresh entry with no frames is its generation shifted left by 16 bits.
+- `encodeChild_charge` — Adding frames to a child entry adds them to its child word.
+- `encodeAuthority_toNat` — Encoding a spawn-permission generation read from a word gives back that word.
+- `encodeMemory_toNat` — Encoding a memory identity read from a word gives back that word.
+- `frames_word` — The frames word of a budget and a frame count is the budget plus the count shifted left by 16 bits.
+- `codeNext_accepted` — After an accepted command, the generated successor words are the per-command updates of the input words.
+- `codeNext_unaccepted` — After a command that is not accepted, the generated successor words are the input words, unchanged.
+- `decoded_childWord` — Encoding the decoded entry of each child slot gives back that slot's word.
+- `decoded_memoryWord2` — Encoding the decoded memory of parent slot 2 gives back its word.
+- `decoded_memoryWord3` — Encoding the decoded memory of parent slot 3 gives back its word.
+- `decoded_frames` — Encoding the decoded budget and frames of canonical words gives back the frames word.
+- `freeSlotW_le` — The generated first-free-slot index is at most four.
+- `spawn_words` — The successor words and the value word of an accepted spawn are exactly the encoding of the allocator's successor record and its control word.
+- `childWordAt_index` — Bookkeeping: the generated child-slot lookup at slots 0 to 3 reads that slot's word.
+- `which_toNat` — Bookkeeping: a slot number from 0 to 3 survives the trip into a word.
+- `which_ofNat` — Bookkeeping: a slot number from 0 to 3 names the same child word as a word.
+- `child_update` — After one child-table slot is replaced, each slot's encoded word is the updated word where the control word points and the old word elsewhere.
+- `parentFramesW_toNat` — The generated parent-frames field is the decoded record's frames.
+- `budgetW_toNat` — The generated subject-budget field is the decoded record's budget.
+- `frames_of` — Bookkeeping: a frames word built from a budget word and a frame-count word encodes their values.
+- `codeValue_accepted` — After an accepted command, the generated value word is the control word, the frames moved or returned, the new spawn-permission generation, or zero, by command.
+- `grant_refines` — The generated successor words of an accepted frame grant are exactly the encoding of the allocator's successor record.
+- `terminate_refines` — The generated successor words and value word of an accepted termination are exactly the encoding of the allocator's successor and the child's returned frames.
+- `memoryAt_update` — After one parent memory slot is replaced, that slot reads the new memory and the other slot reads what it held before.
+- `memory_update` — After one parent memory slot is replaced, each memory word is the updated word where the command points and the old word elsewhere.
+- `acceptedWords_fields` — Bookkeeping: the four child words of an accepted command are the generated per-slot updates.
+- `nextChild_other` — Commands other than spawn, grant and termination leave every child word unchanged.
+- `decoded_childWords` — Encoding the decoded entries of the four child slots gives back the four child words.
+- `allocate_refines` — The generated successor words of an accepted memory allocation are exactly the encoding of the allocator's successor record.
+- `release_refines` — The generated successor words of an accepted memory release are exactly the encoding of the allocator's successor record.
+- `grantAuthority_refines` — The generated successor words of an accepted kernel grant of spawn permission are exactly the encoding of the allocator's successor record.
+- `revoke_refines` — The generated successor words of a withdrawal of spawn permission are exactly the encoding of the allocator's successor record.
+- `codeNext_acceptedWords` — Bookkeeping: the generated successor words of an accepted command, restated.
+- `accepted_refines` — For every accepted command, the generated successor and value words are exactly the specification's.
+- `words_refine` — The fixed-width generated allocator is the allocator: for every thirteen state words and five command words, its reply, value and successor words are exactly those of decoding the words, running the allocator, and encoding the result.

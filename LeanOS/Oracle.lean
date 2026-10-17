@@ -114,12 +114,12 @@ def blocks : List (List Vector) :=
     consoleAuthorizeVectors, directoryResolveVectors, faultHandlerVectors,
     deviceAuthorizeVectors, timerServerVectors, frameServerVectors,
     frameServerViewVectors, spawnEdgeVectors, spawnNegativeVectors,
-    spawnSyscallVectors, loaderVectors, timingRefusalVectors]
+    spawnSyscallVectors, loaderVectors, loaderTraceVectors, timingRefusalVectors]
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := blocks.flatten
 
-theorem corpus_shape : vectors.length = 702 := by decide
+theorem corpus_shape : vectors.length = 709 := by decide
 
 /-- Dropping the first `k` blocks' rows from a concatenation leaves the
 concatenation of the remaining blocks. -/
@@ -213,11 +213,17 @@ theorem hosted_loader_vectors_exact :
     (vectors.drop 668).take loaderVectors.length = loaderVectors := by
   rw [rows_at (k := 25) (n := 668) rfl rfl, List.take_left]
 
-/-- Oracle indices 692--701 are the cross-subject refusal witness's corpus
+/-- Oracle indices 692--698 are the run-time loader's decisions along the
+`spawn-loader` scenario (#571). -/
+theorem hosted_loader_trace_vectors_exact :
+    (vectors.drop 692).take loaderTraceVectors.length = loaderTraceVectors := by
+  rw [rows_at (k := 26) (n := 692) rfl rfl, List.take_left]
+
+/-- Oracle indices 699--708 are the cross-subject refusal witness's corpus
 (#576). -/
 theorem hosted_timing_refusal_vectors_exact :
-    vectors.drop 692 = timingRefusalVectors := by
-  rw [rows_at (k := 26) (n := 692) rfl rfl]
+    vectors.drop 699 = timingRefusalVectors := by
+  rw [rows_at (k := 27) (n := 699) rfl rfl]
   simp only [List.flatten_nil, List.append_nil]
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -254,7 +260,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
         faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
           frameServerVectors ++ frameServerViewVectors ++ spawnEdgeVectors ++
             spawnNegativeVectors ++ spawnSyscallVectors ++ loaderVectors ++
-              timingRefusalVectors := by
+              loaderTraceVectors ++ timingRefusalVectors := by
   rw [rows_at (k := 9) (n := 398) rfl rfl]
   simp only [List.flatten_cons, List.flatten_nil, List.append_nil, List.append_assoc]
 /-- Oracle rows 0--85 are the scheduler, syscall, and IPC family's rows. -/
