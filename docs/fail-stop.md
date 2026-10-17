@@ -840,27 +840,34 @@ not cover is `0xfe24`, on which the kernel stops. `spawnSyscallValue`
 | The `spawn-child` image's run and the model states behind its transcript | `image_run`, `image_model` |
 
 The witness is a bounded boundary: the family's twenty-one tokens name complete
-states, and only commands the table covers are gate steps. In the
-`spawn-child` image (#491) the kernel grants subject B (2) spawn authority with
-the bounded dispatcher's kernel command and enters B, which spawns a child,
-gives it a frame, terminates it, spawns a new child into the same child-table
-slot under generation 2, and presents the first child's control word for
-termination and for a grant: both are rejected with status `0xc3` and the
-state unchanged. The kernel realizes accepted steps (a fresh child root with
-an empty user window, the frame's scrub, and its return) and checks that every
-refusal and rejection leaves its token and its own records unchanged. The
-child is not runnable; nothing is loaded into it.
+states, and only commands the table covers are gate steps. Since #575 no boot
+image calls it. The `spawn-child` and `spawn-loader` kernels hold the
+allocator's thirteen words instead of a token and decide every command with the
+generated `SpawnAllocatorBoot` exports of `LeanOS.SpawnAllocatorWords`
+([the spawn allocator](#the-spawn-allocator-575)); the token witness stays only
+as the hosted oracle's adapters 30 and 31 until the fixed table is removed.
 
-The `spawn-loader` image (#492) uses three more tokens, `loaderRespawned`,
-`loaderGranted` and `loaderTerminated` (`0x8201`–`0x8401`). They cover a spawn
-into the slot of a child whose load was rolled back, a frame grant to the new
-child, and its termination. The loading itself is `LeanOS.ChildLoader`
+In the `spawn-child` image (#491) the kernel grants subject B (2) spawn
+authority with the allocator's kernel command and enters B, which spawns a
+child, gives it a frame, terminates it, spawns a new child into the same
+child-table slot under generation 2, and presents the first child's control
+word for termination and for a grant: both are rejected with status `0xc3` and
+the state unchanged. The kernel realizes accepted steps (a fresh child root
+with an empty user window, the frame's scrub, and its return), checks after
+each one that its mirror agrees with the words, and checks that every refusal
+and rejection leaves its words and its own records unchanged. The child is not
+runnable; nothing is loaded into it.
+
+The `spawn-loader` image (#492) spawns into the slot of a child whose load was
+rolled back, grants the new child a frame, and terminates it. The loading
+itself is `LeanOS.ChildLoader`
 ([ADR 0024's run-time amendment](adr/0024-build-time-elf-admission.md#amendment-2026-10-11-the-run-time-loader-492)).
-The kernel rolls a rejected load back with the spawn table's termination
-edge. `ChildLoaderJoint.joint_rollback_restores` proves that pairing in one
-model: the loader's rollback and `childGate (.terminateChild _)` restore the
-pre-spawn composite state on every authority and resource projection
-(`SpawnRestored`, #571). The child's one send is the composite step
+The kernel rolls a rejected load back with the allocator's termination
+command, which on every family state is the `childGate (.terminateChild _)`
+step (`kernel_refines`). `ChildLoaderJoint.joint_rollback_restores` proves that
+pairing in one model: the loader's rollback and `childGate (.terminateChild _)`
+restore the pre-spawn composite state on every authority and resource
+projection (`SpawnRestored`, #571). The child's one send is the composite step
 `childSend` (`ChildTraceStep.childSend`, a step of `child_resource_trace`),
 which writes only the mailbox of the endpoint spawn granted it
 (`childSend_confined`). The kernel's entry to the child is not a composite
@@ -911,7 +918,41 @@ parentFrames << 16`). Its generated functions `stepReply`, `stepValue` and
 `stepNextWord` take the thirteen state words and the five command words as
 `UInt64` scalars and are allocation-free and non-recursive. `words_refine`
 proves, for every input, that they compute decoding, `SpawnAllocator.step` and
-encoding (`encode_decode`, `decode_bounded`). They are not exported yet.
+encoding (`encode_decode`, `decode_bounded`); conversely a bounded record
+encodes to canonical words that decode back to it (`encode_canonical`,
+`decode_encode`), so on a bounded record they are the allocator's step
+(`code_step`).
+
+#### The boot exports
+
+`LeanOS.SpawnAllocatorWords` also wraps them for the kernel, which holds the
+thirteen words (namespace `SpawnAllocatorBoot`; the boot image links only
+calls inside one generated C file or through an export). Every export takes
+and returns `UInt64` scalars only.
+
+| Export | Use |
+| --- | --- |
+| `leanos_spawn_allocator_seed(index)` | The family seed's words, loaded at boot |
+| `leanos_spawn_allocator_syscall`, `_syscall_value`, `_syscall_next(index, …)` | Syscalls 100 to 104: the 13 words, the actor, RAX and RBX, RCX, RDX; the reply `0x01 \| status << 16` or a refusal `0xfe20` (state words not canonical) to `0xfe23` (as before); the value; the successor words |
+| `leanos_spawn_allocator_kernel`, `_kernel_value`, `_kernel_next(index, …)` | The kernel's own commands: its grant of spawn authority before ring 3 and its termination of a child whose load failed |
+
+The proofs are in `LeanOS.SpawnAllocatorBootRefinement`:
+
+| Property | Theorems |
+| --- | --- |
+| Every family state's record is bounded | `family_bounded` |
+| The register check is exactly decoding to a syscall command; no number names a kernel command | `registersCanonical_iff`, `syscallTag_not_kernel` |
+| On the words of a `Family` state, an admitted syscall is one `familyStep` of that state with the parent as actor: the gate's status and value, the words of its post-state, which is a `Family` state | `syscall_refines` |
+| A refusal or a rejection keeps every word and the pre-state | `syscall_refused`, `syscall_rollback` |
+| The same for the kernel's commands | `kernel_refines` |
+| The seed words are the family seed's, and along every list of syscalls the kernel's words are the words of the family state the same gate steps reach | `seed_refines`, `syscall_preserves`, `syscallTrace_refines` |
+| The exports compute the decode–step–encode specification for every input | `syscall_spec`, `kernel_spec` |
+
+The hosted `spawn-allocator` corpus (`LeanOS.SpawnAllocatorVectors`,
+[model-oracle.md](model-oracle.md#spawn-allocator-corpus-hosted-only)) replays
+the generated C against that specification on 9215 vectors over 171 states:
+every record reached from the four seeds by up to six accepted commands,
+records at the edges of the representation, and malformed words.
 
 `LeanOS.SpawnAllocatorTable` reads every token state of the fixed table as an
 allocator record (`abstraction`) and checks on the sample boot plan that the

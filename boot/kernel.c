@@ -8503,28 +8503,40 @@ static void frame_server_switch(uint64_t *target, uint64_t target_owner,
 #if defined(LEANOS_SPAWN_CHILD_SCENARIO) || defined(LEANOS_SPAWN_LOADER_SCENARIO)
 /* The ring-3 spawn syscall (#489, #491; ADR 0010 decision of 2026-10-10).
    Subject B (2) is the parent, the current subject of the model's latch.
-   Syscalls 100..104 are decoded only by the generated witness
-   leanos_spawn_syscall (LeanOS.SpawnSyscall): it checks the token, the
-   actor, the number and the canonical registers, and asks the generated
-   dispatcher's spawn table, whose every edge is one childGate or memoryGate
-   step on the complete state the token names (spawnSyscall_refines).
+   The kernel holds the spawn family's state as the thirteen words of the
+   allocator record (LeanOS.SpawnAllocatorWords, #575), seeded from
+   leanos_spawn_allocator_seed.  Syscalls 100..104 are decoded only by the
+   generated SpawnAllocatorBoot exports of LeanOS.SpawnAllocatorWords:
+   leanos_spawn_allocator_syscall
+   checks the words, the actor, the number and the canonical registers and
+   decides the command on the record; on the words of every Family state that
+   is exactly one childGate or memoryGate step (syscall_refines), and the
+   successor words are the words of the gate's post-state.
 
-   The kernel keeps the token and changes it only to the successor of an
-   accepted edge.  A refusal (0xfe20..0xfe23) or a rejected edge keeps the
-   token, which then names the pre-state itself (spawnSyscall_rollback); the
-   kernel checks that its own mirror is unchanged too.  0xfe24, a decodable
-   command the bounded table does not cover, stops the machine.
+   The kernel replaces its words only with the successor of an accepted
+   command.  A refusal (0xfe20..0xfe23) or a rejection keeps every word
+   (syscall_rollback); the kernel checks that the generated successor words,
+   its own mirror and its digest are unchanged too.
 
    The mirror below only realizes accepted steps (the child's fresh root, the
-   frame's holder and scrub) and is never consulted to decide anything. */
+   frame's holder and scrub) and is never consulted to decide anything; after
+   every accepted step the kernel checks that it agrees with the words. */
 #define SPAWN_PARENT 2u
 #define SPAWN_REFUSED_FIRST UINT64_C(0xfe20)
 #define SPAWN_REFUSED_LAST UINT64_C(0xfe23)
-#define SPAWN_OUTSIDE_TABLE UINT64_C(0xfe24)
+#define SPAWN_WORD_COUNT 13u
 #define SPAWN_WINDOW_DIRECTORY 8u
 #define SPAWN_PARENT_RESIDUE 0xa5u
 
-static uint64_t spawn_state = LEANOS_COMPOSITE_STATE_SPAWN_SEED;
+/* The allocator record's thirteen words: the subject, object, capability,
+   control-generation and spawn-generation counters, the spawn generation
+   held, the four child words, the two memory identities, and the subject
+   budget with the parent's frames above it. */
+static uint64_t spawn_words[SPAWN_WORD_COUNT];
+#define SPAWN_WORDS \
+    spawn_words[0], spawn_words[1], spawn_words[2], spawn_words[3], spawn_words[4], \
+    spawn_words[5], spawn_words[6], spawn_words[7], spawn_words[8], spawn_words[9], \
+    spawn_words[10], spawn_words[11], spawn_words[12]
 /* Result word one of the last spawn-family syscall; boot.S stores it in the
    caller's saved RBX. */
 uint64_t spawn_syscall_value;
@@ -8570,10 +8582,11 @@ static uint64_t spawn_words_digest(uint64_t digest, const uint64_t *words, unsig
     return digest;
 }
 
-/* Everything the kernel holds for the family: the token, the mirror, the
+/* Everything the kernel holds for the family: the words, the mirror, the
    frame's bytes and the child's root. */
 static uint64_t spawn_digest(void) {
-    uint64_t digest = spawn_mix(UINT64_C(0xcbf29ce484222325), spawn_state);
+    uint64_t digest = spawn_words_digest(UINT64_C(0xcbf29ce484222325), spawn_words,
+                                         SPAWN_WORD_COUNT);
     digest = spawn_words_digest(digest, (const uint64_t *)&spawn_mirror,
                                 sizeof(spawn_mirror) / sizeof(uint64_t));
     digest = spawn_words_digest(digest, (const uint64_t *)spawn_frame,
@@ -8666,30 +8679,68 @@ static const char *spawn_reason(uint64_t status) {
 }
 
 static const char *spawn_refusal(uint64_t reply) {
-    if (reply == UINT64_C(0xfe20)) return "not-a-family-state";
+    if (reply == UINT64_C(0xfe20)) return "noncanonical-state";
     if (reply == UINT64_C(0xfe21)) return "not-the-current-subject";
     if (reply == UINT64_C(0xfe22)) return "not-a-spawn-syscall";
     return "noncanonical-words";
 }
 
-/* The kernel's own grant of spawn authority, before ring 3: the bounded
-   dispatcher's kernel command 0x7501 (subject 2, subject budget 1). */
+/* The mirror agrees with the allocator's words: the subject, object and
+   control-generation counters, the one child word (generation and charge),
+   no other child, memory in slot 2 exactly when the frame holds an object,
+   nothing in slot 3, and the frame among the parent's frames exactly when it
+   is committed to the parent. */
+static void spawn_words_check(void) {
+    const struct spawn_mirror *m = &spawn_mirror;
+    const uint64_t child_word = m->child_live ? (m->generation << 16) | m->charge : 0;
+    if (spawn_words[0] != m->next_subject || spawn_words[1] != m->next_object ||
+        spawn_words[3] != m->next_generation || spawn_words[6] != child_word ||
+        (spawn_words[7] | spawn_words[8] | spawn_words[9] | spawn_words[11]) != 0 ||
+        (spawn_words[10] != 0) != (m->frame_object != 0) ||
+        (spawn_words[12] >> 16) != (m->frame_committed == SPAWN_PARENT ? 1u : 0u))
+        fail("spawn-words-mirror");
+}
+
+/* A kernel command on the words: its status and value, and the successor
+   words in place. */
+static uint64_t spawn_kernel_command(uint64_t tag, uint64_t arg0, uint64_t arg1,
+                                     uint64_t *value) {
+    const uint64_t status = leanos_spawn_allocator_kernel(SPAWN_WORDS, tag, arg0, arg1, 0, 0);
+    *value = leanos_spawn_allocator_kernel_value(SPAWN_WORDS, tag, arg0, arg1, 0, 0);
+    uint64_t next[SPAWN_WORD_COUNT];
+    for (uint64_t i = 0; i < SPAWN_WORD_COUNT; ++i)
+        next[i] = leanos_spawn_allocator_kernel_next(i, SPAWN_WORDS, tag, arg0, arg1, 0, 0);
+    for (unsigned i = 0; i < SPAWN_WORD_COUNT; ++i) spawn_words[i] = next[i];
+    return status;
+}
+
+static void spawn_report_words(void) {
+    serial_puts(" record=");
+    for (unsigned i = 0; i < SPAWN_WORD_COUNT; ++i) {
+        if (i) serial_puts(",");
+        serial_u64(spawn_words[i]);
+    }
+}
+
+/* The kernel's own grant of spawn authority, before ring 3: the allocator's
+   kernel command 0x7501 (subject 2, subject budget 1) on the seed's words. */
 static void spawn_child_install(void) {
     spawn_frame_fill(SPAWN_PARENT_RESIDUE);
     spawn_child_root_clear();
-    const uint64_t control = leanos_composite_dispatch(spawn_state,
-        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_GRANT_AUTHORITY, SPAWN_PARENT, 1, 0, 0);
-    const uint64_t value = leanos_composite_dispatch_value(spawn_state,
-        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_GRANT_AUTHORITY, SPAWN_PARENT, 1, 0, 0);
-    if ((control & UINT64_C(0xffff)) != LEANOS_COMPOSITE_STATE_SPAWN_AUTHORIZED ||
-        (control >> 16) != 1 || value != 1)
-        fail("spawn-authority-grant");
-    spawn_state = LEANOS_COMPOSITE_STATE_SPAWN_AUTHORIZED;
+    for (uint64_t i = 0; i < SPAWN_WORD_COUNT; ++i)
+        spawn_words[i] = leanos_spawn_allocator_seed(i);
+    spawn_words_check();
+    uint64_t value = 0;
+    const uint64_t status = spawn_kernel_command(
+        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_GRANT_AUTHORITY, SPAWN_PARENT, 1, &value);
+    if (status != 1 || value != 1 || spawn_words[5] != value) fail("spawn-authority-grant");
+    spawn_words_check();
     spawn_bystander_digest = spawn_bystander();
     serial_puts(LEANOS_SERIAL_10_SPAWN " event=authority subject=2 budget=1 generation=");
     serial_u64(value);
-    serial_puts(" source=kernel syscall=none control=");
-    serial_u64(control);
+    serial_puts(" source=kernel syscall=none status=");
+    serial_u64(status);
+    spawn_report_words();
     serial_puts(" frame=committed-to-2 object=20 result=PASS\n");
 }
 
@@ -8705,8 +8756,7 @@ static void spawn_report_tail(uint64_t reply, uint64_t value) {
     serial_u64(reply);
     serial_puts(" value=");
     serial_u64(value);
-    serial_puts(" token=");
-    serial_u64(spawn_state);
+    spawn_report_words();
     serial_puts(" result=PASS\n");
 }
 
@@ -8919,17 +8969,16 @@ static uint64_t loader_live(uint64_t control) {
         !loader_started;
 }
 
-/* The kernel's rollback: terminate the child through the generated
-   dispatcher's edge, then realize it (pages discarded, frame returned). */
+/* The kernel's rollback: terminate the child through the allocator's
+   kernel command, then realize it (pages discarded, frame returned). */
 static void loader_rollback(uint64_t number, uint64_t control) {
-    const uint64_t reply = leanos_composite_dispatch(spawn_state,
-        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_TERMINATE_CHILD, control, 0, 0, 0);
-    const uint64_t value = leanos_composite_dispatch_value(spawn_state,
-        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_TERMINATE_CHILD, control, 0, 0, 0);
-    if ((reply & 0xffu) != 1 || (reply >> 16) != 1) fail("loader-rollback-edge");
-    spawn_state = reply & UINT64_C(0xffff);
+    uint64_t value = 0;
+    const uint64_t status = spawn_kernel_command(
+        LEANOS_COMPOSITE_COMMAND_SPAWN_FAMILY_TERMINATE_CHILD, control, 0, &value);
+    if (status != 1) fail("loader-rollback-command");
     spawn_child_apply(number, control, value);
-    spawn_report_tail(reply, value);
+    spawn_words_check();
+    spawn_report_tail(status, value);
     ++loader_rollbacks;
 }
 
@@ -8973,9 +9022,10 @@ static uint64_t loader_syscall(uint64_t number, uint64_t arg0, uint64_t arg1,
         return isr80_select(LEANOS_ISR80_PATH_LOADER_ENTER_CHILD);
     }
     if (number == 108) {
-        if (spawn_state != LEANOS_COMPOSITE_STATE_SPAWN_LOADER_TERMINATED ||
-            spawn_mirror.child_live || !spawn_child_root_empty() || loader_rollbacks != 1 ||
-            loader_refused != 1 || loader_child_word != LOADER_CHILD_WORD ||
+        spawn_words_check();
+        if (spawn_words[3] != 3 || spawn_mirror.child_live || !spawn_child_root_empty() ||
+            loader_rollbacks != 1 || loader_refused != 1 ||
+            loader_child_word != LOADER_CHILD_WORD ||
             spawn_spawned != 2 || spawn_terminated != 2 || !spawn_frame_is(0))
             fail("loader-final-state");
         if (spawn_bystander() != spawn_bystander_digest) fail("spawn-bystander");
@@ -9124,6 +9174,10 @@ static uint64_t loader_child_syscall(uint64_t number, uint64_t arg0, uint64_t ar
 }
 #endif
 
+/* Not inlined: its frame passes the allocator exports' stack arguments, which
+   the entry-stack gate accounts to this function rather than to
+   syscall_handler (#575). */
+__attribute__((noinline))
 static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
                                     uint64_t arg1, uint64_t arg2) {
     uint64_t cr3;
@@ -9138,8 +9192,8 @@ static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
     if (number >= 105 && number <= 108) return loader_syscall(number, arg0, arg1, arg2);
 #else
     if (number == 109) {
-        if (spawn_state != LEANOS_COMPOSITE_STATE_SPAWN_SECOND_TERMINATED ||
-            spawn_mirror.child_live || !spawn_child_root_empty() ||
+        spawn_words_check();
+        if (spawn_words[3] != 3 || spawn_mirror.child_live || !spawn_child_root_empty() ||
             spawn_spawned != 2 || spawn_terminated != 2 || spawn_slot_reused != 1 ||
             spawn_stale_rejected != 3 || spawn_refused != 1 || spawn_rejected != 5)
             fail("spawn-final-state");
@@ -9152,13 +9206,19 @@ static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
 #endif
     if (number < 100 || number > 104) fail("spawn-child-syscall");
     const uint64_t before = spawn_digest();
-    const uint64_t reply = leanos_spawn_syscall(spawn_state, current_subject,
-                                                number, arg0, arg1, arg2);
-    const uint64_t value = leanos_spawn_syscall_value(spawn_state, current_subject,
+    const uint64_t reply = leanos_spawn_allocator_syscall(SPAWN_WORDS, current_subject,
+                                                          number, arg0, arg1, arg2);
+    const uint64_t value = leanos_spawn_allocator_syscall_value(SPAWN_WORDS, current_subject,
+                                                                number, arg0, arg1, arg2);
+    uint64_t next[SPAWN_WORD_COUNT];
+    uint64_t unchanged = 1;
+    for (uint64_t i = 0; i < SPAWN_WORD_COUNT; ++i) {
+        next[i] = leanos_spawn_allocator_syscall_next(i, SPAWN_WORDS, current_subject,
                                                       number, arg0, arg1, arg2);
-    if (reply == SPAWN_OUTSIDE_TABLE) fail("spawn-outside-bounded-table");
+        if (next[i] != spawn_words[i]) unchanged = 0;
+    }
     if (reply >= SPAWN_REFUSED_FIRST && reply <= SPAWN_REFUSED_LAST) {
-        if (value != 0 || spawn_digest() != before) fail("spawn-refusal-mutated");
+        if (value != 0 || !unchanged || spawn_digest() != before) fail("spawn-refusal-mutated");
         ++spawn_refused;
         spawn_syscall_value = 0;
         spawn_report_head("refuse", number);
@@ -9168,12 +9228,11 @@ static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
         spawn_report_tail(reply, value);
         return reply;
     }
-    if ((reply & 0xffu) != 1 || reply >= UINT64_C(0x1000000) || (reply >> 16) == 0)
+    if ((reply & UINT64_C(0xffff)) != 1 || reply >= UINT64_C(0x1000000) || (reply >> 16) == 0)
         fail("spawn-reply-shape");
     const uint64_t status = reply >> 16;
-    const uint64_t next = reply & UINT64_C(0xffff);
     if (status != 1) {
-        if (next != spawn_state || value != 0 || spawn_digest() != before)
+        if (!unchanged || value != 0 || spawn_digest() != before)
             fail("spawn-rejection-mutated");
         ++spawn_rejected;
         if (status == 0xc3) ++spawn_stale_rejected;
@@ -9193,8 +9252,9 @@ static uint64_t spawn_child_syscall(uint64_t number, uint64_t arg0,
         spawn_report_tail(reply, value);
         return reply;
     }
-    spawn_state = next;
+    for (unsigned i = 0; i < SPAWN_WORD_COUNT; ++i) spawn_words[i] = next[i];
     spawn_child_apply(number, arg0, value);
+    spawn_words_check();
     spawn_syscall_value = value;
     spawn_report_tail(reply, value);
     return reply;

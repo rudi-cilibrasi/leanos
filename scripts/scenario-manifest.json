@@ -4093,10 +4093,10 @@
       "release_artifacts": [],
       "reproducibility_artifacts": [],
       "claims": [
-        "SC-SPAWN-SYSCALL",
+        "SC-SPAWN-ALLOCATOR",
         "SC-SPAWN-STALE-CHILD"
       ],
-      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-SPAWN-STALE-CHILD: one finite QEMU run of thirteen scripted ring-3 spawn-family syscalls whose kernel decodes each one only through the generated witness and keeps the token it names; the bounded table covers only these states, the child never runs and nothing is loaded into it, and the C kernel's mirror of accepted steps (child root, frame scrub and return), boot.S, the compiler, linker and QEMU stay trusted"
+      "does_not_prove": "Not a refinement of SC-SPAWN-ALLOCATOR, SC-SPAWN-STALE-CHILD: one finite QEMU run of thirteen scripted ring-3 spawn-family syscalls whose kernel decodes each one only through the generated allocator exports and keeps the thirteen words of the allocator record; the child never runs and nothing is loaded into it, and the C kernel's mirror of accepted steps (child root, frame scrub and return), its copy of the successor words, boot.S, the compiler, linker and QEMU stay trusted"
     },
     "spawn-loader": {
       "expectations": "scripts/expectations/spawn-loader.transcript",
@@ -4115,7 +4115,7 @@
       "release_artifacts": [],
       "reproducibility_artifacts": [],
       "claims": [
-        "SC-SPAWN-SYSCALL",
+        "SC-SPAWN-ALLOCATOR",
         "SC-LOADER-EXACT",
         "SC-LOADER-RESERVED-RANGE",
         "SC-LOADER-ROLLBACK",
@@ -4123,7 +4123,7 @@
         "SC-LOADER-CONTENTS",
         "SC-LOADER-CHILD-SEND"
       ],
-      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK, SC-LOADER-JOINT-ROLLBACK, SC-LOADER-CONTENTS, SC-LOADER-CHILD-SEND: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's pairing of the loader's rollback with the composite termination, its program-header read, page-table writes, byte copy and child switch, its check of the child's one send, boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
+      "does_not_prove": "Not a refinement of SC-SPAWN-ALLOCATOR, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK, SC-LOADER-JOINT-ROLLBACK, SC-LOADER-CONTENTS, SC-LOADER-CHILD-SEND: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's pairing of the loader's rollback with the composite termination, its program-header read, page-table writes, byte copy and child switch, its check of the child's one send, boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
     },
     "timer-server": {
       "expectations": "scripts/expectations/timer-server.transcript",

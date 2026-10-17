@@ -3,21 +3,21 @@
 @common:oracle@
 @common:pre-cpl3@
 @common:controls@
-@10/SPAWN@ event=authority subject=2 budget=1 generation=1 source=kernel syscall=none control=94465 frame=committed-to-2 object=20 result=PASS
+@10/SPAWN@ event=authority subject=2 budget=1 generation=1 source=kernel syscall=none status=1 record=3,21,6,1,2,1,0,0,0,0,5,0,65537 frame=committed-to-2 object=20 result=PASS
 @8/PAGING@ root=B selected=1 result=PASS
 @10/IPC@ event=enter subject=2 address-space=2 cpl=3 role=spawn-parent
-@10/SPAWN@ event=spawn subject=2 origin=cpl3 number=100 endpoint=196608 rights=send child=3 address-space=21 slot=0 generation=1 runnable=0 user-leaves=0 kernel-leaves=supervisor frames=0 reply=94721 value=65536 token=29185 result=PASS
-@10/SPAWN@ event=refuse subject=2 origin=cpl3 number=100 reason=noncanonical-words gate=none state=unchanged reply=65059 value=0 token=29185 result=PASS
-@10/SPAWN@ event=reject subject=2 origin=cpl3 number=100 words=1,196608,4 status=140 reason=subject-budget-exhausted state=unchanged reply=9204225 value=0 token=29185 result=PASS
-@10/SPAWN@ event=reject subject=2 origin=cpl3 number=101 words=65536,1,0 status=197 reason=frame-budget-exhausted state=unchanged reply=12939777 value=0 token=29185 result=PASS
-@10/SPAWN@ event=release subject=2 origin=cpl3 number=104 slot=2 object=20 frame=free,scrubbed reply=94977 value=0 token=29441 result=PASS
-@10/SPAWN@ event=grant subject=2 origin=cpl3 number=101 child=3 frames=1 charge=1 frame=committed-to-child reply=95233 value=1 token=29697 result=PASS
-@10/SPAWN@ event=terminate subject=2 origin=cpl3 number=102 child=3 address-space=21 frames-returned=1 root=cleared slot=0 frame=committed-to-2,free,scrubbed reply=95489 value=1 token=29953 result=PASS
-@10/SPAWN@ event=reject subject=2 origin=cpl3 number=102 words=65536,0,0 status=195 reason=stale-control-word state=unchanged reply=12809473 value=0 token=29953 result=PASS
-@10/SPAWN@ event=allocate subject=2 origin=cpl3 number=103 slot=2 object=22 frame=scrubbed reply=95745 value=0 token=30209 result=PASS
-@10/SPAWN@ event=spawn subject=2 origin=cpl3 number=100 endpoint=196608 rights=send child=4 address-space=23 slot=0 generation=2 runnable=0 user-leaves=0 kernel-leaves=supervisor frames=0 reply=96001 value=131072 token=30465 result=PASS
-@10/SPAWN@ event=reject subject=2 origin=cpl3 number=102 words=65536,0,0 status=195 reason=stale-control-word state=unchanged reply=12809985 value=0 token=30465 result=PASS
-@10/SPAWN@ event=reject subject=2 origin=cpl3 number=101 words=65536,1,0 status=195 reason=stale-control-word state=unchanged reply=12809985 value=0 token=30465 result=PASS
-@10/SPAWN@ event=terminate subject=2 origin=cpl3 number=102 child=4 address-space=23 frames-returned=0 root=cleared slot=0 frame=untouched reply=96257 value=0 token=30721 result=PASS
+@10/SPAWN@ event=spawn subject=2 origin=cpl3 number=100 endpoint=196608 rights=send child=3 address-space=21 slot=0 generation=1 runnable=0 user-leaves=0 kernel-leaves=supervisor frames=0 reply=65537 value=65536 record=4,22,8,2,2,1,65536,0,0,0,5,0,65537 result=PASS
+@10/SPAWN@ event=refuse subject=2 origin=cpl3 number=100 reason=noncanonical-words gate=none state=unchanged reply=65059 value=0 record=4,22,8,2,2,1,65536,0,0,0,5,0,65537 result=PASS
+@10/SPAWN@ event=reject subject=2 origin=cpl3 number=100 words=1,196608,4 status=140 reason=subject-budget-exhausted state=unchanged reply=9175041 value=0 record=4,22,8,2,2,1,65536,0,0,0,5,0,65537 result=PASS
+@10/SPAWN@ event=reject subject=2 origin=cpl3 number=101 words=65536,1,0 status=197 reason=frame-budget-exhausted state=unchanged reply=12910593 value=0 record=4,22,8,2,2,1,65536,0,0,0,5,0,65537 result=PASS
+@10/SPAWN@ event=release subject=2 origin=cpl3 number=104 slot=2 object=20 frame=free,scrubbed reply=65537 value=0 record=4,22,8,2,2,1,65536,0,0,0,0,0,65537 result=PASS
+@10/SPAWN@ event=grant subject=2 origin=cpl3 number=101 child=3 frames=1 charge=1 frame=committed-to-child reply=65537 value=1 record=4,22,8,2,2,1,65537,0,0,0,0,0,1 result=PASS
+@10/SPAWN@ event=terminate subject=2 origin=cpl3 number=102 child=3 address-space=21 frames-returned=1 root=cleared slot=0 frame=committed-to-2,free,scrubbed reply=65537 value=1 record=4,22,8,2,2,1,0,0,0,0,0,0,65537 result=PASS
+@10/SPAWN@ event=reject subject=2 origin=cpl3 number=102 words=65536,0,0 status=195 reason=stale-control-word state=unchanged reply=12779521 value=0 record=4,22,8,2,2,1,0,0,0,0,0,0,65537 result=PASS
+@10/SPAWN@ event=allocate subject=2 origin=cpl3 number=103 slot=2 object=22 frame=scrubbed reply=65537 value=0 record=4,23,9,2,2,1,0,0,0,0,8,0,65537 result=PASS
+@10/SPAWN@ event=spawn subject=2 origin=cpl3 number=100 endpoint=196608 rights=send child=4 address-space=23 slot=0 generation=2 runnable=0 user-leaves=0 kernel-leaves=supervisor frames=0 reply=65537 value=131072 record=5,24,11,3,2,1,131072,0,0,0,8,0,65537 result=PASS
+@10/SPAWN@ event=reject subject=2 origin=cpl3 number=102 words=65536,0,0 status=195 reason=stale-control-word state=unchanged reply=12779521 value=0 record=5,24,11,3,2,1,131072,0,0,0,8,0,65537 result=PASS
+@10/SPAWN@ event=reject subject=2 origin=cpl3 number=101 words=65536,1,0 status=195 reason=stale-control-word state=unchanged reply=12779521 value=0 record=5,24,11,3,2,1,131072,0,0,0,8,0,65537 result=PASS
+@10/SPAWN@ event=terminate subject=2 origin=cpl3 number=102 child=4 address-space=23 frames-returned=0 root=cleared slot=0 frame=untouched reply=65537 value=0 record=5,24,11,3,2,1,0,0,0,0,8,0,65537 result=PASS
 @10/SPAWN@ event=bystander subject=1 tables=unchanged context=unchanged ran=0 result=PASS
 @10/FINAL@ status=PASS subjects=2 parent=2 spawned=2 terminated=2 slot-reused=1 stale-rejected=3 refused=1 rejected=5 children-live=0 bystander=unchanged
