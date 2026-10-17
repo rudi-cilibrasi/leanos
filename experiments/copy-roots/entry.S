@@ -371,7 +371,13 @@ qotom_blocking_user_a_fault_recovered:
     mov $0x4f53, %rcx
     xor %rdx, %rdx
     int $0x80
-#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
+    /* Production network profile (issue #569): after the fixed first
+       exchange A runs the ring-3 DHCP subject built from subjects/dhcp; the
+       echo subject runs in its own address space, C. */
+    call qotom_dhcp_subject_main
+    ud2
+#elif defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
     /* Network subject (issue #450): after the fixed first exchange A runs
        the ring-3 network subject built from subjects/net (its C entry,
        renamed by scripts/build-qotom-recovery-lab.py); it never returns. */
@@ -500,7 +506,8 @@ qotom_blocking_user_b:
     mov $1, %rdx
     mov $9, %rax
     int $0x80
-#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_NETWORK_SUBJECT)
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && \
+    (defined(LEANOS_QOTOM_NETWORK_SUBJECT) || defined(LEANOS_QOTOM_PRODUCTION_NETWORK))
     /* WiFi driver subject (issue #450): it holds the device capability for
        the bound BCM43224 program but not the frame endpoint, so its frame
        fetch (64) is refused.  It then loops: the next frame (60: sequence
@@ -554,6 +561,28 @@ qotom_blocking_user_b_failure:
     int $0x80
     ud2
 .size qotom_blocking_user_b, .-qotom_blocking_user_b
+
+#if defined(LEANOS_QOTOM_IPC_DEVICE_STREAM) && defined(LEANOS_QOTOM_PRODUCTION_NETWORK)
+/* Subject C of the production network profile (issue #569): the echo
+ * subject built from subjects/echo, entered fresh by the kernel after the
+ * fixed first exchange, and its one-page stack, whose bottom is its frame
+ * buffer and its copy window.  Only root C maps these pages. */
+.section .user.c.text,"ax",@progbits
+.global qotom_echo_subject_entry
+.type qotom_echo_subject_entry,@function
+qotom_echo_subject_entry:
+    call qotom_echo_subject_main
+    ud2
+.size qotom_echo_subject_entry, .-qotom_echo_subject_entry
+
+.section .user.c.bss,"aw",@nobits
+.align 4096
+.global user_c_stack
+user_c_stack:
+    .skip 4096
+.global user_c_stack_top
+user_c_stack_top:
+#endif
 #endif
 
 .section .note.GNU-stack,"",@progbits

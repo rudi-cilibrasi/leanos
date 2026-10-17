@@ -143,7 +143,7 @@ and invokes the existing audited transfer helper through immutable byte operands
 Success requires all sixteen bytes to match and CR3 to read back as the closed
 root after the helper reloads closed, copy, then closed roots.
 
-The generated boundary requires the exact counts of one of two audited
+The generated boundary requires the exact counts of one of three audited
 inventories, which the wrapper names with an explicit variant input
 (`QOTOM_ROOT_INVENTORY_VARIANT`):
 
@@ -151,13 +151,18 @@ inventories, which the wrapper names with an explicit variant input
 | --- | --- | --- | --- | --- | --- |
 | 0 | ordinary | 1 page | 5 | 3 | 4,088 |
 | 1 | `--dhcp-subject` (issue #556) | 2 pages | 6 | 4 | 4,087 |
+| 2 | `--production-network` (issue #569) | 2 pages | 8 | 4 | 4,085 |
 
 In the DHCP-subject image A's text holds both the generated DHCP client and
 the echo responder, about 5.5 KiB, so it spans two pages. The wrapper also
 requires A's text to span exactly its variant's page count. An unknown
-variant is rejected (error bit 2048), and neither variant accepts the other's
+variant is rejected (error bit 2048), and no variant accepts another's
 counts; `QotomCopyRootPublication.accepted_inventory_exact` proves that
-acceptance pins one of the two rows. Both variants require two temporary
+acceptance pins one of the three rows. In the production network image
+(issue #569, [qotom-production.md](../qotom-production.md)) the inventory
+adds subject C's text page and stack page; its three-root boot plan already
+omits them from A's root, the source, so it removes four aliases and retains
+4,085 leaves. Every variant requires two temporary
 aliases, distinct aligned roots, both complete scans, the sixteen-byte result,
 and final closed-root readback. Only then may the serial record mark both roots
 published. Word six of the boundary always returns zero, so this checkpoint

@@ -307,6 +307,10 @@ def device_program_scenario(manifest):
         raise ValueError('not a device-program lab image (no ipc_device_stream)')
     if manifest.get('mode') != 'completion':
         raise ValueError('device-program lab image not built in completion mode')
+    if manifest.get('production_network') is True:
+        # Issue #569: the production image has no watchdog and no reset, so
+        # it is not a protected lab capture.
+        raise ValueError('a production network image is not a lab device-program capture')
     network = manifest.get('network_subject') is True
     dhcp = manifest.get('dhcp_subject') is True
     if dhcp and not network:

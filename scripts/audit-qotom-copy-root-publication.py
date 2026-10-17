@@ -13,8 +13,13 @@ PAGE = 4096
 # the --dhcp-subject image (issue #556), whose A text holds the DHCP client
 # and the echo responder. Retained present leaves depend on the whole page
 # plan and are checked only by the generated boundary on the machine.
-INVENTORIES = {'base': (1, 5, 3), 'dhcp-subject': (2, 6, 4)}
+# 'production' is the production network image (issue #569): A text holds
+# the asm subjects and the DHCP client (two pages), and the inventory adds
+# subject C's text page and stack page, which the image's three-root boot
+# plan omits from A's root, so the source still maps only A's text and stack.
+INVENTORIES = {'base': (1, 5, 3), 'dhcp-subject': (2, 6, 4), 'production': (2, 8, 4)}
 RANGES = ('__user_a_text', '__user_a_stack', '__user_b_text', '__user_b_stack')
+C_RANGES = ('__user_c_text', '__user_c_stack')
 
 
 def inventory(symbols, variant):
@@ -24,20 +29,22 @@ def inventory(symbols, variant):
     if variant not in INVENTORIES:
         raise ValueError('unknown copy-root inventory variant')
     text_pages, protected, removed = INVENTORIES[variant]
+    ranges = RANGES + (C_RANGES if variant == 'production' else ())
     addresses = {}
     for line in symbols.splitlines():
         fields = line.split()
-        if len(fields) >= 3 and fields[-1].startswith(RANGES):
+        if len(fields) >= 3 and fields[-1].startswith(ranges):
             addresses[fields[-1]] = int(fields[0], 16)
     pages = {}
-    for name in RANGES:
+    for name in ranges:
         start, end = addresses.get(name + '_start'), addresses.get(name + '_end')
         if start is None or end is None or start % PAGE or end <= start:
             raise ValueError(f'copy-root inventory range {name}')
         pages[name] = (end - start + PAGE - 1) // PAGE
     observed = (pages['__user_a_text'], sum(pages.values()),
                 pages['__user_a_text'] + pages['__user_a_stack'])
-    if pages['__user_a_stack'] != 2 or observed != (text_pages, protected, removed):
+    if pages['__user_a_stack'] != 2 or observed != (text_pages, protected, removed) or \
+            (variant == 'production' and (pages['__user_c_text'], pages['__user_c_stack']) != (1, 1)):
         raise ValueError(f'copy-root inventory differs from variant {variant}: '
                          f'A text pages, protected, removed = {observed}')
     return {'inventory_variant': variant, 'user_a_text_pages': observed[0],
@@ -119,7 +126,17 @@ def selftest():
     two_page = ranges.replace('00201000 T __user_a_text_end', '00201620 T __user_a_text_end')
     assert inventory(ranges, 'base')['protected_frames'] == 5
     assert inventory(two_page, 'dhcp-subject')['removed_aliases'] == 4
+    with_c = ranges + ('00205000 T __user_c_text_start\n00205700 T __user_c_text_end\n'
+                       '00206000 B __user_c_stack_start\n00207000 B __user_c_stack_end\n')
+    with_c = with_c.replace('00201000 T __user_a_text_end', '00201620 T __user_a_text_end')
+    assert inventory(with_c, 'production')['protected_frames'] == 8
+    assert inventory(with_c, 'production')['removed_aliases'] == 4
     for symbols, variant in ((two_page, 'base'), (ranges, 'dhcp-subject'),
+                             (ranges, 'production'),
+                             (with_c.replace('00207000 B __user_c_stack_end',
+                                             '00208000 B __user_c_stack_end'), 'production'),
+                             (with_c.replace('00201620 T __user_a_text_end',
+                                             '00201000 T __user_a_text_end'), 'production'),
                              (ranges, 'six-page'),
                              (ranges.replace('00203000 B __user_a_stack_end',
                                              '00202000 B __user_a_stack_end'), 'base'),
@@ -147,4 +164,4 @@ if __name__ == '__main__':
         print(json.dumps(result, sort_keys=True))
     else:
         raise SystemExit('usage: audit-qotom-copy-root-publication.py '
-                         '[--inventory base|dhcp-subject] ELF | --self-test')
+                         '[--inventory base|dhcp-subject|production] ELF | --self-test')

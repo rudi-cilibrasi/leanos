@@ -458,7 +458,8 @@ class DeviceProgramTests(unittest.TestCase):
                     dict(flags, network_subject=False, dhcp_subject=True),
                     dict(flags, long_session_seconds=40, watchdog_kick_budget=3),
                     dict(flags, dhcp_subject=True, long_session_seconds=40, watchdog_kick_budget=4),
-                    dict(flags, watchdog_kick_budget=3)):
+                    dict(flags, watchdog_kick_budget=3),
+                    dict(flags, network_subject=False, production_network=True)):
             with self.subTest(flags=bad), self.assertRaises(ValueError):
                 self.classify('network-subject-pass', manifest=bad)
         events = self.fixture('network-subject-pass')[0]

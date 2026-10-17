@@ -66,6 +66,7 @@ p.add_argument('--ipc-device-stream', action='store_true', help='with --blocking
 p.add_argument('--network-subject', action='store_true', help='with --ipc-device-stream (issue #450): after the first exchange, subject 2 is the WiFi driver subject and subject 1 runs the ring-3 network subject built from subjects/net with the generated responder; frames cross through the bounded copy roots, 16 bytes per transfer. Use the net-bcm-frames image for a keyless smoke test or a LEANOS_WIFI_NETWORK_SUBJECT connect image (embeds the PMK: never commit it)')
 p.add_argument('--long-session', type=int, metavar='SECONDS', help='with --dhcp-subject (issue #557): a WiFi session longer than the 120-tick lab watchdog allows. The kernel reloads the TCO watchdog GRUB armed (TCO_RLD only) on the link record and after every 40 endpoint ticks, each reload decided by the generated check leanos_qotom_watchdog_kick, at most 2 + ceil(SECONDS/40) times (LeanOS.QotomWatchdogKick.budgetOf); SECONDS is 1..3600 and should be the program\'s LEANOS_WIFI_LEASE_SECONDS plus LEANOS_WIFI_SERVE_SECONDS (issue #573: the serve window starts at the lease). Once the last reload is made the kernel ends the session with FINAL (issue #567, leanos_qotom_watchdog_session_end). The box still resets to FreeBSD at most 120 s after the last reload. See docs/wifi-driver.md, "Long sessions"')
 p.add_argument('--dhcp-subject', action='store_true', help='with --network-subject (issue #556): subject 1 first runs the ring-3 DHCP subject built from subjects/dhcp with the generated client, which leases the address and hands it over endpoint 13; the kernel then scrubs subject 1\'s stack pages and starts the echo subject built from subjects/echo there, which answers only for the lease. Use the net-bcm-dhcp image for a keyless smoke test or a LEANOS_WIFI_NETWORK_SUBJECT connect image without LEANOS_WIFI_DRIVER_DHCP (link-only endpoint; embeds the PMK: never commit it)')
+p.add_argument('--production-network', action='store_true', help='with --ipc-device-stream (issue #569): the production network profile. After the fixed first exchange three ring-3 subjects run, each in its own address space: B the WiFi driver subject (device capability for the bound BCM43224 program, assigned through the reviewed variant of the PCI trust contract), A the DHCP subject (subjects/dhcp) and C the echo subject (subjects/echo), whose address space the kernel builds; frames cross through per-subject copy windows (include/frame_copy_window.h) instead of the 16-byte copy roots. No watchdog is armed or reloaded and FINAL is followed by an absorbing halt instead of a reset. Use scripts/build-qotom-production.py, which fixes the reviewed flag set')
 p.add_argument('--copy-root-publication', action='store_true', help='construct, publish, and exercise the bounded Qotom copy roots')
 p.add_argument('--entry-integration', action='store_true', help='exercise a closed-root CPL3 entry and validated machine return')
 p.add_argument('--exception-integration', action='store_true', help='exercise a terminal CPL3 #UD after validated entry returns')
@@ -186,7 +187,7 @@ if a.pci_diagnostic and a.mode != 'completion':
     p.error('--pci-diagnostic requires --mode completion')
 root = Path(__file__).resolve().parent.parent
 prepared = a.prepared_repo.resolve()
-out = root / 'build' / ('q35-device-lab' if a.q35_device_lab else 'qotom-wifi-lab' if (a.wifi_program or a.lab_program) else 'qotom-blocking-ipc-integration-lab' if a.blocking_ipc_integration else 'qotom-exception-integration-lab' if a.exception_integration else 'qotom-entry-integration-lab' if a.entry_integration else 'qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-copy-root-publication-lab' if a.copy_root_publication else 'qotom-nosmap-control-lab' if a.nosmap_control else 'qotom-pci-trust-lab' if a.pci_trust_contract else 'qotom-pci-final-lab' if a.pci_final_admission else 'qotom-txe-bme-lab' if a.txe_bme else 'qotom-graphics-bme-lab' if a.graphics_bme else 'qotom-graphics-state-lab' if a.graphics_state else 'qotom-broadcom-d3-lab' if a.broadcom_d3 else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
+out = root / 'build' / ('qotom-production' if a.production_network else 'q35-device-lab' if a.q35_device_lab else 'qotom-wifi-lab' if (a.wifi_program or a.lab_program) else 'qotom-blocking-ipc-integration-lab' if a.blocking_ipc_integration else 'qotom-exception-integration-lab' if a.exception_integration else 'qotom-entry-integration-lab' if a.entry_integration else 'qotom-bsp-lvt-policy-lab' if a.bsp_lvt_policy else 'qotom-bsp-lvt-lab' if a.bsp_lvt_observation else 'qotom-bsp-production-lab' if a.bsp_production else 'qotom-copy-root-publication-lab' if a.copy_root_publication else 'qotom-nosmap-control-lab' if a.nosmap_control else 'qotom-pci-trust-lab' if a.pci_trust_contract else 'qotom-pci-final-lab' if a.pci_final_admission else 'qotom-txe-bme-lab' if a.txe_bme else 'qotom-graphics-bme-lab' if a.graphics_bme else 'qotom-graphics-state-lab' if a.graphics_state else 'qotom-broadcom-d3-lab' if a.broadcom_d3 else 'qotom-pcie-pending-lab' if a.pcie_pending else 'qotom-realtek-bme-lab' if a.realtek_bme else 'qotom-realtek-state-lab' if a.realtek_state else 'qotom-rootport-bme-lab' if a.rootport_bme else 'qotom-txe-status-lab' if a.txe_status else 'qotom-hda-bme-lab' if a.hda_bme else 'qotom-hda-state-lab' if a.hda_state else 'qotom-hda-lab' if a.hda_observation else 'qotom-ahci-bme-lab' if a.ahci_bme else 'qotom-ahci-interrupt-lab' if a.ahci_interrupts else 'qotom-ahci-port-lab' if a.ahci_port else 'qotom-ahci-lab' if a.ahci_capabilities else 'qotom-pcie-device-lab' if a.pcie_device_observation else 'qotom-xhci-bme-lab' if a.xhci_bme else 'qotom-xhci-operational-lab' if a.xhci_operational else 'qotom-xhci-smi-lab' if a.xhci_smi else 'qotom-xhci-handoff-lab' if a.xhci_handoff else 'qotom-xhci-legacy-lab' if a.xhci_legacy else 'qotom-xhci-lab' if a.xhci_capabilities else 'qotom-bme-lab' if a.ehci_bme else 'qotom-operational-lab' if a.ehci_operational else 'qotom-smi-lab' if a.ehci_smi else 'qotom-handoff-lab' if a.ehci_handoff else 'qotom-legacy-lab' if a.ehci_legacy else
                        'qotom-ehci-lab' if a.ehci_capabilities else
                        'qotom-af-lab' if a.af_observation else
                        'qotom-capabilities-lab' if a.pci_capabilities else
@@ -309,6 +310,14 @@ if a.network_subject and not a.ipc_device_stream:
     raise SystemExit('--network-subject needs --ipc-device-stream')
 if a.dhcp_subject and not a.network_subject:
     raise SystemExit('--dhcp-subject needs --network-subject')
+if a.production_network and (not a.ipc_device_stream or a.network_subject or
+                             a.dhcp_subject or a.long_session is not None):
+    raise SystemExit('--production-network needs --ipc-device-stream and replaces '
+                     '--network-subject, --dhcp-subject and --long-session')
+if a.production_network and not (a.broadcom_d3 and a.pci_trust_contract and
+                                 a.mode == 'completion'):
+    raise SystemExit('--production-network needs --broadcom-d3, --pci-trust-contract and '
+                     'the completion build')
 # LeanOS.QotomWatchdogKick: kickPeriod 40, maxSessionSeconds 3600,
 # budgetOf seconds = 2 + ceil(seconds / 40).
 watchdog_kicks = None
@@ -330,6 +339,16 @@ if a.q35_device_lab:
     serial_puts("LEANOS-LAB/1 MODE q35-device-lab\\n");
     lab_wifi_run();
     finish(0x10);''')
+elif a.production_network:
+    # No recovery harness (issue #569): no reset after FINAL and no
+    # board-specific I/O; the image halts with interrupts disabled.
+    text = text.replace(old, '''static __attribute__((noreturn)) void finish(uint8_t value) {
+    (void)value;
+    for (;;) {
+        __asm__ volatile ("cli; hlt");
+    }
+}''')
+    text = text.replace('    serial_init();', '    serial_init();\n    serial_puts("LEANOS-LAB/1 MODE qotom-production final=halt watchdog=none\\n");')
 elif a.mode == 'completion':
     text = text.replace(old, (root / 'hardware/lab/qotom-finish.c.inc').read_text())
     text = text.replace('    serial_init();', '    serial_init();\n    serial_puts("LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30\\n");')
@@ -358,6 +377,8 @@ if lab_programs:
             text = '#define LEANOS_QOTOM_NETWORK_SUBJECT 1\n' + text
         if a.dhcp_subject:
             text = '#define LEANOS_QOTOM_DHCP_SUBJECT 1\n' + text
+        if a.production_network:
+            text = '#define LEANOS_QOTOM_PRODUCTION_NETWORK 1\n' + text
         if watchdog_kicks is not None:
             text = ('#define LEANOS_QOTOM_LONG_SESSION 1\n'
                     f'#define LEANOS_QOTOM_WATCHDOG_KICKS {watchdog_kicks}u\n') + text
@@ -573,7 +594,7 @@ if blocking_profile_object is not None:
     graph = '\n'.join(lines) + '\n'
 def build_network_subject(work, source='subjects/net/main.c', generated_name='NetEcho',
                           external='NET_EXTERNAL_FRAME', entry='qotom_network_subject_main',
-                          stem='network-subject'):
+                          stem='network-subject', slot='a'):
     """A q35 subject's sources (by default the network subject,
     subjects/net/main.c with the generated responder NetEcho.c; with
     --dhcp-subject also the DHCP subject and the echo subject) compiled for
@@ -587,14 +608,15 @@ def build_network_subject(work, source='subjects/net/main.c', generated_name='Ne
     lean_prefix = subprocess.check_output(['lean', '--print-prefix'], text=True).strip()
     obj, linked, final = work / f'{stem}-c.o', work / f'{stem}-linked.o', work / f'{stem}.o'
     script = work / f'{stem}.ld'
-    script.write_text('SECTIONS {\n  .user.a.text : { *(.text .text.*) }\n'
+    script.write_text(f'SECTIONS {{\n  .user.{slot}.text : {{ *(.text .text.*) }}\n'
                       '  /DISCARD/ : { *(.comment) *(.note.gnu.*) *(.eh_frame) }\n}\n')
+    stack = f'user_{slot}_stack'
     subprocess.run(['gcc', '-m64', '-std=c11', '-ffreestanding', '-fno-builtin',
                     '-fno-stack-protector', '-fno-pic', '-fno-common', '-mno-red-zone',
                     '-mgeneral-regs-only', '-fno-jump-tables', '-fno-asynchronous-unwind-tables',
                     '-fno-unwind-tables', '-fcf-protection=none', '-O2', '-Wall', '-Wextra',
                     '-Werror', '-ffunction-sections', '-fdata-sections',
-                    f'-D{external}=user_a_stack', f'-I{root / "subjects/include"}',
+                    f'-D{external}={stack}', f'-I{root / "subjects/include"}',
                     f'-I{build}', f'-I{lean_prefix}/include', '-c',
                     str(root / source), '-o', str(obj)], cwd=root, check=True)
     subprocess.run(['ld', '-m', 'elf_x86_64', '-r', '--build-id=none', '--gc-sections',
@@ -609,10 +631,10 @@ def build_network_subject(work, source='subjects/net/main.c', generated_name='Ne
     allocated = [line.split()[1] for line in sections.splitlines()
                  if len(line.split()) > 1 and line.split()[0].isdigit() and
                  line.split()[1] != '.note.GNU-stack']
-    if allocated != ['.user.a.text']:
+    if allocated != [f'.user.{slot}.text']:
         raise SystemExit(f'{stem} must be code only, found sections {allocated}')
     undefined = subprocess.check_output(['nm', '-u', str(final)], text=True).split()
-    if [u for u in undefined if u != 'U'] != ['user_a_stack']:
+    if [u for u in undefined if u != 'U'] != [stack]:
         raise SystemExit(f'{stem} has unexpected undefined symbols {undefined}')
     return final
 
@@ -641,12 +663,23 @@ if a.copy_root_publication:
             entry_command.append('-DLEANOS_QOTOM_NETWORK_SUBJECT=1')
         if a.dhcp_subject:
             entry_command.append('-DLEANOS_QOTOM_DHCP_SUBJECT=1')
+        if a.production_network:
+            entry_command.append('-DLEANOS_QOTOM_PRODUCTION_NETWORK=1')
         subprocess.run(entry_command + ['-c', 'experiments/copy-roots/entry.S',
                         '-o', str(entry_object)], cwd=root, check=True)
         subprocess.run(['gcc', '-m64', '-c', 'experiments/copy-roots/return.S',
                         '-o', str(return_object)], cwd=root, check=True)
         entry_objects = [entry_object, return_object]
-        if a.dhcp_subject:
+        if a.production_network:
+            # Issue #569: the DHCP subject in subject A and the echo subject
+            # in subject C, each in its own address space.
+            entry_objects.append(build_network_subject(
+                copy_root_dir, 'subjects/dhcp/main.c', 'NetDhcp', 'DHCP_EXTERNAL_FRAME',
+                'qotom_dhcp_subject_main', 'dhcp-subject'))
+            entry_objects.append(build_network_subject(
+                copy_root_dir, 'subjects/echo/main.c', 'NetEcho', 'ECHO_EXTERNAL_FRAME',
+                'qotom_echo_subject_main', 'echo-subject', 'c'))
+        elif a.dhcp_subject:
             # Issue #556: the DHCP subject and the echo subject take turns in
             # subject 1, the only Qotom subject the copy roots alias.
             entry_objects.append(build_network_subject(
@@ -681,6 +714,44 @@ if a.bsp_topology or a.bsp_production:
     if inserted < 2:
         raise SystemExit('BSP object missing prelink/final graph anchors')
     graph = '\n'.join(lines) + '\n'
+if a.production_network:
+    # Issue #569: the production image's boot object carries the boot plan's
+    # three subject roots (LEANOS_THREE_SUBJECT_SCENARIO), with subject C's
+    # text and stack linked from separately built objects
+    # (LEANOS_SUBJECT_C_OBJECT): the echo subject and its stack page. The
+    # generated boot page plan then covers root C, and A's and B's roots omit
+    # C's pages.
+    plain = str(build / 'boot.o')
+    production_boot = str(build / 'boot-qotom-production.o')
+    lines = graph.splitlines()
+    rule = [i for i, line in enumerate(lines)
+            if line.startswith(plain + ' ') and line.rstrip().endswith('boot/boot.S')]
+    if len(rule) != 1 or not lines[rule[0] + 1].startswith('\t'):
+        raise SystemExit('boot object rule missing from the prepared graph')
+    recipe = lines[rule[0] + 1].replace(plain, production_boot)
+    if ' -c $< ' not in recipe:
+        raise SystemExit('unsupported boot object recipe')
+    recipe = recipe.replace(' -c $< ', ' -DLEANOS_THREE_SUBJECT_SCENARIO=1 '
+                            '-DLEANOS_SUBJECT_C_OBJECT=1 -c $< ')
+    head = lines[rule[0]].replace(plain, production_boot)
+    swapped = 0
+    for i, line in enumerate(lines):
+        if ('leanos-qotom-pci-diagnostic-prelink.' in line or
+                'leanos-qotom-pci-diagnostic.' in line) and plain + ' ' in line:
+            lines[i] = line.replace(plain + ' ', production_boot + ' ')
+            swapped += 1
+    if swapped < 2:
+        raise SystemExit('production boot object missing prelink/final graph anchors')
+    graph = '\n'.join(lines + [head, recipe]) + '\n'
+    # The prelink must already carry root C's plan array, so that the final
+    # link, which includes the generated three-root plan, keeps its layout.
+    stub = build / 'boot-page-plan-qotom-pci-diagnostic.h'
+    subprocess.run(['scripts/generate-boot-page-plan.sh', '--stub', str(stub)],
+                   cwd=root, check=True)
+    stub_text = stub.read_text()
+    if stub_text.count('#ifdef LEANOS_THREE_SUBJECT_SCENARIO\n') != 1:
+        raise SystemExit('unsupported boot page plan stub shape')
+    stub.write_text(stub_text.replace('#ifdef LEANOS_THREE_SUBJECT_SCENARIO\n', '#if 1\n'))
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
@@ -695,7 +766,7 @@ if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(target), str(final_plan)], cwd=root, check=True)
     if final_plan.read_bytes() != plan.read_bytes():
         raise SystemExit('ACPI lab final ELF differs from prelink page plan')
-elf = out / ('leanos-q35-device-lab.elf' if a.q35_device_lab else 'leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
+elf = out / ('leanos-qotom-production.elf' if a.production_network else 'leanos-q35-device-lab.elf' if a.q35_device_lab else 'leanos-qotom-lab.elf' if a.mode == 'completion' else 'leanos-qotom-kernel-hang.elf')
 shutil.copy2(target, elf)
 subprocess.run(['grub-file', '--is-x86-multiboot2', str(elf)], check=True)
 if a.bsp_topology or a.bsp_production:
@@ -722,7 +793,8 @@ if a.copy_root_publication:
     # The linked inventory must be the one the kernel names to the generated
     # check (LEANOS_QOTOM_DHCP_SUBJECT selects the six-frame variant).
     checked = subprocess.run(['python3', 'scripts/audit-qotom-copy-root-publication.py',
-                              '--inventory', 'dhcp-subject' if a.dhcp_subject else 'base',
+                              '--inventory', 'production' if a.production_network else
+                              'dhcp-subject' if a.dhcp_subject else 'base',
                               str(elf)],
                              cwd=root, check=True, capture_output=True)
     publication_audit.write_bytes(checked.stdout)
@@ -750,7 +822,8 @@ if a.blocking_ipc_integration:
     blocking_ipc_audit = out / 'blocking-ipc-integration-audit.json'
     checked = subprocess.run([
         'python3', 'scripts/audit-qotom-blocking-ipc-integration.py',
-        *(['--dhcp-subject'] if a.dhcp_subject else
+        *(['--production-network'] if a.production_network else
+          ['--dhcp-subject'] if a.dhcp_subject else
           ['--network-subject'] if a.network_subject else
           ['--device-stream'] if a.ipc_device_stream else []),
         *(['--long-session'] if a.long_session is not None else []), str(elf)],
@@ -771,7 +844,7 @@ if a.ecam_read:
         'qotom-ecam-root.h', 'qotom-ecam-window.h', 'qotom-ecam-memory.h',
         'qotom-ecam-native.h', 'qotom-ecam-native.S')])
     files.extend([root / 'boot/qotom-ecam-read.h', build / 'qotom-ecam-firmware-inputs.h', native])
-if a.mode == 'completion':
+if a.mode == 'completion' and not a.production_network:
     files.append(root / 'hardware/lab/qotom-finish.c.inc')
 if a.handoff_capture:
     files.extend([root / 'hardware/lab/qotom-handoff.c.inc', root / 'include/boot_handoff_capture.h'])
@@ -880,7 +953,12 @@ if a.txe_bme:
     files += [root / name for name in ('boot/qotom-txe-bme.h', 'hardware/lab/qotom-txe-bme-window.h', 'hardware/lab/qotom-txe-bme-arm.h', 'hardware/lab/qotom-txe-bme.c.inc')]
 if a.pci_final_admission:
     files += [root / name for name in ('boot/qotom-pci-final-admission.h', 'hardware/lab/qotom-pci-final-admission.c.inc')]
-if a.network_subject:
+if a.production_network:
+    files += [root / name for name in ('hardware/lab/qotom-production-network.c.inc',
+              'include/frame_copy_window.h', 'subjects/dhcp/main.c', 'subjects/echo/main.c',
+              'LeanOS/FrameCopyWindow.lean', '.lake/build/ir/LeanOS/FrameCopyWindow.c',
+              'scripts/build-qotom-production.py')]
+if a.network_subject or a.production_network:
     files += [root / name for name in ('boot/qotom-broadcom-assign.h',
               'hardware/lab/qotom-broadcom-assign-window.h',
               'hardware/lab/qotom-broadcom-assign-arm.h',
@@ -926,11 +1004,11 @@ if a.blocking_ipc_integration:
               build / 'qotom-platform-profile-inputs.h',
               root / 'scripts/expectations/blocking-ipc.transcript',
               blocking_profile_object, blocking_ipc_audit, ap_start_audit]
-manifest = {'wifi_program_sha256': hashlib.sha256(a.wifi_program.read_bytes()).hexdigest() if a.wifi_program else None, 'lab_program_sha256': [hashlib.sha256(f.read_bytes()).hexdigest() for f in a.lab_program], 'blocking_ipc_integration': a.blocking_ipc_integration, 'ipc_device_stream': a.ipc_device_stream, 'network_subject': a.network_subject, 'dhcp_subject': a.dhcp_subject, 'long_session_seconds': a.long_session, 'watchdog_kick_budget': watchdog_kicks, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'evidence_class': 'lab-recovery-experiment', 'canonical_halt_evidence': False,
+manifest = {'wifi_program_sha256': hashlib.sha256(a.wifi_program.read_bytes()).hexdigest() if a.wifi_program else None, 'lab_program_sha256': [hashlib.sha256(f.read_bytes()).hexdigest() for f in a.lab_program], 'blocking_ipc_integration': a.blocking_ipc_integration, 'ipc_device_stream': a.ipc_device_stream, 'network_subject': a.network_subject, 'dhcp_subject': a.dhcp_subject, 'long_session_seconds': a.long_session, 'watchdog_kick_budget': watchdog_kicks, 'exception_integration': a.exception_integration, 'entry_integration': a.entry_integration, 'copy_root_publication': a.copy_root_publication, 'nosmap_control': a.nosmap_control, 'pci_trust_contract': a.pci_trust_contract, 'pci_final_admission': a.pci_final_admission, 'txe_bme': a.txe_bme, 'bsp_lvt_policy': a.bsp_lvt_policy, 'bsp_lvt_observation': a.bsp_lvt_observation, 'bsp_production': a.bsp_production, 'graphics_bme': a.graphics_bme, 'graphics_state': a.graphics_state, 'broadcom_d3': a.broadcom_d3, 'pcie_pending': a.pcie_pending, 'realtek_bme': a.realtek_bme, 'realtek_state': a.realtek_state, 'rootport_bme': a.rootport_bme, 'txe_status': a.txe_status, 'hda_bme': a.hda_bme, 'hda_state': a.hda_state, 'hda_observation': a.hda_observation, 'ahci_bme': a.ahci_bme, 'ahci_interrupts': a.ahci_interrupts, 'ahci_port': a.ahci_port, 'ahci_capabilities': a.ahci_capabilities, 'pcie_device_observation': a.pcie_device_observation, 'xhci_bme': a.xhci_bme, 'xhci_operational': a.xhci_operational, 'xhci_smi': a.xhci_smi, 'xhci_handoff': a.xhci_handoff, 'xhci_legacy': a.xhci_legacy, 'xhci_capabilities': a.xhci_capabilities, 'ehci_bme': a.ehci_bme, 'ehci_operational': a.ehci_operational, 'ehci_smi': a.ehci_smi, 'ehci_handoff': a.ehci_handoff, 'ehci_legacy': a.ehci_legacy, 'ehci_capabilities': a.ehci_capabilities, 'af_observation': a.af_observation, 'pci_capabilities': a.pci_capabilities, 'bsp_topology': a.bsp_topology, 'native_inventory': a.native_inventory, 'ecam_read': a.ecam_read, 'dsdt_capture': a.dsdt_capture, 'ecam_memory_capture': a.ecam_memory_capture, 'bootstrap_capture': a.bootstrap_capture, 'pci_read_trace': a.pci_read_trace, 'acpi_capture': a.acpi_capture, 'handoff_capture': a.handoff_capture, 'production_network': a.production_network, 'evidence_class': 'production-candidate' if a.production_network else 'lab-recovery-experiment', 'canonical_halt_evidence': False,
             'mode': a.mode, 'pci_diagnostic': a.pci_diagnostic,
             # Binds the manifest's scenario flags to the image (issue #572).
             'elf_sha256': hashlib.sha256(elf.read_bytes()).hexdigest(),
-            'recovery_seconds': 30 if a.mode == 'completion' else None, 'hang_recovery': False,
+            'recovery_seconds': 30 if a.mode == 'completion' and not a.production_network else None, 'hang_recovery': False,
             'source_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
             'source_dirty': bool(subprocess.check_output(['git','status','--porcelain'], cwd=root, text=True)),
             'prepared_revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=prepared, text=True).strip(),

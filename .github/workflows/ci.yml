@@ -189,6 +189,15 @@ jobs:
             --bsp-lvt-policy
           python3 scripts/test-qotom-apic-lvt-policy-image.py
 
+      - name: Build production Qotom network image
+        # Issue #569: the fixed production composition (three subjects in
+        # three address spaces, copy windows, no recovery harness) and its
+        # linked-image checks, with the keyless smoke program.
+        if: matrix.part == 'device-lab'
+        run: |
+          python3 scripts/build-qotom-production.py
+          python3 scripts/test-qotom-production-image.py
+
       - name: Verify frame-budget negative evidence
         if: always() && matrix.part == 'images'
         run: ./scripts/verify-negative-evidence.sh frame-budget

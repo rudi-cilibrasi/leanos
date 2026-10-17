@@ -11,7 +11,10 @@ DEC = rb'(0|[1-9][0-9]{0,19})'
 # scripts/run-qotom-recovery-lab.py has no device-stream, network-subject or
 # DHCP-subject mode (those captures use the WiFi lab trial), so it always
 # decodes the 'base' inventory; a DHCP-subject replay passes 'dhcp-subject'.
-INVENTORIES = {'base': (5, 3, 4088), 'dhcp-subject': (6, 4, 4087)}
+# 'production' is the production network image (issue #569), whose
+# inventory adds subject C's two pages after removing them from the source.
+INVENTORIES = {'base': (5, 3, 4088), 'dhcp-subject': (6, 4, 4087),
+               'production': (8, 4, 4085)}
 
 
 def extract(raw, protocol, inventory='base'):

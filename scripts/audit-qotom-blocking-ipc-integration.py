@@ -48,6 +48,17 @@ def body(symbols, rows, name):
     return result
 
 
+def absorbing_terminal(rows):
+    """Exactly one HLT, preceded by CLI and followed by a jump back to it."""
+    hlt_indices = [i for i, row in enumerate(rows) if row[1] == 'hlt']
+    if len(hlt_indices) != 1:
+        return False
+    i = hlt_indices[0]
+    return (i > 0 and i + 1 < len(rows) and
+            rows[i - 1][1] == 'cli' and rows[i + 1][1] == 'jmp' and
+            rows[i + 1][2].split()[0] == format(rows[i - 1][0], 'x'))
+
+
 def calls(rows, target):
     return sum(row[1] == 'call' and re.search(rf'<{re.escape(target)}(?:>|[.+])', row[2])
                is not None for row in rows)
@@ -115,13 +126,7 @@ def facts(elf):
            for row in selected):
         raise ValueError('blocking profile enables interrupts or performs direct I/O')
 
-    hlt_indices = [i for i, row in enumerate(dispatch) if row[1] == 'hlt']
-    terminal_loop = False
-    if len(hlt_indices) == 1:
-        i = hlt_indices[0]
-        terminal_loop = (i > 0 and i + 1 < len(dispatch) and
-            dispatch[i - 1][1] == 'cli' and dispatch[i + 1][1] == 'jmp' and
-            dispatch[i + 1][2].split()[0] == format(dispatch[i - 1][0], 'x'))
+    terminal_loop = absorbing_terminal(dispatch)
 
     fault_address = symbols['qotom_blocking_user_a_fault_instruction'][0]
     recovered = symbols['qotom_blocking_user_a_fault_recovered'][0]
@@ -316,6 +321,76 @@ LONG_SESSION_EXPECTED = {
 }
 
 
+# Issue #569: the production network profile. A runs the DHCP subject after
+# the fixed first exchange (its C entry) and C, in its own address space,
+# runs the echo subject through a trampoline in C's text. B is the WiFi
+# driver subject as in the network-subject contract. Frames cross through
+# the copy windows: the audited copy roots keep only the first exchange's two
+# transfers, and the frame path (the dispatcher and the out-of-line
+# qotom_prod_* helpers) calls the window transfer and checks the port
+# witness, the window operand, the device witness and the cyclic witness.
+# Setup checks root C against the boot plan and builds the window roots,
+# once each; no watchdog code.
+PRODUCTION_EXPECTED = {
+    **NETWORK_EXPECTED,
+    'copy_transfer_calls': 2,
+    'network_entry_calls': 0,
+    'dhcp_entry_calls': 1,
+    'echo_entry_calls': 1,
+    'network_witnesses': {'leanos_blocking_ipc_event': True,
+                          'leanos_frame_port_check': True,
+                          'leanos_frame_window_operand': True,
+                          'leanos_device_authorize': True},
+    'window_transfer_calls': 2,
+    'root_c_check_calls': 1,
+    'window_build_calls': 1,
+}
+
+
+def production_code(symbols, rows):
+    """The dispatcher and the out-of-line qotom_prod_* helpers."""
+    bodies = [body(symbols, rows, 'qotom_entry_dispatch')]
+    bodies += [body(symbols, rows, name) for name in sorted(symbols)
+               if name.startswith('qotom_prod_') and symbols[name][1] > 0 and
+               '.' not in name and name != 'qotom_prod_ipc_words' and
+               name != 'qotom_prod_reasons' and
+               any(row[0] == symbols[name][0] for row in rows)]
+    return [row for rows_ in bodies for row in rows_]
+
+
+def production_facts(elf):
+    symbols, rows = load(elf)
+    user_a = body(symbols, rows, 'qotom_blocking_user_a')
+    code = production_code(symbols, rows)
+    setup = body(symbols, rows, 'lab_run_qotom_blocking_ipc')
+    assign = body(symbols, rows, 'lab_broadcom_assign')
+    return {
+        'broadcom_assign_calls': calls(body(symbols, rows, 'lab_stream_bind'),
+                                       'lab_broadcom_assign'),
+        'broadcom_assign_witnesses': {name: references(assign, name) > 0 for name in (
+            'leanos_qotom_broadcom_assign_write',
+            'leanos_qotom_broadcom_assign_admission',
+            'leanos_qotom_pci_initial_trust_contract')},
+        'adhoc_broadcom_assign': b'pmcsr=d3hot,d0' in Path(elf).read_bytes(),
+        'network_entry_calls': calls(user_a, 'qotom_network_subject_main'),
+        'network_witnesses': {name: calls(code, name) > 0 for name in (
+            'leanos_blocking_ipc_event', 'leanos_frame_port_check',
+            'leanos_frame_window_operand', 'leanos_device_authorize')},
+        'copy_transfer_calls': calls(code, 'leanos_copy_root_transfer'),
+        'window_transfer_calls': calls(code, 'frame_window_transfer'),
+        'dhcp_entry_calls': calls(user_a, 'qotom_dhcp_subject_main'),
+        'echo_entry_calls': calls(
+            body(symbols, rows, 'qotom_echo_subject_entry'), 'qotom_echo_subject_main'),
+        'root_c_check_calls': calls(setup, 'qotom_prod_check_root_c'),
+        'window_build_calls': calls(setup, 'qotom_prod_build_windows'),
+        # The frame path is out of line: its one absorbing terminal (after
+        # FINAL) and its one device invocation are in the qotom_prod_*
+        # helpers rather than in the dispatcher body.
+        'terminal_loop': absorbing_terminal(code),
+        'stream_invoke_calls': calls(code, 'lab_stream_next_key'),
+    }
+
+
 def watchdog_facts(elf):
     symbols, rows = load(elf)
     present = any(key == 'qotom_watchdog_reload' or key.startswith('qotom_watchdog_reload.')
@@ -409,13 +484,20 @@ def validate(observed, expected_facts=EXPECTED):
 
 
 def check(elf, device_stream=False, network_subject=False, dhcp_subject=False,
-          long_session=False):
+          long_session=False, production_network=False):
     runpy.run_path(str(ROOT / 'scripts/audit-qotom-entry-integration.py'))['check'](
         elf, exception_integration=True, blocking_ipc_integration=True)
     observed = facts(elf)
     if long_session and not dhcp_subject:
         raise ValueError('a long-session image is a DHCP-subject image')
-    if dhcp_subject:
+    if production_network:
+        if network_subject or dhcp_subject or long_session:
+            raise ValueError('the production network profile is its own contract')
+        observed.update(stream_facts(elf))
+        observed.update(production_facts(elf))
+        observed.update(watchdog_facts(elf))
+        validate(observed, PRODUCTION_EXPECTED)
+    elif dhcp_subject:
         observed.update(stream_facts(elf))
         observed.update(network_facts(elf, dhcp_subject=True))
         observed.update(watchdog_facts(elf))
@@ -520,6 +602,29 @@ def self_test():
                 rejected += 1
                 continue
             raise ValueError(f'unsafe network mutation accepted: {name}')
+    production = {key: (value.copy() if isinstance(value, (list, dict)) else value)
+                  for key, value in PRODUCTION_EXPECTED.items()}
+    validate(production, PRODUCTION_EXPECTED)
+    production_mutations = {
+        'frames-through-copy-roots': ('copy_transfer_calls', 4),
+        'no-window-transfer': ('window_transfer_calls', 0),
+        'unchecked-window-operand': ('network_witnesses', {
+            'leanos_blocking_ipc_event': True, 'leanos_frame_port_check': True,
+            'leanos_frame_window_operand': False, 'leanos_device_authorize': True}),
+        'no-root-c': ('root_c_check_calls', 0),
+        'no-window-roots': ('window_build_calls', 0),
+        'no-echo-subject': ('echo_entry_calls', 0),
+        'production-watchdog-reload': ('watchdog_reload_present', True),
+        'production-without-assignment': ('broadcom_assign_calls', 0),
+    }
+    for name, (key, value) in production_mutations.items():
+        candidate = dict(production); candidate[key] = value
+        try:
+            validate(candidate, PRODUCTION_EXPECTED)
+        except ValueError:
+            rejected += 1
+            continue
+        raise ValueError(f'unsafe production mutation accepted: {name}')
     long_session = dict(LONG_SESSION_EXPECTED)
     validate(long_session, LONG_SESSION_EXPECTED)
     long_mutations = {
@@ -558,12 +663,15 @@ if __name__ == '__main__':
                         help='audit the issue #556 DHCP-subject continuation')
     parser.add_argument('--long-session', action='store_true',
                         help='with --dhcp-subject: audit the issue #557 watchdog reload')
+    parser.add_argument('--production-network', action='store_true',
+                        help='audit the issue #569 production network profile')
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.elf:
         print(json.dumps(check(args.elf, args.device_stream, args.network_subject,
-                               args.dhcp_subject, args.long_session),
+                               args.dhcp_subject, args.long_session,
+                               args.production_network),
                          indent=2, sort_keys=True))
     else:
         parser.error('provide an ELF or --self-test')
