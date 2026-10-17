@@ -71,6 +71,8 @@ elif [[ "$scenario" == three-subject ]]; then
   default_image="build/boot/leanos-${version}-x86_64-three-subject.iso"
 elif [[ "$scenario" == notify-reply ]]; then
   default_image="build/boot/leanos-${version}-x86_64-notify-reply.iso"
+elif [[ "$scenario" == timing-channels ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-timing-channels.iso"
 elif [[ "$scenario" == console-server ]]; then
   default_image="build/boot/leanos-${version}-x86_64-console-server.iso"
 elif [[ "$scenario" == device-service ]]; then
@@ -142,6 +144,7 @@ vtd_snapshot="${LEANOS_VTD_SNAPSHOT:-build/boot/vtd-activation-snapshot-${scenar
 source_revision_file="${LEANOS_SOURCE_REVISION_FILE:-build/boot/SOURCE_REVISION}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/${scenario}-snapshot.txt}"
+timing_cycles_artifact="${LEANOS_TIMING_CYCLES_ARTIFACT:-build/boot/timing-channels-cycles.txt}"
 fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-${stale_translation_elf:-build/boot/leanos-${scenario}.elf}}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 and coreutils=9.4-3ubuntu6.3" >&2; exit 1; }; done
@@ -420,6 +423,20 @@ if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
     fi
   done
   sed -i "/^$(leanos_serial_re 11 ENTRY-HIGH-WATER) /d" "$without_allocation"
+fi
+if [[ "$scenario" == timing-channels ]]; then
+  # The cycle counts of the paths ADR 0028 names vary from run to run, so
+  # they are a measurement artifact, not transcript: the report checks their
+  # shape and the refusal budget and prints them with the recorded baseline.
+  mkdir -p "$(dirname "$timing_cycles_artifact")"
+  grep "^${LEANOS_SERIAL_26_CYCLES} " "$log" > "$timing_cycles_artifact" || {
+    echo "failure_class=timing-channels: cycle records missing" >&2; exit 1;
+  }
+  ./scripts/report-timing-channels.py "$timing_cycles_artifact" >&2 || {
+    echo "failure_class=timing-channels: malformed cycle records or refusal budget not held" >&2
+    exit 1
+  }
+  sed -i "/^$(leanos_serial_re 26 CYCLES) /d" "$without_allocation"
 fi
 # Retain the composed expectation when asked, so the per-scenario transcript
 # templates can be checked against exactly what this runner expected.

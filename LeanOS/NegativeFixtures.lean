@@ -17,11 +17,13 @@ import LeanOS.NegativeFixtures.NMIManifest
 import LeanOS.NegativeFixtures.PageFaultError
 import LeanOS.NegativeFixtures.PageFaultAgreement
 import LeanOS.NegativeFixtures.PageFaultProvenance
+import LeanOS.NegativeFixtures.Rtl8168Teardown
 import LeanOS.NegativeFixtures.SecurityClaims
 import LeanOS.NegativeFixtures.SharedContainment
 import LeanOS.NegativeFixtures.SpawnAccounting
 import LeanOS.NegativeFixtures.SpawnIdentityRollback
 import LeanOS.NegativeFixtures.StaleTranslation
+import LeanOS.NegativeFixtures.TimingChannels
 import LeanOS.NegativeFixtures.UserFaultClass
 import LeanOS.NegativeFixtures.VTdBootPlan
 import LeanOS.NegativeFixtures.WrappingIssuerReuse

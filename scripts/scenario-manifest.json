@@ -304,6 +304,11 @@
         "-DLEANOS_IPC_STREAM_SCENARIO=1",
         "-DLEANOS_NOTIFY_REPLY_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-notify-reply.h\""
+      ],
+      "kernel-timing-channels": [
+        "-DLEANOS_IPC_STREAM_SCENARIO=1",
+        "-DLEANOS_TIMING_CHANNELS_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-timing-channels.h\""
       ]
     },
     "boot_objects": {
@@ -659,6 +664,13 @@
         "definitions": [
           "-DLEANOS_IPC_STREAM_SCENARIO=1",
           "-DLEANOS_NOTIFY_REPLY_SCENARIO=1"
+        ]
+      },
+      "boot-timing-channels": {
+        "source": "boot/boot.S",
+        "definitions": [
+          "-DLEANOS_IPC_STREAM_SCENARIO=1",
+          "-DLEANOS_TIMING_CHANNELS_SCENARIO=1"
         ]
       }
     },
@@ -1179,6 +1191,14 @@
         "final_link": true,
         "prelink_plan": "boot-page-plan-notify-reply.h",
         "plan_equal_to": null
+      },
+      "leanos-timing-channels": {
+        "boot": "boot-timing-channels",
+        "kernel": "kernel-timing-channels",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-timing-channels.h",
+        "plan_equal_to": null
       }
     },
     "policy_fixtures": {
@@ -1608,6 +1628,14 @@
         "policy": {
           "key": "notify-reply"
         }
+      },
+      "leanos-timing-channels": {
+        "iso": "leanos-@VERSION@-x86_64-timing-channels.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "timing-channels"
+        },
+        "port_sites": "direct-port-sites-timing-channels.tsv"
       }
     },
     "plan_checks": [
@@ -2055,6 +2083,16 @@
         "expected": "boot-page-plan-notify-reply.h",
         "final": "boot-page-plan-notify-reply.final.h",
         "description": "notify-reply"
+      },
+      {
+        "image": "leanos-timing-channels",
+        "check": "converge",
+        "expected": "boot-page-plan-timing-channels.h",
+        "final": "boot-page-plan-timing-channels.final.h",
+        "description": "timing-channels",
+        "targets": [
+          "leanos-timing-channels"
+        ]
       }
     ],
     "disassemblies": [
@@ -4015,9 +4053,12 @@
         "SC-SPAWN-SYSCALL",
         "SC-LOADER-EXACT",
         "SC-LOADER-RESERVED-RANGE",
-        "SC-LOADER-ROLLBACK"
+        "SC-LOADER-ROLLBACK",
+        "SC-LOADER-JOINT-ROLLBACK",
+        "SC-LOADER-CONTENTS",
+        "SC-LOADER-CHILD-SEND"
       ],
-      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's program-header read, page-table writes, byte copy and child switch, the child's one send (not a composite step: the composite model has no running children), boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
+      "does_not_prove": "Not a refinement of SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK, SC-LOADER-JOINT-ROLLBACK, SC-LOADER-CONTENTS, SC-LOADER-CHILD-SEND: one finite QEMU run of one admitted ELF loaded into one spawned child, with one rejected load rolled back; the kernel's pairing of the loader's rollback with the composite termination, its program-header read, page-table writes, byte copy and child switch, its check of the child's one send, boot.S, the subject build rule, compiler, linker and QEMU stay trusted"
     },
     "timer-server": {
       "expectations": "scripts/expectations/timer-server.transcript",
@@ -4162,6 +4203,33 @@
         "SC-NOTIFY-REPLY-BUDGET"
       ],
       "does_not_prove": "Not a refinement of the SC-NOTIFY-REPLY rows: one finite QEMU run whose kernel checks each step against the generated Lean witness; the C kernel, boot.S, compiler and QEMU stay trusted"
+    },
+    "timing-channels": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/timing-channels.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "60",
+        "image": "leanos-@VERSION@-x86_64-timing-channels.iso",
+        "elf": "leanos-timing-channels.elf",
+        "serial_log": "timing-channels.serial.log",
+        "scenario": "timing-channels",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-TIMING-REFUSAL-BUDGET",
+        "SC-TIMING-NO-USER-CLOCK"
+      ],
+      "does_not_prove": "Not a refinement of SC-TIMING-REFUSAL-BUDGET or SC-TIMING-NO-USER-CLOCK, and no bound on real time: one finite QEMU run in which the kernel checks each of the observer's cross-subject requests against the generated witness leanos_cross_subject_refusal and pads each refusal to its cycle budget, times the paths ADR 0028 names with the time-stamp counter at CPL0 (the counts are reported, not compared with a model, and TCG's counter follows the host's), and the observer's RDTSC at CPL3 faults under CR4.TSD; the C kernel, boot.S, the generated C, compiler, QEMU and the processor's RDTSC semantics stay trusted, and caches, TLBs, branch predictors and other microarchitectural state are out of scope"
     }
   }
 }

@@ -261,3 +261,71 @@ termination (`loaderTerminated`).
   `boot.S`. The composite model's frame stays free and scrubbed across the
   copy, so the kernel scrubs the frame before the child's termination returns
   it.
+
+## Amendment (2026-10-16): the loader and the composite model together (#571)
+
+The 2026-10-11 amendment left three gaps: the rollback pairing, the child's
+send, and the copied bytes. Issue #571 closes them in the model. The kernel's
+C half is unchanged, and so is the `spawn-loader` transcript.
+
+### Joint rollback
+
+`LeanOS.ChildLoaderJoint` puts the composite state and the loader state in one
+state. A loader request that rolls back is paired with
+`childGate (.terminateChild control)` for the control word the request names,
+as the kernel's `loader_rollback` pairs them. `joint_rollback_restores`
+(SC-LOADER-JOINT-ROLLBACK) covers the following run:
+
+1. From a composite state that satisfies the invariants, with a loader that
+   holds no child, spawn a child through the gate.
+2. Grant it frames any number of times.
+3. Run any loader requests, until one rolls back.
+
+After that request, the loader is exactly the loader before the spawn. The
+composite state is `SpawnRestored` against the state before the spawn: the
+same live subjects and capability slots, the same runnable set and current
+subject, the same ownership records, frame commitments, allocator, bindings
+and frame contents, and the same child tables and spawn authority. The
+child's spawn records are cleared. This is `spawn_rejected_unchanged` for the
+pair. It cannot be equality, because identities are never reused: the
+child's identity stays issued, and the control generation has advanced.
+
+### The child's send is a composite step
+
+`FailStop.childSend` is the started child's syscall 8. It is the composite
+endpoint send for a spawned child through its slot-0 capability, published as
+the composite gate publishes a send. It keeps every invariant of the
+whole-trace theorem (`childSend_preserves`). `ChildTraceStep.childSend` makes
+it a step of `child_resource_trace`. An accepted send writes only the mailbox
+of the endpoint the child's slot-0 capability names (`childSend_confined`).
+After a spawn and grants, the started child is the spawned child, and that
+capability is the parent's endpoint with exactly the requested rights
+(`joint_child_send_confined`, SC-LOADER-CHILD-SEND).
+
+### Copied contents
+
+`ChildLoader.State` now records the admitted file's bytes in the reserved
+range (`file`) and the bytes of the child's frames (`frameBytes`). A copy
+writes each byte of the claimed source while it is below the segment's file
+size, then zeros (`copyByte`). Rollback scrubs the frames. `Contents` says
+every page holds its segment's bytes, and every request keeps it
+(`step_preserves_contents`). After `start`, every address of a writable
+segment's page-rounded image reads the admitted file byte below `filesz` and
+zero past it (`started_writable_bytes`, SC-LOADER-CONTENTS). A read-only
+segment reads its file bytes in place (`started_contents`).
+
+### Evidence
+
+The oracle corpus gains seven `loaderDecide` vectors along the scenario's
+requests on the model's own states (`loader_trace_vectors_model`,
+`loader_trace_replies`). Their decisions are the transcript's 517, 257, 1, 2
+and 3, followed by two refusals after the start.
+
+### Still not proved
+
+- **The kernel's C half.** Its pairing of the two steps, its program-header
+  read, its page-table writes and byte copy, and the child switch in `boot.S`
+  are still trusted. The joint model says what that pairing must do. It is
+  not a refinement of the kernel.
+- **The child's scheduling.** `childSend` is the send alone. The kernel's
+  entry to the child, and the parent's wake-up, are not composite steps.

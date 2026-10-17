@@ -91,6 +91,7 @@ import LeanOS.SpawnAllocatorWordsRefinement
 import LeanOS.SpawnAllocatorWordsNext
 import LeanOS.SpawnAllocatorTable
 import LeanOS.ChildLoader
+import LeanOS.ChildLoaderJoint
 import LeanOS.FrameBudgetComposite
 import LeanOS.CompositeOwnSteps
 import LeanOS.CompositeChannels
@@ -106,6 +107,8 @@ import LeanOS.CompositeFullSteps
 import LeanOS.CompositeFullIsolation
 import LeanOS.CompositeFullTrace
 import LeanOS.CompositeFullChannels
+import LeanOS.TimingChannels
+import LeanOS.TimingBudget
 import LeanOS.SpawnOracle
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption
