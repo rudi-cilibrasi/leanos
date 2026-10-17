@@ -38,7 +38,12 @@
  * serves.  The separation of the two subjects is in time (the scrub), not in
  * address space as on q35; the lease exchange is not checked against
  * leanos_blocking_ipc_event, because the kernel holds it across the
- * restart.
+ * restart.  At the hand-off the kernel also stores 1 in the lease signal
+ * word of the executor scratch (LeanOS.Net.FrameSource.leaseSignalAt, issue
+ * #573), and at no other time: the driver program learns that the route
+ * moved, never the address, and starts its serve window then
+ * (LeanOS.Wifi.Endpoint.serveWith), so a slow DHCP server does not consume
+ * it.
  *
  * With --long-session (issue #557, LEANOS_QOTOM_LONG_SESSION; requires
  * --dhcp-subject) the kernel reloads the TCO watchdog GRUB armed for 120
@@ -56,6 +61,7 @@
 #define QOTOM_NET_RX_AT 0x3E000u
 #define QOTOM_NET_TX_AT 0x3E800u
 #define QOTOM_NET_TX_LEN_AT 0x3F000u
+#define QOTOM_NET_LEASE_SIGNAL_AT 0x3F004u
 #define QOTOM_NET_CONFIG_BYTES 10u
 #define QOTOM_NET_FRAME_MIN 14u
 #define QOTOM_NET_FRAME_MAX 1514u
@@ -334,6 +340,8 @@ static uint64_t qotom_net_handoff(uint64_t *saved) {
     qotom_net_lease_ip = saved[12];
     qotom_net_lease_held = 1;
     qotom_net_handoff_seq = qotom_net_seq;
+    /* The lease signal (issue #573): the route moved; nothing else. */
+    *(volatile uint32_t *)(qotom_net_scratch() + QOTOM_NET_LEASE_SIGNAL_AT) = 1u;
     for (uint64_t done = 0; done < QOTOM_NET_STACK_BYTES; done += 16)
         qotom_net_copy_out((uint64_t)user_a_stack + done, qotom_net_zeros, 16);
     qotom_net_a_model = QOTOM_NET_MODEL_NETWORK;

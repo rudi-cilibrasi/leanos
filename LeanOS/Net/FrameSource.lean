@@ -16,6 +16,14 @@ network subject through a fixed layout in the program's executor scratch
 * `txAt`, `txLenAt`: before the program is resumed, the kernel leaves the
   network subject's reply here and its length in the 32-bit word at
   `txLenAt` (0: no reply). The program takes the reply and clears the word.
+* `leaseSignalAt` (link-only endpoint, issue #573): the kernel stores 1 in
+  this 32-bit word when the DHCP subject hands its lease to the echo
+  subject, i.e. when the endpoint's route moves to the echo subject
+  (`LeanOS.DhcpSubject.leaseSignal`), and writes it at no other time. The
+  word carries that one bit, never the leased address. The BCM43224 serve
+  program starts its serve window when it sees the bit
+  (`LeanOS.Wifi.Endpoint.serveWith`), so a slow DHCP server does not
+  consume the serve window.
 
 The BCM43224 serve program (`LeanOS.Wifi.Endpoint`) fills the layout from
 the radio. `program` here fills it from a fixed list of synthesized frames
@@ -36,6 +44,8 @@ open LeanOS.Wifi.Bytecode
 def rxAt : UInt32 := 0x3E000
 def txAt : UInt32 := 0x3E800
 def txLenAt : UInt32 := 0x3F000
+/-- The lease signal word (issue #573): 1 once the lease was handed off. -/
+def leaseSignalAt : UInt32 := 0x3F004
 /-- Bytes of the host configuration record. -/
 def configLen : UInt32 := 10
 /-- Bytes reserved for each frame slot. -/

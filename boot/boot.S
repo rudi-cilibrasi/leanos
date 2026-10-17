@@ -854,10 +854,14 @@ read_fast_entry_sysenter_eip:
     ret
 .global enable_smep
 enable_smep:
-    /* Called after the page-fault gate and TSS are installed. */
+    /* Called after the page-fault gate and TSS are installed.  SMEP, SMAP,
+       and TSD set, PCE cleared rather than inherited (ADR 0028): RDTSC,
+       RDTSCP and RDPMC are privileged, so CPL3 has no cycle counter. */
     mov %cr4, %rax
     bts $20, %rax
     bts $21, %rax
+    bts $2, %rax
+    btr $8, %rax
     mov %rax, %cr4
     ret
 .global smap_copy_from
@@ -1133,7 +1137,8 @@ isr2_cld:
    The guard-mapped negative image must take this path and must not claim #DF. */
 .global isr13
 isr13:
-#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO) || \
+    defined(LEANOS_TIMING_CHANNELS_SCENARIO)
     clac
     cld
     /* This gate precedes the shared SAVE/NORMALIZE_ENTRY macro definitions.
@@ -1192,6 +1197,13 @@ direct_port_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#elif defined(LEANOS_TIMING_CHANNELS_SCENARIO)
+    /* Timing-channels image (ADR 0028): subject A's last instruction is
+       RDTSC at CPL3, which CR4.TSD turns into #GP(0).  The handler binds the
+       fault to that instruction, records the denial and ends the image; it
+       never returns. */
+    call timing_tsc_denial_handler
+    ud2
 #else
     /* Direct-port-containment family: subject A executed exactly one reviewed
        raw CPL3 port instruction, so hardware delivered #GP(0).  The handler
@@ -2760,6 +2772,58 @@ user_a_fault_handler_divide:
     mov $76, %rax
     int $0x80
     ud2
+#elif defined(LEANOS_TIMING_CHANNELS_SCENARIO)
+    /* Observer subject (issue #576, ADR 0028): 64 rounds of each path the
+       kernel times.  A cross-subject request (110) naming B (2) and naming
+       subject 9, which was never issued, each refused (0xc5); one naming
+       itself, passed (0).  A copy-in (111) of 1 and of 16 bytes from its own
+       stack.  A send (112) that wakes B, which runs RBX iterations before it
+       blocks again, each followed by a mark (114) that closes the round
+       trip.  Then the report (115), and RDTSC, which faults at CPL3. */
+    mov $64, %r12d
+1:  mov $2, %ebx
+    mov $110, %eax
+    int $0x80
+    cmp $0xc5, %rax
+    jne 9f
+    mov $9, %ebx
+    mov $110, %eax
+    int $0x80
+    cmp $0xc5, %rax
+    jne 9f
+    mov $1, %ebx
+    mov $110, %eax
+    int $0x80
+    test %rax, %rax
+    jnz 9f
+    lea -32(%rsp), %rbx
+    mov $1, %ecx
+    mov $111, %eax
+    int $0x80
+    lea -32(%rsp), %rbx
+    mov $16, %ecx
+    mov $111, %eax
+    int $0x80
+    xor %ebx, %ebx
+    xor %ecx, %ecx
+    mov $112, %eax
+    int $0x80
+    mov $114, %eax
+    int $0x80
+    mov $4096, %ebx
+    xor %ecx, %ecx
+    mov $112, %eax
+    int $0x80
+    mov $114, %eax
+    int $0x80
+    dec %r12d
+    jnz 1b
+    mov $115, %eax
+    int $0x80
+.global user_a_timing_tsc_probe
+user_a_timing_tsc_probe:
+    rdtsc
+9:  ud2
 #else
     /* Driver subject: ask the source for the next event (0 = end) and send
        each one to B over endpoint 10. */
@@ -3598,6 +3662,19 @@ user_b_entry:
     mov $77, %rax
     int $0x80
     ud2
+#elif defined(LEANOS_TIMING_CHANNELS_SCENARIO)
+    /* Receiver subject (issue #576): block on endpoint 10 (113); when A's
+       send wakes it, RAX holds A's first payload word, the number of
+       iterations to run before blocking again.  Its run time is what A's
+       round trip shows. */
+1:  mov $113, %eax
+    int $0x80
+    mov %rax, %rcx
+    test %rcx, %rcx
+    jz 1b
+2:  dec %rcx
+    jnz 2b
+    jmp 1b
 #else
     /* Echo subject: block on endpoint 10; when woken, RAX/RBX hold the two
        payload words; echo them back (syscall 9) and block again. */

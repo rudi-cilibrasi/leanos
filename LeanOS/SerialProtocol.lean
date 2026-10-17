@@ -48,7 +48,8 @@ def families : List Family := [
   ⟨22, ["ACCEPT", "BOOT", "DELEGATED-SEND", "DISPATCH", "ENTER", "EXCESS-RIGHT-DENIAL", "FINAL", "OFFER", "SEALED-DENIAL", "UNRELATED"]⟩,
   ⟨23, ["BOOT", "CANCELED-HANDLE-DENIAL", "CANCELED-RECEIPT", "DISPATCH", "ENTER", "FINAL", "FRESH-SEND", "OFFER", "OFFER-DENIAL", "REPLACE", "REVOKE", "REVOKE-DENIAL", "UNRELATED"]⟩,
   ⟨24, ["BOOT", "CPU", "CONTROL"]⟩,
-  ⟨25, ["BOOT", "CPU", "CONTROL", "PCI-SCAN", "PCI-HEADER"]⟩
+  ⟨25, ["BOOT", "CPU", "CONTROL", "PCI-SCAN", "PCI-HEADER"]⟩,
+  ⟨26, ["CYCLES", "REFUSAL", "TSC-DENIAL"]⟩
 ]
 
 /-- Every record identity, in family order. -/

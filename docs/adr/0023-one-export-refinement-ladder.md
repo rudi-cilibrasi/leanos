@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted, issue #470. Implemented for `leanos_boot_transition`.
+Accepted, issue #470. Implemented for `leanos_boot_transition`. Extended by
+[ADR 0029](0029-refinement-spawn-loader-frame-exports.md) (issue #570) to six
+more exports, with a larger subset and a verified symbolic evaluator.
 
 ## Context
 
