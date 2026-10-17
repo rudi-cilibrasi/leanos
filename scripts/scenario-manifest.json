@@ -1730,10 +1730,13 @@
       },
       {
         "image": "leanos-capability-transfer",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-capability-transfer.h",
         "final": "boot-page-plan-capability-transfer.final.h",
-        "description": "capability-transfer"
+        "description": "capability-transfer",
+        "targets": [
+          "leanos-capability-transfer"
+        ]
       },
       {
         "image": "leanos-inflight-revocation",
