@@ -611,3 +611,48 @@ each former magic value, and the other bypasses; the gate rejects each one.
 delivered its reply word to the caller, so the words handlers now return
 there (zero) are not observable. No oracle vector, adapter or export
 changes.
+
+### 2026-10-16: timing channels decided (#576)
+
+The composite claim excludes timing. [ADR 0028](adr/0028-timing-channels.md)
+now decides what that exclusion covers. Every timing difference is closed,
+declared with its source, or out of scope.
+
+**Closed by construction.**
+
+- **Cross-subject refusals (SC-TIMING-REFUSAL-BUDGET).** The subject gate's
+  refusal is decided by the boot witness `leanos_cross_subject_refusal` from
+  the latch mode, the scheduled subject and the named subject alone. It
+  answers exactly `CompositeState.refusesCrossSubject`
+  (`TimingBudget.crossSubjectRefusal_agrees`). The kernel pads its reply to a
+  fixed cycle budget, so two refusals whose work fits the budget leave at the
+  same cycle, whatever the target's state
+  (`TimingBudget.refusal_fixed_budget`).
+- **The clock (SC-TIMING-NO-USER-CLOCK).** The q35 images set CR4.TSD and
+  clear CR4.PCE, and `validate_user_return` requires both, so RDTSC, RDTSCP
+  and RDPMC fault at CPL3
+  (`TimingBudget.clock_controls_deny_user_counters`). The clocks left to a
+  subject are the scheduler's tick and order, which are public inputs here,
+  and device registers, which only a device's holder reaches.
+
+**Declared.** Each declared difference has its source listed in the ADR:
+
+- the IPC wake path: the waiter state of an endpoint in S's view, and the
+  run time of the receiver S talks to;
+- the copy window: the length S chooses;
+- device programs: the holder's own device and program;
+- the scheduler: a public input;
+- every other kernel path: whatever it reads, which its reply does not
+  reveal (`full_output`), but whose time is not proved to be a function of
+  the full view.
+
+**Out of scope.** Caches, TLBs, branch predictors, speculation and other
+microarchitectural state, physical channels, firmware and platform timing,
+and the host under QEMU.
+
+**Measurement.** The `timing-channels` q35 image times each path the ADR names
+at CPL0 and reports its cycle counts beside a recorded baseline
+([timing channels](timing-channels.md)).
+
+**What does not change.** The composite claim's statement, its exclusion list
+and its theorems are unchanged. Its claim row now points to this ADR.

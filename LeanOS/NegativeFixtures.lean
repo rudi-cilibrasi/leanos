@@ -24,6 +24,7 @@ import LeanOS.NegativeFixtures.SharedContainment
 import LeanOS.NegativeFixtures.SpawnAccounting
 import LeanOS.NegativeFixtures.SpawnIdentityRollback
 import LeanOS.NegativeFixtures.StaleTranslation
+import LeanOS.NegativeFixtures.TimingChannels
 import LeanOS.NegativeFixtures.UserFaultClass
 import LeanOS.NegativeFixtures.VTdBootPlan
 import LeanOS.NegativeFixtures.WrappingIssuerReuse
