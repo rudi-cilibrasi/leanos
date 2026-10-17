@@ -1,0 +1,116 @@
+# The spawn family as a bounded allocator
+
+This section is about a small record that holds everything the kernel needs to decide a spawn-family command: the identity counters, the parent's spawn permission and budget, its child table, its memory slots and its frames. The allocator decides every such command on every such record, and a rejected command never changes the record.
+
+- `syscall_commands_covered` — The allocator decides every command a program can make through the spawn system call: spawn, give frames, end a child, allocate memory, and release memory.
+- `rejectWith_next` — Bookkeeping: a rejection keeps the allocator record unchanged.
+- `rejectWith_status` — Bookkeeping: a rejection reports status 0x80 plus its error code.
+- `acceptWith_status` — Bookkeeping: an accepted step reports status 0x01.
+- `childSpawnErrorCode_lt` — Every spawn error code is small enough that a rejected spawn can never look accepted.
+- `frameGrantErrorCode_lt` — Every frame-grant error code is small enough that a rejected grant can never look accepted.
+- `controlDenialCode_lt` — Every child-handle error code is small enough that a rejection can never look accepted.
+- `memoryCode_lt` — Every memory error code is small enough that a rejection can never look accepted.
+- `reject_status_ne` — Bookkeeping: 0x80 plus a small code is never the accepted status 0x01.
+- `spawnStep_decided` — A spawn either returns the allocator record unchanged with no value, or is accepted.
+- `grantStep_decided` — A frame grant either returns the record unchanged with no value, or is accepted.
+- `terminateStep_decided` — Ending a child either returns the record unchanged with no value, or is accepted.
+- `grantAuthorityStep_decided` — A decided kernel grant of spawn permission either returns the record unchanged with no value, or is accepted.
+- `revokeAuthorityStep_decided` — Withdrawing spawn permission is always accepted.
+- `allocateStep_decided` — A memory allocation either returns the record unchanged with no value, or is accepted.
+- `releaseStep_decided` — A memory release either returns the record unchanged with no value, or is accepted.
+- `step_decided` — Every decided command either returns the allocator record unchanged with no value, or is accepted.
+- `step_rejected_unchanged` — Rollback: every rejected command leaves the allocator record exactly as it was.
+- `step_rejected_value` — Every rejected command returns a zero value word.
+- `rejectWith_status_ne` — A rejection with a small error code never reports the accepted status.
+- `spawnStep_accepted` — An accepted spawn presented the current spawn-permission generation, was within the subject budget, found a free child slot, had control generations, subject, object and capability identities left, named the parent's endpoint, and asked for valid endpoint rights; it records the child in that slot and returns its control word.
+- `grantStep_accepted` — An accepted frame grant named a live child-table entry and asked for no more frames than the parent has free.
+- `terminateStep_accepted` — An accepted termination named a live child-table entry, empties that slot, and gives the child's frames back to the parent.
+- `allocateStep_accepted` — An accepted memory allocation named an empty parent memory slot, had capability and object identities left, and the parent had a free frame.
+- `releaseStep_accepted` — An accepted memory release named a parent memory slot that holds memory, and empties it.
+- `grantAuthorityStep_accepted` — An accepted kernel grant of spawn permission was for the parent, with a subject budget the record holds and that covers its current children, and records a fresh generation.
+- `spawned_subjectNext` — Bookkeeping: after an accepted spawn, the allocator's next subject identity is exactly what that step sets it to.
+- `spawned_objectNext` — Bookkeeping: after an accepted spawn, the allocator's next object identity is exactly what that step sets it to.
+- `spawned_capabilityNext` — Bookkeeping: after an accepted spawn, the allocator's next capability identity is exactly what that step sets it to.
+- `spawned_controlNext` — Bookkeeping: after an accepted spawn, the allocator's next control-handle generation is exactly what that step sets it to.
+- `spawned_authorityNext` — Bookkeeping: after an accepted spawn, the allocator's next spawn-permission generation is exactly what that step sets it to.
+- `spawned_authority` — Bookkeeping: after an accepted spawn, the allocator's spawn permission is exactly what that step sets it to.
+- `spawned_budget` — Bookkeeping: after an accepted spawn, the allocator's subject budget is exactly what that step sets it to.
+- `spawned_children` — Bookkeeping: after an accepted spawn, the allocator's child table is exactly what that step sets it to.
+- `spawned_memory` — Bookkeeping: after an accepted spawn, the allocator's memory slots is exactly what that step sets it to.
+- `spawned_parentFrames` — Bookkeeping: after an accepted spawn, the allocator's parent's frame count is exactly what that step sets it to.
+- `spawned_memoryUsed` — Bookkeeping: after an accepted spawn, the allocator's count of memory objects in use is exactly what that step sets it to.
+- `spawned_memoryAt` — Bookkeeping: after an accepted spawn, the allocator's memory capability in each parent slot is exactly what that step sets it to.
+- `granted_subjectNext` — Bookkeeping: after an accepted frame grant, the allocator's next subject identity is exactly what that step sets it to.
+- `granted_objectNext` — Bookkeeping: after an accepted frame grant, the allocator's next object identity is exactly what that step sets it to.
+- `granted_capabilityNext` — Bookkeeping: after an accepted frame grant, the allocator's next capability identity is exactly what that step sets it to.
+- `granted_controlNext` — Bookkeeping: after an accepted frame grant, the allocator's next control-handle generation is exactly what that step sets it to.
+- `granted_authorityNext` — Bookkeeping: after an accepted frame grant, the allocator's next spawn-permission generation is exactly what that step sets it to.
+- `granted_authority` — Bookkeeping: after an accepted frame grant, the allocator's spawn permission is exactly what that step sets it to.
+- `granted_budget` — Bookkeeping: after an accepted frame grant, the allocator's subject budget is exactly what that step sets it to.
+- `granted_children` — Bookkeeping: after an accepted frame grant, the allocator's child table is exactly what that step sets it to.
+- `granted_memory` — Bookkeeping: after an accepted frame grant, the allocator's memory slots is exactly what that step sets it to.
+- `granted_parentFrames` — Bookkeeping: after an accepted frame grant, the allocator's parent's frame count is exactly what that step sets it to.
+- `granted_memoryUsed` — Bookkeeping: after an accepted frame grant, the allocator's count of memory objects in use is exactly what that step sets it to.
+- `granted_memoryAt` — Bookkeeping: after an accepted frame grant, the allocator's memory capability in each parent slot is exactly what that step sets it to.
+- `terminated_subjectNext` — Bookkeeping: after an accepted child termination, the allocator's next subject identity is exactly what that step sets it to.
+- `terminated_objectNext` — Bookkeeping: after an accepted child termination, the allocator's next object identity is exactly what that step sets it to.
+- `terminated_capabilityNext` — Bookkeeping: after an accepted child termination, the allocator's next capability identity is exactly what that step sets it to.
+- `terminated_controlNext` — Bookkeeping: after an accepted child termination, the allocator's next control-handle generation is exactly what that step sets it to.
+- `terminated_authorityNext` — Bookkeeping: after an accepted child termination, the allocator's next spawn-permission generation is exactly what that step sets it to.
+- `terminated_authority` — Bookkeeping: after an accepted child termination, the allocator's spawn permission is exactly what that step sets it to.
+- `terminated_budget` — Bookkeeping: after an accepted child termination, the allocator's subject budget is exactly what that step sets it to.
+- `terminated_children` — Bookkeeping: after an accepted child termination, the allocator's child table is exactly what that step sets it to.
+- `terminated_memory` — Bookkeeping: after an accepted child termination, the allocator's memory slots is exactly what that step sets it to.
+- `terminated_parentFrames` — Bookkeeping: after an accepted child termination, the allocator's parent's frame count is exactly what that step sets it to.
+- `terminated_memoryUsed` — Bookkeeping: after an accepted child termination, the allocator's count of memory objects in use is exactly what that step sets it to.
+- `terminated_memoryAt` — Bookkeeping: after an accepted child termination, the allocator's memory capability in each parent slot is exactly what that step sets it to.
+- `allocated_subjectNext` — Bookkeeping: after an accepted memory allocation, the allocator's next subject identity is exactly what that step sets it to.
+- `allocated_objectNext` — Bookkeeping: after an accepted memory allocation, the allocator's next object identity is exactly what that step sets it to.
+- `allocated_capabilityNext` — Bookkeeping: after an accepted memory allocation, the allocator's next capability identity is exactly what that step sets it to.
+- `allocated_controlNext` — Bookkeeping: after an accepted memory allocation, the allocator's next control-handle generation is exactly what that step sets it to.
+- `allocated_authorityNext` — Bookkeeping: after an accepted memory allocation, the allocator's next spawn-permission generation is exactly what that step sets it to.
+- `allocated_authority` — Bookkeeping: after an accepted memory allocation, the allocator's spawn permission is exactly what that step sets it to.
+- `allocated_budget` — Bookkeeping: after an accepted memory allocation, the allocator's subject budget is exactly what that step sets it to.
+- `allocated_children` — Bookkeeping: after an accepted memory allocation, the allocator's child table is exactly what that step sets it to.
+- `allocated_memory` — Bookkeeping: after an accepted memory allocation, the allocator's memory slots is exactly what that step sets it to.
+- `allocated_parentFrames` — Bookkeeping: after an accepted memory allocation, the allocator's parent's frame count is exactly what that step sets it to.
+- `allocated_childCount` — Bookkeeping: after an accepted memory allocation, the allocator's number of children is exactly what that step sets it to.
+- `allocated_chargeSum` — Bookkeeping: after an accepted memory allocation, the allocator's total frames charged to children is exactly what that step sets it to.
+- `allocated_childAt` — Bookkeeping: after an accepted memory allocation, the allocator's entry in each child-table slot is exactly what that step sets it to.
+- `released_subjectNext` — Bookkeeping: after an accepted memory release, the allocator's next subject identity is exactly what that step sets it to.
+- `released_objectNext` — Bookkeeping: after an accepted memory release, the allocator's next object identity is exactly what that step sets it to.
+- `released_capabilityNext` — Bookkeeping: after an accepted memory release, the allocator's next capability identity is exactly what that step sets it to.
+- `released_controlNext` — Bookkeeping: after an accepted memory release, the allocator's next control-handle generation is exactly what that step sets it to.
+- `released_authorityNext` — Bookkeeping: after an accepted memory release, the allocator's next spawn-permission generation is exactly what that step sets it to.
+- `released_authority` — Bookkeeping: after an accepted memory release, the allocator's spawn permission is exactly what that step sets it to.
+- `released_budget` — Bookkeeping: after an accepted memory release, the allocator's subject budget is exactly what that step sets it to.
+- `released_children` — Bookkeeping: after an accepted memory release, the allocator's child table is exactly what that step sets it to.
+- `released_memory` — Bookkeeping: after an accepted memory release, the allocator's memory slots is exactly what that step sets it to.
+- `released_parentFrames` — Bookkeeping: after an accepted memory release, the allocator's parent's frame count is exactly what that step sets it to.
+- `released_childCount` — Bookkeeping: after an accepted memory release, the allocator's number of children is exactly what that step sets it to.
+- `released_chargeSum` — Bookkeeping: after an accepted memory release, the allocator's total frames charged to children is exactly what that step sets it to.
+- `released_childAt` — Bookkeeping: after an accepted memory release, the allocator's entry in each child-table slot is exactly what that step sets it to.
+- `authorized_subjectNext` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's next subject identity is exactly what that step sets it to.
+- `authorized_objectNext` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's next object identity is exactly what that step sets it to.
+- `authorized_capabilityNext` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's next capability identity is exactly what that step sets it to.
+- `authorized_controlNext` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's next control-handle generation is exactly what that step sets it to.
+- `authorized_authorityNext` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's next spawn-permission generation is exactly what that step sets it to.
+- `authorized_authority` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's spawn permission is exactly what that step sets it to.
+- `authorized_budget` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's subject budget is exactly what that step sets it to.
+- `authorized_children` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's child table is exactly what that step sets it to.
+- `authorized_memory` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's memory slots is exactly what that step sets it to.
+- `authorized_parentFrames` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's parent's frame count is exactly what that step sets it to.
+- `authorized_childCount` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's number of children is exactly what that step sets it to.
+- `authorized_chargeSum` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's total frames charged to children is exactly what that step sets it to.
+- `authorized_childAt` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's entry in each child-table slot is exactly what that step sets it to.
+- `authorized_memoryUsed` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's count of memory objects in use is exactly what that step sets it to.
+- `authorized_memoryAt` — Bookkeeping: after an accepted kernel grant of spawn permission, the allocator's memory capability in each parent slot is exactly what that step sets it to.
+- `sum_set` — A stepping-stone fact: replacing one number in a list changes the list's sum by exactly the change of that number.
+- `childAt_some` — A child-table entry that is read back exists at that position of the table.
+- `freeSlot_some` — The first free child slot the allocator picks is inside the table and empty.
+- `resolveControl_ok` — A control word that names a child decodes to that slot and the entry's generation, and the entry is in the table.
+- `childAt_set` — After one child-table slot is replaced, that slot reads the new entry and every other slot reads what it held before.
+- `chargeSum_set` — After one child-table slot is replaced, the total frames charged to children changes by exactly that entry's change.
+- `childCount_set` — After one child-table slot is replaced, the number of children changes by exactly that slot's change.
+- `memoryUsed_set` — After one memory slot is replaced, the count of memory objects in use changes by exactly that slot's change.
+- `memoryAt_some` — A memory capability that is read back from a parent slot exists in the record's memory table.

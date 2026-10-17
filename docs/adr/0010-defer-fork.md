@@ -451,3 +451,21 @@ The spawn table gains `loaderRespawned`, `loaderGranted` and
 `loaderTerminated` (tokens `0x8201` to `0x8401`). These are a spawn into the
 slot a rolled-back child left, a frame grant to the new child, and its
 termination.
+
+## Amendment (2026-10-16): the child's send is a composite step (issue #571)
+
+The 2026-10-11 amendment said the loaded child's send "is not a composite
+step, and no theorem covers it". It now is one. `FailStop.childSend` is the
+started child's syscall 8: the composite endpoint send through the child's
+slot-0 capability. It keeps every invariant of the whole-trace theorem
+(`childSend_preserves`), and `ChildTraceStep.childSend` is a step of
+`child_resource_trace`. An accepted send writes only the mailbox of the
+endpoint spawn granted the child (`childSend_confined`,
+`joint_child_send_confined`). The scheduler still admits no spawned child, and
+the kernel's entry to the child is not a composite step.
+
+The loader's rollback and the composite termination it is paired with are
+proved together (`ChildLoaderJoint.joint_rollback_restores`): they restore the
+pre-spawn composite state on every authority and resource projection
+(`FailStop.SpawnRestored`). See
+[ADR 0024's #571 amendment](0024-build-time-elf-admission.md#amendment-2026-10-16-the-loader-and-the-composite-model-together-571).

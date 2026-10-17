@@ -1,0 +1,51 @@
+# Reading the thirteen allocator words
+
+These facts connect the generated fixed-width checks to the allocator record the words stand for: each check reads exactly what the record says.
+
+- `toNat_shr16` — Bookkeeping: shifting a word right by 16 bits divides its value by 65536.
+- `toNat_shr32` — Bookkeeping: shifting a word right by 32 bits divides its value by 2^32.
+- `toNat_and16` — Bookkeeping: keeping a word's low 16 bits takes its value modulo 65536.
+- `toNat_shl16` — Bookkeeping: shifting a small word left by 16 bits multiplies its value by 65536.
+- `beq_toNat` — Bookkeeping: two words are equal exactly when their values are.
+- `eq_toNat` — Bookkeeping: two words are equal exactly when their values are.
+- `toNat_add_of_lt` — Bookkeeping: adding two words whose values sum below 2^64 adds their values.
+- `toNat_ofNat_lt` — Bookkeeping: a number below 2^64 survives the trip into a word.
+- `ofNat_toNat` — Bookkeeping: a word survives the trip through its value.
+- `canonicalFacts` — Canonical state words have a nonzero spawn-permission counter, canonical child words, a frames word with zero high bits and a budget of at most four, and fewer than 65536 frames in the family.
+- `childCanonical_facts` — A canonical child word is zero or carries a generation between 1 and the reserved generation.
+- `decode_childAt` — The decoded child table reads its four slots from the four child words, and nothing past them.
+- `decode_memoryAt` — The decoded parent memory slots 2 and 3 come from the two memory words, and no other slot holds memory.
+- `occupied_toNat` — The generated occupancy test of a child word is one exactly when the slot holds a child.
+- `occupied_memory_toNat` — The generated occupancy test of a memory word is one exactly when the slot holds memory.
+- `occupied_le` — The generated occupancy test is at most one.
+- `childCountW_toNat` — The generated child count is the decoded record's number of children.
+- `memoryUsedW_toNat` — The generated memory count is the decoded record's count of memory objects in use.
+- `availableW_toNat` — The generated free-frame count is the decoded record's free frames.
+- `freeSlotW_spec` — The generated first-free-slot search finds the decoded record's first free child slot, or reports none.
+- `childWordAt_spec` — The generated child-slot lookup reads the decoded record's entry in that slot.
+- `memoryWordAt_spec` — The generated memory-slot lookup reads the decoded record's memory in that slot.
+- `toNat_ne_of_ne` — Bookkeeping: a word different from a small number has a different value.
+- `identityExhaustedW_spec` — The generated subject/object exhaustion test is the allocator's.
+- `capabilityExhaustedW_spec` — The generated capability exhaustion test is the allocator's.
+- `controlAvailableW_spec` — The generated control-generation test is the allocator's.
+- `slot_toNat` — Bookkeeping: a handle word's low 16 bits are its slot.
+- `identity_toNat` — Bookkeeping: a handle word's high 48 bits are its generation.
+- `slotReserved_value` — Bookkeeping: the reserved slot is 65535.
+- `generationLimit_toNat` — Bookkeeping: the generated reserved-generation constant is the model's.
+- `decodeMemory_some_iff` — A memory word holds a capability identity exactly when it is nonzero, and that identity is its value.
+- `resolveEndpointW_spec` — The generated endpoint-handle check gives exactly the allocator's answer: zero for the parent's endpoint, otherwise the code of the same denial.
+- `decodeChild_some_iff` — A child word holds an entry exactly when it is nonzero, with the generation in its high bits and the charge in its low 16 bits.
+- `decodeChild_none_iff` — A child word holds no entry exactly when it is zero.
+- `resolveControlW_spec` — The generated control-word check gives exactly the allocator's answer: zero for a live child, otherwise the code of the same denial.
+- `resolveControl_words` — A control word that names a child names the slot in its low bits, and that slot's child word decodes to the entry.
+- `rightsAgree_all` — For all 64 rights words, the generated endpoint-rights test agrees with the model (checked by evaluation).
+- `rightsValidW_spec` — The generated endpoint-rights test is the model's rights rule for every decoded rights word.
+- `commandErrorW_spec` — The generated command-word check returns zero exactly when the five command words decode, and otherwise the dispatcher's error word for the same reason.
+- `entryCharge_decodeChild` — The frames charged in a decoded child word are its low 16 bits.
+- `decode_chargeSum` — The decoded record's total charged frames is the sum of the child words' low 16 bits.
+- `decodeChild_bounded` — A canonical child word decodes to an entry with a valid generation.
+- `decode_bounded` — Canonical state words decode to a record inside the allocator's bounded representation.
+- `encodeChild_decodeChild` — Encoding a decoded child word gives back the same word.
+- `encodeMemory_decodeMemory` — Encoding a decoded memory word gives back the same word.
+- `encodeAuthority_decodeAuthority` — Encoding a decoded spawn-permission word gives back the same word.
+- `encode_decode` — Canonical state words are exactly the encoding of the record they decode to.

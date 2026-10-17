@@ -76,6 +76,7 @@ LeanOS/ResumablePreemption.lean	bounded-model
 LeanOS/Scheduler.lean	bounded-model
 LeanOS/SecurityClaims.lean	bounded-model
 LeanOS/SpawnAccountingOracle.lean	bounded-model
+LeanOS/SpawnAllocatorTable.lean	bounded-model
 LeanOS/SpawnBoundary.lean	bounded-model
 LeanOS/SpawnBoundaryChecks.lean	bounded-model
 LeanOS/SpawnOracle.lean	bounded-model
