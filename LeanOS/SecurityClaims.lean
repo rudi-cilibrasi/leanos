@@ -51,6 +51,7 @@ import LeanOS.Refinement.BootTransitionC
 import LeanOS.Refinement.ChildLoaderC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
+import LeanOS.Refinement.SpawnAllocatorC
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
@@ -3976,6 +3977,81 @@ theorem frame_port_check_refinement :
   ⟨Refinement.DhcpSubjectC.framePortCheckC_refines,
     Refinement.DhcpSubjectC.framePortCheckC_own_window,
     Refinement.DhcpSubjectC.framePortCheckC_nonholder⟩
+
+/-- SC-SPAWN-ALLOCATOR-REFINEMENT: the seven C functions
+`leanos_spawn_allocator_*`, as emitted by the pinned toolchain, linked with
+the 31 emitted helpers they call and interpreted by the `Refinement.CSubset`
+semantics, compute the Lean exports of `SpawnAllocatorBoot` on every input. -/
+theorem spawn_allocator_refinement (ext : Refinement.CSubset.Ext) :
+    (∀ index : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.seedC [index] =
+        some (SpawnAllocatorBoot.seed index)) ∧
+    (∀ w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.syscallC
+          [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, actor, number, rbx, rcx, rdx] =
+        some (SpawnAllocatorBoot.syscall w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+          actor number rbx rcx rdx)) ∧
+    (∀ w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.syscallValueC
+          [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, actor, number, rbx, rcx, rdx] =
+        some (SpawnAllocatorBoot.syscallValue w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+          actor number rbx rcx rdx)) ∧
+    (∀ index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.syscallNextC
+          [index, w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, actor, number, rbx, rcx,
+            rdx] =
+        some (SpawnAllocatorBoot.syscallNext index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+          actor number rbx rcx rdx)) ∧
+    (∀ w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.kernelC
+          [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, tag, a0, a1, a2, a3] =
+        some (SpawnAllocatorBoot.kernel w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+          tag a0 a1 a2 a3)) ∧
+    (∀ w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.kernelValueC
+          [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, tag, a0, a1, a2, a3] =
+        some (SpawnAllocatorBoot.kernelValue w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+          tag a0 a1 a2 a3)) ∧
+    (∀ index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64,
+      Refinement.CSubset.callWith (Refinement.SpawnAllocatorC.link ext)
+          Refinement.SpawnAllocatorC.kernelNextC
+          [index, w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, tag, a0, a1, a2, a3] =
+        some (SpawnAllocatorBoot.kernelNext index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+          tag a0 a1 a2 a3)) :=
+  ⟨Refinement.SpawnAllocatorC.seedC_refines ext,
+    Refinement.SpawnAllocatorC.syscallC_refines ext,
+    Refinement.SpawnAllocatorC.syscallValueC_refines ext,
+    Refinement.SpawnAllocatorC.syscallNextC_refines ext,
+    Refinement.SpawnAllocatorC.kernelC_refines ext,
+    Refinement.SpawnAllocatorC.kernelValueC_refines ext,
+    Refinement.SpawnAllocatorC.kernelNextC_refines ext⟩
+
+/-- SC-SPAWN-ALLOCATOR-SPEC-REFINEMENT: called as the kernel calls them, the
+emitted C of the seven exports computes the allocator's specification on
+every input: a syscall answers `specSyscall` (the refusals in order, then
+decode, `SpawnAllocator.step`, encode), a kernel command answers `specStep`,
+and the seed export gives the seed's words (`SpawnAllocatorBoot.seedWords`,
+the encoded family seed by `seed_refines`). -/
+theorem spawn_allocator_spec_refinement (ext : Refinement.CSubset.Ext) :
+    (∀ (words : SpawnAllocatorWords.Words) (actor number rbx rcx rdx : UInt64),
+      Refinement.SpawnAllocatorC.syscallWordsC ext words actor number rbx rcx rdx =
+        some (SpawnAllocatorBoot.specSyscall words actor number rbx rcx rdx)) ∧
+    (∀ (words : SpawnAllocatorWords.Words) (command : CompositeDispatcher.CommandWords),
+      Refinement.SpawnAllocatorC.kernelWordsC ext words command =
+        some ((SpawnAllocatorWords.specStep words command).2.1,
+          (SpawnAllocatorWords.specStep words command).2.2,
+          (SpawnAllocatorWords.specStep words command).1)) ∧
+    Refinement.SpawnAllocatorC.seedWordsC ext = some SpawnAllocatorBoot.seedWords :=
+  ⟨Refinement.SpawnAllocatorC.syscallWordsC_spec ext,
+    Refinement.SpawnAllocatorC.kernelWordsC_spec ext,
+    Refinement.SpawnAllocatorC.seedWordsC_eq ext⟩
+
 /-- SC-CONSOLE-INTEGRITY: a subject holding neither the console capability nor
 an endpoint capability that reaches the console server cannot change the
 console trace: two scripts that differ only in its actions produce equal

@@ -911,6 +911,16 @@ The proofs are in `LeanOS.SpawnAllocatorBootRefinement`:
 | The seed words are the family seed's, and along every list of syscalls the kernel's words are the words of the family state the same gate steps reach | `seed_refines`, `syscall_preserves`, `syscallTrace_refines` |
 | The exports compute the decode–step–encode specification for every input | `syscall_spec`, `kernel_spec` |
 
+The C the kernel links has its own proofs (#593,
+[ADR 0029](adr/0029-refinement-spawn-loader-frame-exports.md)).
+`LeanOS.Refinement.SpawnAllocatorC` holds the emitted C of the seven exports
+and of the 31 helpers they call, each drift-checked against the generated
+`SpawnAllocatorWords.c`. Under the C-subset semantics, each computes its Lean
+definition on every input, so the linked exports compute the same
+specification (`syscallWordsC_spec`, `kernelWordsC_spec`) and the seed's words
+(`seedWordsC_eq`, and with `seed_refines` `seedWordsC_spec`;
+SC-SPAWN-ALLOCATOR-REFINEMENT, SC-SPAWN-ALLOCATOR-SPEC-REFINEMENT).
+
 The hosted `spawn-allocator` corpus (`LeanOS.SpawnAllocatorVectors`,
 [model-oracle.md](model-oracle.md#spawn-allocator-corpus-hosted-only)) replays
 the generated C against that specification on 9215 vectors over 171 states:

@@ -1,12 +1,13 @@
 import LeanOS.Refinement.ChildLoaderC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
+import LeanOS.Refinement.SpawnAllocatorC
 
 /-!
-# Negative fixtures for the #570 refinement theorems
+# Negative fixtures for the #570 and #593 refinement theorems
 
-Each rung-3 theorem of issue #570 states that a checked-in C AST computes a
-Lean witness. These fixtures show the statements have teeth on both sides:
+Each rung-3 theorem of issues #570 and #593 states that a checked-in C AST
+computes a Lean witness. These fixtures show the statements have teeth on both sides:
 
 * **a mutated export (C side):** the emitted AST with one constant or one
   comparison changed computes a different answer on a concrete input, so the
@@ -201,6 +202,100 @@ is false
 #guard_msgs in
 example : call framePortCheckC [2, 0x03020101, 0, 100, 0, 1000] =
     some (ownerlessFramePortCheck 2 0x03020101 0 100 0 1000) := by
+  decide
+
+/-! ## The spawn allocator's exports (#593)
+
+The ASTs run linked with the emitted helpers (`SpawnAllocatorC.link`). The
+inputs are the family seed's words: subjects up to 2 issued, the parent's
+spawn authority not yet granted, memory object 20 in slot 2, one frame
+committed to the parent. -/
+
+open LeanOS.SpawnAllocatorBoot LeanOS.Refinement.SpawnAllocatorC in
+/-- The emitted seed export with its first word (subjects issued, `3`)
+changed. -/
+def seedMutantC : Func := mutateLiteral seedC 0 fun _ => 4
+
+open LeanOS.SpawnAllocatorBoot LeanOS.Refinement.SpawnAllocatorC in
+/--
+error: Tactic `decide` proved that the proposition
+  callWith (link noCalls) seedMutantC [0] = some (seed 0)
+is false
+-/
+#guard_msgs in
+example : callWith (link noCalls) seedMutantC [0] = some (seed 0) := by
+  decide
+
+open LeanOS.SpawnAllocatorBoot LeanOS.Refinement.SpawnAllocatorC in
+/-- The emitted seed export agrees on the same word. -/
+example : callWith (link noCalls) seedC [0] = some (seed 0) := by
+  decide
+
+open LeanOS.SpawnAllocatorWords LeanOS.Refinement.SpawnAllocatorC in
+/-- The emitted decision helper with its spawn tag (`0x7001`) changed. -/
+def decideMutantC : Func := mutateLiteral decideWC 0 fun _ => 0x7002
+
+open LeanOS.SpawnAllocatorWords LeanOS.Refinement.SpawnAllocatorC in
+/- A spawn before the kernel grants spawn authority: the model rejects it
+(`0x81`); the mutant no longer knows the tag and accepts it (`0x01`). -/
+/--
+error: Tactic `decide` proved that the proposition
+  callWith (link noCalls) decideMutantC [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 65536, 28673, 1, 0, 0] =
+    some (decideW 3 21 6 1 1 0 0 0 0 0 5 0 65536 28673 1 0 0)
+is false
+-/
+#guard_msgs in
+example : callWith (link noCalls) decideMutantC
+    [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 0x10000, 0x7001, 1, 0, 0] =
+    some (decideW 3 21 6 1 1 0 0 0 0 0 5 0 0x10000 0x7001 1 0 0) := by
+  decide
+
+open LeanOS.SpawnAllocatorWords LeanOS.Refinement.SpawnAllocatorC in
+/-- The emitted decision agrees on the same input. -/
+example : callWith (link noCalls) decideWC
+    [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 0x10000, 0x7001, 1, 0, 0] =
+    some (decideW 3 21 6 1 1 0 0 0 0 0 5 0 0x10000 0x7001 1 0 0) := by
+  decide
+
+open LeanOS.SpawnAllocatorBoot LeanOS.Refinement.SpawnAllocatorC in
+/-- The emitted syscall export with the "no refusal" word it compares the
+refusal against (`0`) changed. -/
+def syscallMutantC : Func := mutateLiteral syscallC 0 fun _ => 1
+
+open LeanOS.SpawnAllocatorBoot LeanOS.Refinement.SpawnAllocatorC in
+/- The parent allocates memory into slot 3: no refusal applies, and the
+mutant returns the refusal word `0` instead of the allocator's reply. -/
+/--
+error: Tactic `decide` proved that the proposition
+  callWith (link noCalls) syscallMutantC [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 65536, 2, 103, 3, 0, 0] =
+    some (syscall 3 21 6 1 1 0 0 0 0 0 5 0 65536 2 103 3 0 0)
+is false
+-/
+#guard_msgs in
+example : callWith (link noCalls) syscallMutantC
+    [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 0x10000, 2, 103, 3, 0, 0] =
+    some (syscall 3 21 6 1 1 0 0 0 0 0 5 0 0x10000 2 103 3 0 0) := by
+  decide
+
+open LeanOS.SpawnAllocatorBoot in
+/-- A Lean syscall that forgets the parent-only rule. -/
+def actorlessSyscall (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f _actor number rbx rcx rdx : UInt64) :
+    UInt64 :=
+  syscall w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f 2 number rbx rcx rdx
+
+open LeanOS.SpawnAllocatorBoot LeanOS.Refinement.SpawnAllocatorC in
+/- Subject 3 asks for the same allocation: the emitted C refuses it
+(`0xfe21`), the mutated witness allocates. -/
+/--
+error: Tactic `decide` proved that the proposition
+  callWith (link noCalls) syscallC [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 65536, 3, 103, 3, 0, 0] =
+    some (actorlessSyscall 3 21 6 1 1 0 0 0 0 0 5 0 65536 3 103 3 0 0)
+is false
+-/
+#guard_msgs in
+example : callWith (link noCalls) syscallC
+    [3, 21, 6, 1, 1, 0, 0, 0, 0, 0, 5, 0, 0x10000, 3, 103, 3, 0, 0] =
+    some (actorlessSyscall 3 21 6 1 1 0 0 0 0 0 5 0 0x10000 3 103 3 0 0) := by
   decide
 
 end LeanOS.NegativeFixtures.ExportRefinement

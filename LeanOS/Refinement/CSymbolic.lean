@@ -511,13 +511,15 @@ elab "csym_case" : tactic => withMainContext do
 
 /-- Close an equation between two `if`-trees over the same conditions: case
 on the first condition, rewrite every occurrence with the case, and recurse.
-Two different leaves under one set of cases fail. -/
+A case on a `Bool` atom `b = true` may rewrite `b` itself to `false`, so
+`false = true` is reduced too. Two different leaves under one set of cases
+fail. -/
 syntax "csym_close" : tactic
 macro_rules
   | `(tactic| csym_close) => `(tactic|
       first
         | rfl
-        | (csym_case <;> simp only [*, ↓reduceIte] <;> csym_close))
+        | (csym_case <;> simp only [*, ↓reduceIte, Bool.false_eq_true] <;> csym_close))
 
 /-- Like `csym_close`, but leaves each pair of unequal leaves as a goal (for
 diagnosing a proof that fails). -/
@@ -526,7 +528,7 @@ macro_rules
   | `(tactic| csym_debug) => `(tactic|
       first
         | rfl
-        | (csym_case <;> simp only [*, ↓reduceIte] <;> csym_debug)
+        | (csym_case <;> simp only [*, ↓reduceIte, Bool.false_eq_true] <;> csym_debug)
         | skip)
 
 /-- Prove `callWith ext f args = some w` from `f`'s tree: compute the tree,

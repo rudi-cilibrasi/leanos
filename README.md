@@ -258,20 +258,22 @@ full implementation refinement remain outside
 the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
-Seven generated exports have a proved refinement edge. For each, the C that
+Twelve generated exports have a proved refinement edge. For each, the C that
 the pinned toolchain emits computes the Lean definition on every input, under a
 reviewed C-subset semantics with a build-time drift check:
 
 - `leanos_boot_transition` ([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md));
-- the spawn syscall and its value word, the child loader's source check and
-  decision, and the two frame-copy checks
-  ([ADR 0029](docs/adr/0029-refinement-spawn-loader-frame-exports.md)).
+- the child loader's source check and decision, and the two frame-copy checks
+  ([ADR 0029](docs/adr/0029-refinement-spawn-loader-frame-exports.md));
+- the spawn allocator's seven exports, with the 31 emitted helpers they call.
+  Called as the kernel calls them, they compute the allocator's
+  decode–step–encode specification
+  ([ADR 0029](docs/adr/0029-refinement-spawn-loader-frame-exports.md), #593).
 
 The claims are the `*-REFINEMENT` rows of
 [docs/security-claims.md](docs/security-claims.md). Each edge stops at the
 export: the C compiler, linker, calling convention and every other export stay
-trusted. The spawn syscall's edge also assumes that the generated dispatcher
-table's C is correct.
+trusted.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
 boundary: they run in ring 0, and their confinement to a per-device policy is

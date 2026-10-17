@@ -28,3 +28,19 @@ loader-source-claim-weakened	leanos_loader_source	claim	(∀ source start stop f
 loader-decide-claim-weakened	leanos_loader_decide	claim	(state : ChildLoader.State) (control : UInt64) :	(state : ChildLoader.State) (control : UInt64) (_h : state.started = false) :	error
 frame-copy-claim-weakened	leanos_frame_copy_check	claim	(ext : Refinement.CSubset.Ext) :	(ext : Refinement.CSubset.Ext) (_h : ext = Refinement.CSubset.noCalls) :	error
 frame-port-claim-weakened	leanos_frame_port_check	claim	(∀ subject req addr len base limit : UInt64,\n      Refinement.CSubset.call	(∀ subject req addr len base limit : UInt64, subject = 2 →\n      Refinement.CSubset.call	error
+# Issue #593: the spawn allocator's seven exports and three of the 31 emitted
+# helpers they call; two use a construct outside the subset, three swap a
+# callee. The claim rows weaken the export-level and the specification-level
+# claims, named directly since each covers all seven exports.
+spawn-seed-drift	leanos_spawn_allocator_seed	drift	= 3ULL;	= 4ULL;	drifted
+spawn-syscall-drift	leanos_spawn_allocator_syscall	drift	= 0ULL;	= 1ULL;	drifted
+spawn-syscall-value-drift	leanos_spawn_allocator_syscall_value	drift	l_LeanOS_SpawnAllocatorWords_stepValue(	l_LeanOS_SpawnAllocatorWords_stepReply(	drifted
+spawn-syscall-next-drift	leanos_spawn_allocator_syscall_next	drift	= 0ULL;	= 2ULL;	drifted
+spawn-kernel-drift	leanos_spawn_allocator_kernel	drift	l_LeanOS_SpawnAllocatorWords_stepReply(	l_LeanOS_SpawnAllocatorWords_stepValue(	drifted
+spawn-kernel-value-drift	leanos_spawn_allocator_kernel_value	drift	l_LeanOS_SpawnAllocatorWords_stepValue(	l_LeanOS_SpawnAllocatorWords_stepReply(	drifted
+spawn-kernel-next-unsupported	leanos_spawn_allocator_kernel_next	drift	l_LeanOS_SpawnAllocatorWords_stepNextWord(	lean_uint64_of_nat(	unsupported
+spawn-decide-helper-drift	l_LeanOS_SpawnAllocatorWords_decideW	drift	= 28673ULL;	= 28674ULL;	drifted
+spawn-refusal-helper-drift	l_LeanOS_SpawnAllocatorBoot_refusal	drift	= 65057ULL;	= 65058ULL;	drifted
+spawn-step-next-helper-unsupported	l_LeanOS_SpawnAllocatorWords_stepNextWord	drift	lean_uint64_add(	lean_uint64_mul(	unsupported
+spawn-allocator-claim-weakened	spawn_allocator_refinement	claim	(∀ index : UInt64,	(∀ index : UInt64, index < 13 →	error
+spawn-allocator-spec-claim-weakened	spawn_allocator_spec_refinement	claim	(∀ (words : SpawnAllocatorWords.Words) (actor number rbx rcx rdx : UInt64),	(∀ (words : SpawnAllocatorWords.Words) (actor number rbx rcx rdx : UInt64), actor = 2 →	error

@@ -26073,8 +26073,20 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_allocator_refinement",
+      "display": "spawn_allocator_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.spawn_allocator_refines_gate",
       "display": "spawn_allocator_refines_gate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_allocator_spec_refinement",
+      "display": "spawn_allocator_spec_refinement",
       "kind": "theorem"
     },
     {
