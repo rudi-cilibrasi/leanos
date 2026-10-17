@@ -3087,14 +3087,8 @@
     },
     {
       "source": "LeanOS/BoundaryVocabulary.lean",
-      "qualified": "LeanOS.BoundaryVocabulary.spawnEdge_tags_covered",
-      "display": "spawnEdge_tags_covered",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/BoundaryVocabulary.lean",
-      "qualified": "LeanOS.BoundaryVocabulary.spawnStateId_covered",
-      "display": "spawnStateId_covered",
+      "qualified": "LeanOS.BoundaryVocabulary.spawnFamily_tags_covered",
+      "display": "spawnFamily_tags_covered",
       "kind": "theorem"
     },
     {
@@ -22527,18 +22521,6 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_spawn_syscall_vectors_exact",
-      "display": "hosted_spawn_syscall_vectors_exact",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
-      "qualified": "LeanOS.Oracle.hosted_spawn_vectors_exact",
-      "display": "hosted_spawn_vectors_exact",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_timer_server_vectors_exact",
       "display": "hosted_timer_server_vectors_exact",
       "kind": "theorem"
@@ -22943,30 +22925,6 @@
       "source": "LeanOS/Oracle/Spawn.lean",
       "qualified": "LeanOS.Oracle.loader_vectors_expected",
       "display": "loader_vectors_expected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle/Spawn.lean",
-      "qualified": "LeanOS.Oracle.spawn_edge_vectors_cover",
-      "display": "spawn_edge_vectors_cover",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle/Spawn.lean",
-      "qualified": "LeanOS.Oracle.spawn_edge_vectors_match_model",
-      "display": "spawn_edge_vectors_match_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle/Spawn.lean",
-      "qualified": "LeanOS.Oracle.spawn_negative_vectors_reject",
-      "display": "spawn_negative_vectors_reject",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/Oracle/Spawn.lean",
-      "qualified": "LeanOS.Oracle.spawn_syscall_vectors_expected",
-      "display": "spawn_syscall_vectors_expected",
       "kind": "theorem"
     },
     {
@@ -26127,24 +26085,6 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
-      "qualified": "LeanOS.SecurityClaims.spawn_syscall_refinement",
-      "display": "spawn_syscall_refinement",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SecurityClaims.lean",
-      "qualified": "LeanOS.SecurityClaims.spawn_syscall_refines_gate",
-      "display": "spawn_syscall_refines_gate",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SecurityClaims.lean",
-      "qualified": "LeanOS.SecurityClaims.spawn_syscall_value_refinement",
-      "display": "spawn_syscall_value_refinement",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.stale_translation_composite_protect_effect_sufficient",
       "display": "stale_translation_composite_protect_effect_sufficient",
       "kind": "theorem"
@@ -27543,30 +27483,6 @@
     },
     {
       "source": "LeanOS/SpawnAllocatorSeeds.lean",
-      "qualified": "LeanOS.SpawnAllocator.map_toCommand_filterMap",
-      "display": "map_toCommand_filterMap",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorSeeds.lean",
-      "qualified": "LeanOS.SpawnAllocator.recordToken_family",
-      "display": "recordToken_family",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorSeeds.lean",
-      "qualified": "LeanOS.SpawnAllocator.recordToken_simulates",
-      "display": "recordToken_simulates",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorSeeds.lean",
-      "qualified": "LeanOS.SpawnAllocator.recordTokens_decided",
-      "display": "recordTokens_decided",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorSeeds.lean",
       "qualified": "LeanOS.SpawnAllocator.seedState_family",
       "display": "seedState_family",
       "kind": "theorem"
@@ -27947,30 +27863,6 @@
       "source": "LeanOS/SpawnAllocatorSpawnStep.lean",
       "qualified": "LeanOS.SpawnAllocator.spawn_result_family",
       "display": "spawn_result_family",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorTable.lean",
-      "qualified": "LeanOS.SpawnAllocator.allocatorEdges_count",
-      "display": "allocatorEdges_count",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorTable.lean",
-      "qualified": "LeanOS.SpawnAllocator.edges_are_allocator_steps",
-      "display": "edges_are_allocator_steps",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorTable.lean",
-      "qualified": "LeanOS.SpawnAllocator.edges_are_word_steps",
-      "display": "edges_are_word_steps",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnAllocatorTable.lean",
-      "qualified": "LeanOS.SpawnAllocator.tokens_abstract",
-      "display": "tokens_abstract",
       "kind": "theorem"
     },
     {
@@ -28946,228 +28838,6 @@
       "kind": "theorem"
     },
     {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.childStatus_accepted_or_rejected",
-      "display": "childStatus_accepted_or_rejected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.decodeChild_not_kernel",
-      "display": "decodeChild_not_kernel",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.decodeChild_spawn",
-      "display": "decodeChild_spawn",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.decodeFamily_encodeFamily",
-      "display": "decodeFamily_encodeFamily",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.decodeState_encodeState",
-      "display": "decodeState_encodeState",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.dispatcher_refines",
-      "display": "dispatcher_refines",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edge_refines",
-      "display": "edge_refines",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edges_decode",
-      "display": "edges_decode",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edges_dispatch",
-      "display": "edges_dispatch",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edges_match_hosted_oracle",
-      "display": "edges_match_hosted_oracle",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edges_model",
-      "display": "edges_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edges_rejections_stay",
-      "display": "edges_rejections_stay",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.edges_shape",
-      "display": "edges_shape",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.encodeFamily_decodeFamily",
-      "display": "encodeFamily_decodeFamily",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.encodeState_injective",
-      "display": "encodeState_injective",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.familyStep_state",
-      "display": "familyStep_state",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.familyStep_stutter",
-      "display": "familyStep_stutter",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.memoryErrorCode_injective",
-      "display": "memoryErrorCode_injective",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.memoryStatus_accepted_or_rejected",
-      "display": "memoryStatus_accepted_or_rejected",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.ofNat_ne_zero",
-      "display": "ofNat_ne_zero",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.okIs_iff",
-      "display": "okIs_iff",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.rejected_edge_unchanged",
-      "display": "rejected_edge_unchanged",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.runFamily_append",
-      "display": "runFamily_append",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundary.lean",
-      "qualified": "LeanOS.SpawnBoundary.toNat_ofNat_of_lt",
-      "display": "toNat_ofNat_of_lt",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryChecks.lean",
-      "qualified": "LeanOS.SpawnBoundary.boundary_checks_pass",
-      "display": "boundary_checks_pass",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.admissibleAlong_family",
-      "display": "admissibleAlong_family",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.authoritative_issuers_frameBudgets_unsupported",
-      "display": "authoritative_issuers_frameBudgets_unsupported",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.dispatcherSeed_issuedObject",
-      "display": "dispatcherSeed_issuedObject",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.dispatcherSeed_issuedSubjects",
-      "display": "dispatcherSeed_issuedSubjects",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.familySeed_authoritativeRuntimeWellFormed",
-      "display": "familySeed_authoritativeRuntimeWellFormed",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.familySeed_childAccounting",
-      "display": "familySeed_childAccounting",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.familySeed_resourceRuntimeWellFormed",
-      "display": "familySeed_resourceRuntimeWellFormed",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.familySeed_spawnTree",
-      "display": "familySeed_spawnTree",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.runFamily_runChildSteps",
-      "display": "runFamily_runChildSteps",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.seedState_familySeed",
-      "display": "seedState_familySeed",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.spawn_boundary_trace",
-      "display": "spawn_boundary_trace",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnBoundaryTraces.lean",
-      "qualified": "LeanOS.SpawnBoundary.toStep_admissible",
-      "display": "toStep_admissible",
-      "kind": "theorem"
-    },
-    {
       "source": "LeanOS/SpawnConfinement.lean",
       "qualified": "LeanOS.SpawnConfinement.blockingTarget_named",
       "display": "blockingTarget_named",
@@ -29258,6 +28928,150 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.admissibleAlong_family",
+      "display": "admissibleAlong_family",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.authoritative_issuers_frameBudgets_unsupported",
+      "display": "authoritative_issuers_frameBudgets_unsupported",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.childStatus_accepted_or_rejected",
+      "display": "childStatus_accepted_or_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.decodeChild_not_kernel",
+      "display": "decodeChild_not_kernel",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.decodeChild_spawn",
+      "display": "decodeChild_spawn",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.decodeFamily_encodeFamily",
+      "display": "decodeFamily_encodeFamily",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.dispatcherSeed_issuedObject",
+      "display": "dispatcherSeed_issuedObject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.dispatcherSeed_issuedSubjects",
+      "display": "dispatcherSeed_issuedSubjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.encodeFamily_decodeFamily",
+      "display": "encodeFamily_decodeFamily",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.familySeed_authoritativeRuntimeWellFormed",
+      "display": "familySeed_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.familySeed_childAccounting",
+      "display": "familySeed_childAccounting",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.familySeed_resourceRuntimeWellFormed",
+      "display": "familySeed_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.familySeed_spawnTree",
+      "display": "familySeed_spawnTree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.familyStep_state",
+      "display": "familyStep_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.familyStep_stutter",
+      "display": "familyStep_stutter",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.family_trace",
+      "display": "family_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.memoryErrorCode_injective",
+      "display": "memoryErrorCode_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.memoryStatus_accepted_or_rejected",
+      "display": "memoryStatus_accepted_or_rejected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.ofNat_ne_zero",
+      "display": "ofNat_ne_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.runFamily_append",
+      "display": "runFamily_append",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.runFamily_runChildSteps",
+      "display": "runFamily_runChildSteps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.seedState_familySeed",
+      "display": "seedState_familySeed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.toNat_ofNat_of_lt",
+      "display": "toNat_ofNat_of_lt",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnFamily.lean",
+      "qualified": "LeanOS.SpawnFamily.toStep_admissible",
+      "display": "toStep_admissible",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/SpawnOracle.lean",
       "qualified": "LeanOS.SpawnOracle.allSpawnErrors_codes_distinct",
       "display": "allSpawnErrors_codes_distinct",
@@ -29327,156 +29141,6 @@
       "source": "LeanOS/SpawnOracle.lean",
       "qualified": "LeanOS.SpawnOracle.spawn_vectors_pass",
       "display": "spawn_vectors_pass",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.allStates_complete",
-      "display": "allStates_complete",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.canonical_iff_decodes",
-      "display": "canonical_iff_decodes",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.dispatch_family",
-      "display": "dispatch_family",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.edgeRows_eq",
-      "display": "edgeRows_eq",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.edgeRows_replies",
-      "display": "edgeRows_replies",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.edge_of_row",
-      "display": "edge_of_row",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.edges_reply_token",
-      "display": "edges_reply_token",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.edges_syscall_commands",
-      "display": "edges_syscall_commands",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.errorWords_not_replies",
-      "display": "errorWords_not_replies",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.image_model",
-      "display": "image_model",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.image_run",
-      "display": "image_run",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.ite_covered",
-      "display": "ite_covered",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.ite_mem",
-      "display": "ite_mem",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.row_eq",
-      "display": "row_eq",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.spawnDispatchRaw_cases",
-      "display": "spawnDispatchRaw_cases",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.spawnFamilyMiss_mem",
-      "display": "spawnFamilyMiss_mem",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.spawnSyscall_cases",
-      "display": "spawnSyscall_cases",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.spawnSyscall_refines",
-      "display": "spawnSyscall_refines",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.spawnSyscall_rollback",
-      "display": "spawnSyscall_rollback",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.spawnSyscall_trace",
-      "display": "spawnSyscall_trace",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.stateActor_current",
-      "display": "stateActor_current",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.stateActor_of_plan",
-      "display": "stateActor_of_plan",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.syscallTag_cases",
-      "display": "syscallTag_cases",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.syscall_never_kernel_command",
-      "display": "syscall_never_kernel_command",
-      "kind": "theorem"
-    },
-    {
-      "source": "LeanOS/SpawnSyscall.lean",
-      "qualified": "LeanOS.SpawnSyscall.toNat_le",
-      "display": "toNat_le",
       "kind": "theorem"
     },
     {

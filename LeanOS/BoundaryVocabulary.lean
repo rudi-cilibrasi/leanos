@@ -1,6 +1,6 @@
 import LeanOS.CompositeDispatcher
 import LeanOS.FrameBudgetScenario
-import LeanOS.SpawnBoundary
+import LeanOS.SpawnFamily
 
 /-!
 # Boundary vocabulary
@@ -161,28 +161,7 @@ def states : List Token := [
   state "INFLIGHT_LINEAGE_REVOKED" (encodeInFlightRevocationState .lineageRevoked),
   state "INFLIGHT_SUBJECT_TWO_RESTORED" (encodeInFlightRevocationState .subjectTwoRestored),
   state "INFLIGHT_DESTINATION_REPLACED" (encodeInFlightRevocationState .destinationReplaced),
-  state "INFLIGHT_REPLACEMENT_USED" (encodeInFlightRevocationState .replacementUsed),
-  state "SPAWN_SEED" (SpawnBoundary.encodeState .seed),
-  state "SPAWN_AUTHORIZED" (SpawnBoundary.encodeState .authorized),
-  state "SPAWN_SPAWNED" (SpawnBoundary.encodeState .spawned),
-  state "SPAWN_RELEASED" (SpawnBoundary.encodeState .released),
-  state "SPAWN_GRANTED" (SpawnBoundary.encodeState .granted),
-  state "SPAWN_TERMINATED" (SpawnBoundary.encodeState .terminated),
-  state "SPAWN_REALLOCATED" (SpawnBoundary.encodeState .reallocated),
-  state "SPAWN_RESPAWNED" (SpawnBoundary.encodeState .respawned),
-  state "SPAWN_SECOND_TERMINATED" (SpawnBoundary.encodeState .secondTerminated),
-  state "SPAWN_OTHER_SUBJECT" (SpawnBoundary.encodeState .otherSubject),
-  state "SPAWN_REVOKED" (SpawnBoundary.encodeState .revoked),
-  state "SPAWN_REGRANTED" (SpawnBoundary.encodeState .regranted),
-  state "SPAWN_REGRANTED_SPAWNED" (SpawnBoundary.encodeState .regrantedSpawned),
-  state "SPAWN_SUBJECTS_EXHAUSTED" (SpawnBoundary.encodeState .subjectsExhausted),
-  state "SPAWN_OBJECTS_EXHAUSTED" (SpawnBoundary.encodeState .objectsExhausted),
-  state "SPAWN_CONTROLS_EXHAUSTED" (SpawnBoundary.encodeState .controlsExhausted),
-  state "SPAWN_NARROWED_SEND" (SpawnBoundary.encodeState .narrowedSend),
-  state "SPAWN_NARROWED_GRANT" (SpawnBoundary.encodeState .narrowedGrant),
-  state "SPAWN_LOADER_RESPAWNED" (SpawnBoundary.encodeState .loaderRespawned),
-  state "SPAWN_LOADER_GRANTED" (SpawnBoundary.encodeState .loaderGranted),
-  state "SPAWN_LOADER_TERMINATED" (SpawnBoundary.encodeState .loaderTerminated)]
+  state "INFLIGHT_REPLACEMENT_USED" (encodeInFlightRevocationState .replacementUsed)]
 
 def commands : List Token := [
   command "CREATE_SUBJECT_ONE" (encodeCommand .createSubjectOne),
@@ -272,12 +251,12 @@ def commands : List Token := [
   spawnCommand "SPAWN" SpawnOracle.spawnCommandTag,
   spawnCommand "GRANT_FRAMES" SpawnAccountingOracle.grantFramesTag,
   spawnCommand "TERMINATE_CHILD" SpawnAccountingOracle.terminateChildTag,
-  spawnCommand "ALLOCATE_MEMORY" SpawnBoundary.allocateTag,
-  spawnCommand "RELEASE_MEMORY" SpawnBoundary.releaseTag,
-  spawnCommand "GRANT_AUTHORITY" SpawnBoundary.grantAuthorityTag,
-  spawnCommand "REVOKE_AUTHORITY" SpawnBoundary.revokeAuthorityTag,
-  spawnCommand "SWITCH" SpawnBoundary.switchTag,
-  spawnCommand "COPY" SpawnBoundary.copyTag]
+  spawnCommand "ALLOCATE_MEMORY" SpawnFamily.allocateTag,
+  spawnCommand "RELEASE_MEMORY" SpawnFamily.releaseTag,
+  spawnCommand "GRANT_AUTHORITY" SpawnFamily.grantAuthorityTag,
+  spawnCommand "REVOKE_AUTHORITY" SpawnFamily.revokeAuthorityTag,
+  spawnCommand "SWITCH" SpawnFamily.switchTag,
+  spawnCommand "COPY" SpawnFamily.copyTag]
 
 def replies : List Token := [
   reply "PAGE_UNMAPPED" (encodeMixedReply .pageUnmapped),
@@ -401,12 +380,12 @@ theorem inFlightRevocationStateId_covered (s : InFlightRevocationStateId) :
     encodeInFlightRevocationState s ∈ stateWords := by
   cases s <;> decide
 
-theorem spawnStateId_covered (s : SpawnBoundary.StateId) :
-    SpawnBoundary.encodeState s ∈ stateWords := by
-  cases s <;> decide
-theorem spawnEdge_tags_covered :
-    SpawnBoundary.edges.all (fun edge => edge.words.tag ∈ commandWords) = true := by
-  decide
+theorem spawnFamily_tags_covered (command : SpawnFamily.FamilyCommand) :
+    (SpawnFamily.encodeFamily command).tag ∈ commandWords := by
+  rcases command with (_ | _ | _ | _ | _) | (_ | _) | _ | _ <;>
+    simp only [SpawnFamily.encodeFamily, SpawnOracle.encodeSpawn, SpawnAccountingOracle.encodeGrant,
+      SpawnAccountingOracle.encodeTerminate, SpawnFamily.scalar] <;>
+    decide
 
 theorem commandId_covered (c : CommandId) : (encodeCommand c).tag ∈ commandWords := by
   cases c <;> decide

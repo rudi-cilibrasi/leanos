@@ -1,4 +1,5 @@
-import LeanOS.SpawnAllocatorTable
+import LeanOS.SpawnAllocatorWordsNext
+import LeanOS.SpawnFamily
 
 /-!
 # The spawn family's composite states, read by the allocator (#575)
@@ -22,8 +23,39 @@ namespace LeanOS.SpawnAllocator
 
 open LeanOS
 open LeanOS.FailStop
+open LeanOS.SpawnFamily
 
 set_option linter.unusedSimpArgs false
+
+/-! ## The abstraction of a composite state -/
+
+/-- The parent's memory capability in a slot: its identity, or none. -/
+def memoryIn (state : CompositeState) (slot : Nat) : Option Nat :=
+  match state.capabilities.slots parent slot with
+  | some capability => if capability.kind = .memory then some capability.identity else none
+  | none => none
+
+/-- **The allocator record of a composite state.** -/
+def abstraction (state : CompositeState) : State :=
+  { subjectNext := state.issuers.subject.next
+    objectNext := state.issuers.object.next
+    capabilityNext := state.capabilities.nextIdentity
+    controlNext := state.spawn.nextChildGeneration
+    authorityNext := state.spawn.nextGeneration
+    authority := (state.spawn.authority parent).map SpawnCapability.generation
+    budget := FailStop.subjectBudget state parent
+    children := (List.range childCapacity).map fun slot =>
+      (state.spawn.children parent slot).map fun entry =>
+        { generation := entry.generation, charge := entry.charge }
+    memory := [memoryIn state 2, memoryIn state 3]
+    parentFrames := state.budgetLimit parent }
+
+/-- The allocator command of a family command, if it is one. -/
+def toCommand : FamilyCommand → Option Command
+  | .child operation => some (.child operation)
+  | .memory operation => some (.memory operation)
+  | .switch => none
+  | .copy _ _ _ _ => none
 
 /-! ## The family invariant -/
 

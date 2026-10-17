@@ -1,5 +1,4 @@
 import LeanOS.Refinement.ChildLoaderC
-import LeanOS.Refinement.SpawnSyscallC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
 
@@ -121,42 +120,6 @@ is false
 #guard_msgs in
 example : call loaderDecideC [1, 0x55, 0, 1, 0, 0] =
     some (framelessLoaderDecide 1 0x55 0 1 0 0) := by
-  decide
-
-/-! ## `leanos_spawn_syscall` -/
-
-open LeanOS.SpawnSyscall LeanOS.Refinement.SpawnSyscallC in
-/-- The emitted syscall with its first refusal word (`0xfe20`, a state word
-outside the spawn family) changed. -/
-def spawnSyscallMutantC : Func := mutateLiteral spawnSyscallC 0 fun _ => 0xfe21
-
-open LeanOS.SpawnSyscall LeanOS.Refinement.SpawnSyscallC in
-/--
-error: Tactic `decide` proved that the proposition
-  callWith (helpers noCalls) spawnSyscallMutantC [0, 0, 0, 0, 0, 0] = some (spawnSyscall 0 0 0 0 0 0)
-is false
--/
-#guard_msgs in
-example : callWith (helpers noCalls) spawnSyscallMutantC [0, 0, 0, 0, 0, 0] =
-    some (spawnSyscall 0 0 0 0 0 0) := by
-  decide
-
-open LeanOS.SpawnSyscall in
-/-- A Lean witness that forgets the actor check. -/
-def actorlessSpawnSyscall (state _actor number rbx rcx rdx : UInt64) : UInt64 :=
-  spawnSyscall state (stateActor state) number rbx rcx rdx
-
-open LeanOS.SpawnSyscall LeanOS.Refinement.SpawnSyscallC in
-/- A family token presented by a subject that is not the token's current
-subject: the emitted C refuses it (`0xfe21`), the mutated witness goes on. -/
-/--
-error: Tactic `decide` proved that the proposition
-  callWith (helpers noCalls) spawnSyscallC [28673, 5, 0, 0, 0, 0] = some (actorlessSpawnSyscall 28673 5 0 0 0 0)
-is false
--/
-#guard_msgs in
-example : callWith (helpers noCalls) spawnSyscallC [0x7001, 5, 0, 0, 0, 0] =
-    some (actorlessSpawnSyscall 0x7001 5 0 0 0 0) := by
   decide
 
 /-! ## `leanos_frame_copy_check` -/

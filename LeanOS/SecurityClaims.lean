@@ -41,7 +41,6 @@ import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.FaultHandler
 import LeanOS.TimerServer
 import LeanOS.FrameServer
-import LeanOS.SpawnSyscall
 import LeanOS.SpawnAllocatorBootRefinement
 import LeanOS.ChildLoader
 import LeanOS.ChildLoaderJoint
@@ -50,7 +49,6 @@ import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
 import LeanOS.Refinement.BootTransitionC
 import LeanOS.Refinement.ChildLoaderC
-import LeanOS.Refinement.SpawnSyscallC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
 import LeanOS.ConsoleServer
@@ -3872,44 +3870,6 @@ theorem boot_transition_refinement (state : KernelTransition.State) (command : U
         (KernelTransition.transition state (KernelTransition.decodeCommand command)).result) :=
   Refinement.BootTransitionC.bootTransitionC_refines_transition state command
 
-/-- SC-SPAWN-SYSCALL-REFINEMENT: the C function `leanos_spawn_syscall`, as
-emitted by the pinned toolchain (with its five emitted helpers) and
-interpreted by the `Refinement.CSubset` semantics, computes the Lean witness
-`spawnSyscall` on every six words, given a dispatcher that answers with
-`CompositeDispatcher.dispatch`; its answer is a refusal or the reply of exactly
-one edge of the spawn table at the presented token. ADR 0029 records what
-stays trusted. -/
-theorem spawn_syscall_refinement (ext : Refinement.CSubset.Ext)
-    (spec : Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :
-    Refinement.CSubset.callWith (Refinement.SpawnSyscallC.helpers ext)
-        Refinement.SpawnSyscallC.spawnSyscallC [state, actor, number, rbx, rcx, rdx] =
-      some (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) ∧
-    (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx ∈ SpawnSyscall.refusals ∨
-      ∃ edge ∈ SpawnBoundary.edges, SpawnBoundary.encodeState edge.state = state ∧
-        edge.words = SpawnSyscall.syscallWords number rbx rcx rdx ∧
-        actor = SpawnSyscall.stateActor state ∧
-        SpawnSyscall.spawnSyscall state actor number rbx rcx rdx =
-          SpawnBoundary.replyWord edge.next edge.status) := by
-  refine ⟨Refinement.SpawnSyscallC.spawnSyscallC_refines ext spec state actor number rbx rcx rdx,
-    ?_⟩
-  rcases SpawnSyscall.spawnSyscall_cases state actor number rbx rcx rdx with
-    refused | ⟨edge, member, token, words, sameActor, _, _, reply⟩
-  · exact Or.inl refused
-  · exact Or.inr ⟨edge, member, token, words, sameActor, reply⟩
-
-/-- SC-SPAWN-SYSCALL-VALUE-REFINEMENT: the C function
-`leanos_spawn_syscall_value`, as emitted by the pinned toolchain and
-interpreted by the `Refinement.CSubset` semantics, calling the emitted
-`leanos_spawn_syscall`, computes the Lean witness `spawnSyscallValue` on
-every six words, given a dispatcher that answers with
-`CompositeDispatcher.dispatch` and `dispatchValue`. -/
-theorem spawn_syscall_value_refinement (ext : Refinement.CSubset.Ext)
-    (spec : Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :
-    Refinement.CSubset.callWith (Refinement.SpawnSyscallC.link ext)
-        Refinement.SpawnSyscallC.spawnSyscallValueC [state, actor, number, rbx, rcx, rdx] =
-      some (SpawnSyscall.spawnSyscallValue state actor number rbx rcx rdx) :=
-  Refinement.SpawnSyscallC.spawnSyscallValueC_refines ext spec state actor number rbx rcx rdx
-
 /-- SC-LOADER-SOURCE-REFINEMENT: the C function `leanos_loader_source`, as
 emitted by the pinned toolchain and interpreted by the `Refinement.CSubset`
 semantics, computes the Lean witness on every five words, and on words below
@@ -4559,47 +4519,6 @@ theorem timer_server_alarm_policy :
    TimerServer.step_preserves_withinQuota,
    TimerServer.wake_only_by_holder⟩
 
-/-- SC-SPAWN-SYSCALL: the ring-3 spawn syscall's generated witness either
-refuses before any gate, keeping the kernel's token, or answers exactly one
-edge of the generated spawn table at the presented token.  That edge's words
-are the syscall's canonical command words, which decode to a public child or
-memory command (never a kernel command); the actor is the current subject of
-the latch on the complete state the token names; the step is exactly
-`childGate` or `memoryGate` there, whose post-state the successor token names;
-and a rejected step keeps the token and the complete pre-state. -/
-theorem spawn_syscall_refines_gate (plan : BootPageTablePlan.Plan)
-    (compiled : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan)
-    (state actor number rbx rcx rdx : UInt64) :
-    (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx ∈ SpawnSyscall.refusals ∧
-        SpawnSyscall.nextToken state (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) =
-          state) ∨
-      ∃ edge ∈ SpawnBoundary.edges, SpawnBoundary.encodeState edge.state = state ∧
-        SpawnBoundary.decodeFamily (SpawnSyscall.syscallWords number rbx rcx rdx) =
-          .ok edge.command ∧
-        SpawnSyscall.isSyscallCommand edge.command = true ∧
-        actor = UInt64.ofNat (FailStop.spawnParent (SpawnBoundary.stateOf plan edge.state)) ∧
-        SpawnBoundary.familyStep (SpawnBoundary.stateOf plan edge.state) edge.command =
-          { state := SpawnBoundary.stateOf plan edge.next, status := edge.status,
-            value := edge.value } ∧
-        SpawnSyscall.nextToken state (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) =
-          SpawnBoundary.encodeState edge.next ∧
-        (edge.status ≠ 0x01 → edge.next = edge.state ∧
-          (SpawnBoundary.familyStep (SpawnBoundary.stateOf plan edge.state) edge.command).state =
-            SpawnBoundary.stateOf plan edge.state) := by
-  rcases SpawnSyscall.spawnSyscall_cases state actor number rbx rcx rdx with
-    refused | ⟨edge, member, token, words, sameActor, _, _, reply⟩
-  · left
-    refine ⟨refused, ?_⟩
-    simp only [SpawnSyscall.refusals, List.mem_cons, List.not_mem_nil, or_false] at refused
-    simp only [SpawnSyscall.nextToken]
-    rcases refused with h | h | h | h | h <;> rw [h] <;> simp [SpawnSyscall.isEdgeReply]
-  · right
-    obtain ⟨decoded, isSyscall, current, step, next, _⟩ :=
-      SpawnSyscall.spawnSyscall_refines plan compiled state actor number rbx rcx rdx edge member
-        token words reply sameActor
-    exact ⟨edge, member, token, decoded, isSyscall, current, step, next,
-      SpawnBoundary.rejected_edge_unchanged plan compiled edge member⟩
-
 /-- SC-SPAWN-ALLOCATOR: the kernel holds the spawn family's state as the
 thirteen words of the bounded allocator's record (#575).  On the words of every
 composite state the spawn family runs on (`SpawnAllocator.Family`), a ring-3
@@ -4615,9 +4534,9 @@ theorem spawn_allocator_refines_gate (plan : BootPageTablePlan.Plan)
     (inputs : List SpawnAllocatorBoot.SyscallInput) :
     (SpawnAllocatorBoot.runWords SpawnAllocatorBoot.seedWords inputs =
         SpawnAllocatorWords.encode (SpawnAllocator.abstraction
-          (SpawnAllocatorBoot.runStates (SpawnBoundary.seedState plan .main) inputs)) ∧
+          (SpawnAllocatorBoot.runStates (SpawnFamily.seedState plan .main) inputs)) ∧
       SpawnAllocator.Family
-        (SpawnAllocatorBoot.runStates (SpawnBoundary.seedState plan .main) inputs)) ∧
+        (SpawnAllocatorBoot.runStates (SpawnFamily.seedState plan .main) inputs)) ∧
     ∀ (state : FailStop.CompositeState), SpawnAllocator.Family state →
       ∀ actor number rbx rcx rdx : UInt64,
         let words := SpawnAllocatorWords.encode (SpawnAllocator.abstraction state)
@@ -4629,7 +4548,7 @@ theorem spawn_allocator_refines_gate (plan : BootPageTablePlan.Plan)
               (SpawnAllocatorBoot.syscallWords number rbx rcx rdx) = .ok command ∧
             command.isSyscall = true ∧
             actor.toNat = state.execution.core.context.currentSubject ∧
-            let outcome := SpawnBoundary.familyStep state (SpawnAllocatorBoot.familyCommandOf command)
+            let outcome := SpawnFamily.familyStep state (SpawnAllocatorBoot.familyCommandOf command)
             SpawnAllocatorBoot.syscallOf words actor number rbx rcx rdx =
               SpawnAllocatorBoot.replyOf outcome.status ∧
             SpawnAllocatorBoot.syscallValueOf words actor number rbx rcx rdx = outcome.value ∧

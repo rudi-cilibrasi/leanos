@@ -329,3 +329,13 @@ and 3, followed by two refusals after the start.
   not a refinement of the kernel.
 - **The child's scheduling.** `childSend` is the send alone. The kernel's
   entry to the child, and the parent's wake-up, are not composite steps.
+
+## Amendment (2026-10-17): the rollback runs on the spawn allocator (#575)
+
+The kernel no longer terminates a child whose load failed through the spawn
+table's edge: the table is gone. It runs the spawn allocator's termination
+command on the thirteen record words it holds
+(`leanos_spawn_allocator_kernel`), which on every composite state the spawn
+family runs on is the same `childGate (.terminateChild _)` step
+(`SpawnAllocatorBoot.kernel_refines`). The pairing proved by #571
+(`ChildLoaderJoint.joint_rollback_restores`) is unchanged.

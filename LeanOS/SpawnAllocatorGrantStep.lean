@@ -95,14 +95,14 @@ theorem resolved_entry (state : CompositeState) (family : Family state) (word : 
 value.** -/
 theorem grantFrames_status_family (state : CompositeState) (family : Family state)
     (control : UInt64) (frames : Nat) :
-    SpawnBoundary.childStatus (FailStop.grantFrames state control frames).result =
+    SpawnFamily.childStatus (FailStop.grantFrames state control frames).result =
       ((grantStep (abstraction state) control frames).status,
         (grantStep (abstraction state) control frames).value) := by
   unfold FailStop.grantFrames grantStep
   cases allocatorResolved : (abstraction state).resolveControl control with
   | error denial =>
       rw [resolveControl_family_error state family control denial allocatorResolved]
-      simp [rejectWith, SpawnBoundary.childStatus, SpawnAccountingOracle.frameGrantErrorCode]
+      simp [rejectWith, SpawnFamily.childStatus, SpawnAccountingOracle.frameGrantErrorCode]
   | ok found =>
       obtain ⟨slot, record⟩ := found
       obtain ⟨entry, resolved, recordEq⟩ :=
@@ -115,10 +115,10 @@ theorem grantFrames_status_family (state : CompositeState) (family : Family stat
       rw [length]
       by_cases short : (abstraction state).available < frames
       · have : min frames (abstraction state).available < frames := by omega
-        simp [this, short, rejectWith, SpawnBoundary.childStatus,
+        simp [this, short, rejectWith, SpawnFamily.childStatus,
           SpawnAccountingOracle.frameGrantErrorCode]
       · have : ¬min frames (abstraction state).available < frames := by omega
-        simp only [this, short, ↓reduceIte, acceptWith, SpawnBoundary.childStatus]
+        simp only [this, short, ↓reduceIte, acceptWith, SpawnFamily.childStatus]
         rw [movedCount_family state family frames]
         have : min frames (abstraction state).available = frames := by omega
         rw [this]
@@ -148,7 +148,7 @@ theorem grantFrames_accepted (state : CompositeState) (family : Family state)
     subst movedFrames childEq
     exact ⟨slot, entry, resolved, enough, stateEq⟩
   · rw [result] at status
-    simp only [SpawnBoundary.childStatus, Prod.mk.injEq] at status
+    simp only [SpawnFamily.childStatus, Prod.mk.injEq] at status
     exact absurd status.1 (reject_status_ne (frameGrantErrorCode_lt reason))
 
 theorem setChildEntry_children (state : CompositeState) (p slot : Nat) (entry : Option ChildEntry) :

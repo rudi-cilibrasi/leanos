@@ -14,8 +14,6 @@ import LeanOS.FaultDispatch
 import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
-import LeanOS.SpawnBoundary
-import LeanOS.SpawnSyscall
 import LeanOS.ChildLoader
 import LeanOS.IOTLB
 import LeanOS.NotifyReply
@@ -97,11 +95,9 @@ def adapters : List AdapterSpec := [
   adapter "TimerServer.decide" 27 "leanos_timer_server_decide" 3,
   adapter "FrameServer.check" 28 "leanos_frame_server_check" 6,
   adapter "FrameServer.view" 29 "leanos_frame_server_view" 6,
-  adapter "SpawnSyscall.step" 30 "leanos_spawn_syscall" 6,
-  adapter "SpawnSyscall.value" 31 "leanos_spawn_syscall_value" 6,
-  adapter "ChildLoader.source" 32 "leanos_loader_source" 5,
-  adapter "ChildLoader.decide" 33 "leanos_loader_decide" 6,
-  adapter "TimingChannels.refusal" 34 "leanos_cross_subject_refusal" 3]
+  adapter "ChildLoader.source" 30 "leanos_loader_source" 5,
+  adapter "ChildLoader.decide" 31 "leanos_loader_decide" 6,
+  adapter "TimingChannels.refusal" 32 "leanos_cross_subject_refusal" 3]
 
 /-- The corpus blocks in their stable order.  Each family module owns its
 blocks; a new adapter appends a block here and nothing else moves. -/
@@ -113,13 +109,12 @@ def blocks : List (List Vector) :=
     bootTransitionClassVectors, notifyReplyVectors, userCopyPolicyVectors,
     consoleAuthorizeVectors, directoryResolveVectors, faultHandlerVectors,
     deviceAuthorizeVectors, timerServerVectors, frameServerVectors,
-    frameServerViewVectors, spawnEdgeVectors, spawnNegativeVectors,
-    spawnSyscallVectors, loaderVectors, loaderTraceVectors, timingRefusalVectors]
+    frameServerViewVectors, loaderVectors, loaderTraceVectors, timingRefusalVectors]
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := blocks.flatten
 
-theorem corpus_shape : vectors.length = 709 := by decide
+theorem corpus_shape : vectors.length = 605 := by decide
 
 /-- Dropping the first `k` blocks' rows from a concatenation leaves the
 concatenation of the remaining blocks. -/
@@ -194,36 +189,22 @@ theorem hosted_frame_server_view_vectors_exact :
     (vectors.drop 556).take frameServerViewVectors.length = frameServerViewVectors := by
   rw [rows_at (k := 21) (n := 556) rfl rfl, List.take_left]
 
-/-- Oracle indices 564--617 are the spawn family's edges, in the order of
-`SpawnBoundary.edges`, and 618--631 its hostile encodings (ADR 0010 gate
-item 5). -/
-theorem hosted_spawn_vectors_exact :
-    (vectors.drop 564).take (spawnEdgeVectors.length + spawnNegativeVectors.length) =
-      spawnEdgeVectors ++ spawnNegativeVectors := by
-  rw [rows_at (k := 22) (n := 564) rfl rfl, List.flatten_cons, ← List.append_assoc]
-  exact List.take_left' List.length_append
-
-/-- Oracle indices 632--667 are the ring-3 spawn syscall's corpus (#489). -/
-theorem hosted_spawn_syscall_vectors_exact :
-    (vectors.drop 632).take spawnSyscallVectors.length = spawnSyscallVectors := by
-  rw [rows_at (k := 24) (n := 632) rfl rfl, List.take_left]
-
-/-- Oracle indices 668--691 are the run-time loader's corpus (#492). -/
+/-- Oracle indices 564--587 are the run-time loader's corpus (#492). -/
 theorem hosted_loader_vectors_exact :
-    (vectors.drop 668).take loaderVectors.length = loaderVectors := by
-  rw [rows_at (k := 25) (n := 668) rfl rfl, List.take_left]
+    (vectors.drop 564).take loaderVectors.length = loaderVectors := by
+  rw [rows_at (k := 22) (n := 564) rfl rfl, List.take_left]
 
-/-- Oracle indices 692--698 are the run-time loader's decisions along the
+/-- Oracle indices 588--594 are the run-time loader's decisions along the
 `spawn-loader` scenario (#571). -/
 theorem hosted_loader_trace_vectors_exact :
-    (vectors.drop 692).take loaderTraceVectors.length = loaderTraceVectors := by
-  rw [rows_at (k := 26) (n := 692) rfl rfl, List.take_left]
+    (vectors.drop 588).take loaderTraceVectors.length = loaderTraceVectors := by
+  rw [rows_at (k := 23) (n := 588) rfl rfl, List.take_left]
 
-/-- Oracle indices 699--708 are the cross-subject refusal witness's corpus
+/-- Oracle indices 595--604 are the cross-subject refusal witness's corpus
 (#576). -/
 theorem hosted_timing_refusal_vectors_exact :
-    vectors.drop 699 = timingRefusalVectors := by
-  rw [rows_at (k := 27) (n := 699) rfl rfl]
+    vectors.drop 595 = timingRefusalVectors := by
+  rw [rows_at (k := 24) (n := 595) rfl rfl]
   simp only [List.flatten_nil, List.append_nil]
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -258,9 +239,8 @@ theorem hosted_inFlight_revocation_vectors_exact :
       blockingIpcEventVectors ++ bootTransitionClassVectors ++ notifyReplyVectors ++
         userCopyPolicyVectors ++ consoleAuthorizeVectors ++ directoryResolveVectors ++
         faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
-          frameServerVectors ++ frameServerViewVectors ++ spawnEdgeVectors ++
-            spawnNegativeVectors ++ spawnSyscallVectors ++ loaderVectors ++
-              loaderTraceVectors ++ timingRefusalVectors := by
+          frameServerVectors ++ frameServerViewVectors ++ loaderVectors ++
+            loaderTraceVectors ++ timingRefusalVectors := by
   rw [rows_at (k := 9) (n := 398) rfl rfl]
   simp only [List.flatten_cons, List.flatten_nil, List.append_nil, List.append_assoc]
 /-- Oracle rows 0--85 are the scheduler, syscall, and IPC family's rows. -/
@@ -296,19 +276,17 @@ theorem hosted_invalidation_vectors_exact :
   rw [rows_at (k := 4) (n := 337) rfl rfl, List.flatten_cons, ← List.append_assoc]
   exact List.take_left' List.length_append
 
-/-- Before the spawn family, only the accepted hosted-mixed receipt and the
-independently modeled machine A-to-B receipt publish a value word. All
-data-only successes, scheduling edges, and rejections publish zero. In the
-spawn family exactly the ten accepted edges whose hosted-oracle value is
-nonzero publish one: two kernel grants (the generation), four spawns (the
-control word), two frame grants and two terminations (the frames). -/
+/-- Only the accepted hosted-mixed receipt and the independently modeled
+machine A-to-B receipt publish a value word. All data-only successes,
+scheduling edges, and rejections publish zero. (The spawn family's value
+words left this corpus with the fixed spawn table, #575: the hosted
+spawn-allocator corpus checks them.) -/
 theorem composite_result_values_exact :
     (vectors[316]).id = "composite.mixed-transfer-accept" ∧
     (vectors[316]).expectedValue = 0x60003 ∧
     (vectors[395]).id = "composite.boot-transfer-subject-two-accept" ∧
     (vectors[395]).expectedValue = 0x60003 ∧
-    ((vectors.take 564).filter (fun vector => vector.expectedValue ≠ 0)).length = 2 ∧
-    ((vectors.drop 564).filter (fun vector => vector.expectedValue ≠ 0)).length = 10 := by
+    (vectors.filter (fun vector => vector.expectedValue ≠ 0)).length = 2 := by
   native_decide
 
 private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=

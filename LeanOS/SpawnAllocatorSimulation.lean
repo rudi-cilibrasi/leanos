@@ -27,7 +27,7 @@ namespace LeanOS.SpawnAllocator
 
 open LeanOS
 open LeanOS.FailStop
-open LeanOS.SpawnBoundary
+open LeanOS.SpawnFamily
 
 set_option linter.unusedSimpArgs false
 
@@ -403,7 +403,7 @@ def runSteps (record : State) : List Command → Option (State × List (UInt64 �
           (run.1, (result.status, result.value) :: run.2)
 
 /-- The replies of the composite family over a list of commands
-(`SpawnBoundary.runFamily` is its final state). -/
+(`SpawnFamily.runFamily` is its final state). -/
 def familyReplies (state : CompositeState) : List FamilyCommand → List (UInt64 × UInt64)
   | [] => []
   | command :: rest =>
