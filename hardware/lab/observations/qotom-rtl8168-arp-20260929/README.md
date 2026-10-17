@@ -38,4 +38,4 @@ ELF SHA256 `42852a6fec8323cf561cb8bcb57e4f29c8443afaf64c16e4ffa26757cec504d3` (n
 **Side effect found afterwards:** the FreeBSD boot that followed stalled
 `re0`'s receive ring after 256 frames until `ifconfig re0 down up`. It
 reproduces on every run; the bisection and workaround are in
-[`docs/net-rtl8168.md`](../../../../docs/net-rtl8168.md#known-issue-freebsds-re0-after-a-run).
+[`docs/net-rtl8168.md`](../../../../docs/net-rtl8168.md#freebsds-re0-after-a-run-issue-577).

@@ -20,3 +20,4 @@ This section extends the whole-run resource result to runs that mix every kernel
 - `bootRuntime_childAccounting` — The kernel state right after boot satisfies all three rulebooks, so the whole-run result applies from boot.
 - `runChildSteps_composite` — Runs without spawn operations are a special case: they behave exactly as the earlier whole-run result describes.
 - `stale_control_after_respawn` — Spawn a child, end it, spawn again into the same slot: the old control handle is refused for both operations and the state is unchanged.
+- `childSend_childKeeps` — A loaded child's one message send keeps everything a step of a whole run must keep: no frame is created or taken, no subject history is lost, and no one's entitlement grows.
