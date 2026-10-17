@@ -561,6 +561,204 @@ def classify_device_program(events, digest, manifest, timeout=120, recovery_slac
     return result
 
 
+
+# Issue #569: the production network image (build-qotom-production.py).
+_PRODUCTION_FINAL = (
+    rb'LEANOS/[0-9]+ FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 '
+    rb'echo-subject=3 device-holder=2 address-spaces=3 '
+    rb'lease=([0-9]{1,3}(?:\.[0-9]{1,3}){3}) frames=([0-9]+) dhcp-frames=([0-9]+) '
+    rb'echo-frames=([0-9]+) fetches=([0-9]+) sends=([0-9]+) refusals=([0-9]+) '
+    rb'ipc-edges=([0-9]+) window-copies=([0-9]+)\n')
+# The four refusals of a run by the real subjects: C's device invocation and
+# its fetch before the hand-off, A's device invocation, B's frame fetch.
+_PRODUCTION_REFUSALS = 4
+
+
+def classify_production(events, digest, manifest):
+    """Classify a production network capture (issue #569) as PASS or FAIL.
+
+    The production image boots from the one-shot `leanos-<digest>` request,
+    which arms no watchdog, and halts after FINAL; the maintainer power-cycles
+    the board, and GRUB, finding the request consumed, chains FreeBSD. The
+    capture passes when it has the one-shot launch and no watchdog record,
+    the production mode record before any kernel output, the composition's
+    records in order (copy windows, platform admission, the Broadcom
+    assignment with admitted=1, the service grant, the IPC profile, the
+    production profile, the lease hand-off from A to C), one passing FINAL
+    whose counts agree with the records, quiet after FINAL, and then the
+    consumed request's default and the FreeBSD chain. It also reports how
+    long the kernel took over each echo frame, from its delivery record to
+    the echo subject's reply record, as the serial line observed them: an
+    upper bound on the in-image service time, not a ping round trip.
+
+    Every failed check is collected rather than raised. Only invalid inputs
+    raise."""
+    if manifest.get('production_network') is not True or \
+            manifest.get('evidence_class') != 'production-candidate':
+        raise ValueError('not a production network image manifest')
+    if not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid image digest')
+    if manifest.get('elf_sha256') not in (None, digest):
+        raise ValueError('lab manifest names a different ELF')
+    if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
+           or e['elapsed'] < 0 for e in events):
+        raise ValueError('invalid capture timestamp')
+    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+        raise ValueError('nonmonotonic capture timestamps')
+    chunks = [bytes.fromhex(e['hex']) for e in events]
+    offsets, total = [], 0
+    for chunk in chunks:
+        offsets.append(total)
+        total += len(chunk)
+    data = b''.join(chunks)
+
+    def time_at(position):
+        return events[bisect.bisect_right(offsets, position) - 1]['elapsed']
+
+    failures = []
+
+    def fail(check, detail):
+        failures.append(check + ': ' + detail)
+
+    def once(pattern, check, count_marker=None):
+        matches = list(re.finditer(pattern, data))
+        extra = data.count(count_marker) if count_marker else len(matches)
+        if len(matches) != 1 or extra != 1:
+            fail(check, 'missing or changed' if not matches else 'repeated')
+            return None
+        return matches[0]
+
+    select = once(rb'LEANOS-LAB/1 SELECT leanos consumed=1', 'one-shot-launch')
+    if b'WATCHDOG' in data:
+        fail('watchdog', 'watchdog record in a production capture')
+    mode = once(rb'LEANOS-LAB/1 MODE qotom-production final=halt watchdog=none\n', 'production-mode',
+                b'LEANOS-LAB/1 MODE ')
+    if mode is not None and b'LEANOS/' in data[:mode.start()]:
+        fail('framing', 'kernel output before the production mode record')
+    windows = once(rb'LEANOS-LAB/1 PRODUCTION-WINDOWS profile=qotom-network-v1 holders=1,3 '
+                   rb'a-window-pages=2 c-window-pages=1 fetch-root=writable send-root=read-only '
+                   rb'protected=8 roots=5 scan=exact operand=agree root-c=exact\n',
+                   'copy-windows', b'PRODUCTION-WINDOWS ')
+    platform = once(rb'LEANOS-LAB/1 PLATFORM-ADMISSION profile=qotom-j1900-clbtm210-v2 version=2 '
+                    rb'status=PASS ', 'platform-admission', b'PLATFORM-ADMISSION ')
+    assign = once(rb'LEANOS-LAB/1 BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1 '
+                  rb'device=2:0\.0 status=0 [^\r\n]* admitted=1\n', 'broadcom-assign',
+                  b'BROADCOM-ASSIGN ')
+    grant = once(rb'LEANOS-LAB/1 SERVICE grant subject=1 device=[0-9a-f]+:[0-9a-f]+\.[0-7] '
+                 rb'bind=accepted policy=admitted\n', 'service-grant', b'SERVICE grant ')
+    ready = once(rb'LEANOS-LAB/1 QOTOM-IPC-READY profile=qotom-blocking-ipc-v1 ', 'ipc-ready')
+    production = once(rb'LEANOS-LAB/1 PRODUCTION-READY profile=qotom-network-v1 subjects=3 '
+                      rb'address-spaces=3 frames=copy-window watchdog=none final=halt\n',
+                      'production-ready', b'PRODUCTION-READY ')
+    service_end = list(re.finditer(
+        rb'LEANOS-LAB/1 SERVICE end subject=1 status=([0-9]+) code=(0x[0-9a-f]{8})\n', data))
+    if len(service_end) != 1 or data.count(b'SERVICE end ') != 1:
+        fail('service-end', 'missing, repeated or changed service end')
+    elif service_end[0].group(1) != b'0':
+        fail('service-end', 'device program ended with status=%s code=%s'
+             % (service_end[0].group(1).decode(), service_end[0].group(2).decode()))
+    terminals = list(re.finditer(rb'LEANOS/[0-9]+ FINAL ([^\r\n]*)\n', data))
+    terminal = terminals[0] if len(terminals) == 1 else None
+    if not terminals:
+        fail('terminal', 'no FINAL record')
+    elif terminal is None:
+        fail('terminal', 'repeated FINAL record')
+    final = re.fullmatch(_PRODUCTION_FINAL, terminal.group(0)) if terminal else None
+    if terminal is not None and final is None:
+        fail('terminal', 'FINAL ' + terminal.group(1).decode('ascii', 'replace'))
+    records = {'copy_windows': windows is not None, 'platform_admitted': platform is not None,
+               'broadcom_assign_admitted': assign is not None, 'service_grant': grant is not None,
+               'production_ready': production is not None}
+    handoff = None
+    if final is not None:
+        lease = final.group(1).decode()
+        frames, dhcp_frames, echo_frames, fetches, sends, refusals, edges, copies = (
+            int(v) for v in final.groups()[1:])
+        delivered = [int(n) for n in re.findall(rb'LEANOS-LAB/1 NET event=deliver frame=([0-9]+) ',
+                                                data)]
+        fetched = len(re.findall(rb'LEANOS-LAB/1 NET event=fetch subject=[13] ', data))
+        sent = len(re.findall(rb'LEANOS-LAB/1 NET event=send subject=[13] ', data))
+        refused = len(re.findall(rb'LEANOS-LAB/1 NET event=refuse ', data))
+        records.update(lease=lease, frames=frames, dhcp_frames=dhcp_frames,
+                       echo_frames=echo_frames, sends=sends, refusals=refusals,
+                       ipc_edges=edges, window_copies=copies)
+        if frames < 1 or delivered != list(range(1, frames + 1)) or fetches != frames or \
+                fetched != fetches:
+            fail('net', 'FINAL frames=%d fetches=%d, %d delivery and %d fetch records'
+                 % (frames, fetches, len(delivered), fetched))
+        if sends != sent:
+            fail('net', 'FINAL sends=%d, %d send records' % (sends, sent))
+        if refusals != refused or refusals != _PRODUCTION_REFUSALS:
+            fail('net', 'FINAL refusals=%d, %d refusal records' % (refusals, refused))
+        if dhcp_frames + echo_frames != frames or copies != fetches + sends or \
+                edges != 4 * frames + 6:
+            fail('net', 'FINAL counts disagree')
+        handoff = once(rb'LEANOS-LAB/1 NET event=handoff from=1 to=3 frame=([0-9]+) '
+                       rb'lease=([0-9.]+) route=echo address-spaces=separate model=accepted\n',
+                       'net-handoff', b'NET event=handoff ')
+        if handoff is not None and (int(handoff.group(1)) != dhcp_frames or
+                                    handoff.group(2).decode() != lease):
+            fail('net-handoff', 'handoff differs from FINAL dhcp-frames/lease')
+        if lease == '0.0.0.0':
+            fail('net-handoff', 'no lease')
+    order = [select, mode, windows, platform, assign, grant, ready, production, handoff,
+             service_end[0] if service_end else None, terminal]
+    positions = [m.start() for m in order if m is not None]
+    if positions != sorted(positions):
+        fail('order', 'records out of order')
+
+    # The link-only endpoint's lease window (issue #573): a connect program
+    # records the lease signal once, after the hand-off, and its serve
+    # window starts then; a lease window that ran out ends the program. The
+    # keyless program prints neither record.
+    signalled = list(re.finditer(rb'LEANOS-LAB/1 WIFI-LEASE signalled after-ms=([0-9]+)\n', data))
+    if b'WIFI-LEASE window-over' in data:
+        fail('lease-window', 'the lease window ended without a lease')
+    if len(signalled) != data.count(b'WIFI-LEASE signalled') or len(signalled) > 1:
+        fail('lease-window', 'repeated or changed lease signal record')
+    elif signalled and (handoff is None or signalled[0].start() < handoff.end()):
+        fail('lease-window', 'lease signal record before the hand-off')
+    records['lease_signalled_after_ms'] = int(signalled[0].group(1)) if len(signalled) == 1 else None
+
+    # How long the kernel took over each echo frame, as the serial line saw it.
+    service = []
+    for deliver in re.finditer(rb'LEANOS-LAB/1 NET event=deliver frame=([0-9]+) bytes=[0-9]+ '
+                               rb'port=echo\n', data):
+        reply = re.compile(rb'LEANOS-LAB/1 NET event=send subject=3 frame=' + deliver.group(1) +
+                           rb' ').search(data, deliver.end())
+        if reply is not None:
+            service.append(round((time_at(reply.start()) - time_at(deliver.start())) * 1000, 1))
+    service.sort()
+
+    # After FINAL: quiet until the maintainer's power cycle, then the
+    # consumed request's default and the FreeBSD chain.
+    quiet = None
+    if terminal is not None:
+        start = terminal.end()
+        default = list(re.finditer(rb'LEANOS-LAB/1 DEFAULT request=none', data))
+        chain = data.find(CHAIN, start)
+        if len(default) != 1 or chain < 0 or not start <= default[0].start() < chain:
+            fail('recovery', 'missing consumed-request default or FreeBSD chain after the run')
+        if b'LEANOS/' in data[start:] or b'LEANOS-LAB/1 SELECT leanos' in data[start:]:
+            fail('recovery', 'kernel output after the run')
+        index = bisect.bisect_right(offsets, terminal.end() - 1) - 1
+        if offsets[index] + len(chunks[index]) != terminal.end():
+            fail('recovery', 'bytes after FINAL without a quiet interval')
+        elif index + 1 < len(events):
+            quiet = events[index + 1]['elapsed'] - events[index]['elapsed']
+            if quiet < 10:
+                fail('recovery', 'insufficient quiet after FINAL')
+
+    return {'scenario': 'qotom-production-network', 'evidence': 'production-candidate',
+            'status': 'FAIL' if failures else 'PASS', 'failures': failures,
+            'records': records,
+            'echo_service_ms': {'frames': len(service),
+                                'median': service[len(service) // 2] if service else None,
+                                'max': service[-1] if service else None,
+                                'observed': 'serial delivery-to-reply record interval'},
+            'quiet_seconds': quiet, 'watchdog_protected': False,
+            'raw_sha256': hashlib.sha256(data).hexdigest()}
+
 def decode_qotom_lvt_observation(data):
     prefix = b'LEANOS-LAB/1 APIC-LVT '
     pattern = re.compile(
@@ -1322,6 +1520,12 @@ def main():
                         help='classify the inherited local-APIC LINT observation')
     parser.add_argument('--bsp-lvt-policy', action='store_true',
                         help='classify the inherited masked local-APIC LINT policy')
+    parser.add_argument('--production-seconds', type=int, metavar='SECONDS',
+                        help='a production network image (issue #569, build-qotom-production.py): '
+                             'boot it from the one-shot request (--scenario leanos), which arms no '
+                             'watchdog, observe for up to SECONDS (the program\'s serve window '
+                             'plus the join), then wait for the maintainer to power-cycle the '
+                             'board back to FreeBSD; the image halts after FINAL')
     parser.add_argument('--lab-manifest', type=Path,
                         help="the lab image's build manifest (default: manifest.json beside --elf); "
                              'an --ipc-device-stream image is classified as a device program')
@@ -1330,7 +1534,21 @@ def main():
     lab_manifest = None
     if args.lab_manifest is not None or manifest_path.exists():
         lab_manifest = json.loads(manifest_path.read_text())
-    device_program = lab_manifest is not None and lab_manifest.get('ipc_device_stream') is True
+    production = lab_manifest is not None and lab_manifest.get('production_network') is True
+    device_program = (lab_manifest is not None and lab_manifest.get('ipc_device_stream') is True
+                      and not production)
+    if production:
+        # Issue #569: no watchdog and no reset; the maintainer power-cycles.
+        if lab_manifest.get('elf_sha256') not in (None, hashlib.sha256(args.elf.read_bytes()).hexdigest()):
+            parser.error('lab manifest names a different ELF')
+        if (args.scenario != 'leanos' or args.cpu_diagnostic or args.pci_diagnostic or
+                args.bsp_production or args.long_session is not None or args.cycles != 1):
+            parser.error('a production image needs --scenario leanos, one cycle and no '
+                         'diagnostic or long-session modes')
+        if args.production_seconds is None or not 60 <= args.production_seconds <= 4500:
+            parser.error('a production image needs --production-seconds 60..4500')
+    elif args.production_seconds is not None:
+        parser.error('--production-seconds needs a production network image')
     if device_program:
         # Issue #572: the manifest's flags name the scenario and its records.
         try:
@@ -1489,7 +1707,7 @@ def main():
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
                                         '-o', 'HostKeyAlias=' + args.host_key_alias, args.host]
     args.output.mkdir(parents=True, exist_ok=False)
-    if device_program:
+    if device_program or production:
         (args.output / 'lab-manifest.json').write_text(json.dumps(lab_manifest, indent=2) + '\n')
     if has_diagnostic:
         (args.output / 'diagnostic-protocol.tsv').write_bytes(args.diagnostic_protocol.read_bytes())
@@ -1600,9 +1818,21 @@ grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
             bound = 420 if args.scenario.startswith('watchdog-') else 180
             if args.long_session:
                 bound += args.long_session + 120
+            if production:
+                # The run, then up to 15 minutes for the maintainer's power cycle.
+                bound += args.production_seconds + 900
+            prompted = False
             while time.monotonic() - started < bound:
                 if errors:
                     raise ValueError(errors)
+                if production and not prompted:
+                    seen = b''.join(bytes.fromhex(e['hex']) for e in events)
+                    if re.search(rb'LEANOS/[0-9]+ FINAL ', seen) or \
+                            time.monotonic() - started > args.production_seconds + 180:
+                        prompted = True
+                        print('POWER-CYCLE cycle=' + str(cycle) + ': the production image has '
+                              'halted (or its window is over); power-cycle the board now. '
+                              'GRUB finds the request consumed and chains FreeBSD.', flush=True)
                 if CHAIN in b''.join(bytes.fromhex(e['hex']) for e in events):
                     after = boot_time()
                     if after is not None and after != before:
@@ -1623,9 +1853,12 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
 '''.replace('SERIAL', shlex.quote(args.usb_serial)), text=True)
         (directory / 'verification.txt').write_text(verify.stdout + verify.stderr)
         recovery = {'freebsd_boot_before': before, 'freebsd_boot_after': after,
-                    'elf_sha256': digest, 'evidence_class': 'lab-recovery-experiment',
+                    'elf_sha256': digest,
+                    'evidence_class': 'production-candidate' if production else 'lab-recovery-experiment',
                     'hang_recovery': False,
-                    'request_consumed': verify.returncode == 0, 'recovery': 'freebsd-ssh-restored'}
+                    'request_consumed': verify.returncode == 0,
+                    'recovery': ('freebsd-ssh-restored-after-power-cycle' if production
+                                 else 'freebsd-ssh-restored')}
         # Preserve recovery evidence even when an unfamiliar serial format fails
         # classification. Replaying a parser fix must not require another boot.
         (directory / 'recovery.json').write_text(json.dumps(recovery, indent=2) + '\n')
@@ -1640,9 +1873,14 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             (directory / 'watchdog-kicks.json').write_text(json.dumps(kicks, indent=2) + '\n')
         else:
             kicks = None
-        if verify.returncode and not device_program:
+        if verify.returncode and not (device_program or production):
             raise ValueError('one-shot request was not verified consumed')
-        if device_program:
+        if production:
+            result = classify_production(events, digest, lab_manifest)
+            if verify.returncode:
+                result['failures'].append('recovery: one-shot request was not verified consumed')
+                result['status'] = 'FAIL'
+        elif device_program:
             result = classify_device_program(events, digest, lab_manifest)
             if verify.returncode:
                 result['failures'].append('recovery: one-shot request was not verified consumed')
@@ -1868,7 +2106,7 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         if kicks is not None:
             result['long_session_outcome'] = kicks.get('outcome')
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
-        if device_program and result['status'] != 'PASS':
+        if (device_program or production) and result['status'] != 'PASS':
             # Issue #572: a device-program FAIL ends the run non-zero, with
             # its result.json written.
             raise SystemExit('FAIL cycle=' + str(cycle) + ' ' + json.dumps(result['failures']))
