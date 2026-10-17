@@ -16,3 +16,20 @@ ipc-lean-constant	leanos_blocking_ipc_event	lean	then 0x0001000200020404	then 0x
 ipc-lean-and-or	leanos_blocking_ipc_event	lean	operation = 1 ∧ step = 0 ∧ caller = 2	operation = 1 ∧ step = 0 ∨ caller = 2	error
 ipc-lean-dropped-branch	leanos_blocking_ipc_event	lean	  else 0\n	  else 1\n	error
 ipc-c-constant	leanos_blocking_ipc_event	c	= 281483566777348ULL;	= 281483566777349ULL;	oracle mismatch
+# Issue #570. `drift` patches the emitted C of a refined function and requires
+# the rung-3 drift check to reject it against the AST its theorem is about.
+spawn-drift-refusal	leanos_spawn_syscall	drift	= 65056ULL;	= 65057ULL;	drifted
+spawn-drift-helper	l_LeanOS_SpawnSyscall_canonical	drift	= 64ULL;	= 65ULL;	drifted
+spawn-value-drift	leanos_spawn_syscall_value	drift	= 0ULL;	= 1ULL;	drifted
+loader-source-drift	leanos_loader_source	drift	= 6ULL;	= 7ULL;	drifted
+loader-decide-drift	leanos_loader_decide	drift	= 511ULL;	= 510ULL;	drifted
+loader-decide-unsupported	leanos_loader_decide	drift	lean_uint64_sub(v_frames	lean_uint64_mul(v_frames	unsupported
+frame-copy-drift	leanos_frame_copy_check	drift	= 8ULL;	= 9ULL;	drifted
+frame-copy-helper-drift	l_LeanOS_NetworkSubject_frameCopyDecide	drift	= 1514ULL;	= 1515ULL;	drifted
+frame-port-drift	leanos_frame_port_check	drift	= 2ULL;	= 4ULL;	drifted
+spawn-claim-weakened	leanos_spawn_syscall	claim	(spec : Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :	(spec : Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64)\n    (_h : actor = SpawnSyscall.stateActor state) :	error
+spawn-value-claim-weakened	leanos_spawn_syscall_value	claim	(state actor number rbx rcx rdx : UInt64) :	(state actor number rbx rcx rdx : UInt64) (_h : number = 100) :	error
+loader-source-claim-weakened	leanos_loader_source	claim	(∀ source start stop fileOffset span : UInt64,	(∀ source start stop fileOffset span : UInt64, start ≤ source →	error
+loader-decide-claim-weakened	leanos_loader_decide	claim	(state : ChildLoader.State) (control : UInt64) :	(state : ChildLoader.State) (control : UInt64) (_h : state.started = false) :	error
+frame-copy-claim-weakened	leanos_frame_copy_check	claim	(ext : Refinement.CSubset.Ext) :	(ext : Refinement.CSubset.Ext) (_h : ext = Refinement.CSubset.noCalls) :	error
+frame-port-claim-weakened	leanos_frame_port_check	claim	(∀ subject req addr len base limit : UInt64,\n      Refinement.CSubset.call	(∀ subject req addr len base limit : UInt64, subject = 2 →\n      Refinement.CSubset.call	error
