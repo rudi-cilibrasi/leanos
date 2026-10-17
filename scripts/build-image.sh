@@ -647,10 +647,12 @@ fi
 record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
-# Issue #470: the emitted C of leanos_boot_transition must still be exactly
-# the AST that LeanOS.Refinement.BootTransitionC proves refines the model.
-python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
-  leanos_boot_transition LeanOS/Refinement/BootTransitionC.lean
+# Issues #470 and #570: the emitted C of every refined function must still be
+# exactly the AST its LeanOS.Refinement module proves refines the model.
+while IFS=$'\t' read -r module function lean_file; do
+  [[ -z "$module" || "$module" == \#* ]] && continue
+  python3 scripts/extract-generated-c.py --check "$build/$module.c" "$function" "$lean_file"
+done < scripts/refinement-exports.tsv
 # The device-service image embeds the Lean xHCI keyboard program (issue
 # #449), the ahci-service image the Lean one-sector AHCI program (issue
 # #496). leanos-wifi-gen refuses a program outside its target's admitted
@@ -683,6 +685,10 @@ embed_device_program net-q35-frames network-subject-program network_subject_prog
 # The dhcp-subject image (issue #556) hosts the deviceless frame source of
 # link records, ticks and DHCP and echo frames (LeanOS.Net.DhcpSource).
 embed_device_program net-q35-dhcp dhcp-subject-program dhcp_subject_program
+# The dhcp-backoff image (issue #573) hosts a slow DHCP server's records,
+# ticks placed on the client's RFC 2131 retransmission schedule
+# (LeanOS.Net.DhcpSource.backoffProgram), in the dhcp-subject image's place.
+embed_device_program net-q35-dhcp-backoff dhcp-backoff-program dhcp_subject_program
 # The gtk-rekey image (issue #557) hosts the frame source that runs the
 # BCM43224 driver's receive and transmit paths on frames rotating the group
 # key (LeanOS.Net.RekeySource), in the network-subject image's place.
@@ -797,6 +803,7 @@ compute_graph_make_input_signature() {
       -name 'ahci-service-program.h' -o \
       -name 'network-subject-program.h' -o \
       -name 'dhcp-subject-program.h' -o \
+      -name 'dhcp-backoff-program.h' -o \
       -name 'gtk-rekey-program.h' -o \
       \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
       -print0 | sort -z |
@@ -1273,7 +1280,7 @@ fi
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
     example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory \
-    network-subject gtk-rekey dhcp-subject spawn-child spawn-loader timing-channels; do
+    network-subject gtk-rekey dhcp-subject dhcp-backoff spawn-child spawn-loader timing-channels; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \
