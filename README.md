@@ -189,8 +189,8 @@ index current:
 | `endpoint-directory` | evidence | SC-DIRECTORY-NO-AMPLIFICATION, SC-DIRECTORY-MISS |
 | `fault-handler` | evidence | SC-FAULT-HANDLER-DELIVERY |
 | `frame-server` | evidence | SC-FRAME-SERVER-BUDGET, SC-FRAME-SERVER-SCRUB, SC-FRAME-SERVER-CHECK |
-| `spawn-child` | evidence | SC-SPAWN-SYSCALL, SC-SPAWN-STALE-CHILD |
-| `spawn-loader` | evidence | SC-SPAWN-SYSCALL, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK, SC-LOADER-JOINT-ROLLBACK, SC-LOADER-CONTENTS, SC-LOADER-CHILD-SEND |
+| `spawn-child` | evidence | SC-SPAWN-ALLOCATOR, SC-SPAWN-STALE-CHILD |
+| `spawn-loader` | evidence | SC-SPAWN-ALLOCATOR, SC-LOADER-EXACT, SC-LOADER-RESERVED-RANGE, SC-LOADER-ROLLBACK, SC-LOADER-JOINT-ROLLBACK, SC-LOADER-CONTENTS, SC-LOADER-CHILD-SEND |
 | `timer-server` | evidence | SC-TIMER-CAPABILITY, SC-TIMER-SERVER-POLICY |
 | `three-subject` | evidence | none (integration only) |
 | `console-server` | evidence | SC-CONSOLE-INTEGRITY, SC-CONSOLE-CONFIDENTIALITY |
@@ -845,8 +845,10 @@ issue that closes every item in that gate before defining a model, ABI,
 adapter, or boot path. Explicit spawn with an enumerated inheritance set
 passed that gate: the `spawn-child` image's ring-3 spawn syscall (numbers
 100 to 104, [userspace-abi.md](docs/userspace-abi.md#spawn-spawn-child-image))
-is decoded only by the generated witness `leanos_spawn_syscall`, whose every
-answer is a refusal or one `childGate`/`memoryGate` step of the spawn model.
+is decoded only by the generated exports of the spawn allocator
+(`leanos_spawn_allocator_syscall`, #575), whose every answer on the words of a
+family state is a refusal or one `childGate`/`memoryGate` step of the spawn
+model.
 
 ## Contributing
 

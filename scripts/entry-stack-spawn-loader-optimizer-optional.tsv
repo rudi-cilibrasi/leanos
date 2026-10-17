@@ -1,8 +1,5 @@
 # path	function (reviewed contributor that a supported optimizer may inline or eliminate)
 syscall	check_fast_entry_control
-syscall	check_selected_root_a
-syscall	check_selected_root_b
-syscall	l_LeanOS_CapabilityReuse_scenarioTransition___redArg
 syscall	q35_manifest_entry
 syscall	serial_u64
 timer-switch	check_fast_entry_control
@@ -17,11 +14,6 @@ kernel-diagnostic	decoded_root_matches
 kernel-diagnostic	l_LeanOS_FaultDispatch_faultDispatchDemo
 kernel-diagnostic	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
 kernel-diagnostic	serial_u64
-syscall	l_LeanOS_CompositeDispatcher_inFlightRevocationDispatchRaw.part.0
-syscall	l_LeanOS_CompositeDispatcher_invalidationDispatchRaw.part.0
-syscall	l_LeanOS_CompositeDispatcher_invalidationDispatchRaw
-syscall	validate_copy
-syscall	l_LeanOS_CompositeDispatcher_spawnFamilyMiss
 syscall	spawn_child_root_clear
 syscall	spawn_report_head
 syscall	check_initial_b_frame
@@ -35,3 +27,10 @@ timer-switch	leanos_preemption_demo
 timer-switch	leanos_resumable_preemption_demo
 syscall	loader_report_words
 syscall	loader_syscall
+syscall	l_LeanOS_SpawnAllocatorBoot_refusal
+syscall	l_LeanOS_SpawnAllocatorWords_canonical
+syscall	l_LeanOS_SpawnAllocatorWords_commandErrorW
+syscall	l_LeanOS_SpawnAllocatorWords_resolveControlW
+syscall	l_LeanOS_SpawnAllocatorWords_stepValue
+syscall	spawn_child_syscall
+syscall	spawn_report_words

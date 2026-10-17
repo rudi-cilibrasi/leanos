@@ -26115,6 +26115,12 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_allocator_refines_gate",
+      "display": "spawn_allocator_refines_gate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.spawn_stale_child_control",
       "display": "spawn_stale_child_control",
       "kind": "theorem"
@@ -27107,6 +27113,102 @@
       "source": "LeanOS/SpawnAllocator.lean",
       "qualified": "LeanOS.SpawnAllocator.terminated_subjectNext",
       "display": "terminated_subjectNext",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.family_bounded",
+      "display": "family_bounded",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.kernel_refines",
+      "display": "kernel_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.kernel_spec",
+      "display": "kernel_spec",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.refusalOf_zero",
+      "display": "refusalOf_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.registersCanonical_iff",
+      "display": "registersCanonical_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.seed_refines",
+      "display": "seed_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscallTag_cases",
+      "display": "syscallTag_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscallTag_not_kernel",
+      "display": "syscallTag_not_kernel",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscallTrace_refines",
+      "display": "syscallTrace_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscall_code",
+      "display": "syscall_code",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscall_preserves",
+      "display": "syscall_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscall_refines",
+      "display": "syscall_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscall_refused",
+      "display": "syscall_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscall_rollback",
+      "display": "syscall_rollback",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.syscall_spec",
+      "display": "syscall_spec",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorBootRefinement.lean",
+      "qualified": "LeanOS.SpawnAllocatorBoot.toCommand_familyCommandOf",
+      "display": "toCommand_familyCommandOf",
       "kind": "theorem"
     },
     {
@@ -28145,6 +28247,96 @@
       "source": "LeanOS/SpawnAllocatorWords.lean",
       "qualified": "LeanOS.SpawnAllocatorWords.Words.ofList_toList",
       "display": "Words.ofList_toList",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.charge_le_chargeSum",
+      "display": "charge_le_chargeSum",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.childAt_mem",
+      "display": "childAt_mem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.children_four",
+      "display": "children_four",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.code_step",
+      "display": "code_step",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.decodeAuthority_encodeAuthority",
+      "display": "decodeAuthority_encodeAuthority",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.decodeChild_encodeChild",
+      "display": "decodeChild_encodeChild",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.decodeMemory_encodeMemory",
+      "display": "decodeMemory_encodeMemory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.decode_encode",
+      "display": "decode_encode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.encode_canonical",
+      "display": "encode_canonical",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.frameBound_value",
+      "display": "frameBound_value",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.frames_toNat",
+      "display": "frames_toNat",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.generationReserved_value",
+      "display": "generationReserved_value",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.memoryAt_mem",
+      "display": "memoryAt_mem",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.memory_two",
+      "display": "memory_two",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SpawnAllocatorWordsEncode.lean",
+      "qualified": "LeanOS.SpawnAllocatorWords.wordBound_value",
+      "display": "wordBound_value",
       "kind": "theorem"
     },
     {

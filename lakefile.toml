@@ -17,6 +17,11 @@ root = "tests.PostStateMain"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-spawn-allocator"
+root = "tests.SpawnAllocatorMain"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-smap-window"
 root = "tests.SmapWindowMain"
 moreLeanArgs = ["-DwarningAsError=true"]

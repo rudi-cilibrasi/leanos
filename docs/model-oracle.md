@@ -535,6 +535,43 @@ diagnostics:
 As with the reply corpus, the comparison is differential testing of the
 generated C, not a proof about it.
 
+## Spawn-allocator corpus (hosted only)
+
+The spawn allocator (#575) holds the spawn family's state as thirteen words
+and decides each command with the `SpawnAllocatorBoot` exports of
+`LeanOS.SpawnAllocatorWords`.
+They take 18 or 19 words, more than the reply corpus's six, so they have a
+corpus of their own. `LeanOS/SpawnAllocatorVectors.lean` defines it;
+`lake exe leanos-spawn-allocator` emits it,
+`scripts/render-spawn-allocator-header.awk` renders it, and the
+`spawn-allocator` row of `scripts/hosted-generated-boundaries.tsv` runs it
+(`tests/spawn-allocator-host.c`).
+
+| Export | Result |
+| --- | --- |
+| `leanos_spawn_allocator_syscall(13 state words, actor, number, rbx, rcx, rdx)` | The ring-3 reply: a refusal `0xfe20`..`0xfe23`, or `0x01 \| status << 16` |
+| `leanos_spawn_allocator_syscall_value(…)` | The value word |
+| `leanos_spawn_allocator_syscall_next(index, …)` | Successor state word `index` |
+| `leanos_spawn_allocator_kernel(13 state words, tag, arg0..arg3)` | A kernel command's status, or the error word |
+| `leanos_spawn_allocator_kernel_value(…)`, `leanos_spawn_allocator_kernel_next(index, …)` | Its value and successor words |
+| `leanos_spawn_allocator_seed(index)` | Word `index` of the family seed's record |
+
+The expected words come from the specification (`specSyscall` and `specStep`:
+decode the words, run `SpawnAllocator.step`, encode), not from the exported
+functions. `syscall_spec` and `kernel_spec` prove the exports compute that
+specification for every input, and the hosted replay checks that the compiled
+C does too. The states are not a table. They are the 160 records reached from
+the four family seeds by up to six accepted commands, five records at the edges
+of the representation (counters one below their bounds, four children with
+48-bit generations at the frame bound, both memory slots full), and six words
+that are not canonical. Each state is paired with every syscall input and
+kernel command of the alphabet: live, stale, future and out-of-range control
+words, every memory slot, every refusal, and kernel grants inside and outside
+the record. That gives 9215 vectors, and each checks the reply, the value and
+all thirteen successor words. The fixture `LEANOS_FIXTURE_SPAWN_ALLOCATOR_STALE_CHILD`
+moves the child of the first accepted termination to the next generation and
+must fail with `field=reply`.
+
 Run the complete local evidence path with:
 
 ```sh
