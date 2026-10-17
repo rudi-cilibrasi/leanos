@@ -37,6 +37,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_spawn_syscall_value);
     REGISTER_BOUNDARY(leanos_loader_source);
     REGISTER_BOUNDARY(leanos_loader_decide);
+    REGISTER_BOUNDARY(leanos_cross_subject_refusal);
     REGISTER_BOUNDARY(leanos_capability_reuse_demo);
     REGISTER_BOUNDARY(leanos_extended_state_denial_demo);
     REGISTER_BOUNDARY(leanos_privilege_entry_control_demo);

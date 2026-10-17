@@ -35,6 +35,7 @@ import LeanOS.Oracle.FrameBudget
 import LeanOS.Oracle.IOTLB
 import LeanOS.Oracle.Services
 import LeanOS.Oracle.Spawn
+import LeanOS.Oracle.Timing
 
 /-!
 # Bounded scalar boundary oracle
@@ -99,7 +100,8 @@ def adapters : List AdapterSpec := [
   adapter "SpawnSyscall.step" 30 "leanos_spawn_syscall" 6,
   adapter "SpawnSyscall.value" 31 "leanos_spawn_syscall_value" 6,
   adapter "ChildLoader.source" 32 "leanos_loader_source" 5,
-  adapter "ChildLoader.decide" 33 "leanos_loader_decide" 6]
+  adapter "ChildLoader.decide" 33 "leanos_loader_decide" 6,
+  adapter "TimingChannels.refusal" 34 "leanos_cross_subject_refusal" 3]
 
 /-- The corpus blocks in their stable order.  Each family module owns its
 blocks; a new adapter appends a block here and nothing else moves. -/
@@ -112,12 +114,12 @@ def blocks : List (List Vector) :=
     consoleAuthorizeVectors, directoryResolveVectors, faultHandlerVectors,
     deviceAuthorizeVectors, timerServerVectors, frameServerVectors,
     frameServerViewVectors, spawnEdgeVectors, spawnNegativeVectors,
-    spawnSyscallVectors, loaderVectors, loaderTraceVectors]
+    spawnSyscallVectors, loaderVectors, loaderTraceVectors, timingRefusalVectors]
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := blocks.flatten
 
-theorem corpus_shape : vectors.length = 699 := by decide
+theorem corpus_shape : vectors.length = 709 := by decide
 
 /-- Dropping the first `k` blocks' rows from a concatenation leaves the
 concatenation of the remaining blocks. -/
@@ -214,8 +216,14 @@ theorem hosted_loader_vectors_exact :
 /-- Oracle indices 692--698 are the run-time loader's decisions along the
 `spawn-loader` scenario (#571). -/
 theorem hosted_loader_trace_vectors_exact :
-    vectors.drop 692 = loaderTraceVectors := by
-  rw [rows_at (k := 26) (n := 692) rfl rfl]
+    (vectors.drop 692).take loaderTraceVectors.length = loaderTraceVectors := by
+  rw [rows_at (k := 26) (n := 692) rfl rfl, List.take_left]
+
+/-- Oracle indices 699--708 are the cross-subject refusal witness's corpus
+(#576). -/
+theorem hosted_timing_refusal_vectors_exact :
+    vectors.drop 699 = timingRefusalVectors := by
+  rw [rows_at (k := 27) (n := 699) rfl rfl]
   simp only [List.flatten_nil, List.append_nil]
 
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
@@ -252,7 +260,7 @@ theorem hosted_inFlight_revocation_vectors_exact :
         faultHandlerVectors ++ deviceAuthorizeVectors ++ timerServerVectors ++
           frameServerVectors ++ frameServerViewVectors ++ spawnEdgeVectors ++
             spawnNegativeVectors ++ spawnSyscallVectors ++ loaderVectors ++
-              loaderTraceVectors := by
+              loaderTraceVectors ++ timingRefusalVectors := by
   rw [rows_at (k := 9) (n := 398) rfl rfl]
   simp only [List.flatten_cons, List.flatten_nil, List.append_nil, List.append_assoc]
 /-- Oracle rows 0--85 are the scheduler, syscall, and IPC family's rows. -/

@@ -7,7 +7,7 @@ boot_early_isr2_32	boot/boot.S	46	46	all	check-early-idt-policy.sh	IDT delivery 
 boot_early_isr2_64	boot/boot.S	47	47	all	check-early-idt-policy.sh	IDT delivery in the 32/64-bit bootstrap	An unexpected early exception would not reach the fail-stop terminal	early boot
 contained_fault_restore_peer	boot/boot.S	47	47	all	check-runtime-invalidation-policy.sh; run-fault-integrity.sh	CR3 write semantics and the reviewed peer context bank	A peer resumes under the wrong address space or context	fault containment
 diagnostic_return_iretq	boot/boot.S	2	2	all	check-image-policy.sh; check-closed-root-return.py	IRETQ semantics and the validated return frame	Return to CPL3 with an unvalidated frame: privilege escalation	privilege return
-enable_smep	boot/boot.S	17	17	all	check-image-policy.sh	CR4.SMEP semantics	Kernel could execute user pages	privilege entry
+enable_smep	boot/boot.S	27	27	all	check-image-policy.sh	CR4.SMEP, TSD and PCE semantics	Kernel could execute user pages; CPL3 could read a cycle counter	privilege entry
 integer_fault_restore_peer	boot/boot.S	43	43	all	check-runtime-invalidation-policy.sh; run-fault-integrity.sh	CR3 write semantics and the reviewed peer context bank	A peer resumes under the wrong address space or context	fault containment
 isr0	boot/boot.S	98	101	all	check-entry-policy.sh; check-entry-stack-budget.sh	Interrupt/exception delivery, IST selection and the saved frame layout	A CPL3 entry runs C with user-controlled flags or on the wrong stack	privilege entry
 isr13	boot/boot.S	50	50	all	check-entry-policy.sh; check-entry-stack-budget.sh	Interrupt/exception delivery, IST selection and the saved frame layout	A CPL3 entry runs C with user-controlled flags or on the wrong stack	privilege entry

@@ -1,0 +1,13 @@
+@10/BOOT@ target=x86_64-q35 subjects=2 schedule=timing-channels controls=wp,smep,smap,tsd samples=64 refusal-budget=100000
+@common:prefix@
+@common:oracle@
+@common:pre-cpl3@
+@common:controls@
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=enter subject=2 address-space=2 cpl=3 endpoint=10
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 blocked-subject=2
+@26/REFUSAL@ subject=1 targets=2,9 own=1 witness=generated reads=mode,scheduled,target reply=197 own-reply=0 budget=100000 departures=at-or-after-budget samples=128 result=PASS
+@10/IPC@ event=wakes subject=1 endpoint=10 receiver=2 deliveries=128 receiver-work=0,4096 result=PASS
+@26/TSC-DENIAL@ subject=1 vector=13 error=0 origin=cpl3 instruction=rdtsc cr4.tsd=1 cr4.pce=0 result=PASS
+@10/FINAL@ status=PASS paths=9 samples=64 refusals=128 copies=128 wakes=128 tsc-denied=1
