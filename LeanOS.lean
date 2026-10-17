@@ -96,6 +96,13 @@ import LeanOS.SpawnAllocatorWordsFacts
 import LeanOS.SpawnAllocatorWordsRefinement
 import LeanOS.SpawnAllocatorWordsNext
 import LeanOS.SpawnAllocatorTable
+import LeanOS.SpawnAllocatorFamily
+import LeanOS.SpawnAllocatorSpawnStep
+import LeanOS.SpawnAllocatorGrantStep
+import LeanOS.SpawnAllocatorTerminateStep
+import LeanOS.SpawnAllocatorMemoryStep
+import LeanOS.SpawnAllocatorSimulation
+import LeanOS.SpawnAllocatorSeeds
 import LeanOS.ChildLoader
 import LeanOS.ChildLoaderJoint
 import LeanOS.FrameBudgetComposite
