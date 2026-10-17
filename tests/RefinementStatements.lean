@@ -28,34 +28,6 @@ info: LeanOS.SecurityClaims.boot_transition_agreement (state : LeanOS.KernelTran
 #check LeanOS.SecurityClaims.boot_transition_agreement
 
 /--
-info: LeanOS.SecurityClaims.spawn_syscall_refinement (ext : LeanOS.Refinement.CSubset.Ext)
-  (spec : LeanOS.Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :
-  LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnSyscallC.helpers ext)
-        LeanOS.Refinement.SpawnSyscallC.spawnSyscallC [state, actor, number, rbx, rcx, rdx] =
-      some (LeanOS.SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) ∧
-    (LeanOS.SpawnSyscall.spawnSyscall state actor number rbx rcx rdx ∈ LeanOS.SpawnSyscall.refusals ∨
-      ∃ edge,
-        edge ∈ LeanOS.SpawnBoundary.edges ∧
-          LeanOS.SpawnBoundary.encodeState edge.state = state ∧
-            edge.words = LeanOS.SpawnSyscall.syscallWords number rbx rcx rdx ∧
-              actor = LeanOS.SpawnSyscall.stateActor state ∧
-                LeanOS.SpawnSyscall.spawnSyscall state actor number rbx rcx rdx =
-                  LeanOS.SpawnBoundary.replyWord edge.next edge.status)
--/
-#guard_msgs in
-#check LeanOS.SecurityClaims.spawn_syscall_refinement
-
-/--
-info: LeanOS.SecurityClaims.spawn_syscall_value_refinement (ext : LeanOS.Refinement.CSubset.Ext)
-  (spec : LeanOS.Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :
-  LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnSyscallC.link ext)
-      LeanOS.Refinement.SpawnSyscallC.spawnSyscallValueC [state, actor, number, rbx, rcx, rdx] =
-    some (LeanOS.SpawnSyscall.spawnSyscallValue state actor number rbx rcx rdx)
--/
-#guard_msgs in
-#check LeanOS.SecurityClaims.spawn_syscall_value_refinement
-
-/--
 info: LeanOS.SecurityClaims.loader_source_refinement :
   (∀ (source start stop fileOffset span : UInt64),
       LeanOS.Refinement.CSubset.call LeanOS.Refinement.ChildLoaderC.loaderSourceC

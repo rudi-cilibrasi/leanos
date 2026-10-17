@@ -537,9 +537,8 @@ re-granted spawn capability, isolation of the other subjects, the child
 presenting the parent's handle, and never-reuse after termination
 (`spawn_vectors_pass`). The version-one command decoder of the original
 dispatcher trace does not decode the tag (`boot_dispatcher_rejects_spawn_tag`);
-the same tag reaches the generated dispatcher only through the spawn family's
-own state tokens (see "Spawn at the generated boundary" below), and there is
-no syscall. The negative fixture
+the boot path decides the same tag only through the spawn allocator's exports
+(see "The spawn family at the boot boundary" below). The negative fixture
 `NegativeFixtures/SpawnIdentityRollback` keeps the issued child on a failed
 grant and fails the rollback check.
 
@@ -753,17 +752,17 @@ object and then B's fresh object; in the composite, B's fresh object is on
 B's own committed frame, and frames return across subjects only through child
 termination.
 
-### Spawn at the generated boundary (gate item 5)
+### The spawn family at the boot boundary
 
-`LeanOS.SpawnBoundary` puts the spawn family into the boot-compiled
-`CompositeDispatcher.dispatch` (`leanos_composite_dispatch`, oracle adapter
-18) as twenty-one state tokens `0x7001`–`0x8401` and a table of 54 edges
-(`spawnDispatchRaw`). Each token names the complete `CompositeState` reached
-by replaying gate steps from one of four seeds: the dispatcher seed with the
-issuers past its histories and frame 4 committed to subject 2
-(`spawnSeed`), and three exhaustion seeds with the subject issuer, the object
-issuer, or the control-generation counter at its bound, which no bounded
-trace reaches.
+`LeanOS.SpawnFamily` holds what every boundary of the spawn family shares: the
+canonical command words, with the hosted oracles' tags; the typed results as
+status and value words (the hosted oracles' status byte: `0x01` accepted,
+`0x80 + code` rejected); one step of the family (`familyStep`, the gate's
+post-state and encoded result); replay of a command list (`runFamily`); and the
+family's four seeds: the dispatcher seed with the issuers past its histories
+and frame 4 committed to subject 2 (`spawnSeed`), and three exhaustion seeds
+with the subject issuer, the object issuer, or the control-generation counter
+at its bound.
 
 | Tag | Command | Step |
 | --- | --- | --- |
@@ -775,77 +774,33 @@ trace reaches.
 | `0x7701` | timer switch | the dispatcher's authoritative `resumePreempt` |
 | `0x7801` | capability copy | authoritative `capabilityCopy` |
 
-The reply's status byte is the hosted oracles' (`0x01` accepted, `0x80 + code`
-rejected), and result word one is their value word (`edges_match_hosted_oracle`).
-The command codec is canonical (`decodeFamily_encodeFamily`,
-`encodeFamily_decodeFamily`), and so are the state tokens and reply words
-(`decodeState_encodeState`, `edges_dispatch`).
-
 | Property | Theorems |
 | --- | --- |
-| The generated table is the edge table | `edges_dispatch`, `edges_decode` |
-| Each edge is one gate step on the named state | `edge_refines`, `dispatcher_refines` |
-| Rejections keep the complete state and the token | `rejected_edge_unchanged`, `familyStep_stutter` |
-| Every token satisfies the whole-trace theorem | `spawn_boundary_trace`, `familySeed_resourceRuntimeWellFormed` |
-| Isolation, cleanup, reuse, stale handles | `boundary_checks_pass` (module `SpawnBoundaryChecks`) |
-| The hosted generated-C replay checks the model | `spawn_edge_vectors_match_model`, `spawn_negative_vectors_reject` (module `Oracle`) |
+| The command codec is canonical | `decodeFamily_encodeFamily`, `encodeFamily_decodeFamily` |
+| Rejections keep the complete state | `familyStep_stutter` |
+| The seeds satisfy the combined invariant | `familySeed_resourceRuntimeWellFormed`, `familySeed_childAccounting`, `familySeed_spawnTree` |
+| Every command list from every seed satisfies the whole-trace theorem | `family_trace` |
 
-The edges cover every failure point reachable from the seeds with rollback:
-missing, stale, and re-granted spawn capabilities; malformed, stale,
-out-of-range, and wrong-kind endpoint handles; invalid and non-subset rights
-and an endpoint without grant; subject-budget, frame-budget, subject-identity,
-object-identity, and control-generation exhaustion; and a kernel grant to a
-spawned child. They cover stale control words before and after child-table
-slot reuse, a stale memory handle after its slot is reused, child isolation
-(the child's slots are exactly the inheritance set, and no state of the family
-changes what the bystander subject 1 holds), the bystander presenting the
-parent's control word, and termination cleanup: the child's identity,
-capabilities, address space, records, and table entry are gone, its frame is
-committed to the parent again, free and scrubbed, and the parent allocates it
-again under a never-issued object identity. The child cannot run before a
-loader exists, so reclamation of memory the child itself allocated
-(`reclaimChildFrames`) is covered by `terminateChild_releases_everything`, not
-by a vector. The slot-table-full and identity-rejection failures need seeds
-the bounded table does not name; the hosted `SpawnOracle` vectors cover them.
-
-The hosted generated-C replay (`check-oracle-host.sh`) and every normal
-image's boot-time oracle replay run all 68 spawn vectors (54 edges and 14
-hostile encodings) through the generated dispatcher.
+`family_trace` is the whole-trace theorem `child_resource_trace` along every
+command list from every seed: the authoritative, resource, child-accounting
+and spawn-tree invariants; frame usage within limit; every parent's live
+children within its subject budget, and its usage plus its children's limits
+within its entitlement; no frame outside the seed's commitment committed; and
+no subject identity created twice or reused.
 
 ### The ring-3 spawn syscall
 
-`LeanOS.SpawnSyscall` (#489) is the syscall that
-[ADR 0010](adr/0010-defer-fork.md)'s decision of 2026-10-10 permits. Numbers
-100 to 104 name spawn, frame grant, child termination, memory allocation and
-memory release, with RBX, RCX and RDX as the first three command words and a
-zero fourth ([userspace-abi.md](userspace-abi.md#spawn-spawn-child-image)).
-The generated witness `spawnSyscall` (export `leanos_spawn_syscall`, oracle
-adapter 30) takes the kernel's token, the current subject, and the four
-registers. It refuses a token outside the family (`0xfe20`), an actor other
-than the token's current subject (`0xfe21`), a number outside the family
-(`0xfe22`), and registers that do not decode (`0xfe23`), and otherwise returns
-the generated dispatcher's reply; a decodable command the bounded table does
-not cover is `0xfe24`, on which the kernel stops. `spawnSyscallValue`
-(adapter 31) is the value word. Both are allocation-free and fixed-width.
-
-| Property | Theorems |
-| --- | --- |
-| The canonical check is the decoder, and only child and memory commands decode | `canonical_iff_decodes` |
-| No number reaches a kernel command | `syscall_never_kernel_command` |
-| The generated spawn table answers an edge or an error word, for every input | `spawnDispatchRaw_cases` |
-| Every syscall is a refusal or exactly one edge at the presented token | `spawnSyscall_cases` |
-| The edge is one `childGate` or `memoryGate` step with the latch's current subject as actor, on the complete state the token names | `spawnSyscall_refines`, `stateActor_current` |
-| Every refusal and every rejection keeps the token and the pre-state | `spawnSyscall_rollback` |
-| Every reachable token satisfies the whole-trace theorem | `spawnSyscall_trace` |
-| The `spawn-child` image's run and the model states behind its transcript | `image_run`, `image_model` |
-
-The witness is a bounded boundary: the family's twenty-one tokens name complete
-states, and only commands the table covers are gate steps. Since #575 no boot
-image calls it. The `spawn-child` and `spawn-loader` kernels hold the
-allocator's thirteen words instead of a token and decide every command with the
-generated `SpawnAllocatorBoot` exports of `LeanOS.SpawnAllocatorWords`
-([the spawn allocator](#the-spawn-allocator-575)); the token witness stays only
-as the hosted oracle's adapters 30 and 31 until the fixed table is removed.
+The syscall that [ADR 0010](adr/0010-defer-fork.md)'s decision of 2026-10-10
+permits (#489) has numbers 100 to 104: spawn, frame grant, child termination,
+memory allocation and memory release, with RBX, RCX and RDX as the first three
+command words and a zero fourth
+([userspace-abi.md](userspace-abi.md#spawn-spawn-child-image)). The
+`spawn-child` and `spawn-loader` kernels hold the spawn allocator's thirteen
+record words and decide every command with its generated exports
+([the spawn allocator](#the-spawn-allocator-575)): on the words of every family
+state an admitted syscall is exactly one `childGate` or `memoryGate` step of
+that state (`syscall_refines`), and refusals and rejections keep every word
+(`syscall_rollback`).
 
 In the `spawn-child` image (#491) the kernel grants subject B (2) spawn
 authority with the allocator's kernel command and enters B, which spawns a
@@ -873,13 +828,21 @@ which writes only the mailbox of the endpoint spawn granted it
 (`childSend_confined`). The kernel's entry to the child is not a composite
 step.
 
+Until #575 the family reached the boot boundary as a fixed table:
+twenty-one state tokens (`0x7001`–`0x8401`) of the composite dispatcher, each
+naming the composite state replayed from a seed, 54 generated edges, and a
+token-based syscall witness (`leanos_spawn_syscall`, oracle adapters 30 and 31,
+with a rung-3 refinement of its emitted C under ADR 0029). The allocator
+replaced them: its states are every family state, not a list, and the table,
+the witness, their oracle rows and their refinement rows are gone.
+
 ### The spawn allocator (#575)
 
-The spawn table above is fixed: each token names one complete state replayed
-from a hand-picked seed, and exhaustion needs a seed of its own.
-`LeanOS.SpawnAllocator` replaces its states with a **bounded allocator**: a
+`LeanOS.SpawnAllocator` is a **bounded allocator** for the spawn family: a
 small record holding exactly what the family's decisions read, and a step
-function that decides every command of the family on every record.
+function that decides every command of the family on every record. It
+replaced the fixed table of state tokens the family used before #575, whose
+states each named one composite state replayed from a hand-picked seed.
 
 | Field | Composite source |
 | --- | --- |
@@ -933,7 +896,7 @@ and returns `UInt64` scalars only.
 | Export | Use |
 | --- | --- |
 | `leanos_spawn_allocator_seed(index)` | The family seed's words, loaded at boot |
-| `leanos_spawn_allocator_syscall`, `_syscall_value`, `_syscall_next(index, …)` | Syscalls 100 to 104: the 13 words, the actor, RAX and RBX, RCX, RDX; the reply `0x01 \| status << 16` or a refusal `0xfe20` (state words not canonical) to `0xfe23` (as before); the value; the successor words |
+| `leanos_spawn_allocator_syscall`, `_syscall_value`, `_syscall_next(index, …)` | Syscalls 100 to 104: the 13 words, the actor, RAX and RBX, RCX, RDX; the reply `0x01 \| status << 16` or a refusal `0xfe20` (state words not canonical) to `0xfe23`; the value; the successor words |
 | `leanos_spawn_allocator_kernel`, `_kernel_value`, `_kernel_next(index, …)` | The kernel's own commands: its grant of spawn authority before ring 3 and its termination of a child whose load failed |
 
 The proofs are in `LeanOS.SpawnAllocatorBootRefinement`:
@@ -954,20 +917,10 @@ the generated C against that specification on 9215 vectors over 171 states:
 every record reached from the four seeds by up to six accepted commands,
 records at the edges of the representation, and malformed words.
 
-`LeanOS.SpawnAllocatorTable` reads every token state of the fixed table as an
-allocator record (`abstraction`) and checks on the sample boot plan that the
-table is a fragment of the allocator: 18 of the 21 tokens are allocator
-records (`tokens_abstract`), and the 45 edges between them that run an
-allocator command are allocator steps, on the records and on the thirteen
-words (`edges_are_allocator_steps`, `edges_are_word_steps`). The three other
-tokens are the bystander after the dispatcher's timer switch and the two
-narrowed-endpoint states made by the dispatcher's capability copy; the switch
-and the copy are dispatcher-only commands the allocator does not take.
-
 #### The composite simulates the allocator on every family state
 
-The table check above is evaluation on one boot plan. The general result is a
-simulation over a named class of composite states. `SpawnAllocator.Family`
+The allocator is tied to the composite by a simulation over a named class of
+composite states. `SpawnAllocator.Family`
 (`LeanOS.SpawnAllocatorFamily`) is the invariant the spawn family runs under:
 
 - the combined resource, child-accounting and spawn-tree invariants hold, the
@@ -1005,12 +958,7 @@ whole command lists: replies, final record and the family invariant.
 `LeanOS.SpawnAllocatorSeeds` proves every family seed is a `Family` state
 (`familySeed_family`, `seedState_family`), so every command list the allocator
 decides from a seed's record is a composite trace with the allocator's replies
-(`seed_trace_simulates`). For **every** boot plan, every record token of the
-fixed table is a `Family` state whose record is the allocator's replay from its
-seed record (`recordToken_family`), and every allocator command from it, not
-only the table's 45 edges, is simulated (`recordToken_simulates`). The only
-evaluation left is `recordTokens_decided`, a kernel `decide` over allocator
-records alone.
+(`seed_trace_simulates`), for every boot plan.
 
 So each allocator theorem above holds of the composite on every reachable
 family state: rollback of rejected commands, frame conservation, stale control

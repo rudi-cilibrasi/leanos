@@ -111,7 +111,7 @@ def explore (seen frontier : List Words) (cap : Nat) : Nat → List Words
       let freshKept := fresh.filter kept.contains
       if freshKept.isEmpty then kept else explore kept freshKept cap depth
 
-def seedWordsOf (seed : SpawnBoundary.Seed) : Words := encode (seedRecord seed)
+def seedWordsOf (seed : SpawnFamily.Seed) : Words := encode (seedRecord seed)
 
 def seeds : List Words :=
   [seedWordsOf .main, seedWordsOf .subjectsExhausted, seedWordsOf .objectsExhausted,

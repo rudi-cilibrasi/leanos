@@ -600,7 +600,7 @@ lean_c_modules=(
   BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
   InterruptEntry BlockingIPC CapabilityReuse ExtendedState
   PrivilegeEntryControl J1900CpuProfile J1900MsrReadback J1900CpuControlPolicy BootTextConsole PlatformAdmission FaultDispatch DirectPortIO StaleTranslation
-  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer SpawnSyscall SpawnAllocatorWords ChildLoader TimingChannels
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB NotifyReply UserCopyPolicy ConsoleServer EndpointDirectory FaultHandler KeyboardEcho TimerServer FrameServer SpawnAllocatorWords ChildLoader TimingChannels
   WifiExec NetworkSubject NetEcho DhcpSubject NetDhcp
 )
 # Generated C file name -> Lean source. WifiExec is the device-program

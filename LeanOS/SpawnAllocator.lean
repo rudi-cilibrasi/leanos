@@ -71,8 +71,9 @@ it: a spawn-authority grant that would be accepted for the bystander
   with the record unchanged, without any hand-picked seed.
 
 `LeanOS.SpawnAllocatorWords` packs a record into thirteen words and decides
-`step` with fixed-width code; `LeanOS.SpawnAllocatorTable` proves the fixed
-table's tokens and edges are allocator records and steps.
+`step` with fixed-width code that the boot image runs;
+`LeanOS.SpawnAllocatorSimulation` proves every decided command is one
+composite gate step on every `Family` state.
 -/
 namespace LeanOS.SpawnAllocator
 
@@ -312,7 +313,7 @@ def revokeAuthorityStep (state : State) (subject : Nat) : Step :=
   if subject = parent then acceptWith { state with authority := none, budget := 0 } 0
   else acceptWith state 0
 
-/-- The memory family's codes (`SpawnBoundary.memoryErrorCode`). -/
+/-- The memory family's codes (`SpawnFamily.memoryErrorCode`). -/
 def memoryCode : MemoryError → UInt64
   | .invalidSubject => 0x01 | .outOfRange => 0x02 | .capabilityIdentityExhausted => 0x03
   | .occupiedSlot => 0x04 | .objectIdentityExhausted => 0x05 | .objectUnavailable => 0x06
