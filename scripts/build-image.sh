@@ -1278,8 +1278,7 @@ fi
 # against their own reviewed manifests (#469, #503).
 for gated_scenario in ipc-stream capability-transfer inflight-revocation frame-budget \
     example-subject fault-handler timer-server frame-server three-subject console-server endpoint-directory \
-    network-subject gtk-rekey dhcp-subject spawn-child spawn-loader timing-channels; do
-    network-subject gtk-rekey dhcp-subject dhcp-backoff spawn-child spawn-loader; do
+    network-subject gtk-rekey dhcp-subject dhcp-backoff spawn-child spawn-loader timing-channels; do
   if selected_final_enabled "$build/leanos-$gated_scenario.elf"; then
     LEANOS_ENTRY_STACK_MANIFEST="scripts/entry-stack-$gated_scenario-callgraph.tsv" \
       LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="scripts/entry-stack-$gated_scenario-optimizer-optional.tsv" \
