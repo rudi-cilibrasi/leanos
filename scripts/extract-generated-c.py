@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Extract one generated scalar C export as a LeanOS C-subset AST (issue #470).
+"""Extract one generated scalar C function as a LeanOS C-subset AST
+(issues #470, #570).
 
-The pinned Lean toolchain emits each `@[export]` scalar function into the
-module's generated `.c`. This tool parses exactly the C subset that
-`LeanOS/Refinement/CSubset.lean` gives meaning to and prints the function as a
-Lean `Func` term. It rejects every other construct, so the proof about the
-checked-in AST covers the emitted function only while the two agree.
+The pinned Lean toolchain emits each `@[export]` scalar function, and each
+scalar helper it calls, into the module's generated `.c`. This tool parses
+exactly the C subset that `LeanOS/Refinement/CSubset.lean` gives meaning to
+and prints the function as a Lean `Func` term. It rejects every other
+construct, so the proof about the checked-in AST covers the emitted function
+only while the two agree.
 
-usage: extract-generated-c.py GENERATED.c EXPORT_NAME
-       extract-generated-c.py --check GENERATED.c EXPORT_NAME LEAN_FILE
+usage: extract-generated-c.py GENERATED.c FUNCTION_NAME
+       extract-generated-c.py --check GENERATED.c FUNCTION_NAME LEAN_FILE
+       extract-generated-c.py --update GENERATED.c FUNCTION_NAME LEAN_FILE
   --check compares the rendering with the text between the
-  `-- BEGIN GENERATED AST` and `-- END GENERATED AST` markers of LEAN_FILE.
+  `-- BEGIN GENERATED AST FUNCTION_NAME` and `-- END GENERATED AST` markers of
+  LEAN_FILE. --update rewrites that text (keeping its `def NAME : Func :=`
+  line) after a toolchain or source change; the proofs must then be re-checked.
 """
 
 from __future__ import annotations
@@ -21,6 +26,25 @@ from pathlib import Path
 
 TOKEN = re.compile(r"\s*(?:(?P<id>[A-Za-z_][A-Za-z0-9_]*)|(?P<num>[0-9]+(?:ULL)?)|"
                    r"(?P<op>==|[{}();:=,]))")
+
+# The inline lean.h helpers of the subset and their CSubset.BinOp names.
+HELPERS = {
+    "lean_uint64_dec_eq": ".decEq",
+    "lean_uint64_dec_lt": ".decLt",
+    "lean_uint64_dec_le": ".decLe",
+    "lean_uint64_add": ".add",
+    "lean_uint64_sub": ".sub",
+    "lean_uint64_land": ".land",
+    "lean_uint64_lor": ".lor",
+    "lean_uint64_xor": ".xor",
+    "lean_uint64_shift_left": ".shiftLeft",
+    "lean_uint64_shift_right": ".shiftRight",
+    "lean_uint64_mod": ".mod",
+}
+TYPES = {"uint64_t": ".u64", "uint8_t": ".u8"}
+VARIABLE = re.compile(r"v_[A-Za-z0-9_]*")
+# A callee: a compiled Lean declaration (`l_…`) or another export (`leanos_…`).
+CALLEE = re.compile(r"(?:l_|leanos_)[A-Za-z0-9_]*")
 
 
 class Reject(Exception):
@@ -54,18 +78,34 @@ class Parser:
         self.i += 1
         return tok
 
+    def variable(self) -> str:
+        tok = self.take()
+        if not VARIABLE.fullmatch(tok):
+            raise Reject(f"expected a variable, found {tok!r}")
+        return tok
+
     def expr(self) -> str:
         tok = self.take()
-        if tok == "lean_uint64_dec_eq":
+        if tok in HELPERS:
             self.take("(")
             left = self.expr()
             self.take(",")
             right = self.expr()
             self.take(")")
-            return f"(.decEq {left} {right})"
-        if re.fullmatch(r"[0-9]+ULL", tok):
-            return f"(.lit {tok[:-3]})"
-        if re.fullmatch(r"v_[A-Za-z0-9_]*", tok):
+            return f"(.bin {HELPERS[tok]} {left} {right})"
+        if CALLEE.fullmatch(tok) and tok not in HELPERS and not tok.startswith("lean_"):
+            self.take("(")
+            args = []
+            if self.peek() != ")":
+                args.append(self.variable())
+                while self.peek() == ",":
+                    self.take(",")
+                    args.append(self.variable())
+            self.take(")")
+            return f'(.call "{tok}" {lean_list([chr(34) + a + chr(34) for a in args])})'
+        if re.fullmatch(r"[0-9]+(?:ULL)?", tok):
+            return f"(.lit {tok.removesuffix('ULL')})"
+        if VARIABLE.fullmatch(tok):
             return f'(.var "{tok}")'
         raise Reject(f"unsupported expression {tok!r}")
 
@@ -83,15 +123,15 @@ class Parser:
 
     def stmt(self) -> list[str]:
         tok = self.peek()
-        if tok in ("uint64_t", "uint8_t"):
-            ty = ".u64" if self.take() == "uint64_t" else ".u8"
-            names = [self.take()]
+        if tok in TYPES:
+            ty = TYPES[self.take()]
+            names = [self.variable()]
             self.take(";")
             return [f'(.decl {ty} "{name}")' for name in names]
         if tok == "if":
             self.take("if")
             self.take("(")
-            name = self.take()
+            name = self.variable()
             self.take("==")
             if self.take() != "0":
                 raise Reject("only `if (x == 0)` is supported")
@@ -115,7 +155,7 @@ class Parser:
             self.take(":")
             return [f'(.block "{label}" {lean_list(self.braced())})']
         if tok is not None and self.peek(1) == "=":
-            name = self.take()
+            name = self.variable()
             self.take("=")
             value = self.expr()
             self.take(";")
@@ -127,12 +167,18 @@ def lean_list(items: list[str]) -> str:
     return "[" + ", ".join(items) + "]" if items else "[]"
 
 
-def extract(source: str, export: str) -> str:
+def extract(source: str, function: str) -> str:
     header = re.search(
-        rf"LEAN_EXPORT uint64_t {re.escape(export)}\(uint64_t (v_[A-Za-z0-9_]+), "
-        rf"uint64_t (v_[A-Za-z0-9_]+)\)\{{\n_start:\n", source)
+        rf"^(?:LEAN_EXPORT|static) (uint64_t|uint8_t) {re.escape(function)}\(([^)]*)\)\{{\n_start:\n",
+        source, re.M)
     if not header:
-        raise Reject(f"no two-argument uint64_t definition of {export}")
+        raise Reject(f"no scalar definition of {function}")
+    params = []
+    for param in header.group(2).split(", "):
+        match = re.fullmatch(r"(uint64_t|uint8_t) (v_[A-Za-z0-9_]+)", param)
+        if not match:
+            raise Reject(f"unsupported parameter {param!r} of {function}")
+        params.append(f'("{match.group(2)}", {TYPES[match.group(1)]})')
     # The body is the brace-balanced block after `_start:`.
     start = header.end()
     if source[start] != "{":
@@ -148,22 +194,37 @@ def extract(source: str, export: str) -> str:
     body = parser.stmts()
     if parser.peek() is not None:
         raise Reject("trailing tokens in body")
-    params = f'["{header.group(1)}", "{header.group(2)}"]'
     lines = ",\n    ".join(body)
-    return ("{ params := " + params + "\n  body := [\n    " + lines + "] }\n")
+    return ("{ params := " + lean_list(params) + "\n  result := " + TYPES[header.group(1)] +
+            "\n  body := [\n    " + lines + "] }\n")
+
+
+def ast_block(text: str, export: str, lean_file: str) -> re.Match:
+    match = re.search(rf"-- BEGIN GENERATED AST {re.escape(export)}\n(.*?)"
+                      r"-- END GENERATED AST", text, re.S)
+    if not match:
+        raise Reject(f"{lean_file} has no generated AST markers for {export}")
+    return match
 
 
 def main(argv: list[str]) -> int:
     try:
+        if argv[:1] == ["--update"]:
+            _, c_file, export, lean_file = argv
+            rendered = extract(Path(c_file).read_text(), export)
+            text = Path(lean_file).read_text()
+            match = ast_block(text, export, lean_file)
+            head = match.group(1).split(":=", 1)[0]
+            body = "  " + rendered.rstrip("\n").replace("\n", "\n  ") + "\n"
+            Path(lean_file).write_text(text[:match.start(1)] + head + ":=\n" + body +
+                                       text[match.end(1):])
+            print(f"updated the AST of {export} in {lean_file}")
+            return 0
         if argv[:1] == ["--check"]:
             _, c_file, export, lean_file = argv
             rendered = extract(Path(c_file).read_text(), export)
             text = Path(lean_file).read_text()
-            match = re.search(r"-- BEGIN GENERATED AST\n(.*?)-- END GENERATED AST",
-                              text, re.S)
-            if not match:
-                raise Reject(f"{lean_file} has no generated AST markers")
-            checked_in = match.group(1)
+            checked_in = ast_block(text, export, lean_file).group(1)
             ast = checked_in.split(":=", 1)[1].lstrip("\n") if ":=" in checked_in else ""
             if " ".join(ast.split()) != " ".join(rendered.split()):
                 print(f"error: emitted C for {export} drifted from the AST in "

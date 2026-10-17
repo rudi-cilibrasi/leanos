@@ -25437,8 +25437,20 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_copy_check_refinement",
+      "display": "frame_copy_check_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.frame_ownership_exclusive",
       "display": "frame_ownership_exclusive",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_port_check_refinement",
+      "display": "frame_port_check_refinement",
       "kind": "theorem"
     },
     {
@@ -25557,6 +25569,12 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_decide_refinement",
+      "display": "loader_decide_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.loader_exact_admitted_segments",
       "display": "loader_exact_admitted_segments",
       "kind": "theorem"
@@ -25577,6 +25595,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.loader_reserved_range_only",
       "display": "loader_reserved_range_only",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_source_refinement",
+      "display": "loader_source_refinement",
       "kind": "theorem"
     },
     {
@@ -25917,8 +25941,20 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_syscall_refinement",
+      "display": "spawn_syscall_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.spawn_syscall_refines_gate",
       "display": "spawn_syscall_refines_gate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_syscall_value_refinement",
+      "display": "spawn_syscall_value_refinement",
       "kind": "theorem"
     },
     {

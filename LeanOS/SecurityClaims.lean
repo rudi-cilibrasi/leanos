@@ -48,6 +48,10 @@ import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
 import LeanOS.Refinement.BootTransitionC
+import LeanOS.Refinement.ChildLoaderC
+import LeanOS.Refinement.SpawnSyscallC
+import LeanOS.Refinement.NetworkSubjectC
+import LeanOS.Refinement.DhcpSubjectC
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
@@ -3865,6 +3869,151 @@ theorem boot_transition_refinement (state : KernelTransition.State) (command : U
       some (KernelTransition.encodeResult
         (KernelTransition.transition state (KernelTransition.decodeCommand command)).result) :=
   Refinement.BootTransitionC.bootTransitionC_refines_transition state command
+
+/-- SC-SPAWN-SYSCALL-REFINEMENT: the C function `leanos_spawn_syscall`, as
+emitted by the pinned toolchain (with its five emitted helpers) and
+interpreted by the `Refinement.CSubset` semantics, computes the Lean witness
+`spawnSyscall` on every six words, given a dispatcher that answers with
+`CompositeDispatcher.dispatch`; its answer is a refusal or the reply of exactly
+one edge of the spawn table at the presented token. ADR 0029 records what
+stays trusted. -/
+theorem spawn_syscall_refinement (ext : Refinement.CSubset.Ext)
+    (spec : Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :
+    Refinement.CSubset.callWith (Refinement.SpawnSyscallC.helpers ext)
+        Refinement.SpawnSyscallC.spawnSyscallC [state, actor, number, rbx, rcx, rdx] =
+      some (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx) ∧
+    (SpawnSyscall.spawnSyscall state actor number rbx rcx rdx ∈ SpawnSyscall.refusals ∨
+      ∃ edge ∈ SpawnBoundary.edges, SpawnBoundary.encodeState edge.state = state ∧
+        edge.words = SpawnSyscall.syscallWords number rbx rcx rdx ∧
+        actor = SpawnSyscall.stateActor state ∧
+        SpawnSyscall.spawnSyscall state actor number rbx rcx rdx =
+          SpawnBoundary.replyWord edge.next edge.status) := by
+  refine ⟨Refinement.SpawnSyscallC.spawnSyscallC_refines ext spec state actor number rbx rcx rdx,
+    ?_⟩
+  rcases SpawnSyscall.spawnSyscall_cases state actor number rbx rcx rdx with
+    refused | ⟨edge, member, token, words, sameActor, _, _, reply⟩
+  · exact Or.inl refused
+  · exact Or.inr ⟨edge, member, token, words, sameActor, reply⟩
+
+/-- SC-SPAWN-SYSCALL-VALUE-REFINEMENT: the C function
+`leanos_spawn_syscall_value`, as emitted by the pinned toolchain and
+interpreted by the `Refinement.CSubset` semantics, calling the emitted
+`leanos_spawn_syscall`, computes the Lean witness `spawnSyscallValue` on
+every six words, given a dispatcher that answers with
+`CompositeDispatcher.dispatch` and `dispatchValue`. -/
+theorem spawn_syscall_value_refinement (ext : Refinement.CSubset.Ext)
+    (spec : Refinement.SpawnSyscallC.DispatchSpec ext) (state actor number rbx rcx rdx : UInt64) :
+    Refinement.CSubset.callWith (Refinement.SpawnSyscallC.link ext)
+        Refinement.SpawnSyscallC.spawnSyscallValueC [state, actor, number, rbx, rcx, rdx] =
+      some (SpawnSyscall.spawnSyscallValue state actor number rbx rcx rdx) :=
+  Refinement.SpawnSyscallC.spawnSyscallValueC_refines ext spec state actor number rbx rcx rdx
+
+/-- SC-LOADER-SOURCE-REFINEMENT: the C function `leanos_loader_source`, as
+emitted by the pinned toolchain and interpreted by the `Refinement.CSubset`
+semantics, computes the Lean witness on every five words, and on words below
+`2^62` the model's range and placement test. -/
+theorem loader_source_refinement :
+    (∀ source start stop fileOffset span : UInt64,
+      Refinement.CSubset.call Refinement.ChildLoaderC.loaderSourceC
+          [source, start, stop, fileOffset, span] =
+        some (ChildLoader.loaderSource source start stop fileOffset span)) ∧
+    (∀ source start stop fileOffset span : Nat, source < 2 ^ 62 → start < 2 ^ 62 →
+      stop < 2 ^ 62 → fileOffset < 2 ^ 62 → span < 2 ^ 62 →
+      Refinement.CSubset.call Refinement.ChildLoaderC.loaderSourceC
+          [UInt64.ofNat source, UInt64.ofNat start, UInt64.ofNat stop, UInt64.ofNat fileOffset,
+            UInt64.ofNat span] =
+        some (if !(decide (start ≤ source) && decide (source + span ≤ stop)) then 5
+          else if source ≠ start + fileOffset then 6 else 0)) := by
+  refine ⟨Refinement.ChildLoaderC.loaderSourceC_refines, ?_⟩
+  intro source start stop fileOffset span h1 h2 h3 h4 h5
+  rw [Refinement.ChildLoaderC.loaderSourceC_refines,
+    ChildLoader.loaderSource_agrees source start stop fileOffset span h1 h2 h3 h4 h5]
+
+/-- SC-LOADER-DECIDE-REFINEMENT: the C functions `leanos_loader_decide` and
+`leanos_loader_source`, as emitted by the pinned toolchain and interpreted by
+the `Refinement.CSubset` semantics, answer a start on every state, and a load
+on every state whose words are small, with exactly the encoded reply of
+`ChildLoader.step`. -/
+theorem loader_decide_refinement (state : ChildLoader.State) (control : UInt64) :
+    (∀ sourceCode pages frames used : UInt64,
+      Refinement.CSubset.call Refinement.ChildLoaderC.loaderDecideC
+          [2, ChildLoader.flagsWord state (.start control), sourceCode, pages, frames, used] =
+        some (ChildLoader.encodeReply false (ChildLoader.step state (.start control)).2)) ∧
+    (∀ index source : Nat, ChildLoader.Small state → source < 2 ^ 62 →
+      ((match state.plan[index]? with
+          | some s => Refinement.CSubset.call Refinement.ChildLoaderC.loaderSourceC
+              [UInt64.ofNat source, UInt64.ofNat state.start, UInt64.ofNat state.stop,
+                UInt64.ofNat s.fileOffset,
+                UInt64.ofNat (ChildLoader.pageCount s * ElfAdmission.pageBytes)]
+          | none => some 0).bind fun sourceCode =>
+        Refinement.CSubset.call Refinement.ChildLoaderC.loaderDecideC
+          [1, ChildLoader.flagsWord state (.load control index source), sourceCode,
+            UInt64.ofNat ((state.plan[index]?.map ChildLoader.pageCount).getD 0),
+            UInt64.ofNat ((state.child.map (fun c : ChildLoader.Child => c.frames)).getD 0),
+            UInt64.ofNat state.used]) =
+        some (ChildLoader.encodeReply
+          (ChildLoader.requestWritable state (.load control index source))
+          (ChildLoader.step state (.load control index source)).2)) :=
+  ⟨Refinement.ChildLoaderC.loaderC_refines_start state control,
+    fun index source small sourceSmall =>
+      Refinement.ChildLoaderC.loaderC_refines_load state control index source small sourceSmall⟩
+
+/-- SC-FRAME-COPY-REFINEMENT: the C function `leanos_frame_copy_check`, as
+emitted by the pinned toolchain (with its emitted helper) and interpreted by
+the `Refinement.CSubset` semantics, computes the Lean witness on every six
+words, so it accepts the network subject's fetch or send exactly when the
+model's `fetchOk` or `sendOk` does and refuses every other subject. -/
+theorem frame_copy_check_refinement (ext : Refinement.CSubset.Ext) :
+    (∀ subject request addr len base limit : UInt64,
+      Refinement.CSubset.callWith (Refinement.NetworkSubjectC.link ext)
+          Refinement.NetworkSubjectC.frameCopyCheckC [subject, request, addr, len, base, limit] =
+        some (NetworkSubject.frameCopyCheck subject request addr len base limit)) ∧
+    (∀ (w : NetworkSubject.Window) (s : NetworkSubject.State) (addr base limit : UInt64),
+      w = ⟨base.toNat, limit.toNat⟩ → s.rx.length < 2 ^ 64 →
+      (Refinement.CSubset.callWith (Refinement.NetworkSubjectC.link ext)
+          Refinement.NetworkSubjectC.frameCopyCheckC
+          [3, NetworkSubject.fetchRequest s.rxPending, addr, s.rx.length.toUInt64, base, limit] =
+          some 0 ↔ NetworkSubject.fetchOk w s NetworkSubject.network addr.toNat = true)) ∧
+    (∀ (w : NetworkSubject.Window) (s : NetworkSubject.State) (addr len base limit : UInt64),
+      w = ⟨base.toNat, limit.toNat⟩ →
+      (Refinement.CSubset.callWith (Refinement.NetworkSubjectC.link ext)
+          Refinement.NetworkSubjectC.frameCopyCheckC
+          [3, NetworkSubject.sendRequest s.txPending, addr, len, base, limit] = some 0 ↔
+        NetworkSubject.sendOk w s NetworkSubject.network addr.toNat len.toNat = true)) ∧
+    (∀ subject request addr len base limit : UInt64, subject ≠ 3 →
+      Refinement.CSubset.callWith (Refinement.NetworkSubjectC.link ext)
+          Refinement.NetworkSubjectC.frameCopyCheckC [subject, request, addr, len, base, limit] =
+        some 1) :=
+  ⟨Refinement.NetworkSubjectC.frameCopyCheckC_refines ext,
+    fun w s addr base limit hw hlen =>
+      Refinement.NetworkSubjectC.frameCopyCheckC_fetch ext w s addr base limit hw hlen,
+    fun w s addr len base limit hw =>
+      Refinement.NetworkSubjectC.frameCopyCheckC_send ext w s addr len base limit hw,
+    fun subject request addr len base limit h =>
+      Refinement.NetworkSubjectC.frameCopyCheckC_nonholder ext subject request addr len base limit h⟩
+
+/-- SC-FRAME-PORT-REFINEMENT: the C function `leanos_frame_port_check`, as
+emitted by the pinned toolchain and interpreted by the `Refinement.CSubset`
+semantics, computes the Lean witness on every six words, so it admits a copy
+only from a port holder for a window labelled its own and served by the
+endpoint, and refuses every subject holding no port. -/
+theorem frame_port_check_refinement :
+    (∀ subject req addr len base limit : UInt64,
+      Refinement.CSubset.call Refinement.DhcpSubjectC.framePortCheckC
+          [subject, req, addr, len, base, limit] =
+        some (DhcpSubject.framePortCheck subject req addr len base limit)) ∧
+    (∀ subject req addr len base limit : UInt64,
+      Refinement.CSubset.call Refinement.DhcpSubjectC.framePortCheckC
+          [subject, req, addr, len, base, limit] = some 0 →
+      (subject = 2 ∨ subject = 3) ∧ (req >>> 24) &&& 0xff = subject ∧
+        (req >>> 16) &&& 0xff = subject ∧
+        NetworkSubject.Window.covers ⟨base.toNat, limit.toNat⟩ addr.toNat len.toNat = true) ∧
+    (∀ subject req addr len base limit : UInt64, subject ≠ 2 → subject ≠ 3 →
+      Refinement.CSubset.call Refinement.DhcpSubjectC.framePortCheckC
+          [subject, req, addr, len, base, limit] = some 1) :=
+  ⟨Refinement.DhcpSubjectC.framePortCheckC_refines,
+    Refinement.DhcpSubjectC.framePortCheckC_own_window,
+    Refinement.DhcpSubjectC.framePortCheckC_nonholder⟩
 /-- SC-CONSOLE-INTEGRITY: a subject holding neither the console capability nor
 an endpoint capability that reaches the console server cannot change the
 console trace: two scripts that differ only in its actions produce equal

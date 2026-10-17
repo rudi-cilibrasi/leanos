@@ -647,10 +647,12 @@ fi
 record_bootstrap_phase complete
 record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
-# Issue #470: the emitted C of leanos_boot_transition must still be exactly
-# the AST that LeanOS.Refinement.BootTransitionC proves refines the model.
-python3 scripts/extract-generated-c.py --check "$build/KernelTransition.c" \
-  leanos_boot_transition LeanOS/Refinement/BootTransitionC.lean
+# Issues #470 and #570: the emitted C of every refined function must still be
+# exactly the AST its LeanOS.Refinement module proves refines the model.
+while IFS=$'\t' read -r module function lean_file; do
+  [[ -z "$module" || "$module" == \#* ]] && continue
+  python3 scripts/extract-generated-c.py --check "$build/$module.c" "$function" "$lean_file"
+done < scripts/refinement-exports.tsv
 # The device-service image embeds the Lean xHCI keyboard program (issue
 # #449), the ahci-service image the Lean one-sector AHCI program (issue
 # #496). leanos-wifi-gen refuses a program outside its target's admitted
