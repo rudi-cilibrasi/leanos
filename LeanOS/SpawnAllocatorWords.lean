@@ -414,3 +414,158 @@ def codeNext (words : Words) (command : CommandWords) : Words :=
     wordAt 10, wordAt 11, wordAt 12⟩
 
 end LeanOS.SpawnAllocatorWords
+
+/-!
+# The spawn allocator's boot exports (#575)
+
+These exports live in this module because the boot image links only calls
+that stay inside one generated C file or go through an export: the
+functions below call `stepReply`, `stepValue`, `stepNextWord` and
+`canonical` directly.
+
+The kernel holds the spawn family's state as the thirteen words of
+`LeanOS.SpawnAllocatorWords` (the encoded allocator record) and decides every
+command of the family with the generated functions below.  Every export takes
+and returns `UInt64` scalars only and is allocation-free and non-recursive.
+
+## The ring-3 syscall
+
+A subject enters the kernel with `int $0x80`; the number is in RAX and the
+arguments in RBX, RCX and RDX.  Numbers 100 to 104 are the five public
+commands of the family, with exactly the command words of the hosted oracles
+(`SpawnOracle`, `SpawnAccountingOracle`):
+
+| Number | Command | Command words |
+| --- | --- | --- |
+| 100 | spawn | `0x7001 rbx rcx rdx 0` |
+| 101 | grant frames | `0x7101 rbx rcx rdx 0` |
+| 102 | terminate child | `0x7201 rbx rcx rdx 0` |
+| 103 | allocate memory | `0x7301 rbx rcx rdx 0` |
+| 104 | release memory | `0x7401 rbx rcx rdx 0` |
+
+`syscall` (export `leanos_spawn_allocator_syscall`) takes the thirteen state
+words, the subject that entered the kernel and the four registers.  In order:
+
+1. state words that are not canonical are refused (`0xfe20`);
+2. an actor other than the parent, subject 2, is refused (`0xfe21`);
+3. a number outside 100..104 is refused (`0xfe22`);
+4. registers that are not the canonical encoding of a command are refused
+   (`0xfe23`);
+5. otherwise the reply is `0x01 | status << 16`, with the allocator's status
+   byte: `0x01` accepted, `0x80 + code` a typed rejection.
+
+`syscallValue` is the value word (the control word of a spawned child, the
+frames a grant moved or a termination returned, zero otherwise), and
+`syscallNext index` is word `index` of the successor state.  A refusal or a
+rejection keeps every word.
+
+## Kernel commands
+
+`kernel`, `kernelValue` and `kernelNext` decide any command words of the
+family (`0x7001` to `0x7601`) for the kernel itself: its grant of spawn
+authority before ring 3 and its termination of a child whose load failed.
+The reply is the bare status byte, or the generated function's error word
+(`0xff02` to `0xff07`) for words that do not decode or a command the record
+cannot hold.
+
+`seed index` is word `index` of the family seed's record.
+
+The proofs are in `LeanOS.SpawnAllocatorBootRefinement`.
+-/
+namespace LeanOS.SpawnAllocatorBoot
+
+open LeanOS
+open LeanOS.SpawnAllocatorWords
+
+/-! ## Numbers and registers -/
+
+/-- The command tag a syscall number names, and `0` for any other number. -/
+def syscallTag (number : UInt64) : UInt64 :=
+  if number == 100 then 0x7001
+  else if number == 101 then 0x7101
+  else if number == 102 then 0x7201
+  else if number == 103 then 0x7301
+  else if number == 104 then 0x7401
+  else 0
+
+/-- The registers are the canonical encoding of a command with this tag: the
+argument rules of `SpawnOracle.decodeSpawn` and
+`SpawnAccountingOracle.decodeChild` and the reserved-zero rule of the memory
+commands. -/
+def registersCanonical (tag rbx rcx rdx : UInt64) : Bool :=
+  if tag == 0x7001 then rbx != 0 && rdx < 64
+  else if tag == 0x7101 then rcx != 0 && rdx == 0
+  else if tag == 0x7201 || tag == 0x7301 || tag == 0x7401 then rcx == 0 && rdx == 0
+  else false
+
+/-- The refusal word of a syscall, or `0` when no refusal applies. -/
+def refusal (w4 c0 c1 c2 c3 f actor number rbx rcx rdx : UInt64) : UInt64 :=
+  if !canonical w4 c0 c1 c2 c3 f then 0xfe20
+  else if actor != 2 then 0xfe21
+  else if syscallTag number == 0 then 0xfe22
+  else if !registersCanonical (syscallTag number) rbx rcx rdx then 0xfe23
+  else 0
+
+/-- The reply word of a status: version 1 and the status byte above it. -/
+def replyOf (status : UInt64) : UInt64 := (0x01 : UInt64) ||| (status <<< 16)
+
+/-- Word `index` of the thirteen state words, and zero past them. -/
+def wordAt (index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f : UInt64) : UInt64 :=
+  if index == 0 then w0 else if index == 1 then w1 else if index == 2 then w2
+  else if index == 3 then w3 else if index == 4 then w4 else if index == 5 then w5
+  else if index == 6 then c0 else if index == 7 then c1 else if index == 8 then c2
+  else if index == 9 then c3 else if index == 10 then m2 else if index == 11 then m3
+  else if index == 12 then f else 0
+
+/-! ## The generated exports -/
+
+/-- **The family seed's record**, word by word: subjects up to 2 and objects
+up to 20 issued, capability identities up to 5, no control generation or
+spawn authority issued, memory object 20 (identity 5) in slot 2, and one
+frame committed to the parent. -/
+@[export leanos_spawn_allocator_seed]
+def seed (index : UInt64) : UInt64 :=
+  wordAt index 3 21 6 1 1 0 0 0 0 0 5 0 0x10000
+
+/-- **The spawn syscall.**  See the module documentation. -/
+@[export leanos_spawn_allocator_syscall]
+def syscall (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64) :
+    UInt64 :=
+  let refused := refusal w4 c0 c1 c2 c3 f actor number rbx rcx rdx
+  if refused != 0 then refused
+  else replyOf (stepReply w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f (syscallTag number) rbx rcx rdx 0)
+
+/-- The syscall's value word, zero for every refusal and rejection. -/
+@[export leanos_spawn_allocator_syscall_value]
+def syscallValue (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64) :
+    UInt64 :=
+  if refusal w4 c0 c1 c2 c3 f actor number rbx rcx rdx != 0 then 0
+  else stepValue w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f (syscallTag number) rbx rcx rdx 0
+
+/-- Word `index` of the state after the syscall; every word is kept on a
+refusal or a rejection. -/
+@[export leanos_spawn_allocator_syscall_next]
+def syscallNext (index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64) :
+    UInt64 :=
+  if refusal w4 c0 c1 c2 c3 f actor number rbx rcx rdx != 0 then
+    wordAt index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f
+  else
+    stepNextWord index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f (syscallTag number) rbx rcx rdx 0
+
+/-- A kernel command's status: `0x01` accepted, `0x80 + code` rejected, or
+the error word. -/
+@[export leanos_spawn_allocator_kernel]
+def kernel (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64) : UInt64 :=
+  stepReply w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3
+
+/-- A kernel command's value word. -/
+@[export leanos_spawn_allocator_kernel_value]
+def kernelValue (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64) : UInt64 :=
+  stepValue w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3
+
+/-- Word `index` of the state after a kernel command. -/
+@[export leanos_spawn_allocator_kernel_next]
+def kernelNext (index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64) : UInt64 :=
+  stepNextWord index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3
+
+end LeanOS.SpawnAllocatorBoot

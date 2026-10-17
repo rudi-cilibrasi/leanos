@@ -3215,7 +3215,7 @@ user_b_entry:
     mov $4, %edx
     mov $100, %eax
     int $0x80
-    cmp $0x017201, %rax
+    cmp $0x010001, %rax
     jne 9f
     mov %rbx, %r12
     mov $2, %ebx                /* 104 release slot 2: the frame is free */
@@ -3223,14 +3223,14 @@ user_b_entry:
     xor %edx, %edx
     mov $104, %eax
     int $0x80
-    cmp $0x017301, %rax
+    cmp $0x010001, %rax
     jne 9f
     mov %r12, %rbx              /* 101 give the child that frame */
     mov $1, %ecx
     xor %edx, %edx
     mov $101, %eax
     int $0x80
-    cmp $0x017401, %rax
+    cmp $0x010001, %rax
     jne 9f
     mov %r12, %rbx              /* 105 a source outside the read authority */
     xor %ecx, %ecx
@@ -3251,7 +3251,7 @@ user_b_entry:
     mov $4, %edx
     mov $100, %eax
     int $0x80
-    cmp $0x018201, %rax
+    cmp $0x010001, %rax
     jne 9f
     cmp $0x20000, %rbx
     jne 9f
@@ -3261,7 +3261,7 @@ user_b_entry:
     xor %edx, %edx
     mov $101, %eax
     int $0x80
-    cmp $0x018301, %rax
+    cmp $0x010001, %rax
     jne 9f
     mov %r13, %rbx              /* 105 text: mapped in place */
     xor %ecx, %ecx
@@ -3296,7 +3296,7 @@ user_b_entry:
     xor %edx, %edx
     mov $102, %eax
     int $0x80
-    cmp $0x018401, %rax
+    cmp $0x010001, %rax
     jne 9f
     cmp $1, %rbx
     jne 9f
@@ -3307,7 +3307,7 @@ user_b_entry:
     /* Spawn parent (#489, #491).  B is the current subject and holds the
        kernel-granted spawn capability (generation 1, subject budget 1),
        endpoint handle 0x30000 (slot 0, with grant) and memory in slot 2.
-       Every syscall's reply word comes back in RAX (version 1, next-state
+       Every syscall's reply word comes back in RAX (version 1, a zero
        selector, status << 16; 0xfe2x is a refusal before any gate) and its
        value word in RBX.  Any other answer is a fault (ud2). */
     mov $1, %ebx                /* 100 spawn: generation 1, endpoint, send */
@@ -3315,7 +3315,7 @@ user_b_entry:
     mov $4, %edx
     mov $100, %eax
     int $0x80
-    cmp $0x017201, %rax
+    cmp $0x010001, %rax
     jne 9f
     cmp $0x10000, %rbx          /* control word: slot 0, generation 1 */
     jne 9f
@@ -3332,28 +3332,28 @@ user_b_entry:
     mov $4, %edx
     mov $100, %eax
     int $0x80
-    cmp $0x8c7201, %rax
+    cmp $0x8c0001, %rax
     jne 9f
     mov %r12, %rbx              /* 101 grant: B's memory holds its frame */
     mov $1, %ecx
     xor %edx, %edx
     mov $101, %eax
     int $0x80
-    cmp $0xc57201, %rax
+    cmp $0xc50001, %rax
     jne 9f
     mov $2, %ebx                /* 104 release slot 2: the frame is free */
     xor %ecx, %ecx
     xor %edx, %edx
     mov $104, %eax
     int $0x80
-    cmp $0x017301, %rax
+    cmp $0x010001, %rax
     jne 9f
     mov %r12, %rbx              /* 101 grant one frame to the child */
     mov $1, %ecx
     xor %edx, %edx
     mov $101, %eax
     int $0x80
-    cmp $0x017401, %rax
+    cmp $0x010001, %rax
     jne 9f
     cmp $1, %rbx
     jne 9f
@@ -3362,7 +3362,7 @@ user_b_entry:
     xor %edx, %edx
     mov $102, %eax
     int $0x80
-    cmp $0x017501, %rax
+    cmp $0x010001, %rax
     jne 9f
     cmp $1, %rbx
     jne 9f
@@ -3371,21 +3371,21 @@ user_b_entry:
     xor %edx, %edx
     mov $102, %eax
     int $0x80
-    cmp $0xc37501, %rax
+    cmp $0xc30001, %rax
     jne 9f
     mov $2, %ebx                /* 103 allocate slot 2 */
     xor %ecx, %ecx
     xor %edx, %edx
     mov $103, %eax
     int $0x80
-    cmp $0x017601, %rax
+    cmp $0x010001, %rax
     jne 9f
     mov $1, %ebx                /* spawn a new child into the same slot */
     mov $0x30000, %ecx
     mov $4, %edx
     mov $100, %eax
     int $0x80
-    cmp $0x017701, %rax
+    cmp $0x010001, %rax
     jne 9f
     cmp $0x20000, %rbx          /* slot 0 again, generation 2 */
     jne 9f
@@ -3395,21 +3395,21 @@ user_b_entry:
     xor %edx, %edx
     mov $102, %eax
     int $0x80
-    cmp $0xc37701, %rax
+    cmp $0xc30001, %rax
     jne 9f
     mov %r12, %rbx              /* the old handle: grant is rejected */
     mov $1, %ecx
     xor %edx, %edx
     mov $101, %eax
     int $0x80
-    cmp $0xc37701, %rax
+    cmp $0xc30001, %rax
     jne 9f
     mov %r13, %rbx              /* the new handle terminates the new child */
     xor %ecx, %ecx
     xor %edx, %edx
     mov $102, %eax
     int $0x80
-    cmp $0x017801, %rax
+    cmp $0x010001, %rax
     jne 9f
     test %rbx, %rbx
     jne 9f

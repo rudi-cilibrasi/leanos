@@ -66,7 +66,7 @@ ABI.
 | 90 | frame-server | 1, 2 | request to the frame server on endpoint 12 (RDX): RBX 1 asks for a frame (answer: its page address, or the typed rejection 0x100), RBX 2 releases the client's budget (A only; A never runs again) |
 | 91 | frame-server | 3 | C's decision for the pending request, checked against the generated witness: RBX op (1 grant, 2 refuse over budget, 3 refuse pool exhausted, 5 revoke) with rights << 8, RCX client, RDX pool frame; C then blocks on endpoint 12 for the next request |
 | 93 | frame-server | 2 | B reports the first and last byte of its republished frame (RBX, RCX) and its address (RDX) (final record) |
-| 100 | spawn-child, spawn-loader | 2 | spawn (#489): RBX spawn-capability generation, RCX endpoint handle to grant, RDX rights mask; RAX the generated reply word (status << 16; 0xfe20..0xfe23 refused before any gate), RBX the control word of the child |
+| 100 | spawn-child, spawn-loader | 2 | spawn (#489): RBX spawn-capability generation, RCX endpoint handle to grant, RDX rights mask; RAX the generated reply word (1 + (status << 16); 0xfe20..0xfe23 refused before any gate), RBX the control word of the child |
 | 101 | spawn-child, spawn-loader | 2 | grant frames to a child: RBX control word, RCX frames (nonzero), RDX 0; RBX the frames moved |
 | 102 | spawn-child, spawn-loader | 2 | terminate a child: RBX control word, RCX and RDX 0; RBX the frames returned; a stale control word is rejected (status 0xc3) with the state unchanged |
 | 103 | spawn-child, spawn-loader | 2 | allocate memory into slot RBX (RCX and RDX 0) |
@@ -197,10 +197,14 @@ endpoint capabilities by a slot of the caller's own table and resolves a
 Syscalls 100 to 104 are the ring-3 spawn family that
 [ADR 0010](adr/0010-defer-fork.md)'s decision of 2026-10-10 permits (#489).
 Unlike every other number above, they are not decoded by C:
-`LeanOS.SpawnSyscall.spawnSyscall` (export `leanos_spawn_syscall`, oracle
-adapter 30) receives the kernel's spawn-family state token, the current
-subject, RAX and RBX, RCX, RDX, and returns RAX; `spawnSyscallValue` (adapter
-31) returns RBX.
+`SpawnAllocatorBoot.syscall` in `LeanOS.SpawnAllocatorWords` (export
+`leanos_spawn_allocator_syscall`,
+issue #575) receives the thirteen words of the spawn allocator's record that the
+kernel holds, the current subject, RAX and RBX, RCX, RDX, and returns RAX;
+`syscallValue` (`leanos_spawn_allocator_syscall_value`) returns RBX, and
+`syscallNext` (`leanos_spawn_allocator_syscall_next`) the kernel's successor
+words. The hosted `spawn-allocator` corpus checks the generated C of all
+three.
 
 | Number | Command | RBX | RCX | RDX | Model step |
 | --- | --- | --- | --- | --- | --- |
@@ -210,20 +214,19 @@ subject, RAX and RBX, RCX, RDX, and returns RAX; `spawnSyscallValue` (adapter
 | 103 | allocate memory | slot | 0 | 0 | `memoryGate (.allocate _)` |
 | 104 | release memory | slot | 0 | 0 | `memoryGate (.release _)` |
 
-RAX is the generated dispatcher's reply word: version `0x01` in bits 0..7,
-the next state in bits 8..15, and the status byte in bits 16..23. Status
-`0x01` is accepted. `0x80 + code` is a typed rejection with the codes of
+RAX is the generated reply word: version `0x01` in bits 0..7, zero in bits
+8..15, and the status byte in bits 16..23. Status `0x01` is accepted. `0x80 + code` is a typed rejection with the codes of
 `SpawnOracle` and `SpawnAccountingOracle` (for example `0x8c` subject budget
 exhausted, `0xc3` stale control word, `0xc5` frame budget exhausted); the
 state is unchanged. RBX is the value word: the control word of a spawned child
 (child-table slot in bits 0..15, a never-reused generation above), the frames a
 grant moved or a termination returned, and zero otherwise. Four words are
 refusals before any gate, with the state unchanged: `0xfe20` (the kernel's
-token is not a spawn-family state), `0xfe21` (the caller is not the current
-subject), `0xfe22` (not a family number) and `0xfe23` (the registers are not
-a canonical encoding, for example a reserved rights bit or a nonzero reserved
-register). `0xfe24`, a canonical command the bounded table does not cover,
-never reaches ring 3: the kernel stops the machine.
+words are not a canonical allocator record), `0xfe21` (the caller is not the
+current subject), `0xfe22` (not a family number) and `0xfe23` (the registers
+are not a canonical encoding, for example a reserved rights bit or a nonzero
+reserved register). Every canonical command is decided: there is no command
+outside the allocator.
 
 No number reaches the kernel's grant or revocation of spawn authority, the
 timer switch, or the capability copy. A spawned child holds exactly a copy of
