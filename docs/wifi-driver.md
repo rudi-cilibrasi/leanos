@@ -632,6 +632,22 @@ board boots legacy BIOS.
 The retained serial stream contains decrypted payloads. Redact them before
 committing an observation, and never commit the `connect` program.
 
+## Production image (issue #569)
+
+The production Qotom image runs the same driver program, the DHCP subject
+and the echo subject without the recovery-lab harness:
+
+* three ring-3 subjects, each in its own address space;
+* frames through per-subject copy windows instead of the 16-byte copy roots;
+* no watchdog;
+* an absorbing halt after `FINAL`.
+
+`scripts/build-qotom-production.py` builds it from one fixed composition of
+the reviewed boot path. Its capture boots from the one-shot request and ends
+with a power cycle by the maintainer. See
+[qotom-production.md](qotom-production.md), which also holds the maintainer
+steps for the capture.
+
 ## Group-key rotation (issue #557)
 
 An access point rotates its group temporal key (GTK) on a fixed interval,
