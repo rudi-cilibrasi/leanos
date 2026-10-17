@@ -547,7 +547,9 @@ The expected words come from the specification (`specSyscall` and `specStep`:
 decode the words, run `SpawnAllocator.step`, encode), not from the exported
 functions. `syscall_spec` and `kernel_spec` prove the exports compute that
 specification for every input, and the hosted replay checks that the compiled
-C does too. The states are not a table. They are the 160 records reached from
+C does too. Under the C-subset semantics of ADR 0029, the emitted C itself is
+proved to compute it (`Refinement.SpawnAllocatorC`, #593); the replay still
+covers the compiler and the calling convention on these vectors. The states are not a table. They are the 160 records reached from
 the four family seeds by up to six accepted commands, five records at the edges
 of the representation (counters one below their bounds, four children with
 48-bit generations at the frame bound, both memory slots full), and six words

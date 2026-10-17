@@ -17,6 +17,15 @@ exports keep their proofs unchanged. The allocator's exports have no rung-3
 proof yet; their evidence is `syscall_spec`/`kernel_spec` (rung 1, for every
 input) and the hosted spawn-allocator corpus (rung 2).
 
+Amended 2026-10-17 (#593): the allocator's seven exports now have rung-3
+proofs, by the method below, in `Refinement.SpawnAllocatorC`. The pinned
+toolchain emits each export and each of the 31 scalar functions they call
+(`stepReply`, `decideW`, `canonical`, …) as its own C function of
+`SpawnAllocatorWords.c`, all inside the subset, so no Lean refactoring and no
+new subset construct was needed. All 38 functions have drift rows. The proof
+is compositional: one theorem per C function, each callee resolved by the
+theorem of its own AST (see "Composing many emitted helpers" below).
+
 ## Context
 
 ADR 0023 proved one rung-3 refinement: the C that the pinned toolchain emits
@@ -75,10 +84,33 @@ The kernel re-checks every proof, so they add no trust (as with `kernel_rfl`).
 | `Refinement.ChildLoaderC` | `leanos_loader_source`, `leanos_loader_decide` |
 | `Refinement.NetworkSubjectC` | `leanos_frame_copy_check`, helper `l_LeanOS_NetworkSubject_frameCopyDecide` |
 | `Refinement.DhcpSubjectC` | `leanos_frame_port_check` (with `framePortDecide` inlined) |
+| `Refinement.SpawnAllocatorC` (#593) | `leanos_spawn_allocator_seed`, `_syscall`, `_syscall_value`, `_syscall_next`, `_kernel`, `_kernel_value`, `_kernel_next`, and the 31 helpers they call (`l_LeanOS_SpawnAllocatorWords_*`, `l_LeanOS_SpawnAllocatorBoot_*`) |
 
 `scripts/refinement-exports.tsv` lists every proved C function and its AST.
 `build-image.sh` re-extracts each one from `build/boot/<module>.c`, the files
 compiled into the images, and fails on any drift.
+
+### Composing many emitted helpers (#593)
+
+The spawn allocator's exports reach their 31 helpers through call chains up
+to five calls deep (`syscallNext`, `stepNextWord`, `stepReply`, `decideW`,
+`resolveControlW`, `childWordAt`). Proving each export with every callee
+inlined would put the whole decision into one symbolic tree. Instead:
+
+- `SpawnAllocatorC.helper?` maps a callee's arity and C name to its extracted
+  AST, and `linkAt ext depth` resolves such a call by running that AST with the
+  helpers linked one call less deep. `link ext` is `linkAt ext 5`, deeper
+  than every chain, so every helper call resolves to its AST.
+- A helper that calls helpers at most `k` calls deep has a theorem
+  `*C_refines` under `linkAt ext (n + k)`, and its C name answers its Lean
+  definition in `linkAt ext (n + k + 1)` (`link_*`). Each proof is one
+  `csym_refine` over that function's own small tree, with its callees
+  rewritten by their `link_*` theorems.
+- Each export's theorem holds under `link ext`, for every `ext`: the exports
+  call nothing outside their module.
+
+`csym_close` also reduces `false = true`: a case on a `Bool` atom can rewrite
+the atom itself (needed by `decideW`, whose checks are `Bool` helpers).
 
 ### Theorems and claims
 
@@ -90,11 +122,22 @@ has a model theorem, the module composes the two:
   (`loaderC_refines_start`, `loaderC_refines_load`);
 - the frame checks accept exactly when `fetchOk`/`sendOk` does and refuse
   non-holders;
+- the spawn allocator's exports (#593), called as the kernel calls them,
+  compute the decode–step–encode specification on every input
+  (`syscallWordsC_spec`, `kernelWordsC_spec`, through
+  `SpawnAllocatorBoot.syscall_spec` and `kernel_spec`), and the seed export
+  gives the seed's words (`seedWordsC_eq`). With `seed_refines` those are the
+  encoded family seed for every boot plan (`seedWordsC_spec`); that last step
+  depends on `native_decide` through the boot plan's q35 platform, so it is
+  kept out of the claim.
 
 The claim index has one refinement row per export, from
 SC-LOADER-SOURCE-REFINEMENT to SC-FRAME-PORT-REFINEMENT (the two spawn-syscall
-rows were removed with their exports, #575). `tests/RefinementStatements.lean`
-pins each statement.
+rows were removed with their exports, #575), and two for the spawn allocator
+(#593): SC-SPAWN-ALLOCATOR-REFINEMENT (each of the seven exports computes its
+Lean definition on every input) and SC-SPAWN-ALLOCATOR-SPEC-REFINEMENT (the
+composition with the specification). `tests/RefinementStatements.lean` pins
+each statement.
 
 ### Negative fixtures
 
@@ -108,6 +151,12 @@ pins each statement.
   them uses a construct outside the subset. `claim` rows weaken each new claim
   statement, and the pinned contract must reject it. The unmutated claim
   fixtures must pass.
+- For the spawn allocator (#593): AST mutants of `seedC`, `decideWC` and
+  `syscallC`, and a Lean syscall that forgets the parent-only rule, each
+  disagree with the original on a concrete input, run with the linked
+  helpers. Drift rows patch all seven exports and three helpers (three swap a
+  callee, two leave the subset), and two `claim` rows weaken the two new
+  claims.
 
 ## TCB note
 
@@ -122,10 +171,12 @@ What the six refinement theorems leave trusted, exactly:
 3. **The C compiler and linker**, which turn the checked C text into machine
    code, and the **`uint64_t`/`uint8_t` calling convention** between the
    kernel's C and these functions.
-4. **The dispatcher's C**, for the two spawn exports only. `DispatchSpec`
-   assumes that the emitted `leanos_composite_dispatch` and
-   `leanos_composite_dispatch_value` compute `CompositeDispatcher.dispatch` and
-   `dispatchValue`. It is a hypothesis of the theorems, not proved here.
+4. **The dispatcher's C**, for the two spawn-syscall exports only (removed in
+   #575). `DispatchSpec` assumed that the emitted `leanos_composite_dispatch`
+   and `leanos_composite_dispatch_value` compute `CompositeDispatcher.dispatch`
+   and `dispatchValue`. The spawn allocator's exports (#593) call only
+   helpers of their own module, each proved from its own AST, so their
+   theorems assume no other C.
 
 The **Lean compiler** is no longer trusted for what these functions compute.
 The theorems are about the C it emitted, and the build checks that this C is
@@ -142,8 +193,9 @@ export.
 - If the toolchain or a witness changes the emitted C, the image build fails
   until the AST is regenerated (`extract-generated-c.py --update`) and the
   proof is re-checked. Variable numbering changes when unrelated code in the same
-  module changes, so editing `ChildLoader.lean`, `NetworkSubject.lean` or
-  `DhcpSubject.lean` can require regenerating the AST.
+  module changes, so editing `ChildLoader.lean`, `NetworkSubject.lean`,
+  `DhcpSubject.lean` or `SpawnAllocatorWords.lean` can require regenerating the
+  AST (for the spawn allocator, all 38 rows of its module).
   The proofs themselves usually need no edit.
 - A new scalar export whose C stays in the subset gets a refinement theorem
   from its AST and `csym_refine`, plus simp lemmas for the callees.

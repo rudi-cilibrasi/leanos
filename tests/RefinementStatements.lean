@@ -1,7 +1,7 @@
 import LeanOS.SecurityClaims
 
 /-!
-Pinned statements of the refinement-ladder claims (issues #475, #570). A weakened
+Pinned statements of the refinement-ladder claims (issues #475, #570, #593). A weakened
 conclusion or an added hypothesis changes the printed type, so the
 `#guard_msgs` contract below fails; `scripts/check-refinement-mutants.sh`
 shows a weakened statement of each refinement claim is rejected this way.
@@ -133,3 +133,63 @@ info: LeanOS.SecurityClaims.frame_port_check_refinement :
 -/
 #guard_msgs in
 #check LeanOS.SecurityClaims.frame_port_check_refinement
+
+/--
+info: LeanOS.SecurityClaims.spawn_allocator_refinement (ext : LeanOS.Refinement.CSubset.Ext) :
+  (∀ (index : UInt64),
+      LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+          LeanOS.Refinement.SpawnAllocatorC.seedC [index] =
+        some (LeanOS.SpawnAllocatorBoot.seed index)) ∧
+    (∀ (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64),
+        LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+            LeanOS.Refinement.SpawnAllocatorC.syscallC
+            [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, actor, number, rbx, rcx, rdx] =
+          some (LeanOS.SpawnAllocatorBoot.syscall w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx)) ∧
+      (∀ (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64),
+          LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+              LeanOS.Refinement.SpawnAllocatorC.syscallValueC
+              [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, actor, number, rbx, rcx, rdx] =
+            some
+              (LeanOS.SpawnAllocatorBoot.syscallValue w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx)) ∧
+        (∀ (index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx rdx : UInt64),
+            LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+                LeanOS.Refinement.SpawnAllocatorC.syscallNextC
+                [index, w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, actor, number, rbx, rcx, rdx] =
+              some
+                (LeanOS.SpawnAllocatorBoot.syscallNext index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f actor number rbx rcx
+                  rdx)) ∧
+          (∀ (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64),
+              LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+                  LeanOS.Refinement.SpawnAllocatorC.kernelC
+                  [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, tag, a0, a1, a2, a3] =
+                some (LeanOS.SpawnAllocatorBoot.kernel w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3)) ∧
+            (∀ (w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64),
+                LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+                    LeanOS.Refinement.SpawnAllocatorC.kernelValueC
+                    [w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, tag, a0, a1, a2, a3] =
+                  some (LeanOS.SpawnAllocatorBoot.kernelValue w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3)) ∧
+              ∀ (index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3 : UInt64),
+                LeanOS.Refinement.CSubset.callWith (LeanOS.Refinement.SpawnAllocatorC.link ext)
+                    LeanOS.Refinement.SpawnAllocatorC.kernelNextC
+                    [index, w0, w1, w2, w3, w4, w5, c0, c1, c2, c3, m2, m3, f, tag, a0, a1, a2, a3] =
+                  some
+                    (LeanOS.SpawnAllocatorBoot.kernelNext index w0 w1 w2 w3 w4 w5 c0 c1 c2 c3 m2 m3 f tag a0 a1 a2 a3)
+-/
+#guard_msgs in
+#check LeanOS.SecurityClaims.spawn_allocator_refinement
+
+/--
+info: LeanOS.SecurityClaims.spawn_allocator_spec_refinement (ext : LeanOS.Refinement.CSubset.Ext) :
+  (∀ (words : LeanOS.SpawnAllocatorWords.Words) (actor number rbx rcx rdx : UInt64),
+      LeanOS.Refinement.SpawnAllocatorC.syscallWordsC ext words actor number rbx rcx rdx =
+        some (LeanOS.SpawnAllocatorBoot.specSyscall words actor number rbx rcx rdx)) ∧
+    (∀ (words : LeanOS.SpawnAllocatorWords.Words) (command : LeanOS.CompositeDispatcher.CommandWords),
+        LeanOS.Refinement.SpawnAllocatorC.kernelWordsC ext words command =
+          some
+            ((LeanOS.SpawnAllocatorWords.specStep words command).snd.fst,
+              (LeanOS.SpawnAllocatorWords.specStep words command).snd.snd,
+              (LeanOS.SpawnAllocatorWords.specStep words command).fst)) ∧
+      LeanOS.Refinement.SpawnAllocatorC.seedWordsC ext = some LeanOS.SpawnAllocatorBoot.seedWords
+-/
+#guard_msgs in
+#check LeanOS.SecurityClaims.spawn_allocator_spec_refinement
