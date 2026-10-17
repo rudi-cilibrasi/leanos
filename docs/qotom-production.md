@@ -118,6 +118,17 @@ copies:
   applies;
 - the generated operand agrees with the port witness.
 
+## The lease signal
+
+The DHCP subject hands its lease to the echo subject on endpoint 13. At
+that moment, and at no other, the kernel stores 1 in the lease signal word
+of the executor scratch, as the lab image and q35 do (issue #573,
+`LeanOS.Net.FrameSource.leaseSignalAt`). The driver learns that the route moved,
+never the address. A link-only `connect` program starts its serve window
+then, so a slow DHCP server uses up the lease window, never the serve
+window. The keyless `net-bcm-dhcp` program checks the word after every
+record: 0 before the ACK, 1 from the ACK on.
+
 ## Records
 
 The production image prints the lab image's records up to
@@ -129,8 +140,8 @@ LEANOS-LAB/1 PRODUCTION-WINDOWS profile=qotom-network-v1 holders=1,3 a-window-pa
 LEANOS-LAB/1 PRODUCTION-READY profile=qotom-network-v1 subjects=3 address-spaces=3 frames=copy-window watchdog=none final=halt
 LEANOS-LAB/1 NET event=deliver frame=1 bytes=6 port=dhcp
 LEANOS-LAB/1 NET event=fetch subject=1 frame=1 bytes=6 copy=fetch-root model=accepted
-LEANOS-LAB/1 NET event=handoff from=1 to=3 frame=11 lease=10.0.2.16 route=echo address-spaces=separate model=accepted
-LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 echo-subject=3 device-holder=2 address-spaces=3 lease=10.0.2.16 frames=17 ...
+LEANOS-LAB/1 NET event=handoff from=1 to=3 frame=13 lease=10.0.2.16 route=echo address-spaces=separate model=accepted
+LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 echo-subject=3 device-holder=2 address-spaces=3 lease=10.0.2.16 frames=19 ...
 ```
 
 The `MODE` record comes right after serial initialization. The window

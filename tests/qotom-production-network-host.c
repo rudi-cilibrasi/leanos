@@ -155,6 +155,10 @@ uint64_t frame_window_transfer(uint64_t resume_root, uint64_t window_root,
 
 static uint64_t lab_stream_next_key(void) {
     volatile uint32_t *tx_len = (volatile uint32_t *)(scratch + QOTOM_PROD_TX_AT + 0x800u);
+    /* The lease signal is set by the hand-off, which follows the third
+       record (the ACK), and never before. */
+    if (*(volatile uint32_t *)(scratch + QOTOM_PROD_LEASE_SIGNAL_AT) != (yielded >= 3 ? 1u : 0u))
+        abort();
     if (yielded > 0) {
         uint64_t want = expected_sent[yielded - 1];
         if (*tx_len != want) abort();

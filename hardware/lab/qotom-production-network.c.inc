@@ -30,7 +30,9 @@
  * operand leanos_frame_window_operand; frame_window_transfer moves the
  * whole frame under the window root and reselects the closed root.  Every
  * device request is checked against leanos_device_authorize and every
- * exchange on endpoints 12 and 13 against leanos_blocking_ipc_event.
+ * exchange on endpoints 12 and 13 against leanos_blocking_ipc_event.  At
+ * the hand-off, and at no other time, the kernel stores 1 in the lease
+ * signal word of the executor scratch (issue #573), as the lab and q35 do.
  *
  * No recovery-lab harness: no watchdog is armed or reloaded, and FINAL is
  * followed by an absorbing halt, not a reset. */
@@ -53,6 +55,8 @@
 #define QOTOM_PROD_RX_AT 0x3E000u
 #define QOTOM_PROD_TX_AT 0x3E800u
 #define QOTOM_PROD_TX_LEN_AT 0x3F000u
+/* LeanOS.Net.FrameSource.leaseSignalAt (issue #573). */
+#define QOTOM_PROD_LEASE_SIGNAL_AT 0x3F004u
 #define QOTOM_PROD_LINK_BYTES 6u
 #define QOTOM_PROD_TICK_BYTES 1u
 #define QOTOM_PROD_FRAME_MIN 14u
@@ -449,6 +453,10 @@ static __attribute__((noinline)) uint64_t qotom_prod_dispatch(uint64_t *saved, u
         qotom_prod_lease_ip = saved[12];
         qotom_prod_handoff_seq = qotom_prod_seq;
         qotom_prod_route = QOTOM_PROD_MODEL_ECHO;
+        /* The lease signal (issue #573): the route moved, and nothing else;
+           the driver program starts its serve window now, never learning the
+           address. */
+        *(volatile uint32_t *)(qotom_net_scratch() + QOTOM_PROD_LEASE_SIGNAL_AT) = 1u;
         qotom_prod_phase = QOTOM_PROD_C_LEASED;
         saved[14] = 0;
         uint64_t root = qotom_prod_switch(saved, QOTOM_PROD_C_SUBJECT);
