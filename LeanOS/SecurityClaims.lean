@@ -42,6 +42,7 @@ import LeanOS.FaultHandler
 import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.SpawnSyscall
+import LeanOS.SpawnAllocatorBootRefinement
 import LeanOS.ChildLoader
 import LeanOS.ChildLoaderJoint
 import LeanOS.StaleTranslation
@@ -4598,6 +4599,62 @@ theorem spawn_syscall_refines_gate (plan : BootPageTablePlan.Plan)
         token words reply sameActor
     exact ⟨edge, member, token, decoded, isSyscall, current, step, next,
       SpawnBoundary.rejected_edge_unchanged plan compiled edge member⟩
+
+/-- SC-SPAWN-ALLOCATOR: the kernel holds the spawn family's state as the
+thirteen words of the bounded allocator's record (#575).  On the words of every
+composite state the spawn family runs on (`SpawnAllocator.Family`), a ring-3
+spawn syscall that the generated exports do not refuse decodes to a public
+child or memory command (never a kernel command), the actor is the latch's
+current subject, and the exports' reply, value and successor words are exactly
+the status, the value and the words of the post-state of one `childGate` or
+`memoryGate` step there, which is again such a state; a refusal or a rejection
+keeps every word and the complete pre-state.  The seed words are the family
+seed's, and along every list of syscalls the kernel's words are the words of
+the family state the same gate steps reach. -/
+theorem spawn_allocator_refines_gate (plan : BootPageTablePlan.Plan)
+    (inputs : List SpawnAllocatorBoot.SyscallInput) :
+    (SpawnAllocatorBoot.runWords SpawnAllocatorBoot.seedWords inputs =
+        SpawnAllocatorWords.encode (SpawnAllocator.abstraction
+          (SpawnAllocatorBoot.runStates (SpawnBoundary.seedState plan .main) inputs)) ∧
+      SpawnAllocator.Family
+        (SpawnAllocatorBoot.runStates (SpawnBoundary.seedState plan .main) inputs)) ∧
+    ∀ (state : FailStop.CompositeState), SpawnAllocator.Family state →
+      ∀ actor number rbx rcx rdx : UInt64,
+        let words := SpawnAllocatorWords.encode (SpawnAllocator.abstraction state)
+        (SpawnAllocatorBoot.refusalOf words actor number rbx rcx rdx ≠ 0 →
+          SpawnAllocatorBoot.syscallValueOf words actor number rbx rcx rdx = 0 ∧
+            SpawnAllocatorBoot.syscallNextOf words actor number rbx rcx rdx = words) ∧
+        (SpawnAllocatorBoot.refusalOf words actor number rbx rcx rdx = 0 →
+          ∃ command, SpawnAllocatorWords.decodeCommand
+              (SpawnAllocatorBoot.syscallWords number rbx rcx rdx) = .ok command ∧
+            command.isSyscall = true ∧
+            actor.toNat = state.execution.core.context.currentSubject ∧
+            let outcome := SpawnBoundary.familyStep state (SpawnAllocatorBoot.familyCommandOf command)
+            SpawnAllocatorBoot.syscallOf words actor number rbx rcx rdx =
+              SpawnAllocatorBoot.replyOf outcome.status ∧
+            SpawnAllocatorBoot.syscallValueOf words actor number rbx rcx rdx = outcome.value ∧
+            SpawnAllocatorBoot.syscallNextOf words actor number rbx rcx rdx =
+              SpawnAllocatorWords.encode (SpawnAllocator.abstraction outcome.state) ∧
+            SpawnAllocator.Family outcome.state ∧
+            (outcome.status ≠ 0x01 → outcome.state = state ∧
+              SpawnAllocatorBoot.syscallNextOf words actor number rbx rcx rdx = words ∧
+              SpawnAllocatorBoot.syscallValueOf words actor number rbx rcx rdx = 0)) := by
+  refine ⟨SpawnAllocatorBoot.syscallTrace_refines plan inputs, ?_⟩
+  intro state family actor number rbx rcx rdx
+  refine ⟨fun refused => ?_, fun admitted => ?_⟩
+  · obtain ⟨_, value, next⟩ := SpawnAllocatorBoot.syscall_refused _ actor number rbx rcx rdx refused
+    exact ⟨value, next⟩
+  · obtain ⟨command, decoded, isSyscall, current, reply, value, next, post⟩ :=
+      SpawnAllocatorBoot.syscall_refines state family actor number rbx rcx rdx admitted
+    refine ⟨command, decoded, isSyscall, current, reply, value, next, post, fun rejected => ?_⟩
+    rcases SpawnAllocatorBoot.syscall_rollback state family actor number rbx rcx rdx with
+      refused | ⟨other, decodedOther, outcome⟩
+    · exact absurd admitted refused
+    · rw [decoded] at decodedOther
+      cases decodedOther
+      rcases outcome with accepted | kept
+      · exact absurd accepted rejected
+      · exact kept
 
 /-- SC-SPAWN-STALE-CHILD: a parent's control word for a child it terminated
 stays stale after the parent spawns a new child, including into the same
