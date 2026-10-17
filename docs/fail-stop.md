@@ -923,6 +923,58 @@ tokens are the bystander after the dispatcher's timer switch and the two
 narrowed-endpoint states made by the dispatcher's capability copy; the switch
 and the copy are dispatcher-only commands the allocator does not take.
 
+#### The composite simulates the allocator on every family state
+
+The table check above is evaluation on one boot plan. The general result is a
+simulation over a named class of composite states. `SpawnAllocator.Family`
+(`LeanOS.SpawnAllocatorFamily`) is the invariant the spawn family runs under:
+
+- the combined resource, child-accounting and spawn-tree invariants hold, the
+  latch is running and subject 2 (the parent) is current, and every slot space
+  has four slots;
+- the parent is live and is no subject's child; slot 0 holds the family's
+  endpoint (identity 3, owned by the bystander) and slot 1 its address-space
+  root (identity 4, owned by the parent); slots 2 and 3 each hold nothing or
+  a revocable memory capability whose object is bound to a frame committed to
+  the parent, and the two name different objects;
+- the parent's children sit in child-table slots 0 to 3, each live with
+  exactly its charge in committed frames; every live subject is the bystander,
+  the parent or one of those children; only the parent may hold spawn
+  authority, with a subject budget of at most four;
+- every committed frame belongs to the parent or is a free, unowned frame of
+  one of its children; the parent's free frames are unowned; the frame list
+  has no repeats; every object at or past the object issuer is dead, owns no
+  frame and is no one's endpoint; whatever any subject owns among the objects the parent's slots name,
+  that subject is no one's child;
+- the parent's frame usage is the record's memory count, and the counters stay
+  in range (`capabilityBound`, `controlBound`, `generationBound`, and the
+  parent's frames plus the children's charges below `2^16`).
+
+`familyStep_simulates` (`LeanOS.SpawnAllocatorSimulation`): on every `Family`
+state, every family command the allocator decides runs through
+`childGate`/`memoryGate` to the allocator's status and value, the post-state's
+`abstraction` is the allocator's successor, and the post-state is again a
+`Family` state. The per-command proofs are in `SpawnAllocatorSpawnStep`
+(`spawnCharged`), `SpawnAllocatorGrantStep` (`grantFrames`),
+`SpawnAllocatorTerminateStep` (`terminateChild`), `SpawnAllocatorMemoryStep`
+(`allocateMemory`, `releaseMemory`) and the simulation module itself (the kernel
+grant and revocation of spawn authority). `familyTrace_simulates` lifts this to
+whole command lists: replies, final record and the family invariant.
+
+`LeanOS.SpawnAllocatorSeeds` proves every family seed is a `Family` state
+(`familySeed_family`, `seedState_family`), so every command list the allocator
+decides from a seed's record is a composite trace with the allocator's replies
+(`seed_trace_simulates`). For **every** boot plan, every record token of the
+fixed table is a `Family` state whose record is the allocator's replay from its
+seed record (`recordToken_family`), and every allocator command from it, not
+only the table's 45 edges, is simulated (`recordToken_simulates`). The only
+evaluation left is `recordTokens_decided`, a kernel `decide` over allocator
+records alone.
+
+So each allocator theorem above holds of the composite on every reachable
+family state: rollback of rejected commands, frame conservation, stale control
+words rejected forever, spawn inheritance exactness and per-child confinement.
+
 ## Diagnostic and trusted boundary
 
 Boot-only WP/SMEP recovery remains a pre-runtime diagnostic behavior outside
