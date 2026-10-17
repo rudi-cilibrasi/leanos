@@ -48,7 +48,7 @@ theorem family_memory_slot (state : CompositeState) (family : Family state) (slo
 /-- **An allocation by the parent on a family state returns the allocator's
 status.** -/
 theorem allocateMemory_status_family (state : CompositeState) (family : Family state) (slot : Nat) :
-    SpawnBoundary.memoryStatus (allocateMemory state slot).result =
+    SpawnFamily.memoryStatus (allocateMemory state slot).result =
       (allocateStep (abstraction state) slot).status := by
   rw [allocateMemory_result]
   unfold allocateDecision allocateStep
@@ -60,8 +60,8 @@ theorem allocateMemory_status_family (state : CompositeState) (family : Family s
       rcases range with high | high
       · exact Or.inl high
       · right; simp; omega
-    simp [range, range', rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-      SpawnBoundary.memoryErrorCode]
+    simp [range, range', rejectWith, SpawnFamily.memoryStatus, memoryCode,
+      SpawnFamily.memoryErrorCode]
   have range' : ¬(CapabilityHandle.slotReserved ≤ slot ∨ !decide (slot < parentSlots) = true) := by
     simp only [not_or] at range ⊢; simp; omega
   simp only [range, range', ↓reduceIte]
@@ -71,8 +71,8 @@ theorem allocateMemory_status_family (state : CompositeState) (family : Family s
   · have exhausted : state.capabilities.nextIdentity = 0 ∨
         CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity := by
       simpa [capabilityExhausted] using capabilities
-    simp [range, exhausted, capabilities, rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-      SpawnBoundary.memoryErrorCode]
+    simp [range, exhausted, capabilities, rejectWith, SpawnFamily.memoryStatus, memoryCode,
+      SpawnFamily.memoryErrorCode]
   have live : ¬(state.capabilities.nextIdentity = 0 ∨
       CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity) := by
     simpa [capabilityExhausted] using capabilities
@@ -87,10 +87,10 @@ theorem allocateMemory_status_family (state : CompositeState) (family : Family s
   rw [occupied]
   by_cases full : slot < memoryBase ∨ ((abstraction state).memoryAt slot).isSome = true
   · rcases full with low | some
-    · simp [range, live, low, rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-        SpawnBoundary.memoryErrorCode]
-    · simp [range, live, some, rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-        SpawnBoundary.memoryErrorCode]
+    · simp [range, live, low, rejectWith, SpawnFamily.memoryStatus, memoryCode,
+        SpawnFamily.memoryErrorCode]
+    · simp [range, live, some, rejectWith, SpawnFamily.memoryStatus, memoryCode,
+        SpawnFamily.memoryErrorCode]
   simp only [not_or, Bool.not_eq_true] at full
   simp only [full, decide_false, Bool.false_or, Bool.false_eq_true, ↓reduceIte, Nat.not_lt.2 (by
     have := full.1; omega : memoryBase ≤ slot)]
@@ -98,7 +98,7 @@ theorem allocateMemory_status_family (state : CompositeState) (family : Family s
   rw [objectsEq]
   by_cases objects : identityExhausted state.issuers.object.next = true
   · simp [range, live, full, LifetimeIssuer.issue, identityExhausted_issuer, objects, rejectWith,
-      SpawnBoundary.memoryStatus, memoryCode, SpawnBoundary.memoryErrorCode]
+      SpawnFamily.memoryStatus, memoryCode, SpawnFamily.memoryErrorCode]
   have objectsLive : identityExhausted state.issuers.object.next = false := by simpa using objects
   obtain ⟨unissuedSpace, unissued, dead, _, endpointFree⟩ := family_next_object state family
   have available : objectAvailable state state.issuers.object.next = true := by
@@ -110,8 +110,8 @@ theorem allocateMemory_status_family (state : CompositeState) (family : Family s
   | none =>
       rw [first] at firstIs
       have zero : (abstraction state).available = 0 := by simpa using firstIs.symm
-      simp [range, live, full, objectsLive, zero, rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-        SpawnBoundary.memoryErrorCode]
+      simp [range, live, full, objectsLive, zero, rejectWith, SpawnFamily.memoryStatus, memoryCode,
+        SpawnFamily.memoryErrorCode]
   | some frame =>
       rw [first] at firstIs
       have positive : (abstraction state).available ≠ 0 := by
@@ -120,14 +120,14 @@ theorem allocateMemory_status_family (state : CompositeState) (family : Family s
       obtain ⟨_, committed, free⟩ := firstAvailable_some first
       have unowned := family.parentFree frame committed free
       simp [range, live, full, objectsLive, positive, unowned, acceptWith,
-        SpawnBoundary.memoryStatus]
+        SpawnFamily.memoryStatus]
 
 /-! ## The status of a release -/
 
 /-- **A release by the parent on a family state returns the allocator's
 status.** -/
 theorem releaseMemory_status_family (state : CompositeState) (family : Family state) (slot : Nat) :
-    SpawnBoundary.memoryStatus (releaseMemory state slot).result =
+    SpawnFamily.memoryStatus (releaseMemory state slot).result =
       (releaseStep (abstraction state) slot).status := by
   rw [releaseMemory_result]
   unfold releaseDecision releaseStep Capability.lookup
@@ -135,8 +135,8 @@ theorem releaseMemory_status_family (state : CompositeState) (family : Family st
   simp only [family.parentLive, ↓reduceIte, Capability.slotInRange, family.capacity parent]
   by_cases range : parentSlots ≤ slot
   · have : ¬slot < parentSlots := by omega
-    simp [range, this, rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-      SpawnBoundary.memoryErrorCode]
+    simp [range, this, rejectWith, SpawnFamily.memoryStatus, memoryCode,
+      SpawnFamily.memoryErrorCode]
   have inRange : slot < parentSlots := by omega
   simp only [range, inRange, decide_true, ↓reduceIte]
   by_cases low : slot < memoryBase
@@ -153,8 +153,8 @@ theorem releaseMemory_status_family (state : CompositeState) (family : Family st
           · rw [spaceHeld] at held; cases held; rw [spaceKind]; simp
           · omega
         have kindBne : (capability.kind != .memory) = true := by simpa using kindNe
-        simp [low, kindBne, rejectWith, SpawnBoundary.memoryStatus, memoryCode,
-          SpawnBoundary.memoryErrorCode]
+        simp [low, kindBne, rejectWith, SpawnFamily.memoryStatus, memoryCode,
+          SpawnFamily.memoryErrorCode]
   have which : slot = 2 ∨ slot = 3 := by unfold memoryBase parentSlots at *; omega
   have memoryAt : (abstraction state).memoryAt slot = memoryIn state slot := by
     rw [abstraction_memoryAt]; rcases which with rfl | rfl <;> simp
@@ -163,9 +163,9 @@ theorem releaseMemory_status_family (state : CompositeState) (family : Family st
   rcases family.memory slot which with empty | ⟨capability, frame, held, kind, revoke, _, bound,
     status, owned, _⟩
   · rw [empty]
-    simp [rejectWith, SpawnBoundary.memoryStatus, memoryCode, SpawnBoundary.memoryErrorCode]
+    simp [rejectWith, SpawnFamily.memoryStatus, memoryCode, SpawnFamily.memoryErrorCode]
   · rw [held]
-    simp [kind, revoke, bound, status, owned, acceptWith, SpawnBoundary.memoryStatus]
+    simp [kind, revoke, bound, status, owned, acceptWith, SpawnFamily.memoryStatus]
 
 /-! ## The post-state of an accepted allocation -/
 
@@ -218,9 +218,9 @@ theorem allocateMemory_accepted (state : CompositeState) (family : Family state)
   | released object frame => exact absurd decision (allocateDecision_not_released _ _ _ _)
   | rejected reason =>
       rw [decision] at status
-      simp only [SpawnBoundary.memoryStatus] at status
+      simp only [SpawnFamily.memoryStatus] at status
       exact absurd status (reject_status_ne (memoryCode_lt reason) ∘ (by
-        intro h; rw [show memoryCode reason = SpawnBoundary.memoryErrorCode reason by
+        intro h; rw [show memoryCode reason = SpawnFamily.memoryErrorCode reason by
           cases reason <;> rfl]; exact h))
 
 theorem allocatedState_fields (state : CompositeState) (object slot frame : Nat) :
@@ -577,9 +577,9 @@ theorem releaseMemory_accepted (state : CompositeState) (family : Family state) 
   | allocated object frame => exact absurd decision (releaseDecision_not_allocated _ _ _ _)
   | rejected reason =>
       rw [decision] at status
-      simp only [SpawnBoundary.memoryStatus] at status
+      simp only [SpawnFamily.memoryStatus] at status
       exact absurd status (reject_status_ne (memoryCode_lt reason) ∘ (by
-        intro h; rw [show memoryCode reason = SpawnBoundary.memoryErrorCode reason by
+        intro h; rw [show memoryCode reason = SpawnFamily.memoryErrorCode reason by
           cases reason <;> rfl]; exact h))
 
 theorem releasedState_fields (state : CompositeState) (object frame : Nat) :

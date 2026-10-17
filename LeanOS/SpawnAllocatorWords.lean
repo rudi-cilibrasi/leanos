@@ -68,7 +68,7 @@ def revokeAuthorityTag : UInt64 := 0x7601
 
 /-- Decode the spawn family's command words, with the canonical rules of
 `SpawnOracle.decodeSpawn`, `SpawnAccountingOracle.decodeChild` and
-`SpawnBoundary.decodeFamily`. -/
+`SpawnFamily.decodeFamily`. -/
 def decodeCommand (words : CommandWords) : Except DecodeError Command :=
   if words.tag = spawnTag ∨ words.tag = grantTag ∨ words.tag = terminateTag then
     match SpawnAccountingOracle.decodeChild words with

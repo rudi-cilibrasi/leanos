@@ -1,21 +1,23 @@
 import LeanOS.SpawnAllocatorSimulation
-import LeanOS.SpawnBoundaryTraces
+import LeanOS.SpawnFamily
 
 /-!
 # The family seeds are family states (#575)
 
-Every family seed (`SpawnBoundary.familySeed`: the dispatcher seed with
+Every family seed (`SpawnFamily.familySeed`: the dispatcher seed with
 issuers, frame 4 committed to subject 2, and an empty spawn registry) is a
 `Family` state (`familySeed_family`), and so are the four seeds of the spawn
-table (`seedState_family`).  With `familyTrace_simulates`, every command
+family (`seedState_family`).  With `familyTrace_simulates`, every command
 trace the allocator decides from a seed's record runs through the composite
-gates to the allocator's replies and records (`seed_trace_simulates`).
+gates to the allocator's replies and records (`seed_trace_simulates`).  The
+seeds' records are written out (`seedRecord`, `abstraction_seedState`); they
+do not depend on the boot plan.
 -/
 namespace LeanOS.SpawnAllocator
 
 open LeanOS
 open LeanOS.FailStop
-open LeanOS.SpawnBoundary
+open LeanOS.SpawnFamily
 
 set_option linter.unusedSimpArgs false
 
@@ -191,7 +193,7 @@ theorem seed_trace_simulates (plan : BootPageTablePlan.Plan) (seed : Seed)
   familyTrace_simulates _ (seedState_family plan seed) commands allocatorCommands translated
     record replies decided
 
-/-! ## The table's record tokens, for every boot plan -/
+/-! ## The seeds' records -/
 
 /-- The allocator record of each seed; no seed reads the boot plan. -/
 def seedRecord : Seed → State
@@ -209,61 +211,5 @@ def seedRecord : Seed → State
 theorem abstraction_seedState (plan : BootPageTablePlan.Plan) (seed : Seed) :
     abstraction (seedState plan seed) = seedRecord seed := by
   cases seed <;> rfl
-
-/-- The allocator run of a token's replay. -/
-def tokenRun (id : StateId) : Option (State × List (UInt64 × UInt64)) :=
-  runSteps (seedRecord (origin id).1) ((origin id).2.filterMap toCommand)
-
-/-- Every record token is replayed by allocator commands alone, all decided. -/
-def tokenDecided (id : StateId) : Bool :=
-  (origin id).2.all (fun command => (toCommand command).isSome) && (tokenRun id).isSome
-
-theorem recordTokens_decided : recordTokens.all tokenDecided = true := by
-  decide
-
-theorem map_toCommand_filterMap (commands : List FamilyCommand)
-    (all : commands.all (fun command => (toCommand command).isSome) = true) :
-    commands.map toCommand = (commands.filterMap toCommand).map some := by
-  induction commands with
-  | nil => rfl
-  | cons command rest ih =>
-      simp only [List.all_cons, Bool.and_eq_true] at all
-      obtain ⟨head, tail⟩ := all
-      cases translated : toCommand command with
-      | none => rw [translated] at head; cases head
-      | some allocatorCommand =>
-          simp only [List.map_cons, List.filterMap_cons, translated, ih tail]
-
-/-- **Every record token of the spawn table is a family state, for every
-boot plan**, and its record is the allocator's run of the token's replay
-from its seed's record. -/
-theorem recordToken_family (plan : BootPageTablePlan.Plan) (id : StateId)
-    (member : id ∈ recordTokens) :
-    ∃ record replies, tokenRun id = some (record, replies) ∧
-      abstraction (stateOf plan id) = record ∧ Family (stateOf plan id) ∧
-      familyReplies (seedState plan (origin id).1) (origin id).2 = replies := by
-  have decided := List.all_eq_true.1 recordTokens_decided id member
-  simp only [tokenDecided, Bool.and_eq_true] at decided
-  obtain ⟨translatable, some⟩ := decided
-  cases run : tokenRun id with
-  | none => rw [run] at some; cases some
-  | some result =>
-      obtain ⟨record, replies⟩ := result
-      have simulated := seed_trace_simulates plan (origin id).1 (origin id).2
-        ((origin id).2.filterMap toCommand) (map_toCommand_filterMap _ translatable) record replies
-        (by rw [abstraction_seedState]; exact run)
-      exact ⟨record, replies, rfl, simulated.2.1, simulated.2.2, simulated.1⟩
-
-/-- **Every allocator edge of the spawn table is a composite step, for every
-boot plan.**  From a record token, every allocator command the allocator
-decides — not only the table's edges — runs through the composite gate to
-the allocator's status, value and successor record. -/
-theorem recordToken_simulates (plan : BootPageTablePlan.Plan) (id : StateId)
-    (member : id ∈ recordTokens) (command : FamilyCommand) (allocatorCommand : Command)
-    (result : Step) (translated : toCommand command = some allocatorCommand)
-    (decided : step (abstraction (stateOf plan id)) allocatorCommand = some result) :
-    Simulates (stateOf plan id) command result := by
-  obtain ⟨_, _, _, _, family, _⟩ := recordToken_family plan id member
-  exact familyStep_simulates _ family command allocatorCommand result translated decided
 
 end LeanOS.SpawnAllocator

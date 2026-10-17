@@ -5,7 +5,8 @@ import LeanOS.ElfAdmission
 
 The run-time half of #492.  A ring-3 loader holds a spawn capability and the
 read authority over the reserved range `[start, stop)` that holds the admitted
-subject ELF (ADR 0024).  It spawns a child (`LeanOS.SpawnSyscall`), gives it
+subject ELF (ADR 0024).  It spawns a child (the spawn syscall,
+`LeanOS.SpawnAllocatorWords`), gives it
 frames, and then asks the kernel to load the admitted segments into the
 child's fresh address space and to start the child.  This module is the model
 of that loading: the child's user pages as the kernel builds them.

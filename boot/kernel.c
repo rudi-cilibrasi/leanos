@@ -8555,7 +8555,7 @@ struct spawn_mirror {
 };
 /* The family seed: subject identities up to 2 and objects up to 20 issued,
    no control generation issued, frame 4 committed to B and holding B's
-   memory object 20 (SpawnBoundary.spawnSeed). */
+   memory object 20 (SpawnFamily.spawnSeed). */
 static struct spawn_mirror spawn_mirror = { 0, 0, 0, 0, 0, 3, 21, 1, 20, 2 };
 static uint64_t spawn_spawned, spawn_terminated, spawn_refused, spawn_rejected;
 static uint64_t spawn_slot_reused, spawn_stale_rejected, spawn_bystander_digest;

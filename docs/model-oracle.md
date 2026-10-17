@@ -18,12 +18,10 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `EndpointDirectory.directoryResolve`, `FaultHandler.faultHandlerRoute`,
 `KeyboardEcho.deviceAuthorize`, `TimerServer.timerServerDecide`,
 `FrameServer.frameServerCheck` and `FrameServer.frameServerView`, and the
-ring-3 spawn syscall's `SpawnSyscall.spawnSyscall` and
-`SpawnSyscall.spawnSyscallValue` (adapters 30 and 31, #489), and the run-time
-loader's `ChildLoader.loaderSource` and `ChildLoader.loaderDecide` (adapters
-32 and 33, #492), and the cross-subject refusal witness
-`TimingChannels.crossSubjectRefusal` (adapter 34, #576). Its stable
-709-vector order covers accepted calls,
+run-time loader's `ChildLoader.loaderSource` and `ChildLoader.loaderDecide`
+(adapters 30 and 31, #492), and the cross-subject refusal witness
+`TimingChannels.crossSubjectRefusal` (adapter 32, #576). Its stable
+605-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -60,8 +58,8 @@ stale translation, page faults), `LeanOS.Oracle.Composite` (the stateful
 dispatcher's scenario, mixed, invalidation, boot capability-transfer, and
 in-flight revocation edges), `LeanOS.Oracle.FrameBudget`,
 `LeanOS.Oracle.IOTLB`, `LeanOS.Oracle.Services` (notification/reply,
-user copy, and the user-level servers), `LeanOS.Oracle.Spawn` (spawn
-edges, the spawn syscall, and the loader), and `LeanOS.Oracle.Timing` (the
+user copy, and the user-level servers), `LeanOS.Oracle.Spawn` (the
+run-time loader), and `LeanOS.Oracle.Timing` (the
 cross-subject refusal witness). The family modules elaborate in
 parallel. `LeanOS.Oracle` remains the umbrella import and the `leanos-oracle`
 root: `blocks` lists the families' blocks in their stable order, `vectors` is
@@ -446,26 +444,15 @@ The scalar selector establishes the named model's accepted fresh-object
 allocation and old-page absence; C sequencing and QEMU do not prove that the
 binary refines that model.
 
-Vectors 632--667 (`hosted_spawn_syscall_vectors_exact`)
-are the ring-3 spawn syscall (`LeanOS.SpawnSyscall`, #489). Each carries the
-kernel's spawn-family token, the actor, the syscall number and RBX, RCX, RDX.
-The first thirteen are the `spawn-child` image's calls at their tokens
-(`image_run`): spawn, a reserved rights bit, a spawn over the subject budget,
-a grant while the parent's memory holds the frame, release, grant, terminate,
-the stale control word, allocate, spawn into the same child-table slot, the old
-control word for termination and for a grant, and termination of the new
-child. Then come every refusal word of the witness (a state outside the
-family, an actor other than the token's current subject, a number outside
-100..104 including the absent kernel grant, noncanonical registers for every
-number, and a decodable command the bounded table does not cover), the
-bystander presenting the parent's control word after the timer switch, and the
-value words. `spawn_syscall_vectors_expected` lists every expected word. The
-general statements are in `LeanOS.SpawnSyscall`: every input is a refusal or
-exactly one edge of the spawn table (`spawnSyscall_cases`), and that edge is
-one `childGate` or `memoryGate` step (`spawnSyscall_refines`).
+The spawn family's rows left this corpus with the fixed spawn table (#575):
+until then indices 564--631 were its 54 dispatcher edges and 14 hostile
+encodings on the stateful dispatcher, and 632--667 the token-based ring-3
+spawn syscall (adapters 30 and 31). The family's boot exports now take
+thirteen state words, more than this corpus's six, and the hosted
+spawn-allocator corpus below replays them over many allocator records.
 
-Indices 668--691 (24 vectors, `hosted_loader_vectors_exact`) are the
-run-time loader's witnesses (`LeanOS.ChildLoader`, #492, adapters 32 and 33).
+Indices 564--587 (24 vectors, `hosted_loader_vectors_exact`) are the
+run-time loader's witnesses (`LeanOS.ChildLoader`, #492, adapters 30 and 31).
 `loaderSource` checks a claimed source on a four-page reserved range: inside
 at the admitted placement, below, past and across the end of the range, at the
 wrong placement, and with a span larger than the range. `loaderDecide` covers
@@ -475,7 +462,7 @@ and maximum words. `loader_vectors_expected` lists every expected word, and
 `loader_witness_agrees_load` and `loader_witness_agrees_start` prove the
 witnesses answer exactly the model's reply.
 
-The 7 vectors at indices 692--698 (`hosted_loader_trace_vectors_exact`) are
+The 7 vectors at indices 588--594 (`hosted_loader_trace_vectors_exact`) are
 `loaderDecide` along the `spawn-loader` scenario's requests (#571), on the
 loader model's own states: the load claiming a source one page below the
 reserved range (rolled back), the same load with the old control word
@@ -488,9 +475,9 @@ reply of the model's step, and `loader_trace_replies` lists those replies
 the started child's bytes through its pages: a text byte in place, a data byte
 copied, and the zero fill past the data segment's file size.
 
-The last 10 vectors (indices 699--708, `hosted_timing_refusal_vectors_exact`)
+The last 10 vectors (indices 595--604, `hosted_timing_refusal_vectors_exact`)
 are the cross-subject refusal witness (`LeanOS.TimingChannels`, #576, adapter
-34), which the timing-channels image calls on every cross-subject request of
+32), which the timing-channels image calls on every cross-subject request of
 its observer (ADR 0028). They cover the image's two refusals (naming the live
 peer and a subject never issued) and its own request, then every word the
 witness must pass: no target, no scheduled subject, a latch busy in an entry,

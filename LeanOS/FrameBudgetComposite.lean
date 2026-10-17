@@ -1,4 +1,4 @@
-import LeanOS.SpawnBoundary
+import LeanOS.SpawnFamily
 
 /-!
 # The dispatcher's frame-budget tokens, simulated by the composite
@@ -109,7 +109,7 @@ def staleAWord : UInt64 := 0x60003
 def counterpart : Command → Step
   | .allocateA => .memory (.allocate 3)
   | .retryA => .memory (.allocate 4)
-  | .selectB => .authoritative SpawnBoundary.switchOperation
+  | .selectB => .authoritative SpawnFamily.switchOperation
   | .allocateB => .memory (.allocate 2)
   | .terminateA => .authoritative (.ordinary (.terminateSubject 2))
   | .publishFreshB => .memory (.allocate 3)
@@ -260,12 +260,12 @@ def resultMatches (state : CompositeState) (command : Command) : Reply → Bool
   | .selectedB | .terminatedA =>
       match counterpart command with
       | .authoritative operation =>
-          SpawnBoundary.authoritativeStatus (authoritativeGate state operation).result == 0x01
+          SpawnFamily.authoritativeStatus (authoritativeGate state operation).result == 0x01
       | _ => false
   | .staleDenied =>
       match counterpart command with
       | .authoritative operation =>
-          SpawnBoundary.authoritativeStatus (authoritativeGate state operation).result == 0x80 &&
+          SpawnFamily.authoritativeStatus (authoritativeGate state operation).result == 0x80 &&
             staleFor state (memoryActor state) staleAWord .memory
       | _ => false
   | .passed =>

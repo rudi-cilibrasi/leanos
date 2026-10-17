@@ -1,25 +1,24 @@
 import LeanOS.SpawnAccountingOracle
+import LeanOS.CompositeDispatcherResources
 
 /-!
-# The spawn family at the generated composite-dispatcher boundary
+# The spawn family's commands, seeds and whole traces
 
-ADR 0010 gate item 5 for explicit spawn (#489).  `LeanOS.SpawnOracle` and
-`LeanOS.SpawnAccountingOracle` gave the spawn family a canonical encoding and
-adversarial vectors as a hosted Lean oracle only.  This module puts the same
-commands, with the same tags, into the boot-compiled
-`CompositeDispatcher.dispatch` (export `leanos_composite_dispatch`, oracle
-adapter 18) and proves that every edge of the generated table is exactly one
-step of `childGate`, `memoryGate`, or the authoritative gate on the complete
-composite state its state token names.
+The spawn family's commands (#489, #491) are the public child commands of
+`FailStop.childGate`, the memory commands of `FailStop.memoryGate`, the kernel's
+grant and revocation of spawn authority, and the dispatcher's timer switch and
+capability copy.  This module holds what every boundary of the family shares:
 
-It adds no syscall: the dispatcher is a bounded table of state tokens, each
-naming the complete `CompositeState` reached by replaying the preceding gate
-steps, and no ring-3 path reaches it.
-
-## Command words
-
-Every command uses the dispatcher's six-word input: state token, tag, and four
-arguments.  The three child tags are those of the hosted oracles.
+* the canonical command words (`encodeFamily`, `decodeFamily`), with the
+  hosted oracles' tags;
+* the typed results as status and value words (`childStatus`,
+  `memoryStatus`), with the codes of `SpawnOracle` and
+  `SpawnAccountingOracle`;
+* one step of the family (`familyStep`: the gate's post-state and the encoded
+  result) and replay of a command list (`runFamily`);
+* the family seeds (`seedState`, `familySeed`) and their invariants;
+* the whole-trace theorem for every command list from every seed
+  (`family_trace`).
 
 | Tag | Command | `arg0` | `arg1` | `arg2` | `arg3` | Model step |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -35,23 +34,22 @@ arguments.  The three child tags are those of the hosted oracles.
 
 `decodeFamily (encodeFamily command) = .ok command` for every representable
 command (`decodeFamily_encodeFamily`), and every word sequence that decodes is
-the encoding of what it decodes to (`encodeFamily_decodeFamily`).  The two
-kernel tags and the copy tag exist only at this bounded boundary; the later
-ring-3 syscall of #489 is not bound by them.
+the encoding of what it decodes to (`encodeFamily_decodeFamily`).
 
-## Result words
+The boot path decides the family with the spawn allocator
+(`LeanOS.SpawnAllocator`, #575): its thirteen words are the record of a
+composite state of this family (`SpawnAllocator.Family`), and
+`SpawnAllocator.familyStep_simulates` makes every decided command one
+`familyStep`.
 
-The dispatcher's result word zero is `0x01 | next << 8 | status << 16`, the
-same layout as every other family.  The status byte is the hosted oracle's:
-`0x01` for an accepted step and `0x80 + code` for a typed rejection, with the
-codes of `SpawnOracle` and `SpawnAccountingOracle` (`childStatus`), and
-`memoryErrorCode` for the memory family.  So for a child command the hosted
-oracle's word `(status << 16) | tag` and the dispatcher's word carry the same
-status byte (`edges_match_hosted_oracle`).  Result word one is the hosted
-oracle's value word: the control word of an accepted spawn, the frames moved
-by a grant or returned by a termination, and the generation of a kernel grant.
+The four seeds (`seedState`) differ from the dispatcher's seed
+`compositeDispatcherInitial` only in the issuers, the frame commitment, and
+the spawn registry.  No authoritative conjunct reads those projections, so a
+seed's authoritative invariant is the dispatcher seed's
+(`compositeDispatcherInitial_authoritativeRuntimeWellFormed`); the resource
+conjuncts are checked directly (`familySeed_resourceRuntimeWellFormed`).
 -/
-namespace LeanOS.SpawnBoundary
+namespace LeanOS.SpawnFamily
 
 open LeanOS
 open LeanOS.FailStop
@@ -344,8 +342,8 @@ def memoryStatus : MemoryResult → UInt64
   | .allocated _ _ | .released _ _ => 0x01
   | .rejected reason => 0x80 + memoryErrorCode reason
 
-/-- Busy and halted latches are `0x7e` and `0x7f`; the bounded table never
-reaches them. -/
+/-- Busy and halted latches are `0x7e` and `0x7f`; the family's states run
+under the running latch, so they never reach them. -/
 def childGateStatus : ChildGateResult → UInt64 × UInt64
   | .completed result => childStatus result
   | .rejectedBusy => (0x7e, 0)
@@ -448,13 +446,13 @@ theorem familyStep_stutter (state : CompositeState) (command : FamilyCommand)
   | switch => simp [FamilyCommand.isAuthoritative] at notAuthoritative
   | copy => simp [FamilyCommand.isAuthoritative] at notAuthoritative
 
-/-! ## Seeds and state tokens -/
+/-! ## Seeds -/
 
 /-- The family's kernel-owned seed: the dispatcher seed
 (`compositeDispatcherInitial`), in which subject 2 is current and holds
 endpoint 10 (slot 0, handle `0x30000`) and memory object 20 on frame 4 (slot
 2), with the issuers past the seed's histories and frame 4 committed to
-subject 2.  No spawn authority is held; the first edge grants it through the
+subject 2.  No spawn authority is held; the kernel grants it first, through the
 kernel command. -/
 def spawnSeed (plan : BootPageTablePlan.Plan) : CompositeState :=
   { compositeDispatcherInitial plan with
@@ -462,8 +460,8 @@ def spawnSeed (plan : BootPageTablePlan.Plan) : CompositeState :=
     frameBudgets := { commitment := fun frame => if frame = 4 then some 2 else none } }
 
 /-- The family seeds.  The three exhaustion seeds are the main seed with one
-never-reused counter at its bound; no bounded trace reaches a bound of
-`2^64 - 1`, so they are seeds of their own, each with one rejecting edge. -/
+never-reused counter at its bound; no short trace reaches a bound of
+`2^64 - 1`, so they are seeds of their own. -/
 inductive Seed where
   | main
   | subjectsExhausted
@@ -479,107 +477,11 @@ def seedState (plan : BootPageTablePlan.Plan) : Seed → CompositeState
       { spawnSeed plan with spawn :=
           { (spawnSeed plan).spawn with nextChildGeneration := CapabilityHandle.generationReserved } }
 
-/-- The observable states of the spawn family. -/
-inductive StateId where
-  | seed | authorized | spawned | released | granted | terminated | reallocated
-  | respawned | secondTerminated | otherSubject | revoked | regranted | regrantedSpawned
-  | subjectsExhausted | objectsExhausted | controlsExhausted | narrowedSend | narrowedGrant
-  | loaderRespawned | loaderGranted | loaderTerminated
-  deriving DecidableEq, Repr
-
-def allStates : List StateId :=
-  [.seed, .authorized, .spawned, .released, .granted, .terminated, .reallocated,
-    .respawned, .secondTerminated, .otherSubject, .revoked, .regranted, .regrantedSpawned,
-    .subjectsExhausted, .objectsExhausted, .controlsExhausted, .narrowedSend, .narrowedGrant,
-    .loaderRespawned, .loaderGranted, .loaderTerminated]
-
-/-- State tokens `0x7001` to `0x8401`: version 1 in bits 0..7, the selector in
-bits 8..15. -/
-def encodeState : StateId → UInt64
-  | .seed => 0x7001 | .authorized => 0x7101 | .spawned => 0x7201 | .released => 0x7301
-  | .granted => 0x7401 | .terminated => 0x7501 | .reallocated => 0x7601
-  | .respawned => 0x7701 | .secondTerminated => 0x7801 | .otherSubject => 0x7901
-  | .revoked => 0x7a01 | .regranted => 0x7b01 | .regrantedSpawned => 0x7c01
-  | .subjectsExhausted => 0x7d01 | .objectsExhausted => 0x7e01
-  | .controlsExhausted => 0x7f01 | .narrowedSend => 0x8001 | .narrowedGrant => 0x8101
-  | .loaderRespawned => 0x8201 | .loaderGranted => 0x8301 | .loaderTerminated => 0x8401
-
-def decodeState (word : UInt64) : Except DecodeError StateId :=
-  match allStates.find? (fun state => encodeState state == word) with
-  | some state => .ok state
-  | none => .error .unknownState
-
-theorem decodeState_encodeState (state : StateId) : decodeState (encodeState state) = .ok state := by
-  cases state <;> rfl
-
-theorem encodeState_injective (first second : StateId)
-    (same : encodeState first = encodeState second) : first = second := by
-  have := decodeState_encodeState first
-  rw [same, decodeState_encodeState] at this
-  exact (Except.ok.inj this).symm
-
-/-! ## The commands of the bounded table -/
-
-def parentEndpoint : UInt64 := 0x30000
-
-def spawnWith (spawnWord endpointWord : UInt64) (rights : Capability.Rights) : FamilyCommand :=
-  .child (.spawn { spawnWord, endpointWord, rights })
-
-def spawnOne : FamilyCommand := spawnWith 1 parentEndpoint sendOnly
-def grantAuthority (subject budget : Nat) : FamilyCommand := .child (.grantAuthority subject budget)
-def revokeAuthority (subject : Nat) : FamilyCommand := .child (.revokeAuthority subject)
-def grant (control : UInt64) (frames : Nat) : FamilyCommand := .child (.grantFrames control frames)
-def terminate (control : UInt64) : FamilyCommand := .child (.terminateChild control)
-def allocate (slot : Nat) : FamilyCommand := .memory (.allocate slot)
-def release (slot : Nat) : FamilyCommand := .memory (.release slot)
-
-/-- Where each state comes from: a seed and the commands replayed from it. -/
-def origin : StateId → Seed × List FamilyCommand
-  | .seed => (.main, [])
-  | .authorized => (.main, [grantAuthority 2 1])
-  | .spawned => (.main, [grantAuthority 2 1, spawnOne])
-  | .released => (.main, [grantAuthority 2 1, spawnOne, release 2])
-  | .granted => (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1])
-  | .terminated =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl])
-  | .reallocated =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl, allocate 2])
-  | .respawned =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl, allocate 2, spawnOne])
-  | .secondTerminated =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl, allocate 2, spawnOne, terminate secondControl])
-  | .otherSubject => (.main, [grantAuthority 2 1, spawnOne, .switch])
-  | .revoked => (.main, [grantAuthority 2 1, revokeAuthority 2])
-  | .regranted => (.main, [grantAuthority 2 1, revokeAuthority 2, grantAuthority 2 1])
-  | .regrantedSpawned =>
-      (.main, [grantAuthority 2 1, revokeAuthority 2, grantAuthority 2 1,
-        spawnWith 2 parentEndpoint sendOnly])
-  | .subjectsExhausted => (.subjectsExhausted, [grantAuthority 2 1])
-  | .objectsExhausted => (.objectsExhausted, [grantAuthority 2 1])
-  | .controlsExhausted => (.controlsExhausted, [grantAuthority 2 1])
-  | .narrowedSend => (.main, [grantAuthority 2 1, .copy 0 2 3 { send := true }])
-  | .narrowedGrant => (.main, [grantAuthority 2 1, .copy 0 2 3 { send := true, grant := true }])
-  | .loaderRespawned =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl, spawnOne])
-  | .loaderGranted =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl, spawnOne, grant secondControl 1])
-  | .loaderTerminated =>
-      (.main, [grantAuthority 2 1, spawnOne, release 2, grant firstControl 1,
-        terminate firstControl, spawnOne, grant secondControl 1, terminate secondControl])
+/-! ## Replay -/
 
 def runFamily (state : CompositeState) : List FamilyCommand → CompositeState
   | [] => state
   | command :: rest => runFamily (familyStep state command).state rest
-
-/-- The complete composite state a token names: replay from its seed. -/
-def stateOf (plan : BootPageTablePlan.Plan) (id : StateId) : CompositeState :=
-  runFamily (seedState plan (origin id).1) (origin id).2
 
 theorem runFamily_append (state : CompositeState) (commands : List FamilyCommand)
     (command : FamilyCommand) :
@@ -589,230 +491,201 @@ theorem runFamily_append (state : CompositeState) (commands : List FamilyCommand
   | nil => rfl
   | cons first rest ih => exact ih _
 
-/-! ## The edge table -/
+open LeanOS.CompositeFootprint (Projection)
 
-/-- Whether a decoding succeeded with exactly this value. -/
-def okIs {ε α : Type} [DecidableEq α] (result : Except ε α) (expected : α) : Bool :=
-  match result with
-  | .ok value => value == expected
-  | .error _ => false
+/-! ## Seeds satisfy the combined invariant -/
 
-theorem okIs_iff {ε α : Type} [DecidableEq α] (result : Except ε α) (expected : α) :
-    okIs result expected = true ↔ result = .ok expected := by
-  cases result <;> simp [okIs]
+/-- A seed of the family: the dispatcher seed with issuers, the single frame
+commitment of frame 4 to subject 2, and an empty spawn registry with some
+generation counters. -/
+def familySeed (plan : BootPageTablePlan.Plan) (subjectNext objectNext : Nat)
+    (registry : SpawnRegistry) : CompositeState :=
+  { compositeDispatcherInitial plan with
+    issuers := { subject := { next := subjectNext }, object := { next := objectNext } }
+    frameBudgets := { commitment := fun frame => if frame = 4 then some 2 else none }
+    spawn := registry }
 
-/-- One edge of the bounded table: a state, a command, the successor state,
-and the status and value words of the typed result. -/
-structure Edge where
-  state : StateId
-  command : FamilyCommand
-  next : StateId
-  status : UInt64
-  value : UInt64
-  deriving DecidableEq, Repr
-
-/-- Result word zero of the dispatcher for an edge: version, next-state
-selector, status byte. -/
-def replyWord (next : StateId) (status : UInt64) : UInt64 :=
-  CompositeDispatcher.abiVersion + (encodeState next / 256) * 256 + status * 65536
-
-/-- Decode result word zero of the spawn family into the next state and the
-status byte. -/
-def decodeReply (word : UInt64) : Except DecodeError (StateId × UInt64) :=
-  if word % 256 != CompositeDispatcher.abiVersion then .error .wrongVersion
-  else if 0x1000000 ≤ word then .error .reservedBits
-  else match decodeState (word % 65536) with
-    | .ok next => .ok (next, word / 65536)
-    | .error reason => .error reason
-
-/-- The 54 edges.  Seventeen are accepted and advance; the other 37 are typed
-rejections that leave the state token, and the composite state, unchanged. -/
-def edges : List Edge :=
-  [ ⟨.seed, spawnOne, .seed, 0x81, 0x0⟩
-  , ⟨.seed, grant firstControl 1, .seed, 0xc3, 0x0⟩
-  , ⟨.seed, grantAuthority 2 1, .authorized, 0x1, 0x1⟩
-  , ⟨.seed, grantAuthority 3 1, .seed, 0x80, 0x0⟩
-  , ⟨.authorized, spawnOne, .spawned, 0x1, 0x10000⟩
-  , ⟨.authorized, spawnWith 2 parentEndpoint sendOnly, .authorized, 0x82, 0x0⟩
-  , ⟨.authorized, spawnWith 1 0xffff sendOnly, .authorized, 0xa0, 0x0⟩
-  , ⟨.authorized, spawnWith 1 0x40000 sendOnly, .authorized, 0xa4, 0x0⟩
-  , ⟨.authorized, spawnWith 1 0x30007 sendOnly, .authorized, 0xa3, 0x0⟩
-  , ⟨.authorized, spawnWith 1 0x40001 sendOnly, .authorized, 0xa5, 0x0⟩
-  , ⟨.authorized, spawnWith 1 parentEndpoint { read := true }, .authorized, 0x8a, 0x0⟩
-  , ⟨.authorized, terminate firstControl, .authorized, 0xc3, 0x0⟩
-  , ⟨.authorized, revokeAuthority 2, .revoked, 0x1, 0x0⟩
-  , ⟨.authorized, allocate 3, .authorized, 0x87, 0x0⟩
-  , ⟨.authorized, .copy 0 2 3 { send := true }, .narrowedSend, 0x1, 0x0⟩
-  , ⟨.authorized, .copy 0 2 3 { send := true, grant := true }, .narrowedGrant, 0x1, 0x0⟩
-  , ⟨.spawned, spawnOne, .spawned, 0x8c, 0x0⟩
-  , ⟨.spawned, grant firstControl 1, .spawned, 0xc5, 0x0⟩
-  , ⟨.spawned, grant secondControl 1, .spawned, 0xc3, 0x0⟩
-  , ⟨.spawned, grant 0xffff 1, .spawned, 0xc1, 0x0⟩
-  , ⟨.spawned, release 2, .released, 0x1, 0x0⟩
-  , ⟨.spawned, .switch, .otherSubject, 0x1, 0x0⟩
-  , ⟨.spawned, grantAuthority 3 1, .spawned, 0x80, 0x0⟩
-  , ⟨.released, release 2, .released, 0x89, 0x0⟩
-  , ⟨.released, grant firstControl 2, .released, 0xc5, 0x0⟩
-  , ⟨.released, grant firstControl 1, .granted, 0x1, 0x1⟩
-  , ⟨.granted, allocate 2, .granted, 0x87, 0x0⟩
-  , ⟨.granted, terminate firstControl, .terminated, 0x1, 0x1⟩
-  , ⟨.terminated, terminate firstControl, .terminated, 0xc3, 0x0⟩
-  , ⟨.terminated, grant firstControl 1, .terminated, 0xc3, 0x0⟩
-  , ⟨.terminated, allocate 2, .reallocated, 0x1, 0x0⟩
-  , ⟨.reallocated, spawnOne, .respawned, 0x1, 0x20000⟩
-  , ⟨.respawned, terminate firstControl, .respawned, 0xc3, 0x0⟩
-  , ⟨.respawned, grant firstControl 1, .respawned, 0xc3, 0x0⟩
-  , ⟨.respawned, spawnOne, .respawned, 0x8c, 0x0⟩
-  , ⟨.respawned, terminate secondControl, .secondTerminated, 0x1, 0x0⟩
-  , ⟨.otherSubject, terminate firstControl, .otherSubject, 0xc3, 0x0⟩
-  , ⟨.otherSubject, grant firstControl 1, .otherSubject, 0xc3, 0x0⟩
-  , ⟨.otherSubject, spawnWith 1 0x20001 sendOnly, .otherSubject, 0x81, 0x0⟩
-  , ⟨.otherSubject, allocate 2, .otherSubject, 0x87, 0x0⟩
-  , ⟨.revoked, spawnOne, .revoked, 0x81, 0x0⟩
-  , ⟨.revoked, grantAuthority 2 1, .regranted, 0x1, 0x2⟩
-  , ⟨.regranted, spawnOne, .regranted, 0x82, 0x0⟩
-  , ⟨.regranted, spawnWith 2 parentEndpoint sendOnly, .regrantedSpawned, 0x1, 0x10000⟩
-  , ⟨.subjectsExhausted, spawnOne, .subjectsExhausted, 0x83, 0x0⟩
-  , ⟨.objectsExhausted, spawnOne, .objectsExhausted, 0x87, 0x0⟩
-  , ⟨.controlsExhausted, spawnOne, .controlsExhausted, 0x8d, 0x0⟩
-  , ⟨.narrowedSend, spawnWith 1 0x60003 sendOnly, .narrowedSend, 0x89, 0x0⟩
-  , ⟨.narrowedGrant, spawnWith 1 0x60003 { receive := true }, .narrowedGrant, 0x8b, 0x0⟩
-  , ⟨.terminated, spawnOne, .loaderRespawned, 0x1, 0x20000⟩
-  , ⟨.loaderRespawned, grant secondControl 1, .loaderGranted, 0x1, 0x1⟩
-  , ⟨.loaderRespawned, grant firstControl 1, .loaderRespawned, 0xc3, 0x0⟩
-  , ⟨.loaderGranted, terminate secondControl, .loaderTerminated, 0x1, 0x1⟩
-  , ⟨.loaderGranted, terminate firstControl, .loaderGranted, 0xc3, 0x0⟩
-  ]
-
-def Edge.words (edge : Edge) : CommandWords := encodeFamily edge.command
-
-/-- The generated dispatcher's answer for an edge. -/
-def Edge.dispatched (edge : Edge) : UInt64 × UInt64 :=
-  let words := edge.words
-  (CompositeDispatcher.dispatch (encodeState edge.state) words.tag words.arg0 words.arg1
-      words.arg2 words.arg3,
-    CompositeDispatcher.dispatchValue (encodeState edge.state) words.tag words.arg0 words.arg1
-      words.arg2 words.arg3)
-
-/-- **The generated table is the edge table.**  For every edge, the
-boot-compiled dispatcher returns the edge's reply and value words, and the
-reply word decodes to the edge's successor and status. -/
-theorem edges_dispatch :
-    edges.all (fun edge => edge.dispatched == (replyWord edge.next edge.status, edge.value) &&
-      okIs (decodeReply (replyWord edge.next edge.status)) (edge.next, edge.status)) = true := by
-  native_decide
-
-/-- **Every edge's words decode to its command** (round trip on the table). -/
-theorem edges_decode :
-    edges.all (fun edge => okIs (decodeFamily edge.words) edge.command) = true := by
+theorem authoritative_issuers_frameBudgets_unsupported :
+    authoritativeInvariants.all
+      (fun invariant => !invariant.support.contains .issuers &&
+        !invariant.support.contains .frameBudgets) = true := by
   decide
 
-/-- An edge either replays one more command from the same seed, or it is a
-rejected child or memory step that keeps its state token. -/
-def Edge.shape (edge : Edge) : Bool :=
-  ((origin edge.next).1 == (origin edge.state).1 &&
-      (origin edge.next).2 == (origin edge.state).2 ++ [edge.command]) ||
-    (edge.next == edge.state && edge.status != 0x01 && !edge.command.isAuthoritative)
+theorem familySeed_authoritativeRuntimeWellFormed (plan : BootPageTablePlan.Plan)
+    (subjectNext objectNext : Nat) (registry : SpawnRegistry) :
+    AuthoritativeRuntimeWellFormed (familySeed plan subjectNext objectNext registry) := by
+  have holds := compositeDispatcherInitial_authoritativeRuntimeWellFormed plan
+  rw [authoritativeRuntimeWellFormed_iff_all] at holds ⊢
+  intro invariant member
+  apply invariant.dependsOn (compositeDispatcherInitial plan) _ _ (holds invariant member)
+  intro projection supported
+  have unsupported := List.all_eq_true.1 authoritative_issuers_frameBudgets_unsupported
+    invariant member
+  have spawnFree := List.all_eq_true.1 spawn_unsupported invariant
+    (List.mem_append_left _ member)
+  simp only [decide_eq_true_eq] at supported
+  cases projection <;> try rfl
+  all_goals simp_all
 
-theorem edges_shape : edges.all Edge.shape = true := by
-  decide
+theorem dispatcherSeed_issuedSubjects (plan : BootPageTablePlan.Plan) (subject : Nat) :
+    (compositeDispatcherInitial plan).lifecycle.issuedSubjects subject =
+      (decide (subject = 1) || decide (subject = 2)) := rfl
 
-/-- The model's typed result on the materialized pre-state is the edge's. -/
-def Edge.modelAgrees (plan : BootPageTablePlan.Plan) (edge : Edge) : Bool :=
-  let outcome := familyStep (stateOf plan edge.state) edge.command
-  outcome.status == edge.status && outcome.value == edge.value
+theorem dispatcherSeed_issuedObject (plan : BootPageTablePlan.Plan) (object : Nat) :
+    (compositeDispatcherInitial plan).virtualMemory.memory.issued object =
+        (decide (object = 1) || decide (object = 2) || decide (object = 10) ||
+          decide (object = 20)) ∧
+      (compositeDispatcherInitial plan).virtualMemory.issuedAddressSpace object =
+        (decide (object = 1) || decide (object = 2)) := ⟨rfl, rfl⟩
 
-/-- The model's results on every edge, by closed evaluation on the sample boot
-plan the dispatcher uses (`native_decide`, classified `bounded-model`). -/
-theorem edges_model :
-    (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
-      | .ok plan => edges.all (Edge.modelAgrees plan)
-      | .error _ => false) = true := by
-  native_decide
+/-- **Every family seed satisfies the combined invariant** when its counters
+bound the seed's histories and stay in the identity domain. -/
+theorem familySeed_resourceRuntimeWellFormed (plan : BootPageTablePlan.Plan)
+    (subjectNext objectNext : Nat) (registry : SpawnRegistry)
+    (subjectBound : 3 ≤ subjectNext) (subjectDomain : subjectNext ≤ LifetimeIssuer.identityReserved)
+    (objectBound : 21 ≤ objectNext) (objectDomain : objectNext ≤ LifetimeIssuer.identityReserved) :
+    ResourceRuntimeWellFormed (familySeed plan subjectNext objectNext registry) := by
+  refine ⟨familySeed_authoritativeRuntimeWellFormed plan subjectNext objectNext registry, ?_⟩
+  rw [resourceWellFormed_iff]
+  refine ⟨⟨subjectDomain, objectDomain⟩, ⟨fun subject issued => ?_, fun object issued => ?_⟩,
+    fun frame subject committed => ?_, fun object frame bound unwritten => ?_⟩
+  · change (compositeDispatcherInitial plan).lifecycle.issuedSubjects subject = true at issued
+    rw [dispatcherSeed_issuedSubjects] at issued
+    show 0 < subject ∧ subject < subjectNext
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at issued
+    rcases issued with rfl | rfl <;> exact ⟨by decide, Nat.lt_of_lt_of_le (by decide) subjectBound⟩
+  · change ((compositeDispatcherInitial plan).virtualMemory.memory.issued object ||
+      (compositeDispatcherInitial plan).virtualMemory.issuedAddressSpace object) = true at issued
+    rw [(dispatcherSeed_issuedObject plan object).1,
+      (dispatcherSeed_issuedObject plan object).2] at issued
+    show 0 < object ∧ object < objectNext
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at issued
+    rcases issued with (((rfl | rfl) | rfl) | rfl) | (rfl | rfl) <;>
+      exact ⟨by decide, Nat.lt_of_lt_of_le (by decide) objectBound⟩
+  · change (if frame = 4 then some 2 else none) = some subject at committed
+    by_cases four : frame = 4
+    · subst four
+      simp only [↓reduceIte, Option.some.injEq] at committed
+      subst committed
+      refine ⟨List.mem_singleton.2 rfl, fun reserved => ?_, rfl⟩
+      cases reserved
+    · simp [four] at committed
+  · change (if object = 20 then some 4 else none) = some frame at bound
+    by_cases twenty : object = 20
+    · subst twenty
+      simp only [↓reduceIte, Option.some.injEq] at bound
+      subst bound
+      exact ⟨rfl, fun _ _ => rfl⟩
+    · simp [twenty] at bound
 
-/-- **Each edge is exactly one gate step.**  On the complete composite state
-the edge's token names, the family step (`childGate`, `memoryGate`, or the
-authoritative gate) returns the complete state the successor token names,
-with the edge's status and value words. -/
-theorem edge_refines (plan : BootPageTablePlan.Plan)
-    (compiled : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan)
-    (edge : Edge) (member : edge ∈ edges) :
-    familyStep (stateOf plan edge.state) edge.command =
-      { state := stateOf plan edge.next, status := edge.status, value := edge.value } := by
-  have model := edges_model
-  rw [compiled] at model
-  have agrees := List.all_eq_true.1 model edge member
-  have shape := List.all_eq_true.1 edges_shape edge member
-  simp only [Edge.modelAgrees, Bool.and_eq_true, beq_iff_eq] at agrees
-  obtain ⟨status, value⟩ := agrees
-  have stateEq : (familyStep (stateOf plan edge.state) edge.command).state =
-      stateOf plan edge.next := by
-    simp only [Edge.shape, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq,
-      Bool.not_eq_true'] at shape
-    rcases shape with ⟨⟨seed, path⟩⟩ | ⟨⟨same, rejected⟩, notAuthoritative⟩
-    · simp only [stateOf, seed, path, runFamily_append]
-    · rw [same]
-      exact familyStep_stutter _ _ notAuthoritative (by rw [status]; exact rejected)
-  cases outcome : familyStep (stateOf plan edge.state) edge.command
-  simp only [outcome] at stateEq status value
-  simp [stateEq, status, value]
+theorem familySeed_childAccounting (plan : BootPageTablePlan.Plan) (subjectNext objectNext : Nat)
+    (registry : SpawnRegistry) (empty : ∀ parent slot, registry.children parent slot = none) :
+    ChildAccountingWellFormed (familySeed plan subjectNext objectNext registry) :=
+  childAccounting_of_empty _ empty
 
-/-- **The dispatcher's spawn commands refine the gates.**  For every edge of the
-bounded table: the command words decode to the edge's command, the generated
-dispatcher maps the pre-state token and the words to the successor token and
-the status and value words, and that result is exactly the gate step on the
-complete composite state the token names. -/
-theorem dispatcher_refines (plan : BootPageTablePlan.Plan)
-    (compiled : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan)
-    (edge : Edge) (member : edge ∈ edges) :
-    decodeFamily edge.words = .ok edge.command ∧
-      edge.dispatched = (replyWord edge.next edge.status, edge.value) ∧
-      decodeReply (replyWord edge.next edge.status) = .ok (edge.next, edge.status) ∧
-      familyStep (stateOf plan edge.state) edge.command =
-        { state := stateOf plan edge.next, status := edge.status, value := edge.value } := by
-  have decoded := List.all_eq_true.1 edges_decode edge member
-  have dispatched := List.all_eq_true.1 edges_dispatch edge member
-  simp only [Bool.and_eq_true, beq_iff_eq, okIs_iff] at decoded dispatched
-  exact ⟨decoded, dispatched.1, dispatched.2, edge_refines plan compiled edge member⟩
+theorem familySeed_spawnTree (plan : BootPageTablePlan.Plan) (subjectNext objectNext : Nat)
+    (registry : SpawnRegistry) (empty : ∀ parent slot, registry.children parent slot = none)
+    (noAuthority : ∀ subject, registry.authority subject = none)
+    (noParents : ∀ child, registry.parent child = none) :
+    SpawnTreeWellFormed (familySeed plan subjectNext objectNext registry) :=
+  spawnTree_of_empty _ empty noAuthority noParents
 
-/-- Exactly the accepted edges advance. -/
-theorem edges_rejections_stay :
-    edges.all (fun edge => (edge.status == 0x01) != (edge.next == edge.state)) = true := by
-  decide
+/-- Each of the four seeds is a family seed. -/
+theorem seedState_familySeed (plan : BootPageTablePlan.Plan) (seed : Seed) :
+    ∃ subjectNext objectNext registry,
+      seedState plan seed = familySeed plan subjectNext objectNext registry ∧
+      3 ≤ subjectNext ∧ subjectNext ≤ LifetimeIssuer.identityReserved ∧
+      21 ≤ objectNext ∧ objectNext ≤ LifetimeIssuer.identityReserved ∧
+      (∀ parent slot, registry.children parent slot = none) ∧
+      (∀ subject, registry.authority subject = none) ∧
+      (∀ child, registry.parent child = none) := by
+  have reserved : 21 ≤ LifetimeIssuer.identityReserved := by
+    unfold LifetimeIssuer.identityReserved LifetimeIssuer.identityRadix
+    decide
+  cases seed with
+  | main =>
+      exact ⟨3, 21, {}, rfl, by omega, by omega, by omega, reserved,
+        fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
+  | subjectsExhausted =>
+      exact ⟨LifetimeIssuer.identityReserved, 21, {}, rfl, by omega, Nat.le_refl _, by omega,
+        reserved, fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
+  | objectsExhausted =>
+      exact ⟨3, LifetimeIssuer.identityReserved, {}, rfl, by omega, by omega, reserved,
+        Nat.le_refl _, fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
+  | controlsExhausted =>
+      exact ⟨3, 21, { nextChildGeneration := CapabilityHandle.generationReserved }, rfl,
+        by omega, by omega, by omega, reserved, fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
 
-/-- **Rollback.**  Every rejecting edge leaves the complete composite state
-unchanged and keeps its state token. -/
-theorem rejected_edge_unchanged (plan : BootPageTablePlan.Plan)
-    (compiled : BootPageTablePlan.compile BootPageTablePlan.sampleInput = .ok plan)
-    (edge : Edge) (member : edge ∈ edges) (rejected : edge.status ≠ 0x01) :
-    edge.next = edge.state ∧
-      (familyStep (stateOf plan edge.state) edge.command).state = stateOf plan edge.state := by
-  have stays := List.all_eq_true.1 edges_rejections_stay edge member
-  have same : edge.next = edge.state := by
-    simp only [bne_iff_ne, ne_eq] at stays
-    by_cases different : edge.next = edge.state
-    · exact different
-    · exact absurd (by rw [beq_false_of_ne rejected, beq_false_of_ne different]) stays
-  refine ⟨same, ?_⟩
-  rw [edge_refines plan compiled edge member, same]
+/-! ## Every command list is an admissible child trace -/
 
-/-! ## Agreement with the hosted oracles -/
+theorem runFamily_runChildSteps (state : CompositeState) (commands : List FamilyCommand) :
+    runFamily state commands = runChildSteps state (commands.map FamilyCommand.toStep) := by
+  induction commands generalizing state with
+  | nil => rfl
+  | cons command rest ih =>
+      simp only [runFamily, List.map_cons, runChildSteps]
+      rw [familyStep_state]
+      exact ih _
 
-/-- For every child command of the table other than the two kernel commands,
-the hosted oracle `SpawnAccountingOracle.childOracleStep` gives the status
-word `(status << 16) | tag` and the value word the dispatcher gives. -/
-def Edge.matchesOracle (plan : BootPageTablePlan.Plan) (edge : Edge) : Bool :=
-  match edge.command with
-  | .child (.grantAuthority _ _) | .child (.revokeAuthority _) => true
-  | .child _ =>
-      let hosted := childOracleStep (stateOf plan edge.state) edge.words
-      hosted.2.1 == statusWord edge.words.tag edge.status && hosted.2.2 == edge.value
-  | _ => true
+/-- Every family command is admissible in every state: child and memory steps
+need no premise, and the switch and the copy are unconditional composite
+steps. -/
+theorem toStep_admissible (state : CompositeState) (command : FamilyCommand) :
+    command.toStep.Admissible state := by
+  cases command with
+  | child operation => trivial
+  | memory operation => trivial
+  | switch => exact CompositeStep.admissible_of_unconditional _ _ rfl
+  | copy => exact CompositeStep.admissible_of_unconditional _ _ rfl
 
-theorem edges_match_hosted_oracle :
-    (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
-      | .ok plan => edges.all (Edge.matchesOracle plan)
-      | .error _ => false) = true := by
-  native_decide
+theorem admissibleAlong_family (state : CompositeState) (commands : List FamilyCommand) :
+    AdmissibleAlongChild state (commands.map FamilyCommand.toStep) := by
+  induction commands generalizing state with
+  | nil => trivial
+  | cons command rest ih => exact ⟨toStep_admissible state command, ih _⟩
 
-end LeanOS.SpawnBoundary
+/-- **The whole-trace theorem for every command list.**  Every state the spawn
+family reaches from a seed satisfies the authoritative, resource, child-accounting,
+and spawn-tree invariants; frame usage is within limit; every parent's live
+children are within its subject budget, and its usage plus its children's
+limits within its entitlement; no frame outside the seed's commitment is
+committed; and no subject identity was created twice or reused along the
+replayed path. -/
+theorem family_trace (plan : BootPageTablePlan.Plan) (start : Seed)
+    (commands : List FamilyCommand) :
+    let state := runFamily (seedState plan start) commands
+    let seed := seedState plan start
+    let steps := commands.map FamilyCommand.toStep
+    ResourceRuntimeWellFormed state ∧ ChildAccountingWellFormed state ∧
+      SpawnTreeWellFormed state ∧
+      (createdAlongChild seed steps).Nodup ∧
+      (∀ identity, identity ∈ createdAlongChild seed steps →
+        seed.lifecycle.issuedSubjects identity = false) ∧
+      (∀ subject, state.budgetUsage subject ≤ state.budgetLimit subject) ∧
+      (∀ frame, (state.frameBudgets.commitment frame).isSome = true →
+        (seed.frameBudgets.commitment frame).isSome = true) ∧
+      (∀ parent capability, state.spawn.authority parent = some capability →
+        childCount state parent ≤ capability.subjectBudget) ∧
+      (∀ parent, state.budgetUsage parent + childLimits state parent ≤
+        entitlement state parent) := by
+  intro state seed steps
+  obtain ⟨subjectNext, objectNext, registry, seedEq, subjectBound, subjectDomain, objectBound,
+    objectDomain, empty, noAuthority, noParents⟩ := seedState_familySeed plan start
+  have holds : ResourceRuntimeWellFormed seed := by
+    simp only [seed, seedEq]
+    exact familySeed_resourceRuntimeWellFormed plan subjectNext objectNext registry subjectBound
+      subjectDomain objectBound objectDomain
+  have accounting : ChildAccountingWellFormed seed := by
+    simp only [seed, seedEq]
+    exact familySeed_childAccounting plan subjectNext objectNext registry empty
+  have tree : SpawnTreeWellFormed seed := by
+    simp only [seed, seedEq]
+    exact familySeed_spawnTree plan subjectNext objectNext registry empty noAuthority noParents
+  obtain ⟨final, finalAccounting, finalTree, nodup, fresh, _, _, usage, _, committed, budget,
+    entitled, _, _⟩ :=
+    child_resource_trace seed steps holds accounting tree (admissibleAlong_family _ _)
+  have stateEq : state = runChildSteps seed steps := runFamily_runChildSteps _ _
+  rw [stateEq]
+  exact ⟨final, finalAccounting, finalTree, nodup, fresh, usage, committed, budget, entitled⟩
+
+end LeanOS.SpawnFamily
