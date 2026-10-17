@@ -55,6 +55,7 @@ import LeanOS.KeyboardEcho
 import LeanOS.NetworkSubject
 import LeanOS.DhcpSubject
 import LeanOS.GtkRekey
+import LeanOS.TimingBudget
 
 /-! # Stable security-claim contract
 
@@ -4663,5 +4664,49 @@ theorem loader_child_send_confined :
     accounting spawned loaded started =>
     ChildLoaderJoint.joint_child_send_confined pre idle request grants requests child
       addressSpace control word running holds accounting spawned loaded started⟩
+
+/-- SC-TIMING-REFUSAL-BUDGET: the subject gate's refusal of a cross-subject
+request is decided by the boot witness `leanos_cross_subject_refusal` from the
+latch mode, the scheduled subject and the named subject alone, exactly as
+`CompositeState.refusesCrossSubject` decides it; two states that agree on the
+mode and the scheduled subject refuse the same request with the same fixed
+result and no effect, and replies padded to a budget leave at the same cycle
+whenever their work fits it, and never before it (ADR 0028). -/
+theorem timing_refusal_fixed_budget :
+    (∀ (state : FailStop.CompositeState) (operation : FailStop.AuthoritativeOperation),
+      TimingBudget.Encodable state.lifecycle.current →
+      TimingBudget.Encodable operation.target →
+      TimingChannels.crossSubjectRefusal (TimingBudget.modeWord state.execution.mode)
+          (TimingBudget.subjectWord state.lifecycle.current)
+          (TimingBudget.subjectWord operation.target) =
+        if state.refusesCrossSubject operation then TimingChannels.refusedWord
+        else TimingChannels.passWord) ∧
+    (∀ (left right : FailStop.CompositeState) (operation : FailStop.AuthoritativeOperation)
+      (start budget leftWork rightWork : Nat),
+      left.execution.mode = right.execution.mode →
+      left.lifecycle.current = right.lifecycle.current →
+      left.refusesCrossSubject operation = true →
+      leftWork ≤ budget → rightWork ≤ budget →
+      FailStop.subjectGate left operation = { state := left, result := .crossSubjectRefused } ∧
+        FailStop.subjectGate right operation =
+          { state := right, result := .crossSubjectRefused } ∧
+        TimingBudget.departure start leftWork budget =
+          TimingBudget.departure start rightWork budget) ∧
+    (∀ start work budget : Nat, start + budget ≤ TimingBudget.departure start work budget) :=
+  ⟨TimingBudget.crossSubjectRefusal_agrees,
+   fun _ _ _ _ _ _ _ hmode hcurrent hrefused hleft hright =>
+     TimingBudget.refusal_fixed_budget hmode hcurrent hrefused hleft hright,
+   TimingBudget.departure_not_early⟩
+
+/-- SC-TIMING-NO-USER-CLOCK: every CR4 the validated user return accepts has
+CR4.TSD set and CR4.PCE clear, so under the architectural reading of RDTSC,
+RDTSCP and RDPMC each of them faults at CPL3; a CR4 without TSD is refused
+(ADR 0028). -/
+theorem timing_no_user_clock :
+    (∀ cr4 : UInt64, TimingBudget.userReturnClockControls cr4 = true →
+      TimingBudget.userCounterFaults cr4 3 = true) ∧
+    (∀ cr4 : UInt64, cr4 &&& TimingBudget.tsdBit = 0 →
+      TimingBudget.userReturnClockControls cr4 = false) :=
+  ⟨TimingBudget.clock_controls_deny_user_counters, TimingBudget.clock_controls_require_tsd⟩
 
 end LeanOS.SecurityClaims

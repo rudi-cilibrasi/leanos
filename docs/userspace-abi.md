@@ -154,6 +154,12 @@ ABI.
 | 81 | endpoint-directory | 1 | call the directory through slot RDX with the name RBX; the answer is the installed slot or the typed miss 0x100 |
 | 82 | endpoint-directory | 3 | reply through the one-shot reply capability with a copy of slot RBX attenuated to rights RCX (0xff and 0 for none), then receive through slot RDX |
 | 83 | endpoint-directory | 3 | describe the last received message: its kind and, for a registration, the directory slot and rights |
+| 110 | timing-channels | 1 | cross-subject request naming subject RBX (2 or 9): refused by the generated witness with 0xc5, padded to the 100000-cycle budget; naming itself (1): passed with 0, unpadded |
+| 111 | timing-channels | 1 | SMAP copy-in of RCX bytes (1 or 16) from RBX in A's own stack; returns the length |
+| 112 | timing-channels | 1 | send on endpoint 10, waking B with RBX (0 or 4096) as the number of iterations it runs |
+| 113 | timing-channels | 2 | block on endpoint 10; woken with A's RBX in RAX |
+| 114 | timing-channels | 1 | mark: closes the timed round trip of A's last send |
+| 115 | timing-channels | 1 | report: the per-path cycle records, the refusal record and the wake record; A then executes RDTSC, which faults at CPL3 |
 <!-- syscall-table:end -->
 
 ## Errors
