@@ -1,4 +1,5 @@
 # reason: LeanOS.TimingChannels, LeanOS.TimingBudget and LeanOS.Oracle.Timing (#576, the cross-subject refusal witness, the timing closures of ADR 0028 and the witness's oracle rows) are new; record their local times (1.0 s, 4.3 s, 1.0 s) normalized by the checker's median factor 6.98 over 64 unchanged modules on a loaded host (0.1 s, 0.6 s, 0.1 s). Earlier: LeanOS.GtkRekey and LeanOS.QotomWatchdogKick (#557, the group-key rotation model and the long-session watchdog kick check) are new; record their measured local times (1.7 s, 1.5 s). Earlier: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
+# reason: LeanOS.Net.DhcpClient (#573) now proves the DHCP subject's RFC 2131 retransmission schedule against its model reading; record its measured local time (12.2 s). Earlier: LeanOS.GtkRekey and LeanOS.QotomWatchdogKick (#557, the group-key rotation model and the long-session watchdog kick check) are new; record their measured local times (1.7 s, 1.5 s). Earlier: LeanOS.QotomBroadcomAssignment (#559, the assigned-Broadcom trust-contract variant) is new; record its measured local time (2.0 s). Earlier: LeanOS.Oracle's corpus checks are split by adapter family into the LeanOS.Oracle.* modules (#558) and its layout proofs go through the block table, so re-measure LeanOS.Oracle (71.6 s -> 2.1 s) and add the family modules (run 38453592555, normalized by the checker's median factor 0.94 over 105 unchanged modules). Earlier: 71.6 s after the spawn-syscall and loader adapters (#554/#555), 45.0 s after the spawn boundary (#547).
 module	seconds
 LeanOS.BootPageTablePlan	139.8
 LeanOS.CompositeDispatcher	137.0
@@ -25,6 +26,7 @@ LeanOS.BoundedLifecycle	14.0
 LeanOS.BootMemoryMapFullProjectionABI	13.5
 LeanOS.FailStop.ResourceSteps	13.5
 LeanOS.Capability	13.0
+LeanOS.Net.DhcpClient	12.2
 LeanOS.TLB	12.1
 LeanOS.IOTLB	11.6
 LeanOS.PrivilegeEntryControl	11.0

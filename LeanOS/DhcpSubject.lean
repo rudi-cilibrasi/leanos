@@ -38,6 +38,12 @@ and proves the confinement the issue asks for:
 * **Frames cross only through the endpoint**: the transmit slot changes only
   by the routed holder's accepted send, carrying exactly bytes of its own
   window, or by the driver program taking it (`step_tx_changed`).
+* **The lease signal carries one bit**: the word the kernel shows the
+  driver (`leaseSignal`, issue #573) is a function of the route alone; it is
+  set only by the DHCP subject's accepted hand-off (`step_leaseSignal_set`),
+  never unset (`step_leaseSignal_stays`), and in every reachable state it is
+  set exactly when the echo subject holds a lease
+  (`run_leaseSignal_iff_lease`).
 * **The lease comes from the DHCP subject**: the echo subject's address
   changes only by the DHCP subject's accepted hand-off (`step_lease_changed`,
   `handoff_refused`), the endpoint serves the echo subject only after it
@@ -442,6 +448,72 @@ theorem echo_fetch_leased (p : Ports) (s : State) (addr : Nat) (hr : Routed s)
   rcases hr with hd | ⟨-, hl⟩
   · rw [hd] at this; exact absurd this (by decide)
   · exact hl
+
+/-! ## The lease signal (issue #573)
+
+The BCM43224 serve program separates the time it allows for a lease from
+the time it serves after the lease. It does not parse DHCP: the kernel
+stores 1 in the lease signal word of the driver's scratch
+(`LeanOS.Net.FrameSource.leaseSignalAt`) when the endpoint's route moves to
+the echo subject, and the driver reads that word. In this model the word is
+`leaseSignal`, a function of the route alone: it carries one bit, never the
+leased address. -/
+
+/-- The lease signal word the kernel shows the driver: whether the endpoint
+serves the echo subject. -/
+def leaseSignal (s : State) : Bool := s.route == echo
+
+/-- At boot the signal is unset. -/
+theorem leaseSignal_boot (mem : Nat → Nat → UInt8) : leaseSignal (State.boot mem) = false :=
+  rfl
+
+/-- The signal is set only by the DHCP subject's accepted hand-off. -/
+theorem step_leaseSignal_set (p : Ports) (s : State) (op : Op)
+    (h0 : leaseSignal s = false) (h1 : leaseSignal (step p s op).1 = true) :
+    ∃ mac ip, op = .handoff dhcp mac ip ∧ s.route = dhcp := by
+  have hne : (step p s op).1.route ≠ s.route := by
+    intro he
+    simp only [leaseSignal] at h0 h1
+    rw [he] at h1
+    rw [h0] at h1
+    exact Bool.false_ne_true h1
+  obtain ⟨hr, -, mac, ip, hop⟩ := step_route_changed p s op hne
+  exact ⟨mac, ip, hop, hr⟩
+
+/-- Once set, the signal stays set: no transition moves the route back. -/
+theorem step_leaseSignal_stays (p : Ports) (s : State) (op : Op) (h : leaseSignal s = true) :
+    leaseSignal (step p s op).1 = true := by
+  by_cases he : (step p s op).1.route = s.route
+  · simp only [leaseSignal] at h ⊢; rw [he]; exact h
+  · obtain ⟨hr, -⟩ := step_route_changed p s op he
+    simp only [leaseSignal, hr] at h
+    exact absurd h (by decide)
+
+/-- In every reachable state the signal is set exactly when the echo subject
+holds a lease: the driver's serve window starts only after a lease was
+handed off, and a handed-off lease always shows. -/
+theorem run_leaseSignal_iff_lease (p : Ports) (mem : Nat → Nat → UInt8) (ops : List Op) :
+    leaseSignal (run p (State.boot mem) ops) = (run p (State.boot mem) ops).lease.isSome := by
+  suffices ∀ (s : State) (ops : List Op), leaseSignal s = s.lease.isSome →
+      leaseSignal (run p s ops) = (run p s ops).lease.isSome from
+    this _ ops rfl
+  intro s ops
+  induction ops generalizing s with
+  | nil => exact id
+  | cons op ops ih =>
+    intro h
+    apply ih
+    cases op with
+    | handoff who mac ip =>
+      simp only [step]
+      split
+      · rfl
+      · exact h
+    | deliver f => simp only [step]; split <;> exact h
+    | fetch who addr => simp only [step]; split <;> exact h
+    | send who addr len => simp only [step]; split <;> exact h
+    | transmit => exact h
+    | write => exact h
 
 /-! ## The echo subject answers only for the lease -/
 
