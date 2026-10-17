@@ -257,6 +257,9 @@ done
 grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
+# ADR 0028: TSD set and PCE cleared, so CPL3 has no cycle counter.
+grep -Fq 'bts $2, %rax' boot/boot.S
+grep -Fq 'btr $8, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
 [[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 15 ]]
 # 21: the entry and SMAP copy sites, plus frame_window_transfer's string move

@@ -7,6 +7,7 @@ import LeanOS.NegativeFixtures.DirectPort
 import LeanOS.NegativeFixtures.DMAQuarantine
 import LeanOS.NegativeFixtures.ElfAdmission
 import LeanOS.NegativeFixtures.Example
+import LeanOS.NegativeFixtures.ExportRefinement
 import LeanOS.NegativeFixtures.FrameBudget
 import LeanOS.NegativeFixtures.Isr80PathSelector
 import LeanOS.NegativeFixtures.IOMMUConfinement
@@ -23,6 +24,7 @@ import LeanOS.NegativeFixtures.SharedContainment
 import LeanOS.NegativeFixtures.SpawnAccounting
 import LeanOS.NegativeFixtures.SpawnIdentityRollback
 import LeanOS.NegativeFixtures.StaleTranslation
+import LeanOS.NegativeFixtures.TimingChannels
 import LeanOS.NegativeFixtures.UserFaultClass
 import LeanOS.NegativeFixtures.VTdBootPlan
 import LeanOS.NegativeFixtures.WrappingIssuerReuse

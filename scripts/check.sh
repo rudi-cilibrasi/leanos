@@ -153,6 +153,8 @@ lake build leanos-wifi-respsim
 .lake/build/bin/leanos-wifi-respsim
 lake build leanos-wifi-rekeysim
 .lake/build/bin/leanos-wifi-rekeysim
+lake build leanos-wifi-leasesim
+.lake/build/bin/leanos-wifi-leasesim
 lake build leanos-copy-roots-replay
 .lake/build/bin/leanos-copy-roots-replay
 lake build leanos-copy-root-construction
