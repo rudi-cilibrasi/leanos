@@ -857,7 +857,14 @@ into the slot of a child whose load was rolled back, a frame grant to the new
 child, and its termination. The loading itself is `LeanOS.ChildLoader`
 ([ADR 0024's run-time amendment](adr/0024-build-time-elf-admission.md#amendment-2026-10-11-the-run-time-loader-492)).
 The kernel rolls a rejected load back with the spawn table's termination
-edge. The child's run is not a composite step.
+edge. `ChildLoaderJoint.joint_rollback_restores` proves that pairing in one
+model: the loader's rollback and `childGate (.terminateChild _)` restore the
+pre-spawn composite state on every authority and resource projection
+(`SpawnRestored`, #571). The child's one send is the composite step
+`childSend` (`ChildTraceStep.childSend`, a step of `child_resource_trace`),
+which writes only the mailbox of the endpoint spawn granted it
+(`childSend_confined`). The kernel's entry to the child is not a composite
+step.
 
 ### The spawn allocator (#575)
 

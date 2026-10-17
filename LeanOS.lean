@@ -98,6 +98,7 @@ import LeanOS.SpawnAllocatorMemoryStep
 import LeanOS.SpawnAllocatorSimulation
 import LeanOS.SpawnAllocatorSeeds
 import LeanOS.ChildLoader
+import LeanOS.ChildLoaderJoint
 import LeanOS.FrameBudgetComposite
 import LeanOS.CompositeOwnSteps
 import LeanOS.CompositeChannels
