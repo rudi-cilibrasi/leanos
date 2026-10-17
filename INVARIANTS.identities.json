@@ -4707,6 +4707,12 @@
     },
     {
       "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.contents_rollback",
+      "display": "contents_rollback",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
       "qualified": "LeanOS.ChildLoader.exact_rollback",
       "display": "exact_rollback",
       "kind": "theorem"
@@ -4731,6 +4737,12 @@
     },
     {
       "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.inSegment_of_address",
+      "display": "inSegment_of_address",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
       "qualified": "LeanOS.ChildLoader.inside_rollback",
       "display": "inside_rollback",
       "kind": "theorem"
@@ -4739,6 +4751,12 @@
       "source": "LeanOS/ChildLoader.lean",
       "qualified": "LeanOS.ChildLoader.leafOf_matches",
       "display": "leafOf_matches",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.loadCheck_placed",
+      "display": "loadCheck_placed",
       "kind": "theorem"
     },
     {
@@ -4827,8 +4845,26 @@
     },
     {
       "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.runRequests_invariants",
+      "display": "runRequests_invariants",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.segment_of_page_unique",
+      "display": "segment_of_page_unique",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
       "qualified": "LeanOS.ChildLoader.start_flags_bits",
       "display": "start_flags_bits",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.started_contents",
+      "display": "started_contents",
       "kind": "theorem"
     },
     {
@@ -4841,6 +4877,18 @@
       "source": "LeanOS/ChildLoader.lean",
       "qualified": "LeanOS.ChildLoader.started_exact_unique",
       "display": "started_exact_unique",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.started_writable_bytes",
+      "display": "started_writable_bytes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoader.lean",
+      "qualified": "LeanOS.ChildLoader.step_preserves_contents",
+      "display": "step_preserves_contents",
       "kind": "theorem"
     },
     {
@@ -4859,6 +4907,72 @@
       "source": "LeanOS/ChildLoader.lean",
       "qualified": "LeanOS.ChildLoader.toNat_ofNat_small",
       "display": "toNat_ofNat_small",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.childSendStep_trace",
+      "display": "childSendStep_trace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.grantSteps_composite",
+      "display": "grantSteps_composite",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.grantSteps_loader",
+      "display": "grantSteps_loader",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.joint_child_send_confined",
+      "display": "joint_child_send_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.joint_rollback_restores",
+      "display": "joint_rollback_restores",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.loaderStep_tracks",
+      "display": "loaderStep_tracks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.rollback_congr",
+      "display": "rollback_congr",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.rolledBack_live",
+      "display": "rolledBack_live",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.runLoader_tracks",
+      "display": "runLoader_tracks",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.step_child",
+      "display": "step_child",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/ChildLoaderJoint.lean",
+      "qualified": "LeanOS.ChildLoaderJoint.step_constants",
+      "display": "step_constants",
       "kind": "theorem"
     },
     {
@@ -16323,6 +16437,12 @@
     },
     {
       "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
+      "qualified": "LeanOS.FailStop.childSend_childKeeps",
+      "display": "childSend_childKeeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnAccountingTraces.lean",
       "qualified": "LeanOS.FailStop.child_resource_trace",
       "display": "child_resource_trace",
       "kind": "theorem"
@@ -16706,6 +16826,72 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.childSend_confined",
+      "display": "childSend_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.childSend_keeps",
+      "display": "childSend_keeps",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.childSend_preserves",
+      "display": "childSend_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.childSend_sent",
+      "display": "childSend_sent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.childSend_shape",
+      "display": "childSend_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.childSend_unchanged",
+      "display": "childSend_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.endpointSend_accepted",
+      "display": "endpointSend_accepted",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.installSend_preserves_runtimeWellFormed",
+      "display": "installSend_preserves_runtimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.send_capabilities_unchanged",
+      "display": "send_capabilities_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.send_preserves_live_senders",
+      "display": "send_preserves_live_senders",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnChildSend.lean",
+      "qualified": "LeanOS.FailStop.send_preserves_occupied_mailbox",
+      "display": "send_preserves_occupied_mailbox",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FailStop/SpawnGate.lean",
       "qualified": "LeanOS.FailStop.ChildTraceStep.identityStep",
       "display": "ChildTraceStep.identityStep",
@@ -16793,6 +16979,78 @@
       "source": "LeanOS/FailStop/SpawnInvariants.lean",
       "qualified": "LeanOS.FailStop.withSpawn_resourceRuntimeWellFormed",
       "display": "withSpawn_resourceRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.GrantedFrom.grant",
+      "display": "GrantedFrom.grant",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.GrantedFrom.grantAll",
+      "display": "GrantedFrom.grantAll",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.GrantedFrom.refl",
+      "display": "GrantedFrom.refl",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.GrantedFrom.same",
+      "display": "GrantedFrom.same",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.copy_subjects",
+      "display": "copy_subjects",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.grantAll_preserves",
+      "display": "grantAll_preserves",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.spawn_addressSpace_record",
+      "display": "spawn_addressSpace_record",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.spawn_execution",
+      "display": "spawn_execution",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.spawn_grants_child",
+      "display": "spawn_grants_child",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.spawn_lifecycle_records",
+      "display": "spawn_lifecycle_records",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.spawn_rollback_restores",
+      "display": "spawn_rollback_restores",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop/SpawnRollback.lean",
+      "qualified": "LeanOS.FailStop.terminatedChild_registry",
+      "display": "terminatedChild_registry",
       "kind": "theorem"
     },
     {
@@ -22047,6 +22305,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_loader_trace_vectors_exact",
+      "display": "hosted_loader_trace_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_loader_vectors_exact",
       "display": "hosted_loader_vectors_exact",
       "kind": "theorem"
@@ -22445,6 +22709,36 @@
       "source": "LeanOS/Oracle/Services.lean",
       "qualified": "LeanOS.Oracle.user_copy_policy_vectors_agree",
       "display": "user_copy_policy_vectors_agree",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.loader_trace_contents",
+      "display": "loader_trace_contents",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.loader_trace_replies",
+      "display": "loader_trace_replies",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.loader_trace_rollback_idle",
+      "display": "loader_trace_rollback_idle",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.loader_trace_vectors_expected",
+      "display": "loader_trace_vectors_expected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Spawn.lean",
+      "qualified": "LeanOS.Oracle.loader_trace_vectors_model",
+      "display": "loader_trace_vectors_model",
       "kind": "theorem"
     },
     {
@@ -25227,6 +25521,18 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_child_send_confined",
+      "display": "loader_child_send_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_copied_contents",
+      "display": "loader_copied_contents",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.loader_decide_refinement",
       "display": "loader_decide_refinement",
       "kind": "theorem"
@@ -25241,6 +25547,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.loader_failure_rolls_back",
       "display": "loader_failure_rolls_back",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_joint_rollback_restores",
+      "display": "loader_joint_rollback_restores",
       "kind": "theorem"
     },
     {

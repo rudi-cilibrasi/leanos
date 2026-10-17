@@ -43,6 +43,7 @@ import LeanOS.TimerServer
 import LeanOS.FrameServer
 import LeanOS.SpawnSyscall
 import LeanOS.ChildLoader
+import LeanOS.ChildLoaderJoint
 import LeanOS.StaleTranslation
 import LeanOS.InvalidationPublication
 import LeanOS.NotifyReply
@@ -4623,5 +4624,136 @@ theorem loader_failure_rolls_back :
   obtain ⟨child, leaves, _, used⟩ := ChildLoader.rollback_empty state
   rw [rolled]
   exact ⟨rfl, child, leaves, used⟩
+
+/-- SC-LOADER-JOINT-ROLLBACK: from a composite state satisfying the
+invariants under the running latch and a loader with no child, spawn a child
+through the gate, grant it frames, and run loader requests; when a request
+rolls the loader back, the paired steps (the loader's rollback and the
+composite termination of the child the request names) leave the loader
+exactly as before the spawn and the composite state restored against the
+state before the spawn: live subjects, every capability slot, runnable set,
+current subject, ownership records, frame commitments, allocator, bindings,
+frame contents, child tables and spawn authority, with the child's spawn
+records cleared and only never-reused histories advanced. -/
+theorem loader_joint_rollback_restores :
+    ∀ (pre : FailStop.CompositeState) (idle : ChildLoader.State)
+      (request : FailStop.SpawnRequest) (grants : List Nat)
+      (requests : List ChildLoader.Request) (last : ChildLoader.Request)
+      (child addressSpace : Nat) (control : UInt64) (reason : ChildLoader.Rejection),
+      pre.execution.mode = .running → FailStop.ResourceRuntimeWellFormed pre →
+      FailStop.ChildAccountingWellFormed pre → ChildLoader.rollback idle = idle →
+      (FailStop.childGate pre (.spawn request)).result =
+        .completed (.spawned child addressSpace control) →
+      (ChildLoaderJoint.loaderStep (ChildLoaderJoint.runLoader (ChildLoaderJoint.grantSteps
+        (ChildLoaderJoint.spawnStep ⟨pre, idle⟩ request) control grants) requests) last).2 =
+          .rolledBack reason →
+      (ChildLoaderJoint.loaderStep (ChildLoaderJoint.runLoader (ChildLoaderJoint.grantSteps
+        (ChildLoaderJoint.spawnStep ⟨pre, idle⟩ request) control grants) requests) last).1.loader =
+          idle ∧
+      FailStop.SpawnRestored pre
+        (ChildLoaderJoint.loaderStep (ChildLoaderJoint.runLoader (ChildLoaderJoint.grantSteps
+          (ChildLoaderJoint.spawnStep ⟨pre, idle⟩ request) control grants) requests)
+          last).1.composite child :=
+  fun pre idle request grants requests last child addressSpace control reason running holds
+    accounting noChild spawned rolledBack =>
+  ChildLoaderJoint.joint_rollback_restores pre idle request grants requests last child
+    addressSpace control reason running holds accounting noChild spawned rolledBack
+
+/-- SC-LOADER-CONTENTS: from a loader with no child, every run of requests
+keeps the child's pages exact, inside the reserved range and the child's
+frames, and holding their segments' bytes; and when `start` succeeds, every
+address of a writable segment's page-rounded memory image reads, through the
+child's pages, the admitted file byte below the segment's file size and zero
+from there to the segment's page-rounded end. -/
+theorem loader_copied_contents :
+    (∀ (state : ChildLoader.State) (requests : List ChildLoader.Request),
+      ChildLoader.Exact (ChildLoader.runRequests (ChildLoader.rollback state) requests) ∧
+        ChildLoader.Inside (ChildLoader.runRequests (ChildLoader.rollback state) requests) ∧
+        ChildLoader.Contents (ChildLoader.runRequests (ChildLoader.rollback state) requests)) ∧
+    (∀ (state : ChildLoader.State) (control : UInt64), ChildLoader.PlanLayout state.plan →
+      ChildLoader.Exact state → ChildLoader.Contents state →
+      (ChildLoader.step state (.start control)).2 = .started →
+      ∀ segment ∈ state.plan, segment.writable = true → ∀ address,
+        segment.vaddr ≤ address → address < segment.pageEnd →
+        (address < segment.vaddr + segment.fileBytes →
+          ChildLoader.childByte (ChildLoader.step state (.start control)).1 address =
+            some (state.file (segment.fileOffset + (address - segment.vaddr)))) ∧
+        (segment.vaddr + segment.fileBytes ≤ address →
+          ChildLoader.childByte (ChildLoader.step state (.start control)).1 address =
+            some 0)) :=
+  ⟨ChildLoader.runRequests_invariants,
+   fun state control layout exact contents started segment member writable address low high =>
+    ChildLoader.started_writable_bytes state control layout exact contents started segment member
+      writable address low high⟩
+
+/-- SC-LOADER-CHILD-SEND: the started child's send (syscall 8 through its
+slot-`0` endpoint) is a composite step that keeps the combined runtime and
+resource invariant, the child accounting invariant and the spawn-tree
+invariant (so it is a step of `child_resource_trace`); an accepted send
+writes only the mailbox of the endpoint the child's slot-`0` capability
+names and changes no other projection; and after a spawn through the gate,
+frame grants and loader requests that leave the child started, the started
+child is the spawned child, its slot-`0` capability is the copy of the
+parent's endpoint with exactly the requested rights, and an accepted send
+reaches only that endpoint. -/
+theorem loader_child_send_confined :
+    (∀ (state : FailStop.CompositeState) (child : Nat) (word : UInt64),
+      FailStop.ResourceRuntimeWellFormed state → FailStop.ChildAccountingWellFormed state →
+      FailStop.SpawnTreeWellFormed state →
+      FailStop.ResourceRuntimeWellFormed (FailStop.childSend state child word).state ∧
+        FailStop.ChildAccountingWellFormed (FailStop.childSend state child word).state ∧
+        FailStop.SpawnTreeWellFormed (FailStop.childSend state child word).state) ∧
+    (∀ (state : FailStop.CompositeState) (child : Nat) (word : UInt64),
+      FailStop.RuntimeWellFormed state → (FailStop.childSend state child word).result = .sent →
+      ∃ capability, state.capabilities.slots child FailStop.childEndpointSlot = some capability ∧
+        capability.kind = .endpoint ∧ capability.rights.send = true ∧
+        (∀ object, object ≠ capability.object →
+          (FailStop.childSend state child word).state.ipc.endpoints.mailbox object =
+            state.ipc.endpoints.mailbox object) ∧
+        (FailStop.childSend state child word).state.ipc.endpoints.capabilities =
+          state.ipc.endpoints.capabilities ∧
+        { (FailStop.childSend state child word).state with
+            ipc := state.ipc, transfers := state.transfers } = state) ∧
+    (∀ (pre : FailStop.CompositeState) (idle : ChildLoader.State)
+      (request : FailStop.SpawnRequest) (grants : List Nat)
+      (requests : List ChildLoader.Request) (child addressSpace : Nat) (control word : UInt64),
+      pre.execution.mode = .running → FailStop.ResourceRuntimeWellFormed pre →
+      FailStop.ChildAccountingWellFormed pre →
+      (FailStop.childGate pre (.spawn request)).result =
+        .completed (.spawned child addressSpace control) →
+      (∃ loading, (ChildLoaderJoint.runLoader (ChildLoaderJoint.grantSteps
+        (ChildLoaderJoint.spawnStep ⟨pre, idle⟩ request) control grants)
+          requests).loader.child = some loading) →
+      (ChildLoaderJoint.runLoader (ChildLoaderJoint.grantSteps
+        (ChildLoaderJoint.spawnStep ⟨pre, idle⟩ request) control grants)
+          requests).loader.started = true →
+      let ran := ChildLoaderJoint.runLoader (ChildLoaderJoint.grantSteps
+        (ChildLoaderJoint.spawnStep ⟨pre, idle⟩ request) control grants) requests
+      ChildLoaderJoint.startedChild ran = some child ∧
+        ((ChildLoaderJoint.childSendStep ran word).2 = .sent →
+          ∃ slot endpoint,
+            pre.capabilities.slots (FailStop.spawnParent pre) slot = some endpoint ∧
+            endpoint.kind = .endpoint ∧
+            ran.composite.capabilities.slots child FailStop.childEndpointSlot =
+              some ⟨endpoint.object, .endpoint, request.rights,
+                pre.capabilities.nextIdentity + 1, some endpoint.identity⟩ ∧
+            (ChildLoaderJoint.childSendStep ran word).1.composite.ipc.endpoints.mailbox
+                endpoint.object =
+              some { endpoint := endpoint.object, sender := child,
+                     payload := FailStop.childSendPayload word } ∧
+            (∀ object, object ≠ endpoint.object →
+              (ChildLoaderJoint.childSendStep ran word).1.composite.ipc.endpoints.mailbox
+                  object =
+                ran.composite.ipc.endpoints.mailbox object) ∧
+            { (ChildLoaderJoint.childSendStep ran word).1.composite with
+                ipc := ran.composite.ipc, transfers := ran.composite.transfers } =
+              ran.composite)) :=
+  ⟨fun state child word holds accounting tree =>
+    FailStop.childSend_preserves state child word holds accounting tree,
+   fun state child word holds sent => FailStop.childSend_confined state child word holds sent,
+   fun pre idle request grants requests child addressSpace control word running holds
+    accounting spawned loaded started =>
+    ChildLoaderJoint.joint_child_send_confined pre idle request grants requests child
+      addressSpace control word running holds accounting spawned loaded started⟩
 
 end LeanOS.SecurityClaims
