@@ -164,6 +164,9 @@ extern uint64_t page_directory_b[], page_table_b[];
      defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_NETWORK_SUBJECT_SCENARIO))
 #error "the dhcp-subject image is the three-subject image with a frame source, B and C built from subjects/, and no assigned device"
 #endif
+#if defined(LEANOS_FRAME_WINDOW_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+#error "the frame-window image is the dhcp-subject image with frames copied through per-subject copy windows"
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 /* Third subject C (issue #472), linked only into the three-subject image. */
 extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
@@ -6997,6 +7000,134 @@ static uint64_t dhcp_window_limit(uint64_t who) {
         who == DHCP_ECHO ? (uint64_t)__user_c_stack_end : 0;
 }
 
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+/* Frame copy windows (issue #569; LeanOS.FrameCopyWindow,
+   docs/frame-copy-window.md).  The frame-window image is this image with
+   every frame copy moved off the SMAP user-copy window onto the copy window
+   the Qotom production profile uses, which needs no SMAP.  Before any
+   subject runs, the kernel builds from A's boot root a closed root, which
+   maps no user frame of A, B or C, and for each port holder a fetch root and
+   a send root: the closed root plus a writable (fetch) or read-only (send)
+   supervisor no-execute alias of the holder's window, its stack page, at
+   the alias slot.  Every root is checked leaf by leaf.  A copy asks the
+   generated operand leanos_frame_window_operand for the alias address,
+   which must be nonzero exactly when leanos_frame_port_check accepts, and
+   frame_window_transfer moves the whole frame through the caller's
+   window root with interrupts disabled and reselects the caller's root.
+   The alias slot is the page of B's text, which A's root, the source, does
+   not map. */
+#include "frame_copy_window.h"
+
+static uint64_t dhcp_request(uint64_t op, uint64_t pending, uint64_t route, uint64_t owner);
+#define FRAME_WINDOW_PROTECTED_PAGES 7u
+static struct qotom_root_pages frame_window_closed;
+static struct qotom_root_pages frame_window_fetch_b, frame_window_send_b;
+static struct qotom_root_pages frame_window_fetch_c, frame_window_send_c;
+static uint64_t frame_window_protected[QOTOM_ROOT_MAX_PROTECTED];
+static size_t frame_window_protected_count;
+static struct qotom_root_build_result frame_window_first;
+static struct frame_window frame_windows[2];
+static uint64_t frame_window_copies;
+
+/* The holder's window, or 0 for a subject that holds no port. */
+static const struct frame_window *frame_window_of(uint64_t who) {
+    return who == DHCP_CLIENT ? &frame_windows[0] : who == DHCP_ECHO ? &frame_windows[1] : 0;
+}
+
+static uint64_t frame_window_slot(uint64_t who) {
+    const struct frame_window *w = frame_window_of(who);
+    return w ? w->slot : 0;
+}
+
+static void frame_window_protect(uint64_t first, uint64_t past) {
+    if (first >= past || (first & 4095u)) fail("frame-window-inventory-range");
+    for (uint64_t address = first; address < past; address += PAGE_BYTES) {
+        uint64_t frame = address >> 12;
+        for (size_t i = 0; i < frame_window_protected_count; ++i)
+            if (frame_window_protected[i] == frame) fail("frame-window-inventory-duplicate");
+        if (frame_window_protected_count >= QOTOM_ROOT_MAX_PROTECTED)
+            fail("frame-window-inventory-bounds");
+        frame_window_protected[frame_window_protected_count++] = frame;
+    }
+}
+
+/* Before any subject runs: the protected inventory is every user page of A,
+   B and C; both windows' roots are built from A's root and checked leaf by
+   leaf; and the generated operand agrees with the port witness on every
+   subject, window owner and route, giving the alias slot for an accepted
+   request. */
+static void frame_window_install(void) {
+    const struct qotom_root_pages *source = (const struct qotom_root_pages *)page_map_level_4_a;
+    if ((const uint64_t *)source->pdpt != page_directory_pointer_a ||
+        (const uint64_t *)source->pd != page_directory_a ||
+        (const uint64_t *)source->pt != page_table_a)
+        fail("frame-window-source");
+    frame_window_protect((uint64_t)__user_a_text_start, (uint64_t)__user_a_text_end);
+    frame_window_protect((uint64_t)__user_a_stack_start, (uint64_t)__user_a_stack_end);
+    frame_window_protect((uint64_t)__user_b_text_start, (uint64_t)__user_b_text_end);
+    frame_window_protect((uint64_t)__user_b_stack_start, (uint64_t)__user_b_stack_end);
+    frame_window_protect((uint64_t)__user_c_text_start, (uint64_t)__user_c_text_end);
+    frame_window_protect((uint64_t)__user_c_stack_start, (uint64_t)__user_c_stack_end);
+    if (frame_window_protected_count != FRAME_WINDOW_PROTECTED_PAGES)
+        fail("frame-window-inventory-count");
+    const uint64_t slot = (uint64_t)__user_b_text_start >> 12;
+    frame_windows[0] = (struct frame_window){ &frame_window_fetch_b, &frame_window_send_b,
+        dhcp_window_base(DHCP_CLIENT), dhcp_window_limit(DHCP_CLIENT), slot };
+    frame_windows[1] = (struct frame_window){ &frame_window_fetch_c, &frame_window_send_c,
+        dhcp_window_base(DHCP_ECHO), dhcp_window_limit(DHCP_ECHO), slot };
+    int built = 0;
+    for (unsigned i = 0; i < 2; ++i) {
+        if (frame_window_build(source, &frame_window_closed, frame_window_protected,
+                frame_window_protected_count, &frame_windows[i], &frame_window_first, &built) !=
+                FRAME_WINDOW_OK)
+            fail("frame-window-roots");
+    }
+    if (frame_window_first.protected_count != FRAME_WINDOW_PROTECTED_PAGES)
+        fail("frame-window-root-counts");
+    /* As a copy asks: the caller names itself as the window's owner and
+       passes its own window, at its first byte and 100 bytes in. */
+    for (uint64_t subject = 1; subject <= 3; ++subject) {
+        for (uint64_t route = DHCP_CLIENT; route <= DHCP_ECHO; ++route) {
+            for (uint64_t offset = 0; offset <= 100; offset += 100) {
+                uint64_t request = dhcp_request(DHCP_OP_FETCH, 1, route, subject);
+                uint64_t base = dhcp_window_base(subject), limit = dhcp_window_limit(subject);
+                uint64_t port = leanos_frame_port_check(subject, request, base + offset,
+                    DHCP_LINK_BYTES, base, limit);
+                uint64_t operand = leanos_frame_window_operand(frame_window_slot(subject),
+                    request, base + offset, DHCP_LINK_BYTES, base, limit);
+                uint64_t accept = (subject == DHCP_CLIENT || subject == DHCP_ECHO) &&
+                    route == subject;
+                if ((port == 0) != accept || (operand != 0) != accept ||
+                    (operand != 0 && operand != (slot << 12) + offset))
+                    fail("frame-window-operand-model");
+            }
+        }
+    }
+    serial_puts(LEANOS_SERIAL_10_NET " event=window holders=2,3 window=own-page pages=1 alias-slots=1 fetch-root=writable send-root=read-only protected=");
+    serial_u64(frame_window_first.protected_count);
+    serial_puts(" removed=");
+    serial_u64(frame_window_first.removed_aliases);
+    serial_puts(" roots=4 scan=exact operand=agree smap=unused result=PASS\n");
+}
+
+/* One copy through `who`'s window root: `operand` is the alias address the
+   generated operand gave for the caller's buffer. */
+static void frame_window_copy(uint64_t who, unsigned fetch, uint64_t operand,
+                              uint8_t *kernel, uint64_t len) {
+    const struct frame_window *w = frame_window_of(who);
+    uint64_t resume = who == DHCP_CLIENT ? (uint64_t)page_map_level_4_b
+                                         : (uint64_t)page_map_level_4_c;
+    if (!w || operand == 0) fail("frame-window-copy");
+    uint64_t moved = fetch
+        ? frame_window_transfer(resume, (uint64_t)w->fetch->pml4, operand,
+              (uint64_t)kernel, len)
+        : frame_window_transfer(resume, (uint64_t)w->send->pml4, (uint64_t)kernel,
+              operand, len);
+    if (moved != len) fail("frame-window-transfer");
+    frame_window_copies++;
+}
+#endif
+
 static uint64_t dhcp_request(uint64_t op, uint64_t pending, uint64_t route, uint64_t owner) {
     return op | pending << 8 | (route & 0xffu) << 16 | (owner & 0xffu) << 24;
 }
@@ -7167,6 +7298,12 @@ static uint64_t dhcp_copy(uint64_t number, uint64_t addr, uint64_t len) {
         (op == DHCP_OP_FETCH || len >= DHCP_FRAME_MIN) &&
         len <= DHCP_FRAME_MAX && addr >= base && addr <= limit && len <= limit - addr;
     if ((witness == 0) != accept) fail("dhcp-port-model-decision");
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+    /* The alias address the copy starts at, from the generated operand. */
+    uint64_t operand = leanos_frame_window_operand(frame_window_slot(who),
+        dhcp_request(op, pending, dhcp_route, who), addr, len, base, limit);
+    if ((operand != 0) != accept) fail("frame-window-operand-decision");
+#endif
     const char *name = op == DHCP_OP_FETCH ? "fetch" : "send";
     if (!accept) return dhcp_refuse(name, witness);
     /* Only the routed holder gets here, and it serves only between A's send
@@ -7175,12 +7312,20 @@ static uint64_t dhcp_copy(uint64_t number, uint64_t addr, uint64_t len) {
         !(who == DHCP_ECHO && dhcp_phase == DHCP_PHASE_C_SERVES))
         fail("dhcp-copy-sequence");
     if (op == DHCP_OP_FETCH) {
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+        frame_window_copy(who, 1, operand, wifi_scratch + DHCP_RX_AT, len);
+#else
         smap_copy_to((void *)addr, wifi_scratch + DHCP_RX_AT, len);
+#endif
         if (ac_is_set()) fail("dhcp-fetch-ac-set");
         dhcp_rx_pending = 0;
         dhcp_fetches++;
     } else {
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+        frame_window_copy(who, 0, operand, wifi_scratch + DHCP_TX_AT, len);
+#else
         smap_copy_from(wifi_scratch + DHCP_TX_AT, (const void *)addr, len);
+#endif
         if (ac_is_set()) fail("dhcp-send-ac-set");
         *(volatile uint32_t *)(wifi_scratch + DHCP_TX_LEN_AT) = (uint32_t)len;
         dhcp_tx_pending = 1;
@@ -7198,7 +7343,12 @@ static uint64_t dhcp_copy(uint64_t number, uint64_t addr, uint64_t len) {
     serial_u64(dhcp_seq);
     serial_puts(" bytes=");
     serial_u64(len);
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+    serial_puts(op == DHCP_OP_FETCH ? " window=own-page copy=fetch-root model=accepted\n"
+                                    : " window=own-page copy=send-root model=accepted\n");
+#else
     serial_puts(" window=own-page model=accepted\n");
+#endif
     return op == DHCP_OP_FETCH ? len : 0;
 }
 
@@ -7361,6 +7511,10 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" lease-signal="); serial_u64(dhcp_lease_signals);
         serial_puts(" ticks="); serial_u64(dhcp_ticks);
         serial_puts(" retransmits="); serial_u64(dhcp_tick_sends);
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+        if (frame_window_copies != dhcp_fetches + dhcp_sends) fail("frame-window-count");
+        serial_puts(" window-copies="); serial_u64(frame_window_copies);
+#endif
         serial_putc('\n');
         finish(0x10);
     }
@@ -10796,6 +10950,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=endpoint-directory controls=wp,smep,smap\n");
 #elif defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=network-subject controls=wp,smep,smap\n");
+#elif defined(LEANOS_FRAME_WINDOW_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=frame-window controls=wp,smep,smap\n");
 #elif defined(LEANOS_DHCP_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=dhcp-subject controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXAMPLE_SUBJECT_SCENARIO)
@@ -11037,6 +11193,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_boot_page_table_c();
     check_dhcp_subject_slots();
     dhcp_install();
+#ifdef LEANOS_FRAME_WINDOW_SCENARIO
+    frame_window_install();
+#endif
     current_subject = 3;
     activate_user_address_space(page_map_level_4_c);
     check_selected_root_c();

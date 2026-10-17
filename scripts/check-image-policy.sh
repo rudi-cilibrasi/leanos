@@ -262,7 +262,9 @@ grep -Fq 'bts $2, %rax' boot/boot.S
 grep -Fq 'btr $8, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
 [[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 15 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 20 ]]
+# 21: the entry and SMAP copy sites, plus frame_window_transfer's string move
+# (issue #569), which clears DF itself before its one rep movsb.
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 21 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \

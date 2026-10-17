@@ -18230,6 +18230,174 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.alias_succ",
+      "display": "alias_succ",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.covers_contains",
+      "display": "covers_contains",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.covers_iff",
+      "display": "covers_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.fetch_footprint",
+      "display": "fetch_footprint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.fetch_refines",
+      "display": "fetch_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.frameWindowOperand_alias",
+      "display": "frameWindowOperand_alias",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.frameWindowOperand_fetch",
+      "display": "frameWindowOperand_fetch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.frameWindowOperand_ne_zero_iff",
+      "display": "frameWindowOperand_ne_zero_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.frameWindowOperand_nonholder",
+      "display": "frameWindowOperand_nonholder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.frameWindowOperand_send",
+      "display": "frameWindowOperand_send",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.geometryOk_nat",
+      "display": "geometryOk_nat",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.geometryOk_spec",
+      "display": "geometryOk_spec",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.loadAll_alias",
+      "display": "loadAll_alias",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.network_fetch_refines",
+      "display": "network_fetch_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.network_send_refines",
+      "display": "network_send_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.ownerOf_request",
+      "display": "ownerOf_request",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.readBytes_succ",
+      "display": "readBytes_succ",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.send_refines",
+      "display": "send_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.storeAll_alias",
+      "display": "storeAll_alias",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.storeAll_readonly",
+      "display": "storeAll_readonly",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.translate_alias",
+      "display": "translate_alias",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.windowRoot_alias",
+      "display": "windowRoot_alias",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.windowRoot_no_user",
+      "display": "windowRoot_no_user",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.windowRoot_other_absent",
+      "display": "windowRoot_other_absent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.windowRoot_outside",
+      "display": "windowRoot_outside",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.windowRoot_protected",
+      "display": "windowRoot_protected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.window_covers_iff",
+      "display": "window_covers_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameCopyWindow.lean",
+      "qualified": "LeanOS.FrameCopyWindow.writeBytes_cons",
+      "display": "writeBytes_cons",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/FrameScrub.lean",
       "qualified": "LeanOS.FrameScrub.allocate_rejected_unchanged",
       "display": "allocate_rejected_unchanged",
@@ -25397,6 +25565,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.frame_copy_check_refinement",
       "display": "frame_copy_check_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_copy_window",
+      "display": "frame_copy_window",
       "kind": "theorem"
     },
     {

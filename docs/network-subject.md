@@ -332,6 +332,20 @@ the audited copy roots alias. The kernel zeroes A's stack pages at the
 hand-off and restarts A at the echo subject's entry
 ([wifi-driver.md](wifi-driver.md#dhcp-subject-on-the-qotom)).
 
+### The `frame-window` scenario
+
+Issue #569 replaces the copy roots for frame transport with a *copy
+window* that needs no SMAP: per port holder, a fetch root and a send root
+built from a closed root, which alias only that holder's window. The
+`frame-window` image is the `dhcp-subject` image with every fetch and send
+moved through those roots instead of the SMAP window
+([frame-copy-window.md](frame-copy-window.md)). Its exact transcript is
+`scripts/expectations/frame-window.transcript`.
+
+```sh
+LEANOS_BOOT_SCENARIO=frame-window ./scripts/run-image.sh
+```
+
 ## Not covered
 
 - The q35 frames come from a program, not from a radio.

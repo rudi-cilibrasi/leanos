@@ -105,6 +105,7 @@
     "LeanOS/FrameBudget.lean",
     "LeanOS/FrameBudgetComposite.lean",
     "LeanOS/FrameBudgetScenario.lean",
+    "LeanOS/FrameCopyWindow.lean",
     "LeanOS/FrameScrub.lean",
     "LeanOS/FrameServer.lean",
     "LeanOS/GtkRekey.lean",

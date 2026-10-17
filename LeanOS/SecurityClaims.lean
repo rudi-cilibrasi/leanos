@@ -56,6 +56,7 @@ import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
 import LeanOS.NetworkSubject
 import LeanOS.DhcpSubject
+import LeanOS.FrameCopyWindow
 import LeanOS.GtkRekey
 import LeanOS.TimingBudget
 
@@ -4337,6 +4338,71 @@ theorem dhcp_subject_separation {σ : Type} (models : Nat → Wifi.Sim.Device σ
    DhcpSubject.framePortCheck_nonholder,
    fun sys hcaps ts hg => DhcpSubject.dhcp_no_device_effects models sys hcaps ts hg,
    fun sys hcaps ts hg => DhcpSubject.echo_no_device_effects models sys hcaps ts hg⟩
+
+/-- SC-FRAME-COPY-WINDOW: frames cross into and out of a port holder's
+window through a window root built from a closed root, which maps no
+protected frame. A window root maps a protected frame only at its alias
+slots, only as a supervisor no-execute alias of one of the holder's own
+window frames, and writable only in the fetch root; the send root cannot
+store. When physical memory agrees with the model's per-subject memory on
+every owned frame, an accepted fetch through the fetch root stores exactly
+the model's fetch, changes no physical byte outside the requested range of
+the caller's own window, and keeps the agreement; an accepted send through
+the send root reads exactly the model's reply. So the copies refine
+`DhcpSubject.step` (and `NetworkSubject.step`) and the confinement of
+SC-DHCP-SUBJECT-SEPARATION and SC-NETWORK-SUBJECT-CONFINEMENT applies to
+them. The generated operand the kernel calls on every copy is nonzero
+exactly when the frame port witness accepts over a reviewed window, and it
+is then the alias of the requested buffer. -/
+theorem frame_copy_window :
+    (∀ (closed : FrameCopyWindow.Root) (prot : Nat → Prop),
+      FrameCopyWindow.Closed closed prot →
+      ∀ (g : FrameCopyWindow.Geometry) (w : Bool) (p : Nat) (l : FrameCopyWindow.Leaf),
+        FrameCopyWindow.windowRoot closed g w p = some l → prot l.frame →
+          (g.slot ≤ p ∧ p < g.slot + g.pages) ∧ g.owns l.frame ∧ l.user = false ∧
+            l.nx = true ∧ l.writable = w) ∧
+    (∀ (closed : FrameCopyWindow.Root) (g : FrameCopyWindow.Geometry),
+      g.base % FrameCopyWindow.pageBytes = 0 →
+      ∀ (phys : Nat → UInt8) (addr : Nat) (b : UInt8) (bs : List UInt8),
+        g.window.covers addr (b :: bs).length = true →
+        FrameCopyWindow.storeAll (FrameCopyWindow.windowRoot closed g false) phys
+          (FrameCopyWindow.alias g addr) (b :: bs) = none) ∧
+    (∀ (owner : Nat → Option Nat) (p : DhcpSubject.Ports) (ws : FrameCopyWindow.Windows owner p)
+      (closed : FrameCopyWindow.Root) (phys : Nat → UInt8) (s : DhcpSubject.State)
+      (who addr : Nat) (g : FrameCopyWindow.Geometry),
+      FrameCopyWindow.Rel owner phys s.mem → DhcpSubject.fetchOk p s who addr = true →
+      ws.geometry who = some g →
+        FrameCopyWindow.storeAll (FrameCopyWindow.windowRoot closed g true) phys
+            (FrameCopyWindow.alias g addr) s.rx = some (NetworkSubject.writeBytes phys addr s.rx) ∧
+          FrameCopyWindow.Rel owner (NetworkSubject.writeBytes phys addr s.rx)
+            (DhcpSubject.step p s (.fetch who addr)).1.mem) ∧
+    (∀ (owner : Nat → Option Nat) (p : DhcpSubject.Ports) (ws : FrameCopyWindow.Windows owner p)
+      (phys : Nat → UInt8) (s : DhcpSubject.State) (who addr : Nat) (g : FrameCopyWindow.Geometry),
+      DhcpSubject.fetchOk p s who addr = true → ws.geometry who = some g → ∀ a,
+        NetworkSubject.writeBytes phys addr s.rx a ≠ phys a →
+          addr ≤ a ∧ a < addr + s.rx.length ∧ g.window.contains a ∧
+            owner (a / FrameCopyWindow.pageBytes) = some who) ∧
+    (∀ (owner : Nat → Option Nat) (p : DhcpSubject.Ports) (ws : FrameCopyWindow.Windows owner p)
+      (closed : FrameCopyWindow.Root) (phys : Nat → UInt8) (s : DhcpSubject.State)
+      (who addr len : Nat) (g : FrameCopyWindow.Geometry),
+      FrameCopyWindow.Rel owner phys s.mem → DhcpSubject.sendOk p s who addr len = true →
+      ws.geometry who = some g →
+        FrameCopyWindow.loadAll (FrameCopyWindow.windowRoot closed g false) phys
+          (FrameCopyWindow.alias g addr) len = some (DhcpSubject.step p s (.send who addr len)).1.tx) ∧
+    (∀ slot req addr len base limit : UInt64,
+      FrameCopyWindow.frameWindowOperand slot req addr len base limit ≠ 0 ↔
+        DhcpSubject.framePortCheck (FrameCopyWindow.ownerOf req) req addr len base limit = 0 ∧
+          FrameCopyWindow.geometryOk base limit slot = true) ∧
+    (∀ slot req addr len base limit : UInt64,
+      FrameCopyWindow.frameWindowOperand slot req addr len base limit ≠ 0 →
+        (FrameCopyWindow.geometryOf base limit slot).ok ∧
+          (FrameCopyWindow.geometryOf base limit slot).window.covers addr.toNat len.toNat = true ∧
+          (FrameCopyWindow.frameWindowOperand slot req addr len base limit).toNat =
+            FrameCopyWindow.alias (FrameCopyWindow.geometryOf base limit slot) addr.toNat) :=
+  ⟨FrameCopyWindow.windowRoot_protected, FrameCopyWindow.storeAll_readonly,
+   FrameCopyWindow.fetch_refines, FrameCopyWindow.fetch_footprint,
+   FrameCopyWindow.send_refines, FrameCopyWindow.frameWindowOperand_ne_zero_iff,
+   FrameCopyWindow.frameWindowOperand_alias⟩
 
 /-- SC-WIFI-GROUP-KEY-ROTATION: the BCM43224 driver keeps a session across
 the access point's group-key rotation without accepting replays. No frame

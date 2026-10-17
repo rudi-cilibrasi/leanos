@@ -898,6 +898,65 @@ smap_copy_to_clac:
     clac
     popfq
     ret
+/* Frame copy window transfer (issue #569; LeanOS.FrameCopyWindow,
+   include/frame_copy_window.h).  rdi = resume root, rsi = window root,
+   rdx = destination, rcx = source, r8 = length.  With interrupts disabled,
+   select the window root (a closed root plus supervisor no-execute aliases
+   of one port holder's window), move `length` bytes with one string move,
+   reselect the resume root and restore the caller's flags.  Every CR3 load
+   is read back.  The length must be at most 1514, CR4.PGE and CR4.PCIDE
+   must be clear (so each load flushes every translation), and both roots
+   must be nonzero, page aligned and below 16 MiB; otherwise, or on a
+   readback mismatch, halt at frame_window_terminal without
+   returning.  No STAC or CLAC: the aliases are supervisor pages.  Returns
+   `length`. */
+.global frame_window_transfer
+frame_window_transfer:
+    pushfq
+    cli
+    cmp $1514, %r8
+    ja frame_window_terminal
+    mov %cr4, %rax
+    test $((1 << 7) | (1 << 17)), %eax
+    jnz frame_window_terminal
+    test %rdi, %rdi
+    jz frame_window_terminal
+    test $0xfff, %edi
+    jnz frame_window_terminal
+    cmp $0x1000000, %rdi
+    jae frame_window_terminal
+    test %rsi, %rsi
+    jz frame_window_terminal
+    test $0xfff, %esi
+    jnz frame_window_terminal
+    cmp $0x1000000, %rsi
+    jae frame_window_terminal
+    mov %rdi, %r10
+    mov $0x000ffffffffff000, %r9
+    mov %rsi, %cr3
+    mov %cr3, %rax
+    and %r9, %rax
+    cmp %rsi, %rax
+    jne frame_window_terminal
+    mov %rdx, %rdi
+    mov %rcx, %rsi
+    mov %r8, %rcx
+    cld
+    rep movsb
+    mov %r10, %cr3
+    mov %cr3, %rax
+    and %r9, %rax
+    cmp %r10, %rax
+    jne frame_window_terminal
+    popfq
+    mov %r8, %rax
+    ret
+.global frame_window_terminal
+frame_window_terminal:
+    cli
+.Lframe_window_halt:
+    hlt
+    jmp .Lframe_window_halt
 .global smap_omit_cleanup_probe
 smap_omit_cleanup_probe:
 .global smap_omit_cleanup_probe_stac
