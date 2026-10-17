@@ -32,7 +32,7 @@ open LeanOS
 open LeanOS.FailStop
 open LeanOS.SpawnAllocator
 open LeanOS.SpawnAllocatorWords
-open LeanOS.SpawnBoundary
+open LeanOS.SpawnFamily
 open LeanOS.CompositeDispatcher (CommandWords)
 
 set_option linter.unusedSimpArgs false

@@ -88,8 +88,6 @@ refined_module() {
 claim_theorem() {
   case "$1" in
     leanos_boot_transition) echo boot_transition_refinement ;;
-    leanos_spawn_syscall) echo spawn_syscall_refinement ;;
-    leanos_spawn_syscall_value) echo spawn_syscall_value_refinement ;;
     leanos_loader_source) echo loader_source_refinement ;;
     leanos_loader_decide) echo loader_decide_refinement ;;
     leanos_frame_copy_check) echo frame_copy_check_refinement ;;

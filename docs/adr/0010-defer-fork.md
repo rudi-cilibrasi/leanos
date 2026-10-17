@@ -469,3 +469,22 @@ proved together (`ChildLoaderJoint.joint_rollback_restores`): they restore the
 pre-spawn composite state on every authority and resource projection
 (`FailStop.SpawnRestored`). See
 [ADR 0024's #571 amendment](0024-build-time-elf-admission.md#amendment-2026-10-16-the-loader-and-the-composite-model-together-571).
+
+## Amendment (2026-10-17): the spawn allocator replaces the bounded table (issue #575)
+
+The syscall above was a bounded boundary: twenty-one state tokens of the
+composite dispatcher, each naming one replayed composite state, and a token
+witness (`leanos_spawn_syscall`) that answered only at those states. Issue #575
+replaced them with a general bounded allocator. The `spawn-child` and
+`spawn-loader` kernels hold the thirteen words of the allocator's record and
+decide every command of the family with its generated exports
+(`leanos_spawn_allocator_*`, `LeanOS.SpawnAllocatorWords`). On the words of
+every composite state the family runs on (`SpawnAllocator.Family`), an admitted
+syscall is exactly one `childGate` or `memoryGate` step of that state
+(`SpawnAllocatorBoot.syscall_refines`), and refusals and rejections keep every
+word (`syscall_rollback`). The numbers, register encodings, refusal words and
+status bytes above are unchanged; the reply word's next-state byte is now zero.
+The fixed table, the token witness, oracle adapters 30 and 31, and the
+witness's refinement rows were removed; the family's shared commands, seeds and
+whole-trace theorem (`family_trace`) are in `LeanOS.SpawnFamily`. See
+[fail-stop.md](../fail-stop.md#the-spawn-allocator-575).

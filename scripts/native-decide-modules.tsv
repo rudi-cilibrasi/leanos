@@ -66,7 +66,6 @@ LeanOS/Oracle/FrameBudget.lean	bounded-model
 LeanOS/Oracle/IOTLB.lean	bounded-model
 LeanOS/Oracle/Interrupt.lean	bounded-model
 LeanOS/Oracle/Scalar.lean	bounded-model
-LeanOS/Oracle/Spawn.lean	bounded-model
 LeanOS/Preemption.lean	bounded-model
 LeanOS/PrivilegeEntryControl.lean	bounded-model
 LeanOS/PrivilegeEntryStack.lean	bounded-model
@@ -76,11 +75,7 @@ LeanOS/ResumablePreemption.lean	bounded-model
 LeanOS/Scheduler.lean	bounded-model
 LeanOS/SecurityClaims.lean	bounded-model
 LeanOS/SpawnAccountingOracle.lean	bounded-model
-LeanOS/SpawnAllocatorTable.lean	bounded-model
-LeanOS/SpawnBoundary.lean	bounded-model
-LeanOS/SpawnBoundaryChecks.lean	bounded-model
 LeanOS/SpawnOracle.lean	bounded-model
-LeanOS/SpawnSyscall.lean	bounded-model
 LeanOS/StaleTranslation.lean	bounded-model
 LeanOS/SubjectLifecycle.lean	bounded-model
 LeanOS/Syscall.lean	bounded-model

@@ -5,6 +5,18 @@
 Accepted, issue #570. Extends [ADR 0023](0023-one-export-refinement-ladder.md)
 from one export to six.
 
+Amended 2026-10-17 (#575): the two spawn-syscall exports are gone. The
+`spawn-child` and `spawn-loader` kernels no longer hold a token of the fixed
+spawn table; they decide the family with the spawn allocator's exports
+(`leanos_spawn_allocator_*`, `LeanOS.SpawnAllocatorWords`), and the fixed table,
+`LeanOS.SpawnSyscall`, `leanos_spawn_syscall` and `leanos_spawn_syscall_value`
+were deleted. With them went `Refinement.SpawnSyscallC`, the claims
+SC-SPAWN-SYSCALL-REFINEMENT and SC-SPAWN-SYSCALL-VALUE-REFINEMENT, their drift
+rows in `scripts/refinement-exports.tsv`, and their mutants. The four remaining
+exports keep their proofs unchanged. The allocator's exports have no rung-3
+proof yet; their evidence is `syscall_spec`/`kernel_spec` (rung 1, for every
+input) and the hosted spawn-allocator corpus (rung 2).
+
 ## Context
 
 ADR 0023 proved one rung-3 refinement: the C that the pinned toolchain emits
@@ -60,7 +72,6 @@ The kernel re-checks every proof, so they add no trust (as with `kernel_rfl`).
 
 | Module | Functions proved (C name) |
 | --- | --- |
-| `Refinement.SpawnSyscallC` | `leanos_spawn_syscall`, `leanos_spawn_syscall_value`, and helpers `l_LeanOS_SpawnSyscall_{syscallTag,canonical,familyToken,stateActor,isEdgeReply}` |
 | `Refinement.ChildLoaderC` | `leanos_loader_source`, `leanos_loader_decide` |
 | `Refinement.NetworkSubjectC` | `leanos_frame_copy_check`, helper `l_LeanOS_NetworkSubject_frameCopyDecide` |
 | `Refinement.DhcpSubjectC` | `leanos_frame_port_check` (with `framePortDecide` inlined) |
@@ -79,12 +90,10 @@ has a model theorem, the module composes the two:
   (`loaderC_refines_start`, `loaderC_refines_load`);
 - the frame checks accept exactly when `fetchOk`/`sendOk` does and refuse
   non-holders;
-- the spawn syscall's answer is a refusal or exactly one spawn-table edge's
-  reply, so `spawnSyscall_refines`, `_rollback` and `_trace` hold of the emitted
-  C.
 
 The claim index has one refinement row per export, from
-SC-SPAWN-SYSCALL-REFINEMENT to SC-FRAME-PORT-REFINEMENT. `tests/RefinementStatements.lean`
+SC-LOADER-SOURCE-REFINEMENT to SC-FRAME-PORT-REFINEMENT (the two spawn-syscall
+rows were removed with their exports, #575). `tests/RefinementStatements.lean`
 pins each statement.
 
 ### Negative fixtures
@@ -133,8 +142,8 @@ export.
 - If the toolchain or a witness changes the emitted C, the image build fails
   until the AST is regenerated (`extract-generated-c.py --update`) and the
   proof is re-checked. Variable numbering changes when unrelated code in the same
-  module changes, so editing `ChildLoader.lean`, `SpawnSyscall.lean`,
-  `NetworkSubject.lean` or `DhcpSubject.lean` can require regenerating the AST.
+  module changes, so editing `ChildLoader.lean`, `NetworkSubject.lean` or
+  `DhcpSubject.lean` can require regenerating the AST.
   The proofs themselves usually need no edit.
 - A new scalar export whose C stays in the subset gets a refinement theorem
   from its AST and `csym_refine`, plus simp lemmas for the callees.

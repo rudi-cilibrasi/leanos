@@ -352,7 +352,7 @@ status and value, and the abstraction of the post-state is the allocator's
 successor. -/
 theorem spawnCharged_family (state : CompositeState) (family : Family state)
     (request : SpawnRequest) :
-    SpawnBoundary.childStatus (spawnCharged state request).result =
+    SpawnFamily.childStatus (spawnCharged state request).result =
         ((spawnStep (abstraction state) request).status,
           (spawnStep (abstraction state) request).value) ∧
       ((spawnCharged state request).result.rejected = true →
@@ -370,7 +370,7 @@ theorem spawnCharged_family (state : CompositeState) (family : Family state)
   dsimp only
   cases auth : (abstraction state).authority with
   | none =>
-      simp [rejectWith, SpawnBoundary.childStatus]
+      simp [rejectWith, SpawnFamily.childStatus]
   | some generation =>
       have held : ∃ capability, state.spawn.authority parent = some capability ∧
           capability.generation = generation := by
@@ -386,7 +386,7 @@ theorem spawnCharged_family (state : CompositeState) (family : Family state)
         simp only [stale, ↓reduceIte, ne_eq, not_true_eq_false]
         rw [family_spawnParent state family, subjectBudget_family, childCount_family state family]
         by_cases full : (abstraction state).budget ≤ (abstraction state).childCount
-        · simp [full, rejectWith, SpawnBoundary.childStatus]
+        · simp [full, rejectWith, SpawnFamily.childStatus]
         simp only [full, ↓reduceIte]
         cases free : (abstraction state).freeSlot with
         | none =>
@@ -398,7 +398,7 @@ theorem spawnCharged_family (state : CompositeState) (family : Family state)
             simp only
             rw [controlGenerationAvailable_eq]
             by_cases control : controlAvailable (abstraction state).controlNext = false
-            · simp [control, rejectWith, SpawnBoundary.childStatus]
+            · simp [control, rejectWith, SpawnFamily.childStatus]
             simp only [control, ↓reduceIte, Bool.false_eq_true]
             rw [spawn_result_family state family request authorized]
             unfold spawnResultOf
@@ -408,23 +408,23 @@ theorem spawnCharged_family (state : CompositeState) (family : Family state)
                 state.capabilities.nextIdentity := rfl
             rw [subjectsEq, objectsEq, capabilitiesEq]
             by_cases subjects : identityExhausted state.issuers.subject.next = true
-            · simp [subjects, rejectWith, SpawnBoundary.childStatus,
+            · simp [subjects, rejectWith, SpawnFamily.childStatus,
                 SpawnAccountingOracle.childSpawnErrorCode]
             simp only [subjects, Bool.false_eq_true, ↓reduceIte]
             by_cases objects : identityExhausted state.issuers.object.next = true
-            · simp [objects, rejectWith, SpawnBoundary.childStatus,
+            · simp [objects, rejectWith, SpawnFamily.childStatus,
                 SpawnAccountingOracle.childSpawnErrorCode]
             simp only [objects, Bool.false_eq_true, ↓reduceIte]
             by_cases capabilities : capabilityExhausted state.capabilities.nextIdentity = true
-            · simp [capabilities, rejectWith, SpawnBoundary.childStatus,
+            · simp [capabilities, rejectWith, SpawnFamily.childStatus,
                 SpawnAccountingOracle.childSpawnErrorCode]
             simp only [capabilities, Bool.false_eq_true, ↓reduceIte]
             cases (abstraction state).resolveEndpoint request.endpointWord with
             | some denial =>
-                simp [rejectWith, SpawnBoundary.childStatus, SpawnAccountingOracle.childSpawnErrorCode]
+                simp [rejectWith, SpawnFamily.childStatus, SpawnAccountingOracle.childSpawnErrorCode]
             | none =>
                 by_cases valid : Capability.rightsValid .endpoint request.rights = false
-                · simp [valid, rejectWith, SpawnBoundary.childStatus,
+                · simp [valid, rejectWith, SpawnFamily.childStatus,
                     SpawnAccountingOracle.childSpawnErrorCode]
                 simp only [valid, ↓reduceIte]
                 obtain ⟨positive, bounded⟩ := controlAvailable_true (by simpa using control)
@@ -433,10 +433,10 @@ theorem spawnCharged_family (state : CompositeState) (family : Family state)
                   have : (abstraction state).children.length = childCapacity := by
                     rw [abstraction_children]; simp
                   unfold childCapacity at this; unfold childSlots; omega
-                simp only [acceptWith, SpawnBoundary.childStatus]
+                simp only [acceptWith, SpawnFamily.childStatus]
                 exact congrArg (fun word => ((0x01 : UInt64), word))
                   (controlWord_eq slot _ slotRange positive bounded)
-      · simp [stale, rejectWith, SpawnBoundary.childStatus, SpawnAccountingOracle.childSpawnErrorCode,
+      · simp [stale, rejectWith, SpawnFamily.childStatus, SpawnAccountingOracle.childSpawnErrorCode,
           SpawnOracle.spawnErrorCode]
 
 /-! ## The post-state of an accepted spawn -/
@@ -570,7 +570,7 @@ theorem spawnCharged_accepted (state : CompositeState) (family : Family state)
     exact ⟨spawned, stateEq⟩
   · rw [result] at status
     have small := childSpawnErrorCode_lt reason
-    simp only [SpawnBoundary.childStatus, Prod.mk.injEq] at status
+    simp only [SpawnFamily.childStatus, Prod.mk.injEq] at status
     exact absurd status.1 (reject_status_ne small)
 
 @[simp] theorem installChild_issuers (state : CompositeState) (p slot child : Nat) :

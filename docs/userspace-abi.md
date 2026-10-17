@@ -245,7 +245,7 @@ admitted segment into the child being loaded. RBX is the control word, RCX the
 segment's index in the admitted plan, and RDX the source address the loader
 claims inside its read authority. 106 starts the child, and 107 waits for the
 child's word. RAX is the loader witness's decision
-(`LeanOS.ChildLoader.loaderDecide`, adapters 32 and 33): `1` mapped in place,
+(`LeanOS.ChildLoader.loaderDecide`, adapters 30 and 31): `1` mapped in place,
 `2` copied, `3` started, `0x101`/`0x102` refused without effect, and
 `0x200 + code` rejected with the spawn rolled back. The loaded child's only
 syscall is 8: it sends RBX through its slot-0 endpoint capability.
