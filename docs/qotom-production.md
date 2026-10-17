@@ -118,6 +118,17 @@ copies:
   applies;
 - the generated operand agrees with the port witness.
 
+## The lease signal
+
+The DHCP subject hands its lease to the echo subject on endpoint 13. At
+that moment, and at no other, the kernel stores 1 in the lease signal word
+of the executor scratch, as the lab image and q35 do (issue #573,
+`LeanOS.Net.FrameSource.leaseSignalAt`). The driver learns that the route moved,
+never the address. A link-only `connect` program starts its serve window
+then, so a slow DHCP server uses up the lease window, never the serve
+window. The keyless `net-bcm-dhcp` program checks the word after every
+record: 0 before the ACK, 1 from the ACK on.
+
 ## Records
 
 The production image prints the lab image's records up to
@@ -129,8 +140,8 @@ LEANOS-LAB/1 PRODUCTION-WINDOWS profile=qotom-network-v1 holders=1,3 a-window-pa
 LEANOS-LAB/1 PRODUCTION-READY profile=qotom-network-v1 subjects=3 address-spaces=3 frames=copy-window watchdog=none final=halt
 LEANOS-LAB/1 NET event=deliver frame=1 bytes=6 port=dhcp
 LEANOS-LAB/1 NET event=fetch subject=1 frame=1 bytes=6 copy=fetch-root model=accepted
-LEANOS-LAB/1 NET event=handoff from=1 to=3 frame=11 lease=10.0.2.16 route=echo address-spaces=separate model=accepted
-LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 echo-subject=3 device-holder=2 address-spaces=3 lease=10.0.2.16 frames=17 ...
+LEANOS-LAB/1 NET event=handoff from=1 to=3 frame=13 lease=10.0.2.16 route=echo address-spaces=separate model=accepted
+LEANOS/10 FINAL status=PASS profile=qotom-network-v1 subjects=3 dhcp-subject=1 echo-subject=3 device-holder=2 address-spaces=3 lease=10.0.2.16 frames=19 ...
 ```
 
 The `MODE` record comes right after serial initialization. The window
@@ -219,10 +230,14 @@ The capture passes when it has all of these:
   - window copies equal to fetches plus sends;
   - IPC edges equal to 4 × frames + 6;
   - the hand-off's frame and lease equal to `dhcp-frames` and `lease`;
+- at most one `WIFI-LEASE signalled` record, after the hand-off, and no
+  `WIFI-LEASE window-over` record;
 - quiet after `FINAL`, then the consumed request's default and the FreeBSD
   chain.
 
-It also reports `echo_service_ms`: for each echo frame, the time from its
+It also reports `lease_signalled_after_ms`, the time the link-only
+endpoint saw the lease take (none for the keyless program), and
+`echo_service_ms`: for each echo frame, the time from its
 delivery record to the echo subject's reply record, as the serial line saw
 them. At 38400 baud this is an upper bound on the time the image took, not a
 round-trip time. The ping round-trip time is measured on the LAN host.
@@ -242,7 +257,7 @@ the maintainer at the board. Nothing here needs the watchdog scripts.
 
 2. Run the keyless smoke test. The program touches no Broadcom register: the
    only Broadcom store is the assignment variant's PMCSR write. It feeds the
-   17 q35 DHCP-subject records through the real Qotom path:
+   19 q35 DHCP-subject records through the real Qotom path:
    - three address spaces;
    - the copy windows;
    - IPC;
@@ -264,7 +279,7 @@ the maintainer at the board. Nothing here needs the watchdog scripts.
    should show:
 
    - `lease` `10.0.2.16`;
-   - `frames` 17;
+   - `frames` 19;
    - `refusals` 4;
    - `window_copies` equal to fetches plus sends.
 
@@ -278,25 +293,31 @@ the maintainer at the board. Nothing here needs the watchdog scripts.
    - do not set `LEANOS_WIFI_DHCP` or `LEANOS_WIFI_DRIVER_DHCP`: the driver
      leases nothing.
 
-   No watchdog bounds the session, so the serve window may be longer than
-   the lab's 45 seconds. Five minutes leaves time to ping and to send UDP
+   The link-only endpoint has two windows ([DHCP retransmission and the
+   lease window](wifi-driver.md#dhcp-retransmission-and-the-lease-window-issue-573)):
+   the lease window `L` from the link record, then the serve window `S`
+   from the hand-off. No watchdog bounds the session, so their sum may be
+   longer than the lab's 45 seconds. A minute leaves a slow DHCP server room
+   to answer, and five minutes of service leave time to ping and to send UDP
    echo by hand.
 
    ```sh
-   S=300
+   L=60 S=300
    LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" \
-     LEANOS_WIFI_SERVE_SECONDS=$S LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     LEANOS_WIFI_LEASE_SECONDS=$L LEANOS_WIFI_SERVE_SECONDS=$S \
+     LEANOS_WIFI_NETWORK_SUBJECT=1 \
      .lake/build/bin/leanos-wifi-gen connect build/wifi/prod569.bin
    python3 scripts/build-qotom-production.py --program build/wifi/prod569.bin
    python3 scripts/test-qotom-production-image.py
    ```
 
    Install it as in step 2, then start the runner with `--output
-   build/wifi/prod569 --production-seconds $((S + 120))`.
+   build/wifi/prod569 --production-seconds $((L + S + 120))`.
 
 4. Drive traffic from a LAN host once `NET event=handoff ... lease=<leased
    address>` appears on the serial line (`WIFI 0F17` marks the link-only
-   endpoint up before that):
+   endpoint up before that, and `WIFI-LEASE signalled after-ms=<ms>` the
+   start of the serve window after it):
 
    ```sh
    ping -c 20 <leased address> | tee build/wifi/prod569/ping.txt
@@ -334,8 +355,8 @@ FreeBSD.
   echo answered by the echo subject, with latency against the lab's
   ~125 ms. It needs the maintainer at the board
   ([Maintainer steps](#maintainer-steps)).
-- The image serves for the program's serve window, at most 4294 seconds,
-  then prints `FINAL` and halts. A power cycle returns the board to
+- The image serves for at most the program's lease window plus its serve
+  window, each at most 4294 seconds, then prints `FINAL` and halts. A power cycle returns the board to
   FreeBSD.
 - The trusted premises of the PCI trust contract stay unproved (ADR 0018):
   posted-write drain, TXE-private quiescence, and firmware and SMM

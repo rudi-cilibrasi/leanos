@@ -21,8 +21,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 ring-3 spawn syscall's `SpawnSyscall.spawnSyscall` and
 `SpawnSyscall.spawnSyscallValue` (adapters 30 and 31, #489), and the run-time
 loader's `ChildLoader.loaderSource` and `ChildLoader.loaderDecide` (adapters
-32 and 33, #492). Its stable
-699-vector order covers accepted calls,
+32 and 33, #492), and the cross-subject refusal witness
+`TimingChannels.crossSubjectRefusal` (adapter 34, #576). Its stable
+709-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -59,8 +60,9 @@ stale translation, page faults), `LeanOS.Oracle.Composite` (the stateful
 dispatcher's scenario, mixed, invalidation, boot capability-transfer, and
 in-flight revocation edges), `LeanOS.Oracle.FrameBudget`,
 `LeanOS.Oracle.IOTLB`, `LeanOS.Oracle.Services` (notification/reply,
-user copy, and the user-level servers), and `LeanOS.Oracle.Spawn` (spawn
-edges, the spawn syscall, and the loader). The family modules elaborate in
+user copy, and the user-level servers), `LeanOS.Oracle.Spawn` (spawn
+edges, the spawn syscall, and the loader), and `LeanOS.Oracle.Timing` (the
+cross-subject refusal witness). The family modules elaborate in
 parallel. `LeanOS.Oracle` remains the umbrella import and the `leanos-oracle`
 root: `blocks` lists the families' blocks in their stable order, `vectors` is
 their concatenation, and the layout theorems pin each block's first row. A new
@@ -473,7 +475,7 @@ and maximum words. `loader_vectors_expected` lists every expected word, and
 `loader_witness_agrees_load` and `loader_witness_agrees_start` prove the
 witnesses answer exactly the model's reply.
 
-The last 7 vectors (indices 692--698, `hosted_loader_trace_vectors_exact`) are
+The 7 vectors at indices 692--698 (`hosted_loader_trace_vectors_exact`) are
 `loaderDecide` along the `spawn-loader` scenario's requests (#571), on the
 loader model's own states: the load claiming a source one page below the
 reserved range (rolled back), the same load with the old control word
@@ -485,6 +487,17 @@ reply of the model's step, and `loader_trace_replies` lists those replies
 (the scenario's decisions 517, 257, 1, 2 and 3). `loader_trace_contents` checks
 the started child's bytes through its pages: a text byte in place, a data byte
 copied, and the zero fill past the data segment's file size.
+
+The last 10 vectors (indices 699--708, `hosted_timing_refusal_vectors_exact`)
+are the cross-subject refusal witness (`LeanOS.TimingChannels`, #576, adapter
+34), which the timing-channels image calls on every cross-subject request of
+its observer (ADR 0028). They cover the image's two refusals (naming the live
+peer and a subject never issued) and its own request, then every word the
+witness must pass: no target, no scheduled subject, a latch busy in an entry,
+halted or with an unknown mode word, and maximum words.
+`timing_refusal_vectors_expected` lists every expected word, and
+`TimingBudget.crossSubjectRefusal_agrees` proves the witness answers exactly
+`CompositeState.refusesCrossSubject` on the encoded words.
 
 ## Post-state corpus (hosted only)
 

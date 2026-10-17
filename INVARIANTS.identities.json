@@ -9573,6 +9573,12 @@
     },
     {
       "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.leaseSignal_boot",
+      "display": "leaseSignal_boot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
       "qualified": "LeanOS.DhcpSubject.nonholder_refused",
       "display": "nonholder_refused",
       "kind": "theorem"
@@ -9615,6 +9621,12 @@
     },
     {
       "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.run_leaseSignal_iff_lease",
+      "display": "run_leaseSignal_iff_lease",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
       "qualified": "LeanOS.DhcpSubject.run_mem_outside_windows",
       "display": "run_mem_outside_windows",
       "kind": "theorem"
@@ -9641,6 +9653,18 @@
       "source": "LeanOS/DhcpSubject.lean",
       "qualified": "LeanOS.DhcpSubject.sendOk_route",
       "display": "sendOk_route",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_leaseSignal_set",
+      "display": "step_leaseSignal_set",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DhcpSubject.lean",
+      "qualified": "LeanOS.DhcpSubject.step_leaseSignal_stays",
+      "display": "step_leaseSignal_stays",
       "kind": "theorem"
     },
     {
@@ -22521,6 +22545,12 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_timing_refusal_vectors_exact",
+      "display": "hosted_timing_refusal_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_user_copy_policy_vectors_exact",
       "display": "hosted_user_copy_policy_vectors_exact",
       "kind": "theorem"
@@ -22937,6 +22967,12 @@
       "source": "LeanOS/Oracle/Spawn.lean",
       "qualified": "LeanOS.Oracle.spawn_syscall_vectors_expected",
       "display": "spawn_syscall_vectors_expected",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle/Timing.lean",
+      "qualified": "LeanOS.Oracle.timing_refusal_vectors_expected",
+      "display": "timing_refusal_vectors_expected",
       "kind": "theorem"
     },
     {
@@ -25575,6 +25611,12 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_copy_check_refinement",
+      "display": "frame_copy_check_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.frame_copy_window",
       "display": "frame_copy_window",
       "kind": "theorem"
@@ -25583,6 +25625,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.frame_ownership_exclusive",
       "display": "frame_ownership_exclusive",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_port_check_refinement",
+      "display": "frame_port_check_refinement",
       "kind": "theorem"
     },
     {
@@ -25701,6 +25749,12 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_decide_refinement",
+      "display": "loader_decide_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.loader_exact_admitted_segments",
       "display": "loader_exact_admitted_segments",
       "kind": "theorem"
@@ -25721,6 +25775,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.loader_reserved_range_only",
       "display": "loader_reserved_range_only",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.loader_source_refinement",
+      "display": "loader_source_refinement",
       "kind": "theorem"
     },
     {
@@ -26061,8 +26121,20 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_syscall_refinement",
+      "display": "spawn_syscall_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.spawn_syscall_refines_gate",
       "display": "spawn_syscall_refines_gate",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.spawn_syscall_value_refinement",
+      "display": "spawn_syscall_value_refinement",
       "kind": "theorem"
     },
     {
@@ -26099,6 +26171,18 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.timer_server_alarm_policy",
       "display": "timer_server_alarm_policy",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.timing_no_user_clock",
+      "display": "timing_no_user_clock",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.timing_refusal_fixed_budget",
+      "display": "timing_refusal_fixed_budget",
       "kind": "theorem"
     },
     {
@@ -29021,6 +29105,102 @@
       "source": "LeanOS/TimerServer.lean",
       "qualified": "LeanOS.TimerServer.wake_only_by_holder",
       "display": "wake_only_by_holder",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.clock_controls_deny_user_counters",
+      "display": "clock_controls_deny_user_counters",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.clock_controls_require_tsd",
+      "display": "clock_controls_require_tsd",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.crossSubjectRefusal_agrees",
+      "display": "crossSubjectRefusal_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.departure_fixed",
+      "display": "departure_fixed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.departure_not_early",
+      "display": "departure_not_early",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.departure_overrun",
+      "display": "departure_overrun",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.departure_within",
+      "display": "departure_within",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.refusal_fixed_budget",
+      "display": "refusal_fixed_budget",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.refusal_words_public",
+      "display": "refusal_words_public",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.subjectWord_some_inj",
+      "display": "subjectWord_some_inj",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.subjectWord_some_ne_zero",
+      "display": "subjectWord_some_ne_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingBudget.lean",
+      "qualified": "LeanOS.TimingBudget.subjectWord_some_toNat",
+      "display": "subjectWord_some_toNat",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingChannels.lean",
+      "qualified": "LeanOS.TimingChannels.crossSubjectRefusal_cases",
+      "display": "crossSubjectRefusal_cases",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingChannels.lean",
+      "qualified": "LeanOS.TimingChannels.crossSubjectRefusal_own",
+      "display": "crossSubjectRefusal_own",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingChannels.lean",
+      "qualified": "LeanOS.TimingChannels.crossSubjectRefusal_refused",
+      "display": "crossSubjectRefusal_refused",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/TimingChannels.lean",
+      "qualified": "LeanOS.TimingChannels.refusedWord_ne_passWord",
+      "display": "refusedWord_ne_passWord",
       "kind": "theorem"
     },
     {

@@ -19,7 +19,7 @@
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 blocked-subjects=2,3 capabilities=device
 @10/NET@ event=refuse subject=1 op=fetch reason=not-holder model=refused
-@10/DEVICE@ event=bind subject=1 device=frame-source image-bytes=29220 policy=admitted window=512 config=none dma=none result=PASS
+@10/DEVICE@ event=bind subject=1 device=frame-source image-bytes=31108 policy=admitted window=512 config=none dma=none result=PASS
 @10/NET@ event=deliver subject=1 frame=1 bytes=6 kind=link port=2
 @10/IPC@ event=send sender=1 endpoint=12 payload0=6 payload1=1 receiver=2 accepted=1
 @8/PAGING@ root=B selected=1 result=PASS
@@ -82,25 +82,24 @@
 @8/PAGING@ root=B selected=1 result=PASS
 @10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
 @10/NET@ event=fetch subject=2 frame=7 bytes=1 window=own-page model=accepted
-@10/NET@ event=send subject=2 frame=7 bytes=342 window=own-page model=accepted
 @10/IPC@ event=block subject=2 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=7 port=2 sent-bytes=342 reference=dhcp-client
-@10/NET@ event=deliver subject=1 frame=8 bytes=342 kind=ethernet port=2
-@10/IPC@ event=send sender=1 endpoint=12 payload0=342 payload1=8 receiver=2 accepted=1
+@10/NET@ event=checked frame=7 port=2 sent=none reference=dhcp-client
+@10/NET@ event=deliver subject=1 frame=8 bytes=1 kind=tick port=2
+@10/IPC@ event=send sender=1 endpoint=12 payload0=1 payload1=8 receiver=2 accepted=1
 @8/PAGING@ root=B selected=1 result=PASS
 @10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
-@10/NET@ event=fetch subject=2 frame=8 bytes=342 window=own-page model=accepted
+@10/NET@ event=fetch subject=2 frame=8 bytes=1 window=own-page model=accepted
 @10/IPC@ event=block subject=2 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
 @10/NET@ event=checked frame=8 port=2 sent=none reference=dhcp-client
-@10/NET@ event=deliver subject=1 frame=9 bytes=342 kind=ethernet port=2
-@10/IPC@ event=send sender=1 endpoint=12 payload0=342 payload1=9 receiver=2 accepted=1
+@10/NET@ event=deliver subject=1 frame=9 bytes=1 kind=tick port=2
+@10/IPC@ event=send sender=1 endpoint=12 payload0=1 payload1=9 receiver=2 accepted=1
 @8/PAGING@ root=B selected=1 result=PASS
 @10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
-@10/NET@ event=fetch subject=2 frame=9 bytes=342 window=own-page model=accepted
+@10/NET@ event=fetch subject=2 frame=9 bytes=1 window=own-page model=accepted
 @10/NET@ event=send subject=2 frame=9 bytes=342 window=own-page model=accepted
 @10/IPC@ event=block subject=2 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
@@ -120,8 +119,27 @@
 @8/PAGING@ root=B selected=1 result=PASS
 @10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
 @10/NET@ event=fetch subject=2 frame=11 bytes=342 window=own-page model=accepted
+@10/NET@ event=send subject=2 frame=11 bytes=342 window=own-page model=accepted
+@10/IPC@ event=block subject=2 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=11 port=2 sent-bytes=342 reference=dhcp-client
+@10/NET@ event=deliver subject=1 frame=12 bytes=342 kind=ethernet port=2
+@10/IPC@ event=send sender=1 endpoint=12 payload0=342 payload1=12 receiver=2 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
+@10/NET@ event=fetch subject=2 frame=12 bytes=342 window=own-page model=accepted
+@10/IPC@ event=block subject=2 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=12 port=2 sent=none reference=dhcp-client
+@10/NET@ event=deliver subject=1 frame=13 bytes=342 kind=ethernet port=2
+@10/IPC@ event=send sender=1 endpoint=12 payload0=342 payload1=13 receiver=2 accepted=1
+@8/PAGING@ root=B selected=1 result=PASS
+@10/IPC@ event=dispatch subject=2 address-space=2 woken=1 payload=exact
+@10/NET@ event=fetch subject=2 frame=13 bytes=342 window=own-page model=accepted
 @10/IPC@ event=send sender=2 endpoint=13 payload0=2200302862670 payload1=167772688 receiver=3 accepted=1
-@10/NET@ event=handoff from=2 to=3 frame=11 lease=10.0.2.16 route=3 model=accepted
+@10/NET@ event=handoff from=2 to=3 frame=13 lease=10.0.2.16 route=3 model=accepted
 @8/PAGING@ root=C selected=1 result=PASS
 @10/IPC@ event=dispatch subject=3 address-space=3 woken=1 endpoint=13 payload=lease
 @10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
@@ -130,63 +148,64 @@
 @10/IPC@ event=block subject=2 endpoint=12 empty=1 routed=3 parked=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=11 port=2 sent=none reference=dhcp-client
-@10/NET@ event=deliver subject=1 frame=12 bytes=60 kind=ethernet port=3
-@10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=12 receiver=3 accepted=1
-@8/PAGING@ root=C selected=1 result=PASS
-@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
-@10/NET@ event=fetch subject=3 frame=12 bytes=60 window=own-page model=accepted
-@10/NET@ event=send subject=3 frame=12 bytes=42 window=own-page model=accepted
-@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
-@8/PAGING@ root=A selected=1 resumed=1 result=PASS
-@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=12 port=3 sent-bytes=42 reference=echo-responder
-@10/NET@ event=deliver subject=1 frame=13 bytes=68 kind=ethernet port=3
-@10/IPC@ event=send sender=1 endpoint=12 payload0=68 payload1=13 receiver=3 accepted=1
-@8/PAGING@ root=C selected=1 result=PASS
-@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
-@10/NET@ event=fetch subject=3 frame=13 bytes=68 window=own-page model=accepted
-@10/NET@ event=send subject=3 frame=13 bytes=68 window=own-page model=accepted
-@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
-@8/PAGING@ root=A selected=1 resumed=1 result=PASS
-@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=13 port=3 sent-bytes=68 reference=echo-responder
+@10/NET@ event=checked frame=13 port=2 sent=none reference=dhcp-client
+@10/NET@ event=lease-signal frame=13 set=1 route=3 driver-sees=route-only model=agree
 @10/NET@ event=deliver subject=1 frame=14 bytes=60 kind=ethernet port=3
 @10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=14 receiver=3 accepted=1
 @8/PAGING@ root=C selected=1 result=PASS
 @10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
 @10/NET@ event=fetch subject=3 frame=14 bytes=60 window=own-page model=accepted
-@10/NET@ event=send subject=3 frame=14 bytes=60 window=own-page model=accepted
+@10/NET@ event=send subject=3 frame=14 bytes=42 window=own-page model=accepted
 @10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=14 port=3 sent-bytes=60 reference=echo-responder
-@10/NET@ event=deliver subject=1 frame=15 bytes=60 kind=ethernet port=3
-@10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=15 receiver=3 accepted=1
+@10/NET@ event=checked frame=14 port=3 sent-bytes=42 reference=echo-responder
+@10/NET@ event=deliver subject=1 frame=15 bytes=68 kind=ethernet port=3
+@10/IPC@ event=send sender=1 endpoint=12 payload0=68 payload1=15 receiver=3 accepted=1
 @8/PAGING@ root=C selected=1 result=PASS
 @10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
-@10/NET@ event=fetch subject=3 frame=15 bytes=60 window=own-page model=accepted
+@10/NET@ event=fetch subject=3 frame=15 bytes=68 window=own-page model=accepted
+@10/NET@ event=send subject=3 frame=15 bytes=68 window=own-page model=accepted
 @10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=15 port=3 sent=none reference=echo-responder
-@10/NET@ event=deliver subject=1 frame=16 bytes=52 kind=ethernet port=3
-@10/IPC@ event=send sender=1 endpoint=12 payload0=52 payload1=16 receiver=3 accepted=1
+@10/NET@ event=checked frame=15 port=3 sent-bytes=68 reference=echo-responder
+@10/NET@ event=deliver subject=1 frame=16 bytes=60 kind=ethernet port=3
+@10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=16 receiver=3 accepted=1
 @8/PAGING@ root=C selected=1 result=PASS
 @10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
-@10/NET@ event=fetch subject=3 frame=16 bytes=52 window=own-page model=accepted
+@10/NET@ event=fetch subject=3 frame=16 bytes=60 window=own-page model=accepted
+@10/NET@ event=send subject=3 frame=16 bytes=60 window=own-page model=accepted
 @10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
-@10/NET@ event=checked frame=16 port=3 sent=none reference=echo-responder
-@10/NET@ event=deliver subject=1 frame=17 bytes=1 kind=tick port=3
-@10/IPC@ event=send sender=1 endpoint=12 payload0=1 payload1=17 receiver=3 accepted=1
+@10/NET@ event=checked frame=16 port=3 sent-bytes=60 reference=echo-responder
+@10/NET@ event=deliver subject=1 frame=17 bytes=60 kind=ethernet port=3
+@10/IPC@ event=send sender=1 endpoint=12 payload0=60 payload1=17 receiver=3 accepted=1
 @8/PAGING@ root=C selected=1 result=PASS
 @10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
-@10/NET@ event=fetch subject=3 frame=17 bytes=1 window=own-page model=accepted
+@10/NET@ event=fetch subject=3 frame=17 bytes=60 window=own-page model=accepted
 @10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
 @8/PAGING@ root=A selected=1 resumed=1 result=PASS
 @10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
 @10/NET@ event=checked frame=17 port=3 sent=none reference=echo-responder
+@10/NET@ event=deliver subject=1 frame=18 bytes=52 kind=ethernet port=3
+@10/IPC@ event=send sender=1 endpoint=12 payload0=52 payload1=18 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=18 bytes=52 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=18 port=3 sent=none reference=echo-responder
+@10/NET@ event=deliver subject=1 frame=19 bytes=1 kind=tick port=3
+@10/IPC@ event=send sender=1 endpoint=12 payload0=1 payload1=19 receiver=3 accepted=1
+@8/PAGING@ root=C selected=1 result=PASS
+@10/IPC@ event=dispatch subject=3 address-space=3 woken=1 payload=exact
+@10/NET@ event=fetch subject=3 frame=19 bytes=1 window=own-page model=accepted
+@10/IPC@ event=block subject=3 endpoint=12 empty=1 result=PASS
+@8/PAGING@ root=A selected=1 resumed=1 result=PASS
+@10/IPC@ event=dispatch subject=1 address-space=1 resumed=1
+@10/NET@ event=checked frame=19 port=3 sent=none reference=echo-responder
 @10/DEVICE@ event=end subject=1 status=0 code=0
-@10/FINAL@ status=PASS subjects=3 dhcp-subject=2 echo-subject=3 device-holder=1 frames=17 dhcp-frames=11 echo-frames=6 fetches=17 sends=8 checked=17 refusals=4 ipc-edges=74
+@10/FINAL@ status=PASS subjects=3 dhcp-subject=2 echo-subject=3 device-holder=1 frames=19 dhcp-frames=13 echo-frames=6 fetches=19 sends=8 checked=19 refusals=4 ipc-edges=82 lease-signal=1 ticks=5 retransmits=1

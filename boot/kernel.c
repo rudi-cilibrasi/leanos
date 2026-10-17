@@ -156,6 +156,9 @@ extern uint64_t page_directory_b[], page_table_b[];
 #if defined(LEANOS_GTK_REKEY_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO)
 #error "the gtk-rekey image is the network-subject image with the rekeying frame source"
 #endif
+#if defined(LEANOS_DHCP_BACKOFF_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
+#error "the dhcp-backoff image is the dhcp-subject image with the slow-server frame source"
+#endif
 #if defined(LEANOS_DHCP_SUBJECT_SCENARIO) && \
     (!defined(LEANOS_THREE_SUBJECT_SCENARIO) || defined(LEANOS_DEVICE_SERVICE_SCENARIO) || \
      defined(LEANOS_CONSOLE_SERVER_SCENARIO) || defined(LEANOS_NETWORK_SUBJECT_SCENARIO))
@@ -1502,9 +1505,12 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     if (cr3 != (uint64_t)expected_cr3) fail("user-return-cr3");
     const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |
         (1ull << 2) | (1ull << 1);
-    const uint64_t required_cr4 = (1ull << 20) | (1ull << 21);
+    /* SMEP, SMAP and TSD required; PKE, OSXSAVE, OSXMMEXCPT, OSFXSR and PCE
+       forbidden.  TSD set and PCE clear leave CPL3 without a cycle counter
+       (ADR 0028, TimingBudget.userReturnClockControls). */
+    const uint64_t required_cr4 = (1ull << 20) | (1ull << 21) | (1ull << 2);
     const uint64_t forbidden_cr4 = (1ull << 22) | (1ull << 18) |
-        (1ull << 10) | (1ull << 9);
+        (1ull << 10) | (1ull << 9) | (1ull << 8);
 #ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
     if (current_subject == 2) {
         const uint64_t injected = cr4 & ((1ull << 22) | (1ull << 18));
@@ -4628,6 +4634,230 @@ static uint64_t notify_reply_syscall(uint64_t number, uint64_t arg0) {
 }
 #endif
 
+#ifdef LEANOS_TIMING_CHANNELS_SCENARIO
+/* Timing-channel measurement harness (issue #576, ADR 0028).  Subject A, the
+   observer, samples each path ADR 0028 names TIMING_SAMPLES times; the
+   kernel reads the time-stamp counter at CPL0 and reports each path's
+   minimum, median and maximum cycle count in one CYCLES record, which the
+   runner keeps as a measurement artifact rather than transcript (counts vary
+   from run to run).  The paths:
+
+   - closed: A's cross-subject request naming B (2, live and blocked) or 9
+     (never issued) is refused by the generated witness
+     leanos_cross_subject_refusal from the latch mode, A's identity and the
+     target's identity alone (TimingBudget.crossSubjectRefusal_agrees), and
+     its reply is padded to TIMING_REFUSAL_BUDGET cycles after entry
+     (TimingBudget.departure).  The unpadded work is reported beside it.
+   - baseline: A's request naming itself, which the witness passes; no
+     padding.
+   - declared: the SMAP copy-in window for 1 and 16 bytes (A chooses the
+     length), and A's send that wakes B, timed from the send's entry to A's
+     next entry, while B runs 0 or TIMING_RECEIVER_WORK iterations before it
+     blocks again (B's run time is visible to the party it talks to).
+
+   A then executes RDTSC at CPL3, which faults because the outbound gate
+   requires CR4.TSD (TimingBudget.clock_controls_deny_user_counters). */
+#define TIMING_SAMPLES 64u
+#define TIMING_REFUSAL_BUDGET UINT64_C(100000)
+#define TIMING_RECEIVER_WORK UINT64_C(4096)
+#define TIMING_MODE_RUNNING UINT64_C(1)
+#define TIMING_REFUSED_WORD UINT64_C(0xc5)
+#define TIMING_PASS_WORD UINT64_C(0)
+extern char user_a_timing_tsc_probe[];
+enum timing_path {
+    TIMING_REFUSAL_PEER, TIMING_REFUSAL_UNISSUED,
+    TIMING_REFUSAL_PEER_WORK, TIMING_REFUSAL_UNISSUED_WORK,
+    TIMING_OWN_REQUEST, TIMING_COPY_1, TIMING_COPY_16,
+    TIMING_IPC_WAKE_IDLE, TIMING_IPC_WAKE_BUSY, TIMING_PATH_COUNT
+};
+static const char *const timing_path_record[TIMING_PATH_COUNT] = {
+    "path=refusal.peer class=closed",
+    "path=refusal.unissued class=closed",
+    "path=refusal.peer.work class=unpadded",
+    "path=refusal.unissued.work class=unpadded",
+    "path=own-request class=baseline",
+    "path=copy-in.1 class=declared source=caller-length",
+    "path=copy-in.16 class=declared source=caller-length",
+    "path=ipc.wake.idle class=declared source=receiver-run",
+    "path=ipc.wake.busy class=declared source=receiver-run",
+};
+static uint64_t timing_samples[TIMING_PATH_COUNT][TIMING_SAMPLES];
+static unsigned timing_counts[TIMING_PATH_COUNT];
+static uint64_t timing_overruns;
+static uint64_t timing_ipc_start;
+static unsigned timing_ipc_path;
+/* 0 B not yet blocked, 1 A runs, 3 B runs after A's send, 4 A resumed after
+   B blocked (its mark is pending), 5 reported (only the TSC probe remains). */
+static unsigned timing_step;
+
+static inline uint64_t timing_cycles(void) {
+    uint32_t low, high;
+    /* LFENCE orders the read after every earlier instruction; this kernel
+       read runs at CPL0, where CR4.TSD does not apply. */
+    __asm__ volatile ("lfence\n\trdtsc" : "=a"(low), "=d"(high) : : "memory");
+    return (uint64_t)high << 32 | low;
+}
+
+/* check_selected_root_a/b without their record (see ipc_stream_switch). */
+static void timing_require_root(const uint64_t *root) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)root) fail("timing-switch-root");
+}
+
+static void timing_record(unsigned path, uint64_t cycles) {
+    if (path >= TIMING_PATH_COUNT || timing_counts[path] >= TIMING_SAMPLES)
+        fail("timing-sample-count");
+    timing_samples[path][timing_counts[path]++] = cycles;
+}
+
+static void timing_report_path(unsigned path) {
+    uint64_t *samples = timing_samples[path];
+    /* Insertion sort in place: the samples are not used again. */
+    for (unsigned i = 1; i < TIMING_SAMPLES; ++i) {
+        uint64_t value = samples[i];
+        unsigned j = i;
+        while (j > 0 && samples[j - 1] > value) {
+            samples[j] = samples[j - 1];
+            --j;
+        }
+        samples[j] = value;
+    }
+    serial_puts(LEANOS_SERIAL_26_CYCLES " ");
+    serial_puts(timing_path_record[path]);
+    serial_puts(" samples="); serial_u64(TIMING_SAMPLES);
+    serial_puts(" min="); serial_u64(samples[0]);
+    serial_puts(" median="); serial_u64(samples[TIMING_SAMPLES / 2]);
+    serial_puts(" max="); serial_u64(samples[TIMING_SAMPLES - 1]);
+    if (path == TIMING_REFUSAL_PEER || path == TIMING_REFUSAL_UNISSUED) {
+        serial_puts(" budget="); serial_u64(TIMING_REFUSAL_BUDGET);
+    }
+    serial_putc('\n');
+}
+
+static uint64_t timing_channels_syscall(uint64_t number, uint64_t arg0,
+                                        uint64_t arg1) {
+    if (number == 113 && current_subject == 2 &&
+        (timing_step == 0 || timing_step == 3)) {
+        /* B blocks on endpoint 10: first before A has run, then after each
+           send that woke it. */
+        if (leanos_blocking_ipc_event(0, 1, 2) != IPC_EVENT_WORD(1, 1, 1, 1, 0))
+            fail("timing-ipc-model-block");
+        current_subject = 1;
+        ipc_stream_step = 1;
+        if (timing_step == 0) {
+            timing_step = 1;
+            ipc_stream_started = 1;
+            return isr80_select(LEANOS_ISR80_PATH_BLOCK_B_ENTER_A);
+        }
+        if (leanos_blocking_ipc_event(3, 4, 2) != IPC_EVENT_WORD(4, 4, 2, 2, 1))
+            fail("timing-ipc-model-delivery");
+        ++ipc_stream_events;
+        timing_step = 4;
+        ipc_resume_word = 0;
+        return isr80_select(IPC_STREAM_RESUME_A);
+    }
+    if (current_subject != 1) fail("timing-subject");
+    if (number == 114 && timing_step == 4) {
+        timing_record(timing_ipc_path, timing_cycles() - timing_ipc_start);
+        timing_step = 1;
+        return 0;
+    }
+    if (timing_step != 1) fail("timing-sequence");
+    if (number == 110) {
+        /* A cross-subject request: RBX names the subject.  The witness reads
+           the latch mode, the caller and the target word, nothing else. */
+        const uint64_t start = timing_cycles();
+        if (arg0 > 255) fail("timing-refusal-target");
+        const uint64_t word = leanos_cross_subject_refusal(
+            TIMING_MODE_RUNNING, current_subject + 1, arg0 + 1);
+        if (arg0 == current_subject) {
+            if (word != TIMING_PASS_WORD) fail("timing-refusal-own");
+            timing_record(TIMING_OWN_REQUEST, timing_cycles() - start);
+            return TIMING_PASS_WORD;
+        }
+        if (word != TIMING_REFUSED_WORD || (arg0 != 2 && arg0 != 9))
+            fail("timing-refusal-witness");
+        const uint64_t work = timing_cycles() - start;
+        uint64_t elapsed;
+        do {
+            elapsed = timing_cycles() - start;
+        } while (elapsed < TIMING_REFUSAL_BUDGET);
+        if (work > TIMING_REFUSAL_BUDGET) ++timing_overruns;
+        timing_record(arg0 == 2 ? TIMING_REFUSAL_PEER_WORK
+                                : TIMING_REFUSAL_UNISSUED_WORK, work);
+        timing_record(arg0 == 2 ? TIMING_REFUSAL_PEER
+                                : TIMING_REFUSAL_UNISSUED, elapsed);
+        return TIMING_REFUSED_WORD;
+    }
+    if (number == 111) {
+        /* The SMAP copy-in window: RBX the address, RCX the length A chose. */
+        const uint64_t start = timing_cycles();
+        if (arg1 != 1 && arg1 != 16) fail("timing-copy-length");
+        if (validate_copy(current_subject, 1, arg0, arg1, 0) != COPY_ALLOWED)
+            fail("timing-copy-policy");
+        smap_copy_from(copy_buffer, (const void *)arg0, arg1);
+        timing_record(arg1 == 1 ? TIMING_COPY_1 : TIMING_COPY_16,
+                      timing_cycles() - start);
+        if (ac_is_set()) fail("timing-copy-ac-set");
+        return arg1;
+    }
+    if (number == 112) {
+        /* A's send on endpoint 10 wakes B, which runs RBX iterations. */
+        timing_ipc_start = timing_cycles();
+        if (arg0 != 0 && arg0 != TIMING_RECEIVER_WORK) fail("timing-ipc-work");
+        if (leanos_blocking_ipc_event(1, 2, 1) != IPC_EVENT_WORD(2, 2, 1, 1, 0) ||
+            leanos_blocking_ipc_event(2, 3, 1) != IPC_EVENT_WORD(3, 3, 2, 2, 0))
+            fail("timing-ipc-model-send");
+        timing_ipc_path = arg0 == 0 ? TIMING_IPC_WAKE_IDLE : TIMING_IPC_WAKE_BUSY;
+        timing_step = 3;
+        ipc_stream_step = 3;
+        current_subject = 2;
+        return isr80_select(LEANOS_ISR80_PATH_WAKE_B);
+    }
+    if (number == 115) {
+        for (unsigned path = 0; path < TIMING_PATH_COUNT; ++path)
+            if (timing_counts[path] != TIMING_SAMPLES) fail("timing-incomplete");
+        if (ipc_stream_events != 2u * TIMING_SAMPLES) fail("timing-ipc-count");
+        /* Every refused reply left at or after its budget (the spin above);
+           check it on the samples before they are reported. */
+        for (unsigned i = 0; i < TIMING_SAMPLES; ++i)
+            if (timing_samples[TIMING_REFUSAL_PEER][i] < TIMING_REFUSAL_BUDGET ||
+                timing_samples[TIMING_REFUSAL_UNISSUED][i] < TIMING_REFUSAL_BUDGET)
+                fail("timing-refusal-early");
+        for (unsigned path = 0; path < TIMING_PATH_COUNT; ++path)
+            timing_report_path(path);
+        serial_puts(LEANOS_SERIAL_26_CYCLES " path=refusal class=closed overruns=");
+        serial_u64(timing_overruns);
+        serial_putc('\n');
+        serial_puts(LEANOS_SERIAL_26_REFUSAL " subject=1 targets=2,9 own=1 witness=generated reads=mode,scheduled,target reply=197 own-reply=0 budget=100000 departures=at-or-after-budget samples=128 result=PASS\n");
+        serial_puts(LEANOS_SERIAL_10_IPC " event=wakes subject=1 endpoint=10 receiver=2 deliveries=128 receiver-work=0,4096 result=PASS\n");
+        timing_step = 5;
+        return 0;
+    }
+    fail("timing-syscall");
+}
+
+/* RDTSC at CPL3 with CR4.TSD set raised #GP(0) (isr13).  The probe is A's
+   last instruction; the image ends here. */
+uint64_t timing_tsc_denial_handler(uint64_t error, uint64_t rip,
+                                   uint64_t saved_cs, uint64_t saved_rdx,
+                                   uint64_t saved_rax) {
+    (void)saved_rdx; (void)saved_rax;
+    uint64_t cr3, cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    if (saved_cs != 0x23 || error != 0 ||
+        rip != (uint64_t)user_a_timing_tsc_probe || current_subject != 1 ||
+        timing_step != 5 || cr3 != (uint64_t)page_map_level_4_a ||
+        (cr4 & (UINT64_C(1) << 2)) == 0 || (cr4 & (UINT64_C(1) << 8)) != 0)
+        fail("timing-tsc-denial-binding");
+    serial_puts(LEANOS_SERIAL_26_TSC_DENIAL " subject=1 vector=13 error=0 origin=cpl3 instruction=rdtsc cr4.tsd=1 cr4.pce=0 result=PASS\n");
+    serial_puts(LEANOS_SERIAL_10_FINAL " status=PASS paths=9 samples=64 refusals=128 copies=128 wakes=128 tsc-denied=1\n");
+    finish(0x10);
+}
+#endif
+
 static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint64_t arg0,
         uint64_t arg1) {
     if (number == 7 && current_subject == 2 && ipc_stream_step == 0) {
@@ -4741,7 +4971,15 @@ static __attribute__((unused)) uint64_t ipc_stream_syscall(uint64_t number, uint
 
 static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
                               uint64_t saved_owner) {
+    /* The timing image (#576) checks every switch but records only A's first
+       dispatch: a record per switch would be serial output inside the round
+       trip it times. */
     if (current_subject == 1 && ipc_stream_step == 1) {
+#ifdef LEANOS_TIMING_CHANNELS_SCENARIO
+        if (ipc_stream_events > 0)
+            timing_require_root(page_map_level_4_a);
+        else
+#endif
         check_selected_root_a();
         if (target_owner != 1 || saved_owner != 2) fail("ipc-stream-switch-a-owner");
         check_original_frame(saved_context_b, saved_context_b_original_rip,
@@ -4749,15 +4987,24 @@ static void ipc_stream_switch(uint64_t *target, uint64_t target_owner,
         if (ipc_stream_events > 0)
             check_original_frame(target, saved_context_a_original_rip,
                 saved_context_a_original_flags, saved_context_a_original_rsp, 1);
-        serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=2\n");
+#ifdef LEANOS_TIMING_CHANNELS_SCENARIO
+        if (ipc_stream_events == 0)
+#endif
+            serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=1 address-space=1 blocked-subject=2\n");
         return;
     }
     if (current_subject == 2 && ipc_stream_step == 3) {
+#ifdef LEANOS_TIMING_CHANNELS_SCENARIO
+        timing_require_root(page_map_level_4_b);
+#else
         check_selected_root_b();
+#endif
         if (target_owner != 2 || saved_owner != 1) fail("ipc-stream-switch-b-owner");
         check_original_frame(target, saved_context_b_original_rip,
             saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+#ifndef LEANOS_TIMING_CHANNELS_SCENARIO
         serial_puts(LEANOS_SERIAL_10_IPC " event=dispatch subject=2 address-space=2 woken=1\n");
+#endif
         return;
     }
     fail("ipc-stream-switch");
@@ -6532,7 +6779,19 @@ static void network_switch(uint64_t *target, uint64_t target_owner,
    The device table is checked at boot against `leanos_device_authorize`
    (KeyboardEcho.deviceAuthorize: only A holds device 0), and every exchange
    on endpoints 12 and 13 against `leanos_blocking_ipc_event`, the woken
-   subject in the model's receiver role. */
+   subject in the model's receiver role.
+
+   The lease signal (issue #573): at the hand-off the kernel stores 1 in the
+   scratch word LeanOS.Net.FrameSource.leaseSignalAt, and at no other time.
+   It tells the driver program only that the route moved to the echo
+   subject (DhcpSubject.leaseSignal), never the leased address; the BCM43224
+   serve program starts its serve window on it.  The frame source checks the
+   word after every record and reports it once, for the record that drew
+   the hand-off.
+
+   The dhcp-backoff image (issue #573, LEANOS_DHCP_BACKOFF_SCENARIO) is this
+   image with the frame source `net-q35-dhcp-backoff`: a server that answers
+   only after the client has retransmitted on the RFC 2131 schedule. */
 extern char user_b_template_text[], user_c_template_text[];
 #define DHCP_FRAME_ENDPOINT 12u
 #define DHCP_LEASE_ENDPOINT 13u
@@ -6569,6 +6828,7 @@ extern char user_b_template_text[], user_c_template_text[];
 #define DHCP_RX_AT 0x3E000u
 #define DHCP_TX_AT 0x3E800u
 #define DHCP_TX_LEN_AT 0x3F000u
+#define DHCP_LEASE_SIGNAL_AT 0x3F004u
 #define DHCP_LINK_BYTES 6u
 #define DHCP_TICK_BYTES 1u
 #define DHCP_FRAME_MIN 14u
@@ -6581,6 +6841,7 @@ extern char user_b_template_text[], user_c_template_text[];
 /* The frame source's records (LeanOS.Net.FrameSource.Tag). */
 #define DHCP_TAG_REPLY_MATCHED 0x5101u
 #define DHCP_TAG_NO_REPLY_MATCHED 0x5102u
+#define DHCP_TAG_LEASE_SIGNAL 0x5106u
 #define DHCP_MODEL_SENDER 1u
 #define DHCP_MODEL_RECEIVER 2u
 
@@ -6589,7 +6850,11 @@ extern char user_b_template_text[], user_c_template_text[];
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "../hardware/wifi/wifi-gen-exec.h"
 #pragma GCC diagnostic pop
+#ifdef LEANOS_DHCP_BACKOFF_SCENARIO
+#include "dhcp-backoff-program.h"
+#else
 #include "dhcp-subject-program.h"
+#endif
 
 static const char *const dhcp_reasons[] = {
     "none", "not-holder", "not-own-window", "not-routed", "endpoint-state",
@@ -6625,6 +6890,9 @@ static uint64_t dhcp_tx_len, dhcp_sent_len, dhcp_sent_seq, dhcp_record_port;
 static uint64_t dhcp_fetches, dhcp_sends, dhcp_checked, dhcp_refusals;
 static uint64_t dhcp_lease_mac, dhcp_lease_ip, dhcp_handoff_seq;
 static uint64_t dhcp_client_records, dhcp_echo_records;
+/* The frame source's lease-signal records (issue #573), and the ticks the
+   DHCP subject was served and the frames it sent on them. */
+static uint64_t dhcp_lease_signals, dhcp_ticks, dhcp_tick_sends;
 /* Blocking-IPC cycles: B on endpoint 12, C on endpoint 13, C on endpoint
    12 (LeanOS.BlockingIPC's four edges each). */
 static uint64_t dhcp_cycle_b12, dhcp_cycle_c13, dhcp_cycle_c12, dhcp_ipc_edges;
@@ -6663,6 +6931,19 @@ __attribute__((noinline, noipa)) void wifi_hook_delay_us(uint32_t us) {
 void wifi_hook_print(uint32_t tag, uint32_t value) {
     uint64_t record = (value >> 16) + 1u;
     uint64_t bytes = value & 0xffffu;
+    if (tag == DHCP_TAG_LEASE_SIGNAL) {
+        /* The frame source saw the signal set after the record that drew
+           the hand-off, and unset after every record before it. */
+        if ((uint64_t)value + 1u != dhcp_seq || dhcp_handoff_seq != dhcp_seq ||
+            dhcp_route != DHCP_ECHO || dhcp_lease_signals != 0 ||
+            *(volatile uint32_t *)(wifi_scratch + DHCP_LEASE_SIGNAL_AT) != 1u)
+            fail("dhcp-lease-signal");
+        dhcp_lease_signals++;
+        serial_puts(LEANOS_SERIAL_10_NET " event=lease-signal frame=");
+        serial_u64(dhcp_seq);
+        serial_puts(" set=1 route=3 driver-sees=route-only model=agree\n");
+        return;
+    }
     if (tag == DHCP_TAG_NO_REPLY_MATCHED) {
         record = (uint64_t)value + 1u;
         bytes = 0;
@@ -6964,6 +7245,7 @@ static uint64_t dhcp_next_record(void) {
             dhcp_sent_len = 0;
             dhcp_record_port = dhcp_route;
             ++dhcp_seq;
+            if (code == DHCP_TICK_BYTES && dhcp_route == DHCP_CLIENT) dhcp_ticks++;
             serial_puts(LEANOS_SERIAL_10_NET " event=deliver subject=1 frame=");
             serial_u64(dhcp_seq);
             serial_puts(" bytes=");
@@ -7051,6 +7333,7 @@ static uint64_t dhcp_copy(uint64_t number, uint64_t addr, uint64_t len) {
         dhcp_sent_len = len;
         dhcp_sent_seq = dhcp_seq;
         dhcp_sends++;
+        if (dhcp_rx_len == DHCP_TICK_BYTES) dhcp_tick_sends++;
     }
     serial_puts(LEANOS_SERIAL_10_NET " event=");
     serial_puts(name);
@@ -7144,6 +7427,8 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
         dhcp_lease_ip = arg1;
         dhcp_handoff_seq = dhcp_seq;
         dhcp_route = DHCP_ECHO;
+        /* The lease signal: the route moved; the driver learns nothing else. */
+        *(volatile uint32_t *)(wifi_scratch + DHCP_LEASE_SIGNAL_AT) = 1u;
         dhcp_phase = DHCP_PHASE_C_LEASED;
         current_subject = DHCP_ECHO;
         serial_puts(LEANOS_SERIAL_10_IPC " event=send sender=2 endpoint=13 payload0=");
@@ -7209,7 +7494,8 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
             dhcp_client_records != dhcp_handoff_seq ||
             dhcp_echo_records != dhcp_seq - dhcp_handoff_seq ||
             !dhcp_b_waiting || !dhcp_c_waiting || dhcp_c_waiting_lease ||
-            dhcp_refusals != 4 || dhcp_cycle_b12 != 1 || dhcp_cycle_c13 != 0 ||
+            dhcp_refusals != 4 || dhcp_lease_signals != 1 ||
+            dhcp_cycle_b12 != 1 || dhcp_cycle_c13 != 0 ||
             dhcp_cycle_c12 != 1 ||
             dhcp_ipc_edges != 4 * dhcp_seq + 1 + 1 + 4)
             fail("dhcp-subject-count");
@@ -7222,6 +7508,9 @@ static uint64_t dhcp_subject_syscall(uint64_t number, uint64_t arg0,
         serial_puts(" checked="); serial_u64(dhcp_checked);
         serial_puts(" refusals="); serial_u64(dhcp_refusals);
         serial_puts(" ipc-edges="); serial_u64(dhcp_ipc_edges);
+        serial_puts(" lease-signal="); serial_u64(dhcp_lease_signals);
+        serial_puts(" ticks="); serial_u64(dhcp_ticks);
+        serial_puts(" retransmits="); serial_u64(dhcp_tick_sends);
 #ifdef LEANOS_FRAME_WINDOW_SCENARIO
         if (frame_window_copies != dhcp_fetches + dhcp_sends) fail("frame-window-count");
         serial_puts(" window-copies="); serial_u64(frame_window_copies);
@@ -8995,6 +9284,15 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 #ifdef LEANOS_NOTIFY_REPLY_SCENARIO
     (void)arg1; (void)arg2; (void)saved_flags;
     return notify_reply_syscall(number, arg0);
+#elif defined(LEANOS_TIMING_CHANNELS_SCENARIO)
+    (void)arg2; (void)saved_flags;
+    {
+        /* A real call, as for the endpoint directory: the entry-stack gate
+           must see the edge under every supported compiler. */
+        uint64_t timing_result = timing_channels_syscall(number, arg0, arg1);
+        __asm__ volatile ("" : "+r"(timing_result));
+        return timing_result;
+    }
 #elif defined(LEANOS_IPC_STREAM_SCENARIO)
     (void)arg2; (void)saved_flags;
     return ipc_stream_syscall(number, arg0, arg1);
@@ -10610,6 +10908,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=spawn-loader controls=wp,smep,smap boundary=generated-spawn-syscall,generated-loader\n");
 #elif defined(LEANOS_THREE_SUBJECT_SCENARIO)
     serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=3 schedule=three-subject controls=wp,smep,smap\n");
+#elif defined(LEANOS_TIMING_CHANNELS_SCENARIO)
+    serial_puts(LEANOS_SERIAL_10_BOOT " target=x86_64-q35 subjects=2 schedule=timing-channels controls=wp,smep,smap,tsd samples=64 refusal-budget=100000\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts(LEANOS_SERIAL_6_BOOT " target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
@@ -10659,13 +10959,16 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         (1ull << 2) | (1ull << 1);
     const uint64_t forbidden_cr4 =
         (1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);
+    /* ADR 0028: CR4.TSD makes RDTSC/RDTSCP privileged and a clear CR4.PCE
+       keeps RDPMC so; CPL3 has no cycle counter to time the kernel with. */
     if ((cr0 & required_cr0) != required_cr0 ||
         (cr4 & forbidden_cr4) != 0 ||
-        (cr4 & (1ull << 20)) == 0 || (cr4 & (1ull << 21)) == 0) {
+        (cr4 & (1ull << 20)) == 0 || (cr4 & (1ull << 21)) == 0 ||
+        (cr4 & (1ull << 2)) == 0 || (cr4 & (1ull << 8)) != 0) {
         fail("supervisor-controls");
     }
     record_extended_state_cpuid();
-    serial_puts(LEANOS_SERIAL_6_CONTROL " cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
+    serial_puts(LEANOS_SERIAL_6_CONTROL " cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 cr4.tsd=1 cr4.pce=0 ac=0 stage=exception-path-ready\n");
     supervisor_probe = 1;
     run_wp_probe();
     if (supervisor_probe != 2) fail("wp-no-fault");

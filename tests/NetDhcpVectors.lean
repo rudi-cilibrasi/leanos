@@ -11,7 +11,12 @@ Hosted vectors for the DHCP subject's client (issue #556).
    `LeanOS.Wifi.Dhcp.Client.handle` on every frame from both waiting states
    (`selecting` and `requesting`): the server's OFFER, ACK and NAK, replies
    for another transaction, another hardware address and another server,
-   each with single-byte corruptions of every byte and truncations.
+   each with single-byte corruptions of every byte and truncations. On
+   ticks it must follow RFC 2131's retransmission schedule (issue #573):
+   each tick agrees with the proved timer model `DhcpClient.Timer.tick`,
+   and the waits between retransmissions are 4, 8, 16, 32, then 64 ticks,
+   each within ±1 (an independent statement of the RFC's schedule), for
+   DISCOVER and REQUEST and over many transaction ids.
 2. It then prints vectors for the differential test of the generated C
    (`scripts/check-dhcp-subject-host.sh`): the registers before, the record,
    the frame the model sends (`-` for none) and the registers after.
@@ -112,15 +117,91 @@ def main (args : List String) : IO UInt32 := do
           ok := false
         compared := compared + 1
         lines := lines.push s!"{regsHex r} {hex g} {(got.map hex).getD "-"} {regsHex regs'}"
-  -- 3. Ticks: retransmissions while selecting and requesting, and the
-  -- restart after the third unanswered REQUEST.
-  let mut t := requesting xid0 nakedIp serverIp
-  for _ in [0:9] do
+  -- 3. Ticks: the RFC 2131 retransmission schedule (issue #573). The waits
+  -- are checked against an independent statement of the RFC's schedule
+  -- (4, 8, 16, 32, then 64 seconds, ±1), each tick against the proved
+  -- timer model `DhcpClient.Timer.tick`, and each frame against
+  -- `Wifi.Dhcp`.
+  let rfcBase (n : Nat) : Nat := min (4 * 2 ^ n) 64
+  let discover0 := toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid0)
+  let request0 := toEthernet (LeanOS.Wifi.Dhcp.request macArray xid0 nakedIp serverIp)
+  let discover1 := toEthernet (LeanOS.Wifi.Dhcp.discover macArray xid1)
+  -- 3a. selecting, right after the first DISCOVER: six retransmissions.
+  let mut t := selecting xid0
+  let mut gaps : Array Nat := #[]
+  let mut since := 0
+  for _ in [0:200] do
     let (t', got) := DhcpClient.stepRecord t tick
     lines := lines.push s!"{regsHex t} {hex tick} {(got.map hex).getD "-"} {regsHex t'}"
+    let (want, sent) := (DhcpClient.Timer.ofRegs t).tick
+    if DhcpClient.Timer.ofRegs t' != want || got.isSome != (sent != .none) ||
+        (got.isSome && got.map (·.toList) != some discover0.toList) then
+      IO.eprintln s!"error: selecting tick from {regsHex t}: {regsHex t'} {got.map hex}"
+      ok := false
+    since := since + 1
+    if got.isSome then
+      gaps := gaps.push since
+      since := 0
     t := t'
-  if t.getD 0 0 != 1 || t.getD 1 0 != xid1.toUInt64 then
-    IO.eprintln s!"error: three unanswered REQUESTs did not restart: {regsHex t}"
+  if gaps.size < 6 then
+    IO.eprintln s!"error: {gaps.size} DISCOVER retransmissions in 200 ticks"
+    ok := false
+  for k in [0:gaps.size] do
+    -- the retransmission count saturates at `backoffSteps` (4): the wait
+    -- stays 64 ±1 from then on
+    let d := (DhcpClient.retransmitDelay xid0.toUInt64 (min k 4).toUInt64).toNat
+    if gaps[k]! != d || gaps[k]! + 1 < rfcBase k || gaps[k]! > rfcBase k + 1 then
+      IO.eprintln s!"error: DISCOVER retransmission {k} after {gaps[k]!} ticks, RFC base {rfcBase k}"
+      ok := false
+  -- 3b. requesting: two REQUEST retransmissions, then DISCOVER with the
+  -- next transaction id after the third REQUEST's wait.
+  let mut r := requesting xid0 nakedIp serverIp
+  let mut sends : Array (Nat × List UInt8) := #[]
+  since := 0
+  for _ in [0:40] do
+    let (r', got) := DhcpClient.stepRecord r tick
+    lines := lines.push s!"{regsHex r} {hex tick} {(got.map hex).getD "-"} {regsHex r'}"
+    let (want, sent) := (DhcpClient.Timer.ofRegs r).tick
+    if DhcpClient.Timer.ofRegs r' != want || got.isSome != (sent != .none) then
+      IO.eprintln s!"error: requesting tick from {regsHex r}: {regsHex r'}"
+      ok := false
+    since := since + 1
+    if let some g := got then
+      sends := sends.push (since, g.toList)
+      since := 0
+    r := r'
+  let d (n : Nat) := (DhcpClient.retransmitDelay xid0.toUInt64 n.toUInt64).toNat
+  let wantSends := [(d 0, request0.toList), (d 1, request0.toList), (d 2, discover1.toList)]
+  if sends.toList.take wantSends.length != wantSends ||
+      (DhcpClient.Timer.ofRegs r).phase != 1 || (DhcpClient.Timer.ofRegs r).xid != xid1.toUInt64 then
+    IO.eprintln s!"error: unanswered REQUESTs: {sends.toList.map (·.1)}, ended {regsHex r}"
+    ok := false
+  for k in [0:3] do
+    if d k + 1 < rfcBase k || d k > rfcBase k + 1 then
+      IO.eprintln s!"error: REQUEST wait {k} is {d k} ticks, RFC base {rfcBase k}"
+      ok := false
+  -- 3c. Many transactions: every wait within ±1 of the RFC's base, and the
+  -- jitter takes each of -1, 0 and +1 (no vectors written).
+  let mut jitters : List Int := []
+  for x in [0:96] do
+    let xid := xid0 + (x * 7919).toUInt32
+    let mut c := selecting xid
+    let mut gap := 0
+    let mut k := 0
+    for _ in [0:130] do
+      let (c', got) := DhcpClient.stepRecord c tick
+      gap := gap + 1
+      if got.isSome then
+        let j : Int := (gap : Int) - rfcBase k
+        if j < -1 || j > 1 then
+          IO.eprintln s!"error: xid {xid}: retransmission {k} after {gap} ticks"
+          ok := false
+        jitters := j :: jitters
+        k := k + 1
+        gap := 0
+      c := c'
+  unless [-1, 0, 1].all (jitters.contains ·) do
+    IO.eprintln "error: the jitter does not take each of -1, 0 and +1"
     ok := false
   unless ok do return 1
   IO.FS.writeFile out (String.intercalate "\n" lines.toList ++ "\n")

@@ -184,6 +184,7 @@ index current:
 | `network-subject` | evidence | SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
 | `gtk-rekey` | evidence | SC-WIFI-GROUP-KEY-ROTATION, SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `dhcp-subject` | evidence | SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
+| `dhcp-backoff` | evidence | SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
 | `frame-window` | evidence | SC-FRAME-COPY-WINDOW, SC-DHCP-SUBJECT-SEPARATION, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `endpoint-directory` | evidence | SC-DIRECTORY-NO-AMPLIFICATION, SC-DIRECTORY-MISS |
 | `fault-handler` | evidence | SC-FAULT-HANDLER-DELIVERY |
@@ -196,10 +197,11 @@ index current:
 | `device-service-unplanned-bus-master` | evidence | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
 | `device-service-unplanned-recorded-command` | pr | SC-DMA-QUARANTINE, SC-DMA-CONTROL-DRIFT-FAILSTOP |
 | `notify-reply` | evidence | SC-NOTIFY-REPLY-NO-AMPLIFICATION, SC-NOTIFY-REPLY-NO-STALE-REUSE, SC-NOTIFY-REPLY-SINGLE-USE, SC-NOTIFY-REPLY-BUDGET |
+| `timing-channels` | evidence | SC-TIMING-REFUSAL-BUDGET, SC-TIMING-NO-USER-CLOCK |
 <!-- scenario-index:end -->
 
 Before the main machine path, the normal images also replay the same bounded
-699-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+709-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -256,14 +258,20 @@ full implementation refinement remain outside
 the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
-One generated export has a proved refinement edge: the C the pinned
-toolchain emits for `leanos_boot_transition` computes the Lean adapter on
-every input, under a reviewed C-subset semantics with a build-time drift check
-([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md), claim
-SC-BOOT-TRANSITION-REFINEMENT in [docs/security-claims.md](docs/security-claims.md)).
-The edge stops at
-the export: the compiler, linker, calling convention and every other export
-stay trusted.
+Seven generated exports have a proved refinement edge. For each, the C that
+the pinned toolchain emits computes the Lean definition on every input, under a
+reviewed C-subset semantics with a build-time drift check:
+
+- `leanos_boot_transition` ([ADR 0023](docs/adr/0023-one-export-refinement-ladder.md));
+- the spawn syscall and its value word, the child loader's source check and
+  decision, and the two frame-copy checks
+  ([ADR 0029](docs/adr/0029-refinement-spawn-loader-frame-exports.md)).
+
+The claims are the `*-REFINEMENT` rows of
+[docs/security-claims.md](docs/security-claims.md). Each edge stops at the
+export: the C compiler, linker, calling convention and every other export stay
+trusted. The spawn syscall's edge also assumes that the generated dispatcher
+table's C is correct.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
 boundary: they run in ring 0, and their confinement to a per-device policy is

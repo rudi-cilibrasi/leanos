@@ -584,6 +584,28 @@ class ProductionTests(unittest.TestCase):
         result = lab.classify_production(self.capture(after=b''), self.DIGEST, self.MANIFEST)
         self.assertTrue(any(f.startswith('recovery') for f in result['failures']))
 
+    def test_lease_window(self):
+        # A connect program's lease signal record (issue #573) follows the
+        # hand-off once; a lease window that ran out fails the capture.
+        lines = self.records()
+        handoff = next(i for i, l in enumerate(lines) if b'NET event=handoff' in l)
+        signal = b'LEANOS-LAB/1 WIFI-LEASE signalled after-ms=4210\n'
+        signalled = lines[:handoff + 1] + [signal] + lines[handoff + 1:]
+        result = lab.classify_production(self.capture(signalled), self.DIGEST, self.MANIFEST)
+        self.assertEqual(result['status'], 'PASS', result['failures'])
+        self.assertEqual(result['records']['lease_signalled_after_ms'], 4210)
+        self.assertIsNone(lab.classify_production(self.capture(), self.DIGEST, self.MANIFEST)
+                          ['records']['lease_signalled_after_ms'])
+        over = b'LEANOS-LAB/1 WIFI-LEASE window-over without-lease window-ms=60000\n'
+        for mutated in (lines[:handoff] + [signal] + lines[handoff:],
+                        lines[:handoff + 1] + [signal, signal] + lines[handoff + 1:],
+                        lines[:handoff + 1] + [over] + lines[handoff + 1:]):
+            with self.subTest(mutated=mutated[handoff:handoff + 3]):
+                result = lab.classify_production(self.capture(mutated), self.DIGEST, self.MANIFEST)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertTrue(any(f.startswith('lease-window') for f in result['failures']),
+                                result['failures'])
+
     def test_manifest(self):
         for bad in (dict(self.MANIFEST, production_network=False),
                     dict(self.MANIFEST, evidence_class='lab-recovery-experiment'),

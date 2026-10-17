@@ -707,6 +707,19 @@ def classify_production(events, digest, manifest):
     if positions != sorted(positions):
         fail('order', 'records out of order')
 
+    # The link-only endpoint's lease window (issue #573): a connect program
+    # records the lease signal once, after the hand-off, and its serve
+    # window starts then; a lease window that ran out ends the program. The
+    # keyless program prints neither record.
+    signalled = list(re.finditer(rb'LEANOS-LAB/1 WIFI-LEASE signalled after-ms=([0-9]+)\n', data))
+    if b'WIFI-LEASE window-over' in data:
+        fail('lease-window', 'the lease window ended without a lease')
+    if len(signalled) != data.count(b'WIFI-LEASE signalled') or len(signalled) > 1:
+        fail('lease-window', 'repeated or changed lease signal record')
+    elif signalled and (handoff is None or signalled[0].start() < handoff.end()):
+        fail('lease-window', 'lease signal record before the hand-off')
+    records['lease_signalled_after_ms'] = int(signalled[0].group(1)) if len(signalled) == 1 else None
+
     # How long the kernel took over each echo frame, as the serial line saw it.
     service = []
     for deliver in re.finditer(rb'LEANOS-LAB/1 NET event=deliver frame=([0-9]+) bytes=[0-9]+ '

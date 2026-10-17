@@ -211,6 +211,15 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
                                   : "LEANOS-LAB/1 WIFI-GTK rekeyed msg2=sent key-id=");
         serial_u64(value);
         serial_putc('\n');
+    } else if (tag == 0x0F19 || tag == 0x0F1A) {
+        /* The link-only endpoint's lease window (LeanOS/Wifi/Endpoint.lean
+           Tag.leaseSignalled, Tag.leaseWindowOver; issue #573): the lease
+           was handed off after `value` microseconds and the serve window
+           starts, or the lease window ended without one. */
+        serial_puts(tag == 0x0F19 ? "LEANOS-LAB/1 WIFI-LEASE signalled after-ms="
+                                  : "LEANOS-LAB/1 WIFI-LEASE window-over without-lease window-ms=");
+        serial_u64(value / 1000u);
+        serial_putc('\n');
     } else if (tag == 0x2100) {
         /* USB keyboard (LeanOS/Usb/Keyboard.lean): one typed character.
            Printable ASCII is echoed as itself, others by name or code. */

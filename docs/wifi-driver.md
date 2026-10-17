@@ -325,8 +325,13 @@ link-only endpoint (`LeanOS.Wifi.Endpoint.connectAndServeLink`):
 * Its first record is the 6-byte link record, our hardware address. It
   chooses no IPv4 address, and `WIFI 0F17` marks the endpoint up.
 * It yields every decapsulated data frame as Ethernet II, and a 1-byte tick
-  after each second of TSF time.
+  after each second of TSF time. The DHCP subject counts the ticks for its
+  RFC 2131 retransmission schedule.
 * It transmits whatever frame the kernel leaves in its scratch.
+* It serves two windows: a lease window, until the kernel signals that the
+  DHCP subject handed its lease off, and then a serve window. See [DHCP
+  retransmission and the lease
+  window](#dhcp-retransmission-and-the-lease-window-issue-573).
 
 The driver keeps the PMK, the TK, the GTK and the frame transport, and
 nothing else.
@@ -389,7 +394,7 @@ board boots legacy BIOS.
 
 2. Run the keyless smoke test first. The program touches no Broadcom
    register (the only Broadcom store is the assignment variant's PMCSR
-   write). It feeds the 17 q35 records through the real Qotom path: the copy roots,
+   write). It feeds the 19 q35 records through the real Qotom path: the copy roots,
    IPC, the DHCP subject, the scrub and the echo subject.
 
    ```sh
@@ -407,26 +412,32 @@ board boots legacy BIOS.
    * the `BROADCOM-ASSIGN profile=qotom-j1900-pci-trust-v1-bcm43224-assign-v1
      ... admitted=1` record and `SERVICE grant subject=1 ... bind=accepted`,
      as in step 2 of the issue #450 steps;
-   * 17 `NET event=deliver` records, the first of 6 bytes;
-   * `NET event=handoff from=dhcp-subject to=echo-subject frame=11
+   * 19 `NET event=deliver` records, the first of 6 bytes;
+   * `NET event=handoff from=dhcp-subject to=echo-subject frame=13
      lease=10.0.2.16 scrubbed=8192`, then `IPC event=deliver receiver=1
      endpoint=13 role=echo-subject payload=lease`;
    * `WIFI 5101`/`5102` records from the frame source: every frame matched
      the reference;
+   * `WIFI 5106 0x0000000c`: the frame source found the lease signal word
+     set after the thirteenth record (the ACK) and unset after every record
+     before it, so the kernel wrote it at the hand-off (issue #573);
    * `LEANOS/10 FINAL status=PASS dhcp-subject=1 echo-subject=1
-     device-holder=2 dhcp-frames=11 lease=10.0.2.16 frames=17 fetches=17
+     device-holder=2 dhcp-frames=13 lease=10.0.2.16 frames=19 fetches=19
      replies=8 refusals=4`.
 
 3. Run the WiFi capture. The image embeds the PMK: keep it under `build/`,
    never commit it, and never print the passphrase. Do not set
    `LEANOS_WIFI_DHCP` or `LEANOS_WIFI_DRIVER_DHCP`: the driver must lease
-   nothing. Keep the serve window at most 45 seconds. The lab watchdog is
-   armed for 120 ticks and the join takes about 55 seconds. DHCP now runs
-   inside the serve window.
+   nothing. Since issue #573 the program has a lease window
+   (`LEANOS_WIFI_LEASE_SECONDS`, required) and a serve window that starts
+   at the lease (`LEANOS_WIFI_SERVE_SECONDS`). Keep their sum at most 45
+   seconds: the lab watchdog is armed for 120 ticks and the join takes
+   about 55 seconds.
 
    ```sh
    LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" \
-     LEANOS_WIFI_SERVE_SECONDS=45 LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     LEANOS_WIFI_LEASE_SECONDS=25 LEANOS_WIFI_SERVE_SECONDS=20 \
+     LEANOS_WIFI_NETWORK_SUBJECT=1 \
      .lake/build/bin/leanos-wifi-gen connect build/wifi/dhcp556.bin
    python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
      --lab-program build/wifi/dhcp556.bin --ipc-device-stream \
@@ -437,7 +448,8 @@ board boots legacy BIOS.
    build/wifi/dhcp556`. Expect `WIFI 0F17` (the link-only endpoint is up),
    then the DHCP subject's DISCOVER and REQUEST as `NET event=send` records
    and `WIFI 0F13` transmissions. Once `NET event=handoff ... lease=<leased
-   address>` appears, run these from a LAN host:
+   address>` and `LEANOS-LAB/1 WIFI-LEASE signalled after-ms=<ms>` appear
+   (the serve window starts there), run these from a LAN host:
 
    ```sh
    ping -c 10 <leased address>
@@ -453,12 +465,172 @@ board boots legacy BIOS.
    * a final `LEANOS/10 FINAL status=PASS dhcp-subject=1 echo-subject=1 ...`
      with the leased address.
 
-   If the box resets before `FINAL`, shorten the serve window; never
-   lengthen it past 45 seconds without a long-session image ([Long
+   If no lease came within the lease window, the program records
+   `WIFI-LEASE window-over without-lease window-ms=25000` and the run ends
+   with `FINAL status=FAIL reason=qotom-net-lease-count`; give a slow
+   server a longer lease window in a long-session image ([DHCP
+   retransmission and the lease
+   window](#dhcp-retransmission-and-the-lease-window-issue-573)). If the box
+   resets before `FINAL`, shorten the windows; never let their sum exceed
+   45 seconds without a long-session image ([Long
    sessions](#long-sessions)). The retained serial stream contains
    decrypted payloads. Redact them before committing an observation
    ([Redacting a capture](#redacting-a-capture)), and never commit
    `dhcp556.bin`.
+
+## DHCP retransmission and the lease window (issue #573)
+
+Two Qotom runs of issues #556 and #557 ended with `FINAL status=FAIL
+reason=qotom-net-lease-count`. QUAIL's DHCP server did not answer 15
+DISCOVERs within the 45-second serve window, and in another run the lease
+took 30 frames. The DHCP subject then retransmitted on every third tick,
+and the serve window had to cover the lease and the service. Issue #573
+changes both.
+
+### The retransmission schedule
+
+The DHCP subject (`LeanOS.Net.DhcpClient`) retransmits on the schedule of
+RFC 2131 section 4.1, counted in the driver's one-second ticks:
+
+* The wait before retransmission `n` (from 0) is `4 · 2^n` ticks, capped at
+  64: 4, 8, 16, 32, 64, 64, ….
+* Each wait is randomized by ±1 tick. The subject has no random source, so
+  the offset is derived from the transaction id and `n`
+  (`retransmitDelay`), like the transaction id itself, a lab-grade choice.
+* While selecting, the DISCOVER is retransmitted for ever. While requesting,
+  the REQUEST is retransmitted twice; when the third REQUEST's wait ends,
+  the client restarts from DISCOVER with the next transaction id (RFC 2131
+  section 4.4.1).
+
+The schedule is proved in `LeanOS/Net/DhcpClient.lean`:
+
+* `backoffBase_toNat`, `backoffBase_rfc`, `retransmitDelay_bounds`,
+  `retransmitDelay_range`: the waits are the RFC's, within ±1, and 3 to 65
+  ticks long.
+* `step_tick_buf`, `stepRecord_tick`: the client's `step` on a tick moves
+  its timer registers exactly as the timer model `Timer.tick` says,
+  transmits exactly when the model retransmits, and changes no other
+  register.
+* `run_silent`, `selecting_gap`, `requesting_gap`: after a transmission the
+  client is silent for its wait less one tick and retransmits on the next.
+
+`tests/NetDhcpVectors.lean` checks the client against an independent
+statement of the RFC schedule, over many transaction ids, and the frames
+against `Wifi.Dhcp`. The generated C is checked against the model on the
+same vectors (`scripts/check-dhcp-subject-host.sh`).
+
+### The lease window and the serve window
+
+The driver runs no DHCP client and parses no DHCP. It learns of the lease
+from a **lease signal**: at the hand-off the kernel stores 1 in the 32-bit
+scratch word `LeanOS.Net.FrameSource.leaseSignalAt`, and it writes the word
+at no other time. The word tells the driver that the route moved to the
+echo subject, never the address. `LeanOS.DhcpSubject` proves that the
+signal is set only by the DHCP subject's accepted hand-off, is never unset,
+and is set exactly when the echo subject holds a lease
+(`step_leaseSignal_set`, `step_leaseSignal_stays`,
+`run_leaseSignal_iff_lease`).
+
+The link-only endpoint (`LeanOS.Wifi.Endpoint.serveWith`) then serves two
+windows, both in TSF time:
+
+* the **lease window**, `LEANOS_WIFI_LEASE_SECONDS` from the link record;
+* the **serve window**, `LEANOS_WIFI_SERVE_SECONDS` from the moment the
+  serve loop sees the signal.
+
+When the loop sees the signal it records `WIFI 0f19` with the microseconds
+the lease took, which the lab prints as `LEANOS-LAB/1 WIFI-LEASE signalled
+after-ms=<ms>`. If the lease window ends first it records `WIFI 0f1a`,
+printed as `WIFI-LEASE window-over without-lease window-ms=<ms>`, and ends.
+A session thus lasts at most the lease window plus the serve window, and a
+slow server uses up only the lease window. `leanos-wifi-gen connect`
+requires `LEANOS_WIFI_LEASE_SECONDS` (1–4294) for the link-only endpoint.
+The issue #450 endpoint, whose driver leases the address before it serves,
+keeps one window.
+
+`tests/WifiLeaseWindowSim.lean` (`leanos-wifi-leasesim`) runs the serve
+program in the simulator against a silent radio, with a harness in the
+kernel's place that sets the signal at chosen times. It checks that the
+serve window runs from the signal for its full length however late the
+signal comes in the lease window, and that without a signal the program
+ends at the lease window.
+
+Short runs must still fit the 120-tick watchdog: keep the lease window
+plus the serve window at most 45 seconds (25 + 20 in the steps above). For a
+slower server use a long-session image ([Long sessions](#long-sessions))
+with `--long-session` set to the sum: the kernel reloads the watchdog on
+the ticks, and the budget-aware end of issue #567 still puts `FINAL` first.
+
+### The `dhcp-backoff` scenario
+
+The q35 `dhcp-backoff` image is the `dhcp-subject` image with the frame
+source `net-q35-dhcp-backoff` (`LeanOS.Net.DhcpSource.backoffProgram`), a
+server that answers late:
+
+1. the link record draws a DISCOVER;
+2. the client retransmits the DISCOVER after 4, 9 and 15 ticks (its waits
+   of 4, 8 and 16 ticks ±1 for this transaction id);
+3. after five more silent ticks the OFFER arrives and draws a REQUEST;
+4. the client retransmits the REQUEST after 4 and 9 ticks;
+5. after two more silent ticks the ACK arrives, and B hands the lease off;
+6. the echo records follow, as in `dhcp-subject`.
+
+The frame source places the ticks at the waits `retransmitDelay` names and
+checks every frame against `Wifi.Dhcp`, so each retransmission must come on
+exactly its tick and every other tick must draw nothing. It also checks
+the lease signal word after every record. The kernel counts the ticks and
+the frames sent on them. The exact transcript is
+`scripts/expectations/dhcp-backoff.transcript`, which ends with
+
+```text
+FINAL status=PASS subjects=3 dhcp-subject=2 echo-subject=3 device-holder=1 frames=57 dhcp-frames=51 echo-frames=6 fetches=57 sends=10 checked=57 refusals=4 ipc-edges=234 lease-signal=1 ticks=48 retransmits=5
+```
+
+```sh
+LEANOS_BOOT_SCENARIO=dhcp-backoff ./scripts/run-image.sh
+```
+
+The `dhcp-subject` scenario follows the same schedule: its retransmitted
+DISCOVER now comes on the fifth tick, its first wait for the second
+transaction id.
+
+### Maintainer steps for the issue #573 confirmation
+
+Run these on the development host in a checkout of the merged branch, with
+the `<flag set>` of
+`hardware/lab/observations/qotom-device-stream-20261007/manifest.json`. The
+board boots legacy BIOS.
+
+1. Run the keyless smoke test of [Maintainer steps for the DHCP-subject
+   capture](#maintainer-steps-for-the-dhcp-subject-capture), step 2. Its
+   `WIFI 5106 0x0000000c` record shows that the lab kernel sets the lease
+   signal at the hand-off.
+
+2. Run the short capture of that section's step 3, with
+   `LEANOS_WIFI_LEASE_SECONDS=25 LEANOS_WIFI_SERVE_SECONDS=20`, and record
+   the DHCP exchange: `sudo tcpdump -i eno1 -tttt 'port 67 or port 68'`.
+   Expect:
+   * DISCOVERs from the Qotom's hardware address about 4, 8 and 16 seconds
+     apart (±1 second), not every 3 seconds, until the server answers;
+   * `NET event=handoff ... lease=<leased address>`, then `WIFI-LEASE
+     signalled after-ms=<ms>` with the lease time;
+   * replies to `ping -c 10 <leased address>` for about 20 seconds after
+     the lease, however long the lease took;
+   * `FINAL status=PASS dhcp-subject=1 echo-subject=1 ...`.
+
+3. If QUAIL's server needs longer than 25 seconds, give it a long lease
+   window in a long-session image. Build the program as in [Maintainer
+   steps for the long-session
+   capture](#maintainer-steps-for-the-long-session-capture), step 3, with
+   `L=120 S=60`, `LEANOS_WIFI_LEASE_SECONDS=$L LEANOS_WIFI_SERVE_SECONDS=$S`
+   and `--long-session $((L + S))`, and run it as in step 4 there. Expect
+   `WIFI-LEASE signalled after-ms=<ms>` with `ms` up to 120000, then about
+   60 seconds of service, then `FINAL status=PASS ... session-end=window`.
+   A lease that never comes ends with `WIFI-LEASE window-over` after 120
+   seconds and `FINAL status=FAIL reason=qotom-net-lease-count`.
+
+The retained serial stream contains decrypted payloads. Redact them before
+committing an observation, and never commit the `connect` program.
 
 ## Production image (issue #569)
 
@@ -549,8 +721,9 @@ rekey interval, while the lab watchdog resets the board 120 seconds after
 GRUB arms it. `build-qotom-recovery-lab.py --long-session SECONDS` (with
 `--dhcp-subject`) builds an image in which the kernel **reloads** that
 watchdog while the WiFi driver subject makes progress. `SECONDS` is 1–3600
-and should be the program's `LEANOS_WIFI_SERVE_SECONDS`, which
-`leanos-wifi-gen` accepts up to 4294 (the serve window is measured in
+and should be the program's `LEANOS_WIFI_LEASE_SECONDS` plus its
+`LEANOS_WIFI_SERVE_SECONDS`, the most a session can last (issue #573).
+`leanos-wifi-gen` accepts each up to 4294 (each window is measured in
 microseconds of the TSF's low 32-bit word).
 
 How it works (`hardware/lab/qotom-network-subject.c.inc`):
@@ -722,21 +895,25 @@ board boots legacy BIOS.
    set `LEANOS_WIFI_DHCP` or `LEANOS_WIFI_DRIVER_DHCP`.
 
    ```sh
-   S=900
+   L=60 S=900
    LEANOS_WIFI_PSK="$(cat ~/.config/leanos/wifi-psk)" \
-     LEANOS_WIFI_SERVE_SECONDS=$S LEANOS_WIFI_NETWORK_SUBJECT=1 \
+     LEANOS_WIFI_LEASE_SECONDS=$L LEANOS_WIFI_SERVE_SECONDS=$S \
+     LEANOS_WIFI_NETWORK_SUBJECT=1 \
      .lake/build/bin/leanos-wifi-gen connect build/wifi/gtk557.bin
    python3 scripts/build-qotom-recovery-lab.py --prepared-repo . <flag set> \
      --lab-program build/wifi/gtk557.bin --ipc-device-stream \
-     --network-subject --dhcp-subject --long-session $S
+     --network-subject --dhcp-subject --long-session $((L + S))
    ```
 
+   `L` is the lease window and `S` the serve window after the lease ([DHCP
+   retransmission and the lease
+   window](#dhcp-retransmission-and-the-lease-window-issue-573)).
    `build/qotom-wifi-lab/manifest.json` records `long_session_seconds` and
-   `watchdog_kick_budget` (`2 + ceil(S / 40)`, 25 for 900 seconds).
+   `watchdog_kick_budget` (`2 + ceil((L + S) / 40)`, 26 for 960 seconds).
 
 4. **Install and run it** with the runner's long-session mode. The runner
-   reads `SECONDS` from the image's manifest; `--long-session $S` must agree
-   with it:
+   reads `SECONDS` from the image's manifest; `--long-session $((L + S))`
+   must agree with it:
 
    ```sh
    scp build/qotom-wifi-lab/leanos-qotom-lab.elf freebsd@192.168.6.21:/var/tmp/leanos-wifi.elf
@@ -747,7 +924,7 @@ board boots legacy BIOS.
      --serial-device <FTDI by-id path> \
      --elf build/qotom-wifi-lab/leanos-qotom-lab.elf --image-on-ssd \
      --output build/wifi/gtk557 --cycles 1 --scenario watchdog-leanos \
-     --long-session $S
+     --long-session $((L + S))
    ```
 
 5. **Drive traffic from a LAN host for the whole session**, once `NET
