@@ -312,6 +312,9 @@ redact_spec = importlib.util.spec_from_file_location(
 redact = importlib.util.module_from_spec(redact_spec)
 redact_spec.loader.exec_module(redact)
 FIXTURES = Path(__file__).with_name('fixtures') / 'qotom-device-captures'
+# Fixtures of plain --lab-program images (issue #595), and the scenario each
+# classifies as.
+LAB_PROGRAM_FIXTURES = {'rtl8168-arp-pass': 'qotom-rtl8168-arp'}
 
 
 def replace_bytes(events, old, new, count=1):
@@ -365,7 +368,8 @@ class DeviceProgramTests(unittest.TestCase):
                 'terminal: no FINAL record',
                 'long-session: budget-exhausted-before-final: budget exhausted before FINAL']),
         }
-        self.assertEqual(sorted(p.name for p in FIXTURES.iterdir()), sorted(expected))
+        self.assertEqual(sorted(p.name for p in FIXTURES.iterdir()),
+                         sorted(list(expected) + list(LAB_PROGRAM_FIXTURES)))
         for name, (scenario, status, failures) in expected.items():
             with self.subTest(name=name):
                 result = self.classify(name)
@@ -491,10 +495,187 @@ class DeviceProgramTests(unittest.TestCase):
         self.assertEqual(removed, {'payload': 5, 'fragment': 2})
         self.assertEqual([e['elapsed'] for e in out], [1.0])
         self.assertEqual(raw, b'LEANOS-LAB/1 NET event=deliver frame=1 bytes=60\n')
+        # The rtl8168-arp program's value records (tags 40xx-42xx) are read
+        # by the lab-program classifier (issue #595): a fragment keeps them.
+        rtl = b'WIFI 4004 0x0000008b\nWIFI 4237 0x00000000\nWIFI 42e8 0x00000000\n'
+        out, raw, removed = redact.redact([event(rtl + b'WIFI 4300 0x00000000\n', 1.0)],
+                                          fragment=True)
+        self.assertEqual((raw, removed), (rtl, {'payload': 0, 'fragment': 1}))
         # Events within a second join at the first one's time, never longer.
         spread = [event(b'LEANOS-LAB/1 NET event=send frame=%d\n' % n, 0.4 * n) for n in range(6)]
         self.assertEqual([round(e['elapsed'], 6) for e in redact.redact(spread, fragment=True)[0]],
                          [0.0, 1.2])
+
+class LabProgramTests(unittest.TestCase):
+    """Issue #595: the capture of a plain --lab-program image is classified
+    PASS or FAIL against its program's records. For rtl8168-arp these are
+    step 2 of "Maintainer hardware steps" in docs/net-rtl8168.md."""
+
+    fixture = DeviceProgramTests.fixture
+
+    def classify(self, events=None, manifest=None, name='rtl8168-arp-pass'):
+        recorded, flags = self.fixture(name)
+        flags = flags if manifest is None else manifest
+        return lab.classify_lab_program(recorded if events is None else events,
+                                        flags['elf_sha256'], flags)
+
+    def test_fixtures(self):
+        for name, scenario in LAB_PROGRAM_FIXTURES.items():
+            with self.subTest(name=name):
+                result = self.classify(name=name)
+                self.assertEqual((result['scenario'], result['status'], result['failures']),
+                                 (scenario, 'PASS', []))
+                self.assertEqual(result['terminal']['reason'], 'qotom-platform-pending')
+                self.assertTrue(result['watchdog_protected'])
+                self.assertGreaterEqual(result['quiet_seconds'], 30)
+                self.assertLessEqual(result['recovery_after_last_protection_seconds'], 150)
+                json.dumps(result)
+        # The 2026-10-19 run (#577): the router's address as FreeBSD's
+        # neighbour table has it, one probe and one frame.
+        records = self.classify()['records']
+        self.assertEqual((records['device_id'], records['wifi_end']),
+                         ('0x816810ec', {'status': '0', 'code': '0x00000000'}))
+        self.assertEqual((records['link_media'], records['transmit_status'], records['router_address'],
+                          records['frames']), ('0x8b', ['0x70000000'], '70:13:01:5f:32:0f', 1))
+        self.assertEqual([len(records['before_dump']), len(records['after_dump'])], [23, 23])
+        # 9346CR reads 0x10 before and after: bit 4 stays set on this chip,
+        # and the EEM bits 7:6 are clear.
+        self.assertEqual((records['before_dump']['50'], records['after_dump']['50']),
+                         ('0x00000010', '0x00000010'))
+        self.assertEqual((records['after_dump']['37'], records['after_dump']['3c'],
+                          records['after_dump']['e4']), ('0x00000000', '0x00000000', '0x001b0000'))
+
+    def test_named_failures(self):
+        events, _ = self.fixture('rtl8168-arp-pass')
+        cases = {
+            'missing after-dump record': (
+                replace_bytes(events, b'WIFI 42e8 0x00000000\n', b''), ['after-dump: missing 42e8']),
+            'reset timeout': (
+                replace_bytes(events, b'WIFI 4237 ', b'WIFI 400e 0x00000000\nWIFI 4237 '),
+                ['teardown: 400e: the reset did not complete']),
+            'engines still on': (
+                replace_bytes(events, b'WIFI 4237 0x00000000', b'WIFI 4237 0x0000000c'),
+                ['after-command: 4237 = 0x0c, not 0: TE, RE or RST still set']),
+        }
+        for name, (mutated, failures) in cases.items():
+            with self.subTest(name=name):
+                result = self.classify(mutated)
+                self.assertEqual((result['status'], result['failures']), ('FAIL', failures))
+
+    def test_mutations_fail(self):
+        events, _ = self.fixture('rtl8168-arp-pass')
+        link_first = replace_bytes(replace_bytes(events, b'WIFI 4004 0x0000008b\n', b''),
+                                   b'WIFI 4137 ', b'WIFI 4004 0x0000008b\nWIFI 4137 ')
+        cases = [
+            ('before-dump', replace_bytes(events, b'WIFI 4150 0x00000010\n', b'')),
+            ('before-dump', replace_bytes(events, b'WIFI 4158 ', b'WIFI 4158 0x00000000\nWIFI 4158 ')),
+            ('after-dump', replace_bytes(events, b'WIFI 4250 ', b'WIFI 4251 ')),
+            ('link', replace_bytes(events, b'WIFI 4004 0x0000008b', b'WIFI 4004 0x00000089')),
+            ('transmit', replace_bytes(events, b'WIFI 400c 0x70000000', b'WIFI 400c 0xf0000000')),
+            ('transmit', replace_bytes(events, b'WIFI 400c 0x70000000\n', b'')),
+            ('router-address', replace_bytes(events, b'WIFI 4007 0x5f011370\n', b'')),
+            ('frames', replace_bytes(events, b'WIFI 4009 0x00000001', b'WIFI 4009 0x00000000')),
+            ('teardown', replace_bytes(events, b'WIFI 4237 ', b'WIFI 400d 0x00000000\nWIFI 4237 ')),
+            ('after-imr', replace_bytes(events, b'WIFI 423c 0x00000000', b'WIFI 423c 0x00000085')),
+            ('after-9346cr', replace_bytes(events, b'WIFI 4250 0x00000010', b'WIFI 4250 0x000000d0')),
+            ('done', replace_bytes(events, b'WIFI 40ff 0x00000000\n', b'')),
+            ('records', replace_bytes(events, b'WIFI 4006 0x00000000', b'WIFI 4006 0x0000')),
+            ('wifi-end', replace_bytes(events, b'WIFI-END status=0 code=0x00000000',
+                                       b'WIFI-END status=1 code=0x00007b07')),
+            ('wifi-end', replace_bytes(events, b'LEANOS-LAB/1 WIFI-END status=0 code=0x00000000\n', b'')),
+            ('wifi-begin', replace_bytes(events, b'WIFI-BEGIN id=', b'WIFI-BEGAN id=')),
+            ('terminal', replace_bytes(events, b'reason=qotom-platform-pending',
+                                       b'reason=j1900-msr-readback')),
+            ('order', link_first),
+            ('watchdog-arm', replace_bytes(events, b'WATCHDOG-ARMED ticks=120', b'WATCHDOG-ARMED ticks=60')),
+            ('recovery', replace_bytes(events, b'LEANOS-LAB/1 CHAIN freebsd', b'LEANOS-LAB/1 HALT freebsd')),
+            ('recovery', replace_bytes(events, b'qotom-platform-pending\n',
+                                       b'qotom-platform-pending\nx')),
+        ]
+        for check, mutated in cases:
+            with self.subTest(check=check):
+                result = self.classify(mutated)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertTrue(any(f.startswith(check + ':') for f in result['failures']),
+                                result['failures'])
+        # Without WIFI-BEGIN the program is unknown, and so are its records.
+        result = self.classify(replace_bytes(events, b'WIFI-BEGIN id=', b'WIFI-BEGAN id='))
+        self.assertEqual((result['scenario'], result['failures']),
+                         ('qotom-lab-program', ['wifi-begin: missing or changed']))
+
+    def test_manifest(self):
+        events, flags = self.fixture('rtl8168-arp-pass')
+        digest = flags['elf_sha256']
+        for bad in (dict(flags, lab_program_sha256=[]),
+                    dict(flags, lab_program_sha256=flags['lab_program_sha256'] * 2),
+                    {k: v for k, v in flags.items() if k != 'lab_program_sha256'},
+                    dict(flags, wifi_program_sha256='d' * 64), dict(flags, ipc_device_stream=True),
+                    dict(flags, production_network=True), dict(flags, mode='kernel-hang'),
+                    dict(flags, pci_diagnostic=True), dict(flags, realtek_bme=True),
+                    dict(flags, long_session_seconds=40)):
+            with self.subTest(flags=bad), self.assertRaises(ValueError):
+                lab.classify_lab_program(events, digest, bad)
+        # source_dirty records the build, not a stage.
+        self.assertEqual(lab.classify_lab_program(events, digest, dict(flags, source_dirty=True))
+                         ['status'], 'PASS')
+        for bad_digest, bad_flags in (('b' * 63, flags), (digest, dict(flags, elf_sha256='b' * 64))):
+            with self.assertRaises(ValueError):
+                lab.classify_lab_program(events, bad_digest, bad_flags)
+        unbound = {k: v for k, v in flags.items() if k != 'elf_sha256'}
+        self.assertEqual(lab.classify_lab_program(events, 'b' * 64, unbound)['failures'],
+                         ['watchdog-load: missing or changed'])
+        # A program whose records the runner does not know is not classified.
+        other = replace_bytes(events, b'WIFI-BEGIN id=0x816810ec', b'WIFI-BEGIN id=0x435314e4')
+        with self.assertRaisesRegex(ValueError, 'no classifier for the lab program on device 0x435314e4'):
+            lab.classify_lab_program(other, digest, flags)
+        # Not a device-program image (issue #572).
+        with self.assertRaises(ValueError):
+            lab.classify_device_program(events, digest, flags)
+
+    def test_program_source(self):
+        # The classifier's tags and dump offsets are LeanOS/Net/Rtl8168.lean's.
+        source = (Path(__file__).resolve().parent.parent / 'LeanOS/Net/Rtl8168.lean').read_text()
+
+        def constants(text):
+            return {name: int(value, 16) for name, value in
+                    re.findall(r'^def (\w+) : UInt32 := (0x[0-9A-Fa-f]+)', text, re.M)}
+
+        registers = constants(source[source.index('## Registers'):source.index('## Scratch layout')])
+        tags = constants(source[source.index('namespace Tag'):source.index('end Tag')])
+        self.assertEqual({k: tags[k] for k in ('media', 'routerMacLo', 'routerMacHi', 'frames',
+                                               'txStatus', 'stopTimeout', 'resetTimeout', 'done',
+                                               'before', 'after')},
+                         {'media': 0x4004, 'routerMacLo': 0x4007, 'routerMacHi': 0x4008,
+                          'frames': 0x4009, 'txStatus': 0x400c, 'stopTimeout': 0x400d,
+                          'resetTimeout': 0x400e, 'done': 0x40ff, 'before': 0x4100, 'after': 0x4200})
+        dump = re.search(r'def dumpRegs : List \(UInt32 × Nat\) :=\n(.*?)\n\n', source, re.S).group(1)
+        offsets = tuple(registers[name] + int(plus or 0)
+                        for name, plus in re.findall(r'\((\w+)(?: \+ (\d+))?, [124]\)', dump))
+        self.assertEqual(offsets, lab.RTL8168_DUMP)
+        self.assertEqual((registers['command'], registers['imr'], registers['eecmd']), (0x37, 0x3c, 0x50))
+        self.assertIn('target : Target :=\n  { bus := 1, dev := 0, fn := 0, id := 0x816810ec,', source)
+        self.assertEqual(lab._LAB_PROGRAMS, {0x816810ec: 'rtl8168-arp'})
+
+
+class SimulatedRun:
+    """A run as wait_for_recovery sees it (issue #595): the capture's events
+    arrive at their times, the runner polls every 2 seconds, and FreeBSD
+    answers over SSH, with a new boot time, from `freebsd_at` on."""
+
+    def __init__(self, events, freebsd_at):
+        self.events, self.freebsd_at, self.now, self.prompts = events, freebsd_at, 0.0, []
+
+    def wait(self, **options):
+        def captured():
+            return b''.join(bytes.fromhex(e['hex']) for e in self.events if e['elapsed'] <= self.now)
+
+        def pause():
+            self.now += 2
+
+        return lab.wait_for_recovery(lambda: self.now, captured,
+                                     lambda: 2 if self.now >= self.freebsd_at else None, 1, pause,
+                                     prompt=lambda: self.prompts.append(self.now), **options)
+
 
 class ProductionTests(unittest.TestCase):
     """The production network capture (issue #569): no watchdog, an
@@ -546,12 +727,59 @@ class ProductionTests(unittest.TestCase):
                   b'window-copies=7\n']
         return lines
 
-    def capture(self, lines=None, after=None):
+    def capture(self, lines=None, after=None, start=1.0, tail_at=400.0):
         lines = self.records() if lines is None else lines
-        events = [event(line, 1.0 + 0.002 * i) for i, line in enumerate(lines)]
+        events = [event(line, start + 0.002 * i) for i, line in enumerate(lines)]
         tail = (b'LEANOS-LAB/1 DEFAULT request=none\nLEANOS-LAB/1 CHAIN freebsd disk=hd1\n'
                 if after is None else after)
-        return events + [event(tail, 400.0)]
+        return events + [event(tail, tail_at)]
+
+    def test_power_cycle_wait(self):
+        # Issue #595: the wait for the maintainer's power cycle runs from the
+        # POWER-CYCLE prompt (15 minutes by default), not from the start.
+        # FINAL at 199 s of a 120-second serve window; the board is power-
+        # cycled 14 minutes after the prompt, more than 15 minutes after the
+        # start (and after the former SECONDS + 900 deadline).
+        events = self.capture(start=199.0, tail_at=1045.0)
+        run = SimulatedRun(events, freebsd_at=1080.0)
+        self.assertEqual(run.wait(bound=180, production_seconds=120), 2)
+        self.assertEqual(run.prompts, [200.0])
+        self.assertGreater(run.now, 15 * 60)
+        self.assertGreater(run.now, 120 + 900)
+        self.assertLess(run.now - run.prompts[0], 15 * 60)
+        result = lab.classify_production(events, self.DIGEST, self.MANIFEST)
+        self.assertEqual(result['status'], 'PASS', result['failures'])
+        # Past the window after the prompt, the runner gives up.
+        run = SimulatedRun(events, freebsd_at=1110.0)
+        with self.assertRaisesRegex(ValueError, 'no verified FreeBSD recovery before timeout'):
+            run.wait(bound=180, production_seconds=120)
+        self.assertEqual((run.prompts, run.now), ([200.0], 1100.0))
+        # --power-cycle-minutes 30 widens the window, still from the prompt.
+        late = self.capture(start=199.0, tail_at=1870.0)
+        run = SimulatedRun(late, freebsd_at=1900.0)
+        self.assertEqual(run.wait(bound=180, production_seconds=120, power_cycle_seconds=30 * 60), 2)
+        self.assertEqual(lab.classify_production(late, self.DIGEST, self.MANIFEST)['status'], 'PASS')
+        # Without FINAL the prompt comes SECONDS + 180 seconds after the
+        # start, and the window runs from there; the capture fails.
+        hung = self.capture(self.records()[:-1], start=1.0, tail_at=1100.0)
+        run = SimulatedRun(hung, freebsd_at=1150.0)
+        self.assertEqual(run.wait(bound=180, production_seconds=120), 2)
+        self.assertEqual(run.prompts, [302.0])
+        self.assertIn('terminal: no FINAL record',
+                      lab.classify_production(hung, self.DIGEST, self.MANIFEST)['failures'])
+        run = SimulatedRun(hung, freebsd_at=1210.0)
+        with self.assertRaises(ValueError):
+            run.wait(bound=180, production_seconds=120)
+        # A lab image recovers by itself: its bound runs from the start and
+        # nothing asks for a power cycle.
+        reset = self.capture(tail_at=60.0)
+        run = SimulatedRun(reset, freebsd_at=400.0)
+        self.assertEqual(run.wait(bound=420), 2)
+        self.assertEqual(run.prompts, [])
+        run = SimulatedRun(reset, freebsd_at=430.0)
+        with self.assertRaises(ValueError):
+            run.wait(bound=420)
+        self.assertEqual((run.prompts, run.now), ([], 420.0))
 
     def test_pass(self):
         result = lab.classify_production(self.capture(), self.DIGEST, self.MANIFEST)

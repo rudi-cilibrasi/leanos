@@ -201,8 +201,10 @@ production image with `--scenario leanos`. The runner:
 1. arms the one-shot request and reboots the board;
 2. captures the serial line;
 3. prints `POWER-CYCLE cycle=1` once `FINAL` appears (or `SECONDS` + 180
-   seconds have passed);
-4. waits up to 15 minutes for FreeBSD to come back;
+   seconds after the start, if `FINAL` never does);
+4. waits for FreeBSD to come back, up to 15 minutes from that prompt
+   (`--power-cycle-minutes MINUTES` changes this, issue #595), however long
+   the run took;
 5. checks the request was consumed, then classifies the capture with
    `classify_production`.
 
@@ -274,7 +276,12 @@ the maintainer at the board. Nothing here needs the watchdog scripts.
      --output build/wifi/prod569-smoke --scenario leanos --production-seconds 120
    ```
 
-   When the runner prints `POWER-CYCLE cycle=1`, power-cycle the board.
+   When the runner prints `POWER-CYCLE cycle=1`, power-cycle the board. The
+   runner waits 15 minutes from that prompt for FreeBSD to come back. If you
+   may need longer, add `--power-cycle-minutes MINUTES` (at most 240) rather
+   than a larger `--production-seconds`, which only delays the prompt for an
+   image that never prints `FINAL`.
+
    Expect `PASS cycle=1`. `build/wifi/prod569-smoke/cycle-1/result.json`
    should show:
 
@@ -312,7 +319,8 @@ the maintainer at the board. Nothing here needs the watchdog scripts.
    ```
 
    Install it as in step 2, then start the runner with `--output
-   build/wifi/prod569 --production-seconds $((L + S + 120))`.
+   build/wifi/prod569 --production-seconds $((L + S + 120))`, and
+   `--power-cycle-minutes` as in step 2 if needed.
 
 4. Drive traffic from a LAN host once `NET event=handoff ... lease=<leased
    address>` appears on the serial line (`WIFI 0F17` marks the link-only
@@ -333,7 +341,8 @@ the maintainer at the board. Nothing here needs the watchdog scripts.
 
 5. When the serve window ends, the image prints `FINAL status=PASS
    profile=qotom-network-v1 ... lease=<leased address>` and halts. Power-cycle
-   the board when the runner asks. Expect `PASS cycle=1`.
+   the board when the runner asks, within its `--power-cycle-minutes` window
+   (15 minutes by default). Expect `PASS cycle=1`.
 
 6. Report latency against the lab baseline. The lab image answered ping in
    about 125 ms through the 16-byte copy roots. The ring-0 responder of the

@@ -80,7 +80,7 @@ controller, and 0x4200 + offset after the teardown:
 | 0x3C / 0x3E | IMR / ISR (ISR bit 0x10: receive descriptor unavailable) | 16 |
 | 0x40 / 0x44 | TXCFG / RXCFG | 32 |
 | 0x4C | missed-packet counter | 32 |
-| 0x50 | 9346CR (config lock; 0 = locked) | 8 |
+| 0x50 | 9346CR (config lock; locked when the EEM bits 7:6 are clear) | 8 |
 | 0x52 / 0x54 / 0x56 | CONFIG1 / CONFIG3 / CONFIG5 (PME, wake-on-LAN) | 8 |
 | 0x58 | timer interrupt | 32 |
 | 0x6C | PHY status (bit 0x02: link) | 8 |
@@ -296,8 +296,17 @@ stalled. Ping from the wired workstation (192.168.6.62).
      `WIFI 4007`/`4008` (router address), `WIFI 4009` (frames);
    * no `WIFI 400d` and no `WIFI 400e`;
    * `WIFI 4237` … `WIFI 42e8`: the after dump, with `4237` = 0x00 (TE, RE
-     and RST clear), `423c` = 0x0000 and `4250` = 0x00;
+     and RST clear), `423c` = 0x0000, and `4250` (9346CR) with the EEM bits
+     7:6 clear, so the configuration registers are locked. This chip reads
+     `0x10`, because bit 4 stays set whatever the program writes; the before
+     dump (`4150`) shows `0x10` too;
    * `WIFI 40ff`, then `WIFI-END status=0`.
+
+   `scripts/run-qotom-recovery-lab.py --scenario watchdog-leanos` checks
+   these records, with the protected launch and the recovery, and writes
+   `result.json` with `PASS` or `FAIL` and the failed checks (issue #595;
+   see [Lab runner results for device
+   programs](wifi-driver.md#lab-runner-results-for-device-programs)).
 
 3. **Check FreeBSD after the CF9 reset, without touching `re0`.** On the
    Qotom:

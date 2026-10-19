@@ -9,11 +9,12 @@ cycle directory written by run-qotom-recovery-lab.py (`events.jsonl`, and
 the timed events, and writes `events.jsonl`, `serial.raw` and
 `redaction.json` to a new directory.
 
-With `--fragment` it also drops the bulky records that the device-program
-classifier does not read (data dumps, PCI observations, `WIFI` value
-records, IPC block/send/dispatch and NET fetch records) and joins events
-that arrive within one second of each other, so that a capture fragment is
-small enough to keep as a test fixture. A fragment still classifies as its
+With `--fragment` it also drops the bulky records that the runner's
+classifiers do not read (data dumps, PCI observations, `WIFI` value records
+other than the rtl8168-arp program's tags 40xx-42xx, IPC
+block/send/dispatch and NET fetch records) and joins events that arrive
+within one second of each other, so that a capture fragment is small enough
+to keep as a test fixture. A fragment still classifies as its
 capture does. Its events are stored as `serial.raw` plus `timing.tsv` (one
 `elapsed<TAB>bytes` line per event) in place of `events.jsonl`; `load` reads
 either layout.
@@ -29,9 +30,10 @@ import re
 # Lines that carry decrypted payload bytes: LeanOS.Wifi.Connect's Tag.body
 # and Tag.dump records.
 PAYLOAD = re.compile(rb'\r*WIFI 0e2[46] ')
-# Records the device-program classifier never reads.
+# Records the classifiers never read. The rtl8168-arp program's value
+# records (tags 40xx-42xx, issue #595) are read, so a fragment keeps them.
 BULKY = re.compile(
-    rb'\r*(?:WIFI [0-9a-f]{4} 0x[0-9a-f]{8}\r?\n'
+    rb'\r*(?:WIFI (?!4[0-2])[0-9a-f]{4} 0x[0-9a-f]{8}\r?\n'
     rb'|LEANOS-LAB/1 [A-Z0-9-]+ [^\n]* hex=[0-9a-f]*\r?\n'
     rb'|LEANOS-LAB/1 (?:PCI-CAPS?|PCI-AF|PCIE-DEVICE) '
     rb'|LEANOS/[0-9]+ PCI-HEADER '

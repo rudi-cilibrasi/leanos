@@ -118,6 +118,32 @@ both fail. `cycle-N/result.json` records the result:
 The runner then exits non-zero on a FAIL and prints `PASS cycle=N` otherwise.
 `watchdog-kicks.json` is still written before the classification.
 
+An image built with a single `--lab-program` and no other stage runs the
+program once at the lab kernel's CPU gate, between `WIFI-BEGIN` and
+`WIFI-END`. Under `--scenario watchdog-leanos` the runner classifies its
+capture with `classify_lab_program` (issue #595). The device the kernel
+reports in `WIFI-BEGIN id=` names the program. The runner knows the records
+of `rtl8168-arp` (`id=0x816810ec`), step 2 of the [maintainer
+steps](net-rtl8168.md#maintainer-hardware-steps):
+
+* the 23-record before dump (`4137` … `41e8`);
+* `4004` with the link bit, one to three `400c` transmit statuses that the
+  chip handed back, the router's address (`4007`/`4008`) and at least one
+  frame (`4009`);
+* no `400d` and no `400e`;
+* the 23-record after dump (`4237` … `42e8`), with `4237` = 0, `423c` = 0
+  and 9346CR (`4250`) bits 7:6 clear;
+* `40ff` last, then `WIFI-END status=0`.
+
+The capture also needs the protected launch, the lab kernel's own terminal
+(`FINAL status=FAIL reason=qotom-platform-pending`, since this image never
+admits the platform) and the same recovery as a device program. Each failed
+check is named, for example `after-dump: missing 42e8`, `teardown: 400e: the
+reset did not complete` or `after-command: 4237 = 0x0c, not 0: TE, RE or RST
+still set`. `result.json` also holds both dumps, the router's address and
+the frame count. A capture of any other program still stops the runner with
+an error, after `recovery.json` is written, and is checked by hand.
+
 ### Redacting a capture
 
 A WiFi capture can contain decrypted network payloads: the driver's dumps of
@@ -134,18 +160,21 @@ It writes the redacted `events.jsonl` and `serial.raw`, plus
 lines removed. It fails if a payload line survives. Inspect the output
 before committing it.
 
-`--fragment` also drops the records the classifier does not read (data
-dumps, PCI observations, `WIFI` value records, IPC block/send/dispatch and
-`NET event=fetch`). It joins events less than a second apart and stores the
+`--fragment` also drops the records the classifiers do not read (data
+dumps, PCI observations, `WIFI` value records other than the `rtl8168-arp`
+program's tags `40xx`–`42xx`, IPC block/send/dispatch and `NET
+event=fetch`). It joins events less than a second apart and stores the
 timing as `timing.tsv`. The runner's self-tests
-(`scripts/test-qotom-recovery-capture.py`) run over such fragments of five
+(`scripts/test-qotom-recovery-capture.py`) run over such fragments of six
 hardware captures, in `scripts/fixtures/qotom-device-captures/`:
 
 * a network-subject smoke test with the Broadcom assignment;
 * a WiFi DHCP-subject session;
 * a `qotom-net-lease-count` failure;
 * a long session that ended at its budget;
-* a one-hour session that ran out of reloads before `FINAL`.
+* a one-hour session that ran out of reloads before `FINAL`;
+* an `rtl8168-arp` run (issue #577, 2026-10-19), wired Ethernet with no
+  payload records.
 
 Each fragment's `manifest.json` holds the image's scenario flags.
 
