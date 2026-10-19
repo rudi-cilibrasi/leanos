@@ -1,0 +1,15 @@
+{
+  "wifi_program_sha256": null,
+  "lab_program_sha256": [
+    "c18520ebc5b835c62bce62ec8818b14b384b1d19b1dde540f7ae815af3fef84d"
+  ],
+  "ipc_device_stream": false,
+  "network_subject": false,
+  "dhcp_subject": false,
+  "long_session_seconds": null,
+  "watchdog_kick_budget": null,
+  "production_network": false,
+  "pci_diagnostic": false,
+  "mode": "completion",
+  "elf_sha256": "9cd40e56a286ad30ff60b459fee47281d131d44527d09409424c83cf35677d0e"
+}

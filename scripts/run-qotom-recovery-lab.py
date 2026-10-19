@@ -341,6 +341,95 @@ _DEVICE_FINAL_FIELDS = {
 _LONG_SESSION_FIELDS = rb' watchdog-kicks=([0-9]+)(?: session-end=(window|budget) unsent-replies=([01]))?'
 
 
+class _Capture:
+    """A protected lab capture for the PASS/FAIL classifiers (issues #572,
+    #595): its bytes, the time each byte arrived, and the failed checks,
+    which are collected rather than raised."""
+
+    def __init__(self, events):
+        if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
+               or e['elapsed'] < 0 for e in events):
+            raise ValueError('invalid capture timestamp')
+        if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
+            raise ValueError('nonmonotonic capture timestamps')
+        self.events = events
+        self.chunks = [bytes.fromhex(e['hex']) for e in events]
+        self.offsets, total = [], 0
+        for chunk in self.chunks:
+            self.offsets.append(total)
+            total += len(chunk)
+        self.data = b''.join(self.chunks)
+        self.failures = []
+
+    def time_at(self, position):
+        return self.events[bisect.bisect_right(self.offsets, position) - 1]['elapsed']
+
+    def fail(self, check, detail):
+        self.failures.append(check + ': ' + detail)
+
+    def once(self, pattern, check, count_marker=None):
+        matches = list(re.finditer(pattern, self.data))
+        extra = self.data.count(count_marker) if count_marker else len(matches)
+        if len(matches) != 1 or extra != 1:
+            self.fail(check, 'missing or changed' if not matches else 'repeated')
+            return None
+        return matches[0]
+
+    def protected_launch(self, digest):
+        """The watchdog window, the single 120-tick arm, the digest-bound
+        load and the recovery mode record, with no watchdog failure record
+        and no kernel output before the mode record."""
+        accepted = self.once(rb'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1', 'watchdog-window')
+        armed = self.once(rb'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120', 'watchdog-arm',
+                          b'WATCHDOG-ARMED')
+        wrapped = rb'[\r\n]*'.join(bytes([ch]) for ch in digest.encode())
+        load = self.once(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' + wrapped + rb'(?=[\r\n])',
+                         'watchdog-load', b'WATCHDOG-LEANOS-LOAD')
+        mode_record = EXPECTED[:-len(EXPECTED_KERNEL)]
+        mode = self.once(re.escape(mode_record), 'recovery-mode')
+        for marker in (b'WATCHDOG-LOAD-FAILED', b'WATCHDOG-STOP-FAILED', b'WATCHDOG-NO-RESET',
+                       b'WATCHDOG-ARM-REJECTED', b'KERNEL-HANG', b'WATCHDOG-KERNEL-LOAD'):
+            if marker in self.data:
+                self.fail('watchdog', marker.decode() + ' record')
+        if mode is not None and b'LEANOS/' in self.data[:mode.start()]:
+            self.fail('framing', 'kernel output before the recovery mode record')
+        return accepted, armed, load, mode
+
+    def recovery(self, terminal, armed, timeout, recovery_slack):
+        """Quiet after FINAL, then the consumed request's default and the
+        FreeBSD chain within the watchdog bound of the last reload or the
+        arm. Returns the quiet interval and the chain's delay."""
+        data = self.data
+        default = list(re.finditer(rb'LEANOS-LAB/1 DEFAULT request=none', data))
+        if terminal is not None:
+            start = terminal.end()
+        else:
+            # Without FINAL the run ends at the kernel's last record.
+            last = data.rfind(b'LEANOS/')
+            start = data.find(b'\n', last) + 1 if last >= 0 else 0
+        chain = data.find(CHAIN, start)
+        quiet = recovery = None
+        if len(default) != 1 or chain < 0 or not start <= default[0].start() < chain:
+            self.fail('recovery', 'missing consumed-request default or FreeBSD chain after the run')
+        if b'LEANOS/' in data[start:] or b'LEANOS-LAB/1 SELECT leanos' in data[start:]:
+            self.fail('recovery', 'kernel output after the run')
+        if terminal is not None:
+            index = bisect.bisect_right(self.offsets, terminal.end() - 1) - 1
+            if self.offsets[index] + len(self.chunks[index]) != terminal.end():
+                self.fail('recovery', 'bytes after FINAL without a quiet interval')
+            elif index + 1 < len(self.events):
+                quiet = self.events[index + 1]['elapsed'] - self.events[index]['elapsed']
+                if quiet < 10:
+                    self.fail('recovery', 'insufficient quiet after FINAL')
+        if chain >= 0 and armed is not None:
+            reloads = list(re.finditer(rb'LEANOS-LAB/1 WATCHDOG-KICK n=', data[:chain]))
+            protected = self.time_at(reloads[-1].start() if reloads else armed.start())
+            recovery = self.time_at(chain) - protected
+            if recovery > timeout + recovery_slack:
+                self.fail('recovery', 'FreeBSD chain later than the watchdog bound')
+        return quiet, recovery
+
+
 def classify_device_program(events, digest, manifest, timeout=120, recovery_slack=30):
     """Classify a device-program capture (issue #572) as PASS or FAIL.
 
@@ -363,49 +452,11 @@ def classify_device_program(events, digest, manifest, timeout=120, recovery_slac
         raise ValueError('invalid protected image digest')
     if manifest.get('elf_sha256') not in (None, digest):
         raise ValueError('lab manifest names a different ELF')
-    if any(type(e['elapsed']) not in (int, float) or not math.isfinite(e['elapsed'])
-           or e['elapsed'] < 0 for e in events):
-        raise ValueError('invalid capture timestamp')
-    if any(b['elapsed'] < a['elapsed'] for a, b in zip(events, events[1:])):
-        raise ValueError('nonmonotonic capture timestamps')
-    chunks = [bytes.fromhex(e['hex']) for e in events]
-    offsets, total = [], 0
-    for chunk in chunks:
-        offsets.append(total)
-        total += len(chunk)
-    data = b''.join(chunks)
-
-    def time_at(position):
-        return events[bisect.bisect_right(offsets, position) - 1]['elapsed']
-
-    failures = []
-
-    def fail(check, detail):
-        failures.append(check + ': ' + detail)
-
-    def once(pattern, check, count_marker=None):
-        matches = list(re.finditer(pattern, data))
-        extra = data.count(count_marker) if count_marker else len(matches)
-        if len(matches) != 1 or extra != 1:
-            fail(check, 'missing or changed' if not matches else 'repeated')
-            return None
-        return matches[0]
+    capture = _Capture(events)
+    data, failures, fail, once = capture.data, capture.failures, capture.fail, capture.once
 
     # The protected launch.
-    accepted = once(rb'LEANOS-LAB/1 WATCHDOG-WINDOW accepted=1', 'watchdog-window')
-    armed = once(rb'LEANOS-LAB/1 WATCHDOG-ARMED ticks=120', 'watchdog-arm',
-                 b'WATCHDOG-ARMED')
-    wrapped = rb'[\r\n]*'.join(bytes([ch]) for ch in digest.encode())
-    load = once(rb'LEANOS-LAB/1 WATCHDOG-LEANOS-LOAD[ \r\n]+sha256=' + wrapped + rb'(?=[\r\n])',
-                'watchdog-load', b'WATCHDOG-LEANOS-LOAD')
-    mode_record = EXPECTED[:-len(EXPECTED_KERNEL)]
-    mode = once(re.escape(mode_record), 'recovery-mode')
-    for marker in (b'WATCHDOG-LOAD-FAILED', b'WATCHDOG-STOP-FAILED', b'WATCHDOG-NO-RESET',
-                   b'WATCHDOG-ARM-REJECTED', b'KERNEL-HANG', b'WATCHDOG-KERNEL-LOAD'):
-        if marker in data:
-            fail('watchdog', marker.decode() + ' record')
-    if mode is not None and b'LEANOS/' in data[:mode.start()]:
-        fail('framing', 'kernel output before the recovery mode record')
+    accepted, armed, load, mode = capture.protected_launch(digest)
 
     # The terminal record.
     terminals = list(re.finditer(rb'LEANOS/[0-9]+ FINAL ([^\r\n]*)\n', data))
@@ -519,33 +570,7 @@ def classify_device_program(events, digest, manifest, timeout=120, recovery_slac
         fail('watchdog-kicks', 'reload records in an image without a long session')
 
     # The recovery: quiet after FINAL, then the consumed request and the chain.
-    default = list(re.finditer(rb'LEANOS-LAB/1 DEFAULT request=none', data))
-    if terminal is not None:
-        start = terminal.end()
-    else:
-        # Without FINAL the run ends at the kernel's last record.
-        last = data.rfind(b'LEANOS/')
-        start = data.find(b'\n', last) + 1 if last >= 0 else 0
-    chain = data.find(CHAIN, start)
-    quiet = recovery = None
-    if len(default) != 1 or chain < 0 or not start <= default[0].start() < chain:
-        fail('recovery', 'missing consumed-request default or FreeBSD chain after the run')
-    if b'LEANOS/' in data[start:] or b'LEANOS-LAB/1 SELECT leanos' in data[start:]:
-        fail('recovery', 'kernel output after the run')
-    if terminal is not None:
-        index = bisect.bisect_right(offsets, terminal.end() - 1) - 1
-        if offsets[index] + len(chunks[index]) != terminal.end():
-            fail('recovery', 'bytes after FINAL without a quiet interval')
-        elif index + 1 < len(events):
-            quiet = events[index + 1]['elapsed'] - events[index]['elapsed']
-            if quiet < 10:
-                fail('recovery', 'insufficient quiet after FINAL')
-    if chain >= 0 and armed is not None:
-        reloads = list(re.finditer(rb'LEANOS-LAB/1 WATCHDOG-KICK n=', data[:chain]))
-        protected = time_at(reloads[-1].start() if reloads else armed.start())
-        recovery = time_at(chain) - protected
-        if recovery > timeout + recovery_slack:
-            fail('recovery', 'FreeBSD chain later than the watchdog bound')
+    quiet, recovery = capture.recovery(terminal, armed, timeout, recovery_slack)
 
     gtk = [int(k) for k in re.findall(rb'LEANOS-LAB/1 WIFI-GTK installed key-id=([0-9]+)', data)]
     result = {'scenario': scenario, 'evidence': 'device-program',
@@ -559,6 +584,219 @@ def classify_device_program(events, digest, manifest, timeout=120, recovery_slac
               'watchdog_protected': armed is not None and load is not None,
               'raw_sha256': hashlib.sha256(data).hexdigest()}
     return result
+
+
+def lab_program_image(manifest):
+    """Check that a lab image's build manifest is a plain `--lab-program`
+    image (issue #595): exactly one Lean device program, which the lab
+    kernel runs once at its CPU gate, and nothing else, so no WiFi program,
+    device stream, production network, long session or diagnostic stage."""
+    programs = manifest.get('lab_program_sha256')
+    if (type(programs) is not list or len(programs) != 1 or type(programs[0]) is not str
+            or not re.fullmatch(r'[0-9a-f]{64}', programs[0])):
+        raise ValueError('not a single --lab-program image')
+    if manifest.get('wifi_program_sha256') is not None:
+        raise ValueError('a --wifi-program image is not a plain lab-program image')
+    if manifest.get('mode') != 'completion':
+        raise ValueError('lab-program image not built in completion mode')
+    if manifest.get('long_session_seconds') is not None or \
+            manifest.get('watchdog_kick_budget') is not None:
+        raise ValueError('long-session flags in a plain lab-program image')
+    # Every other true flag is a build stage (source_dirty is not one).
+    stages = sorted(k for k, v in manifest.items() if v is True and k != 'source_dirty')
+    if stages:
+        raise ValueError('lab-program image with other stages: ' + ', '.join(stages))
+
+
+# The lab programs the runner can check, by the device identity the kernel
+# reads at the program's target (`WIFI-BEGIN id=`).
+_LAB_PROGRAMS = {0x816810ec: 'rtl8168-arp'}
+# rtl8168-arp (LeanOS/Net/Rtl8168.lean): the register offsets of its before
+# (tag 0x4100 + offset) and after (0x4200 + offset) dumps, in print order.
+RTL8168_DUMP = (0x37, 0x3c, 0x3e, 0x40, 0x44, 0x4c, 0x50, 0x52, 0x54, 0x56, 0x58, 0x6c,
+                0xda, 0xe0, 0xec, 0x10, 0x14, 0x20, 0x24, 0x28, 0x2c, 0xe4, 0xe8)
+# The lab kernel's own terminal: it never admits the platform.
+_LAB_PROGRAM_FINAL = 'status=FAIL reason=qotom-platform-pending'
+
+
+def _rtl8168_arp(capture, values):
+    """The rtl8168-arp records (`docs/net-rtl8168.md`, "Maintainer hardware
+    steps", step 2): the before dump, link, transmit status, the router's
+    address and the frame count, no teardown timeout, the after dump with
+    the engines stopped, interrupts masked and 9346CR's EEM bits 7:6 clear,
+    then `40ff`. `values` are the program's (tag, value, position) records.
+    Returns the parsed records and their positions, which must ascend."""
+    fail = capture.fail
+
+    def dump(base, check):
+        got = [(t, v) for t, v, _ in values if t & 0xff00 == base]
+        tags = [t for t, _ in got]
+        expected = [base | off for off in RTL8168_DUMP]
+        if tags != expected:
+            missing = [t for t in expected if t not in tags]
+            extra = sorted({t for t in tags if t not in expected or tags.count(t) > 1})
+            detail = '; '.join(
+                [what + ' ' + ' '.join('%04x' % t for t in which)
+                 for what, which in (('missing', missing), ('repeated or unexpected', extra)) if which]
+                or ['out of order'])
+            fail(check, detail)
+        return {t & 0xff: v for t, v in got if tags.count(t) == 1}
+
+    def single(tag, check):
+        found = [(v, p) for t, v, p in values if t == tag]
+        if len(found) != 1:
+            fail(check, '%04x %s' % (tag, 'missing' if not found else 'repeated'))
+            return None
+        return found[0]
+
+    def first(base):
+        return next((p for t, _, p in values if t & 0xff00 == base), None)
+
+    def last(base):
+        return next((p for t, _, p in reversed(values) if t & 0xff00 == base), None)
+
+    before = dump(0x4100, 'before-dump')
+    link = single(0x4004, 'link')
+    if link is not None and not link[0] & 0x02:
+        fail('link', '4004 = 0x%02x without the link bit' % link[0])
+    transmit = [(v, p) for t, v, p in values if t == 0x400c]
+    if not 1 <= len(transmit) <= 3:
+        fail('transmit', '%d 400c records, not 1 to 3' % len(transmit))
+    for status, _ in transmit:
+        if status & 0x80000000:
+            fail('transmit', '400c = 0x%08x: the chip still owns the descriptor' % status)
+    router = [single(0x4007, 'router-address'), single(0x4008, 'router-address')]
+    address = None
+    if None not in router:
+        if router[1][0] > 0xffff:
+            fail('router-address', '4008 = 0x%08x is wider than 16 bits' % router[1][0])
+        else:
+            address = ':'.join('%02x' % b for b in
+                               (router[0][0] | router[1][0] << 32).to_bytes(6, 'little'))
+    frames = single(0x4009, 'frames')
+    if frames is not None and frames[0] < 1:
+        fail('frames', '4009 = 0: no frame received')
+    for tag, what in ((0x400d, 'the stop request timed out'), (0x400e, 'the reset did not complete')):
+        if any(t == tag for t, _, _ in values):
+            fail('teardown', '%04x: %s' % (tag, what))
+    after = dump(0x4200, 'after-dump')
+    if 0x37 in after and after[0x37] != 0:
+        fail('after-command', '4237 = 0x%02x, not 0: TE, RE or RST still set' % after[0x37])
+    if 0x3c in after and after[0x3c] != 0:
+        fail('after-imr', '423c = 0x%04x, not 0: interrupts unmasked' % after[0x3c])
+    if 0x50 in after and after[0x50] & 0xc0:
+        fail('after-9346cr', '4250 = 0x%02x: EEM bits 7:6 set, configuration registers unlocked'
+             % after[0x50])
+    done = single(0x40ff, 'done')
+    if done is not None and values[-1][0] != 0x40ff:
+        fail('done', '40ff is not the last record')
+    records = {'before_dump': {'%02x' % k: '0x%08x' % v for k, v in before.items()},
+               'link_media': '0x%02x' % link[0] if link else None,
+               'transmit_status': ['0x%08x' % v for v, _ in transmit],
+               'router_address': address, 'frames': frames[0] if frames else None,
+               'after_dump': {'%02x' % k: '0x%08x' % v for k, v in after.items()}}
+
+    def at(found):
+        return found[1] if found else None
+
+    order = [first(0x4100), last(0x4100), at(link), at(transmit[0] if transmit else None),
+             at(transmit[-1] if transmit else None), at(router[0]), at(router[1]), at(frames),
+             first(0x4200), last(0x4200), at(done)]
+    return records, [p for p in order if p is not None]
+
+
+def classify_lab_program(events, digest, manifest, timeout=120, recovery_slack=30):
+    """Classify a plain lab-program capture (issue #595) as PASS or FAIL.
+
+    The lab kernel runs the image's one Lean device program at its CPU
+    gate, between `WIFI-BEGIN` and `WIFI-END`, then ends with its own
+    terminal, `FINAL status=FAIL reason=qotom-platform-pending`: this image
+    never admits the platform, and the program's outcome is `WIFI-END`.
+    The device the kernel found at the program's target (`WIFI-BEGIN id=`)
+    names the program; the runner knows the records of `rtl8168-arp`.
+
+    The capture passes when it has the protected launch, the kernel's BOOT
+    record, one `WIFI-BEGIN`, the program's records in order, `WIFI-END
+    status=0`, the lab kernel's terminal and the recovery, as for a device
+    program (`classify_device_program`). Every failed check is collected
+    rather than raised. Only invalid inputs raise, and a capture of a
+    program whose records the runner does not know."""
+    lab_program_image(manifest)
+    if not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid protected image digest')
+    if manifest.get('elf_sha256') not in (None, digest):
+        raise ValueError('lab manifest names a different ELF')
+    capture = _Capture(events)
+    data, fail, once = capture.data, capture.fail, capture.once
+    accepted, armed, load, mode = capture.protected_launch(digest)
+    boot = once(rb'LEANOS/[0-9]+ BOOT ', 'boot')
+    if b'WATCHDOG-KICK' in data:
+        fail('watchdog-kicks', 'reload records in an image without a long session')
+
+    begin = once(rb'LEANOS-LAB/1 WIFI-BEGIN id=0x([0-9a-f]{8}) bar0=0x[0-9a-f]{8}\r?\n',
+                 'wifi-begin', b'WIFI-BEGIN')
+    program = None
+    if begin is not None:
+        device = int(begin.group(1), 16)
+        program = _LAB_PROGRAMS.get(device)
+        if program is None:
+            raise ValueError('no classifier for the lab program on device 0x%08x' % device)
+    ends = list(re.finditer(rb'LEANOS-LAB/1 WIFI-END status=([0-9a-z-]+)(?: code=(0x[0-9a-f]{8}))?\r?\n',
+                            data))
+    end = ends[0] if len(ends) == 1 and data.count(b'WIFI-END') == 1 else None
+    wifi_end = None
+    if end is None:
+        fail('wifi-end', 'missing or changed' if not ends else 'repeated')
+    else:
+        wifi_end = {'status': end.group(1).decode(),
+                    'code': end.group(2).decode() if end.group(2) else None}
+        if end.group(1) != b'0':
+            fail('wifi-end', 'program ended with status=%s code=%s'
+                 % (wifi_end['status'], wifi_end['code']))
+
+    terminals = list(re.finditer(rb'LEANOS/[0-9]+ FINAL ([^\r\n]*)\n', data))
+    terminal = terminals[0] if len(terminals) == 1 else None
+    terminal_info = None
+    if not terminals:
+        fail('terminal', 'no FINAL record')
+    elif terminal is None:
+        fail('terminal', 'repeated FINAL record')
+    else:
+        text = terminal.group(1).decode('ascii', 'replace')
+        fields = dict(item.split('=', 1) for item in text.split(' ') if '=' in item)
+        terminal_info = {'status': fields.get('status'), 'reason': fields.get('reason'),
+                         'fields': fields}
+        if text != _LAB_PROGRAM_FINAL:
+            fail('terminal', 'FINAL ' + text + ', not the lab kernel\'s ' + _LAB_PROGRAM_FINAL)
+
+    records = {'device_id': '0x' + begin.group(1).decode() if begin else None,
+               'wifi_end': wifi_end}
+    positions = [m.start() for m in (accepted, armed, load, mode, boot, begin) if m is not None]
+    if program is not None:
+        # The program's value records, from WIFI-BEGIN to WIFI-END (or to
+        # FINAL, or the end of the capture, if WIFI-END is missing).
+        stop = (end.start() if end else terminal.start() if terminal and terminal.start() > begin.end()
+                else len(data))
+        body = data[begin.end():stop]
+        matches = list(re.finditer(rb'WIFI ([0-9a-f]{4}) 0x([0-9a-f]{8})\r?\n', body))
+        if len(matches) != body.count(b'WIFI '):
+            fail('records', 'malformed WIFI value record')
+        values = [(int(m.group(1), 16), int(m.group(2), 16), begin.end() + m.start())
+                  for m in matches]
+        program_records, program_positions = _rtl8168_arp(capture, values)
+        records.update(program_records)
+        positions += program_positions
+    positions += [m.start() for m in (end, terminal) if m is not None]
+    if positions != sorted(positions):
+        fail('order', 'records out of order')
+
+    quiet, recovery = capture.recovery(terminal, armed, timeout, recovery_slack)
+    return {'scenario': 'qotom-' + (program or 'lab-program'), 'evidence': 'lab-program',
+            'status': 'FAIL' if capture.failures else 'PASS', 'failures': capture.failures,
+            'terminal': terminal_info, 'records': records,
+            'quiet_seconds': quiet, 'recovery_after_last_protection_seconds': recovery,
+            'watchdog_protected': armed is not None and load is not None,
+            'raw_sha256': hashlib.sha256(data).hexdigest()}
 
 
 
@@ -1438,6 +1676,50 @@ def classify_cpu_protected(events, digest, protocol_path, replay, pci_replay=Non
     return result
 
 
+POWER_CYCLE_MINUTES = 15
+
+
+def wait_for_recovery(elapsed, captured, boot_time, before, pause, bound,
+                      production_seconds=None, power_cycle_seconds=60 * POWER_CYCLE_MINUTES,
+                      prompt=None):
+    """Wait until FreeBSD is back after a run and return its new boot time.
+
+    `elapsed()` is the time since the run started, `captured()` the serial
+    bytes so far, `boot_time()` FreeBSD's boot time over SSH (None while it
+    is down), `before` its boot time before the run, and `pause()` sleeps
+    between polls. FreeBSD is back once the capture holds the FreeBSD chain
+    marker and its boot time differs from `before`.
+
+    A lab image recovers by itself, through the watchdog or the reset after
+    FINAL, so its wait is `bound` seconds from the start of the run. A
+    production image (issue #569) halts after FINAL until the maintainer
+    power-cycles the board. `prompt()` asks for the power cycle once: when
+    FINAL appears, or `production_seconds` + 180 seconds after the start if
+    it never does. The wait then lasts `power_cycle_seconds` from that
+    prompt (issue #595), however long the run took. Raises ValueError when
+    the wait runs out."""
+    prompted = None
+    while True:
+        now = elapsed()
+        data = captured()
+        if production_seconds is not None and prompted is None and (
+                re.search(rb'LEANOS/[0-9]+ FINAL ', data) or now > production_seconds + 180):
+            prompted = now
+            if prompt is not None:
+                prompt()
+        if production_seconds is None:
+            over = now >= bound
+        else:
+            over = prompted is not None and now >= prompted + power_cycle_seconds
+        if over:
+            raise ValueError('no verified FreeBSD recovery before timeout; manual recovery may be needed')
+        if CHAIN in data:
+            after = boot_time()
+            if after is not None and after != before:
+                return after
+        pause()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True)
@@ -1525,10 +1807,18 @@ def main():
                              'boot it from the one-shot request (--scenario leanos), which arms no '
                              'watchdog, observe for up to SECONDS (the program\'s serve window '
                              'plus the join), then wait for the maintainer to power-cycle the '
-                             'board back to FreeBSD; the image halts after FINAL')
+                             'board back to FreeBSD; the image halts after FINAL. The runner prints '
+                             'POWER-CYCLE when FINAL appears, or SECONDS + 180 seconds after the '
+                             'start if it never does')
+    parser.add_argument('--power-cycle-minutes', type=int, metavar='MINUTES',
+                        help='with --production-seconds: how many minutes after the POWER-CYCLE '
+                             'prompt to wait for the power cycle and FreeBSD\'s return '
+                             '(default %d, at most 240)' % POWER_CYCLE_MINUTES)
     parser.add_argument('--lab-manifest', type=Path,
                         help="the lab image's build manifest (default: manifest.json beside --elf); "
-                             'an --ipc-device-stream image is classified as a device program')
+                             'an --ipc-device-stream image is classified as a device program, and '
+                             'an image with one --lab-program and no other stage by its program\'s '
+                             'records (rtl8168-arp, with --scenario watchdog-leanos)')
     args = parser.parse_args()
     manifest_path = args.lab_manifest or args.elf.parent / 'manifest.json'
     lab_manifest = None
@@ -1547,8 +1837,26 @@ def main():
                          'diagnostic or long-session modes')
         if args.production_seconds is None or not 60 <= args.production_seconds <= 4500:
             parser.error('a production image needs --production-seconds 60..4500')
-    elif args.production_seconds is not None:
-        parser.error('--production-seconds needs a production network image')
+        if args.power_cycle_minutes is None:
+            args.power_cycle_minutes = POWER_CYCLE_MINUTES
+        elif not 1 <= args.power_cycle_minutes <= 240:
+            parser.error('--power-cycle-minutes must be 1..240')
+    elif args.production_seconds is not None or args.power_cycle_minutes is not None:
+        parser.error('--production-seconds and --power-cycle-minutes need a production network image')
+    # Issue #595: a plain --lab-program image under the protected launch is
+    # classified by its program's records. Other images keep their paths.
+    lab_program = False
+    if (lab_manifest is not None and not production and not device_program
+            and lab_manifest.get('lab_program_sha256') and args.scenario == 'watchdog-leanos'
+            and not (args.cpu_diagnostic or args.pci_diagnostic or args.bsp_production)):
+        try:
+            lab_program_image(lab_manifest)
+        except ValueError:
+            pass
+        else:
+            lab_program = True
+            if lab_manifest.get('elf_sha256') not in (None, hashlib.sha256(args.elf.read_bytes()).hexdigest()):
+                parser.error('lab manifest names a different ELF')
     if device_program:
         # Issue #572: the manifest's flags name the scenario and its records.
         try:
@@ -1707,7 +2015,7 @@ def main():
     ssh = shlex.split(args.ssh_prefix) + ['-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
                                         '-o', 'HostKeyAlias=' + args.host_key_alias, args.host]
     args.output.mkdir(parents=True, exist_ok=False)
-    if device_program or production:
+    if device_program or production or lab_program:
         (args.output / 'lab-manifest.json').write_text(json.dumps(lab_manifest, indent=2) + '\n')
     if has_diagnostic:
         (args.output / 'diagnostic-protocol.tsv').write_bytes(args.diagnostic_protocol.read_bytes())
@@ -1818,28 +2126,25 @@ grep -Fq 'WATCHDOG-LEANOS-LOAD sha256=DIGEST' /mnt/leanos-lab/boot/grub/grub.cfg
             bound = 420 if args.scenario.startswith('watchdog-') else 180
             if args.long_session:
                 bound += args.long_session + 120
-            if production:
-                # The run, then up to 15 minutes for the maintainer's power cycle.
-                bound += args.production_seconds + 900
-            prompted = False
-            while time.monotonic() - started < bound:
+
+            def captured():
                 if errors:
                     raise ValueError(errors)
-                if production and not prompted:
-                    seen = b''.join(bytes.fromhex(e['hex']) for e in events)
-                    if re.search(rb'LEANOS/[0-9]+ FINAL ', seen) or \
-                            time.monotonic() - started > args.production_seconds + 180:
-                        prompted = True
-                        print('POWER-CYCLE cycle=' + str(cycle) + ': the production image has '
-                              'halted (or its window is over); power-cycle the board now. '
-                              'GRUB finds the request consumed and chains FreeBSD.', flush=True)
-                if CHAIN in b''.join(bytes.fromhex(e['hex']) for e in events):
-                    after = boot_time()
-                    if after is not None and after != before:
-                        break
-                stop.wait(2)
-            else:
-                raise ValueError('no verified FreeBSD recovery before timeout; manual recovery may be needed')
+                return b''.join(bytes.fromhex(e['hex']) for e in events)
+
+            def prompt():
+                print('POWER-CYCLE cycle=%d: the production image has halted (or its window is '
+                      'over); power-cycle the board within %d minutes. GRUB finds the request '
+                      'consumed and chains FreeBSD.' % (cycle, args.power_cycle_minutes), flush=True)
+
+            # A production image waits for the maintainer's power cycle,
+            # counted from the prompt (issue #595).
+            after = wait_for_recovery(
+                lambda: time.monotonic() - started, captured, boot_time, before,
+                lambda: stop.wait(2), bound,
+                production_seconds=args.production_seconds if production else None,
+                power_cycle_seconds=60 * (args.power_cycle_minutes or POWER_CYCLE_MINUTES),
+                prompt=prompt)
         finally:
             stop.set(); thread.join()
             termios.tcsetattr(fd, termios.TCSANOW, previous); os.close(fd)
@@ -1873,15 +2178,12 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
             (directory / 'watchdog-kicks.json').write_text(json.dumps(kicks, indent=2) + '\n')
         else:
             kicks = None
-        if verify.returncode and not (device_program or production):
+        if verify.returncode and not (device_program or production or lab_program):
             raise ValueError('one-shot request was not verified consumed')
-        if production:
-            result = classify_production(events, digest, lab_manifest)
-            if verify.returncode:
-                result['failures'].append('recovery: one-shot request was not verified consumed')
-                result['status'] = 'FAIL'
-        elif device_program:
-            result = classify_device_program(events, digest, lab_manifest)
+        if production or device_program or lab_program:
+            classifier = (classify_production if production else
+                          classify_device_program if device_program else classify_lab_program)
+            result = classifier(events, digest, lab_manifest)
             if verify.returncode:
                 result['failures'].append('recovery: one-shot request was not verified consumed')
                 result['status'] = 'FAIL'
@@ -2106,9 +2408,9 @@ sha256 /mnt/leanos-lab/boot/grub/grub.cfg
         if kicks is not None:
             result['long_session_outcome'] = kicks.get('outcome')
         (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
-        if (device_program or production) and result['status'] != 'PASS':
-            # Issue #572: a device-program FAIL ends the run non-zero, with
-            # its result.json written.
+        if (device_program or production or lab_program) and result['status'] != 'PASS':
+            # Issues #572, #595: a device-program FAIL ends the run
+            # non-zero, with its result.json written.
             raise SystemExit('FAIL cycle=' + str(cycle) + ' ' + json.dumps(result['failures']))
         if kicks is not None and 'error' in kicks:
             # A long session that did not reach FINAL (issue #567) fails the

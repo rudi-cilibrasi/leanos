@@ -1,0 +1,11 @@
+{
+  "source_events_sha256": "b9c56a29ec92bd40a986f24aef75bc7fae5c2719dcb697243396847f71f93f5b",
+  "source_raw_sha256": "710ae847b0f668f84739df85f196da52587f8cbc433ae5e2cffb189a14687ff6",
+  "fragment": true,
+  "removed_lines": {
+    "payload": 0,
+    "fragment": 0
+  },
+  "timing_tsv_sha256": "825a3747f77ec170bd2124f059a4af9af01a324ef0451cf251888f58223da71a",
+  "raw_sha256": "710ae847b0f668f84739df85f196da52587f8cbc433ae5e2cffb189a14687ff6"
+}

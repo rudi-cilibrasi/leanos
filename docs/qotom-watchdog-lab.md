@@ -256,5 +256,7 @@ above does not apply to it. For an image built with `--ipc-device-stream`,
 the runner reads the image's `manifest.json` and checks the scenario's
 records instead: the same protected launch and recovery, then `FINAL
 status=PASS` (issue #572). It writes `result.json` with `status` `PASS` or
-`FAIL` and the failed checks, and exits non-zero on a FAIL. See
-[wifi-driver.md](wifi-driver.md#lab-runner-results-for-device-programs).
+`FAIL` and the failed checks, and exits non-zero on a FAIL. An image with a
+single `--lab-program` and no other stage is classified the same way
+against its program's records; the runner knows `rtl8168-arp` (issue #595).
+See [wifi-driver.md](wifi-driver.md#lab-runner-results-for-device-programs).
