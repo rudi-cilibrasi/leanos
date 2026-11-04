@@ -281,8 +281,9 @@ trusted.
 One handwritten C component has a machine-checked theorem of a different kind:
 **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean ([ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md),
-#597). The component is the early boot text console
+Lean (issue #597,
+[ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
+component is the early boot text console
 (`include/boot_text_console.h`). For every Multiboot2 buffer of up to 16 MiB and
 every sequence of printed bytes:
 

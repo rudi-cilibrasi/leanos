@@ -1,4 +1,4 @@
-# Verification of <scratch>/leanos_console-proof at b380bb4774fa
+# Verification of SCRATCH/leanos_console-proof at b380bb4774fa
 
 - date: 2026-11-04 01:16
 - framework: quickproof/ at fab76ef826ae (not a release tag of this verifier's repository)
