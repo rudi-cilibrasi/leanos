@@ -21,9 +21,12 @@
  * reselects the caller's root.
  *
  * This header builds the roots with the reviewed builder
- * (qotom_copy_root_builder.h) and checks every leaf of each result.  It
- * cannot establish the completeness of the protected inventory or that the
- * alias slots are unused by the kernel; its caller names both. */
+ * (qotom_copy_root_builder.h) and checks every leaf of each result.  Like
+ * the builder it names each root by its storage and its physical address,
+ * which CR3 selects and the root's own entries hold.  It cannot establish
+ * the completeness of the protected inventory, that the alias slots are
+ * unused by the kernel, or that each physical address is the storage's;
+ * its caller names all three. */
 
 #include "qotom_copy_root_builder.h"
 
@@ -42,6 +45,8 @@ extern uint64_t frame_window_transfer(uint64_t resume_root, uint64_t window_root
 struct frame_window {
     struct qotom_root_pages *fetch;
     struct qotom_root_pages *send;
+    uint64_t fetch_phys; /* physical address of *fetch, which CR3 selects */
+    uint64_t send_phys;  /* physical address of *send */
     uint64_t base;   /* first byte of the window, page aligned */
     uint64_t limit;  /* one past its last byte: one or two pages */
     uint64_t slot;   /* page number of the first alias slot */
@@ -68,14 +73,17 @@ static inline int frame_window_geometry_ok(const struct frame_window *w) {
         w->slot + frame_window_pages(w) <= QOTOM_ROOT_LEAVES;
 }
 
-/* `root` has the source hierarchy's shape, equals `closed` at every page
- * outside the alias slots, and maps exactly the window's frames at the alias
- * slots, supervisor and no-execute, writable exactly when `writable`; and
- * `closed` maps no protected frame at all. */
+/* `root` and `closed` have the source hierarchy's shape at their physical
+ * addresses, `root` equals `closed` at every page outside the alias slots,
+ * and maps exactly the window's frames at the alias slots, supervisor and
+ * no-execute, writable exactly when `writable`; and `closed` maps no
+ * protected frame at all. */
 static inline int frame_window_root_exact(const struct qotom_root_pages *root,
-        const struct qotom_root_pages *closed, const uint64_t *protected_frames,
-        size_t protected_count, const struct frame_window *w, int writable) {
-    if (!qotom_root_source_ancestors(root) || !qotom_root_source_ancestors(closed))
+        uint64_t root_phys, const struct qotom_root_pages *closed, uint64_t closed_phys,
+        const uint64_t *protected_frames, size_t protected_count,
+        const struct frame_window *w, int writable) {
+    if (!qotom_root_source_ancestors(root, root_phys) ||
+        !qotom_root_source_ancestors(closed, closed_phys))
         return 0;
     const uint64_t pages = frame_window_pages(w);
     for (size_t page = 0; page < QOTOM_ROOT_LEAVES; ++page) {
@@ -101,20 +109,25 @@ static inline int frame_window_root_exact(const struct qotom_root_pages *root,
  * check them leaf by leaf.  Every rebuild must reproduce the first build's
  * counts, which `first` holds once `*built` is set. */
 static inline enum frame_window_status frame_window_build(
-        const struct qotom_root_pages *source, struct qotom_root_pages *closed,
+        const struct qotom_root_pages *source, uint64_t source_phys,
+        struct qotom_root_pages *closed, uint64_t closed_phys,
         const uint64_t *protected_frames, size_t protected_count,
         const struct frame_window *w, struct qotom_root_build_result *first, int *built) {
     if (!frame_window_geometry_ok(w)) return FRAME_WINDOW_GEOMETRY;
     struct qotom_copy_alias aliases[FRAME_WINDOW_MAX_PAGES];
     const uint64_t pages = frame_window_pages(w);
     for (int writable = 1; writable >= 0; --writable) {
-        for (uint64_t i = 0; i < pages; ++i)
-            aliases[i] = (struct qotom_copy_alias){
-                w->slot + i, (w->base >> 12) + i, (uint64_t)writable };
+        for (uint64_t i = 0; i < pages; ++i) {
+            aliases[i].page = w->slot + i;
+            aliases[i].frame = (w->base >> 12) + i;
+            aliases[i].writable = (uint64_t)writable;
+        }
         struct qotom_root_build_result result;
         struct qotom_root_pages *root = writable ? w->fetch : w->send;
-        if (qotom_build_copy_roots(source, closed, root, protected_frames, protected_count,
-                aliases, (size_t)pages, &result) != QOTOM_ROOT_BUILD_OK)
+        const uint64_t root_phys = writable ? w->fetch_phys : w->send_phys;
+        if (qotom_build_copy_roots(source, source_phys, closed, closed_phys, root, root_phys,
+                protected_frames, protected_count, aliases, (size_t)pages, &result) !=
+                QOTOM_ROOT_BUILD_OK)
             return FRAME_WINDOW_BUILD;
         if (*built) {
             if (result.protected_count != first->protected_count ||
@@ -122,12 +135,15 @@ static inline enum frame_window_status frame_window_build(
                 result.retained_present != first->retained_present)
                 return FRAME_WINDOW_REBUILD;
         } else {
-            *first = result;
+            first->protected_count = result.protected_count;
+            first->removed_aliases = result.removed_aliases;
+            first->retained_present = result.retained_present;
+            first->alias_count = result.alias_count;
             *built = 1;
         }
         if (result.alias_count != pages ||
-            !frame_window_root_exact(root, closed, protected_frames, protected_count, w,
-                writable))
+            !frame_window_root_exact(root, root_phys, closed, closed_phys, protected_frames,
+                protected_count, w, writable))
             return FRAME_WINDOW_SCAN;
     }
     return FRAME_WINDOW_OK;

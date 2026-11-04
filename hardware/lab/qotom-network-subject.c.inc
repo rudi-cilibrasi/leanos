@@ -205,7 +205,7 @@ static void qotom_net_copy_out(uint64_t address, const uint8_t *source, uint64_t
                 (uint64_t)&source[done + i],
                 qotom_alias_address(address + done + i, qotom_copy_out_aliases)};
         if (leanos_copy_root_transfer(qotom_entry_closed_root,
-                (uint64_t)qotom_copy_out_root.pml4, qotom_net_operands, n) != n)
+                qotom_root_phys(&qotom_copy_out_root), qotom_net_operands, n) != n)
             qotom_blocking_fail("qotom-net-copy-out");
         done += n;
     }
@@ -220,7 +220,7 @@ static void qotom_net_copy_in(uint8_t *destination, uint64_t address, uint64_t l
                 qotom_alias_address(address + done + i, qotom_aliases),
                 (uint64_t)&destination[done + i]};
         if (leanos_copy_root_transfer(qotom_entry_closed_root,
-                (uint64_t)qotom_copy_root.pml4, qotom_net_operands, n) != n)
+                qotom_root_phys(&qotom_copy_root), qotom_net_operands, n) != n)
             qotom_blocking_fail("qotom-net-copy-in");
         done += n;
     }

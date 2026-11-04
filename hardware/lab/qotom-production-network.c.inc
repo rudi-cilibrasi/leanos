@@ -143,7 +143,7 @@ static __attribute__((noinline)) int qotom_prod_root_c_exact(void) {
     if ((const uint64_t *)root->pdpt != page_directory_pointer_c ||
         (const uint64_t *)root->pd != page_directory_c ||
         (const uint64_t *)root->pt != page_table_c ||
-        !qotom_root_source_ancestors(root))
+        !qotom_root_source_ancestors(root, qotom_root_phys(root)))
         return 0;
     for (size_t page = 0; page < QOTOM_ROOT_LEAVES; ++page)
         if ((root->pt[page] & ~(QOTOM_ROOT_ACCESSED | QOTOM_ROOT_DIRTY)) != leanos_boot_plan_c[page])
@@ -173,7 +173,9 @@ static __attribute__((noinline)) int qotom_prod_windows_exact(void) {
     for (unsigned i = 0; i < 2; ++i)
         for (int writable = 0; writable <= 1; ++writable)
             if (!frame_window_root_exact(writable ? qotom_windows[i].fetch : qotom_windows[i].send,
-                    &qotom_window_closed, qotom_protected_frames,
+                    writable ? qotom_windows[i].fetch_phys : qotom_windows[i].send_phys,
+                    &qotom_window_closed, qotom_root_phys(&qotom_window_closed),
+                    qotom_protected_frames,
                     qotom_root_result.protected_count, &qotom_windows[i], writable))
                 return 0;
     return 1;
@@ -189,8 +191,10 @@ static __attribute__((noinline)) void qotom_prod_build_windows(void) {
         (uint64_t)__user_a_stack_end - (uint64_t)__user_a_stack_start != QOTOM_PROD_A_WINDOW_BYTES)
         pre_admission_fail("qotom-production-window-slots");
     qotom_windows[0] = (struct frame_window){ &qotom_window_fetch_a, &qotom_window_send_a,
+        qotom_root_phys(&qotom_window_fetch_a), qotom_root_phys(&qotom_window_send_a),
         (uint64_t)__user_a_stack_start, (uint64_t)__user_a_stack_end, slot };
     qotom_windows[1] = (struct frame_window){ &qotom_window_fetch_c, &qotom_window_send_c,
+        qotom_root_phys(&qotom_window_fetch_c), qotom_root_phys(&qotom_window_send_c),
         (uint64_t)__user_c_stack_start, (uint64_t)__user_c_stack_end, slot };
     const struct qotom_root_pages *storage[] = { &qotom_window_closed, &qotom_window_fetch_a,
         &qotom_window_send_a, &qotom_window_fetch_c, &qotom_window_send_c };
@@ -199,7 +203,8 @@ static __attribute__((noinline)) void qotom_prod_build_windows(void) {
             pre_admission_fail("qotom-production-window-storage");
     int built = 0;
     for (unsigned i = 0; i < 2; ++i)
-        if (frame_window_build(source, &qotom_window_closed, qotom_protected_frames,
+        if (frame_window_build(source, qotom_root_phys(source), &qotom_window_closed,
+                qotom_root_phys(&qotom_window_closed), qotom_protected_frames,
                 qotom_root_result.protected_count, &qotom_windows[i], &qotom_window_first,
                 &built) != FRAME_WINDOW_OK)
             pre_admission_fail("qotom-production-window-build");
@@ -301,9 +306,9 @@ static __attribute__((noinline)) uint64_t qotom_prod_copy(uint64_t *saved, uint6
         !(model == QOTOM_PROD_MODEL_ECHO && qotom_prod_phase == QOTOM_PROD_C_SERVES))
         qotom_blocking_fail("qotom-production-copy-sequence");
     uint64_t moved = fetch
-        ? frame_window_transfer(qotom_entry_closed_root, (uint64_t)w->fetch->pml4, operand,
+        ? frame_window_transfer(qotom_entry_closed_root, w->fetch_phys, operand,
               (uint64_t)(qotom_net_scratch() + QOTOM_PROD_RX_AT), length)
-        : frame_window_transfer(qotom_entry_closed_root, (uint64_t)w->send->pml4,
+        : frame_window_transfer(qotom_entry_closed_root, w->send_phys,
               (uint64_t)(qotom_net_scratch() + QOTOM_PROD_TX_AT), operand, length);
     if (moved != length) qotom_blocking_fail("qotom-production-transfer");
     qotom_prod_window_copies++;

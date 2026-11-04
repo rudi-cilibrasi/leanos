@@ -1,11 +1,13 @@
 # Hosted tests that run unchanged under CompCert's reference interpreter
 # (scripts/check-compcert-interp.sh, ADR 0030): each must reach its end
 # without a "Stuck state", i.e. without undefined behaviour in CompCert's C
-# semantics on the test's own inputs. Survey at ee64a79 (#597): these pass;
-# pci-express-observation exceeds a 15-minute interpreter budget;
-# qotom-copy-root-builder stops at `<ptr source+4096> | 7U`, the
-# pointer-to-integer page-table idiom ADR 0030 names.
+# semantics on the test's own inputs. Survey at ee64a79 (#597): the first four
+# pass; pci-express-observation exceeds a 15-minute interpreter budget;
+# qotom-copy-root-builder stopped at `<ptr source+4096> | 7U`, the
+# pointer-to-integer page-table idiom ADR 0030 names, until #599 made the
+# builder take physical addresses as integers (about 6 minutes).
 tests/pci-capabilities.c
 tests/pci-power-observation.c
 tests/qotom-pcie-pending.c
 tests/qotom-broadcom-d3.c
+tests/qotom-copy-root-builder.c

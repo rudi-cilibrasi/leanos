@@ -136,8 +136,8 @@ uint64_t frame_window_transfer(uint64_t resume_root, uint64_t window_root,
     if (resume_root != CLOSED_ROOT || length > FRAME_WINDOW_MAX_BYTES) abort();
     for (unsigned i = 0; i < 2; ++i) {
         const struct frame_window *w = &qotom_windows[i];
-        int fetch = window_root == (uint64_t)w->fetch->pml4;
-        if (!fetch && window_root != (uint64_t)w->send->pml4) continue;
+        int fetch = window_root == w->fetch_phys;
+        if (!fetch && window_root != w->send_phys) continue;
         uint64_t alias = fetch ? destination : source;
         uint64_t first = w->slot << 12, past = first + (w->limit - w->base);
         if (alias < first || alias + length > past) abort();
@@ -214,9 +214,9 @@ static void setup(void) {
     yielded = 0; transmitted = 0; window_copies = 0; halted = 0;
     capturing = 0; final_length = 0; failure = 0;
     qotom_windows[0] = (struct frame_window){ &qotom_window_fetch_a, &qotom_window_send_a,
-        A_STACK, A_STACK_END, B_TEXT >> 12 };
+        qotom_root_phys(&qotom_window_fetch_a), qotom_root_phys(&qotom_window_send_a), A_STACK, A_STACK_END, B_TEXT >> 12 };
     qotom_windows[1] = (struct frame_window){ &qotom_window_fetch_c, &qotom_window_send_c,
-        C_STACK, C_STACK_END, B_TEXT >> 12 };
+        qotom_root_phys(&qotom_window_fetch_c), qotom_root_phys(&qotom_window_send_c), C_STACK, C_STACK_END, B_TEXT >> 12 };
     /* B reports the fixed first exchange; A's send returns later. */
     current_subject = 2; qotom_blocking_step = 4;
     qotom_entry_subject_root = (uint64_t)page_map_level_4_b;
