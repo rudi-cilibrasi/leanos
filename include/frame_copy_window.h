@@ -107,13 +107,17 @@ static inline int frame_window_root_exact(const struct qotom_root_pages *root,
 
 /* Build both of `w`'s roots from `source`, rewriting `closed` each time, and
  * check them leaf by leaf.  Every rebuild must reproduce the first build's
- * counts, which `first` holds once `*built` is set. */
+ * counts, which `first` holds once `*built` is set.  The source, the closed
+ * root and both window roots must occupy pairwise disjoint physical ranges. */
 static inline enum frame_window_status frame_window_build(
         const struct qotom_root_pages *source, uint64_t source_phys,
         struct qotom_root_pages *closed, uint64_t closed_phys,
         const uint64_t *protected_frames, size_t protected_count,
         const struct frame_window *w, struct qotom_root_build_result *first, int *built) {
     if (!frame_window_geometry_ok(w)) return FRAME_WINDOW_GEOMETRY;
+    /* Each build checks its root against the source and the closed root;
+     * the two window roots must not overlap each other either. */
+    if (!qotom_root_phys_disjoint(w->fetch_phys, w->send_phys)) return FRAME_WINDOW_BUILD;
     struct qotom_copy_alias aliases[FRAME_WINDOW_MAX_PAGES];
     const uint64_t pages = frame_window_pages(w);
     for (int writable = 1; writable >= 0; --writable) {

@@ -1,9 +1,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "qotom_copy_root_builder.h"
+#include "frame_copy_window.h"
 
-static struct qotom_root_pages source,closed,copy;
+static struct qotom_root_pages source,closed,copy,fetch,send;
 static struct qotom_root_build_result result;
 static const uint64_t protected_frames[2]={3,4};
 static const struct qotom_copy_alias aliases[2]={{100,3,0},{101,4,1}};
@@ -83,6 +83,74 @@ static int rejected(enum qotom_root_build_status expected,
         !memcmp(before_closed,&closed,sizeof(closed)) &&
         !memcmp(before_copy,&copy,sizeof(copy)) &&
         !memcmp(&before_result,&result,sizeof(result));
+}
+
+/* frame_window_build over the same source: a two-page window of frames 3
+ * and 4 aliased at pages 100 and 101, which the source leaves absent. */
+static int window_cases(void) {
+    place(0);initialize();
+    struct frame_window w={&fetch,&send,UINT64_C(0x300000),UINT64_C(0x30b000),
+        UINT64_C(3)<<12,UINT64_C(5)<<12,100};
+    struct qotom_root_build_result first;
+    int built=0;
+    ++cases;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_OK || !built ||
+       first.protected_count!=2 || first.removed_aliases!=4 ||
+       first.retained_present!=4089 || first.alias_count!=2)return 0;
+    if(!frame_window_root_exact(&fetch,w.fetch_phys,&closed,closed_phys,
+            protected_frames,2,&w,1) ||
+       !frame_window_root_exact(&send,w.send_phys,&closed,closed_phys,
+            protected_frames,2,&w,0) ||
+       !qotom_root_source_ancestors(&fetch,w.fetch_phys) ||
+       fetch.pt[101]!=((UINT64_C(4)<<12)|QOTOM_ROOT_PRESENT|QOTOM_ROOT_WRITABLE|QOTOM_ROOT_NX) ||
+       send.pt[101]!=((UINT64_C(4)<<12)|QOTOM_ROOT_PRESENT|QOTOM_ROOT_NX) ||
+       fetch.pt[3]!=0 || send.pt[7]!=source.pt[7])return 0;
+    /* The scan rejects a changed leaf, the other root's permission, and a
+     * closed root that maps a protected frame, even where both agree. */
+    ++cases;fetch.pt[7]^=QOTOM_ROOT_USER;
+    if(frame_window_root_exact(&fetch,w.fetch_phys,&closed,closed_phys,
+            protected_frames,2,&w,1))return 0;
+    fetch.pt[7]^=QOTOM_ROOT_USER;
+    ++cases;
+    if(frame_window_root_exact(&send,w.send_phys,&closed,closed_phys,
+            protected_frames,2,&w,1))return 0;
+    ++cases;closed.pt[300]=fetch.pt[300]=(UINT64_C(3)<<12)|QOTOM_ROOT_PRESENT;
+    if(frame_window_root_exact(&fetch,w.fetch_phys,&closed,closed_phys,
+            protected_frames,2,&w,1))return 0;
+    ++cases;
+    if(frame_window_root_exact(&fetch,w.fetch_phys+4096u,&closed,closed_phys,
+            protected_frames,2,&w,1))return 0;
+    /* A rebuild must reproduce the first build's counts. */
+    ++cases;first.removed_aliases=3;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_REBUILD)return 0;
+    first.removed_aliases=4;
+    ++cases;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_OK)return 0;
+    /* The window roots must not overlap each other. */
+    ++cases;w.send_phys=w.fetch_phys;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_BUILD)return 0;
+    ++cases;w.send_phys=w.fetch_phys+4096u;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_BUILD)return 0;
+    w.send_phys=UINT64_C(0x30b000);
+    /* The geometry, an occupied alias slot and a window frame outside the
+     * inventory. */
+    ++cases;w.base+=8u;w.limit+=8u;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_GEOMETRY)return 0;
+    w.base-=8u;w.limit-=8u;
+    ++cases;w.slot=101;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_BUILD)return 0;
+    w.slot=100;
+    ++cases;w.base=UINT64_C(4)<<12;w.limit=UINT64_C(6)<<12;
+    if(frame_window_build(&source,source_phys,&closed,closed_phys,protected_frames,2,
+            &w,&first,&built)!=FRAME_WINDOW_BUILD)return 0;
+    return 1;
 }
 
 #define REJECT(code,status,sp,ap,bp,frames,n,map,m) do { \
@@ -180,6 +248,7 @@ int main(void) {
      * same roots. */
     ++cases;place(0);initialize();closed.pml4[0]=3;closed.pml4[1]=4;
     if(!built(closed.pml4))return 28;
+    if(!window_cases())return 29;
     printf("Qotom copy-root builder: %u cases PASS\n",cases);
     return 0;
 }
