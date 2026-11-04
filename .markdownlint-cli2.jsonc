@@ -4,6 +4,11 @@
   },
   "ignores": [
     ".lake/**",
-    "**/node_modules/**"
+    "**/node_modules/**",
+    // Local build outputs, such as scripts/check-quickproof.sh reports.
+    "build/**",
+    // Verbatim QuickProof reports (`qp check`, `qp verify`), kept as evidence.
+    "experiments/quickproof/*/CHECK.md",
+    "experiments/quickproof/*/VERIFY.md"
   ]
 }

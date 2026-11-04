@@ -44,6 +44,17 @@ handoff and visible result still need physical verification. A graphics-only
 handoff remains unsupported and requires a bounded framebuffer backend to
 finish issue #335. No Qotom screen result is claimed by hosted or QEMU tests.
 
+The header also has a QuickProof theorem under CompCert's C semantics, for
+every Multiboot2 buffer and every printed byte sequence:
+
+- in-bounds parsing;
+- acceptance only of geometries the Lean selector accepts;
+- writes only inside the advertised surface, with the cursor inside it;
+- after each byte other than CR/LF, that byte in the cell before the cursor;
+- the cursor after CR and LF ([pilot](../experiments/quickproof/boot-text-console/README.md),
+[ADR 0030](adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
+selector's emitted C has a rung-3 theorem, SC-BOOT-TEXT-SURFACE-REFINEMENT.
+
 `python3 scripts/test-boot-text-console.py` checks malformed and truncated tags,
 duplicate/absent/unsupported displays, full-width scalar rejection, exact-width
 lines, CR/LF, scrolling, long output, reentrancy, disabled output, and guarded
