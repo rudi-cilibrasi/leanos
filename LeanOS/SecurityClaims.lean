@@ -52,6 +52,7 @@ import LeanOS.Refinement.ChildLoaderC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
 import LeanOS.Refinement.SpawnAllocatorC
+import LeanOS.Refinement.BootTextConsoleC
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
@@ -4051,6 +4052,33 @@ theorem spawn_allocator_spec_refinement (ext : Refinement.CSubset.Ext) :
   ⟨Refinement.SpawnAllocatorC.syscallWordsC_spec ext,
     Refinement.SpawnAllocatorC.kernelWordsC_spec ext,
     Refinement.SpawnAllocatorC.seedWordsC_eq ext⟩
+
+/-- SC-BOOT-TEXT-SURFACE-REFINEMENT: the C function `leanos_boot_text_surface`,
+as emitted by the pinned toolchain (with `valid` inlined) and interpreted by
+the `Refinement.CSubset` semantics, computes `BootTextConsole.checkRaw` on
+every six words; over the naturals it answers 1 exactly on the geometries the
+QuickProof model of the export assumes (#597), and every cell of an accepted
+geometry lies in the 32 KiB colour-text aperture. -/
+theorem boot_text_surface_refinement :
+    (∀ kind bits address pitch width height : UInt64,
+      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] =
+        some (BootTextConsole.checkRaw kind bits address pitch width height)) ∧
+    (∀ kind bits address pitch width height : UInt64,
+      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] =
+        some (if kind.toNat = 2 ∧ bits.toNat = 16 ∧ address.toNat = 753664 ∧
+                 0 < width.toNat ∧ width.toNat ≤ 160 ∧ 0 < height.toNat ∧ height.toNat ≤ 64 ∧
+                 pitch.toNat % 2 = 0 ∧ 2 * width.toNat ≤ pitch.toNat ∧ pitch.toNat ≤ 512
+              then 1 else 0)) ∧
+    (∀ (kind bits address pitch width height : UInt64) (row column : Nat),
+      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] = some 1 →
+      row < height.toNat → column < width.toNat →
+      row * pitch.toNat + 2 * column + 2 ≤ 32768) :=
+  ⟨Refinement.BootTextConsoleC.bootTextSurfaceC_refines,
+    Refinement.BootTextConsoleC.bootTextSurfaceC_spec,
+    Refinement.BootTextConsoleC.bootTextSurfaceC_cell_inside_aperture⟩
 
 /-- SC-CONSOLE-INTEGRITY: a subject holding neither the console capability nor
 an endpoint capability that reaches the console server cannot change the

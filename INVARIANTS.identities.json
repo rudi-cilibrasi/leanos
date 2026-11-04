@@ -25035,6 +25035,12 @@
     },
     {
       "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.boot_text_surface_refinement",
+      "display": "boot_text_surface_refinement",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.boot_transition_agreement",
       "display": "boot_transition_agreement",
       "kind": "theorem"

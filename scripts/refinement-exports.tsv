@@ -51,3 +51,6 @@ SpawnAllocatorWords	leanos_spawn_allocator_syscall_next	LeanOS/Refinement/SpawnA
 SpawnAllocatorWords	leanos_spawn_allocator_kernel	LeanOS/Refinement/SpawnAllocatorC.lean
 SpawnAllocatorWords	leanos_spawn_allocator_kernel_value	LeanOS/Refinement/SpawnAllocatorC.lean
 SpawnAllocatorWords	leanos_spawn_allocator_kernel_next	LeanOS/Refinement/SpawnAllocatorC.lean
+# Issue #597: the early text console's geometry selector, whose answer the
+# QuickProof model of experiments/quickproof/boot-text-console assumes.
+BootTextConsole	leanos_boot_text_surface	LeanOS/Refinement/BootTextConsoleC.lean

@@ -1,7 +1,7 @@
 import LeanOS.SecurityClaims
 
 /-!
-Pinned statements of the refinement-ladder claims (issues #475, #570, #593). A weakened
+Pinned statements of the refinement-ladder claims (issues #475, #570, #593, #597). A weakened
 conclusion or an added hypothesis changes the printed type, so the
 `#guard_msgs` contract below fails; `scripts/check-refinement-mutants.sh`
 shows a weakened statement of each refinement claim is rejected this way.
@@ -133,6 +133,36 @@ info: LeanOS.SecurityClaims.frame_port_check_refinement :
 -/
 #guard_msgs in
 #check LeanOS.SecurityClaims.frame_port_check_refinement
+
+/--
+info: LeanOS.SecurityClaims.boot_text_surface_refinement :
+  (∀ (kind bits address pitch width height : UInt64),
+      LeanOS.Refinement.CSubset.call LeanOS.Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] =
+        some (LeanOS.BootTextConsole.checkRaw kind bits address pitch width height)) ∧
+    (∀ (kind bits address pitch width height : UInt64),
+        LeanOS.Refinement.CSubset.call LeanOS.Refinement.BootTextConsoleC.bootTextSurfaceC
+            [kind, bits, address, pitch, width, height] =
+          some
+            (if
+                kind.toNat = 2 ∧
+                  bits.toNat = 16 ∧
+                    address.toNat = 753664 ∧
+                      0 < width.toNat ∧
+                        width.toNat ≤ 160 ∧
+                          0 < height.toNat ∧
+                            height.toNat ≤ 64 ∧
+                              pitch.toNat % 2 = 0 ∧ 2 * width.toNat ≤ pitch.toNat ∧ pitch.toNat ≤ 512 then
+              1
+            else 0)) ∧
+      ∀ (kind bits address pitch width height : UInt64) (row column : Nat),
+        LeanOS.Refinement.CSubset.call LeanOS.Refinement.BootTextConsoleC.bootTextSurfaceC
+              [kind, bits, address, pitch, width, height] =
+            some 1 →
+          row < height.toNat → column < width.toNat → row * pitch.toNat + 2 * column + 2 ≤ 32768
+-/
+#guard_msgs in
+#check LeanOS.SecurityClaims.boot_text_surface_refinement
 
 /--
 info: LeanOS.SecurityClaims.spawn_allocator_refinement (ext : LeanOS.Refinement.CSubset.Ext) :
