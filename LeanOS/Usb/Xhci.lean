@@ -158,7 +158,7 @@ def erst : UInt32 := Layout.erst              -- one segment entry
 def inputCtx : UInt32 := Layout.inputCtx      -- 33 × 32
 def outCtxBase : UInt32 := Layout.outCtxBase  -- slot n: + 0x400 × (n - 1), 4 slots
 def ep0RingBase : UInt32 := Layout.ep0RingBase -- slot n: + 0x400 × (n - 1)
-def intRing : UInt32 := Layout.intRing        -- keyboard interrupt IN ring
+def intRing : UInt32 := Layout.intRing        -- HID interrupt IN ring
 def dataBuf : UInt32 := Layout.dataBuf        -- control transfer data (512)
 def reportBuf : UInt32 := Layout.reportBuf    -- interrupt report (64)
 def prevReport : UInt32 := Layout.prevReport
@@ -247,9 +247,20 @@ def commandRing : Ring := { base := cmdRing, enqV := Var.cmdEnq, cycleV := Var.c
 def transferRing (id : Nat) (base : UInt32) : Ring :=
   { base, enqV := Var.ringEnq id, cycleV := Var.ringCycle id }
 
-/-- Initialise a ring: enqueue 0, cycle 1, last TRB a Link TRB (toggle cycle)
-back to the start. -/
+/-- Initialise a ring: every TRB's control dword cleared, enqueue 0, cycle
+1, last TRB a Link TRB (toggle cycle) back to the start. Clearing matters when
+a ring is reused: the EP0 ring of a driver context that addressed a device
+the enumeration passed over still holds that device's TRBs with cycle bit 1,
+which the controller would run again after the next device's first request.
+Type 0 with cycle 0 is never a TRB the consumer takes, nor one whose
+parameter is a pointer (`Descriptor.trbParamIsPtr`). Uses r1. -/
 def ringInit (r : Ring) : ProgM Unit := do
+  li 1 0
+  let clear ← newLabel
+  place clear
+  emit (.memStore 4 1 (r.base + 12) (.imm 0))
+  addi 1 16
+  emit (.branch .ltu 1 (.imm (16 * (ringTrbs - 1))) clear)
   st 4 r.enqV (.imm 0)
   st 4 r.cycleV (.imm 1)
   let link := r.base + 16 * (ringTrbs - 1)
@@ -312,11 +323,11 @@ the DCBAA (MaxSlotsEn + 1 entries: the scratchpad array, then each slot's
 output context), the scratchpad array, the ERST entry's segment base, the TR
 Dequeue Pointer of every endpoint context in the input context (contexts
 2–32), and every TRB of the command ring, the EP0 transfer rings and the
-keyboard's interrupt ring (a TRB's parameter is a pointer unless the TRB type
-says otherwise, `Descriptor.trbParamIsPtr`). The event ring and the output
-contexts are written by the controller, not the driver. That this map lists
-every pointer field the controller follows (xHCI 1.1 §6.1–§6.4) is an
-assumption about the specification. -/
+HID device's (keyboard or mouse) interrupt ring (a TRB's parameter is a
+pointer unless the TRB type says otherwise, `Descriptor.trbParamIsPtr`). The
+event ring and the output contexts are written by the controller, not the
+driver. That this map lists every pointer field the controller follows
+(xHCI 1.1 §6.1–§6.4) is an assumption about the specification. -/
 
 def descriptorMap : List Descriptor :=
   [{ trb := false, start := dcbaa, count := maxSlots + 1, stride := 8 }] ++
