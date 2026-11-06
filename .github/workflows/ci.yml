@@ -449,10 +449,11 @@ jobs:
           ./scripts/check-firmware-boot.sh build/boot/leanos-0.1.0-x86_64.iso \
             build/ci/firmware-boot 2>&1 | tee build/ci/firmware-boot.log
 
-      - name: Boot the canonical image's kernel over the network (PXE)
+      - name: Boot the netboot and canonical images over the network (PXE)
         run: |
           set -o pipefail
-          ./scripts/check-netboot.sh build/boot/leanos-0.1.0-x86_64.iso \
+          ./scripts/check-netboot.sh build/boot/leanos-0.1.0-x86_64-netboot.iso \
+            build/boot/leanos-0.1.0-x86_64.iso \
             build/ci/netboot 2>&1 | tee build/ci/netboot.log
 
       - name: Preserve Clang compiler and canonical boot evidence
@@ -462,6 +463,8 @@ jobs:
           name: leanos-clang-canonical-${{ github.sha }}
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
+            build/boot/leanos-0.1.0-x86_64-netboot.iso
+            build/boot/leanos-netboot.elf
             build/boot/leanos-0.1.0-x86_64-assigned-edu.iso
             build/boot/leanos-assigned-edu.elf
             build/boot/leanos-assigned-edu.map
@@ -488,6 +491,9 @@ jobs:
             build/ci/clang-image-build-phases.tsv
             build/ci/clang-image-build-phases-bootstrap.tsv
             build/ci/clang-canonical-boot.log
+            build/ci/netboot.log
+            build/ci/netboot/*.log
+            build/ci/netboot/*.tsv
             build/oracle/
           if-no-files-found: error
           retention-days: 14

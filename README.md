@@ -180,6 +180,7 @@ index current:
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `keyboard-echo` | evidence | SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
 | `ahci-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS |
+| `netboot` | evidence | SC-DMA-QUARANTINE |
 | `example-subject` | evidence | none (integration only) |
 | `network-subject` | evidence | SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
 | `gtk-rekey` | evidence | SC-WIFI-GROUP-KEY-ROTATION, SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT |
@@ -353,9 +354,9 @@ tools, debug artifacts, and added trusted boundary are documented in
 The ISO boots under BIOS and UEFI from a CD-ROM, and from a disk or USB stick
 it is written to raw. Its kernel and `grub.cfg` also boot over the network
 (PXE/TFTP) from a tree that `scripts/build-netboot-tree.sh` makes from the ISO.
-CI boots all of these on q35. On q35 a netbooted kernel then refuses the boot
-NIC, which the admitted topology leaves out (#601). See "Boot media" in the
-guide.
+CI boots all of these on q35. Netbooted, the canonical kernel refuses the boot
+NIC, which its admitted topology leaves out; the netboot image admits that NIC
+quarantined and passes (#601). See "Boot media" in the guide.
 
 The same unchanged image also boots in a browser: the
 [in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical
