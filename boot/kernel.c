@@ -7072,12 +7072,15 @@ static void frame_window_install(void) {
         fail("frame-window-inventory-count");
     const uint64_t slot = (uint64_t)__user_b_text_start >> 12;
     frame_windows[0] = (struct frame_window){ &frame_window_fetch_b, &frame_window_send_b,
+        qotom_root_phys(&frame_window_fetch_b), qotom_root_phys(&frame_window_send_b),
         dhcp_window_base(DHCP_CLIENT), dhcp_window_limit(DHCP_CLIENT), slot };
     frame_windows[1] = (struct frame_window){ &frame_window_fetch_c, &frame_window_send_c,
+        qotom_root_phys(&frame_window_fetch_c), qotom_root_phys(&frame_window_send_c),
         dhcp_window_base(DHCP_ECHO), dhcp_window_limit(DHCP_ECHO), slot };
     int built = 0;
     for (unsigned i = 0; i < 2; ++i) {
-        if (frame_window_build(source, &frame_window_closed, frame_window_protected,
+        if (frame_window_build(source, qotom_root_phys(source), &frame_window_closed,
+                qotom_root_phys(&frame_window_closed), frame_window_protected,
                 frame_window_protected_count, &frame_windows[i], &frame_window_first, &built) !=
                 FRAME_WINDOW_OK)
             fail("frame-window-roots");
@@ -7119,10 +7122,8 @@ static void frame_window_copy(uint64_t who, unsigned fetch, uint64_t operand,
                                          : (uint64_t)page_map_level_4_c;
     if (!w || operand == 0) fail("frame-window-copy");
     uint64_t moved = fetch
-        ? frame_window_transfer(resume, (uint64_t)w->fetch->pml4, operand,
-              (uint64_t)kernel, len)
-        : frame_window_transfer(resume, (uint64_t)w->send->pml4, (uint64_t)kernel,
-              operand, len);
+        ? frame_window_transfer(resume, w->fetch_phys, operand, (uint64_t)kernel, len)
+        : frame_window_transfer(resume, w->send_phys, (uint64_t)kernel, operand, len);
     if (moved != len) fail("frame-window-transfer");
     frame_window_copies++;
 }
