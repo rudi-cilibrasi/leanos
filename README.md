@@ -278,10 +278,10 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-Three handwritten C components have machine-checked theorems of a different
+Four handwritten C components have machine-checked theorems of a different
 kind: **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean (issues #597, #599 and #604,
+Lean (issues #597, #599, #604 and #606,
 [ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
 first is the early boot text console (`include/boot_text_console.h`). For every
 Multiboot2 buffer of up to 16 MiB and every sequence of printed bytes:
@@ -329,6 +329,15 @@ every failure and publishes nothing then. On success it publishes exactly the
 list it read, at distinct aligned offsets. A fixed, well-formed list of up to
 48 headers is published whole
 ([the project](experiments/quickproof/pci-capabilities/README.md)).
+
+The fourth is the PCI segment scan (`boot/pci-enumeration.h`), which reads
+every function's header from the device. Against a device that may fail any
+read or answer anything, also differently each time, the scan reads exactly
+in bus, device, function order and only conventional space, at most
+65536 + 16 × 15 times. It names the first failed read or the seventeenth
+function found and publishes nothing then. Otherwise it publishes exactly the
+functions found, each with the sixteen dwords the device answered
+([the project](experiments/quickproof/pci-enumeration/README.md)).
 
 The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
 boundary: they run in ring 0, and their confinement to a per-device policy is
