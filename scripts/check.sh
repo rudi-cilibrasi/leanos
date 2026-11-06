@@ -226,8 +226,12 @@ phase_device_program_lab() {
 ensure_lean_build
 
 ./scripts/check-device-programs.sh
+lake build leanos-usb-kbd-decode leanos-usb-mouse-decode
+.lake/build/bin/leanos-usb-kbd-decode
+.lake/build/bin/leanos-usb-mouse-decode
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service
+python3 scripts/run-q35-device-lab.py --mouse
 }
 
 phase_security_and_platform_contracts() {

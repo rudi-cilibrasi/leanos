@@ -158,7 +158,7 @@ def erst : UInt32 := Layout.erst              -- one segment entry
 def inputCtx : UInt32 := Layout.inputCtx      -- 33 × 32
 def outCtxBase : UInt32 := Layout.outCtxBase  -- slot n: + 0x400 × (n - 1), 4 slots
 def ep0RingBase : UInt32 := Layout.ep0RingBase -- slot n: + 0x400 × (n - 1)
-def intRing : UInt32 := Layout.intRing        -- keyboard interrupt IN ring
+def intRing : UInt32 := Layout.intRing        -- HID interrupt IN ring
 def dataBuf : UInt32 := Layout.dataBuf        -- control transfer data (512)
 def reportBuf : UInt32 := Layout.reportBuf    -- interrupt report (64)
 def prevReport : UInt32 := Layout.prevReport
@@ -312,11 +312,11 @@ the DCBAA (MaxSlotsEn + 1 entries: the scratchpad array, then each slot's
 output context), the scratchpad array, the ERST entry's segment base, the TR
 Dequeue Pointer of every endpoint context in the input context (contexts
 2–32), and every TRB of the command ring, the EP0 transfer rings and the
-keyboard's interrupt ring (a TRB's parameter is a pointer unless the TRB type
-says otherwise, `Descriptor.trbParamIsPtr`). The event ring and the output
-contexts are written by the controller, not the driver. That this map lists
-every pointer field the controller follows (xHCI 1.1 §6.1–§6.4) is an
-assumption about the specification. -/
+HID device's (keyboard or mouse) interrupt ring (a TRB's parameter is a
+pointer unless the TRB type says otherwise, `Descriptor.trbParamIsPtr`). The
+event ring and the output contexts are written by the controller, not the
+driver. That this map lists every pointer field the controller follows
+(xHCI 1.1 §6.1–§6.4) is an assumption about the specification. -/
 
 def descriptorMap : List Descriptor :=
   [{ trb := false, start := dcbaa, count := maxSlots + 1, stride := 8 }] ++

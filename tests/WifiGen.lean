@@ -1,5 +1,6 @@
 import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
+import LeanOS.Usb.Mouse
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Storage.Ahci
 import LeanOS.Storage.AhciRead
@@ -197,6 +198,13 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
       let secs := ((← IO.getEnv "LEANOS_KBD_SECONDS").bind String.toNat?).getD 10
       let idle := ((← IO.getEnv "LEANOS_KBD_IDLE").bind String.toNat?).getD 0
       return @LeanOS.Usb.Keyboard.program LeanOS.Usb.Xhci.qemu secs.toUInt32 idle.toUInt32 false false),
+   -- USB boot mouse (issue #607): the Qotom's Bay Trail controller, and qemu-xhci.
+   ("mouse", do
+      let secs := ((← IO.getEnv "LEANOS_MOUSE_SECONDS").bind String.toNat?).getD 60
+      return @LeanOS.Usb.Mouse.program LeanOS.Usb.Xhci.bayTrail secs.toUInt32),
+   ("mouse-q35", do
+      let secs := ((← IO.getEnv "LEANOS_MOUSE_SECONDS").bind String.toNat?).getD 10
+      return @LeanOS.Usb.Mouse.program LeanOS.Usb.Xhci.qemu secs.toUInt32),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir
