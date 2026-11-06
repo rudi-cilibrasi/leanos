@@ -1,6 +1,6 @@
 # pci_capabilities: harness check
 
-By `tools/qp check` on 2026-11-06 12:43: upstream c08cd0c72909, quickproof fab76ef.
+By `tools/qp check` on 2026-11-06 13:05: upstream fba97e16470d, quickproof fab76ef.
 
 ## Native runs (ASan/UBSan, 3000 runs per harness)
 
