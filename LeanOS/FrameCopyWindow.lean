@@ -61,12 +61,17 @@ proves:
   move touches exactly the bytes the model's step does
   (`frameWindowOperand_fetch`, `frameWindowOperand_send`).
 
-Not modelled: the construction of the roots from the boot page tables
-(`include/qotom_copy_root_builder.h`, checked by the kernel's exact scans),
-CR3 loads and TLB invalidation (the transfer reloads CR3 and reads it back,
-with PCID and global pages disabled), interrupts during the move (the
-kernel keeps IF clear), the string move instruction itself and the
-compiler. The booted kernel is tested, not proved, against this model.
+The roots' construction from the boot page tables is C
+(`include/frame_copy_window.h` over `include/qotom_copy_root_builder.h`).
+The QuickProof law `window_roots_isolated` (`experiments/quickproof/copy-roots`)
+proves under CompCert's C semantics which page-table words an accepted build
+leaves. `LeanOS.FrameWindowWords` proves that those words are `windowRoot`
+over a `Closed` root (#599).
+
+Not modelled: CR3 loads and TLB invalidation (the transfer reloads CR3 and
+reads it back, with PCID and global pages disabled), interrupts during the
+move (the kernel keeps IF clear), the string move instruction itself and
+the compiler. The booted kernel is tested, not proved, against this model.
 -/
 
 namespace LeanOS.FrameCopyWindow
