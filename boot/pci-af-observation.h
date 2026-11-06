@@ -27,7 +27,8 @@ static inline struct pci_af_observation pci_observe_af(
     if (!read || !initial || !previous || previous->count > PCI_CAPABILITY_CAPACITY)
         return out;
     struct pci_capability_snapshot fresh;
-    struct pci_capability_result result = pci_collect_capabilities(read, context, initial, &fresh);
+    struct pci_capability_result result;
+    pci_collect_capabilities(read, context, initial, &fresh, &result);
     if (result.status != PCI_CAPABILITY_OK) {
         out.status = PCI_AF_COLLECTION_FAILED; return out;
     }

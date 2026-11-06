@@ -26,7 +26,7 @@ static inline struct pci_power_observation pci_observe_power(
     if(!read || !initial || !previous || previous->count>PCI_CAPABILITY_CAPACITY)
         return out;
     struct pci_capability_snapshot fresh,final;
-    if(pci_collect_capabilities(read,context,initial,&fresh).status!=PCI_CAPABILITY_OK) {
+    if(pci_collect_capabilities(read,context,initial,&fresh,0)!=PCI_CAPABILITY_OK) {
         out.status=PCI_POWER_COLLECTION_FAILED;return out;
     }
     if(!pci_express_same_list(&fresh,previous)) {
@@ -54,7 +54,7 @@ static inline struct pci_power_observation pci_observe_power(
         out.status=PCI_POWER_READ_FAILED;return out;
     }
     if(value==UINT32_MAX) {out.status=PCI_POWER_ABSENT;return out;}
-    if(pci_collect_capabilities(read,context,initial,&final).status!=PCI_CAPABILITY_OK ||
+    if(pci_collect_capabilities(read,context,initial,&final,0)!=PCI_CAPABILITY_OK ||
        !pci_express_same_list(&fresh,&final)) {
         out.status=PCI_POWER_FINAL_FAILED;return out;
     }
