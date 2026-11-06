@@ -232,6 +232,7 @@ lake build leanos-usb-kbd-decode leanos-usb-mouse-decode
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service
 python3 scripts/run-q35-device-lab.py --mouse
+python3 scripts/run-q35-device-lab.py --mouse --keyboard-first
 }
 
 phase_security_and_platform_contracts() {

@@ -247,9 +247,20 @@ def commandRing : Ring := { base := cmdRing, enqV := Var.cmdEnq, cycleV := Var.c
 def transferRing (id : Nat) (base : UInt32) : Ring :=
   { base, enqV := Var.ringEnq id, cycleV := Var.ringCycle id }
 
-/-- Initialise a ring: enqueue 0, cycle 1, last TRB a Link TRB (toggle cycle)
-back to the start. -/
+/-- Initialise a ring: every TRB's control dword cleared, enqueue 0, cycle
+1, last TRB a Link TRB (toggle cycle) back to the start. Clearing matters when
+a ring is reused: the EP0 ring of a driver context that addressed a device
+the enumeration passed over still holds that device's TRBs with cycle bit 1,
+which the controller would run again after the next device's first request.
+Type 0 with cycle 0 is never a TRB the consumer takes, nor one whose
+parameter is a pointer (`Descriptor.trbParamIsPtr`). Uses r1. -/
 def ringInit (r : Ring) : ProgM Unit := do
+  li 1 0
+  let clear ← newLabel
+  place clear
+  emit (.memStore 4 1 (r.base + 12) (.imm 0))
+  addi 1 16
+  emit (.branch .ltu 1 (.imm (16 * (ringTrbs - 1))) clear)
   st 4 r.enqV (.imm 0)
   st 4 r.cycleV (.imm 1)
   let link := r.base + 16 * (ringTrbs - 1)

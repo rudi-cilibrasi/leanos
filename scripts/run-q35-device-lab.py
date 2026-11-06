@@ -26,9 +26,9 @@ motion sent in that state. The ready record must name QEMU's mouse.
 
 `--mouse --keyboard-first` puts a USB keyboard on hub port 1 and the mouse on
 port 2, so the driver must pass over the keyboard's boot interface (protocol
-1). This currently fails the ready-record check: the passed-over device's
-EP0 transfer descriptors are still valid in the reused ring and the
-controller runs them again for the mouse (docs/usb-mouse.md).
+1) and address the mouse in the driver context the keyboard used. The ready
+record must still name the mouse: a regression check that the reused EP0
+ring holds none of the keyboard's transfer descriptors (`Xhci.ringInit`).
 
 usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first]] [--text hello]
                              [--output DIR] [--no-build]
