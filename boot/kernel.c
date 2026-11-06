@@ -3,6 +3,7 @@
 #include "serial-protocol.h"
 #include "boundary-abi.h"
 #include "boot_text_console.h"
+#include "acpi_table_copy.h"
 #ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
 #include "qotom-platform-admission-state.h"
 #endif
@@ -1548,22 +1549,9 @@ struct copied_boot_handoff {
     uint32_t executing_apic_id;
 };
 
-#define MAX_COPIED_ACPI_SDT_BYTES UINT32_C(65536)
-#define MAX_ACPI_ROOT_ENTRIES UINT32_C(256)
+/* MAX_COPIED_ACPI_SDT_BYTES, MAX_ACPI_ROOT_ENTRIES and the copy structs are
+   include/acpi_table_copy.h's. */
 #define MAX_COPIED_ACPI_TABLE_BYTES (UINT32_C(1024) * UINT32_C(1024))
-
-struct copied_acpi_sdt {
-    uint64_t physical_address;
-    const uint8_t *bytes;
-    uint32_t length;
-    uint32_t next_copy_offset;
-};
-
-struct acpi_root_entries {
-    const uint8_t *bytes;
-    uint32_t count;
-    uint32_t width;
-};
 
 static uint8_t boot_acpi_root_copy[MAX_COPIED_ACPI_SDT_BYTES]
     __attribute__((aligned(8)));
@@ -1620,116 +1608,134 @@ static void copy_acpi_physical_bytes(
     __asm__ volatile ("invlpg (%0)" : : "r"(window) : "memory");
 }
 
-/* Copy one complete ACPI SDT into kernel-owned storage before generated
-   validation sees it.  Address translation and this byte copy remain trusted;
-   signature, declared-length, checksum, root-entry, and MADT admission checks
-   remain the generated boundary's responsibility.  The caller supplies a
-   dedicated immutable-after-copy arena so the selected root and candidate
-   table cannot alias each other. */
+/* The physical copy of the ACPI pipeline (include/acpi_table_copy.h): the
+   trusted aperture copy above, which fails the handoff itself rather than
+   return 0. */
+static int boot_acpi_physical_copy(void *context, uint64_t physical_address,
+                                   uint8_t *destination, uint32_t length) {
+    (void)context;
+    copy_acpi_physical_bytes(physical_address, destination, length);
+    return 1;
+}
+
+/* Fail the handoff with the reason of a status of include/acpi_table_copy.h;
+   return on ACPI_TABLE_COPY_OK.  The kernel's physical copy never returns
+   failure, so ACPI_TABLE_COPY_PHYSICAL takes the reason the copy gives for
+   an address it refuses. */
+static void acpi_table_copy_require(enum acpi_table_copy_status status) {
+    if (status == ACPI_TABLE_COPY_OK) return;
+    if (status == ACPI_TABLE_COPY_ROOT_SELECTION)
+        handoff_fail("topology-root-selection");
+    if (status == ACPI_TABLE_COPY_SDT_ADDRESS_WIDTH)
+        handoff_fail("topology-sdt-address-width");
+    if (status == ACPI_TABLE_COPY_PHYSICAL)
+        handoff_fail("topology-sdt-address");
+    if (status == ACPI_TABLE_COPY_SDT_LENGTH)
+        handoff_fail("topology-sdt-length");
+    if (status == ACPI_TABLE_COPY_BUDGET)
+        handoff_fail("topology-table-copy-budget");
+    if (status == ACPI_TABLE_COPY_LENGTH)
+        handoff_fail("topology-table-copy-length");
+    if (status == ACPI_TABLE_COPY_ADDRESS)
+        handoff_fail("topology-table-copy-address");
+    if (status == ACPI_TABLE_COPY_OFFSET)
+        handoff_fail("topology-table-copy-offset");
+    if (status == ACPI_TABLE_COPY_TERMINAL)
+        handoff_fail("topology-table-copy-terminal");
+    if (status == ACPI_TABLE_COPY_ERROR)
+        handoff_fail("topology-table-copy-error");
+    if (status == ACPI_TABLE_COPY_STATUS)
+        handoff_fail("topology-table-copy-status");
+    if (status == ACPI_TABLE_COPY_NEXT_BYTE)
+        handoff_fail("topology-table-copy-next-byte");
+    if (status == ACPI_TABLE_COPY_EXPOSED)
+        handoff_fail("topology-table-copy-exposed");
+    if (status == ACPI_TABLE_COPY_PARTIAL_CURSOR)
+        handoff_fail("topology-table-copy-partial-cursor");
+    if (status == ACPI_TABLE_COPY_FINAL_CURSOR)
+        handoff_fail("topology-table-copy-final-cursor");
+    if (status == ACPI_TABLE_COPY_ROOT_COPY)
+        handoff_fail("topology-root-copy");
+    if (status == ACPI_TABLE_COPY_SDT_ENVELOPE)
+        handoff_fail("topology-sdt-envelope");
+    if (status == ACPI_TABLE_COPY_SDT_CHECKSUM)
+        handoff_fail("topology-sdt-checksum");
+    if (status == ACPI_TABLE_COPY_ROOT_KIND)
+        handoff_fail("topology-root-kind");
+    if (status == ACPI_TABLE_COPY_ROOT_HEADER)
+        handoff_fail("topology-root-header");
+    if (status == ACPI_TABLE_COPY_ROOT_WIDTH)
+        handoff_fail("topology-root-width");
+    if (status == ACPI_TABLE_COPY_ROOT_ENTRIES)
+        handoff_fail("topology-root-entries");
+    if (status == ACPI_TABLE_COPY_ROOT_VECTOR)
+        handoff_fail("topology-root-vector");
+    if (status == ACPI_TABLE_COPY_ROOT_ENTRY_INDEX)
+        handoff_fail("topology-root-entry-index");
+    if (status == ACPI_TABLE_COPY_ROOT_ENTRY_ADDRESS)
+        handoff_fail("topology-root-entry-address");
+    if (status == ACPI_TABLE_COPY_ROOT_ENTRY_DUPLICATE)
+        handoff_fail("topology-root-entry-duplicate");
+    if (status == ACPI_TABLE_COPY_SEQUENCE)
+        handoff_fail("topology-table-copy-sequence");
+    if (status == ACPI_TABLE_COPY_BINDING)
+        handoff_fail("topology-table-copy-binding");
+    if (status == ACPI_TABLE_COPY_STREAM)
+        handoff_fail("topology-table-copy-stream");
+    if (status == ACPI_TABLE_COPY_INCOMPLETE)
+        handoff_fail("topology-table-copy-incomplete");
+    if (status == ACPI_TABLE_COPY_MADT_DUPLICATE)
+        handoff_fail("topology-madt-duplicate");
+    if (status == ACPI_TABLE_COPY_MADT_MISSING)
+        handoff_fail("topology-madt-missing");
+    if (status == ACPI_TABLE_COPY_MADT_SELECTION)
+        handoff_fail("topology-madt-selection");
+    /* The header returns no other value; fail closed regardless. */
+    handoff_fail("topology-table-copy-error");
+}
+
+/* The lab capture (hardware/lab/qotom-acpi.c.inc and qotom-bsp.c.inc)
+   composes the pipeline's steps itself, through these.  Each fails the
+   handoff with the reason boot_allocate gives. */
 static __attribute__((unused)) struct copied_acpi_sdt copy_acpi_sdt(
         uint64_t physical_address, uint8_t *destination,
         uint32_t destination_capacity, uint32_t current_copy_offset) {
-    if (physical_address > UINT64_C(0xffffffff))
-        handoff_fail("topology-sdt-address-width");
-    uint8_t header[36];
-    copy_acpi_physical_bytes(physical_address, header, sizeof(header));
-    uint32_t length = (uint32_t)header[4] |
-        (uint32_t)header[5] << 8 |
-        (uint32_t)header[6] << 16 |
-        (uint32_t)header[7] << 24;
-    if (length < 36u || length > MAX_COPIED_ACPI_SDT_BYTES ||
-        length > destination_capacity)
-        handoff_fail("topology-sdt-length");
-    copy_acpi_physical_bytes(physical_address, destination, length);
-    uint64_t byte_offset = 0;
-    uint64_t next_copy_offset = current_copy_offset;
-    while (byte_offset < length) {
-        const uint32_t remaining = length - (uint32_t)byte_offset;
-        const uint32_t chunk_bytes = remaining < 8u ? remaining : 8u;
-        uint64_t physical_chunk = 0;
-        for (uint32_t byte = 0; byte < chunk_bytes; ++byte)
-            physical_chunk |=
-                (uint64_t)destination[byte_offset + byte] << (byte * 8u);
-        const uint64_t terminal = byte_offset + chunk_bytes == length;
-#define COPY_STREAM_QUERY(query) leanos_boot_machine_acpi_copy_stream_step_query( \
-            next_copy_offset, physical_address, byte_offset, physical_address, \
-            length, byte_offset, physical_chunk, terminal, (query))
-        const uint64_t status = COPY_STREAM_QUERY(1);
-        const uint64_t error = COPY_STREAM_QUERY(2);
-        const uint64_t next_byte = COPY_STREAM_QUERY(4);
-        const uint64_t emitted_copy_offset = COPY_STREAM_QUERY(5);
-        const uint64_t exposed = COPY_STREAM_QUERY(6);
-#undef COPY_STREAM_QUERY
-        if (error == 43) handoff_fail("topology-table-copy-budget");
-        if (error == 44) handoff_fail("topology-table-copy-length");
-        if (error == 45) handoff_fail("topology-table-copy-address");
-        if (error == 46) handoff_fail("topology-table-copy-offset");
-        if (error == 47) handoff_fail("topology-table-copy-terminal");
-        if (error != 0) handoff_fail("topology-table-copy-error");
-        if (status != 1) handoff_fail("topology-table-copy-status");
-        if (next_byte != byte_offset + chunk_bytes)
-            handoff_fail("topology-table-copy-next-byte");
-        if (exposed != physical_chunk)
-            handoff_fail("topology-table-copy-exposed");
-        if (!terminal && emitted_copy_offset != next_copy_offset)
-            handoff_fail("topology-table-copy-partial-cursor");
-        if (terminal && emitted_copy_offset <= next_copy_offset)
-            handoff_fail("topology-table-copy-final-cursor");
-        for (uint32_t byte = 0; byte < chunk_bytes; ++byte)
-            destination[byte_offset + byte] =
-                (uint8_t)(exposed >> (byte * 8u));
-        byte_offset = next_byte;
-        if (terminal) next_copy_offset = emitted_copy_offset;
-    }
-    return (struct copied_acpi_sdt) {
-        .physical_address = physical_address,
-        .bytes = destination,
-        .length = length,
-        .next_copy_offset = (uint32_t)next_copy_offset
-    };
+    uint8_t header[ACPI_SDT_HEADER_BYTES];
+    struct copied_acpi_sdt copied = {0};
+    acpi_table_copy_require(acpi_copy_sdt(
+        boot_acpi_physical_copy, 0, physical_address, header, destination,
+        destination_capacity, current_copy_offset, &copied));
+    return copied;
 }
 
-static int acpi_signature_matches(
-        const struct copied_acpi_sdt *table, const char signature[4]) {
-    return table->length >= 36u &&
-        table->bytes[0] == (uint8_t)signature[0] &&
-        table->bytes[1] == (uint8_t)signature[1] &&
-        table->bytes[2] == (uint8_t)signature[2] &&
-        table->bytes[3] == (uint8_t)signature[3];
-}
-
-/* Admit only the immutable copy: copied header, declared extent, expected
-   signature (when supplied), and whole-table ACPI checksum must agree before
-   root-entry decoding or MADT selection. */
-static void validate_copied_acpi_sdt(
+static __attribute__((unused)) void validate_copied_acpi_sdt(
         const struct copied_acpi_sdt *table, const char *signature) {
-    if (table->bytes == 0 || table->length < 36u ||
-        ((uint32_t)table->bytes[4] |
-         (uint32_t)table->bytes[5] << 8 |
-         (uint32_t)table->bytes[6] << 16 |
-         (uint32_t)table->bytes[7] << 24) != table->length ||
-        (signature != 0 && !acpi_signature_matches(table, signature)))
-        handoff_fail("topology-sdt-envelope");
-    uint8_t checksum = 0;
-    for (uint32_t byte = 0; byte < table->length; ++byte)
-        checksum = (uint8_t)(checksum + table->bytes[byte]);
-    if (checksum != 0) handoff_fail("topology-sdt-checksum");
+    acpi_table_copy_require(acpi_validate_copied_sdt(table, signature));
 }
 
-static const struct copied_acpi_sdt *select_unique_copied_madt(
-        uint32_t copied_count) {
+static __attribute__((unused)) const struct copied_acpi_sdt *
+select_unique_copied_madt(uint32_t copied_count) {
     const struct copied_acpi_sdt *selected = 0;
-    for (uint32_t index = 0; index < copied_count; ++index) {
-        const struct copied_acpi_sdt *candidate =
-            &boot_acpi_table_copies[index];
-        validate_copied_acpi_sdt(candidate, 0);
-        if (acpi_signature_matches(candidate, "APIC")) {
-            if (selected != 0) handoff_fail("topology-madt-duplicate");
-            selected = candidate;
-        }
-    }
-    if (selected == 0) handoff_fail("topology-madt-missing");
+    acpi_table_copy_require(acpi_select_unique_madt(
+        boot_acpi_table_copies, copied_count, &selected));
     return selected;
+}
+
+static __attribute__((unused)) struct acpi_root_entries
+decode_acpi_root_entries(
+        const struct copied_acpi_sdt *root, uint64_t selected_kind) {
+    struct acpi_root_entries entries = {0};
+    acpi_table_copy_require(
+        acpi_decode_root_entries(root, selected_kind, &entries));
+    return entries;
+}
+
+static __attribute__((unused)) uint64_t decode_acpi_root_entry(
+        const struct acpi_root_entries *entries, uint32_t index) {
+    uint64_t physical_address = 0;
+    acpi_table_copy_require(
+        acpi_decode_root_entry(entries, index, &physical_address));
+    return physical_address;
 }
 
 /* Replay the selected immutable MADT copy through the generated byte-level
@@ -1919,90 +1925,6 @@ static uint32_t require_qotom_machine_topology_admission(
     return (uint32_t)word[3];
 }
 #endif
-
-/* Bind the copied root payload shape to the generated RSDT/XSDT selection
-   before any advertised physical address is translated.  The 256-entry cap
-   is the machine rendering of BootTopology.maxAcpiRootEntries. */
-static struct acpi_root_entries decode_acpi_root_entries(
-        const struct copied_acpi_sdt *root, uint64_t selected_kind) {
-    uint32_t width;
-    if (selected_kind == 1u) width = 4u;
-    else if (selected_kind == 2u) width = 8u;
-    else handoff_fail("topology-root-kind");
-    if (root->length < 36u) handoff_fail("topology-root-header");
-    const uint32_t payload = root->length - 36u;
-    if (payload % width != 0u) handoff_fail("topology-root-width");
-    const uint32_t count = payload / width;
-    if (count > MAX_ACPI_ROOT_ENTRIES)
-        handoff_fail("topology-root-entries");
-    return (struct acpi_root_entries) {
-        .bytes = root->bytes + 36u,
-        .count = count,
-        .width = width
-    };
-}
-
-static uint64_t decode_acpi_root_entry(
-        const struct acpi_root_entries *entries, uint32_t index) {
-    if (index >= entries->count ||
-        (entries->width != 4u && entries->width != 8u))
-        handoff_fail("topology-root-entry-index");
-    uint64_t physical_address = 0;
-    const uint8_t *encoded = entries->bytes + index * entries->width;
-    for (uint32_t byte = 0; byte < entries->width; ++byte)
-        physical_address |= (uint64_t)encoded[byte] << (byte * 8u);
-    if (physical_address == 0 || physical_address > UINT64_C(0xffffffff))
-        handoff_fail("topology-root-entry-address");
-    return physical_address;
-}
-
-/* Translate every advertised root entry into a disjoint kernel-owned byte
-   range before firmware memory can be scrubbed or reused.  The one-MiB
-   aggregate cap is a deliberately tighter machine boundary than the model's
-   per-table 64-KiB cap: a root whose complete translation does not fit is
-   rejected rather than partially admitted. */
-static uint32_t copy_acpi_root_tables(
-        const struct acpi_root_entries *entries,
-        const uint64_t addresses[MAX_ACPI_ROOT_ENTRIES]) {
-    if (entries->count == 0)
-        handoff_fail("topology-table-copy-sequence");
-    uint32_t arena_offset = 0;
-    uint64_t copied_ordinal = 0;
-    for (uint32_t entry = 0; entry < entries->count; ++entry) {
-        if (arena_offset >= MAX_COPIED_ACPI_TABLE_BYTES)
-            handoff_fail("topology-table-copy-budget");
-        const struct copied_acpi_sdt copied = copy_acpi_sdt(
-            addresses[entry], boot_acpi_table_copy + arena_offset,
-            MAX_COPIED_ACPI_TABLE_BYTES - arena_offset, arena_offset);
-        if (copied.physical_address != addresses[entry] ||
-            copied.bytes != boot_acpi_table_copy + arena_offset)
-            handoff_fail("topology-table-copy-binding");
-        boot_acpi_table_copies[entry] = copied;
-        const uint32_t padded_length = (copied.length + 7u) & ~7u;
-        if (padded_length < copied.length ||
-            padded_length > MAX_COPIED_ACPI_TABLE_BYTES - arena_offset)
-            handoff_fail("topology-table-copy-budget");
-        if (copied.next_copy_offset != arena_offset + padded_length)
-            handoff_fail("topology-table-copy-stream");
-        arena_offset += padded_length;
-        const uint64_t final_table = entry + 1u == entries->count;
-        const uint64_t status =
-            leanos_boot_machine_acpi_copy_sequence_step_query(
-                copied_ordinal, entries->count, entry, 1, final_table, 1);
-        const uint64_t error =
-            leanos_boot_machine_acpi_copy_sequence_step_query(
-                copied_ordinal, entries->count, entry, 1, final_table, 2);
-        const uint64_t next_ordinal =
-            leanos_boot_machine_acpi_copy_sequence_step_query(
-                copied_ordinal, entries->count, entry, 1, final_table, 3);
-        if (status != 1 || error != 0 || next_ordinal != entry + 1u)
-            handoff_fail("topology-table-copy-sequence");
-        copied_ordinal = next_ordinal;
-    }
-    if (copied_ordinal != entries->count)
-        handoff_fail("topology-table-copy-sequence");
-    return entries->count;
-}
 
 /* CPUID.1:EBX[31:24] is the initial APIC ID of the processor executing this
    instruction.  This is a trusted hardware observation, not topology
@@ -2322,38 +2244,22 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
         decode_boot_projection(magic, info_address, total, info);
     if (decoded.word[1] != 1 || decoded.word[2] != 0)
         handoff_fail("decode-rejected");
-    if ((decoded.word[39] != 1 && decoded.word[39] != 2) ||
-        decoded.word[40] == 0)
-        handoff_fail("topology-root-selection");
-    const struct copied_acpi_sdt selected_root =
-        copy_acpi_sdt(decoded.word[40], boot_acpi_root_copy,
-            MAX_COPIED_ACPI_SDT_BYTES, 0);
-    if (selected_root.physical_address != decoded.word[40] ||
-        selected_root.bytes != boot_acpi_root_copy || selected_root.length < 36u)
-        handoff_fail("topology-root-copy");
-    validate_copied_acpi_sdt(
-        &selected_root, decoded.word[39] == 1 ? "RSDT" : "XSDT");
-    const struct acpi_root_entries root_entries =
-        decode_acpi_root_entries(&selected_root, decoded.word[39]);
-    if (root_entries.bytes != selected_root.bytes + 36u ||
-        (root_entries.width != 4u && root_entries.width != 8u))
-        handoff_fail("topology-root-vector");
-    uint64_t root_table_addresses[MAX_ACPI_ROOT_ENTRIES];
-    for (uint32_t entry = 0; entry < root_entries.count; ++entry) {
-        root_table_addresses[entry] =
-            decode_acpi_root_entry(&root_entries, entry);
-        for (uint32_t prior = 0; prior < entry; ++prior)
-            if (root_table_addresses[prior] == root_table_addresses[entry])
-                handoff_fail("topology-root-entry-duplicate");
-    }
-    const uint32_t copied_table_count =
-        copy_acpi_root_tables(&root_entries, root_table_addresses);
-    if (copied_table_count != root_entries.count)
-        handoff_fail("topology-table-copy-incomplete");
-    const struct copied_acpi_sdt *selected_madt =
-        select_unique_copied_madt(copied_table_count);
-    if (!acpi_signature_matches(selected_madt, "APIC"))
-        handoff_fail("topology-madt-selection");
+    /* Copy the root the generated decoder selected, every table it lists and
+       the unique MADT (include/acpi_table_copy.h). */
+    uint8_t acpi_header[ACPI_SDT_HEADER_BYTES];
+    const struct acpi_table_copy_storage acpi_storage = {
+        .header = acpi_header,
+        .root = boot_acpi_root_copy,
+        .root_capacity = MAX_COPIED_ACPI_SDT_BYTES,
+        .tables = boot_acpi_table_copy,
+        .table_capacity = MAX_COPIED_ACPI_TABLE_BYTES,
+        .copies = boot_acpi_table_copies
+    };
+    struct acpi_table_copy_result acpi = {0};
+    acpi_table_copy_require(acpi_copy_root_and_tables(
+        boot_acpi_physical_copy, 0, decoded.word[39], decoded.word[40],
+        &acpi_storage, &acpi));
+    const struct copied_acpi_sdt *selected_madt = acpi.madt;
     validate_generated_madt_envelope(selected_madt);
 #ifdef LEANOS_QOTOM_BSP_PRODUCTION_CANDIDATE
     const struct qotom_bsp_result qotom_bsp =
@@ -2361,16 +2267,16 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
             selected_madt, handoff.executing_apic_id);
     const uint32_t published_apic_id =
         require_qotom_machine_topology_admission(
-            decoded.word[39], decoded.word[40], selected_root.physical_address,
-            root_entries.count, copied_table_count, 1, &qotom_bsp,
+            decoded.word[39], decoded.word[40], acpi.root.physical_address,
+            acpi.entries.count, acpi.table_count, 1, &qotom_bsp,
             handoff.executing_apic_id);
 #else
     const uint32_t admitted_apic_id =
         validate_generated_madt_entries(
             selected_madt, handoff.executing_apic_id);
     const uint32_t published_apic_id = require_machine_topology_admission(
-        decoded.word[39], decoded.word[40], selected_root.physical_address,
-        root_entries.count, copied_table_count, 1, 1, 0,
+        decoded.word[39], decoded.word[40], acpi.root.physical_address,
+        acpi.entries.count, acpi.table_count, 1, 1, 0,
         admitted_apic_id, handoff.executing_apic_id);
 #endif
     if (published_apic_id != handoff.executing_apic_id)
