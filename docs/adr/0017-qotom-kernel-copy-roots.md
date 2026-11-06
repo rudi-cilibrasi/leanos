@@ -134,7 +134,11 @@ image, six for the `--dhcp-subject` image (see below). It accepts only the exact
 root storage and malformed ancestors, removes every present protected-frame
 alias from both output roots, and adds exactly two supervisor/NX aliases to the
 copy root at source-absent slots. Validation completes before either output root
-or its result record is written.
+or its result record is written. Since #599 the builder takes each root's
+physical address as an integer and checks storage on physical ranges. It
+copies the inventory and aliases before writing. QuickProof proves its whole
+contract under CompCert's C semantics (`experiments/quickproof/copy-roots`,
+law `copy_roots_exact`).
 
 The Qotom wrapper separately checks that both eleven-page output structures are
 page aligned, below 16 MiB, and mapped as supervisor writable NX storage. It
