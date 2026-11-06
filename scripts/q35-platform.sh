@@ -35,15 +35,19 @@ leanos_qemu_accelerator() {
 # image as an IDE hard disk, as it boots once written to a USB stick or an
 # internal disk (its MBR for BIOS, its GPT EFI system partition for UEFI).
 # The disk is opened with snapshot=on, so the image is never written.
+# The netboot construction below has no boot medium attached: it boots from
+# the network, and only its own builder and validator select that medium.
 leanos_qemu_medium() {
   local medium="${LEANOS_QEMU_MEDIUM:-cdrom}"
   case "$medium" in
-    cdrom|disk) printf '%s\n' "$medium" ;;
+    cdrom|disk) ;;
     *)
       echo "error: QEMU boot medium must be exactly 'cdrom' or 'disk'" >&2
       return 1
       ;;
   esac
+  [[ "${leanos_q35_network_medium:-0}" != 1 ]] || medium=network
+  printf '%s\n' "$medium"
 }
 
 readonly LEANOS_OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
@@ -152,9 +156,10 @@ leanos_validate_q35_command() {
     return 1
   }
   # The caller's array is reached by name: keep these locals' names distinct.
-  local expected_cd=1 expected_hard_disk=0
+  local expected_cd=1 expected_hard_disk=0 expected_devices=4
   [[ "$medium" == disk ]] && { expected_cd=0; expected_hard_disk=1; }
-  [[ $devices -eq 4 && $iommu -eq 1 && $vga -eq 1 && $cdrom -eq $expected_cd &&
+  [[ "$medium" == network ]] && { expected_cd=0; expected_devices=3; }
+  [[ $devices -eq $expected_devices && $iommu -eq 1 && $vga -eq 1 && $cdrom -eq $expected_cd &&
      $cdrom_drive -eq $expected_cd && $hard_disk -eq $expected_hard_disk &&
      $hard_disk_drive -eq $expected_hard_disk && $debug_exit -eq 1 && $cpu_options -eq 1 &&
      $smp_options -eq 1 ]] || {
@@ -203,17 +208,22 @@ leanos_q35_command() {
     -device VGA,bus=pcie.0,addr=0x1
     -device isa-debug-exit,iobase=0xf4,iosize=0x04
   )
-  if [[ "$(leanos_qemu_medium)" == disk ]]; then
-    q35_command+=(
-      -drive "id=leanos-disk,if=none,format=raw,snapshot=on,file=$image"
-      -device ide-hd,drive=leanos-disk,bus=ide.0
-    )
-  else
-    q35_command+=(
-      -drive "id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=$image"
-      -device ide-cd,drive=leanos-cd,bus=ide.0
-    )
-  fi
+  case "$(leanos_qemu_medium)" in
+    disk)
+      q35_command+=(
+        -drive "id=leanos-disk,if=none,format=raw,snapshot=on,file=$image"
+        -device ide-hd,drive=leanos-disk,bus=ide.0
+      )
+      ;;
+    cdrom)
+      q35_command+=(
+        -drive "id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=$image"
+        -device ide-cd,drive=leanos-cd,bus=ide.0
+      )
+      ;;
+    network) ;;
+    *) return 1 ;;
+  esac
   if [[ "$(leanos_qemu_firmware)" == ovmf ]]; then
     # UEFI writes boot variables, so each run gets a fresh private store
     # next to its serial log; the pinned code flash stays read-only.
@@ -337,4 +347,92 @@ leanos_q35_ahci_service_command() {
     -device ide-hd,drive=leanos-disk,bus=ide.1
   )
   leanos_validate_q35_ahci_service_command "$command_name"
+}
+
+# The netboot scenario (issue #601) is its own construction contract: the
+# unchanged production devices with no boot medium, plus QEMU's user network
+# serving a TFTP tree made from an ISO (scripts/build-netboot-tree.sh) and,
+# as the only boot device, a transitional virtio-net function at 00:03.0, the
+# optional network slot of the q35 manifest (DMAQuarantine.q35Manifest).
+# SeaBIOS boots it through QEMU's iPXE option ROM and GRUB i386-pc's core.0,
+# OVMF through its own PXE client and GRUB x86_64-efi's core.efi; both read
+# the ISO's grub.cfg and kernel from the tree. The kernel quarantines the NIC
+# to Command=0 with every other function and never uses it. restrict=on keeps
+# the guest off the host's networks; the TFTP server still answers.
+readonly LEANOS_Q35_NETBOOT_TOPOLOGY_VERSION=0001000800020006
+readonly LEANOS_Q35_NETBOOT_NIC=virtio-net-pci,netdev=leanos-net,bus=pcie.0,addr=0x3,disable-legacy=off,bootindex=1
+
+# The network loader each firmware family fetches from the tree.
+leanos_q35_netboot_loader() {
+  local firmware
+  firmware="$(leanos_qemu_firmware)" || return 1
+  case "$firmware" in
+    seabios) printf '%s\n' boot/grub/i386-pc/core.0 ;;
+    ovmf) printf '%s\n' boot/grub/x86_64-efi/core.efi ;;
+  esac
+}
+
+leanos_validate_q35_netboot_command() {
+  local command_name="$1"
+  local -n netboot_command="$command_name"
+  local count="${#netboot_command[@]}"
+  local -a production_command=()
+  local leanos_q35_network_medium=1
+  local loader argument previous=
+
+  [[ -z "${LEANOS_QEMU_MEDIUM:-}" ]] || {
+    echo "error: netboot platform boots from the network, not LEANOS_QEMU_MEDIUM" >&2
+    return 1
+  }
+  loader="$(leanos_q35_netboot_loader)" || return 1
+  [[ $count -ge 4 &&
+     "${netboot_command[$((count - 4))]}" == -netdev &&
+     "${netboot_command[$((count - 3))]}" =~ ^user,id=leanos-net,restrict=on,tftp=[^,]+,bootfile=([^,]+)$ &&
+     "${BASH_REMATCH[1]}" == "$loader" &&
+     "${netboot_command[$((count - 2))]}" == -device &&
+     "${netboot_command[$((count - 1))]}" == "$LEANOS_Q35_NETBOOT_NIC" ]] || {
+    echo "error: netboot platform requires the pinned TFTP network, the firmware's loader and the virtio-net at 00:03.0 last" >&2
+    return 1
+  }
+  production_command=("${netboot_command[@]:0:$((count - 4))}")
+  # The production part keeps its `-nic none` and adds no network of its own.
+  for argument in "${production_command[@]}"; do
+    if [[ "$argument" == -netdev || "$argument" == -net ||
+          ( "$previous" == -nic && "$argument" != none ) ]]; then
+      echo "error: netboot platform requires its one pinned network last" >&2
+      return 1
+    fi
+    previous="$argument"
+  done
+  leanos_validate_q35_command production_command
+}
+
+# usage: leanos_q35_netboot_command <array> <tftp-tree> <qemu> <memory-mib> <serial-log>
+leanos_q35_netboot_command() {
+  local command_name="$1"
+  local tree="$2"
+  local leanos_q35_network_medium=1
+  local loader
+  shift 2
+
+  [[ -z "${LEANOS_QEMU_MEDIUM:-}" ]] || {
+    echo "error: netboot platform boots from the network, not LEANOS_QEMU_MEDIUM" >&2
+    return 1
+  }
+  [[ "$tree" != *,* ]] || {
+    echo "error: netboot TFTP tree path must not contain a comma" >&2
+    return 1
+  }
+  loader="$(leanos_q35_netboot_loader)" || return 1
+  [[ -f "$tree/$loader" ]] || {
+    echo "error: netboot TFTP tree '$tree' has no $loader" >&2
+    return 1
+  }
+  leanos_q35_command "$command_name" "$1" "$2" "$3" - || return 1
+  local -n netboot_command="$command_name"
+  netboot_command+=(
+    -netdev "user,id=leanos-net,restrict=on,tftp=$tree,bootfile=$loader"
+    -device "$LEANOS_Q35_NETBOOT_NIC"
+  )
+  leanos_validate_q35_netboot_command "$command_name"
 }

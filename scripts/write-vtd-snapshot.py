@@ -69,6 +69,14 @@ SERVICE_PROFILES = {
     "device-service": (SERVICE_TOPOLOGY, SERVICE_ASSIGN_RE),
     "ahci-service": (AHCI_SERVICE_TOPOLOGY, AHCI_SERVICE_ASSIGN_RE),
 }
+# The netboot construction (issue #601) keeps the production deny-all plan:
+# its boot NIC is quarantined and never assigned, so it records no assignment.
+NETBOOT_TOPOLOGY = "0001000800020006"
+PROFILE_TOPOLOGIES = {
+    "production": TOPOLOGY,
+    **{profile: topology for profile, (topology, _) in SERVICE_PROFILES.items()},
+    "netboot": NETBOOT_TOPOLOGY,
+}
 ACTIVATE_RE = re.compile(
     "^" + re.escape(SERIAL["21/VTD-ACTIVATE"]) + r" order=validate,scrub,construct,publish,"
     r"invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 "
@@ -131,7 +139,7 @@ def write_snapshot(
         "meta\tmachine\tq35",
         "meta\taccelerator\ttcg",
         "meta\tplan-version\t1",
-        f"meta\ttopology-version\t{SERVICE_PROFILES[profile][0] if profile in SERVICE_PROFILES else TOPOLOGY}",
+        f"meta\ttopology-version\t{PROFILE_TOPOLOGIES[profile]}",
         "meta\tunit-version\t16",
         "meta\tcapability\t59110346977575430",
         "meta\textended-capability\t3842",
@@ -154,8 +162,7 @@ def main() -> int:
     parser.add_argument("--source-revision", type=Path, required=True)
     parser.add_argument("--qemu-version", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--profile", choices=("production", "device-service", "ahci-service"),
-                        default="production")
+    parser.add_argument("--profile", choices=tuple(PROFILE_TOPOLOGIES), default="production")
     args = parser.parse_args()
     try:
         revision = args.source_revision.read_text(encoding="ascii").strip()

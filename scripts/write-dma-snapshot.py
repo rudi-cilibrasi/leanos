@@ -51,7 +51,14 @@ class Profile:
     initial_masters: int
     initial_mask: int
     expected: dict
+    optional_absent: int = 1
 
+
+NETBOOT_EXPECTED = {
+    **PRODUCTION_EXPECTED, (0, 3, 0): (1, 0x1AF4, 0x1000, 0x020000, 0, 0, 0),
+}
+NETBOOT_SEABIOS_MASTERS, NETBOOT_SEABIOS_MASK = 2, 20
+NETBOOT_OVMF_MASTERS, NETBOOT_OVMF_MASK = 6, 63
 
 PROFILES = {
     "production": Profile("0001000800020002", 5, 1, 16, PRODUCTION_EXPECTED),
@@ -66,6 +73,20 @@ PROFILES = {
     # built-in AHCI's port 1: the production PCI inventory, quarantined
     # unassigned; the kernel assigns the AHCI only after VT-d is enabled.
     "ahci-service": Profile("0001000800020005", 5, 1, 16, PRODUCTION_EXPECTED),
+    # The netboot construction (issue #601) fills the optional network slot
+    # with the transitional virtio-net that carried the PXE boot: present,
+    # unassigned and quarantined to Command 0 like the rest. What the
+    # firmware leaves bus-mastering differs: SeaBIOS (iPXE) the NIC and the
+    # AHCI (mask 20), OVMF all six functions (mask 63). scripts/run-image.sh
+    # checks the SeaBIOS run; scripts/check-netboot.sh also the OVMF one.
+    "netboot": Profile(
+        "0001000800020006", 6, NETBOOT_SEABIOS_MASTERS, NETBOOT_SEABIOS_MASK,
+        NETBOOT_EXPECTED, optional_absent=0,
+    ),
+    "netboot-ovmf": Profile(
+        "0001000800020006", 6, NETBOOT_OVMF_MASTERS, NETBOOT_OVMF_MASK,
+        NETBOOT_EXPECTED, optional_absent=0,
+    ),
 }
 
 
@@ -84,7 +105,8 @@ def summary_re(profile: Profile) -> re.Pattern:
     return re.compile(
         "^" + re.escape(SERIAL["15/DMA"])
         + rf" snapshot=1 topology={profile.topology} bus=0 scanned=256 "
-        rf"present={count} optional-absent=1 writes={count} readbacks={count} "
+        rf"present={count} optional-absent={profile.optional_absent} "
+        rf"writes={count} readbacks={count} "
         rf"initial-bus-masters={profile.initial_masters} "
         rf"initial-bus-master-mask={profile.initial_mask} bus-master=disabled "
         r"readback=exact generated-result=0 "

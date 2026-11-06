@@ -110,10 +110,12 @@ cmp -s "$tmp/out/composite-tokens.h" "$tmp/tokens.expected"
 cmp -s "$tmp/out/boundary-abi.h" "$tmp/abi.expected"
 grep -Fxq '#define LEANOS_COMPOSITE_STATE_COUNT 71U' "$tmp/out/composite-tokens.h"
 export_count="$(grep -c '^uint64_t leanos_' "$tmp/out/boundary-abi.h")"
-if [[ "$export_count" -ne 123 ]]; then
-  echo "error: expected 123 generated boundary exports, found $export_count" >&2
+if [[ "$export_count" -ne 124 ]]; then
+  echo "error: expected 124 generated boundary exports, found $export_count" >&2
   exit 1
 fi
+# The netboot topology's boundary (#601) beside the production q35 one.
+grep -Eq '^uint64_t leanos_validate_q35_netboot_dma_snapshot\(' "$tmp/out/boundary-abi.h"
 
 grep -Fq '  X(leanos_boot_text_surface, 6)' "$tmp/out/boundary-abi.h"
 grep -Fq '  X(leanos_pci_header_observe, 21)' "$tmp/out/boundary-abi.h"

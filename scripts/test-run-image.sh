@@ -34,6 +34,65 @@ grep -Fxq $'meta\tjournal\t2271560481' "$tmp/success.vtd.tsv" &&
     cat "$tmp/success.vtd.tsv" >&2
     exit 1
   }
+# The netboot DMA profiles (issue #601) admit the boot NIC at 00:03.0, present
+# and quarantined, and nothing else: the production records are refused, the
+# same records with the NIC present are accepted, and the production profile
+# refuses those.
+dma_profile() {
+  local profile="$1" serial="$2"
+  LEANOS_SERIAL_PROTOCOL_TSV="$tmp/oracle/serial-protocol.tsv" \
+    ./scripts/write-dma-snapshot.py --profile "$profile" --serial-log "$serial" \
+      --source-revision "$tmp/SOURCE_REVISION" --qemu-version "QEMU fixture version 1" \
+      --output "$tmp/$profile.dma.tsv"
+}
+for profile in netboot netboot-ovmf; do
+  if dma_profile "$profile" "$tmp/success.serial" 2>/dev/null; then
+    echo "error: DMA profile $profile accepted the production inventory" >&2
+    exit 1
+  fi
+  read -r masters mask < <(python3 - "$profile" <<'PY'
+import runpy, sys
+profile = runpy.run_path("scripts/write-dma-snapshot.py")["PROFILES"][sys.argv[1]]
+print(profile.initial_masters, profile.initial_mask)
+PY
+)
+  sed -e 's/topology=0001000800020002/topology=0001000800020006/' \
+    -e '/DMA-FUNCTION .*bdf=0:3\.0 /s/present=0 vendor=0 device=0 class=0 /present=1 vendor=6900 device=4096 class=131072 /' \
+    -e "s/present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16/present=6 optional-absent=0 writes=6 readbacks=6 initial-bus-masters=$masters initial-bus-master-mask=$mask/" \
+    "$tmp/success.serial" >"$tmp/$profile.serial"
+  python3 - "$tmp/$profile.serial" "$mask" <<'PY'
+import re, sys
+from pathlib import Path
+# Give each function the initial bus-master bit the profile's mask names.
+path, mask = Path(sys.argv[1]), int(sys.argv[2])
+order = ["0:0.0", "0:1.0", "0:3.0", "0:31.0", "0:31.2", "0:31.3"]
+lines = path.read_text().splitlines()
+for i, line in enumerate(lines):
+    found = re.search(r" DMA-FUNCTION .* bdf=(\S+) .*command-before=(\d+) ", line)
+    if found:
+        before = int(found.group(2))
+        before = before | 4 if mask >> order.index(found.group(1)) & 1 else before & ~4
+        lines[i] = re.sub(r"command-before=\d+", f"command-before={before}", line)
+path.write_text("\n".join(lines) + "\n")
+PY
+  dma_profile "$profile" "$tmp/$profile.serial" &&
+    grep -Fxq $'0:3.0\t1\t6900\t4096\t131072\t'"$(sed -n 's/.*bdf=0:3\.0 .*command-before=\([0-9]*\) .*/\1/p' "$tmp/$profile.serial")"$'\t0\t0\t0\t0\taccepted:0' \
+      "$tmp/$profile.dma.tsv" &&
+    grep -Fxq $'meta\ttopology-version\t0001000800020006' "$tmp/$profile.dma.tsv" || {
+      echo "error: DMA profile $profile refused the quarantined boot NIC" >&2
+      exit 1
+    }
+  if dma_profile production "$tmp/$profile.serial" 2>/dev/null; then
+    echo "error: the production DMA profile accepted the boot NIC" >&2
+    exit 1
+  fi
+  sed '/DMA-FUNCTION .*bdf=0:3\.0 /s/command-after=0/command-after=4/' \
+    "$tmp/$profile.serial" >"$tmp/$profile-bus-master.serial"
+  if dma_profile "$profile" "$tmp/$profile-bus-master.serial" 2>/dev/null; then
+    echo "error: DMA profile $profile accepted a bus-mastering boot NIC" >&2
+    exit 1
+  fi
+done
 set +e
 invoke dma-prestate-forged >"$tmp/dma-prestate-forged.output" 2>&1
 status=$?
