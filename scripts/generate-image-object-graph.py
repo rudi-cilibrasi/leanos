@@ -299,13 +299,7 @@ def render_graph(
             )
             + f" {build}/BootAllocation.o {build}/FaultDispatch.o",
             "",
-            # Each dependency file is a grouped target of its object's rule,
-            # so Make remakes a missing or stale one before the goal, which
-            # rebuilds an object whose dependency file was lost. `include`,
-            # not `-include`: Make ignores a failure to remake a `-include`d
-            # file, so a variant that failed to compile used to print its
-            # errors and leave the build green (issue #611).
-            "include "
+            "-include "
             + " ".join(
                 f"{build}/{module}.{'part.o' if module in combined else 'o'}.d"
                 for module in GENERATED_MODULES
@@ -402,7 +396,7 @@ def render_graph(
                 ]
             ),
             "",
-            "include "
+            "-include "
             + " ".join(
                 f"{build}/{name}.o.d"
                 for name in [
@@ -496,7 +490,7 @@ def render_graph(
                 + subject_objects
             ),
             "",
-            "include "
+            "-include "
             + " ".join(f"{build}/{name}.o.d" for name, _, _ in assembly_variants),
             "",
         ]
