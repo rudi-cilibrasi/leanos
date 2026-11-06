@@ -35,9 +35,10 @@ fi
 # Compile the actual collector independently of the hosted test runtime.
 cat > "$build/freestanding.c" <<'C'
 #include "pci-command-executor.h"
-struct pci_enumeration_result collect(pci_enumeration_read read, void *context,
-                                     struct pci_enumeration_snapshot *snapshot) {
-    return pci_enumerate_segment(read, context, snapshot);
+enum pci_enumeration_status collect(pci_enumeration_read read, void *context,
+                                    struct pci_enumeration_snapshot *snapshot,
+                                    struct pci_enumeration_result *result) {
+    return pci_enumerate_segment(read, context, snapshot, result);
 }
 struct pci_command_result execute(pci_enumeration_read read,
         pci_command_write16 write, pci_command_admit admit, void *context,

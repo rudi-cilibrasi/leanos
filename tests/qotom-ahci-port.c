@@ -54,7 +54,7 @@ static void zero(const struct qotom_ahci_port *out) {
     const struct qotom_ahci_port empty={0};assert(!memcmp(out,&empty,sizeof empty));
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_ahci_port out;
     setup();assert(collect(&out)==QOTOM_AHCI_PORT_OK && reads==37);
     assert(out.command_before==0 && out.interrupt_enable==1 && out.task_file==2 && out.sata_status==3 && out.active==4 && out.issued==5 && out.command_after==6);

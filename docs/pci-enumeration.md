@@ -34,6 +34,20 @@ every captured header word plus the last absent slot. Its `sanitizers` mode
 uses the repository's pinned ASan/UBSan configuration. The collector is also
 compiled as a separate freestanding object and checked for runtime dependencies.
 
+The scan also has a QuickProof theorem under CompCert's C semantics
+([`experiments/quickproof/pci-enumeration`](../experiments/quickproof/pci-enumeration/README.md),
+ADR 0030, #606). It holds against a device that may fail any read or return
+any value, also a different one each time. The scan reads exactly in bus,
+device and function order: each function's identity dword and, right after
+an identity with a vendor other than 0xffff while fewer than sixteen
+functions were found, that function's dwords 4 to 60. It reads nothing after
+a failed read or the seventeenth function. It returns INVALID_ARGUMENT,
+without a read, exactly when the callback or the snapshot is NULL. It names
+the failed read or the seventeenth function, publishing count zero, and
+otherwise returns OK and publishes exactly the functions found with the
+dwords the device answered. The result record may be NULL. The kernel's
+mechanism #1 and ECAM readers are outside it: the law brings its own device.
+
 The existing Qotom inventory hosted harness also passes collected snapshots
 through `leanos_qotom_pci_inventory_check`, using the actual generated C. It
 checks the complete captured inventory, each missing function, each changed

@@ -44,7 +44,7 @@ static void check(enum qotom_ehci_smi_status status) {
     if(!writes)assert(!out.before_control && !out.after_control);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     for(unsigned subset=0;subset<512;++subset) {
         reset();uint32_t mask=(subset&63)|((subset&448)<<7);
         words[27]=prior.final_control=mask|QOTOM_EHCI_SMI_STATUS;

@@ -34,7 +34,7 @@ static void zero(struct qotom_ahci_capabilities *out) {
     const struct qotom_ahci_capabilities empty={0};assert(!memcmp(out,&empty,sizeof empty));
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_ahci_capabilities out;
     for(unsigned off=0;off<4096;++off) {
         uint64_t addr=7;int valid=off==0 || off==4 || off==12 || off==16 || off==36;

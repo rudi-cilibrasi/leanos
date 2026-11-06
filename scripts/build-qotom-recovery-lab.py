@@ -427,11 +427,11 @@ if a.acpi_capture:
                         '    lab_mb2_magic = multiboot_magic; lab_mb2_address = multiboot_info;\n    lab_capture_handoff(multiboot_magic, multiboot_info);')
 if a.pci_read_trace:
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
-    call = 'pci_enumerate_segment(pci_config_read, 0, &snapshot);'
+    call = 'pci_enumerate_segment(pci_config_read, 0, &snapshot, &scan);'
     if text.count(marker) != 1 or text.count(call) != 1:
         raise SystemExit('unsupported PCI diagnostic shape')
     text = text.replace(marker, (root / 'hardware/lab/qotom-pci-read-trace.c.inc').read_text() + '\n' + marker)
-    text = text.replace(call, 'pci_enumerate_segment(lab_pci_read, 0, &snapshot);\n    lab_report_pci_read();')
+    text = text.replace(call, 'pci_enumerate_segment(lab_pci_read, 0, &snapshot, &scan);\n    lab_report_pci_read();')
 if a.bootstrap_capture:
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
     gate = '    if (result != 1) pre_admission_fail("j1900-msr-readback");'
@@ -448,13 +448,13 @@ if a.ecam_memory_capture:
     text = text.replace(call, call + '\n    lab_capture_ecam_memory((uint32_t)w[9]);')
 if a.ecam_read:
     marker = 'static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {'
-    call = 'pci_enumerate_segment(pci_config_read, 0, &snapshot);'
+    call = 'pci_enumerate_segment(pci_config_read, 0, &snapshot, &scan);'
     gate = '    lab_capture_acpi();'
     if text.count(marker) != 1 or text.count(call) != 1 or text.count(gate) != 1:
         raise SystemExit('unsupported ECAM diagnostic shape')
     text = text.replace(marker, (root / 'hardware/lab/qotom-ecam.c.inc').read_text() + '\n' + marker)
     text = text.replace(gate, gate + '\n    lab_prepare_ecam();')
-    text = text.replace(call, 'pci_enumerate_segment(qotom_ecam_read, &lab_ecam_reader, &snapshot);\n    lab_ecam_window.armed = 0;')
+    text = text.replace(call, 'pci_enumerate_segment(qotom_ecam_read, &lab_ecam_reader, &snapshot, &scan);\n    lab_ecam_window.armed = 0;')
     subprocess.run(['python3', 'scripts/generate-qotom-ecam-firmware.py',
                     str(build / 'qotom-ecam-firmware-inputs.h')], cwd=root, check=True)
 if a.blocking_ipc_integration:

@@ -66,7 +66,7 @@ static void check(enum qotom_xhci_operational_status status) {
     if(status)assert(!out.command && !out.status_before && !out.status_after);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();check(QOTOM_XHCI_OPERATIONAL_OK);assert(reads==93 && ops==3 && out.status_before==1 && !out.command && out.status_after==1);
     maximum();check(QOTOM_XHCI_OPERATIONAL_OK);assert(reads==177);
     for(unsigned i=1;i<=177;++i) {

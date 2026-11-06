@@ -87,7 +87,7 @@ static void expect(unsigned last,unsigned status,unsigned attempted,unsigned bef
     }
 }
 int main(void){
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     setup();lab_capture_rootport_bme(&view,&snapshot);expect(3,0,1,7,3);
     for(volatile unsigned fn=0;fn<4;++fn)assert(reads[fn]==71 && writes[fn]==1);
     for(volatile unsigned fn=0;fn<4;++fn)for(volatile unsigned n=1;n<=71;++n){

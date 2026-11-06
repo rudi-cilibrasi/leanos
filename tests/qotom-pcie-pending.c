@@ -64,7 +64,7 @@ static void clear_result(struct qotom_pcie_pending_result result) {
     assert(!result.polls && !result.device_status);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_pcie_pending_result result;
     struct qotom_realtek_state state={UINT32_C(0x2f900d00),0,0,UINT32_C(0x2ff0e),0,UINT32_C(0x2f900d00)};
     struct qotom_realtek_bme_result rbme={1,7,3};
