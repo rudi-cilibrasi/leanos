@@ -20,9 +20,8 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
             (uintptr_t)lab_ecam_aperture))
         pre_admission_fail("qotom-pci-final-arm");
     lab_ecam_window.armed=1;
-    struct pci_enumeration_result scan;
-    pci_enumerate_segment(
-        qotom_ecam_read,&lab_ecam_reader,&final_snapshot, &scan);
+    const enum pci_enumeration_status scan_status=pci_enumerate_segment(
+        qotom_ecam_read,&lab_ecam_reader,&final_snapshot,0);
     lab_ecam_window.armed=0;
 
     /* Intel 329670-002 describes the host bridge's fixed Command bits and says
@@ -31,12 +30,12 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
      * selects all five together as repository policy premises. */
 #ifdef LEANOS_QOTOM_PCI_TRUST_CONTRACT
     struct qotom_pci_final_result result=qotom_check_pci_final_initial_trust(
-        scan.status,&final_snapshot,leanos_qotom_native_pci_header_check,
+        scan_status,&final_snapshot,leanos_qotom_native_pci_header_check,
         leanos_qotom_pci_final_commands,leanos_qotom_pci_final_admission,
         leanos_qotom_pci_initial_trust_contract);
 #else
     const struct qotom_pci_final_assumptions assumptions={1,1,0,0,0};
-    struct qotom_pci_final_result result=qotom_check_pci_final(scan.status,
+    struct qotom_pci_final_result result=qotom_check_pci_final(scan_status,
         &final_snapshot,leanos_qotom_native_pci_header_check,
         leanos_qotom_pci_final_commands,leanos_qotom_pci_final_admission,
         &assumptions);
