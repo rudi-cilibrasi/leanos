@@ -54,7 +54,12 @@ static struct pci_enumeration_snapshot snapshot;
 
 static struct pci_enumeration_result run(void) {
     snapshot.count = 99; /* Failure must invalidate even a prior count. */
-    return pci_enumerate_segment(read_word, functions, &snapshot);
+    /* Every field of the result is written, and the return value is its status. */
+    struct pci_enumeration_result r = {PCI_ENUMERATION_INVALID_ARGUMENT, 0xaa, 0xaa, 0xaa, 0xaa};
+    const enum pci_enumeration_status status =
+        pci_enumerate_segment(read_word, functions, &snapshot, &r);
+    assert(status == r.status);
+    return r;
 }
 
 int main(void) {
@@ -129,9 +134,9 @@ int main(void) {
     r = run();
     assert(r.status == PCI_ENUMERATION_READ_FAILED && snapshot.count == 0 && calls == 65761);
     reset();
-    assert(pci_enumerate_segment(NULL, functions, &snapshot).status == PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL, functions, &snapshot, 0) == PCI_ENUMERATION_INVALID_ARGUMENT);
     assert(snapshot.count == 0 && calls == 0);
-    assert(pci_enumerate_segment(read_word, functions, NULL).status == PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(read_word, functions, NULL, 0) == PCI_ENUMERATION_INVALID_ARGUMENT);
     assert(calls == 0);
     free(functions);
     puts("PCI enumeration: full segment, exact capture, overflow and 241 read failures passed");

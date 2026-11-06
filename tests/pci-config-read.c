@@ -53,7 +53,8 @@ int main(void) {
     scan = 1;
     calls = 0;
     struct pci_enumeration_snapshot snapshot;
-    struct pci_enumeration_result result = pci_enumerate_segment(pci_config_read, 0, &snapshot);
+    struct pci_enumeration_result result;
+    pci_enumerate_segment(pci_config_read, 0, &snapshot, &result);
     assert(result.status == PCI_ENUMERATION_OK && snapshot.count == 1);
     assert(calls == 65536u + 15u);
     assert(snapshot.headers[0].bus == 255 && snapshot.headers[0].device == 31 &&

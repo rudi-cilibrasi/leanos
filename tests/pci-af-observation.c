@@ -16,7 +16,7 @@ static void rejected(struct pci_af_observation o, enum pci_af_status status) {
     assert(o.status == status && !o.offset && !o.raw_control_status);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL, NULL, NULL).status == PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL, NULL, NULL, 0) == PCI_ENUMERATION_INVALID_ARGUMENT);
     struct pci_enumeration_header initial = {.device=29};
     initial.words[0] = config[0] = 0x0f348086;
     initial.words[1] = config[1] = 0x00100406;

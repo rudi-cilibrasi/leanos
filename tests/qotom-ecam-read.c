@@ -79,14 +79,15 @@ int main(void) {
     struct pci_enumeration_snapshot snapshot;
     fail_address = 0;
     calls = 0;
-    struct pci_enumeration_result result = pci_enumerate_segment(qotom_ecam_read,&reader,&snapshot);
+    struct pci_enumeration_result result;
+    pci_enumerate_segment(qotom_ecam_read,&reader,&snapshot, &result);
     assert(result.status == PCI_ENUMERATION_OK && snapshot.count == 1);
     assert(calls == 65536 + 15);
     assert(snapshot.headers[0].bus == 255 && snapshot.headers[0].device == 31 && snapshot.headers[0].function == 7);
     for (unsigned i = 1; i < 16; ++i) assert(snapshot.headers[0].words[i] == i*4);
     fail_address = UINT64_C(0xeffff008);
     calls = 0;
-    result = pci_enumerate_segment(qotom_ecam_read,&reader,&snapshot);
+    pci_enumerate_segment(qotom_ecam_read,&reader,&snapshot, &result);
     assert(result.status == PCI_ENUMERATION_READ_FAILED && snapshot.count == 0);
     assert(result.bus == 255 && result.device == 31 && result.function == 7 && result.offset == 8);
     assert(calls == 65536 + 2);

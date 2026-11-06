@@ -52,7 +52,7 @@ static enum qotom_rootport_bme_status collect(struct qotom_rootport_bme_result *
     return qotom_clear_rootport_bme(config,cfg,store,cfg,&header,&caps,&prior,out);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_rootport_bme_result out;
     for(unsigned fn=0;fn<4;++fn){setup(fn);assert(collect(&out)==QOTOM_ROOTPORT_OK);
         assert(reads==71 && writes==1 && out.attempted==1 && out.before_command==7 && out.after_command==3 && cfg[1]==0x100003);}

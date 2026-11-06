@@ -27,7 +27,7 @@ static void reset(void) {
 }
 #define ARM() lab_pm_delay_arm(&timer,lab_ecam_expected_tables,LAB_ECAM_FIRMWARE_TABLE_COUNT,config,NULL)
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();assert(ARM() && config_reads==3 && !reads);
     assert(lab_pm_delay_wait(&timer,10) && reads==5 && timer.armed);
     for(unsigned i=1;i<=5;++i) {reset();assert(ARM());failed=i;assert(!lab_pm_delay_wait(&timer,10) && !timer.armed && reads==i);}

@@ -39,46 +39,57 @@ struct pci_enumeration_result {
 typedef int (*pci_enumeration_read)(void *, uint8_t, uint8_t, uint8_t,
                                     uint8_t, uint32_t *);
 
-static struct pci_enumeration_result pci_enumerate_segment(
+static inline enum pci_enumeration_status pci_enumeration_finish(
+        struct pci_enumeration_result *result,
+        enum pci_enumeration_status status, uint8_t bus, uint8_t device,
+        uint8_t function, uint8_t offset) {
+    if (result) {
+        result->status = status;
+        result->bus = bus;
+        result->device = device;
+        result->function = function;
+        result->offset = offset;
+    }
+    return status;
+}
+
+/* Returns the status; when `result` is not NULL, also writes the status and
+ * the location it names (#606: no struct is returned by value, so
+ * QuickProof's clightgen and VST can take this function). */
+static enum pci_enumeration_status pci_enumerate_segment(
         pci_enumeration_read read, void *context,
-        struct pci_enumeration_snapshot *snapshot) {
-    struct pci_enumeration_result result = {PCI_ENUMERATION_OK, 0, 0, 0, 0};
+        struct pci_enumeration_snapshot *snapshot,
+        struct pci_enumeration_result *result) {
     uint32_t count = 0;
     if (snapshot) snapshot->count = 0;
-    if (!read || !snapshot) {
-        result.status = PCI_ENUMERATION_INVALID_ARGUMENT;
-        return result;
-    }
+    if (!read || !snapshot)
+        return pci_enumeration_finish(result, PCI_ENUMERATION_INVALID_ARGUMENT,
+                                      0, 0, 0, 0);
     for (unsigned bus = 0; bus < 256; ++bus) {
         for (unsigned device = 0; device < 32; ++device) {
             for (unsigned function = 0; function < 8; ++function) {
+                const uint8_t b = (uint8_t)bus, d = (uint8_t)device,
+                              f = (uint8_t)function;
                 uint32_t identity;
-                result.bus = (uint8_t)bus;
-                result.device = (uint8_t)device;
-                result.function = (uint8_t)function;
-                result.offset = 0;
-                if (!read(context, result.bus, result.device, result.function,
-                          0, &identity)) {
-                    result.status = PCI_ENUMERATION_READ_FAILED;
-                    return result;
-                }
+                if (!read(context, b, d, f, 0, &identity))
+                    return pci_enumeration_finish(result,
+                        PCI_ENUMERATION_READ_FAILED, b, d, f, 0);
                 if ((uint16_t)identity == UINT16_MAX) continue;
-                if (count == PCI_ENUMERATION_CAPACITY) {
-                    result.status = PCI_ENUMERATION_CAPACITY_EXCEEDED;
-                    return result;
-                }
+                if (count == PCI_ENUMERATION_CAPACITY)
+                    return pci_enumeration_finish(result,
+                        PCI_ENUMERATION_CAPACITY_EXCEEDED, b, d, f, 0);
                 struct pci_enumeration_header *header = &snapshot->headers[count];
-                header->bus = result.bus;
-                header->device = result.device;
-                header->function = result.function;
+                header->bus = b;
+                header->device = d;
+                header->function = f;
                 header->words[0] = identity;
                 for (unsigned word = 1; word < PCI_ENUMERATION_WORDS; ++word) {
-                    result.offset = (uint8_t)(word * 4);
-                    if (!read(context, result.bus, result.device, result.function,
-                              result.offset, &header->words[word])) {
-                        result.status = PCI_ENUMERATION_READ_FAILED;
-                        return result;
-                    }
+                    const uint8_t offset = (uint8_t)(word * 4);
+                    uint32_t value;
+                    if (!read(context, b, d, f, offset, &value))
+                        return pci_enumeration_finish(result,
+                            PCI_ENUMERATION_READ_FAILED, b, d, f, offset);
+                    header->words[word] = value;
                 }
                 ++count;
             }
@@ -88,8 +99,7 @@ static struct pci_enumeration_result pci_enumerate_segment(
      * header storage may be partial and must not be consumed as a snapshot.
      */
     snapshot->count = count;
-    result.bus = result.device = result.function = result.offset = 0;
-    return result;
+    return pci_enumeration_finish(result, PCI_ENUMERATION_OK, 0, 0, 0, 0);
 }
 
 #endif

@@ -56,6 +56,6 @@ int main(void) {
     assert(r.status==PCI_CAPABILITY_ARGUMENT && !snap.count);
     /* Keep the complete-segment collector compiled in this translation unit. */
     struct pci_enumeration_snapshot enumeration;
-    assert(pci_enumerate_segment(0,0,&enumeration).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(0,0,&enumeration, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     return 0;
 }

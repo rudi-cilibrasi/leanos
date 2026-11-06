@@ -36,7 +36,7 @@ static void zero(struct qotom_hda_observation *out) {
     const struct qotom_hda_observation empty={0};assert(!memcmp(out,&empty,sizeof empty));
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_hda_observation out;
     for(unsigned off=0;off<16384;++off)for(unsigned width=0;width<=8;++width) {
         uint64_t addr=7;

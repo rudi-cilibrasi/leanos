@@ -35,7 +35,7 @@ static void check(enum qotom_xhci_status expected) {
     if(expected==QOTOM_XHCI_OK)assert(reads==19 && mmio_reads==7);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();check(QOTOM_XHCI_OK);
     for(unsigned i=1;i<=19;++i){reset();failed=i;check(i>=7 && i<=13?QOTOM_XHCI_MMIO_READ:QOTOM_XHCI_CONFIG_READ);}
     for(unsigned i=0;i<7;++i){reset();samples[i]=UINT32_MAX;check(QOTOM_XHCI_ABSENT);}

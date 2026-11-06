@@ -52,7 +52,7 @@ static void setup(unsigned count) {
     used=reads=0;output[0]=0;
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     setup(16);lab_capture_pcie_device(&snapshot);
     assert(!lab_ecam_window.armed && reads==8*12+8*5);
     const char *cursor=output;

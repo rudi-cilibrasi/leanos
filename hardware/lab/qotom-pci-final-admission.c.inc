@@ -20,8 +20,9 @@ static __attribute__((noreturn,noinline)) void lab_capture_pci_final_admission(
             (uintptr_t)lab_ecam_aperture))
         pre_admission_fail("qotom-pci-final-arm");
     lab_ecam_window.armed=1;
-    struct pci_enumeration_result scan=pci_enumerate_segment(
-        qotom_ecam_read,&lab_ecam_reader,&final_snapshot);
+    struct pci_enumeration_result scan;
+    pci_enumerate_segment(
+        qotom_ecam_read,&lab_ecam_reader,&final_snapshot, &scan);
     lab_ecam_window.armed=0;
 
     /* Intel 329670-002 describes the host bridge's fixed Command bits and says

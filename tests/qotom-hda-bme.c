@@ -76,7 +76,7 @@ static void zero(const struct qotom_hda_bme_result *out) {
     assert(!out->attempted && !out->before_command && !out->after_command);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     assert(!qotom_hda_stopped(NULL));
     struct qotom_hda_bme_result out;
     setup();assert(clear(&out)==QOTOM_HDA_BME_OK && reads==97 && writes==1);
