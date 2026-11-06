@@ -34,6 +34,19 @@ No production source or hardware state was changed by this review. Kernel
 integration needs its own profile, final-object, emulator and physical evidence;
 it is not a reason to describe this candidate interface as full Qotom admission.
 
+The C consumer's side of the table above is also a QuickProof theorem under
+CompCert's C semantics
+([`experiments/quickproof/madt-consumer`](../experiments/quickproof/madt-consumer/README.md),
+ADR 0030, #608). Against a Lean that answers every call with any value, a
+different one each time, `qotom_bind_validated_madt_entries` initializes the
+stream state, steps each byte with sixteen projections of one unchanged old
+state, and checks ABI, status, error, next offset and byte echo before
+replacing it. It rejects malformed record walks and NMI records itself, and
+passes the actual terminal status, error and twelve final words to the
+finish. It publishes a topology only when the finish accepts. Envelope
+validation, the copy's immutability and the observation's provenance stay
+the caller's obligations, outside that theorem.
+
 The reusable bounded C caller is now described in
 [qotom-bsp-consumer.md](qotom-bsp-consumer.md). It carries actual stream outputs
 into the BSP binding under the obligations above; production selection and

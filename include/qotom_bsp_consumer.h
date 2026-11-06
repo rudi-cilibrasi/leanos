@@ -24,13 +24,32 @@ struct qotom_bsp_result {
     uint64_t status, detail, offset;
     uint64_t apic_id, processor_count, apic_base;
 };
-static inline struct qotom_bsp_result qotom_bind_validated_madt_entries(
+/* Write a result and return its status. */
+static inline uint64_t qotom_bsp_publish(struct qotom_bsp_result *out,
+        uint64_t status, uint64_t detail, uint64_t offset, uint64_t apic_id,
+        uint64_t processor_count, uint64_t apic_base) {
+    out->status = status; out->detail = detail; out->offset = offset;
+    out->apic_id = apic_id; out->processor_count = processor_count;
+    out->apic_base = apic_base;
+    return status;
+}
+/* Writes the result through `out` and returns its status; a NULL `out` is an
+ * input-bounds rejection with nothing written (#608: no struct is returned by
+ * value or copied, so QuickProof's clightgen and VST can take this function). */
+static inline uint64_t qotom_bind_validated_madt_entries(
         const uint8_t *entries, size_t length,
-        const struct qotom_bsp_observation *observation) {
-    struct qotom_bsp_result out = {1,0,44,0,0,0};
+        const struct qotom_bsp_observation *observation,
+        struct qotom_bsp_result *out) {
+    if (!out) return 1;
     if (!entries || !observation || !length || length > 65536u - 44u)
-        return out;
-    const struct qotom_bsp_observation obs = *observation;
+        return qotom_bsp_publish(out,1,0,44,0,0,0);
+    /* The observation is read once, here. */
+    const uint64_t executing = observation->executing,
+        cpuid_edx = observation->cpuid_edx,
+        available = observation->available,
+        apic_base = observation->apic_base,
+        sample_id = observation->sample_id,
+        routing_authority = observation->interrupt_routing_authority;
     uint64_t state[12] = {44,0,0,0,0,0,0,256,0,0,0,0};
     uint64_t result[16] = {0};
     const uint64_t table_length = 44u + length;
@@ -41,28 +60,23 @@ static inline struct qotom_bsp_result qotom_bind_validated_madt_entries(
             result[word] = leanos_qotom_madt_stream_byte_step_query(
                 state[0],state[1],state[2],state[3],state[4],state[5],
                 state[6],state[7],state[8],state[9],state[10],state[11],
-                table_length,obs.executing,offset,byte,word);
-        out.offset = offset;
-        if (result[0] != 1) { out.status = 3; return out; }
-        if (result[1] == 2) {
-            out.status = 2; out.detail = result[2]; return out;
-        }
+                table_length,executing,offset,byte,word);
+        if (result[0] != 1) return qotom_bsp_publish(out,3,0,offset,0,0,0);
+        if (result[1] == 2)
+            return qotom_bsp_publish(out,2,result[2],offset,0,0,0);
         if (result[1] != (i + 1 == length ? 3u : 1u) ||
-            result[2] || result[3] != offset + 1 || result[15] != byte) {
-            out.status = 3; return out;
-        }
+            result[2] || result[3] != offset + 1 || result[15] != byte)
+            return qotom_bsp_publish(out,3,0,offset,0,0,0);
         for (size_t word = 0; word < 12; ++word) state[word] = result[word+3];
     }
-    out.offset = state[0];
     uint64_t nmi[4] = {0,0,0,0}, nmi_count = 0;
     for (size_t offset = 0; offset < length;) {
-        if (length - offset < 2u) { out.status = 3; return out; }
+        if (length - offset < 2u) return qotom_bsp_publish(out,3,0,state[0],0,0,0);
         const size_t record_length = entries[offset+1u];
-        if (record_length < 2u || record_length > length - offset) {
-            out.status = 3; return out;
-        }
+        if (record_length < 2u || record_length > length - offset)
+            return qotom_bsp_publish(out,3,0,state[0],0,0,0);
         if (entries[offset] == 4u) {
-            if (record_length != 6u) { out.status = 3; return out; }
+            if (record_length != 6u) return qotom_bsp_publish(out,3,0,state[0],0,0,0);
             uint64_t packed = 0;
             for (size_t byte = 0; byte < 6u; ++byte)
                 packed |= (uint64_t)entries[offset+byte] << (8u*byte);
@@ -74,36 +88,27 @@ static inline struct qotom_bsp_result qotom_bind_validated_madt_entries(
     uint64_t nmi_policy[5];
     for (uint64_t word = 0; word < 5; ++word)
         nmi_policy[word] = leanos_qotom_madt_nmi_policy_query(
-            nmi_count,nmi[0],nmi[1],nmi[2],nmi[3],
-            obs.interrupt_routing_authority,word);
-    if (nmi_policy[0] != 1 || nmi_policy[3] > 1 || nmi_policy[4] > 4) {
-        out.status = 3; return out;
-    }
-    if (nmi_policy[1] != 1) {
-        out.status = 5; out.detail = nmi_policy[2]; return out;
-    }
-    if (nmi_policy[2] || nmi_policy[3] != 1 || nmi_policy[4] != 4) {
-        out.status = 3; return out;
-    }
+            nmi_count,nmi[0],nmi[1],nmi[2],nmi[3],routing_authority,word);
+    if (nmi_policy[0] != 1 || nmi_policy[3] > 1 || nmi_policy[4] > 4)
+        return qotom_bsp_publish(out,3,0,state[0],0,0,0);
+    if (nmi_policy[1] != 1)
+        return qotom_bsp_publish(out,5,nmi_policy[2],state[0],0,0,0);
+    if (nmi_policy[2] || nmi_policy[3] != 1 || nmi_policy[4] != 4)
+        return qotom_bsp_publish(out,3,0,state[0],0,0,0);
     uint64_t bound[6];
     for (uint64_t word = 0; word < 6; ++word)
         bound[word] = leanos_qotom_madt_stream_finish_query(
             result[1],result[2],state[0],state[1],state[2],state[3],state[4],
             state[5],state[6],state[7],state[8],state[9],state[10],state[11],
-            table_length,obs.executing,obs.cpuid_edx,obs.available,
-            obs.apic_base,obs.sample_id,word);
-    out.offset = state[0];
-    if (bound[0] != 1 || bound[5] != 0) { out.status = 3; return out; }
-    if (bound[1] == 2 || bound[1] == 5) {
-        out.status = 4; out.detail = bound[2]; return out;
-    }
-    if (bound[1] != 1 || bound[2] != obs.executing ||
-        bound[3] != state[6] || bound[4] != obs.apic_base) {
-        out.status = 3; return out;
-    }
-    out.status = 0;
-    out.apic_id = bound[2]; out.processor_count = bound[3];
-    out.apic_base = bound[4];
-    return out;
+            table_length,executing,cpuid_edx,available,apic_base,sample_id,
+            word);
+    if (bound[0] != 1 || bound[5] != 0)
+        return qotom_bsp_publish(out,3,0,state[0],0,0,0);
+    if (bound[1] == 2 || bound[1] == 5)
+        return qotom_bsp_publish(out,4,bound[2],state[0],0,0,0);
+    if (bound[1] != 1 || bound[2] != executing ||
+        bound[3] != state[6] || bound[4] != apic_base)
+        return qotom_bsp_publish(out,3,0,state[0],0,0,0);
+    return qotom_bsp_publish(out,0,0,state[0],bound[2],bound[3],bound[4]);
 }
 #endif

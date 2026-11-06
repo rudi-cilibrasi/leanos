@@ -36,7 +36,8 @@ int main(int argc, char **argv) {
     uint8_t checksum = 0;
     for (size_t i = 0; i < length; ++i) checksum = (uint8_t)(checksum + bytes[i]);
     if (declared != length || checksum) return 3;
-    struct qotom_bsp_result r = qotom_bind_validated_madt_entries(bytes+44,length-44,&obs);
+    struct qotom_bsp_result r;
+    qotom_bind_validated_madt_entries(bytes+44,length-44,&obs,&r);
     printf("%"PRIu64" %"PRIu64" %"PRIu64" %"PRIu64" %"PRIu64" %"PRIu64"\n",
         r.status,r.detail,r.offset,r.apic_id,r.processor_count,r.apic_base);
     return 0;
