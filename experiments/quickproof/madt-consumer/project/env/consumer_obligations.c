@@ -5,8 +5,9 @@
  * Lean would, and makes most spans well-formed records (local APIC, I/O APIC and NMI records tiling the span).  Each
  * run then perturbs at most one place: one stream projection, the record framing, one policy word or one finish
  * word, with the values next to each check's boundary, so that runs reach every check and every status.  One run in
- * six is a span of 4 to 8 NMI records only, more than the four the consumer keeps.  It tracks the values it drew
- * itself to know the expected answers. */
+ * six is a span of 4 to 8 NMI records only, more than the four the consumer keeps.  One in sixteen has a length at
+ * the bound, 65536 - 44 + 0 to 2; under the interpreter (GP_RUNS defined), only the two rejected ones.  It tracks the
+ * values it drew itself to know the expected answers. */
 #include <stddef.h>
 #include <stdint.h>
 #include "quickproof.h"
@@ -46,7 +47,15 @@ size_t nondet_size(void) {
     env_nmi_heavy = env_r(6) == 0;
     if (env_nmi_heavy) env_length = 6 * (4 + (size_t)env_r(5));
     else if (k == 0) env_length = 0;
-    else if (k == 1) env_length = (size_t)(65536 - 44 + env_r(3));
+    else if (k == 1) {
+#ifdef GP_RUNS
+        /* The interpreter takes minutes for the 16 calls per byte of a maximal span, past its budget per seed:
+           there only the lengths just past the bound, which the consumer rejects before any call. */
+        env_length = (size_t)(65536 - 44 + 1 + env_r(2));
+#else
+        env_length = (size_t)(65536 - 44 + env_r(3));
+#endif
+    }
     else env_length = 1 + (size_t)env_r(env_r(2) ? 8 : 48);   /* short spans reach the later stages more often */
     env_target_index = env_length ? env_r(env_length) : 0;
     return env_length;

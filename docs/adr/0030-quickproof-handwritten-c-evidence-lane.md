@@ -175,6 +175,25 @@ results are in the experiment's README.
    power, AF and express observations, the final admission check and the
    MADT consumer.
 
+   **Amendment (#608).** The MADT consumer got the same refactor:
+   `qotom_bind_validated_madt_entries` returns its status and writes the
+   result through a pointer, every exit through one publishing helper, and
+   nothing else changes. The fifth project,
+   [`experiments/quickproof/madt-consumer`](../../experiments/quickproof/madt-consumer/README.md),
+   has its seam with the Lean code the consumer calls. Its law,
+   `consumer_obligations`, replaces the three Lean exports the consumer calls
+   with an adversarial Lean that answers anything and checks every call. The
+   consumer meets the caller obligations of the MADT review against every
+   such Lean: the exact calls in order, the answers carried unchanged, the
+   first rejection final, and a topology published only on the finish's
+   acceptance. The specification is parameterized by an abstract oracle,
+   like the device protocols of the PCI projects. The trusted step is
+   reading the law's protocol, the review table and the Lean theorems of
+   `LeanOS.QotomMadtStream` as the same. The other helpers of refactor 1,
+   none of them in a booted kernel, still return structs: the command
+   executor, the power, AF and express observations and the final admission
+   check.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain
