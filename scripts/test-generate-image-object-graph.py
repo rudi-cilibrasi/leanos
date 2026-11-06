@@ -1509,6 +1509,26 @@ converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture \
             )
             self.assertNotEqual(kernel_object.read_bytes(), original_kernel_object)
 
+            # Issue #611: Make remakes every included dependency file before
+            # the goal, so a variant that no longer compiles is compiled even
+            # for a goal that does not need it. That failure must fail the
+            # build, not only print its errors.
+            kernel_source.write_text(
+                '#include "test-header.h"\n'
+                "#ifdef LEANOS_DEVICE_SERVICE_SCENARIO\n"
+                "#error device-service variant broken\n"
+                "#endif\n"
+                "int kernel_variant(void) { return TEST_VALUE; }\n",
+                encoding="utf-8",
+            )
+            broken = subprocess.run(
+                ["make", "-f", str(graph), "-j2", str(kernel_object)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(broken.returncode, 0)
+            self.assertIn("device-service variant broken", broken.stderr)
+
     def test_kernel_variant_flags_are_owned_by_the_graph(self) -> None:
         graph = MODULE.render_graph(
             Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src")

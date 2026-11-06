@@ -335,9 +335,14 @@ if a.ipc_device_stream and (not a.blocking_ipc_integration or len(a.lab_program)
                             a.wifi_program or a.device_service or a.q35_device_lab):
     raise SystemExit('--ipc-device-stream needs --blocking-ipc-integration and exactly one --lab-program')
 if a.q35_device_lab:
+    # lab_wifi_run is declared and defined (below) only outside the canonical
+    # device-service, network-subject and DHCP-subject variants, which host
+    # their own executors; the call is guarded the same way (issue #611).
     text = text.replace('    serial_init();', '''    serial_init();
     serial_puts("LEANOS-LAB/1 MODE q35-device-lab\\n");
+#if !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
     lab_wifi_run();
+#endif
     finish(0x10);''')
 elif a.production_network:
     # No recovery harness (issue #569): no reset after FINAL and no
