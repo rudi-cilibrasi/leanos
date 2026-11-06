@@ -66,7 +66,7 @@ static inline int qotom_broadcom_assign_header(pci_enumeration_read read,void *c
            (raw&mask)!=(current->words[i]&mask))return 0;
     }
     struct pci_capability_snapshot list;
-    return pci_collect_capabilities(read,context,current,&list).status==PCI_CAPABILITY_OK &&
+    return pci_collect_capabilities(read,context,current,&list,0)==PCI_CAPABILITY_OK &&
         qotom_broadcom_same_list(caps,&list);
 }
 

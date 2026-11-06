@@ -23,7 +23,7 @@ static void setup(unsigned off,unsigned flags,unsigned layout) {
     cfg[off/4]=(flags<<16)|0x10;
     if(off<=244) {cfg[off/4+1]=0x10008000;cfg[off/4+2]=0x00202810;}
     reads=fail_at=mutate_at=0;
-    assert(pci_collect_capabilities(read_config,NULL,&initial,&previous).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(read_config,NULL,&initial,&previous,0)==PCI_CAPABILITY_OK);
     reads=0;
 }
 static struct pci_express_observation observe(void) {
@@ -60,7 +60,7 @@ int main(void) {
     setup(0x40,0x142,1);
     cfg[16]=0x01424c10;
     for(unsigned off=0x4c;off<=0xfc;off+=4) cfg[off/4]=1|((off==0xfc?0:off+4)<<8);
-    assert(pci_collect_capabilities(read_config,NULL,&initial,&previous).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(read_config,NULL,&initial,&previous,0)==PCI_CAPABILITY_OK);
     assert(previous.count==46);
     struct pci_express_observation o=observe();assert(o.status==PCI_EXPRESS_OK && reads==102);
     for(unsigned n=1;n<=102;++n) {
@@ -84,11 +84,11 @@ int main(void) {
     for(unsigned off=0x74;off<=0x78;off+=4) {
         setup(0x70,2,0);cfg[off/4]=UINT32_MAX;reject(observe(),PCI_EXPRESS_ABSENT);
         setup(0x70,2,0);cfg[0x70/4]|=off<<8;cfg[off/4]=1;
-        assert(pci_collect_capabilities(read_config,NULL,&initial,&previous).status==PCI_CAPABILITY_OK);
+        assert(pci_collect_capabilities(read_config,NULL,&initial,&previous,0)==PCI_CAPABILITY_OK);
         reject(observe(),PCI_EXPRESS_SHAPE);
     }
     setup(0x70,2,0);cfg[28]|=0x8000;cfg[32]=0x00010010;
-    assert(pci_collect_capabilities(read_config,NULL,&initial,&previous).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(read_config,NULL,&initial,&previous,0)==PCI_CAPABILITY_OK);
     reject(observe(),PCI_EXPRESS_SHAPE);
     setup(0x70,2,0);cfg[28]=1;previous.headers[0].raw=1;reject(observe(),PCI_EXPRESS_NOT_PRESENT);
     setup(0x70,2,0);previous.count=49;reject(observe(),PCI_EXPRESS_ARGUMENT);assert(!reads);

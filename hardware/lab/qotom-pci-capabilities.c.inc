@@ -16,8 +16,9 @@ static void lab_capture_pci_capabilities(
     for (uint32_t i = 0; i < snapshot->count; ++i) {
         struct pci_capability_snapshot caps;
         lab_ecam_window.armed = 1;
-        struct pci_capability_result result = pci_collect_capabilities(
-            qotom_ecam_read, &lab_ecam_reader, &snapshot->headers[i], &caps);
+        struct pci_capability_result result;
+        pci_collect_capabilities(qotom_ecam_read, &lab_ecam_reader, &snapshot->headers[i], &caps,
+            &result);
         lab_ecam_window.armed = 0;
         serial_puts("LEANOS-LAB/1 PCI-CAPS profile=conventional-v1 index=");
         serial_u64(i);

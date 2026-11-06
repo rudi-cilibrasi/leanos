@@ -40,7 +40,7 @@ static void setup(void) {
     cfg[0xd0/4]=UINT32_C(0x00010010);cfg[0xd4/4]=UINT32_C(0x05908fa0);
     cfg[0xd8/4]=UINT32_C(0x00190000);
     reads=writes=delays=fail_read=fail_write=pending_polls=0;
-    assert(pci_collect_capabilities(read_config,cfg,&endpoint,&caps).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(read_config,cfg,&endpoint,&caps,0)==PCI_CAPABILITY_OK);
     prior=pci_observe_express(read_config,cfg,&endpoint,&caps);
     assert(qotom_broadcom_pcie_valid(&prior));
     memset(&bridge,0,sizeof bridge);bridge.device=28;bridge.function=1;
