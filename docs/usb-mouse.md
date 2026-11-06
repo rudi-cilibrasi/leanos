@@ -72,18 +72,16 @@ QEMU's mouse (0627:0001), the session-end count to match the records, and the
 program to end with status 0. `scripts/check.sh` runs it after the keyboard
 scenarios.
 
-Known issue, shared with the keyboard: when the enumeration passes over a
-device in a driver context and then addresses the next one in it, the first
-device's EP0 transfer descriptors still carry the ring's cycle bit, and the
-controller runs them again after the next device's first request. In QEMU,
-with `--mouse --keyboard-first` (a `usb-kbd` on hub port 1, the mouse on
-port 2), the keyboard is passed over correctly and every `MOUSE` record is
-right, but the device descriptor read is overwritten by a replayed
-configuration descriptor, so the ready record shows `vendor=0x0932
-product=0x0004` and the check fails. The fix (clearing the TRBs in
-`Xhci.ringInit`) changes the keyboard's image, whose size the
-`device-service` and `keyboard-echo` transcripts pin, so it is left to a
-separate change.
+`--mouse --keyboard-first` puts a `usb-kbd` on hub port 1 and the mouse on
+port 2, so the driver passes over the keyboard's boot interface and addresses
+the mouse in the driver context the keyboard used; it requires the keyboard to
+be rejected and the same records, and `scripts/check.sh` runs it too.
+
+Known issue, shared with the keyboard, fixed in a3d0e3ec: the passed-over
+device's EP0 TRBs kept the reused ring's cycle bit, so the controller replayed
+its GET_DESCRIPTOR(configuration) after the next device's first request and
+the ready record showed `vendor=0x0932 product=0x0004`; `Xhci.ringInit` now
+clears every TRB's control dword.
 
 On the Qotom the `mouse` image would be built and booted like the keyboard's
 ([usb-keyboard.md](usb-keyboard.md), "Trying it"), with
