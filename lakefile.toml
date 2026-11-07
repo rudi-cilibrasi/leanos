@@ -147,6 +147,11 @@ root = "tests.UsbMouseDecode"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-usb-msc-report"
+root = "tests.UsbMscReport"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-wifi-fuzz"
 root = "tests.WifiFuzz"
 moreLeanArgs = ["-DwarningAsError=true"]

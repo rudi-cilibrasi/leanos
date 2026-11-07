@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the xHCI keyboard or mouse device program under QEMU q35 (issues #449, #607).
+"""Run the xHCI keyboard, mouse or mass-storage device program under QEMU q35 (issues #449, #607, #619).
 
 Builds the q35 device-lab kernel (`build-qotom-recovery-lab.py
 --q35-device-lab`) around the `kbd-q35` program, boots it from a GRUB ISO on
@@ -30,13 +30,27 @@ port 2, so the driver must pass over the keyboard's boot interface (protocol
 record must still name the mouse: a regression check that the reused EP0
 ring holds none of the keyboard's transfer descriptors (`Xhci.ringInit`).
 
-usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first]] [--text hello]
-                             [--output DIR] [--no-build]
+With `--msc` the `msc-q35` program runs instead, with a QEMU `usb-storage`
+behind the hub whose raw image (`MSC_BLOCKS` blocks of 512 bytes) the script
+writes first: each block's content derives from its LBA, so a misread block
+or offset shows. The INQUIRY record must name QEMU's disk, the capacity must
+be the image's, every block record (LBA, first 16 bytes, FNV-1a of the block)
+must match the image, LBA 0, the middle LBA and the last LBA among them, and
+the READ(10) past the end must fail with an illegal-request sense.
+`--msc --root-port` puts the storage on QEMU's root port 2 instead, where it
+attaches at SuperSpeed to the port's USB 3 half (qemu-xhci numbers its USB 3
+ports 1-4 and its USB 2 ports 5-8, so the hub is xHCI port 5 and the storage
+xHCI port 2), and a USB keyboard alone behind the hub, which the driver must
+pass over.
+
+usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]]
+                             [--text hello] [--output DIR] [--no-build]
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -109,12 +123,42 @@ def parse_mouse(line: str) -> dict:
     return {k: int(fields[k]) for k in ("buttons", "dx", "dy", "wheel")}
 
 
+# The mass-storage scenario's disk: 4 MiB of 512-byte blocks.
+MSC_BLOCKS = 8192
+MSC_BLOCK_BYTES = 512
+# The LBAs the program reads: 0-3 in one command, the middle one, the last
+# two in one command.
+MSC_LBAS = [0, 1, 2, 3, MSC_BLOCKS // 2, MSC_BLOCKS - 2, MSC_BLOCKS - 1]
+
+
+def msc_block(lba: int) -> bytes:
+    """Block `lba` of the disk: a readable 16-byte head naming the LBA, then
+    bytes hashed from the LBA and their position."""
+    head = f"LBA{lba:08x}-MSC\n".encode()
+    body = b"".join(hashlib.sha256(b"leanos-msc %d %d" % (lba, k)).digest() for k in range(16))
+    return (head + body)[:MSC_BLOCK_BYTES]
+
+
+def fnv1a32(data: bytes) -> int:
+    h = 0x811C9DC5
+    for b in data:
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def write_msc_disk(path: Path) -> None:
+    with path.open("wb") as f:
+        for lba in range(MSC_BLOCKS):
+            f.write(msc_block(lba))
+
+
 def run(cmd: list[str], **kw) -> None:
     subprocess.run(cmd, check=True, cwd=ROOT, **kw)
 
 
-def build(output: Path, seconds: int, service: bool, mouse: bool) -> Path:
-    program = "mouse-q35" if mouse else "kbd-q35-service" if service else "kbd-q35"
+def build(output: Path, seconds: int, service: bool, mouse: bool, msc: bool) -> Path:
+    program = ("msc-q35" if msc else "mouse-q35" if mouse else
+               "kbd-q35-service" if service else "kbd-q35")
     image = output / f"{program}.bin"
     env = dict(os.environ, LEANOS_KBD_SECONDS=str(seconds), LEANOS_MOUSE_SECONDS=str(seconds))
     run(["lake", "build", "leanos-wifi-gen"], stdout=subprocess.DEVNULL)
@@ -208,11 +252,19 @@ def main() -> int:
                         help="run the USB mouse program, a mouse behind the hub")
     parser.add_argument("--keyboard-first", action="store_true",
                         help="with --mouse: a keyboard on hub port 1, the mouse on port 2")
+    parser.add_argument("--msc", action="store_true",
+                        help="run the USB mass-storage program, a usb-storage behind the hub")
+    parser.add_argument("--root-port", action="store_true",
+                        help="with --msc: the usb-storage on root port 2, a keyboard behind the hub")
     a = parser.parse_args()
     if a.mouse and a.service:
         raise SystemExit("--mouse runs without the device service")
     if a.keyboard_first and not a.mouse:
         raise SystemExit("--keyboard-first needs --mouse")
+    if a.msc and (a.mouse or a.service):
+        raise SystemExit("--msc runs alone, without the device service")
+    if a.root_port and not a.msc:
+        raise SystemExit("--root-port needs --msc")
     if any(c not in QCODES for c in a.text):
         raise SystemExit("--text may use lower-case letters, digits, space and newline")
     if a.output == parser.get_default("output"):
@@ -221,9 +273,25 @@ def main() -> int:
         elif a.mouse:
             a.output = ROOT / ("build/q35-device-lab/run-mouse-keyboard-first" if a.keyboard_first
                                else "build/q35-device-lab/run-mouse")
+        elif a.msc:
+            a.output = ROOT / ("build/q35-device-lab/run-msc-root-port" if a.root_port
+                               else "build/q35-device-lab/run-msc")
     a.output.mkdir(parents=True, exist_ok=True)
     iso = (a.output / "q35-device-lab.iso" if a.no_build else
-           build(a.output, a.seconds, a.service, a.mouse))
+           build(a.output, a.seconds, a.service, a.mouse, a.msc))
+    if a.msc:
+        disk = a.output / "msc-disk.raw"
+        write_msc_disk(disk)
+        usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"] if a.root_port
+               else []) + [
+            "-drive", f"id=msc0,if=none,format=raw,readonly=on,file={disk}",
+            "-device", f"usb-storage,id=msc,bus=xhci.0,port={2 if a.root_port else '1.1'},"
+                       "drive=msc0"]
+    else:
+        usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
+               if not a.mouse or a.keyboard_first else []) + (
+            ["-device", f"usb-mouse,id=mouse0,bus=xhci.0,port=1.{2 if a.keyboard_first else 1}"]
+            if a.mouse else [])
     serial = a.output / "serial.log"
     serial.unlink(missing_ok=True)
     qmp_path = Path(tempfile.mkdtemp()) / "qmp.sock"
@@ -235,15 +303,16 @@ def main() -> int:
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
         "-device", "qemu-xhci,id=xhci,bus=pcie.0,addr=0x2",
         "-device", "usb-hub,id=hub,bus=xhci.0,port=1",
-    ] + (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
-         if not a.mouse or a.keyboard_first else []) + (
-        ["-device", f"usb-mouse,id=mouse0,bus=xhci.0,port=1.{2 if a.keyboard_first else 1}"]
-        if a.mouse else []) + [
+    ] + usb + [
         "-drive", f"id=cd,if=none,format=raw,media=cdrom,readonly=on,file={iso}",
         "-device", "ide-cd,drive=cd,bus=ide.0",
     ], cwd=ROOT)
     try:
         qmp = Qmp(qmp_path)
+        if a.msc:
+            # Nothing to send: the program reads the disk on its own.
+            qemu.wait(timeout=180)
+            return check_msc(serial.read_text(errors="replace").replace("\r", ""), a.root_port)
         ready = "MOUSE ready" if a.mouse else "KBD ready"
         if not wait_for(serial, ready, 120):
             print(serial.read_text(errors="replace") if serial.exists() else "(no serial)")
@@ -316,6 +385,67 @@ def check_mouse(transcript: str, keyboard_first: bool) -> int:
         return 1
     print(f"q35 device lab: {len(MOUSE_PLAN)} mouse events through QMP came back from the "
           f"Lean xHCI driver as {len(records)} MOUSE records in {len(want)} button runs")
+    return 0
+
+
+def check_msc(transcript: str, root_port: bool) -> int:
+    lines = transcript.splitlines()
+    print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
+    errors = []
+
+    def need(line: str, what: str) -> None:
+        if line not in lines:
+            errors.append(f"{what}: no line {line!r}")
+
+    # QEMU's usb-storage is 46f4:0001, its SCSI disk "QEMU" / "QEMU HARDDISK".
+    need("LEANOS-LAB/1 MSC ready vendor=0x46f4 product=0x0001", "device descriptor")
+    # Full speed behind QEMU's full-speed hub (bulk max packet 64); SuperSpeed
+    # (1024) on a root port, where qemu-xhci attaches it to the USB 3 port.
+    mps = 1024 if root_port else 64
+    need(f"LEANOS-LAB/1 MSC configured bulk-in=0x81 in-max-packet={mps} "
+         f"bulk-out=0x02 out-max-packet={mps}", "bulk endpoints")
+    inquiry = [l for l in lines if l.startswith("LEANOS-LAB/1 MSC inquiry ")]
+    if (len(inquiry) != 1 or not inquiry[0].startswith(
+            'LEANOS-LAB/1 MSC inquiry type=0x00 removable=0 vendor="QEMU" '
+            'product="QEMU HARDDISK" revision="')):
+        errors.append(f"INQUIRY record {inquiry} does not name QEMU's disk")
+    if not any(l.startswith("LEANOS-LAB/1 MSC unit-ready attempts=") for l in lines):
+        errors.append("no unit-ready record")
+    need(f"LEANOS-LAB/1 MSC capacity blocks={MSC_BLOCKS} block-bytes={MSC_BLOCK_BYTES}",
+         "capacity")
+    reads = []
+    for l in lines:
+        if l.startswith("LEANOS-LAB/1 MSC block "):
+            fields = dict(f.split("=", 1) for f in l.split()[3:])
+            reads.append((int(fields["lba"]), fields["head"], int(fields["fnv1a"], 16)))
+    if [r[0] for r in reads] != MSC_LBAS:
+        errors.append(f"blocks read {[r[0] for r in reads]}, expected {MSC_LBAS}")
+    for lba, head, fnv in reads:
+        block = msc_block(lba) if 0 <= lba < MSC_BLOCKS else b""
+        if head != block[:16].hex() or fnv != fnv1a32(block):
+            errors.append(f"block {lba}: head={head} fnv1a=0x{fnv:08x}, the image has "
+                          f"head={block[:16].hex()} fnv1a=0x{fnv1a32(block):08x}")
+    # READ(10) of LBA MSC_BLOCKS: a failed CSW, then ILLEGAL REQUEST, LBA out of range.
+    if not any(l.startswith("LEANOS-LAB/1 MSC csw step=read-past-end status=1 ") for l in lines):
+        errors.append("the read past the end did not report a failed CSW")
+    if not any(l.startswith("LEANOS-LAB/1 MSC sense after=read-past-end key=0x05 asc=0x21 ")
+               for l in lines):
+        errors.append("the read past the end did not report ILLEGAL REQUEST / LBA out of range")
+    need(f"LEANOS-LAB/1 MSC done blocks-read={len(MSC_LBAS)}", "done record")
+    if any(l.startswith("LEANOS-LAB/1 MSC error=") for l in lines):
+        errors.append("the program stopped with an error record")
+    # The keyboard behind the hub was addressed and passed over (Hid.Tag.rejected).
+    if root_port and "WIFI 2019 0x00000001" not in lines:
+        errors.append("the keyboard on hub port 1 was not rejected")
+    if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
+        errors.append("device program did not end with status 0")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    if errors:
+        return 1
+    where = "on root port 2" if root_port else "behind the hub"
+    print(f"q35 device lab: the Lean xHCI driver read {len(reads)} blocks of the usb-storage "
+          f"{where} through bulk-only transport, all matching the image")
     return 0
 
 

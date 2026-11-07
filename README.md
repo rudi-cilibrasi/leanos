@@ -275,7 +275,7 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-The lab kernel's Lean device programs (WiFi, USB keyboard and mouse) add their
+The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy
 is proved about the reference simulator while the C executor is tested against
 it ([ADR 0020](docs/adr/0020-device-program-executor-assurance.md)). On the

@@ -1,6 +1,7 @@
 import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
 import LeanOS.Usb.Mouse
+import LeanOS.Usb.MassStorage
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Storage.Ahci
 import LeanOS.Storage.AhciRead
@@ -205,6 +206,9 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    ("mouse-q35", do
       let secs := ((← IO.getEnv "LEANOS_MOUSE_SECONDS").bind String.toNat?).getD 10
       return @LeanOS.Usb.Mouse.program LeanOS.Usb.Xhci.qemu secs.toUInt32),
+   -- USB mass storage, bulk-only transport (issue #619): Bay Trail and qemu-xhci.
+   ("msc", pure (@LeanOS.Usb.MassStorage.program LeanOS.Usb.Xhci.bayTrail)),
+   ("msc-q35", pure (@LeanOS.Usb.MassStorage.program LeanOS.Usb.Xhci.qemu)),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir
