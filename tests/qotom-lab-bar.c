@@ -45,10 +45,13 @@ int main(void) {
        below the device's registers. The check before admitted it. */
     assert(before(0xd0916800u, 0, 0x800) && !lab_dev_bar_admitted(0xd0916800u, 0, 0x800, 1));
     assert(before(0xd0916200u, 0, 0x200) && !lab_dev_bar_admitted(0xd0916200u, 0, 0x200, 1));
-    /* The I/O APIC's page, and a window that runs into it: admitted before. */
+    /* A base at the I/O APIC: its page, or with a 64 KiB window its page and
+       the 15 after it. The check before admitted both. */
     assert(before(0xfec00000u, 0, 0x1000) && !lab_dev_bar_admitted(0xfec00000u, 0, 0x1000, 1));
-    assert(before(0xfebff000u, 0, 0x1000) && !lab_dev_bar_admitted(0xfebff000u, 0, 0x2000, 2));
+    assert(before(0xfec00000u, 0, 0x10000) && !lab_dev_bar_admitted(0xfec00000u, 0, 0x10000, 16));
+    /* The last page below it is admitted; one page more is not. */
     assert(lab_dev_bar_admitted(0xfebff000u, 0, 0x1000, 1));
+    assert(!lab_dev_bar_admitted(0xfebff000u, 0, 0x1000, 2));
     /* Outside the hole, prefetchable, I/O, 64-bit above 4 GiB: rejected. */
     assert(!lab_dev_bar_admitted(0x7ffff000u, 0, 0x1000, 1));
     assert(!lab_dev_bar_admitted(0xfee00000u, 0, 0x1000, 1));
