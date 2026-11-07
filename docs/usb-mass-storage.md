@@ -12,7 +12,7 @@ the HID programs. The other block reader, AHCI, is
 | Module | Contents |
 | --- | --- |
 | `LeanOS/Usb/Xhci.lean` | Controller, command and event rings, transfer rings (`Ring`, with a TRB count), Enable Slot / Address Device, control transfers; `Layout.bulkBuf`, the scratch of the bulk buffers |
-| `LeanOS/Usb/Hid.lean` | Shared: root port scan, USB 2.0 hub support, `findInterface` (the configuration-descriptor walk by interface class, subclass and protocol, with per-class endpoint handling), `attachWith` (bring-up and enumeration with a per-class acceptance routine) |
+| `LeanOS/Usb/Hid.lean` | Shared: root port scan, USB 2.0 hub support ([usb-hub.md](usb-hub.md)), `findInterface` (the configuration-descriptor walk by interface class, subclass and protocol, with per-class endpoint handling), `attachWith` (bring-up and enumeration with a per-class acceptance routine) |
 | `LeanOS/Usb/MassStorage.lean` | Interface match, bulk endpoints, BOT, the SCSI commands, the `MSC` records, the `program` entry point |
 
 ## What the program does
@@ -186,11 +186,15 @@ the done record, no error record and the program's status 0.
 USB 2 ports 5–8 and attaches a device to the USB 3 half of a QEMU port when
 it can, so the full-speed hub is xHCI port 5 (as in every scenario) and the
 storage enumerates at SuperSpeed on xHCI port 2, with bulk max packet 1024.
-The driver configures the hub, passes over the keyboard (it has no
-mass-storage interface), skips the hub's port and accepts the storage on
-port 2. The same records are required, with max packet 1024, and the
-keyboard's rejection. `scripts/check.sh` runs both after the mouse
-scenarios.
+The hub search passes over the SuperSpeed port 2 without addressing the
+storage (`HUB passed-over root-port=2 speed=super`). The driver then
+configures the hub and passes over the keyboard (it has no mass-storage
+interface). Last, it skips the hub's port and accepts the storage on port
+2. The same records are required, with max packet 1024, and the keyboard's
+rejection. `--msc --hub-port 7` puts the storage on hub port 7 and a decoy
+keyboard on port 1, and also checks the hub records
+([usb-hub.md](usb-hub.md)). `scripts/check.sh` runs all
+three after the mouse scenarios.
 
 An excerpt of the hub scenario's transcript:
 
@@ -222,6 +226,6 @@ On the Qotom the `msc` image would be built and booted like the keyboard's
 Not covered: hardware evidence, writing, other transports (UAS, CBI),
 READ CAPACITY(16), more than LUN 0, BOT reset recovery and stall recovery, a
 device-service (yield) form and file systems; the enumeration's limits (one
-level of hub, polling) are the HID programs'. The shared Address Device gives
+level of hub, polling; [usb-hub.md](usb-hub.md)) are the HID programs'. The shared Address Device gives
 EP0 a max packet size of 8 at every speed but high speed (64); QEMU accepts
 that at SuperSpeed, where a real device needs 512.
