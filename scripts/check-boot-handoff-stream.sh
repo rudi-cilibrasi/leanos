@@ -204,6 +204,69 @@ scrub_line="$(grep -n 'frame\[i\] = 0' <<<"$production_allocate" | cut -d: -f1)"
   echo "error: production must copy the selected ACPI root and every advertised table before scrub/publication" >&2
   exit 1
 }
+# The canonical MADT admission lives in include/madt_generated_admission.h
+# (#617): boot_allocate calls it once on the unique MADT copy, before the
+# scrub, and maps each status to the reason of its step.
+madt_admission=include/madt_generated_admission.h
+for required in \
+  'madt_generated_require(madt_generated_admission(' \
+  'selected_madt->bytes, selected_madt->length,' \
+  'handoff.executing_apic_id, decoded.word[39], decoded.word[40],' \
+  'acpi.root.physical_address, acpi.entries.count, acpi.table_count,'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production allocation omits the generated MADT admission: $required" >&2
+    exit 1
+  }
+done
+madt_line="$(grep -n 'madt_generated_require(madt_generated_admission(' <<<"$production_allocate" | cut -d: -f1)"
+[[ -n "$madt_line" && "$pipeline_line" -lt "$madt_line" && "$madt_line" -lt "$scrub_line" ]] || {
+  echo "error: production must admit the copied MADT after the ACPI copy and before scrub/publication" >&2
+  exit 1
+}
+production_madt_admission="$(
+  sed -n '/^static inline enum madt_generated_status madt_generated_admission(/,/^}/p' "$madt_admission"
+)"
+madt_envelope_line="$(grep -n 'madt_generated_envelope(bytes, length)' <<<"$production_madt_admission" | cut -d: -f1)"
+madt_entries_line="$(grep -n 'madt_generated_entries(bytes, length, executing_apic_id,' <<<"$production_madt_admission" | cut -d: -f1)"
+madt_result_line="$(grep -n 'madt_topology_admission_result(' <<<"$production_madt_admission" | cut -d: -f1)"
+[[ -n "$madt_envelope_line" && -n "$madt_entries_line" && -n "$madt_result_line" &&
+   "$madt_envelope_line" -lt "$madt_entries_line" && "$madt_entries_line" -lt "$madt_result_line" ]] &&
+  grep -Fq 'advertised_count, completed_copies, 1, 1, 0, admitted_apic_id,' \
+    <<<"$production_madt_admission" || {
+  echo "error: the MADT admission must run the envelope, then the entry stream, then the admission result" >&2
+  exit 1
+}
+# madt_generated_require, one line per status: "status reason".
+madt_reasons="$(
+  sed -n '/^static void madt_generated_require(/,/^}/p' boot/kernel.c |
+    tr '\n' ' ' | tr -s ' ' |
+    grep -o 'if (status == MADT_GENERATED_[A-Z_]*) handoff_fail("[a-z0-9-]*")' |
+    sed 's/if (status == \(MADT_GENERATED_[A-Z_]*\)) handoff_fail("\([a-z0-9-]*\)")/\1 \2/'
+)"
+mapfile -t madt_statuses < <(
+  sed -n '/^enum madt_generated_status {/,/^};/p' "$madt_admission" |
+    grep -o 'MADT_GENERATED_[A-Z_]*' | grep -vx MADT_GENERATED_OK
+)
+[[ ${#madt_statuses[@]} -gt 0 ]] || {
+  echo "error: $madt_admission declares no failure status" >&2; exit 1;
+}
+for madt_status in "${madt_statuses[@]}"; do
+  case "$madt_status" in
+    MADT_GENERATED_ENVELOPE_*) madt_reason=topology-madt-generated-envelope ;;
+    MADT_GENERATED_ENTRIES_*) madt_reason=topology-madt-generated-entries ;;
+    MADT_GENERATED_RESULT_*) madt_reason=topology-admission-result ;;
+    *) echo "error: $madt_status belongs to no MADT admission step" >&2; exit 1 ;;
+  esac
+  [[ "$(grep -c "^$madt_status " <<<"$madt_reasons")" -eq 1 ]] &&
+    grep -Fxq "$madt_status $madt_reason" <<<"$madt_reasons" || {
+    echo "error: boot_allocate does not map $madt_status to $madt_reason, or maps it more than once" >&2
+    exit 1
+  }
+done
+[[ "$(wc -l <<<"$madt_reasons")" -eq ${#madt_statuses[@]} ]] || {
+  echo "error: madt_generated_require maps a status the header does not declare" >&2
+  exit 1
+}
 for required in \
   'for (uint64_t candidate = 0; candidate < 4096; ++candidate)' \
   'uint64_t exact_candidate = leanos_boot_consume_exact_projection(' \

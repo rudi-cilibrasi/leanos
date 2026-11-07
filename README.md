@@ -366,6 +366,21 @@ any value. Against both, the pipeline:
 ([The project](experiments/quickproof/acpi-table-copy/README.md).) What the
 answers mean is what the Lean theorems of `LeanOS.BootTopology` state.
 
+The seventh is the canonical MADT admission of `boot_allocate`
+(`include/madt_generated_admission.h`). This is the C between the MADT copy
+that the sixth selects and three Lean exports. It is proved against a Lean
+that may answer every call with any value. Against every such Lean, it:
+
+- asks exactly the envelope, entry-stream and admission calls the exports
+  require, in order, with one unchanged old state per byte;
+- carries the answers unchanged;
+- stops at the first rejection;
+- writes the APIC ID only when it returns OK.
+
+([The project](experiments/quickproof/madt-generated-admission/README.md).)
+What the answers mean is what the Lean theorems of `LeanOS.BootTopology`
+state.
+
 The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
 boundary: they run in ring 0, and their confinement to a per-device policy is
 proved about the reference simulator while the C executor is tested against
