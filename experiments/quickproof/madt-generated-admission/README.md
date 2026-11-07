@@ -20,8 +20,8 @@ of `LeanOS/BootTopology.lean`:
 
 The Lean theorems of `LeanOS.BootTopology` say what the answers mean. This
 theorem is about the C between them, under CompCert's semantics for x86-64,
-for every input the law allows. The decision record is ADR 0030, with its
-#617 amendment.
+for every input the law allows. The decision record is ADR 0030, with the
+amendment of issue #617.
 
 The code was not provable as written: three kernel helpers called
 `handoff_fail` directly and read the copy through the kernel's
