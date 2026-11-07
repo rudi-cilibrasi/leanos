@@ -406,6 +406,8 @@ if lab_programs:
                         # step loop; wifi-exec.h is already spliced above.
                         (root / 'hardware/wifi/wifi-gen-exec.h').read_text().replace(
                             '#include "wifi-exec.h"\n', '', 1) + '\n' + arrays +
+                        # The BAR admission both of its windows use.
+                        (root / 'hardware/lab/qotom-lab-bar.h').read_text() + '\n' +
                         (root / 'hardware/lab/qotom-wifi.c.inc').read_text() + '\n#endif\n' + marker)
 if a.handoff_capture:
     marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
