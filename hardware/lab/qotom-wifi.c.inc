@@ -346,8 +346,85 @@ static int lab_msc_print(uint32_t tag, uint32_t value) {
     return 1;
 }
 
+/* USB hub enumeration (LeanOS/Usb/Hid.lean, docs/usb-hub.md). Speeds are
+   xHCI PORTSC speed IDs; a device record spans two prints. */
+static const char *const lab_hub_skips[] = { "none", "unstable", "reset-timeout", "not-enabled" };
+
+static void lab_hub_speed(uint32_t speed) {
+    static const char *const names[] = { "full", "low", "high", "super" };
+    if (speed >= 1 && speed <= 4) serial_puts(names[speed - 1]);
+    else serial_u64(speed);
+}
+
+/* 1 if `tag` is a hub record part (rendered), else 0. */
+static int lab_hub_print(uint32_t tag, uint32_t value) {
+    switch (tag) {
+    case 0x2400:
+        serial_puts("LEANOS-LAB/1 HUB found root-port=");
+        serial_u64(value & 0xffu);
+        serial_puts(" speed=");
+        lab_hub_speed((value >> 8) & 0xffu);
+        serial_puts(" slot=");
+        serial_u64(value >> 16);
+        serial_putc('\n');
+        break;
+    case 0x2401:
+        serial_puts("LEANOS-LAB/1 HUB configured ports=");
+        serial_u64(value & 0xffu);
+        serial_puts(" power-on-wait-ms=");
+        serial_u64((value >> 8) & 0xffffu);
+        serial_puts(" tt-think-time=");
+        serial_u64(value >> 24);
+        serial_putc('\n');
+        break;
+    case 0x2402:
+        serial_puts("LEANOS-LAB/1 HUB port=");
+        serial_u64(value >> 24);
+        serial_puts(" status=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" change=0x");
+        lab_wifi_hex((value >> 16) & 0xffu, 2);
+        serial_putc('\n');
+        break;
+    case 0x2403:
+        serial_puts("LEANOS-LAB/1 HUB port=");
+        serial_u64(value & 0xffu);
+        serial_puts(" skipped=");
+        LAB_MSC_NAME(lab_hub_skips, (value >> 8) & 0xffu);
+        serial_putc('\n');
+        break;
+    case 0x2404:
+        serial_puts("LEANOS-LAB/1 HUB device route=0x");
+        lab_wifi_hex(value & 0xfffffu, 5);
+        serial_puts(" speed=");
+        lab_hub_speed((value >> 20) & 0xfu);
+        serial_puts(" root-port=");
+        serial_u64(value >> 24);
+        break;
+    case 0x2405:
+        serial_puts(" tt-slot=");
+        serial_u64(value & 0xffu);
+        serial_puts(" tt-port=");
+        serial_u64((value >> 8) & 0xffu);
+        serial_putc('\n');
+        break;
+    case 0x2406:
+        serial_puts("LEANOS-LAB/1 HUB passed-over root-port=");
+        serial_u64(value & 0xffu);
+        serial_puts(" speed=");
+        lab_hub_speed((value >> 8) & 0xffu);
+        serial_putc('\n');
+        break;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
     if ((tag >> 8) == 0x23u && lab_msc_print(tag, value))
+        return;
+    if ((tag >> 8) == 0x24u && lab_hub_print(tag, value))
         return;
     /* Lease records from LeanOS/Wifi/Connect.lean (Tag.leasedIp, router,
        subnet, lease) are also rendered as a readable boot message. */

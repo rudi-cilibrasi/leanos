@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the xHCI keyboard, mouse or mass-storage device program under QEMU q35 (issues #449, #607, #619).
+"""Run the xHCI keyboard, mouse or mass-storage device program under QEMU q35 (issues #449, #607, #619, #623).
 
 Builds the q35 device-lab kernel (`build-qotom-recovery-lab.py
 --q35-device-lab`) around the `kbd-q35` program, boots it from a GRUB ISO on
@@ -43,8 +43,17 @@ ports 1-4 and its USB 2 ports 5-8, so the hub is xHCI port 5 and the storage
 xHCI port 2), and a USB keyboard alone behind the hub, which the driver must
 pass over.
 
+`--hub-port N` (2-8, with the keyboard, `--mouse` or `--msc`) puts the device
+under test on hub port N, and a decoy on hub port 1 that the driver must
+pass over: a mouse for the keyboard, a keyboard for the mouse and the
+storage. Besides the program's own records it checks the `HUB`
+records (docs/usb-hub.md): QEMU's full-speed hub on xHCI port 5 with 8
+ports, a status record for each port up to N, connected only at 1 and N, and
+both devices' slot contexts with the hub port as route string, full speed,
+root port 5 and no TT fields, as behind any full-speed hub.
+
 usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]]
-                             [--text hello] [--output DIR] [--no-build]
+                             [--hub-port N] [--text hello] [--output DIR] [--no-build]
 """
 
 from __future__ import annotations
@@ -256,6 +265,9 @@ def main() -> int:
                         help="run the USB mass-storage program, a usb-storage behind the hub")
     parser.add_argument("--root-port", action="store_true",
                         help="with --msc: the usb-storage on root port 2, a keyboard behind the hub")
+    parser.add_argument("--hub-port", type=int, metavar="N",
+                        help="the device under test on hub port N (2-8), a decoy device on hub "
+                             "port 1")
     a = parser.parse_args()
     if a.mouse and a.service:
         raise SystemExit("--mouse runs without the device service")
@@ -265,6 +277,11 @@ def main() -> int:
         raise SystemExit("--msc runs alone, without the device service")
     if a.root_port and not a.msc:
         raise SystemExit("--root-port needs --msc")
+    if a.hub_port is not None:
+        if not 2 <= a.hub_port <= 8:
+            raise SystemExit("--hub-port needs 2..8 (QEMU's usb-hub has 8 ports; 1 holds the decoy)")
+        if a.service or a.keyboard_first or a.root_port:
+            raise SystemExit("--hub-port runs without --service, --keyboard-first and --root-port")
     if any(c not in QCODES for c in a.text):
         raise SystemExit("--text may use lower-case letters, digits, space and newline")
     if a.output == parser.get_default("output"):
@@ -276,17 +293,25 @@ def main() -> int:
         elif a.msc:
             a.output = ROOT / ("build/q35-device-lab/run-msc-root-port" if a.root_port
                                else "build/q35-device-lab/run-msc")
+        if a.hub_port is not None:
+            a.output = a.output.with_name(a.output.name + f"-hub-port-{a.hub_port}")
     a.output.mkdir(parents=True, exist_ok=True)
     iso = (a.output / "q35-device-lab.iso" if a.no_build else
            build(a.output, a.seconds, a.service, a.mouse, a.msc))
     if a.msc:
         disk = a.output / "msc-disk.raw"
         write_msc_disk(disk)
-        usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"] if a.root_port
-               else []) + [
+        usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
+               if a.root_port or a.hub_port else []) + [
             "-drive", f"id=msc0,if=none,format=raw,readonly=on,file={disk}",
-            "-device", f"usb-storage,id=msc,bus=xhci.0,port={2 if a.root_port else '1.1'},"
-                       "drive=msc0"]
+            "-device", "usb-storage,id=msc,bus=xhci.0,port="
+                       f"{2 if a.root_port else f'1.{a.hub_port or 1}'},drive=msc0"]
+    elif a.hub_port:
+        # The keyboard is bound to the display QMP types on, as elsewhere.
+        kbd, mouse = "usb-kbd,id=kbd0,bus=xhci.0,port=1.{},display=vga0", \
+            "usb-mouse,id=mouse0,bus=xhci.0,port=1.{}"
+        usb = (["-device", kbd.format(1), "-device", mouse.format(a.hub_port)] if a.mouse else
+               ["-device", mouse.format(1), "-device", kbd.format(a.hub_port)])
     else:
         usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
                if not a.mouse or a.keyboard_first else []) + (
@@ -312,7 +337,8 @@ def main() -> int:
         if a.msc:
             # Nothing to send: the program reads the disk on its own.
             qemu.wait(timeout=180)
-            return check_msc(serial.read_text(errors="replace").replace("\r", ""), a.root_port)
+            return check_msc(serial.read_text(errors="replace").replace("\r", ""), a.root_port,
+                             a.hub_port)
         ready = "MOUSE ready" if a.mouse else "KBD ready"
         if not wait_for(serial, ready, 120):
             print(serial.read_text(errors="replace") if serial.exists() else "(no serial)")
@@ -330,7 +356,7 @@ def main() -> int:
             qemu.kill()
     transcript = serial.read_text(errors="replace").replace("\r", "")
     if a.mouse:
-        return check_mouse(transcript, a.keyboard_first)
+        return check_mouse(transcript, a.keyboard_first, a.hub_port)
     prefix = "LEANOS-LAB/1 SERVICE subject=1 key=" if a.service else "LEANOS-LAB/1 KBD key="
     keys = [l.split("key=", 1)[1] for l in transcript.splitlines() if l.startswith(prefix)]
     want = [RECORD.get(c, c) for c in a.text]
@@ -340,6 +366,8 @@ def main() -> int:
         return 1
     if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
         print("error: device program did not end with status 0", file=sys.stderr)
+        return 1
+    if a.hub_port and check_hub(transcript.splitlines(), a.hub_port):
         return 1
     if a.service:
         lines = transcript.splitlines()
@@ -352,11 +380,70 @@ def main() -> int:
             print("error: service grant/deny/revoke records missing or out of order", file=sys.stderr)
             return 1
     via = "the device service (yield per key)" if a.service else "the Lean xHCI driver"
-    print(f"q35 device lab: {len(keys)} keys typed through QMP came back from {via}")
+    where = f" on hub port {a.hub_port}" if a.hub_port else ""
+    print(f"q35 device lab: {len(keys)} keys typed through QMP came back from {via}{where}")
     return 0
 
 
-def check_mouse(transcript: str, keyboard_first: bool) -> int:
+# QEMU's usb-hub: full speed, 8 ports, attached to qemu-xhci's USB 2 port 5
+# (QEMU port 1; ports 1-4 are the USB 3 halves).
+HUB_ROOT_PORT = 5
+HUB_PORTS = 8
+
+
+def check_hub(lines: list[str], port: int) -> list[str]:
+    """Errors in the HUB records of a --hub-port run (docs/usb-hub.md),
+    printed; an empty list if they are as required."""
+    errors = []
+    hub = [l for l in lines if l.startswith("LEANOS-LAB/1 HUB ")]
+    found = [l for l in hub if l.startswith("LEANOS-LAB/1 HUB found ")]
+    if len(found) != 1 or not found[0].startswith(
+            f"LEANOS-LAB/1 HUB found root-port={HUB_ROOT_PORT} speed=full slot="):
+        errors.append(f"hub found records {found}, expected one on root port {HUB_ROOT_PORT} "
+                      "at full speed")
+    # QEMU's hub reports a bPwrOn2PwrGood below 50 (100 ms), so the floor applies;
+    # a full-speed hub has no TT think time.
+    want = (f"LEANOS-LAB/1 HUB configured ports={HUB_PORTS} power-on-wait-ms=100 "
+            "tt-think-time=0")
+    if want not in hub:
+        errors.append(f"no line {want!r}")
+    # Each port up to the device's: one status record when first read, and
+    # one more after the reset of each connected port.
+    status: dict[int, list[int]] = {}
+    for l in hub:
+        if l.startswith("LEANOS-LAB/1 HUB port=") and " status=" in l:
+            f = dict(x.split("=", 1) for x in l.split()[2:])
+            status.setdefault(int(f["port"]), []).append(int(f["status"], 16))
+    if sorted(status) != list(range(1, port + 1)):
+        errors.append(f"status records for hub ports {sorted(status)}, expected 1..{port}")
+    for k, words in sorted(status.items()):
+        connected = k in (1, port)
+        # first read: powered (bit 8), connected (bit 0) only where a device is
+        if not words or words[0] & 0x101 != (0x101 if connected else 0x100):
+            errors.append(f"hub port {k} first status {words[:1]}, expected "
+                          f"{'connected and ' if connected else ''}powered")
+        # after the reset: connected and enabled (bits 0, 1), full speed
+        if connected and (len(words) != 2 or words[1] & 0x603 != 0x003):
+            errors.append(f"hub port {k} statuses {words}, expected a second one "
+                          "connected, enabled, full speed")
+        if not connected and len(words) != 1:
+            errors.append(f"empty hub port {k} statuses {words}, expected one")
+    for k in (1, port):
+        want = (f"LEANOS-LAB/1 HUB device route=0x{k:05x} speed=full root-port={HUB_ROOT_PORT} "
+                "tt-slot=0 tt-port=0")
+        if want not in hub:
+            errors.append(f"no line {want!r}")
+    if any(" skipped=" in l for l in hub):
+        errors.append("a connected hub port was given up")
+    # The decoy on hub port 1 was addressed and passed over (Hid.Tag.rejected).
+    if "WIFI 2019 0x00000001" not in lines:
+        errors.append("the decoy on hub port 1 was not passed over")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    return errors
+
+
+def check_mouse(transcript: str, keyboard_first: bool, hub_port: int | None) -> int:
     lines = transcript.splitlines()
     print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
     records = [parse_mouse(l) for l in lines if l.startswith(MOUSE_RECORD)]
@@ -377,18 +464,21 @@ def check_mouse(transcript: str, keyboard_first: bool) -> int:
     if keyboard_first and "WIFI 2019 0x00000001" not in lines:
         print("error: the keyboard on hub port 1 was not rejected", file=sys.stderr)
         return 1
+    if hub_port and check_hub(lines, hub_port):
+        return 1
     if f"LEANOS-LAB/1 MOUSE session-end records={len(records)}" not in lines:
         print("error: session-end record count missing or wrong", file=sys.stderr)
         return 1
     if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
         print("error: device program did not end with status 0", file=sys.stderr)
         return 1
+    where = f" on hub port {hub_port}" if hub_port else ""
     print(f"q35 device lab: {len(MOUSE_PLAN)} mouse events through QMP came back from the "
-          f"Lean xHCI driver as {len(records)} MOUSE records in {len(want)} button runs")
+          f"Lean xHCI driver{where} as {len(records)} MOUSE records in {len(want)} button runs")
     return 0
 
 
-def check_msc(transcript: str, root_port: bool) -> int:
+def check_msc(transcript: str, root_port: bool, hub_port: int | None) -> int:
     lines = transcript.splitlines()
     print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
     errors = []
@@ -441,9 +531,12 @@ def check_msc(transcript: str, root_port: bool) -> int:
         errors.append("device program did not end with status 0")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
+    if hub_port and check_hub(lines, hub_port):
+        return 1
     if errors:
         return 1
-    where = "on root port 2" if root_port else "behind the hub"
+    where = ("on root port 2" if root_port else f"on hub port {hub_port}" if hub_port
+             else "behind the hub")
     print(f"q35 device lab: the Lean xHCI driver read {len(reads)} blocks of the usb-storage "
           f"{where} through bulk-only transport, all matching the image")
     return 0

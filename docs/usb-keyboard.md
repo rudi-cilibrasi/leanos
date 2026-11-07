@@ -10,13 +10,14 @@ hooks of `hardware/wifi/wifi-gen-exec.h`).
 | Module | Contents |
 | --- | --- |
 | `LeanOS/Usb/Xhci.lean` | BIOS handoff (extended capability walk), controller reset and start, command/event rings, root port reset, Enable Slot / Address Device, control transfers |
-| `LeanOS/Usb/Hid.lean` | Shared with the mouse: root port scan, USB 2.0 hub support (hub descriptor, port power/reset, transaction translator), boot interface discovery by protocol, interrupt IN endpoint, HID boot protocol, timed session loop; the enumeration and interface discovery also serve mass storage |
+| `LeanOS/Usb/Hid.lean` | Shared with the mouse: root port scan, USB 2.0 hub support (hub descriptor, port power, debounce and reset, the hub's and the device's slot contexts with route string and transaction translator; [usb-hub.md](usb-hub.md)), boot interface discovery by protocol, interrupt IN endpoint, HID boot protocol, timed session loop; the enumeration and interface discovery also serve mass storage |
 | `LeanOS/Usb/Keyboard.lean` | Boot-keyboard program: LED sweep, US-layout decoding, the session's key records |
 
 The boot-protocol mouse program (`LeanOS/Usb/Mouse.lean`) reuses everything
 but the decoder; see [usb-mouse.md](usb-mouse.md). The mass-storage reader
 (`LeanOS/Usb/MassStorage.lean`) reuses the controller, hub and enumeration
-code; see [usb-mass-storage.md](usb-mass-storage.md).
+code; see [usb-mass-storage.md](usb-mass-storage.md). The hub handling
+the three share, its records and its tests are in [usb-hub.md](usb-hub.md).
 
 The executor gained what DMA-based controllers need: version-2 program
 images that name their PCI target and register window (up to 64 KiB), a
@@ -50,7 +51,9 @@ key instead of printing it and runs through the lab device service
 denied, the driver runs in fixed step budgets with one key per yield, and
 after revocation the former holder is denied. `scripts/check.sh` runs both,
 then the mouse scenario ([usb-mouse.md](usb-mouse.md)) and the
-mass-storage scenario ([usb-mass-storage.md](usb-mass-storage.md)).
+mass-storage scenario ([usb-mass-storage.md](usb-mass-storage.md)), and
+the hub scenarios, `--hub-port 8` among them: the keyboard on the hub's last
+port, a decoy mouse on port 1 ([usb-hub.md](usb-hub.md)).
 
 ## Trying it
 
@@ -78,5 +81,5 @@ Hardware evidence:
 [qotom-usb-keyboard-20260927](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md).
 Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`).
 
-Limitations: one level of hub, one boot keyboard, polling (no interrupts),
+Limitations: one level of hub ([usb-hub.md](usb-hub.md)), one boot keyboard, polling (no interrupts),
 US layout, no key repeat, no USB 3 devices beyond port handling.
