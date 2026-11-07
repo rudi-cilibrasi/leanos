@@ -194,6 +194,31 @@ results are in the experiment's README.
    executor, the power, AF and express observations and the final admission
    check.
 
+   **Amendment (#614).** The ACPI root and table copy of `boot_allocate`
+   got refactor 1. It ended every check in the `noreturn` `handoff_fail`,
+   returned structs by value and used kernel globals. Now it is
+   `include/acpi_table_copy.h`:
+   - the physical copy is a callback;
+   - the storage comes in as arguments;
+   - each check returns its own status, which `acpi_table_copy_require`
+     maps to the reason the check gave before.
+
+   The sixth project,
+   [`experiments/quickproof/acpi-table-copy`](../../experiments/quickproof/acpi-table-copy/README.md),
+   has two adversaries in its law, `table_copy_exact`: a firmware whose
+   every copy may fail or write any bytes, and a Lean that answers anything.
+   Both check every call. Against all of them, the pipeline:
+   - copies only within its storage, at most 64 KiB per table;
+   - replays every copied byte through the generated copy stream;
+   - meets the copy sequence's caller obligations;
+   - publishes a MADT only from complete copies whose envelopes and checksums
+     pass.
+
+   The aperture copy itself stays a trusted boundary. The proof also shows
+   that eight of the pipeline's checks cannot fail, because each tests what
+   the pipeline itself just computed. They stay in the code as defense in
+   depth.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain

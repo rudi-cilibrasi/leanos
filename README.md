@@ -351,6 +351,21 @@ only when the finish accepts
 ([the project](experiments/quickproof/madt-consumer/README.md)). What the
 answers mean is what the Lean theorems of `LeanOS.QotomMadtStream` state.
 
+The sixth is the ACPI copy pipeline of `boot_allocate`
+(`include/acpi_table_copy.h`), the C between the firmware's tables and two
+Lean exports. It is proved against two adversaries: a firmware whose every
+copy may fail or write any bytes, and a Lean that may answer every call with
+any value. Against both, the pipeline:
+
+- copies only within its two arenas, at most 64 KiB per table;
+- replays every copied byte through the generated copy stream;
+- stops at the first check that fails;
+- publishes the tables and the one MADT only when every table was copied,
+  replayed and sequenced, and each envelope and checksum it checks passes.
+
+([The project](experiments/quickproof/acpi-table-copy/README.md).) What the
+answers mean is what the Lean theorems of `LeanOS.BootTopology` state.
+
 The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
 boundary: they run in ring 0, and their confinement to a per-device policy is
 proved about the reference simulator while the C executor is tested against
