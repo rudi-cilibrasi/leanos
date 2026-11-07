@@ -88,6 +88,9 @@ On the Qotom the `mouse` image would be built and booted like the keyboard's
 `LEANOS_MOUSE_SECONDS=60 lake exe leanos-wifi-gen mouse build/wifi/mouse.bin`
 and `--lab-program build/wifi/mouse.bin`; it has not been run there yet.
 
+The mass-storage reader shares the same enumeration with a different
+interface match ([usb-mass-storage.md](usb-mass-storage.md)).
+
 Not covered: hardware evidence, and a device-service (yield) form. Absolute
 pointers (tablets), report-protocol features, more than one mouse and the
 limitations of the keyboard's enumeration (one level of hub, polling) are out

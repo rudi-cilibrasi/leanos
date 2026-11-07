@@ -6,7 +6,9 @@ Boot-protocol HID devices on the xHCI driver, shared by the keyboard
 device with a HID boot interface of a given protocol (directly on a root port
 or behind one USB 2.0 hub), configure it for the boot protocol, and poll its
 interrupt IN endpoint for a bounded session, handing each report to the
-device class's decoder.
+device class's decoder. The mass-storage program (`LeanOS/Usb/MassStorage.lean`)
+reuses the enumeration (`attachWith`) and the configuration-descriptor walk
+(`findInterface`) with its own interface match and bulk endpoints.
 
 USB 2.0 chapter 9/11 requests and HID 1.11 (§7.2 class requests, appendix B
 boot interfaces).
@@ -168,11 +170,19 @@ def setupHub : ProgM Unit := do
     place skip
   delay 250000
 
-/-- Read the configuration descriptor of the device in context 1 and record
-the first HID boot interface (class 3, subclass 1) of `protocol`, and its
-interrupt IN endpoint (`V.epAddr` stays 0 if there is none). -/
-def findBootInterface (protocol : UInt32) : ProgM Unit := do
-  st 4 V.epAddr (.imm 0)
+/-- Read the configuration descriptor (at most 255 bytes) of the device in
+context 1 into `dataBuf`, record its bConfigurationValue (`V.cfgValue`) and
+walk its descriptors. An interface descriptor of class `cls`, subclass
+`subclass` and protocol `protocol` starts a matching interface: its number
+goes to `V.iface`, it is printed (`Tag.iface`) and `onInterface` runs; any
+other interface descriptor ends it. Each endpoint descriptor inside a
+matching interface goes to `onEndpoint advance done` with r5 its offset in
+`dataBuf` and r2 its bLength; the handler jumps to `advance` for the next
+descriptor or to `done` to stop the walk, and must keep r2, r5, r6 and r8
+(it may use r1, r3, r4, r7 and r9). Also used by the mass-storage program
+(`LeanOS/Usb/MassStorage.lean`). -/
+def findInterface (cls subclass protocol : UInt32) (onInterface : ProgM Unit)
+    (onEndpoint : Nat → Nat → ProgM Unit) : ProgM Unit := do
   control 1 V.hidSlot (.imm ((0x80 : UInt32) ||| ((6 : UInt32) <<< 8) ||| ((0x0200 : UInt32) <<< 16))) (.imm ((255 : UInt32) <<< 16)) 255 true
   ld 1 1 (dataBuf + 5)
   st 4 V.cfgValue (.reg 1)
@@ -197,44 +207,60 @@ def findBootInterface (protocol : UInt32) : ProgM Unit := do
   li 6 0
   emit (.memLoad 1 4 5 (dataBuf + 5))
   let advance ← newLabel
-  emit (.branch .ne 4 (.imm 3) advance)               -- bInterfaceClass HID
+  emit (.branch .ne 4 (.imm cls) advance)             -- bInterfaceClass
   emit (.memLoad 1 4 5 (dataBuf + 6))
-  emit (.branch .ne 4 (.imm 1) advance)               -- bInterfaceSubClass boot
+  emit (.branch .ne 4 (.imm subclass) advance)        -- bInterfaceSubClass
   emit (.memLoad 1 4 5 (dataBuf + 7))
   emit (.branch .ne 4 (.imm protocol) advance)        -- bInterfaceProtocol
   li 6 1
   emit (.memLoad 1 4 5 (dataBuf + 2))
   st 4 V.iface (.reg 4)
   print Tag.iface 4
+  onInterface
   emit (.jump advance)
   place notIface
   emit (.branch .ne 3 (.imm 5) advance)
   emit (.branch .eq 6 (.imm 0) advance)
-  emit (.memLoad 1 4 5 (dataBuf + 2))                 -- bEndpointAddress
-  mov 7 4
-  andi 7 0x80
-  emit (.branch .eq 7 (.imm 0) advance)
-  emit (.memLoad 1 7 5 (dataBuf + 3))
-  andi 7 3
-  emit (.branch .ne 7 (.imm 3) advance)
-  st 4 V.epAddr (.reg 4)
-  emit (.memLoad 2 7 5 (dataBuf + 4))
-  andi 7 0x7FF
-  st 4 V.epMps (.reg 7)
-  emit (.memLoad 1 7 5 (dataBuf + 6))
-  st 4 V.epInterval (.reg 7)
-  print Tag.endpoint 4
-  emit (.jump done)
+  onEndpoint advance done
   place advance
   emit (.alu .add 5 (.reg 2))
   emit (.jump top)
   place done
 
+/-- Read the configuration descriptor of the device in context 1 and record
+the first HID boot interface (class 3, subclass 1) of `protocol`, and its
+interrupt IN endpoint (`V.epAddr` stays 0 if there is none). -/
+def findBootInterface (protocol : UInt32) : ProgM Unit := do
+  st 4 V.epAddr (.imm 0)
+  findInterface 3 1 protocol (pure ()) fun advance done => do
+    emit (.memLoad 1 4 5 (dataBuf + 2))               -- bEndpointAddress
+    mov 7 4
+    andi 7 0x80
+    emit (.branch .eq 7 (.imm 0) advance)
+    emit (.memLoad 1 7 5 (dataBuf + 3))
+    andi 7 3
+    emit (.branch .ne 7 (.imm 3) advance)
+    st 4 V.epAddr (.reg 4)
+    emit (.memLoad 2 7 5 (dataBuf + 4))
+    andi 7 0x7FF
+    st 4 V.epMps (.reg 7)
+    emit (.memLoad 1 7 5 (dataBuf + 6))
+    st 4 V.epInterval (.reg 7)
+    print Tag.endpoint 4
+    emit (.jump done)
+
+/-- Accept a device with a HID boot interface of `protocol` (r1 ≠ 0 iff
+accepted; the enumeration's `accept` contract). -/
+def bootInterface (protocol : UInt32) : ProgM Unit := do
+  findBootInterface protocol
+  ld 4 1 V.epAddr
+
 /-- Scan hub ports 1–4 for a device, reset it, address it in context 1 with
-the hub's transaction translator, read its descriptors and accept it if it
-has a boot interface of `protocol` (else disable the slot and continue).
-Jumps to `found`; falls through when none. -/
-def findOnHub (protocol : UInt32) (found : Nat) : ProgM Unit := do
+the hub's transaction translator, read its device descriptor (idVendor |
+idProduct << 16 to `V.ids`) and run `accept`, which reads what else it needs
+and leaves r1 ≠ 0 to accept the device (else its slot is disabled and the
+scan continues). Jumps to `found`; falls through when none. -/
+def findOnHub (accept : ProgM Unit) (found : Nat) : ProgM Unit := do
   for p in [1:5] do
     let next ← newLabel
     ld 4 1 V.hubPorts
@@ -297,19 +323,18 @@ def findOnHub (protocol : UInt32) (found : Nat) : ProgM Unit := do
     getDeviceDescriptor 1 V.hidSlot
     ld 4 1 (dataBuf + 8)
     st 4 V.ids (.reg 1)
-    findBootInterface protocol
-    ld 4 1 V.epAddr
+    accept
     emit (.branch .ne 1 (.imm 0) found)
     printImm Tag.rejected p.toUInt32
     disableSlot V.hidSlot
     place next
 
-/-- Probe root ports 1–6 for a device with a boot interface of `protocol`
-attached directly (no hub, no transaction translator): address each connected
-non-hub device in context 1 and accept the first that has one. The port of an
-already configured hub (`V.hubSlot` ≠ 0, at `V.rootPort`) is left alone.
-Jumps to `found`; falls through when none. -/
-def findOnRoot (protocol : UInt32) (found : Nat) : ProgM Unit := do
+/-- Probe root ports 1–6 for a device attached directly (no hub, no
+transaction translator): address each connected non-hub device in context 1
+and accept the first for which `accept` leaves r1 ≠ 0 (as in `findOnHub`).
+The port of an already configured hub (`V.hubSlot` ≠ 0, at `V.rootPort`) is
+left alone. Jumps to `found`; falls through when none. -/
+def findOnRoot (accept : ProgM Unit) (found : Nat) : ProgM Unit := do
   ld 4 1 V.hubSlot
   st 4 V.hubPortNo (.imm 0)
   let noHub ← newLabel
@@ -342,8 +367,7 @@ def findOnRoot (protocol : UInt32) (found : Nat) : ProgM Unit := do
     emit (.branch .eq 1 (.imm 9) notMatching)
     ld 4 1 (dataBuf + 8)
     st 4 V.ids (.reg 1)
-    findBootInterface protocol
-    ld 4 1 V.epAddr
+    accept
     emit (.branch .ne 1 (.imm 0) found)
     place notMatching
     printImm Tag.rejected port
@@ -351,10 +375,11 @@ def findOnRoot (protocol : UInt32) (found : Nat) : ProgM Unit := do
     place next
 
 /-- Controller bring-up, then enumeration through at most one hub or directly
-on a root port, for a device with a boot interface of `protocol`; fails with
-`missing` when there is none. The device is left addressed in context 1
-(`V.hidSlot`) with its interface and endpoint recorded. -/
-def attach (protocol : UInt32) (missing : UInt32) : ProgM Unit := do
+on a root port, for a device that `accept` takes (see `findOnHub`); runs
+`missing`, which must not fall through, when there is none. The device is
+left addressed in context 1 (`V.hidSlot`, `V.hidRoute`, `V.hidSpeed`,
+`V.hidTt`, `V.rootPort`), with what `accept` recorded. -/
+def attachWith (accept : ProgM Unit) (missing : ProgM Unit) : ProgM Unit := do
   bringUp
   let hubFound ← newLabel
   let found ← newLabel
@@ -363,13 +388,19 @@ def attach (protocol : UInt32) (missing : UInt32) : ProgM Unit := do
   emit (.jump rootSearch)
   place hubFound
   setupHub
-  findOnHub protocol found
+  findOnHub accept found
   -- no matching device behind the hub (or no hub): one plugged straight
   -- into a root port
   place rootSearch
-  findOnRoot protocol found
-  fail missing
+  findOnRoot accept found
+  missing
   place found
+
+/-- `attachWith` for a device with a boot interface of `protocol`; fails with
+`missing` when there is none. Its interface and interrupt IN endpoint are
+recorded (`V.iface`, `V.epAddr`, `V.epMps`, `V.epInterval`). -/
+def attach (protocol : UInt32) (missing : UInt32) : ProgM Unit :=
+  attachWith (bootInterface protocol) (fail missing)
 
 /-! ## Device setup and session -/
 
