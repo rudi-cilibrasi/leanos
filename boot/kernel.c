@@ -2174,13 +2174,18 @@ static uint32_t boot_frame_physical_scrub(void *context, uint64_t selected) {
 #define BOOT_FRAME_TAKE_NEXT 0u
 #endif
 
-/* The authority cross-check's reason: the raw-selection mutation fixture,
-   which must fail it, names its own. */
+/* Fail the authority cross-check: the raw-selection mutation fixture, which
+   must fail it, names its own reason.  Each reason is a literal handoff_fail
+   argument, as scripts/test-generate-serial-protocol.sh requires of every
+   boot-allocation reason. */
+static inline __attribute__((always_inline, noreturn)) void
+boot_frame_authority_fail(void) {
 #ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE
-#define BOOT_FRAME_AUTHORITY_REASON "raw-selection-authority"
+    handoff_fail("raw-selection-authority");
 #else
-#define BOOT_FRAME_AUTHORITY_REASON "projection-authority"
+    handoff_fail("projection-authority");
 #endif
+}
 
 /* Fail the handoff with the reason of a status of
    include/boot_frame_selection.h; return on BOOT_FRAME_OK.  Each group of
@@ -2210,21 +2215,21 @@ static inline __attribute__((always_inline)) void boot_frame_require(
         boot_handoff_require((enum boot_handoff_status)decoder_status);
     if (status == BOOT_FRAME_DECODER) handoff_fail("authority-rejected");
     if (status == BOOT_FRAME_AUTHORITY_NONE)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_NOMINATION)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_TARGET)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_ENTRY_COUNT)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_HIGHEST)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_USABLE)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_BLOCKED)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_AUTHORITY_MANIFEST)
-        handoff_fail(BOOT_FRAME_AUTHORITY_REASON);
+        boot_frame_authority_fail();
     if (status == BOOT_FRAME_SCRUB) handoff_fail("scrub");
     if (status == BOOT_FRAME_PUBLICATION_VERSION) handoff_fail("publication");
     if (status == BOOT_FRAME_PUBLICATION_STATUS) handoff_fail("publication");

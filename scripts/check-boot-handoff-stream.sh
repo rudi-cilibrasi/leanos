@@ -538,20 +538,27 @@ if grep -Eq 'leanos_boot_(projection_manifest|projection_free|projection_finish|
   exit 1
 fi
 # boot_frame_require, one line per status: "status reason".  The cross-check
-# takes its fixture's reason, and a decoder's rejection the reason of the
-# decoder's own status.
+# takes its fixture's reason through boot_frame_authority_fail, and a
+# decoder's rejection the reason of the decoder's own status.
 frame_require="$(
   sed -n '/^static inline __attribute__((always_inline)) void boot_frame_require(/,/^}/p' boot/kernel.c |
     tr '\n' ' ' | tr -s ' '
 )"
 frame_reasons="$(
-  grep -o 'if (status == BOOT_FRAME_[A-Z_]*) handoff_fail(\("[a-z0-9-]*"\|BOOT_FRAME_AUTHORITY_REASON\))' <<<"$frame_require" |
-    sed 's/if (status == \(BOOT_FRAME_[A-Z_]*\)) handoff_fail(\(.*\))/\1 \2/' |
-    sed 's/ BOOT_FRAME_AUTHORITY_REASON$/ projection-authority/; s/ "\(.*\)"$/ \1/'
+  grep -o 'if (status == BOOT_FRAME_[A-Z_]*) \(handoff_fail("[a-z0-9-]*")\|boot_frame_authority_fail()\)' <<<"$frame_require" |
+    sed 's/if (status == \(BOOT_FRAME_[A-Z_]*\)) /\1 /' |
+    sed 's/ boot_frame_authority_fail()$/ boot_frame_authority_fail/; s/ handoff_fail("\(.*\)")$/ \1/'
 )"
-[[ "$(grep -c 'define BOOT_FRAME_AUTHORITY_REASON' boot/kernel.c)" -eq 2 &&
-   "$(grep -B1 -A3 -x '#define BOOT_FRAME_AUTHORITY_REASON "raw-selection-authority"' boot/kernel.c | tr '\n' '|')" == \
-   '#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE|#define BOOT_FRAME_AUTHORITY_REASON "raw-selection-authority"|#else|#define BOOT_FRAME_AUTHORITY_REASON "projection-authority"|#endif|' ]] || {
+# The cross-check's failure, which every authority status takes: exactly
+# projection-authority, or raw-selection-authority under its fixture.
+authority_fail="$(
+  sed -n '/^boot_frame_authority_fail(void) {$/,/^}$/p' boot/kernel.c | tr '\n' '|'
+)"
+[[ "$(grep -c '^boot_frame_authority_fail(void) {$' boot/kernel.c)" -eq 1 &&
+   "$(grep -B1 -x 'boot_frame_authority_fail(void) {' boot/kernel.c | head -1)" == \
+   'static inline __attribute__((always_inline, noreturn)) void' &&
+   "$authority_fail" == \
+   'boot_frame_authority_fail(void) {|#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE|    handoff_fail("raw-selection-authority");|#else|    handoff_fail("projection-authority");|#endif|}|' ]] || {
   echo "error: the cross-check's reason is not projection-authority, or raw-selection-authority under its fixture" >&2
   exit 1
 }
@@ -571,7 +578,7 @@ for frame_status in "${frame_statuses[@]}"; do
   case "$frame_status" in
     BOOT_FRAME_TERMINAL_*) frame_reason=projection-terminal ;;
     BOOT_FRAME_DECODER) frame_reason=authority-rejected ;;
-    BOOT_FRAME_AUTHORITY_*) frame_reason=projection-authority ;;
+    BOOT_FRAME_AUTHORITY_*) frame_reason=boot_frame_authority_fail ;;
     BOOT_FRAME_SCRUB) frame_reason=scrub ;;
     BOOT_FRAME_PUBLICATION_*) frame_reason=publication ;;
     BOOT_FRAME_UNPUBLISHED_*) frame_reason=frame-budget-unpublished-frame ;;
