@@ -401,9 +401,9 @@ def check_hub(lines: list[str], port: int) -> list[str]:
             f"LEANOS-LAB/1 HUB found root-port={HUB_ROOT_PORT} speed=full slot="):
         errors.append(f"hub found records {found}, expected one on root port {HUB_ROOT_PORT} "
                       "at full speed")
-    # QEMU's hub reports a bPwrOn2PwrGood below 50 (100 ms), so the floor applies;
-    # a full-speed hub has no TT think time.
-    want = (f"LEANOS-LAB/1 HUB configured ports={HUB_PORTS} power-on-wait-ms=100 "
+    # QEMU's hub reports a bPwrOn2PwrGood of at most 75 (150 ms), so the 250 ms
+    # floor applies; a full-speed hub has no TT think time.
+    want = (f"LEANOS-LAB/1 HUB configured ports={HUB_PORTS} power-on-wait-ms=250 "
             "tt-think-time=0")
     if want not in hub:
         errors.append(f"no line {want!r}")

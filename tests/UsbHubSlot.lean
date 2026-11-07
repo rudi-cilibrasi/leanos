@@ -49,14 +49,17 @@ def slotCases : List ((UInt32 × UInt32 × UInt32 × UInt32) × (UInt32 × UInt3
    ((Speed.full, 5, 8, 0x0069), (0x0C100000, 0x08050000, 0))]   -- TTT bits reserved
 
 /-- (bNbrPorts, bPwrOn2PwrGood) and (`V.hubPorts`, `V.hubScanPorts`,
-`V.hubWait`): ports searched capped at 15, the wait at least 50 × 2 ms. -/
+`V.hubWait`): ports searched capped at 15; the wait (2 ms units)
+bPwrOn2PwrGood + 50 (TSIGATT, 100 ms), at least 125 (250 ms). -/
 def limitCases : List ((UInt32 × UInt32) × (UInt32 × UInt32 × UInt32)) :=
-  [((4, 50), (4, 4, 50)),
-   ((8, 1), (8, 8, 50)),              -- QEMU's usb-hub
-   ((7, 0), (7, 7, 50)),
-   ((15, 100), (15, 15, 100)),
-   ((16, 255), (16, 15, 255)),
-   ((255, 49), (255, 15, 50))]
+  [((4, 50), (4, 4, 125)),
+   ((8, 1), (8, 8, 125)),
+   ((7, 0), (7, 7, 125)),
+   ((4, 75), (4, 4, 125)),            -- 75 + 50: exactly the floor
+   ((4, 76), (4, 4, 126)),
+   ((15, 100), (15, 15, 150)),
+   ((16, 255), (16, 15, 305)),
+   ((255, 49), (255, 15, 125))]
 
 def tagSpeed : UInt32 := 0x2F00
 def tagTt : UInt32 := 0x2F01

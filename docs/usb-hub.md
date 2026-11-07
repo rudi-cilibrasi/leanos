@@ -32,9 +32,19 @@ endpoint.
    descriptor (type 0x29, 9 bytes): bNbrPorts, wHubCharacteristics and
    bPwrOn2PwrGood. A Configure Endpoint command then marks the slot as a
    hub (see [Slot contexts](#slot-contexts)). SET_FEATURE(PORT_POWER) goes
-   to ports 1 to bNbrPorts, at most 15. Then the program waits 2 ×
-   bPwrOn2PwrGood ms (USB 2.0 §11.23.2.1), and at least 100 ms, because some
-   hubs report 0.
+   to ports 1 to bNbrPorts, at most 15. Then the program waits for the
+   ports to come up, before it reads any status:
+   - 2 × bPwrOn2PwrGood ms, the hub's power-good time (USB 2.0 §11.23.2.1);
+   - plus 100 ms, the time a device may take after that to signal attach
+     (TSIGATT, USB 2.0 §7.1.7.3);
+   - never less than 250 ms in all. That is the fixed wait of the earlier
+     driver, the timing that ran on the Qotom's Genesys hub.
+
+   The wait matters because the port search passes over a port whose first
+   GET_STATUS shows no connection. A device that attached late would be
+   missed. A hub that switches port power comes out of its reset with its
+   ports off, so on real hardware every device attaches only after this
+   PORT_POWER.
 3. **Port search.** Ports 1 to bNbrPorts (at most 15) are searched in order:
    - **Connection.** A port whose GET_STATUS shows no connection is passed
      over.
@@ -113,8 +123,9 @@ LEANOS-LAB/1 HUB device route=0x<5 hex> speed=<speed> root-port=<dec> tt-slot=<d
 - `passed-over`: a SuperSpeed root port that the hub search did not
   address.
 - `found`: the hub, its root port, its speed and its xHCI slot.
-- `configured`: bNbrPorts, the power-on wait and the TT think time (0–3, for
-  8, 16, 24 or 32 FS bit times) in the hub's slot context.
+- `configured`: bNbrPorts, the power-on wait used in ms (2 ×
+  (bPwrOn2PwrGood + 50), at least 250), and the TT think time (0–3, for 8,
+  16, 24 or 32 FS bit times) in the hub's slot context.
 - `port`, `status`: GET_STATUS of a hub port, wPortStatus and the low byte
   of wPortChange (USB 2.0 Tables 11-21 and 11-22). Each searched port gets
   one record when it is first read. A port whose device is addressed gets a
@@ -152,9 +163,9 @@ The device's own checks are those of its scenario: every typed key, the
 mouse runs, or every mass-storage record against the disk image. The
 `HUB` records must show:
 
-- the hub found on root port 5 at full speed, with 8 ports, a 100 ms
-  power-on wait (QEMU's bPwrOn2PwrGood is below 50, so the floor applies)
-  and no TT think time;
+- the hub found on root port 5 at full speed, with 8 ports, a 250 ms
+  power-on wait (the floor: QEMU's bPwrOn2PwrGood is at most 75) and no TT
+  think time;
 - a status record for each port from 1 to N, connected (and powered) only
   at 1 and N, and after the reset connected, enabled and full speed;
 - both devices' slot contexts with the hub port as the route string, full
@@ -177,7 +188,7 @@ sets C_PORT_ENABLE when a reset enables a port, hence `change=0x12`):
 
 ```text
 LEANOS-LAB/1 HUB found root-port=5 speed=full slot=1
-LEANOS-LAB/1 HUB configured ports=8 power-on-wait-ms=100 tt-think-time=0
+LEANOS-LAB/1 HUB configured ports=8 power-on-wait-ms=250 tt-think-time=0
 LEANOS-LAB/1 HUB port=1 status=0x0101 change=0x01
 LEANOS-LAB/1 HUB port=1 status=0x0103 change=0x12
 LEANOS-LAB/1 HUB device route=0x00001 speed=full root-port=5 tt-slot=0 tt-port=0
@@ -217,6 +228,12 @@ All of them still pass `DeviceProgramConfinement.admissible` under
   went through a high-speed hub's TT. It used the earlier code, which put
   the same values in these fields for that case (hub slot | port << 8).
   This code has not run on hardware.
+- **The Qotom keyboard path is changed code.** That path is the Genesys
+  high-speed hub with the low-speed keyboard on its port 3, TT word 0x0301.
+  The port loop, the power-on wait, the debounce, the C_PORT_RESET wait,
+  the hub's slot speed and the TT condition are all new on it. It has not
+  been rerun on hardware, and a Qotom keyboard run needs its own
+  go-ahead.
 - **More than one hub level.** A hub behind the hub is addressed like any
   device and passed over: it has no interface the programs accept. Only the
   first hub is used: a hub on another root port is passed over too.
@@ -224,7 +241,8 @@ All of them still pass `DeviceProgramConfinement.admissible` under
   USB 2.0 half is used, so a SuperSpeed device behind a USB 3 hub (which
   connects only to the SuperSpeed half) is not found.
 - **Port power.** In QEMU the hub's ports are powered before the program
-  runs, so the power-on step is not tested there. SeaBIOS powers them
+  runs, so the power-on step, and the power-on wait's TSIGATT margin, are
+  not tested there. SeaBIOS powers them
   during its own USB scan, and they still read powered after the
   controller reset, also with `usb-hub,port-power=on`. A control run made the
   point: in a copy of the `--hub-port 8` keyboard image, the

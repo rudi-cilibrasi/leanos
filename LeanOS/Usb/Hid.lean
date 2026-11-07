@@ -84,6 +84,11 @@ end Speed
 (four bits per tier, xHCI 1.1 §6.2.2). -/
 def maxHubPorts : UInt32 := 15
 
+/-- The shortest power-on wait, in 2 ms units: 250 ms, the fixed wait the
+earlier driver used after PORT_POWER, which the Qotom's Genesys 05e3:0610
+hub ran with (`hardware/lab/observations/qotom-usb-keyboard-20260927`). -/
+def minHubWait : UInt32 := 125
+
 -- Enumeration diagnostics. The 0x20xx tags print as raw records; the hub
 -- records (0x24xx, `docs/usb-hub.md`) are rendered by the lab kernel's print
 -- hook (`hardware/lab/qotom-wifi.c.inc`).
@@ -265,8 +270,9 @@ def hubSlotContext : ProgM Unit := do
 /-- From the hub descriptor in `dataBuf`: bNbrPorts to `V.hubPorts`, the
 ports to power and search (bNbrPorts, at most `maxHubPorts`) to
 `V.hubScanPorts`, and the power-on wait in 2 ms units to `V.hubWait`:
-bPwrOn2PwrGood (USB 2.0 §11.23.2.1), at least 50 (100 ms), as some hubs
-report 0. -/
+bPwrOn2PwrGood (power good, USB 2.0 §11.23.2.1) + 50, the 100 ms a device
+may take after its power is good to signal attach (TSIGATT, §7.1.7.3), at
+least `minHubWait`. -/
 def hubDescriptorLimits : ProgM Unit := do
   ld 1 1 (dataBuf + 2)                                  -- bNbrPorts
   st 4 V.hubPorts (.reg 1)
@@ -276,9 +282,10 @@ def hubDescriptorLimits : ProgM Unit := do
   place fits
   st 4 V.hubScanPorts (.reg 1)
   ld 1 1 (dataBuf + 5)                                  -- bPwrOn2PwrGood
+  addi 1 50                                             -- + TSIGATT
   let long ← newLabel
-  emit (.branch .geu 1 (.imm 50) long)
-  li 1 50
+  emit (.branch .geu 1 (.imm minHubWait) long)
+  li 1 minHubWait
   place long
   st 4 V.hubWait (.reg 1)
 
