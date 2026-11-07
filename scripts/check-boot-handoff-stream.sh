@@ -170,10 +170,11 @@ done
   exit 1
 }
 for required in 'boot_handoff_require(boot_handoff_project(' \
-  leanos_boot_projection_manifest \
-  leanos_boot_projection_free projection_finish_query \
-  decode_boot_candidate_authority leanos_boot_manifest_candidate \
-  leanos_boot_consume_exact_projection leanos_boot_authority_result \
+  'boot_frame_require(boot_frame_terminal(' 'boot_frame_select(' \
+  'boot_frame_require(boot_frame_cross_check(' \
+  'boot_frame_require(boot_frame_scrub_selected(' \
+  'boot_frame_publication_result(' \
+  'boot_frame_require(boot_frame_publication_check(' 'boot_frame_rescan(' \
   'acpi_table_copy_require(acpi_copy_root_and_tables(' \
   'boot_acpi_physical_copy, 0, decoded.word[39], decoded.word[40],' \
   '.root = boot_acpi_root_copy,' \
@@ -226,7 +227,7 @@ table_copy_line="$(grep -n 'acpi_copy_root_tables(copy, context' <<<"$production
   exit 1
 }
 pipeline_line="$(grep -n 'acpi_table_copy_require(acpi_copy_root_and_tables(' <<<"$production_allocate" | cut -d: -f1)"
-scrub_line="$(grep -n 'frame\[i\] = 0' <<<"$production_allocate" | cut -d: -f1)"
+scrub_line="$(grep -n 'boot_frame_require(boot_frame_scrub_selected(' <<<"$production_allocate" | cut -d: -f1)"
 [[ -n "$pipeline_line" && -n "$scrub_line" && "$pipeline_line" -lt "$scrub_line" ]] || {
   echo "error: production must copy the selected ACPI root and every advertised table before scrub/publication" >&2
   exit 1
@@ -294,81 +295,307 @@ done
   echo "error: madt_generated_require maps a status the header does not declare" >&2
   exit 1
 }
-for required in \
-  'for (uint64_t candidate = 0; candidate < 4096; ++candidate)' \
-  'uint64_t exact_candidate = leanos_boot_consume_exact_projection(' \
-  'selected = exact_candidate' \
-  'next_selected = exact_candidate' \
-  'frame_budget_physical_frame = next_selected' \
-  'authority.word[3] != selected'; do
-  grep -Fq "$required" <<<"$production_allocate" || {
-    echo "error: production selection is not bound to the canonical raw-byte candidate scan: $required" >&2
+# The frame selection, scrub and publication live in
+# include/boot_frame_selection.h (#627): boot_allocate calls its steps in
+# order after the MADT admission, keeps the production mutation fixtures
+# between them, and maps each status to the reason of its check.
+frame_selection=include/boot_frame_selection.h
+frame_function() {
+  sed -n "/^static inline [a-z_ ]* $1(/,/^}/p" "$frame_selection"
+}
+for function in boot_frame_terminal boot_frame_select boot_frame_cross_check \
+  boot_frame_scrub_selected boot_frame_publication_result \
+  boot_frame_publication_check boot_frame_rescan; do
+  [[ -n "$(frame_function "$function")" ]] || {
+    echo "error: $frame_selection does not define $function" >&2
     exit 1
   }
 done
-if grep -Fq 'selected = authority.word[3]' <<<"$production_allocate"; then
+frame_terminal="$(frame_function boot_frame_terminal)"
+frame_select="$(frame_function boot_frame_select)"
+frame_cross_check="$(frame_function boot_frame_cross_check)"
+frame_scrub="$(frame_function boot_frame_scrub_selected)"
+frame_publication="$(frame_function boot_frame_publication_result)"
+frame_publication_check="$(frame_function boot_frame_publication_check)"
+frame_rescan="$(frame_function boot_frame_rescan)"
+frame_decoder="$(sed -n '/^static uint32_t boot_frame_decode_candidate(/,/^}/p' boot/kernel.c)"
+frame_physical_scrub="$(sed -n '/^static uint32_t boot_frame_physical_scrub(/,/^}/p' boot/kernel.c)"
+# check_text TEXT DESCRIPTION REQUIRED...: every required line is in TEXT.
+check_text() {
+  local text="$1" description="$2" required
+  shift 2
+  for required in "$@"; do
+    grep -Fq "$required" <<<"$text" || {
+      echo "error: $description omits $required" >&2
+      exit 1
+    }
+  done
+}
+# line_in TEXT PATTERN: the line number of the first match of PATTERN.
+line_in() {
+  grep -n -m1 -F "$2" <<<"$1" | cut -d: -f1
+}
+# The manifest overlay and the terminal result: three overlay words and one
+# free word per block, in block order, then the nine terminal words over the
+# free words, checked before the selection.
+check_text "$frame_terminal" "the manifest overlay and terminal result" \
+  'for (uint64_t block = 0; block < BOOT_FRAME_BLOCKS; ++block) {' \
+  'block, BOOT_FRAME_MANIFEST_ARGS(manifest), 1);' \
+  'block, BOOT_FRAME_MANIFEST_ARGS(manifest), 2);' \
+  'block, BOOT_FRAME_MANIFEST_ARGS(manifest), 3);' \
+  'if (status != 1 || error != 0) {' \
+  'reserved[block] = mask;' \
+  'usable[block], blocked[block], mask);' \
+  'for (uint64_t query = 0; query < BOOT_FRAME_TERMINAL_WORDS; ++query)' \
+  'terminal[query] = leanos_boot_projection_finish(' \
+  'decoded[1], decoded[2], manifest_status, manifest_error,' \
+  'decoded[11], decoded[17], 1, query,' \
+  'BOOT_FRAME_BITMAP_ARGS(free_words));' \
+  'if (terminal[3] >= BOOT_FRAME_COUNT) return BOOT_FRAME_TERMINAL_FRAME;' \
+  'if (terminal[5] != decoded[11]) return BOOT_FRAME_TERMINAL_ENTRY_COUNT;'
+# The selection: each candidate in order is replayed through the generated
+# candidate decoder before its manifest and exact-projection answers, a
+# decoder's rejection stops it, and the selected frame is the consumer's
+# first acceptance, never the projection's nomination.
+check_text "$frame_select" "production selection is not bound to the canonical raw-byte candidate scan:" \
+  'for (uint64_t candidate = 0; candidate < BOOT_FRAME_COUNT; ++candidate) {' \
+  'uint64_t *state = states[scan];' \
+  'const uint32_t status = decode(context, candidate, state);' \
+  'return BOOT_FRAME_DECODER;' \
+  'candidate, BOOT_FRAME_MANIFEST_ARGS(manifest));' \
+  'const uint64_t exact_candidate = leanos_boot_consume_exact_projection(' \
+  'BOOT_FRAME_COUNT, candidate, state[1], state[14], state[15],' \
+  'if (exact_candidate >= BOOT_FRAME_COUNT) continue;' \
+  'first = exact_candidate;' \
+  'if (take_next == 0) break;' \
+  'second = exact_candidate;'
+select_decode_line="$(line_in "$frame_select" 'decode(context, candidate, state)')"
+select_rejected_line="$(line_in "$frame_select" 'return BOOT_FRAME_DECODER;')"
+select_manifest_line="$(line_in "$frame_select" 'leanos_boot_manifest_candidate(')"
+select_consume_line="$(line_in "$frame_select" 'leanos_boot_consume_exact_projection(')"
+[[ "$select_decode_line" -lt "$select_rejected_line" &&
+   "$select_rejected_line" -lt "$select_manifest_line" &&
+   "$select_manifest_line" -lt "$select_consume_line" ]] || {
+  echo "error: the selection must decode each candidate and stop at its rejection before asking its manifest and exact projection" >&2
+  exit 1
+}
+if grep -Eq 'terminal|nominat' <<<"$frame_select"; then
   echo "error: production selected a caller-transported projection word" >&2
   exit 1
 fi
-if grep -Fq 'frame_budget_physical_frame = authority.word[8]' \
-    <<<"$production_allocate"; then
-  echo "error: frame-budget allocation consumed a caller-transported projection word" >&2
+if grep -Fq 'selected = authority.word[3]' <<<"$production_allocate" ||
+   grep -Fq 'frame_budget_physical_frame = authority.word[8]' <<<"$production_allocate"; then
+  echo "error: production allocation consumed a caller-transported projection word" >&2
   exit 1
 fi
+# The cross-check, the scrub, the publication and the rescan.
+check_text "$frame_cross_check" "production selected-frame authorization" \
+  'if (selected >= BOOT_FRAME_COUNT) return BOOT_FRAME_AUTHORITY_NONE;' \
+  'if (terminal[3] != selected) return BOOT_FRAME_AUTHORITY_NOMINATION;' \
+  'if (state[16] != selected) return BOOT_FRAME_AUTHORITY_TARGET;' \
+  'if (state[11] != decoded[11]) return BOOT_FRAME_AUTHORITY_ENTRY_COUNT;' \
+  'if (state[17] != decoded[17]) return BOOT_FRAME_AUTHORITY_HIGHEST;' \
+  'if (state[14] != 1) return BOOT_FRAME_AUTHORITY_USABLE;' \
+  'if (state[15] != 0) return BOOT_FRAME_AUTHORITY_BLOCKED;' \
+  'if (selected_manifest != 1) return BOOT_FRAME_AUTHORITY_MANIFEST;'
+check_text "$frame_scrub" "the scrub step" \
+  'if (scrub(context, selected) != 1) return BOOT_FRAME_SCRUB;'
+check_text "$frame_physical_scrub" "the kernel's physical scrub" \
+  'volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);' \
+  'for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;' \
+  'if (frame[i] != 0) return 0;' \
+  'return 1;'
+[[ "$(line_in "$frame_physical_scrub" 'frame[i] = 0;')" -lt \
+   "$(line_in "$frame_physical_scrub" 'if (frame[i] != 0) return 0;')" ]] || {
+  echo "error: the kernel's scrub must zero the frame before reading it back" >&2
+  exit 1
+}
+check_text "$frame_publication" "the publication's authority result" \
+  'for (uint64_t query = 0; query < BOOT_FRAME_PUBLICATION_WORDS; ++query)' \
+  'publication[query] = leanos_boot_authority_result(' \
+  'selected, state[16], state[1], state[14], state[15],' \
+  'selected_manifest, 1, query);'
+check_text "$frame_publication_check" "the publication check" \
+  'if (publication[0] != 1) return BOOT_FRAME_PUBLICATION_VERSION;' \
+  'if (publication[3] != selected) return BOOT_FRAME_PUBLICATION_FRAME;' \
+  'if (publication[4] != selected + 1) return BOOT_FRAME_PUBLICATION_OBJECT;'
+check_text "$frame_rescan" "the frame-budget rescan" \
+  'if (next >= BOOT_FRAME_COUNT) return BOOT_FRAME_UNPUBLISHED_LIMIT;' \
+  'if (next <= published) return BOOT_FRAME_UNPUBLISHED_ORDER;' \
+  'const uint32_t status = decode(context, next, state);' \
+  'return BOOT_FRAME_DECODER;' \
+  'next, BOOT_FRAME_MANIFEST_ARGS(manifest));' \
+  'if (state[16] != next) return BOOT_FRAME_RESCAN_TARGET;' \
+  'if (state[1] != 1) return BOOT_FRAME_RESCAN_STATUS;' \
+  'if (next_manifest != 1) return BOOT_FRAME_RESCAN_MANIFEST;'
+[[ "$(line_in "$frame_rescan" 'return BOOT_FRAME_UNPUBLISHED_ORDER;')" -lt \
+   "$(line_in "$frame_rescan" 'decode(context, next, state)')" ]] || {
+  echo "error: the frame-budget rescan must bound the next frame before decoding it" >&2
+  exit 1
+}
+# The kernel's candidate decoder is the generated decoder over the immutable
+# handoff copy (include/boot_handoff_decode.h), and the selection decodes
+# from that copy.
+check_text "$frame_decoder" "the kernel's candidate decoder" \
+  'boot_handoff_decode_candidate(' \
+  'handoff->magic, handoff->info_address, handoff->total, candidate,' \
+  'handoff->copy, states, &current);' \
+  'if (status != BOOT_HANDOFF_OK) return (uint32_t)status;' \
+  'load_boot_decode_words(state, states[current]);'
+check_text "$production_allocate" "production allocation's frame selection" \
+  '.bytes = boot_handoff_copy,' \
+  'const uint8_t *info = handoff.bytes;' \
+  'const uint64_t manifest[BOOT_FRAME_MANIFEST_WORDS] = {' \
+  'BOOT_MANIFEST_ARGS(info_address, total)' \
+  'manifest, decoded.word, boot_projection_usable,' \
+  'boot_projection_blocked, boot_projection_reserved, authority.word), 0);' \
+  '.copy = (const uint64_t *)info' \
+  'uint64_t *const selected_authority = selection_states[0];' \
+  'boot_frame_decode_candidate, &candidates, manifest,' \
+  'BOOT_FRAME_TAKE_NEXT, selection_states, &selected,' \
+  'boot_frame_require(selection, decoder_status);' \
+  'authority.word, decoded.word, selected, selected_authority,' \
+  'boot_frame_physical_scrub, 0, selected), 0);' \
+  'boot_frame_publication_result(selected, selected_authority,' \
+  'selected, publication.word), 0);' \
+  'published_boot_object = publication.word[4];' \
+  'frame_budget_boot_published_frame = selected;' \
+  'frame_budget_physical_frame = next_selected;' \
+  'boot_frame_decode_candidate, &candidates, manifest, decoded.word,' \
+  'frame_budget_boot_published_frame, frame_budget_physical_frame,' \
+  'selection_states[1], frame_budget_rescan, &decoder_status);' \
+  'boot_frame_require(rescan, decoder_status);'
+[[ "$(grep -c 'define BOOT_FRAME_TAKE_NEXT' boot/kernel.c)" -eq 2 &&
+   "$(grep -B1 -A3 -x '#define BOOT_FRAME_TAKE_NEXT 1u' boot/kernel.c | tr '\n' '|')" == \
+   '#ifdef LEANOS_FRAME_BUDGET_SCENARIO|#define BOOT_FRAME_TAKE_NEXT 1u|#else|#define BOOT_FRAME_TAKE_NEXT 0u|#endif|' ]] || {
+  echo "error: only the frame-budget scenario takes the next accepted frame" >&2
+  exit 1
+}
+# The order of boot_allocate's steps, with the mutation fixtures between them.
+terminal_line="$(line_in "$production_allocate" 'boot_frame_require(boot_frame_terminal(')"
+select_line="$(line_in "$production_allocate" 'boot_frame_select(')"
+selection_required_line="$(line_in "$production_allocate" 'boot_frame_require(selection, decoder_status);')"
+cross_line="$(line_in "$production_allocate" 'boot_frame_require(boot_frame_cross_check(')"
+publication_line="$(line_in "$production_allocate" 'boot_frame_publication_result(')"
+publication_check_line="$(line_in "$production_allocate" 'boot_frame_require(boot_frame_publication_check(')"
+published_line="$(line_in "$production_allocate" 'published_boot_object = publication.word[4];')"
+rescan_line="$(line_in "$production_allocate" 'boot_frame_rescan(')"
+handoff_record_line="$(line_in "$production_allocate" 'LEANOS_SERIAL_7_HANDOFF')"
+for line in terminal_line select_line selection_required_line cross_line \
+  scrub_line publication_line publication_check_line published_line \
+  rescan_line handoff_record_line; do
+  [[ -n "${!line}" ]] || { echo "error: production allocation lacks its $line" >&2; exit 1; }
+done
+[[ "$madt_line" -lt "$terminal_line" && "$terminal_line" -lt "$select_line" &&
+   "$select_line" -lt "$selection_required_line" &&
+   "$selection_required_line" -lt "$cross_line" && "$cross_line" -lt "$scrub_line" &&
+   "$scrub_line" -lt "$publication_line" &&
+   "$publication_line" -lt "$publication_check_line" &&
+   "$publication_check_line" -lt "$published_line" &&
+   "$published_line" -lt "$rescan_line" && "$rescan_line" -lt "$handoff_record_line" ]] || {
+  echo "error: production must overlay and finish the projection, select, cross-check, scrub, then publish, then rescan, after the MADT admission" >&2
+  exit 1
+}
 for required in \
   'LEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE' \
   'const uint64_t exact_replay_selected = selected' \
   'authority.word[3] = selected == 4095 ? selected - 1 : selected + 1' \
   'selected != exact_replay_selected' \
-  'handoff_fail("projection-mutation-raw-selection")'; do
+  'handoff_fail("projection-mutation-raw-selection")' \
+  'LEANOS_RAW_SELECTION_MUTATION_FIXTURE' \
+  'LEANOS_RAW_CLASSIFICATION_MUTATION_FIXTURE' \
+  'LEANOS_PUBLICATION_RESULT_MUTATION_FIXTURE' \
+  'publication.word[3] = selected == 4095 ? selected - 1 : selected + 1'; do
   grep -Fq "$required" <<<"$production_allocate" || {
-    echo "error: production projection-selection mutation fixture omits $required" >&2
+    echo "error: production mutation fixtures omit $required" >&2
     exit 1
   }
 done
 mutation_line="$(grep -n 'authority.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
-rejection_line="$(grep -n 'authority.word\[3\] != selected' <<<"$production_allocate" | cut -d: -f1)"
-scrub_line="$(grep -n 'frame\[i\] = 0' <<<"$production_allocate" | cut -d: -f1)"
-publication_line="$(grep -n 'leanos_boot_authority_result(' <<<"$production_allocate" | tail -1 | cut -d: -f1)"
-for required in \
-  'LEANOS_RAW_SELECTION_MUTATION_FIXTURE' \
-  'LEANOS_RAW_CLASSIFICATION_MUTATION_FIXTURE' \
-  'selected_authority.word[16] != selected' \
-  'LEANOS_PUBLICATION_RESULT_MUTATION_FIXTURE' \
-  'publication.word[3] = selected == 4095 ? selected - 1 : selected + 1'; do
-  grep -Fq "$required" <<<"$production_allocate" || {
-    echo "error: production raw-authority mutation coverage omits $required" >&2
+raw_selection_mutation_line="$(grep -n '^    selected = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+raw_classification_mutation_line="$(grep -n 'selected_authority\[14\] = 0' <<<"$production_allocate" | cut -d: -f1)"
+publication_mutation_line="$(grep -n 'publication.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+for line in mutation_line raw_selection_mutation_line \
+  raw_classification_mutation_line publication_mutation_line; do
+  [[ -n "${!line}" ]] || { echo "error: production allocation lacks its $line" >&2; exit 1; }
+done
+if (( mutation_line <= selection_required_line || mutation_line >= cross_line ||
+      raw_selection_mutation_line <= selection_required_line ||
+      raw_selection_mutation_line >= cross_line ||
+      raw_classification_mutation_line <= selection_required_line ||
+      raw_classification_mutation_line >= cross_line )); then
+  echo "error: the selection mutation fixtures must sit between the selection and its cross-check, before scrub/publication" >&2
+  exit 1
+fi
+if (( publication_mutation_line <= publication_line ||
+      publication_mutation_line >= publication_check_line )); then
+  echo "error: the publication mutation fixture must sit between the authority result and its check" >&2
+  exit 1
+fi
+if grep -Eq 'leanos_boot_(projection_manifest|projection_free|projection_finish|manifest_candidate|consume_exact_projection|authority_result)\(' \
+    <<<"$production_allocate"; then
+  echo "error: production allocation asks a frame-selection export itself instead of through $frame_selection" >&2
+  exit 1
+fi
+# boot_frame_require, one line per status: "status reason".  The cross-check
+# takes its fixture's reason, and a decoder's rejection the reason of the
+# decoder's own status.
+frame_require="$(
+  sed -n '/^static inline __attribute__((always_inline)) void boot_frame_require(/,/^}/p' boot/kernel.c |
+    tr '\n' ' ' | tr -s ' '
+)"
+frame_reasons="$(
+  grep -o 'if (status == BOOT_FRAME_[A-Z_]*) handoff_fail(\("[a-z0-9-]*"\|BOOT_FRAME_AUTHORITY_REASON\))' <<<"$frame_require" |
+    sed 's/if (status == \(BOOT_FRAME_[A-Z_]*\)) handoff_fail(\(.*\))/\1 \2/' |
+    sed 's/ BOOT_FRAME_AUTHORITY_REASON$/ projection-authority/; s/ "\(.*\)"$/ \1/'
+)"
+[[ "$(grep -c 'define BOOT_FRAME_AUTHORITY_REASON' boot/kernel.c)" -eq 2 &&
+   "$(grep -B1 -A3 -x '#define BOOT_FRAME_AUTHORITY_REASON "raw-selection-authority"' boot/kernel.c | tr '\n' '|')" == \
+   '#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE|#define BOOT_FRAME_AUTHORITY_REASON "raw-selection-authority"|#else|#define BOOT_FRAME_AUTHORITY_REASON "projection-authority"|#endif|' ]] || {
+  echo "error: the cross-check's reason is not projection-authority, or raw-selection-authority under its fixture" >&2
+  exit 1
+}
+grep -Fq 'if (status == BOOT_FRAME_DECODER) boot_handoff_require((enum boot_handoff_status)decoder_status);' \
+    <<<"$frame_require" || {
+  echo "error: boot_frame_require does not give a decoder's rejection the decoder's own reason" >&2
+  exit 1
+}
+mapfile -t frame_statuses < <(
+  sed -n '/^enum boot_frame_status {/,/^};/p' "$frame_selection" |
+    grep -o 'BOOT_FRAME_[A-Z_]*' | grep -vx BOOT_FRAME_OK
+)
+[[ ${#frame_statuses[@]} -gt 0 ]] || {
+  echo "error: $frame_selection declares no failure status" >&2; exit 1;
+}
+for frame_status in "${frame_statuses[@]}"; do
+  case "$frame_status" in
+    BOOT_FRAME_TERMINAL_*) frame_reason=projection-terminal ;;
+    BOOT_FRAME_DECODER) frame_reason=authority-rejected ;;
+    BOOT_FRAME_AUTHORITY_*) frame_reason=projection-authority ;;
+    BOOT_FRAME_SCRUB) frame_reason=scrub ;;
+    BOOT_FRAME_PUBLICATION_*) frame_reason=publication ;;
+    BOOT_FRAME_UNPUBLISHED_*) frame_reason=frame-budget-unpublished-frame ;;
+    BOOT_FRAME_RESCAN_*) frame_reason=frame-budget-projection-authority ;;
+    *) echo "error: $frame_status belongs to no frame-selection check" >&2; exit 1 ;;
+  esac
+  [[ "$(grep -c "^$frame_status " <<<"$frame_reasons")" -eq 1 ]] &&
+    grep -Fxq "$frame_status $frame_reason" <<<"$frame_reasons" || {
+    echo "error: boot_allocate does not map $frame_status to $frame_reason, or maps it more than once" >&2
     exit 1
   }
 done
-raw_selection_mutation_line="$(grep -n '^    selected = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
-raw_selection_rejection_line="$(grep -n 'selected_authority.word\[16\] != selected' <<<"$production_allocate" | cut -d: -f1)"
-raw_classification_mutation_line="$(grep -n 'selected_authority.word\[14\] = 0' <<<"$production_allocate" | cut -d: -f1)"
-publication_mutation_line="$(grep -n 'publication.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
-publication_rejection_line="$(grep -n 'publication.word\[3\] != selected' <<<"$production_allocate" | cut -d: -f1)"
-if (( raw_selection_mutation_line >= raw_selection_rejection_line ||
-      raw_classification_mutation_line >= raw_selection_rejection_line ||
-      raw_selection_rejection_line >= scrub_line ||
-      publication_mutation_line >= publication_rejection_line )); then
-  echo "error: production raw-authority mutation can reach authority use before rejection" >&2
+[[ "$(wc -l <<<"$frame_reasons")" -eq ${#frame_statuses[@]} ]] || {
+  echo "error: boot_frame_require maps a status the header does not declare" >&2
   exit 1
-fi
-if (( mutation_line >= rejection_line || rejection_line >= scrub_line ||
-      rejection_line >= publication_line )); then
-  echo "error: projection-selection mutation can reach scrub/publication before rejection" >&2
-  exit 1
-fi
+}
 if grep -Eq 'mb2_(tag|mmap)|boot_frames|reserve_byte_range|allocation_check' \
-    <<<"$production_allocate"; then
+    <<<"$production_allocate$(cat "$frame_selection")"; then
   echo "error: production allocation retained a C handoff policy authority" >&2
   exit 1
 fi
-for required in 'states[0][16] != candidate' 'states[at][16] != candidate' \
-  'decode_boot_candidate_authority(' \
-  'candidate_authority.word[14]' 'candidate_authority.word[15]' \
-  'selected_authority.word[14] != 1' \
-  'selected_authority.word[15] != 0'; do
-  grep -Fq "$required" <<<"$production_allocate$production_authority" || {
+# The candidate decoder accepts a candidate only as its own target frame.
+for required in 'states[0][16] != candidate' 'states[at][16] != candidate'; do
+  grep -Fq "$required" <<<"$production_authority" || {
     echo "error: production selected-frame authorization omits $required" >&2
     exit 1
   }
