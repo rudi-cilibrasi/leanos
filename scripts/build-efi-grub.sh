@@ -48,11 +48,16 @@ case "${1:-}" in
     embedded=()
     if [[ $# -eq 3 ]]; then
       [[ -f "$3" ]] || { echo "error: embedded config '$3' not found" >&2; exit 1; }
-      embedded=(-c "$3")
+      # GRUB runs an embedded configuration with its rescue parser, which has
+      # no comments: a `#` line is an unknown command and ends the script, so
+      # every command after it would be skipped. Embed only the commands.
+      grep -v '^[[:space:]]*\(#\|$\)' "$3" >"$output.cfg.tmp"
+      embedded=(-c "$output.cfg.tmp")
     fi
     grub-mkimage -O x86_64-efi -d "$LEANOS_EFI_GRUB_MODULE_ROOT" \
       -p /boot/grub "${embedded[@]}" -o "$output.tmp" \
       "${LEANOS_EFI_GRUB_MODULES[@]}"
+    rm -f "$output.cfg.tmp"
     mv "$output.tmp" "$output"
     ;;
   esp-image)
