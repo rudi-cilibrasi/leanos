@@ -66,6 +66,15 @@ the BPB, each component's attributes, cluster and size, and the file's size,
 first 16 bytes, FNV-1a and cluster count. The CD carries `bootindex=0`,
 because SeaBIOS would otherwise try to boot the disk's MBR.
 
+`--fat-hostile` boots the same program once per corruption of that disk, as
+a hostile stick may carry it, `--jobs` QEMU instances at a time: no MBR
+signature or FAT32 partition, four bad BPB fields, a root cluster, a
+directory chain and a file entry outside the volume, a missing file, a
+directory that is a file, a directory whose chain loops, and a file longer
+than its chain. Each must end in exactly its `MSC error=` record, with its
+detail computed from the image, and in `WIFI-END status=1`, without a file
+record. The loop is cut off at FAT's limit of 65,536 entries per directory.
+
 `--locks` types `a`, Caps Lock, `b`, `1`, Caps Lock, `c` into the keyboard and
 requires `a B 1 c`: Caps Lock inverts Shift for letters only. Each Caps Lock
 press must print the lock state (`KBD locks num=0 caps=1 scroll=0`, then
@@ -73,8 +82,8 @@ press must print the lock state (`KBD locks num=0 caps=1 scroll=0`, then
 waiting, must complete with Success (`HID control-done cc=1`).
 
 usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]
-                              | --fat | --locks] [--hub-port N] [--text hello] [--output DIR]
-                             [--no-build]
+                              | --fat | --fat-hostile [--jobs N] | --locks] [--hub-port N]
+                             [--text hello] [--output DIR] [--no-build]
 """
 
 from __future__ import annotations
@@ -322,6 +331,160 @@ def write_fat_disk(path: Path) -> dict:
     return {"fat": fat, "found": found, "chain": fat.chain(found[-1][1])}
 
 
+# The --fat-hostile scenario: the --fat disk with one corruption each, as a
+# hostile stick may carry. The reader must stop with the named error record,
+# not read a file, and not run on: a directory whose chain loops is cut off at
+# FAT's 65,536-entry directory limit.
+FAT_DIR_LIMIT_BLOCKS = 65536 * 32 // 512
+
+
+def _part(disk: bytearray) -> tuple[bytearray, "Fat32"]:
+    part = disk[FAT_PART_LBA * 512:(FAT_PART_LBA + FAT_PART_BLOCKS) * 512]
+    return part, Fat32(part)
+
+
+def _entry_at(fat: "Fat32", directory: int, name: str) -> int:
+    "Byte offset, in the partition, of `name`'s 8.3 entry in the directory at `directory`."
+    base, _, ext = name.partition(".")
+    want = (base.ljust(8) + ext.ljust(3)).encode()
+    for c in fat.chain(directory):
+        for off in range(fat.at(c), fat.at(c) + fat.spc * fat.bps, 32):
+            if fat.img[off:off + 11] == want:
+                return off
+    raise AssertionError(name)
+
+
+def hostile_fat_variants(good: bytes) -> list[tuple[str, bytes, str]]:
+    "(name, disk, the error record the reader must end with) for each corruption."
+    out = []
+
+    def variant(name: str, record: str, edit) -> None:
+        disk = bytearray(good)
+        part, fat = _part(disk)
+        edit(disk, part, fat)
+        disk[FAT_PART_LBA * 512:(FAT_PART_LBA + FAT_PART_BLOCKS) * 512] = part
+        out.append((name, bytes(disk), f"LEANOS-LAB/1 MSC error={record}"))
+
+    def bpb(offset: int, fmt: str, value: int):
+        return lambda disk, part, fat: struct.pack_into(fmt, part, offset, value)
+
+    _, fat = _part(bytearray(good))
+    boot, grub, cfg = fat.find(FAT_PATH)
+    grub_chain = fat.chain(grub[1])
+    cfg_chain = fat.chain(cfg[1])
+    assert len(grub_chain) > 1, "BOOT/GRUB must span several clusters"
+    blocks_before_data = fat.data // fat.bps
+
+    variant("mbr-signature", "mbr stage=data reason=no-partition detail=0x00000000",
+            lambda disk, part, fat: disk.__setitem__(slice(510, 512), b"\0\0"))
+    variant("mbr-no-fat32", "mbr stage=data reason=no-partition detail=0x00000000",
+            lambda disk, part, fat: disk.__setitem__(446 + 16 + 4, 0x07))
+    variant("bpb-bytes-per-sector", "volume stage=data reason=not-fat32 detail=0x0000000b",
+            bpb(11, "<H", 1024))
+    variant("bpb-cluster-size", "volume stage=data reason=not-fat32 detail=0x0000000d",
+            bpb(13, "<B", 3))
+    variant("bpb-fat16", "volume stage=data reason=not-fat32 detail=0x00000016",
+            bpb(22, "<H", 1))
+    variant("bpb-total-sectors", "volume stage=data reason=not-fat32 detail=0x00000020",
+            bpb(32, "<I", blocks_before_data))
+    variant("bpb-root-cluster", "volume stage=data reason=bad-cluster detail=0x00000001",
+            bpb(44, "<I", 1))
+    variant("missing-file", "lookup stage=data reason=not-found detail=0x00000002",
+            lambda disk, part, fat: part.__setitem__(
+                slice(_entry_at(fat, grub[1], "GRUB.CFG") + 8,
+                      _entry_at(fat, grub[1], "GRUB.CFG") + 11), b"CFX"))
+    variant("directory-is-a-file", "lookup stage=data reason=wrong-kind detail=0x00000000",
+            lambda disk, part, fat: part.__setitem__(_entry_at(fat, fat.root, "BOOT") + 11, 0x20))
+    variant("directory-chain-out-of-range",
+            "lookup stage=data reason=bad-cluster detail=0x0ffffff0",
+            lambda disk, part, fat: fat.set_entry(grub_chain[0], 0x0FFFFFF0))
+    # BOOT/GRUB's first cluster points back at itself: its block is full (no
+    # end-of-directory entry) and holds no GRUB.CFG, so only the bound stops it.
+    variant("directory-chain-loop",
+            f"lookup stage=data reason=chain-too-long detail=0x{grub_chain[0]:08x}",
+            lambda disk, part, fat: fat.set_entry(grub_chain[0], grub_chain[0]))
+    variant("file-cluster-out-of-range",
+            "lookup stage=data reason=bad-cluster detail=0x0ffffff0",
+            lambda disk, part, fat: (
+                struct.pack_into("<H", part, _entry_at(fat, grub[1], "GRUB.CFG") + 20, 0x0FFF),
+                struct.pack_into("<H", part, _entry_at(fat, grub[1], "GRUB.CFG") + 26, 0xFFF0)))
+    longer = cfg[2] + 4 * 512
+    variant("file-chain-short",
+            f"file stage=data reason=chain-short "
+            f"detail=0x{longer - len(cfg_chain) * fat.spc * fat.bps:08x}",
+            lambda disk, part, fat: struct.pack_into(
+                "<I", part, _entry_at(fat, grub[1], "GRUB.CFG") + 28, longer))
+    return out
+
+
+def boot_q35(iso: Path, usb: list[str], output: Path, timeout: float = 180) -> str:
+    "Boot the device lab with `usb` attached; the transcript once QEMU exits."
+    serial = output / "serial.log"
+    serial.unlink(missing_ok=True)
+    qemu = subprocess.Popen([
+        "qemu-system-x86_64", "-machine", "q35,accel=tcg", "-nodefaults", "-cpu", "max",
+        "-m", "512M", "-display", "none", "-monitor", "none", "-no-reboot",
+        "-serial", f"file:{serial}",
+        "-device", "VGA,id=vga0,bus=pcie.0,addr=0x1",
+        "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+        "-device", "qemu-xhci,id=xhci,bus=pcie.0,addr=0x2",
+        "-device", "usb-hub,id=hub,bus=xhci.0,port=1",
+    ] + usb + [
+        "-drive", f"id=cd,if=none,format=raw,media=cdrom,readonly=on,file={iso}",
+        "-device", "ide-cd,drive=cd,bus=ide.0,bootindex=0",
+    ], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        qemu.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        qemu.kill()
+        qemu.wait()
+    return serial.read_text(errors="replace").replace("\r", "") if serial.exists() else ""
+
+
+def run_fat_hostile(iso: Path, output: Path, jobs: int) -> int:
+    good = output / "fat-disk.raw"
+    write_fat_disk(good)
+    variants = hostile_fat_variants(good.read_bytes())
+
+    def one(v: tuple[str, bytes, str]) -> tuple[str, str, float, list[str]]:
+        name, disk, want = v
+        where = output / name
+        where.mkdir(parents=True, exist_ok=True)
+        (where / "disk.raw").write_bytes(disk)
+        start = time.time()
+        transcript = boot_q35(iso, [
+            "-drive", f"id=msc0,if=none,format=raw,readonly=on,file={where / 'disk.raw'}",
+            "-device", "usb-storage,id=msc,bus=xhci.0,port=1.1,drive=msc0"], where)
+        lines = transcript.splitlines()
+        errors = [l for l in lines if l.startswith("LEANOS-LAB/1 MSC error=")]
+        problems = []
+        if errors != [want]:
+            problems.append(f"error records {errors}, expected [{want!r}]")
+        if any(l.startswith("LEANOS-LAB/1 MSC file ") for l in lines):
+            problems.append("the program read a file")
+        if "LEANOS-LAB/1 WIFI-END status=1 " not in transcript:
+            problems.append("the device program did not end with status 1")
+        return name, want, time.time() - start, problems
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        results = list(pool.map(one, variants))
+    failed = 0
+    for name, want, seconds, problems in results:
+        print(f"{'ok ' if not problems else 'FAIL'} {name:30} {seconds:5.1f} s  "
+              f"{want.removeprefix('LEANOS-LAB/1 MSC ')}")
+        for p in problems:
+            print(f"     error: {p}", file=sys.stderr)
+        failed += bool(problems)
+    if failed:
+        print(f"error: {failed} of {len(results)} hostile FAT images were not rejected as "
+              f"expected (transcripts under {output})", file=sys.stderr)
+        return 1
+    print(f"q35 device lab: the Lean FAT32 reader rejected all {len(results)} hostile volumes "
+          f"with the expected error record")
+    return 0
+
+
 def build(output: Path, seconds: int, service: bool, mouse: bool, msc: bool,
           fat: bool = False) -> Path:
     program = ("msc-fat-q35" if fat else "msc-q35" if msc else "mouse-q35" if mouse else
@@ -427,6 +590,12 @@ def main() -> int:
     parser.add_argument("--fat", action="store_true",
                         help="read BOOT/GRUB/GRUB.CFG from a FAT32 volume on a usb-storage "
                              "behind the hub (msc-fat-q35)")
+    parser.add_argument("--fat-hostile", action="store_true",
+                        help="the --fat disk with one corruption at a time (a bad MBR or BPB, an "
+                             "out-of-range or looping cluster chain, a missing file, ...): each "
+                             "must end in its MSC error record")
+    parser.add_argument("--jobs", type=int, default=4,
+                        help="with --fat-hostile: QEMU instances at a time")
     parser.add_argument("--locks", action="store_true",
                         help="type with Caps Lock presses: the case must flip, the lock state "
                              "must be printed and each LED SET_REPORT must complete")
@@ -442,8 +611,11 @@ def main() -> int:
         raise SystemExit("--msc runs alone, without the device service")
     if a.root_port and not a.msc:
         raise SystemExit("--root-port needs --msc")
-    if a.fat and (a.mouse or a.msc or a.service or a.locks or a.hub_port or a.root_port):
-        raise SystemExit("--fat runs alone")
+    if a.fat and a.fat_hostile:
+        raise SystemExit("--fat and --fat-hostile are separate runs")
+    if (a.fat or a.fat_hostile) and (a.mouse or a.msc or a.service or a.locks or a.hub_port or
+                                     a.root_port):
+        raise SystemExit("--fat and --fat-hostile run alone")
     if a.locks and (a.mouse or a.msc or a.service):
         raise SystemExit("--locks runs the keyboard alone, without the device service")
     if a.hub_port is not None:
@@ -454,7 +626,9 @@ def main() -> int:
     if any(c not in QCODES for c in a.text):
         raise SystemExit("--text may use lower-case letters, digits, space and newline")
     if a.output == parser.get_default("output"):
-        if a.fat:
+        if a.fat_hostile:
+            a.output = ROOT / "build/q35-device-lab/run-fat-hostile"
+        elif a.fat:
             a.output = ROOT / "build/q35-device-lab/run-fat"
         elif a.locks:
             a.output = ROOT / "build/q35-device-lab/run-locks"
@@ -470,7 +644,9 @@ def main() -> int:
             a.output = a.output.with_name(a.output.name + f"-hub-port-{a.hub_port}")
     a.output.mkdir(parents=True, exist_ok=True)
     iso = (a.output / "q35-device-lab.iso" if a.no_build else
-           build(a.output, a.seconds, a.service, a.mouse, a.msc, a.fat))
+           build(a.output, a.seconds, a.service, a.mouse, a.msc, a.fat or a.fat_hostile))
+    if a.fat_hostile:
+        return run_fat_hostile(iso, a.output, max(1, a.jobs))
     if a.fat:
         disk = a.output / "fat-disk.raw"
         expect = write_fat_disk(disk)

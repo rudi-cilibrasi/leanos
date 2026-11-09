@@ -246,6 +246,10 @@ python3 scripts/run-q35-device-lab.py --msc --root-port
 # One file from a FAT32 volume: MBR, BPB, a multi-cluster directory and a
 # fragmented cluster chain, against the script's own reading of the image.
 python3 scripts/run-q35-device-lab.py --fat
+# A hostile stick: 13 corruptions of that disk, each of which must end in its
+# own MSC error record; a looping directory chain stops at FAT's 65,536-entry
+# directory limit.
+python3 scripts/run-q35-device-lab.py --fat-hostile
 # Hubs (docs/usb-hub.md): each program's device on a hub port past the
 # fourth, a decoy on hub port 1.
 python3 scripts/run-q35-device-lab.py --hub-port 8

@@ -285,11 +285,23 @@ a time:
    bytes, the hash and the clusters read.
 
 **Bounds.** Every cluster number, in a directory entry or the FAT, is checked
-against the volume before it is used. A chain stops at 0x0FFFFFF8 or after
-`maxChain` clusters, so a corrupt volume ends in an `MSC error=` record (steps
-`mbr`, `volume`, `lookup`, `file`; reasons `no-partition`, `not-fat32`,
-`not-found`, `bad-cluster`, `wrong-kind`, `chain-too-long`, `chain-short`)
-instead of a read outside it.
+against the volume before it is used. A chain stops at 0x0FFFFFF8, and:
+
+* a directory's chain stops at FAT's limit of 65,536 entries (2 MiB, 4,096
+  blocks), so a directory whose chain loops back costs at most 4,096 block
+  reads and as many FAT reads;
+* a file's chain is followed only as far as its size, and for no more
+  clusters than the volume has.
+
+A corrupt volume ends in an `MSC error=` record (steps `mbr`, `volume`,
+`lookup`, `file`; reasons `no-partition`, `not-fat32`, `not-found`,
+`bad-cluster`, `wrong-kind`, `chain-too-long`, `chain-short`) instead of a
+read outside it or a run without end. `scripts/run-q35-device-lab.py
+--fat-hostile` boots the reader on 13 corrupted copies of the `--fat` disk:
+no MBR signature or FAT32 partition, four bad BPB fields, a root cluster, a
+directory chain and a file entry outside the volume, a missing file, a
+directory that is a file, a looping directory chain and a file longer than
+its chain. Each must end in its own error record.
 
 **One subroutine for every block read.** The ten block reads call a single
 copy of the BOT READ(10) (`call`/`ret`). One inlined BOT command, with its
