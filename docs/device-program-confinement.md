@@ -1,7 +1,9 @@
 # Device-program confinement
 
 The Lean device programs (the BCM43224 WiFi driver, `docs/wifi-driver.md`,
-the xHCI keyboard driver, `docs/usb-keyboard.md`, the AHCI identify
+the xHCI keyboard, mouse and mass-storage drivers, `docs/usb-keyboard.md`,
+`docs/usb-mouse.md` and `docs/usb-mass-storage.md`, with their shared hub
+support, `docs/usb-hub.md`, admitted under the same xHCI policy, the AHCI identify
 program, `docs/storage-ahci.md`, and the RTL8168 Ethernet program,
 `docs/net-rtl8168.md`) run in ring 0 of the
 lab kernel, the keyboard program under the canonical `device-service`
