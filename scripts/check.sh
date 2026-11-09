@@ -233,6 +233,9 @@ lake build leanos-usb-kbd-decode leanos-usb-mouse-decode leanos-usb-msc-report l
 .lake/build/bin/leanos-usb-hub-slot
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service
+# Lock keys (#632): Caps Lock flips letters only, prints the lock state and
+# sets the keyboard LEDs with a SET_REPORT queued without waiting.
+python3 scripts/run-q35-device-lab.py --locks
 python3 scripts/run-q35-device-lab.py --mouse
 python3 scripts/run-q35-device-lab.py --mouse --keyboard-first
 python3 scripts/run-q35-device-lab.py --msc

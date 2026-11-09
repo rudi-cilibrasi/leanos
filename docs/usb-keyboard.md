@@ -74,6 +74,18 @@ all, off) and `LEANOS-LAB/1 KBD ready ... type-now` appears on COM1 and the
 screen. For the session length, each new key press prints
 `LEANOS-LAB/1 KBD key=<char>`; the session ends with the key count and
 LeanOS then returns to FreeBSD through the usual recovery path.
+
+Num Lock, Caps Lock and Scroll Lock (usages 0x53, 0x39, 0x47) each toggle a
+lock bit instead of printing a key. Caps Lock inverts Shift for the letters
+only, so Caps Lock with Shift gives lower case and digits ignore it. Each
+change prints `LEANOS-LAB/1 KBD locks num=<0|1> caps=<0|1> scroll=<0|1>`
+and is sent to the keyboard's LEDs: a boot keyboard does not light them
+itself (HID 1.11 §B.1).
+
+The SET_REPORT(Output) is queued on EP0 without waiting, because a control
+transfer that waited could consume a key report's transfer event. The session
+counts only its interrupt endpoint's events. A completed EP0 transfer prints
+`LEANOS-LAB/1 HID control-done cc=<code>`, where 1 is Success.
 `LEANOS_KBD_IDLE=125` makes the keyboard repeat its report every 500 ms, which
 verifies the interrupt path without anyone typing.
 
@@ -83,8 +95,12 @@ Hardware evidence:
 [qotom-usb-20261108](../hardware/lab/observations/qotom-usb-20261108/README.md):
 a person typed `Hi LeanOS!`, Enter and Backspace, and 14 keys came back with
 Shift applied, through the hub code of [usb-hub.md](usb-hub.md). Caps Lock
-neither toggles nor lights its LED (issue #632).
-Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`).
+then neither toggled nor lit its LED, which is what led to the lock keys
+(issue #632).
+Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`),
+lock keys included. `python3 scripts/run-q35-device-lab.py --locks` types
+with Caps Lock presses through QEMU, and requires the case to flip, both lock
+records, and a Success completion for each LED SET_REPORT.
 
 Limitations: one level of hub ([usb-hub.md](usb-hub.md)), one boot keyboard, polling (no interrupts),
 US layout, no key repeat, no USB 3 devices beyond port handling.

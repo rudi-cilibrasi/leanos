@@ -52,8 +52,15 @@ ports, a status record for each port up to N, connected only at 1 and N, and
 both devices' slot contexts with the hub port as route string, full speed,
 root port 5 and no TT fields, as behind any full-speed hub.
 
-usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]]
-                             [--hub-port N] [--text hello] [--output DIR] [--no-build]
+`--locks` types `a`, Caps Lock, `b`, `1`, Caps Lock, `c` into the keyboard and
+requires `a B 1 c`: Caps Lock inverts Shift for letters only. Each Caps Lock
+press must print the lock state (`KBD locks num=0 caps=1 scroll=0`, then
+`caps=0`), and each state's SET_REPORT to the keyboard's LEDs, queued without
+waiting, must complete with Success (`HID control-done cc=1`).
+
+usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]
+                              | --locks] [--hub-port N] [--text hello] [--output DIR]
+                             [--no-build]
 """
 
 from __future__ import annotations
@@ -77,6 +84,13 @@ QCODES = {c: c for c in "abcdefghijklmnopqrstuvwxyz"}
 QCODES.update({str(d): str(d) for d in range(10)})
 QCODES.update({" ": "spc", "\n": "ret"})
 RECORD = {" ": "space", "\n": "enter"}
+
+# The --locks scenario: keys and Caps Lock presses (None), the characters the
+# driver must report, and the lock records it must print in order.
+LOCKS_PLAN = ["a", None, "b", "1", None, "c"]
+LOCKS_KEYS = ["a", "B", "1", "c"]
+LOCKS_RECORDS = ["LEANOS-LAB/1 KBD locks num=0 caps=1 scroll=0",
+                 "LEANOS-LAB/1 KBD locks num=0 caps=0 scroll=0"]
 
 # The mouse scenario: moves (dx, dy), button presses and releases, wheel
 # clicks. dx -150 needs two reports; the wheel is QEMU's "wheel-up" (+1) and
@@ -265,6 +279,9 @@ def main() -> int:
                         help="run the USB mass-storage program, a usb-storage behind the hub")
     parser.add_argument("--root-port", action="store_true",
                         help="with --msc: the usb-storage on root port 2, a keyboard behind the hub")
+    parser.add_argument("--locks", action="store_true",
+                        help="type with Caps Lock presses: the case must flip, the lock state "
+                             "must be printed and each LED SET_REPORT must complete")
     parser.add_argument("--hub-port", type=int, metavar="N",
                         help="the device under test on hub port N (2-8), a decoy device on hub "
                              "port 1")
@@ -277,6 +294,8 @@ def main() -> int:
         raise SystemExit("--msc runs alone, without the device service")
     if a.root_port and not a.msc:
         raise SystemExit("--root-port needs --msc")
+    if a.locks and (a.mouse or a.msc or a.service):
+        raise SystemExit("--locks runs the keyboard alone, without the device service")
     if a.hub_port is not None:
         if not 2 <= a.hub_port <= 8:
             raise SystemExit("--hub-port needs 2..8 (QEMU's usb-hub has 8 ports; 1 holds the decoy)")
@@ -285,7 +304,9 @@ def main() -> int:
     if any(c not in QCODES for c in a.text):
         raise SystemExit("--text may use lower-case letters, digits, space and newline")
     if a.output == parser.get_default("output"):
-        if a.service:
+        if a.locks:
+            a.output = ROOT / "build/q35-device-lab/run-locks"
+        elif a.service:
             a.output = ROOT / "build/q35-device-lab/run-service"
         elif a.mouse:
             a.output = ROOT / ("build/q35-device-lab/run-mouse-keyboard-first" if a.keyboard_first
@@ -347,6 +368,9 @@ def main() -> int:
         if a.mouse:
             for step in MOUSE_PLAN:
                 qmp.mouse(step)
+        elif a.locks:
+            for c in LOCKS_PLAN:
+                qmp.key("caps_lock" if c is None else QCODES[c])
         else:
             for c in a.text:
                 qmp.key(QCODES[c])
@@ -359,11 +383,22 @@ def main() -> int:
         return check_mouse(transcript, a.keyboard_first, a.hub_port)
     prefix = "LEANOS-LAB/1 SERVICE subject=1 key=" if a.service else "LEANOS-LAB/1 KBD key="
     keys = [l.split("key=", 1)[1] for l in transcript.splitlines() if l.startswith(prefix)]
-    want = [RECORD.get(c, c) for c in a.text]
+    want = LOCKS_KEYS if a.locks else [RECORD.get(c, c) for c in a.text]
     print("\n".join(l for l in transcript.splitlines() if l.startswith("LEANOS-LAB/1")))
     if keys != want:
         print(f"error: typed {want}, driver reported {keys}", file=sys.stderr)
         return 1
+    if a.locks:
+        lines = transcript.splitlines()
+        locks = [l for l in lines if l.startswith("LEANOS-LAB/1 KBD locks ")]
+        done = [l for l in lines if l.startswith("LEANOS-LAB/1 HID control-done ")]
+        if locks != LOCKS_RECORDS:
+            print(f"error: lock records {locks}, expected {LOCKS_RECORDS}", file=sys.stderr)
+            return 1
+        if done != ["LEANOS-LAB/1 HID control-done cc=1"] * len(LOCKS_RECORDS):
+            print(f"error: LED SET_REPORT completions {done}, expected one Success per change",
+                  file=sys.stderr)
+            return 1
     if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
         print("error: device program did not end with status 0", file=sys.stderr)
         return 1

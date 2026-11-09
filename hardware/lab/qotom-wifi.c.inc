@@ -486,6 +486,22 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         serial_puts(" product=0x");
         lab_wifi_hex(value >> 16, 4);
         serial_puts(" type-now\n");
+    } else if (tag == 0x2105) {
+        /* Lock state (LeanOS/Usb/Keyboard.lean Tag.locks): Num bit 0, Caps
+           bit 1, Scroll bit 2, as sent to the keyboard's LEDs. */
+        serial_puts("LEANOS-LAB/1 KBD locks num=");
+        serial_putc((value & 1u) ? '1' : '0');
+        serial_puts(" caps=");
+        serial_putc((value & 2u) ? '1' : '0');
+        serial_puts(" scroll=");
+        serial_putc((value & 4u) ? '1' : '0');
+        serial_putc('\n');
+    } else if (tag == 0x201A) {
+        /* A control transfer queued in a HID session completed
+           (LeanOS/Usb/Hid.lean Tag.controlDone): its completion code. */
+        serial_puts("LEANOS-LAB/1 HID control-done cc=");
+        serial_u64(value);
+        serial_putc('\n');
     } else if (tag == 0x2103) {
         serial_puts("LEANOS-LAB/1 KBD reports=");
         serial_u64(value);
