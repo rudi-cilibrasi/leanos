@@ -2,6 +2,7 @@ import LeanOS.Wifi.Responder
 import LeanOS.Usb.Keyboard
 import LeanOS.Usb.Mouse
 import LeanOS.Usb.MassStorage
+import LeanOS.Usb.Fat32
 import LeanOS.DeviceProgramConfinement
 import LeanOS.Storage.Ahci
 import LeanOS.Storage.AhciRead
@@ -80,6 +81,13 @@ def scanProg (fwDir : System.FilePath) (ch : Nat) : IO (ProgM Unit) := do
              for k in [0:0x40] do
                shmRead16 0 (0xE0 + 2 * k.toUInt32); print (0x0900 + k.toUInt32) 0
              printImm Tag.done 0; halt)
+
+/-- The FAT32 file reader for `LEANOS_MSC_FILE` (default `BOOT/GRUB/GRUB.CFG`). -/
+def fatProgram (layout : LeanOS.Usb.Xhci.Layout) : IO (ProgM Unit) := do
+  let path := (← IO.getEnv "LEANOS_MSC_FILE").getD "BOOT/GRUB/GRUB.CFG"
+  match @LeanOS.Usb.Fat32.fileProgram layout (path.splitOn "/") with
+  | some p => pure p
+  | none => throw (IO.userError s!"LEANOS_MSC_FILE={path}: every component must be an 8.3 name")
 
 def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
   [("probe", pure probe), ("sprom", pure spromDump),
@@ -209,6 +217,10 @@ def programs (fwDir : System.FilePath) : List (String × IO (ProgM Unit)) :=
    -- USB mass storage, bulk-only transport (issue #619): Bay Trail and qemu-xhci.
    ("msc", pure (@LeanOS.Usb.MassStorage.program LeanOS.Usb.Xhci.bayTrail)),
    ("msc-q35", pure (@LeanOS.Usb.MassStorage.program LeanOS.Usb.Xhci.qemu)),
+   -- One file from a FAT32 volume on the mass-storage device: LEANOS_MSC_FILE
+   -- is its 8.3 path, components separated by '/'.
+   ("msc-fat", fatProgram LeanOS.Usb.Xhci.bayTrail),
+   ("msc-fat-q35", fatProgram LeanOS.Usb.Xhci.qemu),
    ("scanOld1", do
       let cfg := LeanOS.Wifi.NPhy.qotom 1
       let fw ← loadFirmware fwDir

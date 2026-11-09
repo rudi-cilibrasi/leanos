@@ -83,6 +83,36 @@ CLEAR_FEATURE(ENDPOINT_HALT). The sense data is ILLEGAL REQUEST with LOGICAL
 BLOCK ADDRESS OUT OF RANGE: the answer SBC-3 requires, which QEMU gives without
 stalling.
 
+### A file from the stick's FAT32 volume (`msc-fat32/`)
+
+| | |
+| --- | --- |
+| Program | `msc-fat` (`LeanOS/Usb/Fat32.lean`), `LEANOS_MSC_FILE=BOOT/GRUB/GRUB.CFG`, SHA-256 `0161ccc335c25aa1d8849106a688be6f06effbd79c439b8ef3043bb306b1216e` |
+| Lab ELF | `b7d1bb28c79928563a297604076fcdc19b7b5b024f1059341e3b1ac4fac667f2` |
+| Capture | `msc-fat32/serial.raw`, SHA-256 `0e913d52abf97f761dfec44ff843c45da0d72e2ee332dbfcd1225d5bd04e912e` |
+
+The same stick, through the hub:
+
+- **The MBR and the volume.** Its one partition is FAT32 at LBA 2048, 194560 blocks, active, as `gpart show da0` lists it. The program read its BPB.
+- **The path.** It followed `BOOT` (cluster 3), `GRUB` (cluster 4) and `GRUB.CFG` (cluster 189179) by their 8.3 names.
+- **The file.** It read the file's 16 clusters:
+
+```text
+MSC mbr partition=0 type=0x0c active=1 lba=2048 blocks=194560
+MSC fat32 sectors-per-cluster=1 fats=2 reserved=32 fat-blocks=1497 root-cluster=2
+MSC fat found component=0 attr=0x10 cluster=3 bytes=0
+MSC fat found component=1 attr=0x10 cluster=4 bytes=0
+MSC fat found component=2 attr=0x20 cluster=189179 bytes=7725
+MSC file bytes=7725 head=23204c61622d6f6e6c792042494f532f fnv1a=0x407c2dba clusters=16
+WIFI-END status=0 code=0x00000000
+```
+
+FreeBSD mounted the same partition read-only (`mount -t msdosfs -o ro
+/dev/da0s1`). Its `boot/grub/grub.cfg` is 7725 bytes and begins
+`# Lab-only BIOS/`, which is the head above. Its FNV-1a is `0x407c2dba` and its
+SHA-256
+`9e56eb78a05cabbfdc23de87d6a124c1d028dbdd2422505bffa482e4f32f0bac`.
+
 ## Keyboard (`keyboard/`)
 
 | | |

@@ -52,6 +52,20 @@ ports, a status record for each port up to N, connected only at 1 and N, and
 both devices' slot contexts with the hub port as route string, full speed,
 root port 5 and no TT fields, as behind any full-speed hub.
 
+`--fat` runs `msc-fat-q35`, the FAT32 file reader, on a usb-storage behind the
+hub. The disk has an MBR whose entry 0 is a non-FAT partition and entry 1 a
+FAT32 volume (mtools) of one-block clusters with `BOOT/GRUB/GRUB.CFG`:
+* `BOOT/GRUB` holds 30 long-named decoys, so the directory spans several
+  clusters;
+* the file (7725 bytes, 16 clusters) has its third cluster moved near the
+  volume's end, so its chain jumps forward and back, and mtools must still
+  read it back.
+
+Every record must equal the script's own reading of the image: the partitions,
+the BPB, each component's attributes, cluster and size, and the file's size,
+first 16 bytes, FNV-1a and cluster count. The CD carries `bootindex=0`,
+because SeaBIOS would otherwise try to boot the disk's MBR.
+
 `--locks` types `a`, Caps Lock, `b`, `1`, Caps Lock, `c` into the keyboard and
 requires `a B 1 c`: Caps Lock inverts Shift for letters only. Each Caps Lock
 press must print the lock state (`KBD locks num=0 caps=1 scroll=0`, then
@@ -59,7 +73,7 @@ press must print the lock state (`KBD locks num=0 caps=1 scroll=0`, then
 waiting, must complete with Success (`HID control-done cc=1`).
 
 usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]
-                              | --locks] [--hub-port N] [--text hello] [--output DIR]
+                              | --fat | --locks] [--hub-port N] [--text hello] [--output DIR]
                              [--no-build]
 """
 
@@ -71,6 +85,7 @@ import json
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -179,11 +194,141 @@ def run(cmd: list[str], **kw) -> None:
     subprocess.run(cmd, check=True, cwd=ROOT, **kw)
 
 
-def build(output: Path, seconds: int, service: bool, mouse: bool, msc: bool) -> Path:
-    program = ("msc-q35" if msc else "mouse-q35" if mouse else
+# The --fat scenario: an MBR disk whose entry 0 is a non-FAT partition and
+# entry 1 a FAT32 volume of 1-block clusters holding BOOT/GRUB/GRUB.CFG, a
+# directory of long-named decoys spanning several clusters, and the file's
+# cluster chain made non-contiguous.
+FAT_PART_LBA = 2048
+FAT_PART_BLOCKS = 98304
+FAT_OTHER_LBA = FAT_PART_LBA + FAT_PART_BLOCKS
+FAT_OTHER_BLOCKS = 2048
+FAT_PATH = ["BOOT", "GRUB", "GRUB.CFG"]
+FAT_FILE_BYTES = 7725
+FAT_DECOYS = 30
+
+
+def fat_file() -> bytes:
+    data = b"".join(hashlib.sha256(b"leanos-fat %d" % k).digest()
+                    for k in range(FAT_FILE_BYTES // 32 + 1))
+    return data[:FAT_FILE_BYTES]
+
+
+class Fat32:
+    "Just enough FAT32 to place clusters and to state what the reader must find."
+
+    def __init__(self, image: bytearray) -> None:
+        self.img = image
+        (self.bps, self.spc, self.reserved, self.fats) = struct.unpack_from("<HBHB", image, 11)
+        self.total = struct.unpack_from("<I", image, 32)[0]
+        self.fat_blocks = struct.unpack_from("<I", image, 36)[0]
+        self.root = struct.unpack_from("<I", image, 44)[0]
+        self.data = (self.reserved + self.fats * self.fat_blocks) * self.bps
+        self.clusters = (self.total - self.data // self.bps) // self.spc + 2
+
+    def entry(self, c: int) -> int:
+        return struct.unpack_from("<I", self.img, self.reserved * self.bps + 4 * c)[0] & 0x0FFFFFFF
+
+    def set_entry(self, c: int, v: int) -> None:
+        for k in range(self.fats):
+            at = (self.reserved + k * self.fat_blocks) * self.bps + 4 * c
+            old = struct.unpack_from("<I", self.img, at)[0]
+            struct.pack_into("<I", self.img, at, (old & 0xF0000000) | v)
+
+    def chain(self, c: int) -> list[int]:
+        out = []
+        while 2 <= c < 0x0FFFFFF8:
+            out.append(c)
+            c = self.entry(c)
+        return out
+
+    def at(self, c: int) -> int:
+        return self.data + (c - 2) * self.spc * self.bps
+
+    def find(self, path: list[str]) -> list[tuple[int, int, int]]:
+        "(attributes, first cluster, size) of each component, by 8.3 name."
+        found, cluster = [], self.root
+        for comp in path:
+            base, _, ext = comp.upper().partition(".")
+            want = (base.ljust(8) + ext.ljust(3)).encode()
+            hit = None
+            for c in self.chain(cluster):
+                blob = self.img[self.at(c):self.at(c) + self.spc * self.bps]
+                for off in range(0, len(blob), 32):
+                    e = blob[off:off + 32]
+                    if e[0] in (0, 0xE5) or e[11] == 0x0F or e[11] & 0x08:
+                        continue
+                    if e[:11] == want:
+                        hi, lo, size = struct.unpack_from("<H", e, 20)[0], \
+                            struct.unpack_from("<H", e, 26)[0], struct.unpack_from("<I", e, 28)[0]
+                        hit = (e[11], hi << 16 | lo, size)
+                        break
+                if hit:
+                    break
+            assert hit, comp
+            found.append(hit)
+            cluster = hit[1]
+        return found
+
+
+def write_fat_disk(path: Path) -> dict:
+    work = path.with_name("fat-work")
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir()
+    part = work / "part.raw"
+    with open(part, "wb") as f:
+        f.truncate(FAT_PART_BLOCKS * 512)
+    run(["mformat", "-i", str(part), "-F", "-c", "1", "-T", str(FAT_PART_BLOCKS),
+         "-h", "64", "-s", "32", "-H", str(FAT_PART_LBA), "::"])
+    run(["mmd", "-i", str(part), "::/BOOT", "::/BOOT/GRUB"])
+    for k in range(FAT_DECOYS):
+        decoy = work / f"decoy-file-number-{k:02d}.txt"
+        decoy.write_bytes(b"decoy %d\n" % k)
+        run(["mcopy", "-i", str(part), str(decoy), f"::/BOOT/GRUB/{decoy.name}"])
+    target = work / "GRUB.CFG"
+    target.write_bytes(fat_file())
+    run(["mcopy", "-i", str(part), str(target), "::/BOOT/GRUB/GRUB.CFG"])
+    image = bytearray(part.read_bytes())
+    fat = Fat32(image)
+    # Move the file's third cluster near the volume's end, so the chain jumps
+    # forward and back. (Not to the very last cluster, CountofClusters + 1:
+    # mtools' check rejects that one, although the FAT specification allows it.)
+    chain = fat.chain(fat.find(FAT_PATH)[-1][1])
+    last = fat.clusters - 2
+    assert fat.entry(last) == 0 and len(chain) > 3
+    size = fat.spc * fat.bps
+    image[fat.at(last):fat.at(last) + size] = image[fat.at(chain[2]):fat.at(chain[2]) + size]
+    image[fat.at(chain[2]):fat.at(chain[2]) + size] = bytes(size)
+    fat.set_entry(chain[1], last)
+    fat.set_entry(last, chain[3])
+    fat.set_entry(chain[2], 0)
+    part.write_bytes(image)
+    # mtools must still read the file back through the new chain.
+    back = work / "back.bin"
+    run(["mcopy", "-n", "-i", str(part), "::/BOOT/GRUB/GRUB.CFG", str(back)])
+    if back.read_bytes() != fat_file():
+        raise SystemExit("error: the FAT image's fragmented file does not read back")
+    mbr = bytearray(512)
+    for i, (status, kind, lba, blocks) in enumerate(
+            [(0x00, 0x83, FAT_OTHER_LBA, FAT_OTHER_BLOCKS), (0x80, 0x0C, FAT_PART_LBA, FAT_PART_BLOCKS)]):
+        struct.pack_into("<B3xB3xII", mbr, 446 + 16 * i, status, kind, lba, blocks)
+    mbr[510:512] = b"\x55\xaa"
+    with open(path, "wb") as f:
+        f.write(mbr)
+        f.write(bytes((FAT_PART_LBA - 1) * 512))
+        f.write(image)
+        f.write(bytes(FAT_OTHER_BLOCKS * 512))
+    fat = Fat32(image)
+    found = fat.find(FAT_PATH)
+    return {"fat": fat, "found": found, "chain": fat.chain(found[-1][1])}
+
+
+def build(output: Path, seconds: int, service: bool, mouse: bool, msc: bool,
+          fat: bool = False) -> Path:
+    program = ("msc-fat-q35" if fat else "msc-q35" if msc else "mouse-q35" if mouse else
                "kbd-q35-service" if service else "kbd-q35")
     image = output / f"{program}.bin"
-    env = dict(os.environ, LEANOS_KBD_SECONDS=str(seconds), LEANOS_MOUSE_SECONDS=str(seconds))
+    env = dict(os.environ, LEANOS_KBD_SECONDS=str(seconds), LEANOS_MOUSE_SECONDS=str(seconds),
+               LEANOS_MSC_FILE="/".join(FAT_PATH))
     run(["lake", "build", "leanos-wifi-gen"], stdout=subprocess.DEVNULL)
     run([".lake/build/bin/leanos-wifi-gen", program, str(image)], env=env,
         stdout=subprocess.DEVNULL)
@@ -279,6 +424,9 @@ def main() -> int:
                         help="run the USB mass-storage program, a usb-storage behind the hub")
     parser.add_argument("--root-port", action="store_true",
                         help="with --msc: the usb-storage on root port 2, a keyboard behind the hub")
+    parser.add_argument("--fat", action="store_true",
+                        help="read BOOT/GRUB/GRUB.CFG from a FAT32 volume on a usb-storage "
+                             "behind the hub (msc-fat-q35)")
     parser.add_argument("--locks", action="store_true",
                         help="type with Caps Lock presses: the case must flip, the lock state "
                              "must be printed and each LED SET_REPORT must complete")
@@ -294,6 +442,8 @@ def main() -> int:
         raise SystemExit("--msc runs alone, without the device service")
     if a.root_port and not a.msc:
         raise SystemExit("--root-port needs --msc")
+    if a.fat and (a.mouse or a.msc or a.service or a.locks or a.hub_port or a.root_port):
+        raise SystemExit("--fat runs alone")
     if a.locks and (a.mouse or a.msc or a.service):
         raise SystemExit("--locks runs the keyboard alone, without the device service")
     if a.hub_port is not None:
@@ -304,7 +454,9 @@ def main() -> int:
     if any(c not in QCODES for c in a.text):
         raise SystemExit("--text may use lower-case letters, digits, space and newline")
     if a.output == parser.get_default("output"):
-        if a.locks:
+        if a.fat:
+            a.output = ROOT / "build/q35-device-lab/run-fat"
+        elif a.locks:
             a.output = ROOT / "build/q35-device-lab/run-locks"
         elif a.service:
             a.output = ROOT / "build/q35-device-lab/run-service"
@@ -318,8 +470,13 @@ def main() -> int:
             a.output = a.output.with_name(a.output.name + f"-hub-port-{a.hub_port}")
     a.output.mkdir(parents=True, exist_ok=True)
     iso = (a.output / "q35-device-lab.iso" if a.no_build else
-           build(a.output, a.seconds, a.service, a.mouse, a.msc))
-    if a.msc:
+           build(a.output, a.seconds, a.service, a.mouse, a.msc, a.fat))
+    if a.fat:
+        disk = a.output / "fat-disk.raw"
+        expect = write_fat_disk(disk)
+        usb = ["-drive", f"id=msc0,if=none,format=raw,readonly=on,file={disk}",
+               "-device", "usb-storage,id=msc,bus=xhci.0,port=1.1,drive=msc0"]
+    elif a.msc:
         disk = a.output / "msc-disk.raw"
         write_msc_disk(disk)
         usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
@@ -351,10 +508,13 @@ def main() -> int:
         "-device", "usb-hub,id=hub,bus=xhci.0,port=1",
     ] + usb + [
         "-drive", f"id=cd,if=none,format=raw,media=cdrom,readonly=on,file={iso}",
-        "-device", "ide-cd,drive=cd,bus=ide.0",
+        "-device", "ide-cd,drive=cd,bus=ide.0,bootindex=0",
     ], cwd=ROOT)
     try:
         qmp = Qmp(qmp_path)
+        if a.fat:
+            qemu.wait(timeout=180)
+            return check_fat(serial.read_text(errors="replace").replace("\r", ""), expect)
         if a.msc:
             # Nothing to send: the program reads the disk on its own.
             qemu.wait(timeout=180)
@@ -510,6 +670,44 @@ def check_mouse(transcript: str, keyboard_first: bool, hub_port: int | None) -> 
     where = f" on hub port {hub_port}" if hub_port else ""
     print(f"q35 device lab: {len(MOUSE_PLAN)} mouse events through QMP came back from the "
           f"Lean xHCI driver{where} as {len(records)} MOUSE records in {len(want)} button runs")
+    return 0
+
+
+def check_fat(transcript: str, expect: dict) -> int:
+    lines = transcript.splitlines()
+    print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
+    fat, found, chain = expect["fat"], expect["found"], expect["chain"]
+    data = fat_file()
+    want = [
+        f"LEANOS-LAB/1 MSC mbr partition=0 type=0x83 active=0 lba={FAT_OTHER_LBA} "
+        f"blocks={FAT_OTHER_BLOCKS}",
+        f"LEANOS-LAB/1 MSC mbr partition=1 type=0x0c active=1 lba={FAT_PART_LBA} "
+        f"blocks={FAT_PART_BLOCKS}",
+        f"LEANOS-LAB/1 MSC fat32 sectors-per-cluster={fat.spc} fats={fat.fats} "
+        f"reserved={fat.reserved} fat-blocks={fat.fat_blocks} root-cluster={fat.root}",
+    ] + [f"LEANOS-LAB/1 MSC fat found component={i} attr=0x{a:02x} cluster={c} bytes={n}"
+         for i, (a, c, n) in enumerate(found)] + [
+        f"LEANOS-LAB/1 MSC file bytes={len(data)} head={data[:16].hex()} "
+        f"fnv1a=0x{fnv1a32(data):08x} clusters={len(chain)}",
+    ]
+    got = [l for l in lines if l.startswith(("LEANOS-LAB/1 MSC mbr ", "LEANOS-LAB/1 MSC fat",
+                                             "LEANOS-LAB/1 MSC file "))]
+    errors = []
+    if got != want:
+        errors.append("records differ:\n  got  " + "\n       ".join(got) +
+                      "\n  want " + "\n       ".join(want))
+    if sorted(chain) == chain:
+        errors.append("the file's chain is contiguous: the image did not fragment it")
+    if any(l.startswith("LEANOS-LAB/1 MSC error=") for l in lines):
+        errors.append("the program stopped with an error record")
+    if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
+        errors.append("device program did not end with status 0")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    if errors:
+        return 1
+    print(f"q35 device lab: the Lean xHCI driver read {'/'.join(FAT_PATH)} ({len(data)} bytes, "
+          f"{len(chain)} clusters, chain {chain[:4]}…) from a FAT32 volume behind the hub")
     return 0
 
 

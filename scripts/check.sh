@@ -240,6 +240,9 @@ python3 scripts/run-q35-device-lab.py --mouse
 python3 scripts/run-q35-device-lab.py --mouse --keyboard-first
 python3 scripts/run-q35-device-lab.py --msc
 python3 scripts/run-q35-device-lab.py --msc --root-port
+# One file from a FAT32 volume: MBR, BPB, a multi-cluster directory and a
+# fragmented cluster chain, against the script's own reading of the image.
+python3 scripts/run-q35-device-lab.py --fat
 # Hubs (docs/usb-hub.md): each program's device on a hub port past the
 # fourth, a decoy on hub port 1.
 python3 scripts/run-q35-device-lab.py --hub-port 8
