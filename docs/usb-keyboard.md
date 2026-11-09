@@ -97,6 +97,10 @@ a person typed `Hi LeanOS!`, Enter and Backspace, and 14 keys came back with
 Shift applied, through the hub code of [usb-hub.md](usb-hub.md). Caps Lock
 then neither toggled nor lit its LED, which is what led to the lock keys
 (issue #632).
+On the Qotom the lock keys work end to end: Caps Lock lit and cleared the
+keyboard's LED, and `a` came back as `A` in between
+([observation](../hardware/lab/observations/qotom-usb-20261108/README.md),
+`keyboard-locks/`).
 Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`),
 lock keys included. `python3 scripts/run-q35-device-lab.py --locks` types
 with Caps Lock presses through QEMU, and requires the case to flip, both lock

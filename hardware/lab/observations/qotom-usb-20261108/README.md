@@ -102,6 +102,30 @@ KBD reports=44   KBD session-end keys=14   WIFI-END status=0
 - **Shift works:** the capitals and `!`.
 - **The stray `:` and the extra `o`.** The `:` is Shift with the key next to `L`. The person also pressed Caps Lock, whose LED did not light: the program has no lock-key state yet (issue #632). That probably explains the lowercase `o` before `OS`.
 
+### Lock keys (`keyboard-locks/`, issue #632)
+
+| | |
+| --- | --- |
+| Program | `kbd` with lock keys (#632), `LEANOS_KBD_SECONDS=300`, SHA-256 `1e242e49586ef649135e83e2826b9a5438a90ae4245e50c653569c6348192435` |
+| Lab ELF | `ac5570e9a9a612e8cfda6fd16850fe3c44a050dde3aa351643620990784da692` |
+| Capture | `keyboard-locks/serial.raw`, SHA-256 `17fca58ebd047a0f4a1b7d3d36da017eb8f53b642f6ff00f083ca9d33d7c90d8` |
+
+The same keyboard, behind the hub. The person was asked one step at a time and
+confirmed what the Caps Lock LED showed after each step:
+
+```text
+KBD locks num=0 caps=1 scroll=0     ← the LED lit
+HID control-done cc=1
+KBD key=A                           ← "a" typed without Shift
+KBD locks num=0 caps=0 scroll=0     ← the LED went out
+HID control-done cc=1
+KBD session-end keys=1   WIFI-END status=0
+```
+
+The program drives the LEDs with SET_REPORT(Output), queued on EP0 without
+waiting. The keyboard acknowledged each one (`cc=1`), and the LED followed the
+lock state.
+
 ## Mouse (`mouse/`, `mouse-buttons/`)
 
 The mouse was on a root port, with no TT, for both captures.
@@ -122,4 +146,4 @@ The mouse was on a root port, with no TT, for both captures.
 ## Not established here
 
 - Mouse motion through the hub's TT. The mouse's start-up reports did arrive through it, and the keyboard's typing session used the same TT path.
-- Lock keys (issue #632).
+- Num Lock and Scroll Lock on hardware. They are checked in simulation (`leanos-usb-kbd-decode`); only Caps Lock was pressed here.
