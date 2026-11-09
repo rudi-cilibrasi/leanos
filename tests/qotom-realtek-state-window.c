@@ -63,7 +63,7 @@ static void reset(void) {
 
 static void run(void) {
     requested=qotom_realtek_bar(selected_bus)+0x40;requested_width=4;
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();
     assert(lab_realtek_state_window_read(&window, requested, 4, &output));
     assert(output == 0x12345678 && leaf == saved && control_calls == 2 && !faults);

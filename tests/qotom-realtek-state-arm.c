@@ -20,7 +20,7 @@ static int load(void *ctx,uint64_t a,uint8_t width,uint32_t *v) {(void)ctx;(void
 static void fault(void *ctx) {(void)ctx;assert(0);}
 static void run(uint8_t selected_bus) {
     memset(root,0,sizeof root);memset(pdpt,0,sizeof pdpt);memset(pd,0,sizeof pd);
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct lab_ecam_root_view v={root,pdpt,pd,pt,0x100000,0x101000,0x102000,0x103000};
     root[0]=v.pdpt_address|7;pdpt[0]=v.pd_address|7;
     for(unsigned i=0;i<8;++i)pd[i]=(v.pt_address+i*4096)|7;

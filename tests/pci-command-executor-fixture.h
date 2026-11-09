@@ -116,8 +116,9 @@ static void test_command_executor(void) {
     unsigned negatives = 0;
     executor_reset(&f);
     struct pci_enumeration_snapshot collected;
-    struct pci_enumeration_result collection = pci_enumerate_segment(
-        executor_initial_read, &f, &collected);
+    struct pci_enumeration_result collection;
+    pci_enumerate_segment(
+        executor_initial_read, &f, &collected, &collection);
     EXEC_REQUIRE(collection.status == PCI_ENUMERATION_OK && collected.count == 15);
     r = pci_execute_command_clear(executor_read, executor_write, executor_admit,
                                   &f, &collected, &t);

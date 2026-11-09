@@ -74,7 +74,7 @@ static void zero(const struct qotom_ahci_interrupt_result *out) {
     assert(!out->write_attempted && !out->before_control && !out->after_control);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_ahci_interrupt_result out;
     setup();assert(disable(&out)==QOTOM_AHCI_INTERRUPTS_OK && reads==75 && writes==1);
     assert(out.write_attempted==1 && out.before_control==0x80000002 && out.after_control==0x80000000);

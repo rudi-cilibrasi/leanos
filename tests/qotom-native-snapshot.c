@@ -33,7 +33,8 @@ uint64_t qotom_native_collect_replay(const struct pci_enumeration_snapshot *sour
     struct source_context context = {source, fail_last};
     struct pci_enumeration_snapshot snapshot;
     if (!source || source->count > PCI_ENUMERATION_CAPACITY) return UINT64_MAX;
-    struct pci_enumeration_result result = pci_enumerate_segment(
-        read_source, &context, &snapshot);
+    struct pci_enumeration_result result;
+    pci_enumerate_segment(
+        read_source, &context, &snapshot, &result);
     return qotom_native_snapshot_replay(result.status, &snapshot);
 }

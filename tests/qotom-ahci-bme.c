@@ -77,7 +77,7 @@ static void zero(const struct qotom_ahci_bme_result *out) {
     assert(!out->attempted && !out->before_command && !out->after_command);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_ahci_bme_result out;
     setup();assert(clear(&out)==QOTOM_AHCI_BME_OK && reads==77 && writes==1);
     assert(out.attempted==1 && out.before_command==7 && out.after_command==3);

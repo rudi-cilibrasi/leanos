@@ -33,7 +33,7 @@ static void reject(struct pci_express_observation o,enum pci_express_status s) {
     assert(o.status==s && !o.offset && !o.device_capabilities && !o.device_control_status);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reject(pci_observe_express(NULL,NULL,&initial,&previous),PCI_EXPRESS_ARGUMENT);
     reject(pci_observe_express(read_config,NULL,NULL,&previous),PCI_EXPRESS_ARGUMENT);
     reject(pci_observe_express(read_config,NULL,&initial,NULL),PCI_EXPRESS_ARGUMENT);

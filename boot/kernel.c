@@ -10842,8 +10842,8 @@ static __attribute__((noinline, noipa)) void report_j1900_cpu_candidate(void) {
      * Sole BSP and exclusion of other CF8/CFC users are caller assumptions.
      */
     static struct pci_enumeration_snapshot snapshot;
-    struct pci_enumeration_result scan =
-        pci_enumerate_segment(pci_config_read, 0, &snapshot);
+    struct pci_enumeration_result scan;
+    pci_enumerate_segment(pci_config_read, 0, &snapshot, &scan);
     serial_puts(LEANOS_SERIAL_25_PCI_SCAN " codec=1 status=");
     serial_u64(scan.status);
     serial_puts(" count="); serial_u64(snapshot.count);

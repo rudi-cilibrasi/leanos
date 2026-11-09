@@ -158,6 +158,23 @@ results are in the experiment's README.
    enumeration, the command executor, the power, AF and express
    observations, the final admission check and the MADT consumer.
 
+   **Amendment (#606).** Enumeration got the same refactor:
+   `pci_enumerate_segment` returns its status and writes the result through
+   an optional pointer, and nothing else changes. The fourth project,
+   [`experiments/quickproof/pci-enumeration`](../../experiments/quickproof/pci-enumeration/README.md),
+   proves one law, `enumeration_exact`. Against a device that may fail any
+   read or answer anything, the scan reads exactly in bus, device, function
+   order: each identity dword, then the other fifteen dwords of each of the
+   first sixteen functions found. It rejects exactly a NULL callback or
+   snapshot, names the first failed read or the seventeenth function, and
+   on OK publishes exactly the functions found as the device answered them.
+   The law's device keeps its own copy of what it answered, so the one law
+   gives both safety and completeness. The capability project, which pins
+   the enumeration header too, was re-verified at the refactor. The other
+   helpers of refactor 1 still return structs: the command executor, the
+   power, AF and express observations, the final admission check and the
+   MADT consumer.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain

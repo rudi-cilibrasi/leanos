@@ -54,7 +54,7 @@ static void check(enum qotom_ehci_bme_status expected) {
     else assert(out.before_command==0x406);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();check(QOTOM_EHCI_BME_OK);assert(reads==51 && writes==1 && out.after_command==0x402);
     for(unsigned i=1;i<=51;++i) {
         reset();failed=i;check(i<=24?QOTOM_EHCI_BME_REFRESH:i==25?QOTOM_EHCI_BME_COMMAND:
