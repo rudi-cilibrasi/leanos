@@ -34,6 +34,14 @@ the HID programs. The other block reader, AHCI, is
    a 13-byte CSW on bulk IN. The CSW must be 13 bytes, carry the signature
    0x53425355 and the command's tag, and have status 0 (passed) or 1
    (failed); status 2 (phase error) or more stops the program.
+   A device may STALL bulk IN in the data stage when it has less data than
+   asked, or none (BOT 1.0 §6.7.2), and real sticks do so for a failed READ.
+   The program then recovers the endpoint and reads the CSW, which reports
+   the failure. Recovery is Reset Endpoint (Halted to Stopped), then Set TR
+   Dequeue Pointer to the ring's next TRB with its cycle state (past the
+   stalled TD), then CLEAR_FEATURE(ENDPOINT_HALT) on the device, which resets
+   its data toggle. A stalled CSW is recovered the same way and read once
+   more.
 4. **Commands.** INQUIRY (36 bytes); TEST UNIT READY up to 10 times, 100 ms
    apart, each failure followed by REQUEST SENSE (many devices report a unit
    attention after a reset); READ CAPACITY(10); READ(10) of LBAs 0–3 in one
@@ -49,8 +57,16 @@ Each wait for a transfer event is bounded (2 s without an event, and at most
 32 unrelated events). Blocks of up to 4096 bytes are supported (four of them
 fill the 16 KiB data buffer); a device that needs READ CAPACITY(16) (last
 LBA 0xFFFFFFFF) is refused. BOT reset recovery (the class-specific reset and
-clearing both halts) is not implemented: a stall stops the program with an
-error record, without recovery.
+clearing both halts) is not implemented, so the program stops with an error
+record in these cases:
+
+* a stalled CBW;
+* a CSW that stalls twice;
+* a phase error.
+
+The Set TR Dequeue Pointer command's parameter is a bus address inside the bulk
+ring. The executor's per-store descriptor-map check (ADR 0021) admits it as it
+admits the transfer TRBs, so the policies are unchanged.
 
 ## Records
 
@@ -64,6 +80,7 @@ LEANOS-LAB/1 MSC configured bulk-in=0x<2 hex> in-max-packet=<dec> bulk-out=0x<2 
 LEANOS-LAB/1 MSC inquiry type=0x<2 hex> removable=<0|1> vendor="<text>" product="<text>" revision="<text>"
 LEANOS-LAB/1 MSC csw step=<step> status=<dec> residue=<dec>
 LEANOS-LAB/1 MSC sense after=<step> key=0x<2 hex> asc=0x<2 hex> ascq=0x<2 hex>
+LEANOS-LAB/1 MSC stall-cleared step=<step> stage=<data|csw> endpoint=0x<2 hex>
 LEANOS-LAB/1 MSC unit-ready attempts=<dec>
 LEANOS-LAB/1 MSC capacity blocks=<dec> block-bytes=<dec>
 LEANOS-LAB/1 MSC block lba=<dec> head=<32 hex> fnv1a=0x<8 hex>
@@ -84,6 +101,9 @@ LEANOS-LAB/1 MSC error=<step> stage=<stage> reason=<reason> detail=0x<8 hex>
 * `sense`: REQUEST SENSE after a failed command, `after` naming the step it
   explains; key, ASC and ASCQ from fixed-format (0x70, 0x71) or
   descriptor-format (0x72, 0x73) sense data.
+* `stall-cleared`: the device stalled bulk IN in the data stage or the CSW
+  stage of `step`, and the endpoint was recovered (Reset Endpoint, Set TR
+  Dequeue Pointer, CLEAR_FEATURE(ENDPOINT_HALT)); the CSW is read next.
 * `unit-ready`: TEST UNIT READY passed on this attempt.
 * `capacity`: READ CAPACITY(10)'s last LBA + 1 and block length.
 * `block`: one block read. `head` is its first 16 bytes in order, two hex
@@ -233,12 +253,16 @@ It ran there on 2026-11-08, on the old lab stick (Alcor `058f:6387`,
 * **The retry path.** The first TEST UNIT READY failed with UNIT ATTENTION
   (06/28/00), and the second passed. This was the first run of the retry path.
 * **The read past the end.** The stick STALLs the bulk-IN endpoint in the data
-  stage, and the program stops with
-  `MSC error=read-past-end stage=data reason=stall`. Stall recovery is issue
-  #631.
+  stage, and the program stopped with
+  `MSC error=read-past-end stage=data reason=stall`. With stall recovery
+  (issue #631), the same stick, read through the hub, gives
+  `MSC stall-cleared step=read-past-end stage=data endpoint=0x82`, then the
+  failed CSW (`status=1 residue=512`), then sense 05/21/00 (ILLEGAL REQUEST,
+  LBA out of range), and `MSC done blocks-read=7`.
 
 Not covered: writing, other transports (UAS, CBI),
-READ CAPACITY(16), more than LUN 0, BOT reset recovery and stall recovery, a
+READ CAPACITY(16), more than LUN 0, BOT reset recovery, a stall in QEMU
+(its `usb-storage` never stalls, so recovery runs only on hardware), a
 device-service (yield) form and file systems; the enumeration's limits (one
 level of hub, polling; [usb-hub.md](usb-hub.md)) are the HID programs'. The shared Address Device gives
 EP0 a max packet size of 8 at every speed but high speed (64); QEMU accepts

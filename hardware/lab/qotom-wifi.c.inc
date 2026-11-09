@@ -299,6 +299,15 @@ static int lab_msc_print(uint32_t tag, uint32_t value) {
         serial_u64(value);
         serial_putc('\n');
         break;
+    case 0x2324:
+        serial_puts("LEANOS-LAB/1 MSC stall-cleared step=");
+        LAB_MSC_NAME(lab_msc_steps, value & 0xffu);
+        serial_puts(" stage=");
+        LAB_MSC_NAME(lab_msc_stages, (value >> 8) & 0xffu);
+        serial_puts(" endpoint=");
+        lab_msc_byte_hex(value >> 16);
+        serial_putc('\n');
+        break;
     case 0x2330:
         serial_puts("LEANOS-LAB/1 MSC capacity blocks=");
         serial_u64(value);

@@ -55,6 +55,34 @@ The run, step by step:
    - The stick STALLs the bulk-IN endpoint in the data stage, which BOT §6.7.2 allows. QEMU never does this.
    - The program does not yet recover from a stall: issue #631.
 
+### Stall recovery (`msc-stall-recovery/`, issue #631)
+
+| | |
+| --- | --- |
+| Program | `msc` with stall recovery (#631), SHA-256 `483c173619d3b55f1e01c08483b4364b19c6f42d95c44629c70b157d97f15ba8` |
+| Lab ELF | `186589858af4b3df0c449da7d17fff29b990576f10c57e88f75715a03bda1ac9` |
+| Capture | `msc-stall-recovery/serial.raw`, SHA-256 `ceb1bb3ff553c196d8bb37f0df4574f65b6d1f64247c34325051bef2081217bb` |
+
+The same stick, now on hub port 3 and reached through the hub
+(`route=0x00003 speed=high`):
+
+- The same INQUIRY, capacity and UNIT ATTENTION retry.
+- The same seven blocks, identical to `msc/freebsd-reference.txt`.
+- At the READ past the end, the stick stalled bulk IN again. The program recovered the endpoint and read the CSW:
+
+```text
+MSC stall-cleared step=read-past-end stage=data endpoint=0x82
+MSC csw step=read-past-end status=1 residue=512
+MSC sense after=read-past-end key=0x05 asc=0x21 ascq=0x00
+MSC done blocks-read=7
+WIFI-END status=0 code=0x00000000
+```
+
+The recovery is Reset Endpoint, Set TR Dequeue Pointer and
+CLEAR_FEATURE(ENDPOINT_HALT). The sense data is ILLEGAL REQUEST with LOGICAL
+BLOCK ADDRESS OUT OF RANGE: the answer SBC-3 requires, which QEMU gives without
+stalling.
+
 ## Keyboard (`keyboard/`)
 
 | | |
@@ -94,4 +122,4 @@ The mouse was on a root port, with no TT, for both captures.
 ## Not established here
 
 - Mouse motion through the hub's TT. The mouse's start-up reports did arrive through it, and the keyboard's typing session used the same TT path.
-- Recovery from a mass-storage STALL (issue #631), and lock keys (issue #632).
+- Lock keys (issue #632).
