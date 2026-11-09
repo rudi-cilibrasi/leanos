@@ -1,0 +1,23 @@
+!k2ÿbk²G2«3£°ë[H[J[1;1HLEANOS-DISK/1 CORE root=hd0,gpt1 prefix=(hd0,gpt1)/leanos/grub
+LEANOS-DISK/1 REQUEST consumed=1
+LEANOS-DISK/1 MENU disk=hd0 default=leanos timeout=0
+
+LEANOS-DISK/1 LEANOS load=1
+leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/24 BOOT target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0
+LEANOS/24 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/24 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
+!k2ÿb—²Gº,'š,ÿ[H[J[1;1HLEANOS-DISK/1 CORE root=hd0,gpt1 prefix=(hd0,gpt1)/leanos/grub
+LEANOS-DISK/1 MENU disk=hd0 default=freebsd timeout=5
+[?25l[m[H[J[1;1H[2;30HGNU GRUB  version 2.12
+
+[m[4;2H+----------------------------------------------------------------------------+[5;2H|[5;79H|[6;2H|[6;79H|[7;2H|[7;79H|[8;2H|[8;79H|[9;2H|[9;79H|[10;2H|[10;79H|[11;2H|[11;79H|[12;2H|[12;79H|[13;2H|[13;79H|[14;2H|[14;79H|[15;2H|[15;79H|[16;2H|[16;79H|[17;2H+----------------------------------------------------------------------------+[m[18;2H[19;2H[m     Use the ^ and v keys to select which entry is highlighted.          
+      Press enter to boot the selected OS, `e' to edit the commands       
+      before booting or `c' for a command-line.                           [5;80H [7m[5;3H*FreeBSD                                                                    [m[5;78H[m[m[6;3H LeanOS (lab image de279092d637ce5b794f4230b25fcb45d8cdab62b7d517e7b0ee975c>[m[6;78H[m[m[7;3H                                                                            [m[7;78H[m[m[8;3H                                                                            [m[8;78H[m[m[9;3H                                                                            [m[9;78H[m[m[10;3H                                                                            [m[10;78H[m[m[11;3H                                                                            [m[11;78H[m[m[12;3H                                                                            [m[12;78H[m[m[13;3H                                                                            [m[13;78H[m[m[14;3H                                                                            [m[14;78H[m[m[15;3H                                                                            [m[15;78H[m[m[16;3H                                                                            [m[16;78H[m[16;80H [5;78H[22;1H   The highlighted entry will be executed automatically in 5s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 4s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 3s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 2s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 1s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 0s.                 [5;78H[?25h[H[J[1;1H[H[J[1;1H
+LEANOS-DISK/1 CHAIN freebsd disk=hd0
+
+FreeBSD/amd64 (qotom) (ttyu0)
+
+login: 
