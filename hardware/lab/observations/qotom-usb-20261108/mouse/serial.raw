@@ -1,0 +1,542 @@
+"­¬2{8£0ë[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+[H[J[1;1HLEANOS-DISK/1 CORE root=hd1,gpt1 prefix=(hd1,gpt1)/leanos/grub
+LEANOS-DISK/1 REQUEST consumed=1
+LEANOS-DISK/1 MENU disk=hd1 default=leanos timeout=0
+
+LEANOS-DISK/1 LEANOS load=1
+leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/24 BOOT target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0
+LEANOS/24 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/24 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS-LAB/1 WIFI-BEGIN id=0x0f358086 bar0=0xd0900004
+WIFI 2000 0x0f358086
+WIFI 2001 0x00008460
+WIFI 2001 0x00010801
+WIFI 2001 0x01000801
+WIFI 2001 0x00000000
+WIFI 2002 0x00000000
+WIFI 2003 0x000002a0
+WIFI 2003 0x000002a0
+WIFI 2003 0x000002a0
+WIFI 2003 0x000206e1
+WIFI 2003 0x00000e03
+WIFI 2004 0x00000022
+WIFI 2004 0x00000022
+WIFI 2009 0x00000001
+WIFI 2005 0x00000001
+WIFI 2009 0x00000001
+WIFI 2006 0x00000001
+WIFI 2007 0x061005e3
+WIFI 2013 0x00000009
+LEANOS-LAB/1 HUB found root-port=4 speed=high slot=1
+WIFI 2009 0x00000001
+LEANOS-LAB/1 HUB configured ports=4 power-on-wait-ms=250 tt-think-time=3
+LEANOS-LAB/1 HUB port=1 status=0x0100 change=0x00
+LEANOS-LAB/1 HUB port=2 status=0x0100 change=0x00
+LEANOS-LAB/1 HUB port=3 status=0x0101 change=0x01
+LEANOS-LAB/1 HUB port=3 status=0x0503 change=0x10
+LEANOS-LAB/1 HUB device route=0x00003 speed=high root-port=4 tt-slot=0 tt-port=0
+WIFI 2009 0x00000001
+WIFI 2005 0x00000002
+WIFI 2009 0x00000001
+WIFI 2006 0x00000002
+WIFI 2007 0x6387058f
+WIFI 2019 0x00000003
+WIFI 2009 0x00000001
+LEANOS-LAB/1 HUB port=4 status=0x0301 change=0x01
+LEANOS-LAB/1 HUB port=4 status=0x0303 change=0x10
+LEANOS-LAB/1 HUB device route=0x00004 speed=low root-port=4 tt-slot=1 tt-port=4
+WIFI 2009 0x00000001
+WIFI 2005 0x00000003
+WIFI 2009 0x00000001
+WIFI 2006 0x00000003
+WIFI 2007 0x040204f2
+WIFI 2019 0x00000004
+WIFI 2009 0x00000001
+WIFI 2003 0x000002a0
+WIFI 2003 0x00020ae1
+WIFI 2003 0x00000a03
+WIFI 2009 0x00000001
+WIFI 2005 0x00000004
+WIFI 2009 0x00000001
+WIFI 2006 0x00000004
+WIFI 2007 0x4ef30461
+WIFI 2013 0x00000000
+WIFI 2014 0x00000000
+WIFI 2015 0x00000081
+WIFI 2009 0x00000001
+WIFI 2016 0x00000000
+LEANOS-LAB/1 MOUSE ready vendor=0x0461 product=0x4ef3 move-now
+WIFI 2201 0x4ef30461
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=-2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=-3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=-7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=4 dy=-17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=5 dy=-32 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=13 dy=-40 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=25 dy=-41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=31 dy=-37 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=38 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=46 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=51 dy=-14 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=45 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=42 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=35 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-12 dy=28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-32 dy=48 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-24 dy=28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-44 dy=20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-41 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-50 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-52 dy=-3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-47 dy=-15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-40 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-35 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-28 dy=-43 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-19 dy=-55 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=-55 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=-53 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=-50 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=30 dy=-50 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=37 dy=-50 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=44 dy=-44 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=46 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=52 dy=-19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=56 dy=-15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=55 dy=-5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=51 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=44 dy=20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=35 dy=21 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-9 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-44 dy=35 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-51 dy=28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-31 dy=16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-25 dy=-5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-45 dy=-19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-30 dy=-21 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-16 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=-35 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=14 dy=-41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=20 dy=-49 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=27 dy=-42 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=23 dy=-20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=20 dy=3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=88 dy=-2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=20 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=66 dy=16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=17 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=26 dy=16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-16 dy=16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-36 dy=23 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-21 dy=5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-34 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-32 dy=-18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-27 dy=-26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-17 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-24 dy=-41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-23 dy=-54 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-15 dy=-57 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-37 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=-36 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=17 dy=-48 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=30 dy=-51 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=42 dy=-40 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=33 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=55 dy=-41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=62 dy=-41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=14 dy=-5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=45 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-9 dy=42 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-15 dy=45 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=40 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-9 dy=17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-8 dy=7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-13 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-24 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=30 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=38 dy=-12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=28 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=25 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=14 dy=26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=11 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=4 dy=40 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=39 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-21 dy=34 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-30 dy=27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-39 dy=19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-28 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-5 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=9 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=17 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=9 dy=-11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=-19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=10 dy=-12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=-6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-14 dy=-13 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-21 dy=-23 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=5 dy=-34 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=-22 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=-16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=-17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=-22 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-7 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-16 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-23 dy=-6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-12 dy=-18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-13 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=-19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=-3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=11 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=22 dy=21 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=39 dy=51 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=51 dy=63 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=42 dy=44 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=27 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=11 dy=25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-29 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-43 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-55 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-63 dy=-16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-54 dy=-27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-37 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-22 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=-26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=5 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=15 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=-32 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=20 dy=-27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=21 dy=-16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=28 dy=-12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=29 dy=-7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=27 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=17 dy=29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=24 dy=39 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=24 dy=44 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=8 dy=26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-9 dy=28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-12 dy=25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-13 dy=18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-9 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-7 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-5 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=-10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=-11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=8 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=13 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=10 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=4 dy=-5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=15 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=23 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=32 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=34 dy=-4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=25 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=21 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-12 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-16 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-22 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-34 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-38 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-33 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-30 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-30 dy=5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-22 dy=5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-15 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-17 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-19 dy=-14 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-27 dy=-23 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-27 dy=-27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-13 dy=-26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=-25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=-28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=-28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=-27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=9 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=15 dy=-20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=24 dy=-16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=30 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=37 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=37 dy=18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=44 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=48 dy=41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=30 dy=25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=12 dy=14 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=5 dy=39 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=34 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=36 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-7 dy=41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-13 dy=37 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-22 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-14 dy=25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-20 dy=20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-27 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-34 dy=20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-11 dy=5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-38 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-36 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-36 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-37 dy=-3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-35 dy=-6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-26 dy=-10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-25 dy=-15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=-22 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=-32 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=-33 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=25 dy=-33 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=35 dy=-34 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=46 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=52 dy=-22 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=52 dy=-16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=46 dy=-7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=40 dy=-2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=36 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=33 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=28 dy=18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=22 dy=23 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=15 dy=29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=16 dy=35 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=11 dy=36 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=35 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=-6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-27 dy=-15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-24 dy=-17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-19 dy=-21 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-20 dy=-24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-16 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-13 dy=-33 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-12 dy=-33 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-7 dy=-32 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=-32 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=4 dy=-32 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=12 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=15 dy=-27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=23 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=29 dy=-26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=31 dy=-22 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=32 dy=-16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=32 dy=-11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=32 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=32 dy=-6 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=28 dy=-1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=24 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=22 dy=7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=13 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=11 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=12 dy=23 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=10 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-18 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-31 dy=-5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-32 dy=-9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-29 dy=-17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-37 dy=-25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-37 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-42 dy=-40 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-44 dy=-44 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-42 dy=-50 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-38 dy=-61 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-28 dy=-60 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-22 dy=-58 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-15 dy=-58 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-15 dy=-56 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=-52 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=8 dy=-50 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=25 dy=-55 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=35 dy=-43 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=47 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=57 dy=-25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=61 dy=-17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=60 dy=-13 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=56 dy=-8 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=55 dy=-5 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=56 dy=-2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=59 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=59 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=59 dy=12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=54 dy=18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=39 dy=17 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=19 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=25 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=14 dy=26 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=10 dy=28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=37 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-5 dy=30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=38 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=34 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-9 dy=29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=2 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-32 dy=-10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-33 dy=-19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-43 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-43 dy=-39 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-39 dy=-47 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-24 dy=-48 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-11 dy=-52 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=-57 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=-57 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=7 dy=-54 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=16 dy=-53 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=22 dy=-49 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=33 dy=-42 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=46 dy=-37 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=53 dy=-29 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=55 dy=-23 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=55 dy=-19 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=57 dy=-12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=61 dy=-3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=65 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=71 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=75 dy=24 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=61 dy=21 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=36 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=27 dy=16 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=23 dy=28 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=10 dy=35 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=6 dy=37 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=2 dy=43 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-3 dy=42 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-12 dy=40 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=1 dy=18 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-35 dy=-31 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-26 dy=-30 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-19 dy=-35 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-10 dy=-38 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-2 dy=-43 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=-47 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=12 dy=-44 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=20 dy=-41 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=29 dy=-39 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=34 dy=-34 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=38 dy=-27 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=42 dy=-20 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=43 dy=-12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=45 dy=-3 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=44 dy=7 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=42 dy=15 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=27 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=18 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=9 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=3 dy=10 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=12 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-8 dy=13 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-8 dy=13 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-8 dy=11 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-6 dy=9 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-4 dy=4 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=0 dy=1 wheel=0
+LEANOS-LAB/1 MOUSE buttons=0 dx=-1 dy=0 wheel=0
+LEANOS-LAB/1 MOUSE reports=442
+WIFI 2203 0x000001ba
+LEANOS-LAB/1 MOUSE session-end records=442
+WIFI 2202 0x000001ba
+LEANOS-LAB/1 WIFI-END status=0 code=0x00000000
+LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
+ak²G¬£2ë[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+[H[J[1;1HLEANOS-DISK/1 CORE root=hd1,gpt1 prefix=(hd1,gpt1)/leanos/grub
+LEANOS-DISK/1 MENU disk=hd1 default=freebsd timeout=5
+[?25l[m[H[J[1;1H[2;30HGNU GRUB  version 2.12
+
+[m[4;2H+----------------------------------------------------------------------------+[5;2H|[5;79H|[6;2H|[6;79H|[7;2H|[7;79H|[8;2H|[8;79H|[9;2H|[9;79H|[10;2H|[10;79H|[11;2H|[11;79H|[12;2H|[12;79H|[13;2H|[13;79H|[14;2H|[14;79H|[15;2H|[15;79H|[16;2H|[16;79H|[17;2H+----------------------------------------------------------------------------+[m[18;2H[19;2H[m     Use the ^ and v keys to select which entry is highlighted.          
+      Press enter to boot the selected OS, `e' to edit the commands       
+      before booting or `c' for a command-line.                           [5;80H [7m[5;3H*FreeBSD                                                                    [m[5;78H[m[m[6;3H LeanOS (lab image 6b70f00290e665c4c09669afec2f73710970a4a1cd671af9bea0090b>[m[6;78H[m[m[7;3H                                                                            [m[7;78H[m[m[8;3H                                                                            [m[8;78H[m[m[9;3H                                                                            [m[9;78H[m[m[10;3H                                                                            [m[10;78H[m[m[11;3H                                                                            [m[11;78H[m[m[12;3H                                                                            [m[12;78H[m[m[13;3H                                                                            [m[13;78H[m[m[14;3H                                                                            [m[14;78H[m[m[15;3H                                                                            [m[15;78H[m[m[16;3H                                                                            [m[16;78H[m[16;80H [5;78H[22;1H   The highlighted entry will be executed automatically in 5s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 4s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 3s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 2s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 1s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 0s.                 [5;78H[?25h[H[J[1;1H[H[J[1;1H
+LEANOS-DISK/1 CHAIN freebsd disk=hd1
+
+FreeBSD/amd64 (qotom) (ttyu0)
+
+login: 

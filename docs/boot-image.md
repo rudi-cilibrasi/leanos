@@ -180,8 +180,9 @@ through Multiboot2 in 32-bit protected mode. The build also uses a fixed ISO
 UUID, GPT disk GUID and file dates, no linker build ID, and normalized debug
 paths. `./scripts/check-firmware-boot.sh` boots the canonical ISO on the pinned
 q35 platform under SeaBIOS and under OVMF (`LEANOS_QEMU_FIRMWARE=ovmf` adds
-the pinned `OVMF_CODE_4M.fd` and a private variable store) and requires the
-final PASS from both. Release CI and local validation retain
+the pinned `OVMF_CODE_4M.fd` and a private variable store), each from a
+CD-ROM and from a disk (see "Boot media" below), and requires the final PASS
+from all four. Release CI and local validation retain
 `./scripts/test-reproducible-build.sh` for same-runner checks. A pull request
 promoted with the reviewed `ci:full-admission` label runs two Clang builds
 concurrently on independent hosted runners,
@@ -204,6 +205,61 @@ complete `merge_group` path for a future move to an organization-owned
 repository, where GitHub makes merge queues available. The audit is
 intentionally separate from per-commit admission so a transient API outage
 cannot make otherwise valid changes unmergeable.
+
+## Boot media
+
+The same ISO boots from three kinds of media, on both firmware families:
+
+| Medium | BIOS | UEFI | Checked by |
+| --- | --- | --- | --- |
+| CD-ROM (El Torito) | GRUB `i386-pc` from the BIOS boot entry | the monolithic GRUB `x86_64-efi` from the UEFI boot entry | `scripts/check-firmware-boot.sh` |
+| Disk or USB stick (the ISO written raw) | GRUB from the image's MBR | the same EFI loader from the image's GPT EFI system partition | `scripts/check-firmware-boot.sh` (`LEANOS_QEMU_MEDIUM=disk`) |
+| Network (PXE/TFTP) | GRUB `i386-pc` `core.0` through a PXE option ROM | GRUB `x86_64-efi` `core.efi` through the firmware's PXE client | `scripts/check-netboot.sh` |
+
+**Disk and USB stick.** `grub-mkrescue` makes the ISO hybrid, so writing it
+unchanged to a stick or an internal disk (`dd if=leanos-0.1.0-x86_64.iso
+of=/dev/sdX bs=4M conv=fsync`, which overwrites the whole device) gives a
+bootable disk on both families. No USB port is needed to install LeanOS on a
+machine that can take a disk. The check attaches the image as an IDE hard disk
+with `snapshot=on`, so it is never written. From a disk, UEFI firmware loads
+the EFI loader from the system partition, which holds no `grub.cfg`. Only the
+loader's embedded configuration (`boot/grub-efi-iso.cfg`) then finds the ISO
+tree by `/boot/leanos.elf` and reads its `grub.cfg`. GRUB runs an embedded
+configuration with its rescue parser, which has no comments, so
+`scripts/build-efi-grub.sh` embeds only the file's commands. Before #600 the
+first `#` line ended that script, and a disk booted under UEFI stopped at the
+GRUB prompt.
+
+**Network.** `scripts/build-netboot-tree.sh ISO DIR` writes a TFTP tree:
+
+- the ISO's own `/boot`, byte for byte: the kernel ELF, `grub.cfg` and the
+  build records;
+- GRUB's network loaders for both families, made with the pinned GRUB:
+  `boot/grub/i386-pc/core.0` and `boot/grub/x86_64-efi/core.efi`.
+
+Both loaders take `(tftp)/boot/grub` as their prefix, so the kernel and its
+configuration are the ISO's; only the delivery differs. To boot a machine,
+serve `DIR` over TFTP and have DHCP name the loader. With dnsmasq as a proxy
+next to an existing DHCP server:
+
+```sh
+dnsmasq --no-daemon --port=0 --dhcp-range=192.168.6.0,proxy \
+  --enable-tftp --tftp-root="$DIR" \
+  --pxe-service=x86PC,"LeanOS",boot/grub/i386-pc/core \
+  --pxe-service=X86-64_EFI,"LeanOS",boot/grub/x86_64-efi/core.efi
+```
+
+`scripts/check-netboot.sh` boots the canonical ISO's tree on the pinned q35
+platform through QEMU's user network. Its only boot device is a transitional
+virtio-net function at 00:03.0, the q35 manifest's optional network slot. The
+admitted q35 topology has that slot empty, as under `-nic none`. A netbooted
+kernel therefore clears the boot NIC's Command word with every other
+function's, then stops at platform admission with `FINAL status=FAIL
+reason=dma-q35-nic-none`. The check requires exactly that, after the kernel's
+BOOT record, for both firmware families. It shows the network path delivers the
+ISO's kernel and the kernel refuses a topology it has not admitted. A topology
+that admits a quarantined boot NIC is #601. Real hardware boots over the
+network only when its admitted profile includes the NIC that carried the boot.
 
 ## Image-build phase timing evidence
 
