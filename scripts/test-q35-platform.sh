@@ -36,6 +36,42 @@ if LEANOS_QEMU_ACCELERATOR=kvm,tcg \
   exit 1
 fi
 
+# The disk medium attaches the same image as an IDE hard disk, never written.
+disk=()
+LEANOS_QEMU_MEDIUM=disk leanos_q35_command disk qemu-system-x86_64 128 \
+  build/evidence/disk.serial.log build/boot/leanos.iso
+LEANOS_QEMU_MEDIUM=disk leanos_validate_q35_command disk
+[[ " ${disk[*]} " == *" -device ide-hd,drive=leanos-disk,bus=ide.0 "* &&
+   " ${disk[*]} " == *" id=leanos-disk,if=none,format=raw,snapshot=on,file=build/boot/leanos.iso "* &&
+   " ${disk[*]} " != *" ide-cd,"* ]] || {
+  echo "error: q35 disk medium did not attach exactly the image as a snapshot disk" >&2
+  exit 1
+}
+if leanos_validate_q35_command disk 2>/dev/null; then
+  echo "error: q35 platform accepted a disk command under the CD-ROM contract" >&2
+  exit 1
+fi
+if LEANOS_QEMU_MEDIUM=disk leanos_validate_q35_command command 2>/dev/null; then
+  echo "error: q35 platform accepted a CD-ROM command under the disk contract" >&2
+  exit 1
+fi
+negative=("${disk[@]}")
+for index in "${!negative[@]}"; do
+  if [[ "${negative[$index]}" == id=leanos-disk,* ]]; then
+    negative[$index]=id=leanos-disk,if=none,format=raw,file=build/boot/leanos.iso
+    break
+  fi
+done
+if LEANOS_QEMU_MEDIUM=disk leanos_validate_q35_command negative 2>/dev/null; then
+  echo "error: q35 platform accepted a writable disk image" >&2
+  exit 1
+fi
+if LEANOS_QEMU_MEDIUM=usb leanos_q35_command negative qemu-system-x86_64 128 \
+    build/evidence/usb.serial.log build/boot/leanos.iso 2>/dev/null; then
+  echo "error: q35 platform accepted an unknown boot medium" >&2
+  exit 1
+fi
+
 multivcpu=()
 leanos_q35_command multivcpu qemu-system-x86_64 128 \
   build/evidence/multivcpu.serial.log build/boot/leanos.iso max \

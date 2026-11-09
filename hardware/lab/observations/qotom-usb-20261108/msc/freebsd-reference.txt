@@ -1,0 +1,12 @@
+# FreeBSD 15.0 on the same Qotom, same stick, before the LeanOS run (2026-11-08):
+#   sudo dd if=/dev/da0 bs=512 skip=<lba> count=<n>
+# head = the block's first 16 bytes; fnv1a = 32-bit FNV-1a of its 512 bytes
+# (offset basis 0x811C9DC5, prime 0x01000193), as LeanOS/Usb/MassStorage.lean computes it.
+# da0: <Generic Flash Disk 8.07> Removable, Serial Number 11758C40, 122880000 512-byte sectors
+MSC block lba=0 head=eb639000000000000000000000000000 fnv1a=0x98c3a689
+MSC block lba=1 head=52e82801740856be3381e84c015ebff4 fnv1a=0x5f593355
+MSC block lba=2 head=ea1c82000000000028630000e4bd0000 fnv1a=0x4e2c0d3b
+MSC block lba=3 head=3c8945d88955e4894dd431c08b7dd839 fnv1a=0x9719ef59
+MSC block lba=61440000 head=00000000000000000000000000000000 fnv1a=0x4d7705c5
+MSC block lba=122879998 head=00000000000000000000000000000000 fnv1a=0x4d7705c5
+MSC block lba=122879999 head=00000000000000000000000000000000 fnv1a=0x4d7705c5

@@ -4,9 +4,11 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import shlex
 import subprocess
+import sys
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--prepared-repo', type=Path, required=True)
@@ -335,9 +337,14 @@ if a.ipc_device_stream and (not a.blocking_ipc_integration or len(a.lab_program)
                             a.wifi_program or a.device_service or a.q35_device_lab):
     raise SystemExit('--ipc-device-stream needs --blocking-ipc-integration and exactly one --lab-program')
 if a.q35_device_lab:
+    # lab_wifi_run is declared and defined (below) only outside the canonical
+    # device-service, network-subject and DHCP-subject variants, which host
+    # their own executors; the call is guarded the same way (issue #611).
     text = text.replace('    serial_init();', '''    serial_init();
     serial_puts("LEANOS-LAB/1 MODE q35-device-lab\\n");
+#if !defined(LEANOS_DEVICE_SERVICE_SCENARIO) && !defined(LEANOS_NETWORK_SUBJECT_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
     lab_wifi_run();
+#endif
     finish(0x10);''')
 elif a.production_network:
     # No recovery harness (issue #569): no reset after FINAL and no
@@ -406,6 +413,8 @@ if lab_programs:
                         # step loop; wifi-exec.h is already spliced above.
                         (root / 'hardware/wifi/wifi-gen-exec.h').read_text().replace(
                             '#include "wifi-exec.h"\n', '', 1) + '\n' + arrays +
+                        # The BAR admission both of its windows use.
+                        (root / 'hardware/lab/qotom-lab-bar.h').read_text() + '\n' +
                         (root / 'hardware/lab/qotom-wifi.c.inc').read_text() + '\n#endif\n' + marker)
 if a.handoff_capture:
     marker = 'void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {'
@@ -754,13 +763,42 @@ if a.production_network:
     stub.write_text(stub_text.replace('#ifdef LEANOS_THREE_SUBJECT_SCENARIO\n', '#if 1\n'))
 makefile = out / 'objects.mk'
 makefile.write_text(graph)
+COMPILER_ERROR = re.compile(r'^\S+:\d+(?::\d+)?: (?:fatal )?error: ')
+
+
+def make(goal):
+    """Build goal, and fail on any compiler error make prints.
+
+    The graph -includes every object's dependency file. Make remakes each
+    missing or stale one before the goal, so it compiles every variant of the
+    overlaid kernel.c, and it ignores a failure to remake one: build-image.sh
+    needs that, since its early phases run before later variants' generated
+    headers exist. A variant this script's overlay breaks therefore printed its
+    errors and left the build green (issue #611). In a prepared repository
+    every generated header exists, so an error here is the overlay's.
+    """
+    proc = subprocess.Popen(['make', '-f', str(makefile), '-j4', str(goal)], cwd=root,
+                            stderr=subprocess.PIPE, text=True)
+    errors = []
+    for line in proc.stderr:
+        sys.stderr.write(line)
+        if COMPILER_ERROR.match(line):
+            errors.append(line.rstrip())
+    if proc.wait() != 0:
+        raise subprocess.CalledProcessError(proc.returncode, proc.args)
+    if errors:
+        raise SystemExit(f'{len(errors)} compiler error(s) while building {goal.name}, '
+                         'in variants it does not need (issue #611); the first:\n'
+                         + errors[0])
+
+
 target = build / ('leanos-qotom-pci-diagnostic.elf' if a.pci_diagnostic else 'leanos.elf')
 if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production:
     plan = build / 'boot-page-plan-qotom-pci-diagnostic.h'
     prelink = build / 'leanos-qotom-pci-diagnostic-prelink.elf'
-    subprocess.run(['make', '-f', str(makefile), '-j4', str(prelink)], cwd=root, check=True)
+    make(prelink)
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(prelink), str(plan)], cwd=root, check=True)
-subprocess.run(['make', '-f', str(makefile), '-j4', str(target)], cwd=root, check=True)
+make(target)
 if a.acpi_capture or a.pci_read_trace or a.bootstrap_capture or a.bsp_production:
     final_plan = out / 'final-page-plan.h'
     subprocess.run(['scripts/generate-boot-page-plan.sh', str(target), str(final_plan)], cwd=root, check=True)
