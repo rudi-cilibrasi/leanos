@@ -19,8 +19,9 @@ static void lab_check_bsp(uint32_t copied_count) {
     const struct qotom_bsp_observation observation = {
         executing, d, available, apic_base, b >> 24, 0
     };
-    const struct qotom_bsp_result result = qotom_bind_validated_madt_entries(
-        madt->bytes + 44u, madt->length - 44u, &observation);
+    struct qotom_bsp_result result;
+    qotom_bind_validated_madt_entries(
+        madt->bytes + 44u, madt->length - 44u, &observation, &result);
     /* Record the actual sample as well as the result, so replay need not
        substitute the earlier bootstrap sample or expected register values. */
     serial_puts("LEANOS-LAB/1 NATIVE-BSP profile=qotom-bsp-v1 madt=");

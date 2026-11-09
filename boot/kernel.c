@@ -1889,9 +1889,9 @@ static struct qotom_bsp_result validate_generated_qotom_bsp_entries(
     const struct qotom_bsp_observation observation = {
         sampled_apic_id, d, available, apic_base, sampled_apic_id, 0
     };
-    const struct qotom_bsp_result result =
-        qotom_bind_validated_madt_entries(
-            madt->bytes + 44u, madt->length - 44u, &observation);
+    struct qotom_bsp_result result;
+    qotom_bind_validated_madt_entries(
+        madt->bytes + 44u, madt->length - 44u, &observation, &result);
     if (result.status != 0)
         handoff_fail("topology-qotom-bsp-consumer");
     return result;

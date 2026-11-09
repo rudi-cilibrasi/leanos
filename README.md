@@ -278,10 +278,10 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-Four handwritten C components have machine-checked theorems of a different
+Five handwritten C components have machine-checked theorems of a different
 kind: **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean (issues #597, #599, #604 and #606,
+Lean (issues #597, #599, #604, #606 and #608,
 [ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
 first is the early boot text console (`include/boot_text_console.h`). For every
 Multiboot2 buffer of up to 16 MiB and every sequence of printed bytes:
@@ -338,6 +338,18 @@ in bus, device, function order and only conventional space, at most
 function found and publishes nothing then. Otherwise it publishes exactly the
 functions found, each with the sixteen dwords the device answered
 ([the project](experiments/quickproof/pci-enumeration/README.md)).
+
+The fifth is the Qotom MADT consumer (`include/qotom_bsp_consumer.h`), the C
+between three Lean exports that the Qotom production candidate calls from
+`boot_allocate`. Against a Lean that may answer every call with any value, the
+consumer reads only the entry span and the observation and writes only the
+result. It asks exactly the calls the
+[review](docs/qotom-madt-consumer-review.md) requires, in order, with one
+unchanged old state per byte. It carries the answers unchanged and stops at
+the first rejection. It publishes an APIC ID, processor count and APIC base
+only when the finish accepts
+([the project](experiments/quickproof/madt-consumer/README.md)). What the
+answers mean is what the Lean theorems of `LeanOS.QotomMadtStream` state.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy
