@@ -226,8 +226,13 @@ phase_device_program_lab() {
 ensure_lean_build
 
 ./scripts/check-device-programs.sh
+lake build leanos-usb-kbd-decode leanos-usb-mouse-decode
+.lake/build/bin/leanos-usb-kbd-decode
+.lake/build/bin/leanos-usb-mouse-decode
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service
+python3 scripts/run-q35-device-lab.py --mouse
+python3 scripts/run-q35-device-lab.py --mouse --keyboard-first
 }
 
 phase_security_and_platform_contracts() {
@@ -305,6 +310,10 @@ ensure_canonical_image
 ./scripts/test-run-malformed-handoff.sh
 
 ./scripts/test-run-image.sh
+# The Qotom's internal-disk GRUB (#620), booted from a disk laid out like the
+# Qotom's: FreeBSD by default, a one-shot LeanOS boot of build/boot/leanos.elf,
+# stale and failed requests, and the lab stick chaining in.
+./scripts/test-qotom-internal-grub.py
 ./scripts/check-expectation-templates.sh
 # The ahci-service transcript (issue #496) must carry exactly the generated
 # disk's sector at the program's LBA and its digest.

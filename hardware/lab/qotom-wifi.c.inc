@@ -181,6 +181,16 @@ static void lab_kbd_render(uint32_t value) {
     else { serial_puts("0x"); lab_wifi_hex(value, 2); }
 }
 
+/* A two's-complement byte (mouse motion) as a signed decimal. */
+static void lab_signed8(uint32_t value) {
+    uint32_t b = value & 0xffu;
+    if (b & 0x80u) {
+        serial_putc('-');
+        b = 0x100u - b;
+    }
+    serial_u64(b);
+}
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
     /* Lease records from LeanOS/Wifi/Connect.lean (Tag.leasedIp, router,
        subnet, lease) are also rendered as a readable boot message. */
@@ -239,6 +249,34 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         serial_putc('\n');
     } else if (tag == 0x2102) {
         serial_puts("LEANOS-LAB/1 KBD session-end keys=");
+        serial_u64(value);
+        serial_putc('\n');
+    } else if (tag == 0x2200) {
+        /* USB mouse (LeanOS/Usb/Mouse.lean): one report that moves or
+           changes the buttons, buttons | dx << 8 | dy << 16 | wheel << 24
+           with two's-complement motion bytes. */
+        serial_puts("LEANOS-LAB/1 MOUSE buttons=");
+        serial_u64(value & 0xffu);
+        serial_puts(" dx=");
+        lab_signed8(value >> 8);
+        serial_puts(" dy=");
+        lab_signed8(value >> 16);
+        serial_puts(" wheel=");
+        lab_signed8(value >> 24);
+        serial_putc('\n');
+        return;
+    } else if (tag == 0x2201) {
+        serial_puts("LEANOS-LAB/1 MOUSE ready vendor=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" product=0x");
+        lab_wifi_hex(value >> 16, 4);
+        serial_puts(" move-now\n");
+    } else if (tag == 0x2203) {
+        serial_puts("LEANOS-LAB/1 MOUSE reports=");
+        serial_u64(value);
+        serial_putc('\n');
+    } else if (tag == 0x2202) {
+        serial_puts("LEANOS-LAB/1 MOUSE session-end records=");
         serial_u64(value);
         serial_putc('\n');
     }
@@ -350,17 +388,15 @@ static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
     lab_wifi_hex(bar0, 8);
     serial_putc('\n');
     /* Non-prefetchable memory BAR, 32-bit (type 0) or 64-bit (type 2 with a
-       zero upper half), aligned to the window, in the PCI hole below 4 GiB. */
-    uint32_t type = bar0 & 0xfu;
+       zero upper half), page-aligned and aligned to the window, with every
+       mapped page in the PCI hole below the I/O APIC (qotom-lab-bar.h). */
     uint32_t pages = (lab_dev_target.window + 4095u) / 4096u;
-    bar0 &= ~UINT32_C(0xf);
-    if (id != lab_dev_target.id || (type != 0 && !(type == 4 && bar1 == 0)) ||
-        pages == 0 || pages > LAB_DEV_MAX_PAGES ||
-        (bar0 & (lab_dev_target.window - 1u)) != 0 ||
-        bar0 < UINT32_C(0x80000000) || bar0 > UINT32_C(0xfec00000)) {
+    if (id != lab_dev_target.id || pages == 0 || pages > LAB_DEV_MAX_PAGES ||
+        !lab_dev_bar_admitted(bar0, bar1, lab_dev_target.window, pages)) {
         serial_puts("LEANOS-LAB/1 WIFI-END status=reject\n");
         return;
     }
+    bar0 &= ~UINT32_C(0xf);
     uintptr_t window = (uintptr_t)lab_dev_window;
     for (unsigned i = 0; i < pages; ++i) {
         uint64_t *leaf = &page_table_a[window / 4096 + i];
@@ -432,14 +468,11 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
     uint32_t id = wifi_hook_cfg_read32(0);
     uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);
     uint32_t bar1 = lab_dev_target.bar < 0x24u ? wifi_hook_cfg_read32(lab_dev_target.bar + 4u) : 0;
-    uint32_t type = bar0 & 0xfu;
     uint32_t pages = (lab_dev_target.window + 4095u) / 4096u;
-    bar0 &= ~UINT32_C(0xf);
-    if (id != lab_dev_target.id || (type != 0 && !(type == 4 && bar1 == 0)) ||
-        pages == 0 || pages > LAB_DEV_MAX_PAGES ||
-        (bar0 & (lab_dev_target.window - 1u)) != 0 ||
-        bar0 < UINT32_C(0x80000000) || bar0 > UINT32_C(0xfec00000))
+    if (id != lab_dev_target.id || pages == 0 || pages > LAB_DEV_MAX_PAGES ||
+        !lab_dev_bar_admitted(bar0, bar1, lab_dev_target.window, pages))
         pre_admission_fail("qotom-stream-bar");
+    bar0 &= ~UINT32_C(0xf);
     uintptr_t window = (uintptr_t)lab_dev_window;
     for (unsigned i = 0; i < pages; ++i)
         if ((leaf_table[window / 4096 + i] & ~UINT64_C(0x60)) !=

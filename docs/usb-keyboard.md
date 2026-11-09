@@ -10,7 +10,11 @@ hooks of `hardware/wifi/wifi-gen-exec.h`).
 | Module | Contents |
 | --- | --- |
 | `LeanOS/Usb/Xhci.lean` | BIOS handoff (extended capability walk), controller reset and start, command/event rings, root port reset, Enable Slot / Address Device, control transfers |
-| `LeanOS/Usb/Keyboard.lean` | Root port scan, USB 2.0 hub support (hub descriptor, port power/reset, transaction translator), boot-keyboard interface discovery, interrupt IN endpoint, HID boot protocol, LED sweep, US-layout decoding, timed session |
+| `LeanOS/Usb/Hid.lean` | Shared with the mouse: root port scan, USB 2.0 hub support (hub descriptor, port power/reset, transaction translator), boot interface discovery by protocol, interrupt IN endpoint, HID boot protocol, timed session loop |
+| `LeanOS/Usb/Keyboard.lean` | Boot-keyboard program: LED sweep, US-layout decoding, the session's key records |
+
+The boot-protocol mouse program (`LeanOS/Usb/Mouse.lean`) reuses everything
+but the decoder; see [usb-mouse.md](usb-mouse.md).
 
 The executor gained what DMA-based controllers need: version-2 program
 images that name their PCI target and register window (up to 64 KiB), a
@@ -42,7 +46,8 @@ record, in order. With `--service` the `kbd-q35-service` program yields each
 key instead of printing it and runs through the lab device service
 (ADR 0022): subject 1 is granted the controller, an ungranted subject is
 denied, the driver runs in fixed step budgets with one key per yield, and
-after revocation the former holder is denied. `scripts/check.sh` runs both.
+after revocation the former holder is denied. `scripts/check.sh` runs both,
+and then the mouse scenario ([usb-mouse.md](usb-mouse.md)).
 
 ## Trying it
 
@@ -68,7 +73,7 @@ verifies the interrupt path without anyone typing.
 
 Hardware evidence:
 [qotom-usb-keyboard-20260927](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md).
-Report decoding is checked by `lake exe leanos-usb-kbd-decode`.
+Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`).
 
 Limitations: one level of hub, one boot keyboard, polling (no interrupts),
 US layout, no key repeat, no USB 3 devices beyond port handling.
