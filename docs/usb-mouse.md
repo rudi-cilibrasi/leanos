@@ -8,7 +8,7 @@ controller, hub and enumeration code; only the report decoder is its own.
 
 | Module | Contents |
 | --- | --- |
-| `LeanOS/Usb/Hid.lean` | Shared with the keyboard: root port scan, USB 2.0 hub support, boot interface discovery by protocol, interrupt IN endpoint, SET_PROTOCOL(boot) and SET_IDLE, timed session loop |
+| `LeanOS/Usb/Hid.lean` | Shared with the keyboard: root port scan, USB 2.0 hub support ([usb-hub.md](usb-hub.md)), boot interface discovery by protocol, interrupt IN endpoint, SET_PROTOCOL(boot) and SET_IDLE, timed session loop |
 | `LeanOS/Usb/Mouse.lean` | Boot mouse report decoding (buttons, signed dx and dy, optional wheel byte), `MOUSE` records, the `program` entry point |
 
 The program accepts the first interface of class 3 (HID), subclass 1 (boot),
@@ -75,7 +75,9 @@ scenarios.
 `--mouse --keyboard-first` puts a `usb-kbd` on hub port 1 and the mouse on
 port 2, so the driver passes over the keyboard's boot interface and addresses
 the mouse in the driver context the keyboard used; it requires the keyboard to
-be rejected and the same records, and `scripts/check.sh` runs it too.
+be rejected and the same records, and `scripts/check.sh` runs it too, as
+well as `--mouse --hub-port 5`: the mouse on hub port 5, a decoy keyboard
+on port 1, with the hub records checked ([usb-hub.md](usb-hub.md)).
 
 Known issue, shared with the keyboard, fixed in a3d0e3ec: the passed-over
 device's EP0 TRBs kept the reused ring's cycle bit, so the controller replayed
@@ -93,5 +95,6 @@ interface match ([usb-mass-storage.md](usb-mass-storage.md)).
 
 Not covered: hardware evidence, and a device-service (yield) form. Absolute
 pointers (tablets), report-protocol features, more than one mouse and the
-limitations of the keyboard's enumeration (one level of hub, polling) are out
+limitations of the shared enumeration (one level of hub, polling;
+[usb-hub.md](usb-hub.md)) are out
 of scope.

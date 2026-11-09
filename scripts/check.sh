@@ -226,16 +226,22 @@ phase_device_program_lab() {
 ensure_lean_build
 
 ./scripts/check-device-programs.sh
-lake build leanos-usb-kbd-decode leanos-usb-mouse-decode leanos-usb-msc-report
+lake build leanos-usb-kbd-decode leanos-usb-mouse-decode leanos-usb-msc-report leanos-usb-hub-slot
 .lake/build/bin/leanos-usb-kbd-decode
 .lake/build/bin/leanos-usb-mouse-decode
 .lake/build/bin/leanos-usb-msc-report
+.lake/build/bin/leanos-usb-hub-slot
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service
 python3 scripts/run-q35-device-lab.py --mouse
 python3 scripts/run-q35-device-lab.py --mouse --keyboard-first
 python3 scripts/run-q35-device-lab.py --msc
 python3 scripts/run-q35-device-lab.py --msc --root-port
+# Hubs (docs/usb-hub.md): each program's device on a hub port past the
+# fourth, a decoy on hub port 1.
+python3 scripts/run-q35-device-lab.py --hub-port 8
+python3 scripts/run-q35-device-lab.py --mouse --hub-port 5
+python3 scripts/run-q35-device-lab.py --msc --hub-port 7
 }
 
 phase_security_and_platform_contracts() {
