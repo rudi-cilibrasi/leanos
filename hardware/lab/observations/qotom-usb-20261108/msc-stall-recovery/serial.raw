@@ -1,0 +1,93 @@
+bkÇk²óZ‘ÿ[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+[H[J[1;1HLEANOS-DISK/1 CORE root=hd1,gpt1 prefix=(hd1,gpt1)/leanos/grub
+LEANOS-DISK/1 REQUEST consumed=1
+LEANOS-DISK/1 MENU disk=hd1 default=leanos timeout=0
+
+LEANOS-DISK/1 LEANOS load=1
+leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/24 BOOT target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0
+LEANOS/24 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/24 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS-LAB/1 WIFI-BEGIN id=0x0f358086 bar0=0xd0900004
+WIFI 2000 0x0f358086
+WIFI 2001 0x00008460
+WIFI 2001 0x00010801
+WIFI 2001 0x01000801
+WIFI 2001 0x00000000
+WIFI 2002 0x00000000
+WIFI 2003 0x000002a0
+WIFI 2003 0x000002a0
+WIFI 2003 0x000002a0
+WIFI 2003 0x000206e1
+WIFI 2003 0x00000e03
+WIFI 2004 0x00000022
+WIFI 2004 0x00000022
+WIFI 2009 0x00000001
+WIFI 2005 0x00000001
+WIFI 2009 0x00000001
+WIFI 2006 0x00000001
+WIFI 2007 0x061005e3
+WIFI 2013 0x00000009
+LEANOS-LAB/1 HUB found root-port=4 speed=high slot=1
+WIFI 2009 0x00000001
+LEANOS-LAB/1 HUB configured ports=4 power-on-wait-ms=250 tt-think-time=3
+LEANOS-LAB/1 HUB port=1 status=0x0100 change=0x00
+LEANOS-LAB/1 HUB port=2 status=0x0100 change=0x00
+LEANOS-LAB/1 HUB port=3 status=0x0101 change=0x01
+LEANOS-LAB/1 HUB port=3 status=0x0503 change=0x10
+LEANOS-LAB/1 HUB device route=0x00003 speed=high root-port=4 tt-slot=0 tt-port=0
+WIFI 2009 0x00000001
+WIFI 2005 0x00000002
+WIFI 2009 0x00000001
+WIFI 2006 0x00000002
+WIFI 2007 0x6387058f
+WIFI 2014 0x00000000
+WIFI 2015 0x00000001
+WIFI 2015 0x00000082
+LEANOS-LAB/1 MSC ready vendor=0x058f product=0x6387
+WIFI 2009 0x00000001
+LEANOS-LAB/1 MSC configured bulk-in=0x82 in-max-packet=512 bulk-out=0x01 out-max-packet=512
+LEANOS-LAB/1 MSC inquiry type=0x00 removable=1 vendor="Generic" product="Flash Disk" revision="8.07"
+LEANOS-LAB/1 MSC csw step=unit-ready status=1 residue=0
+LEANOS-LAB/1 MSC sense after=unit-ready key=0x06 asc=0x28 ascq=0x00
+LEANOS-LAB/1 MSC unit-ready attempts=2
+LEANOS-LAB/1 MSC capacity blocks=122880000 block-bytes=512
+LEANOS-LAB/1 MSC block lba=0 head=eb639000000000000000000000000000 fnv1a=0x98c3a689
+LEANOS-LAB/1 MSC block lba=1 head=52e82801740856be3381e84c015ebff4 fnv1a=0x5f593355
+LEANOS-LAB/1 MSC block lba=2 head=ea1c82000000000028630000e4bd0000 fnv1a=0x4e2c0d3b
+LEANOS-LAB/1 MSC block lba=3 head=3c8945d88955e4894dd431c08b7dd839 fnv1a=0x9719ef59
+LEANOS-LAB/1 MSC block lba=61440000 head=00000000000000000000000000000000 fnv1a=0x4d7705c5
+LEANOS-LAB/1 MSC block lba=122879998 head=00000000000000000000000000000000 fnv1a=0x4d7705c5
+LEANOS-LAB/1 MSC block lba=122879999 head=00000000000000000000000000000000 fnv1a=0x4d7705c5
+WIFI 2009 0x00000001
+WIFI 2009 0x00000001
+LEANOS-LAB/1 MSC stall-cleared step=read-past-end stage=data endpoint=0x82
+LEANOS-LAB/1 MSC csw step=read-past-end status=1 residue=512
+LEANOS-LAB/1 MSC sense after=read-past-end key=0x05 asc=0x21 ascq=0x00
+LEANOS-LAB/1 MSC done blocks-read=7
+LEANOS-LAB/1 WIFI-END status=0 code=0x00000000
+LEANOS/3 FINAL status=FAIL reason=qotom-platform-pending
+"kRÇk2WZ‘ÿ[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+[H[J[1;1HLEANOS-DISK/1 CORE root=hd1,gpt1 prefix=(hd1,gpt1)/leanos/grub
+LEANOS-DISK/1 MENU disk=hd1 default=freebsd timeout=5
+[?25l[m[H[J[1;1H[2;30HGNU GRUB  version 2.12
+
+[m[4;2H+----------------------------------------------------------------------------+[5;2H|[5;79H|[6;2H|[6;79H|[7;2H|[7;79H|[8;2H|[8;79H|[9;2H|[9;79H|[10;2H|[10;79H|[11;2H|[11;79H|[12;2H|[12;79H|[13;2H|[13;79H|[14;2H|[14;79H|[15;2H|[15;79H|[16;2H|[16;79H|[17;2H+----------------------------------------------------------------------------+[m[18;2H[19;2H[m     Use the ^ and v keys to select which entry is highlighted.          
+      Press enter to boot the selected OS, `e' to edit the commands       
+      before booting or `c' for a command-line.                           [5;80H [7m[5;3H*FreeBSD                                                                    [m[5;78H[m[m[6;3H LeanOS (lab image 186589858af4b3df0c449da7d17fff29b990576f10c57e88f75715a0>[m[6;78H[m[m[7;3H                                                                            [m[7;78H[m[m[8;3H                                                                            [m[8;78H[m[m[9;3H                                                                            [m[9;78H[m[m[10;3H                                                                            [m[10;78H[m[m[11;3H                                                                            [m[11;78H[m[m[12;3H                                                                            [m[12;78H[m[m[13;3H                                                                            [m[13;78H[m[m[14;3H                                                                            [m[14;78H[m[m[15;3H                                                                            [m[15;78H[m[m[16;3H                                                                            [m[16;78H[m[16;80H [5;78H[22;1H   The highlighted entry will be executed automatically in 5s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 4s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 3s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 2s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 1s.                 [5;78H[22;1H   The highlighted entry will be executed automatically in 0s.                 [5;78H[?25h[H[J[1;1H[H[J[1;1H
+LEANOS-DISK/1 CHAIN freebsd disk=hd1
+
+FreeBSD/amd64 (qotom) (ttyu0)
+
+login: 

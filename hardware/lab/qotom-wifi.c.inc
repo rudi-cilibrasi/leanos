@@ -181,7 +181,333 @@ static void lab_kbd_render(uint32_t value) {
     else { serial_puts("0x"); lab_wifi_hex(value, 2); }
 }
 
+/* A two's-complement byte (mouse motion) as a signed decimal. */
+static void lab_signed8(uint32_t value) {
+    uint32_t b = value & 0xffu;
+    if (b & 0x80u) {
+        serial_putc('-');
+        b = 0x100u - b;
+    }
+    serial_u64(b);
+}
+
+/* USB mass storage (LeanOS/Usb/MassStorage.lean, docs/usb-mass-storage.md).
+   A record may span several prints: each part prints its text and only the
+   last ends the line, so none of them adds the raw "WIFI" line. */
+static const char *const lab_msc_steps[] = {
+    "attach", "configure", "inquiry", "unit-ready", "capacity", "read", "read-past-end", "sense",
+    "mbr", "volume", "lookup", "file",
+};
+static const char *const lab_msc_stages[] = { "none", "cbw", "data", "csw" };
+static const char *const lab_msc_reasons[] = {
+    "none", "no-device", "timeout", "stall", "transfer", "csw-length", "csw-signature",
+    "csw-tag", "phase-error", "csw-status", "failed", "not-ready", "capacity", "short-read",
+    "passed-past-end", "no-partition", "not-fat32", "not-found", "bad-cluster", "wrong-kind",
+    "chain-too-long", "chain-short",
+};
+#define LAB_MSC_NAME(names, i) \
+    lab_msc_name(names, sizeof names / sizeof names[0], i)
+
+static void lab_msc_name(const char *const *names, unsigned count, uint32_t i) {
+    if (i < count) serial_puts(names[i]);
+    else serial_u64(i);
+}
+
+/* The INQUIRY string field being collected: printed without SCSI's space
+   padding when it ends. */
+static char lab_msc_text[16];
+static unsigned lab_msc_text_len;
+
+static void lab_msc_text_flush(void) {
+    unsigned n = lab_msc_text_len;
+    while (n && lab_msc_text[n - 1] == ' ')
+        --n;
+    for (unsigned i = 0; i < n; ++i)
+        serial_putc(lab_msc_text[i]);
+    lab_msc_text_len = 0;
+}
+
+static void lab_msc_byte_hex(uint32_t value) {
+    serial_puts("0x");
+    lab_wifi_hex(value & 0xffu, 2);
+}
+
+/* 1 if `tag` is a mass-storage record part (rendered), else 0. */
+static int lab_msc_print(uint32_t tag, uint32_t value) {
+    switch (tag) {
+    case 0x2300:
+        serial_puts("LEANOS-LAB/1 MSC ready vendor=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" product=0x");
+        lab_wifi_hex(value >> 16, 4);
+        serial_putc('\n');
+        break;
+    case 0x2301:
+    case 0x2302:
+        serial_puts(tag == 0x2301 ? "LEANOS-LAB/1 MSC configured bulk-in=" : " bulk-out=");
+        lab_msc_byte_hex(value);
+        serial_puts(tag == 0x2301 ? " in-max-packet=" : " out-max-packet=");
+        serial_u64(value >> 16);
+        if (tag == 0x2302) serial_putc('\n');
+        break;
+    case 0x2310:
+        serial_puts("LEANOS-LAB/1 MSC inquiry type=");
+        lab_msc_byte_hex(value);
+        serial_puts(" removable=");
+        serial_u64((value >> 8) & 1u);
+        break;
+    case 0x2311:
+        if (value > 0) {
+            lab_msc_text_flush();
+            serial_putc('"');
+        }
+        serial_puts(value == 0 ? " vendor=\"" : value == 1 ? " product=\"" :
+                    value == 2 ? " revision=\"" : "\n");
+        lab_msc_text_len = 0;
+        break;
+    case 0x2312:
+        for (unsigned i = 0; i < 4; ++i) {
+            unsigned c = (value >> (8 * i)) & 0xffu;
+            if (c == 0) c = ' ';
+            else if (c < 0x20 || c > 0x7e || c == '"' || c == '\\') c = '.';
+            if (lab_msc_text_len < sizeof lab_msc_text)
+                lab_msc_text[lab_msc_text_len++] = (char)c;
+        }
+        break;
+    case 0x2320:
+        serial_puts("LEANOS-LAB/1 MSC unit-ready attempts=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2321:
+        serial_puts("LEANOS-LAB/1 MSC sense after=");
+        LAB_MSC_NAME(lab_msc_steps, value >> 24);
+        serial_puts(" key=");
+        lab_msc_byte_hex(value);
+        serial_puts(" asc=");
+        lab_msc_byte_hex(value >> 8);
+        serial_puts(" ascq=");
+        lab_msc_byte_hex(value >> 16);
+        serial_putc('\n');
+        break;
+    case 0x2322:
+        serial_puts("LEANOS-LAB/1 MSC csw step=");
+        LAB_MSC_NAME(lab_msc_steps, value & 0xffu);
+        serial_puts(" status=");
+        serial_u64((value >> 8) & 0xffu);
+        break;
+    case 0x2323:
+        serial_puts(" residue=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2324:
+        serial_puts("LEANOS-LAB/1 MSC stall-cleared step=");
+        LAB_MSC_NAME(lab_msc_steps, value & 0xffu);
+        serial_puts(" stage=");
+        LAB_MSC_NAME(lab_msc_stages, (value >> 8) & 0xffu);
+        serial_puts(" endpoint=");
+        lab_msc_byte_hex(value >> 16);
+        serial_putc('\n');
+        break;
+    case 0x2330:
+        serial_puts("LEANOS-LAB/1 MSC capacity blocks=");
+        serial_u64(value);
+        break;
+    case 0x2331:
+        serial_puts(" block-bytes=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2340:
+        serial_puts("LEANOS-LAB/1 MSC block lba=");
+        serial_u64(value);
+        serial_puts(" head=");
+        break;
+    case 0x2341:
+        for (unsigned i = 0; i < 4; ++i)
+            lab_wifi_hex((value >> (8 * i)) & 0xffu, 2);
+        break;
+    case 0x2342:
+        serial_puts(" fnv1a=0x");
+        lab_wifi_hex(value, 8);
+        serial_putc('\n');
+        break;
+    case 0x2350:
+        serial_puts("LEANOS-LAB/1 MSC done blocks-read=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2360:
+        /* LeanOS/Usb/Fat32.lean: an MBR partition entry, then its first LBA
+           and its blocks. */
+        serial_puts("LEANOS-LAB/1 MSC mbr partition=");
+        serial_u64(value & 0xffu);
+        serial_puts(" type=");
+        lab_msc_byte_hex(value >> 8);
+        serial_puts(" active=");
+        serial_u64((value >> 16) & 1u);
+        break;
+    case 0x2361:
+        serial_puts(" lba=");
+        serial_u64(value);
+        break;
+    case 0x2362:
+        serial_puts(" blocks=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2370:
+        serial_puts("LEANOS-LAB/1 MSC fat32 sectors-per-cluster=");
+        serial_u64(value & 0xffu);
+        serial_puts(" fats=");
+        serial_u64((value >> 8) & 0xffu);
+        break;
+    case 0x2371:
+        serial_puts(" reserved=");
+        serial_u64(value);
+        break;
+    case 0x2372:
+        serial_puts(" fat-blocks=");
+        serial_u64(value);
+        break;
+    case 0x2373:
+        serial_puts(" root-cluster=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2380:
+        serial_puts("LEANOS-LAB/1 MSC fat found component=");
+        serial_u64(value & 0xffu);
+        serial_puts(" attr=");
+        lab_msc_byte_hex(value >> 8);
+        break;
+    case 0x2381:
+        serial_puts(" cluster=");
+        serial_u64(value);
+        break;
+    case 0x2382:
+        serial_puts(" bytes=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2390:
+        serial_puts("LEANOS-LAB/1 MSC file bytes=");
+        serial_u64(value);
+        serial_puts(" head=");
+        break;
+    case 0x2391:
+        for (unsigned i = 0; i < 4; ++i)
+            lab_wifi_hex((value >> (8 * i)) & 0xffu, 2);
+        break;
+    case 0x2392:
+        serial_puts(" fnv1a=0x");
+        lab_wifi_hex(value, 8);
+        break;
+    case 0x2393:
+        serial_puts(" clusters=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x23E0:
+        serial_puts("LEANOS-LAB/1 MSC error=");
+        LAB_MSC_NAME(lab_msc_steps, value & 0xffu);
+        serial_puts(" stage=");
+        LAB_MSC_NAME(lab_msc_stages, (value >> 8) & 0xffu);
+        serial_puts(" reason=");
+        LAB_MSC_NAME(lab_msc_reasons, (value >> 16) & 0xffu);
+        break;
+    case 0x23E1:
+        serial_puts(" detail=0x");
+        lab_wifi_hex(value, 8);
+        serial_putc('\n');
+        break;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
+/* USB hub enumeration (LeanOS/Usb/Hid.lean, docs/usb-hub.md). Speeds are
+   xHCI PORTSC speed IDs; a device record spans two prints. */
+static const char *const lab_hub_skips[] = { "none", "unstable", "reset-timeout", "not-enabled" };
+
+static void lab_hub_speed(uint32_t speed) {
+    static const char *const names[] = { "full", "low", "high", "super" };
+    if (speed >= 1 && speed <= 4) serial_puts(names[speed - 1]);
+    else serial_u64(speed);
+}
+
+/* 1 if `tag` is a hub record part (rendered), else 0. */
+static int lab_hub_print(uint32_t tag, uint32_t value) {
+    switch (tag) {
+    case 0x2400:
+        serial_puts("LEANOS-LAB/1 HUB found root-port=");
+        serial_u64(value & 0xffu);
+        serial_puts(" speed=");
+        lab_hub_speed((value >> 8) & 0xffu);
+        serial_puts(" slot=");
+        serial_u64(value >> 16);
+        serial_putc('\n');
+        break;
+    case 0x2401:
+        serial_puts("LEANOS-LAB/1 HUB configured ports=");
+        serial_u64(value & 0xffu);
+        serial_puts(" power-on-wait-ms=");
+        serial_u64((value >> 8) & 0xffffu);
+        serial_puts(" tt-think-time=");
+        serial_u64(value >> 24);
+        serial_putc('\n');
+        break;
+    case 0x2402:
+        serial_puts("LEANOS-LAB/1 HUB port=");
+        serial_u64(value >> 24);
+        serial_puts(" status=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" change=0x");
+        lab_wifi_hex((value >> 16) & 0xffu, 2);
+        serial_putc('\n');
+        break;
+    case 0x2403:
+        serial_puts("LEANOS-LAB/1 HUB port=");
+        serial_u64(value & 0xffu);
+        serial_puts(" skipped=");
+        LAB_MSC_NAME(lab_hub_skips, (value >> 8) & 0xffu);
+        serial_putc('\n');
+        break;
+    case 0x2404:
+        serial_puts("LEANOS-LAB/1 HUB device route=0x");
+        lab_wifi_hex(value & 0xfffffu, 5);
+        serial_puts(" speed=");
+        lab_hub_speed((value >> 20) & 0xfu);
+        serial_puts(" root-port=");
+        serial_u64(value >> 24);
+        break;
+    case 0x2405:
+        serial_puts(" tt-slot=");
+        serial_u64(value & 0xffu);
+        serial_puts(" tt-port=");
+        serial_u64((value >> 8) & 0xffu);
+        serial_putc('\n');
+        break;
+    case 0x2406:
+        serial_puts("LEANOS-LAB/1 HUB passed-over root-port=");
+        serial_u64(value & 0xffu);
+        serial_puts(" speed=");
+        lab_hub_speed((value >> 8) & 0xffu);
+        serial_putc('\n');
+        break;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
+    if ((tag >> 8) == 0x23u && lab_msc_print(tag, value))
+        return;
+    if ((tag >> 8) == 0x24u && lab_hub_print(tag, value))
+        return;
     /* Lease records from LeanOS/Wifi/Connect.lean (Tag.leasedIp, router,
        subnet, lease) are also rendered as a readable boot message. */
     if (tag == 0x0E05 || tag == 0x0E07 || tag == 0x0E08) {
@@ -233,12 +559,56 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         serial_puts(" product=0x");
         lab_wifi_hex(value >> 16, 4);
         serial_puts(" type-now\n");
+    } else if (tag == 0x2105) {
+        /* Lock state (LeanOS/Usb/Keyboard.lean Tag.locks): Num bit 0, Caps
+           bit 1, Scroll bit 2, as sent to the keyboard's LEDs. */
+        serial_puts("LEANOS-LAB/1 KBD locks num=");
+        serial_putc((value & 1u) ? '1' : '0');
+        serial_puts(" caps=");
+        serial_putc((value & 2u) ? '1' : '0');
+        serial_puts(" scroll=");
+        serial_putc((value & 4u) ? '1' : '0');
+        serial_putc('\n');
+    } else if (tag == 0x201A) {
+        /* A control transfer queued in a HID session completed
+           (LeanOS/Usb/Hid.lean Tag.controlDone): its completion code. */
+        serial_puts("LEANOS-LAB/1 HID control-done cc=");
+        serial_u64(value);
+        serial_putc('\n');
     } else if (tag == 0x2103) {
         serial_puts("LEANOS-LAB/1 KBD reports=");
         serial_u64(value);
         serial_putc('\n');
     } else if (tag == 0x2102) {
         serial_puts("LEANOS-LAB/1 KBD session-end keys=");
+        serial_u64(value);
+        serial_putc('\n');
+    } else if (tag == 0x2200) {
+        /* USB mouse (LeanOS/Usb/Mouse.lean): one report that moves or
+           changes the buttons, buttons | dx << 8 | dy << 16 | wheel << 24
+           with two's-complement motion bytes. */
+        serial_puts("LEANOS-LAB/1 MOUSE buttons=");
+        serial_u64(value & 0xffu);
+        serial_puts(" dx=");
+        lab_signed8(value >> 8);
+        serial_puts(" dy=");
+        lab_signed8(value >> 16);
+        serial_puts(" wheel=");
+        lab_signed8(value >> 24);
+        serial_putc('\n');
+        return;
+    } else if (tag == 0x2201) {
+        serial_puts("LEANOS-LAB/1 MOUSE ready vendor=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" product=0x");
+        lab_wifi_hex(value >> 16, 4);
+        serial_puts(" move-now\n");
+    } else if (tag == 0x2203) {
+        serial_puts("LEANOS-LAB/1 MOUSE reports=");
+        serial_u64(value);
+        serial_putc('\n');
+    } else if (tag == 0x2202) {
+        serial_puts("LEANOS-LAB/1 MOUSE session-end records=");
         serial_u64(value);
         serial_putc('\n');
     }
@@ -350,17 +720,15 @@ static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
     lab_wifi_hex(bar0, 8);
     serial_putc('\n');
     /* Non-prefetchable memory BAR, 32-bit (type 0) or 64-bit (type 2 with a
-       zero upper half), aligned to the window, in the PCI hole below 4 GiB. */
-    uint32_t type = bar0 & 0xfu;
+       zero upper half), page-aligned and aligned to the window, with every
+       mapped page in the PCI hole below the I/O APIC (qotom-lab-bar.h). */
     uint32_t pages = (lab_dev_target.window + 4095u) / 4096u;
-    bar0 &= ~UINT32_C(0xf);
-    if (id != lab_dev_target.id || (type != 0 && !(type == 4 && bar1 == 0)) ||
-        pages == 0 || pages > LAB_DEV_MAX_PAGES ||
-        (bar0 & (lab_dev_target.window - 1u)) != 0 ||
-        bar0 < UINT32_C(0x80000000) || bar0 > UINT32_C(0xfec00000)) {
+    if (id != lab_dev_target.id || pages == 0 || pages > LAB_DEV_MAX_PAGES ||
+        !lab_dev_bar_admitted(bar0, bar1, lab_dev_target.window, pages)) {
         serial_puts("LEANOS-LAB/1 WIFI-END status=reject\n");
         return;
     }
+    bar0 &= ~UINT32_C(0xf);
     uintptr_t window = (uintptr_t)lab_dev_window;
     for (unsigned i = 0; i < pages; ++i) {
         uint64_t *leaf = &page_table_a[window / 4096 + i];
@@ -432,14 +800,11 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
     uint32_t id = wifi_hook_cfg_read32(0);
     uint32_t bar0 = wifi_hook_cfg_read32(lab_dev_target.bar);
     uint32_t bar1 = lab_dev_target.bar < 0x24u ? wifi_hook_cfg_read32(lab_dev_target.bar + 4u) : 0;
-    uint32_t type = bar0 & 0xfu;
     uint32_t pages = (lab_dev_target.window + 4095u) / 4096u;
-    bar0 &= ~UINT32_C(0xf);
-    if (id != lab_dev_target.id || (type != 0 && !(type == 4 && bar1 == 0)) ||
-        pages == 0 || pages > LAB_DEV_MAX_PAGES ||
-        (bar0 & (lab_dev_target.window - 1u)) != 0 ||
-        bar0 < UINT32_C(0x80000000) || bar0 > UINT32_C(0xfec00000))
+    if (id != lab_dev_target.id || pages == 0 || pages > LAB_DEV_MAX_PAGES ||
+        !lab_dev_bar_admitted(bar0, bar1, lab_dev_target.window, pages))
         pre_admission_fail("qotom-stream-bar");
+    bar0 &= ~UINT32_C(0xf);
     uintptr_t window = (uintptr_t)lab_dev_window;
     for (unsigned i = 0; i < pages; ++i)
         if ((leaf_table[window / 4096 + i] & ~UINT64_C(0x60)) !=
