@@ -78,7 +78,12 @@ LeanOS then returns to FreeBSD through the usual recovery path.
 verifies the interrupt path without anyone typing.
 
 Hardware evidence:
-[qotom-usb-keyboard-20260927](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md).
+[qotom-usb-keyboard-20260927](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md)
+(idle reports), and
+[qotom-usb-20261108](../hardware/lab/observations/qotom-usb-20261108/README.md):
+a person typed `Hi LeanOS!`, Enter and Backspace, and 14 keys came back with
+Shift applied, through the hub code of [usb-hub.md](usb-hub.md). Caps Lock
+neither toggles nor lights its LED (issue #632).
 Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`).
 
 Limitations: one level of hub ([usb-hub.md](usb-hub.md)), one boot keyboard, polling (no interrupts),
