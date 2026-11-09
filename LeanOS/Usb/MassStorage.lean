@@ -94,6 +94,8 @@ def blocksRead : UInt32 := vars + 0x248
 def skips : UInt32 := vars + 0x24C
 def k : UInt32 := vars + 0x250
 def blockAt : UInt32 := vars + 0x254
+/-- 1 once the current command's CSW has been retried after a stall. -/
+def cswRetried : UInt32 := vars + 0x258
 end M
 
 /-! ## Records -/
@@ -123,6 +125,9 @@ def sense : UInt32 := 0x2321
 dCSWDataResidue (line ends). -/
 def csw : UInt32 := 0x2322
 def cswResidue : UInt32 := 0x2323
+/-- A stalled bulk endpoint recovered (`clearHalt`): step | stage << 8 |
+endpoint address << 16. -/
+def stallCleared : UInt32 := 0x2324
 /-- Blocks (last LBA + 1; line continues), then the block length. -/
 def capacity : UInt32 := 0x2330
 def blockBytes : UInt32 := 0x2331
@@ -426,6 +431,47 @@ def transferOk (err : Nat) (stage : UInt32) (allowShort : Bool) : ProgM Unit := 
   stop err stage Reason.transfer (.reg 1)
   place ok
 
+/-- Recover the halted bulk endpoint in `dciVar` (address in `addrVar`), whose
+TD on `ring` ended with a stall: Reset Endpoint (xHCI 1.1 §4.6.8; Halted →
+Stopped), Set TR Dequeue Pointer to the ring's enqueue TRB with its cycle state
+(§4.6.10), which skips the stalled TD, then CLEAR_FEATURE(ENDPOINT_HALT) on the
+device (USB 2.0 §9.4.1), which resets its data toggle as Reset Endpoint reset
+the controller's (BOT 1.0 §6.6.2). The new dequeue pointer is a bus address
+inside the ring, so the command TRB keeps the descriptor map in scratch. Prints
+`Tag.stallCleared`. Uses r0–r13. -/
+def clearHalt (ring : Ring) (dciVar addrVar : UInt32) (stage : UInt32) : ProgM Unit := do
+  -- Reset Endpoint (type 14): slot << 24 | endpoint id << 16
+  ld 4 7 V.hidSlot
+  shli 7 24
+  ld 4 1 dciVar
+  shli 1 16
+  emit (.alu .or 7 (.reg 1))
+  ori 7 ((14 : UInt32) <<< 10)
+  command (.imm 0) (.reg 7)
+  -- Set TR Dequeue Pointer (type 16): &ring[enqueue] | DCS, SCT 0
+  ld 4 1 ring.enqV
+  shli 1 4
+  emit (.physAddr 6 ring.base)
+  emit (.alu .add 6 (.reg 1))
+  ld 4 2 ring.cycleV
+  emit (.alu .or 6 (.reg 2))
+  ld 4 7 V.hidSlot
+  shli 7 24
+  ld 4 1 dciVar
+  shli 1 16
+  emit (.alu .or 7 (.reg 1))
+  ori 7 ((16 : UInt32) <<< 10)
+  command (.reg 6) (.reg 7)
+  -- CLEAR_FEATURE(ENDPOINT_HALT): endpoint recipient, wIndex = the address
+  ld 4 1 addrVar
+  control 1 V.hidSlot (.imm ((0x02 : UInt32) ||| ((1 : UInt32) <<< 8))) (.reg 1) 0 false
+  ld 4 1 addrVar
+  shli 1 16
+  ld 4 2 M.step
+  emit (.alu .or 1 (.reg 2))
+  ori 1 (stage <<< 8)
+  print Tag.stallCleared 1
+
 /-! ## Bulk-only transport -/
 
 /-- One BOT command (BOT 1.0 §5): the CBW on bulk OUT (dCBWTag the next tag,
@@ -433,9 +479,12 @@ dCBWDataTransferLength `dataLen` bytes, direction IN when `dataIn`, LUN 0,
 bCBWCBLength `cdbLen`; the CBW is zeroed, then `cdb` stores the command
 block from `cdbAt 0`), then with `dataIn` the data stage into `xferBuf` on
 bulk IN (`dataLen` > 0, at most `xferBytes`), then the 13-byte CSW on bulk
-IN, whose signature, tag and status are checked. A transfer that does not
-complete, a short CSW, a wrong signature or tag and a status above 1 stop the
-program through `err`. A CSW with failed status (1) is reported
+IN, whose signature, tag and status are checked. A data stage the device
+stalls (BOT 1.0 §6.7.2: it may stall bulk IN when it has less data than asked,
+or none) is recovered (`clearHalt`) and the CSW read; a stalled CSW is recovered
+and read once more. A transfer that does not complete, a second stalled CSW, a
+short CSW, a wrong signature or tag and a status above 1 stop the program
+through `err`. A CSW with failed status (1) is reported
 (`Tag.csw`). On return r1 = bCSWStatus (0 passed, 1 failed), also in
 `M.status`; `M.residual` holds the bytes the data stage did not transfer,
 `M.residue` the CSW's dCSWDataResidue. `dataLen` may not be r9. -/
@@ -466,12 +515,30 @@ def botCommand (err : Nat) (step : UInt32) (dataLen : Operand) (dataIn : Bool)
     bulkQueue inRing M.inDci xferBuf (.reg 7)
     bulkWait M.inDci
     st 4 M.residual (.reg 2)
+    let notStalled ← newLabel
+    let dataDone ← newLabel
+    emit (.branch .ne 1 (.imm ccStall) notStalled)
+    clearHalt inRing M.inDci M.inAddr Stage.data
+    emit (.jump dataDone)
+    place notStalled
     transferOk err Stage.data true
-  -- status transport
+    place dataDone
+  -- status transport, once more after a stalled CSW
+  st 4 M.cswRetried (.imm 0)
+  let cswTop ← newLabel
+  place cswTop
   for k in [0:4] do
     st 4 (cswBuf + 4 * k.toUInt32) (.imm 0)
   bulkQueue inRing M.inDci cswBuf (.imm 13)
   bulkWait M.inDci
+  let cswNotStalled ← newLabel
+  emit (.branch .ne 1 (.imm ccStall) cswNotStalled)
+  ld 4 3 M.cswRetried
+  emit (.branch .ne 3 (.imm 0) cswNotStalled)
+  st 4 M.cswRetried (.imm 1)
+  clearHalt inRing M.inDci M.inAddr Stage.csw
+  emit (.jump cswTop)
+  place cswNotStalled
   transferOk err Stage.csw true
   let whole ← newLabel
   emit (.branch .eq 2 (.imm 0) whole)
