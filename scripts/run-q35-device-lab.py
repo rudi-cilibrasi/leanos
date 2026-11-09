@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the xHCI keyboard or mouse device program under QEMU q35 (issues #449, #607).
+"""Run the xHCI keyboard, mouse or mass-storage device program under QEMU q35 (issues #449, #607, #619, #623).
 
 Builds the q35 device-lab kernel (`build-qotom-recovery-lab.py
 --q35-device-lab`) around the `kbd-q35` program, boots it from a GRUB ISO on
@@ -30,17 +30,62 @@ port 2, so the driver must pass over the keyboard's boot interface (protocol
 record must still name the mouse: a regression check that the reused EP0
 ring holds none of the keyboard's transfer descriptors (`Xhci.ringInit`).
 
-usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first]] [--text hello]
-                             [--output DIR] [--no-build]
+With `--msc` the `msc-q35` program runs instead, with a QEMU `usb-storage`
+behind the hub whose raw image (`MSC_BLOCKS` blocks of 512 bytes) the script
+writes first: each block's content derives from its LBA, so a misread block
+or offset shows. The INQUIRY record must name QEMU's disk, the capacity must
+be the image's, every block record (LBA, first 16 bytes, FNV-1a of the block)
+must match the image, LBA 0, the middle LBA and the last LBA among them, and
+the READ(10) past the end must fail with an illegal-request sense.
+`--msc --root-port` puts the storage on QEMU's root port 2 instead, where it
+attaches at SuperSpeed to the port's USB 3 half (qemu-xhci numbers its USB 3
+ports 1-4 and its USB 2 ports 5-8, so the hub is xHCI port 5 and the storage
+xHCI port 2), and a USB keyboard alone behind the hub, which the driver must
+pass over.
+
+`--hub-port N` (2-8, with the keyboard, `--mouse` or `--msc`) puts the device
+under test on hub port N, and a decoy on hub port 1 that the driver must
+pass over: a mouse for the keyboard, a keyboard for the mouse and the
+storage. Besides the program's own records it checks the `HUB`
+records (docs/usb-hub.md): QEMU's full-speed hub on xHCI port 5 with 8
+ports, a status record for each port up to N, connected only at 1 and N, and
+both devices' slot contexts with the hub port as route string, full speed,
+root port 5 and no TT fields, as behind any full-speed hub.
+
+`--fat` runs `msc-fat-q35`, the FAT32 file reader, on a usb-storage behind the
+hub. The disk has an MBR whose entry 0 is a non-FAT partition and entry 1 a
+FAT32 volume (mtools) of one-block clusters with `BOOT/GRUB/GRUB.CFG`:
+* `BOOT/GRUB` holds 30 long-named decoys, so the directory spans several
+  clusters;
+* the file (7725 bytes, 16 clusters) has its third cluster moved near the
+  volume's end, so its chain jumps forward and back, and mtools must still
+  read it back.
+
+Every record must equal the script's own reading of the image: the partitions,
+the BPB, each component's attributes, cluster and size, and the file's size,
+first 16 bytes, FNV-1a and cluster count. The CD carries `bootindex=0`,
+because SeaBIOS would otherwise try to boot the disk's MBR.
+
+`--locks` types `a`, Caps Lock, `b`, `1`, Caps Lock, `c` into the keyboard and
+requires `a B 1 c`: Caps Lock inverts Shift for letters only. Each Caps Lock
+press must print the lock state (`KBD locks num=0 caps=1 scroll=0`, then
+`caps=0`), and each state's SET_REPORT to the keyboard's LEDs, queued without
+waiting, must complete with Success (`HID control-done cc=1`).
+
+usage: run-q35-device-lab.py [--service | --mouse [--keyboard-first] | --msc [--root-port]
+                              | --fat | --locks] [--hub-port N] [--text hello] [--output DIR]
+                             [--no-build]
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -54,6 +99,13 @@ QCODES = {c: c for c in "abcdefghijklmnopqrstuvwxyz"}
 QCODES.update({str(d): str(d) for d in range(10)})
 QCODES.update({" ": "spc", "\n": "ret"})
 RECORD = {" ": "space", "\n": "enter"}
+
+# The --locks scenario: keys and Caps Lock presses (None), the characters the
+# driver must report, and the lock records it must print in order.
+LOCKS_PLAN = ["a", None, "b", "1", None, "c"]
+LOCKS_KEYS = ["a", "B", "1", "c"]
+LOCKS_RECORDS = ["LEANOS-LAB/1 KBD locks num=0 caps=1 scroll=0",
+                 "LEANOS-LAB/1 KBD locks num=0 caps=0 scroll=0"]
 
 # The mouse scenario: moves (dx, dy), button presses and releases, wheel
 # clicks. dx -150 needs two reports; the wheel is QEMU's "wheel-up" (+1) and
@@ -109,14 +161,174 @@ def parse_mouse(line: str) -> dict:
     return {k: int(fields[k]) for k in ("buttons", "dx", "dy", "wheel")}
 
 
+# The mass-storage scenario's disk: 4 MiB of 512-byte blocks.
+MSC_BLOCKS = 8192
+MSC_BLOCK_BYTES = 512
+# The LBAs the program reads: 0-3 in one command, the middle one, the last
+# two in one command.
+MSC_LBAS = [0, 1, 2, 3, MSC_BLOCKS // 2, MSC_BLOCKS - 2, MSC_BLOCKS - 1]
+
+
+def msc_block(lba: int) -> bytes:
+    """Block `lba` of the disk: a readable 16-byte head naming the LBA, then
+    bytes hashed from the LBA and their position."""
+    head = f"LBA{lba:08x}-MSC\n".encode()
+    body = b"".join(hashlib.sha256(b"leanos-msc %d %d" % (lba, k)).digest() for k in range(16))
+    return (head + body)[:MSC_BLOCK_BYTES]
+
+
+def fnv1a32(data: bytes) -> int:
+    h = 0x811C9DC5
+    for b in data:
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def write_msc_disk(path: Path) -> None:
+    with path.open("wb") as f:
+        for lba in range(MSC_BLOCKS):
+            f.write(msc_block(lba))
+
+
 def run(cmd: list[str], **kw) -> None:
     subprocess.run(cmd, check=True, cwd=ROOT, **kw)
 
 
-def build(output: Path, seconds: int, service: bool, mouse: bool) -> Path:
-    program = "mouse-q35" if mouse else "kbd-q35-service" if service else "kbd-q35"
+# The --fat scenario: an MBR disk whose entry 0 is a non-FAT partition and
+# entry 1 a FAT32 volume of 1-block clusters holding BOOT/GRUB/GRUB.CFG, a
+# directory of long-named decoys spanning several clusters, and the file's
+# cluster chain made non-contiguous.
+FAT_PART_LBA = 2048
+FAT_PART_BLOCKS = 98304
+FAT_OTHER_LBA = FAT_PART_LBA + FAT_PART_BLOCKS
+FAT_OTHER_BLOCKS = 2048
+FAT_PATH = ["BOOT", "GRUB", "GRUB.CFG"]
+FAT_FILE_BYTES = 7725
+FAT_DECOYS = 30
+
+
+def fat_file() -> bytes:
+    data = b"".join(hashlib.sha256(b"leanos-fat %d" % k).digest()
+                    for k in range(FAT_FILE_BYTES // 32 + 1))
+    return data[:FAT_FILE_BYTES]
+
+
+class Fat32:
+    "Just enough FAT32 to place clusters and to state what the reader must find."
+
+    def __init__(self, image: bytearray) -> None:
+        self.img = image
+        (self.bps, self.spc, self.reserved, self.fats) = struct.unpack_from("<HBHB", image, 11)
+        self.total = struct.unpack_from("<I", image, 32)[0]
+        self.fat_blocks = struct.unpack_from("<I", image, 36)[0]
+        self.root = struct.unpack_from("<I", image, 44)[0]
+        self.data = (self.reserved + self.fats * self.fat_blocks) * self.bps
+        self.clusters = (self.total - self.data // self.bps) // self.spc + 2
+
+    def entry(self, c: int) -> int:
+        return struct.unpack_from("<I", self.img, self.reserved * self.bps + 4 * c)[0] & 0x0FFFFFFF
+
+    def set_entry(self, c: int, v: int) -> None:
+        for k in range(self.fats):
+            at = (self.reserved + k * self.fat_blocks) * self.bps + 4 * c
+            old = struct.unpack_from("<I", self.img, at)[0]
+            struct.pack_into("<I", self.img, at, (old & 0xF0000000) | v)
+
+    def chain(self, c: int) -> list[int]:
+        out = []
+        while 2 <= c < 0x0FFFFFF8:
+            out.append(c)
+            c = self.entry(c)
+        return out
+
+    def at(self, c: int) -> int:
+        return self.data + (c - 2) * self.spc * self.bps
+
+    def find(self, path: list[str]) -> list[tuple[int, int, int]]:
+        "(attributes, first cluster, size) of each component, by 8.3 name."
+        found, cluster = [], self.root
+        for comp in path:
+            base, _, ext = comp.upper().partition(".")
+            want = (base.ljust(8) + ext.ljust(3)).encode()
+            hit = None
+            for c in self.chain(cluster):
+                blob = self.img[self.at(c):self.at(c) + self.spc * self.bps]
+                for off in range(0, len(blob), 32):
+                    e = blob[off:off + 32]
+                    if e[0] in (0, 0xE5) or e[11] == 0x0F or e[11] & 0x08:
+                        continue
+                    if e[:11] == want:
+                        hi, lo, size = struct.unpack_from("<H", e, 20)[0], \
+                            struct.unpack_from("<H", e, 26)[0], struct.unpack_from("<I", e, 28)[0]
+                        hit = (e[11], hi << 16 | lo, size)
+                        break
+                if hit:
+                    break
+            assert hit, comp
+            found.append(hit)
+            cluster = hit[1]
+        return found
+
+
+def write_fat_disk(path: Path) -> dict:
+    work = path.with_name("fat-work")
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir()
+    part = work / "part.raw"
+    with open(part, "wb") as f:
+        f.truncate(FAT_PART_BLOCKS * 512)
+    run(["mformat", "-i", str(part), "-F", "-c", "1", "-T", str(FAT_PART_BLOCKS),
+         "-h", "64", "-s", "32", "-H", str(FAT_PART_LBA), "::"])
+    run(["mmd", "-i", str(part), "::/BOOT", "::/BOOT/GRUB"])
+    for k in range(FAT_DECOYS):
+        decoy = work / f"decoy-file-number-{k:02d}.txt"
+        decoy.write_bytes(b"decoy %d\n" % k)
+        run(["mcopy", "-i", str(part), str(decoy), f"::/BOOT/GRUB/{decoy.name}"])
+    target = work / "GRUB.CFG"
+    target.write_bytes(fat_file())
+    run(["mcopy", "-i", str(part), str(target), "::/BOOT/GRUB/GRUB.CFG"])
+    image = bytearray(part.read_bytes())
+    fat = Fat32(image)
+    # Move the file's third cluster near the volume's end, so the chain jumps
+    # forward and back. (Not to the very last cluster, CountofClusters + 1:
+    # mtools' check rejects that one, although the FAT specification allows it.)
+    chain = fat.chain(fat.find(FAT_PATH)[-1][1])
+    last = fat.clusters - 2
+    assert fat.entry(last) == 0 and len(chain) > 3
+    size = fat.spc * fat.bps
+    image[fat.at(last):fat.at(last) + size] = image[fat.at(chain[2]):fat.at(chain[2]) + size]
+    image[fat.at(chain[2]):fat.at(chain[2]) + size] = bytes(size)
+    fat.set_entry(chain[1], last)
+    fat.set_entry(last, chain[3])
+    fat.set_entry(chain[2], 0)
+    part.write_bytes(image)
+    # mtools must still read the file back through the new chain.
+    back = work / "back.bin"
+    run(["mcopy", "-n", "-i", str(part), "::/BOOT/GRUB/GRUB.CFG", str(back)])
+    if back.read_bytes() != fat_file():
+        raise SystemExit("error: the FAT image's fragmented file does not read back")
+    mbr = bytearray(512)
+    for i, (status, kind, lba, blocks) in enumerate(
+            [(0x00, 0x83, FAT_OTHER_LBA, FAT_OTHER_BLOCKS), (0x80, 0x0C, FAT_PART_LBA, FAT_PART_BLOCKS)]):
+        struct.pack_into("<B3xB3xII", mbr, 446 + 16 * i, status, kind, lba, blocks)
+    mbr[510:512] = b"\x55\xaa"
+    with open(path, "wb") as f:
+        f.write(mbr)
+        f.write(bytes((FAT_PART_LBA - 1) * 512))
+        f.write(image)
+        f.write(bytes(FAT_OTHER_BLOCKS * 512))
+    fat = Fat32(image)
+    found = fat.find(FAT_PATH)
+    return {"fat": fat, "found": found, "chain": fat.chain(found[-1][1])}
+
+
+def build(output: Path, seconds: int, service: bool, mouse: bool, msc: bool,
+          fat: bool = False) -> Path:
+    program = ("msc-fat-q35" if fat else "msc-q35" if msc else "mouse-q35" if mouse else
+               "kbd-q35-service" if service else "kbd-q35")
     image = output / f"{program}.bin"
-    env = dict(os.environ, LEANOS_KBD_SECONDS=str(seconds), LEANOS_MOUSE_SECONDS=str(seconds))
+    env = dict(os.environ, LEANOS_KBD_SECONDS=str(seconds), LEANOS_MOUSE_SECONDS=str(seconds),
+               LEANOS_MSC_FILE="/".join(FAT_PATH))
     run(["lake", "build", "leanos-wifi-gen"], stdout=subprocess.DEVNULL)
     run([".lake/build/bin/leanos-wifi-gen", program, str(image)], env=env,
         stdout=subprocess.DEVNULL)
@@ -208,22 +420,81 @@ def main() -> int:
                         help="run the USB mouse program, a mouse behind the hub")
     parser.add_argument("--keyboard-first", action="store_true",
                         help="with --mouse: a keyboard on hub port 1, the mouse on port 2")
+    parser.add_argument("--msc", action="store_true",
+                        help="run the USB mass-storage program, a usb-storage behind the hub")
+    parser.add_argument("--root-port", action="store_true",
+                        help="with --msc: the usb-storage on root port 2, a keyboard behind the hub")
+    parser.add_argument("--fat", action="store_true",
+                        help="read BOOT/GRUB/GRUB.CFG from a FAT32 volume on a usb-storage "
+                             "behind the hub (msc-fat-q35)")
+    parser.add_argument("--locks", action="store_true",
+                        help="type with Caps Lock presses: the case must flip, the lock state "
+                             "must be printed and each LED SET_REPORT must complete")
+    parser.add_argument("--hub-port", type=int, metavar="N",
+                        help="the device under test on hub port N (2-8), a decoy device on hub "
+                             "port 1")
     a = parser.parse_args()
     if a.mouse and a.service:
         raise SystemExit("--mouse runs without the device service")
     if a.keyboard_first and not a.mouse:
         raise SystemExit("--keyboard-first needs --mouse")
+    if a.msc and (a.mouse or a.service):
+        raise SystemExit("--msc runs alone, without the device service")
+    if a.root_port and not a.msc:
+        raise SystemExit("--root-port needs --msc")
+    if a.fat and (a.mouse or a.msc or a.service or a.locks or a.hub_port or a.root_port):
+        raise SystemExit("--fat runs alone")
+    if a.locks and (a.mouse or a.msc or a.service):
+        raise SystemExit("--locks runs the keyboard alone, without the device service")
+    if a.hub_port is not None:
+        if not 2 <= a.hub_port <= 8:
+            raise SystemExit("--hub-port needs 2..8 (QEMU's usb-hub has 8 ports; 1 holds the decoy)")
+        if a.service or a.keyboard_first or a.root_port:
+            raise SystemExit("--hub-port runs without --service, --keyboard-first and --root-port")
     if any(c not in QCODES for c in a.text):
         raise SystemExit("--text may use lower-case letters, digits, space and newline")
     if a.output == parser.get_default("output"):
-        if a.service:
+        if a.fat:
+            a.output = ROOT / "build/q35-device-lab/run-fat"
+        elif a.locks:
+            a.output = ROOT / "build/q35-device-lab/run-locks"
+        elif a.service:
             a.output = ROOT / "build/q35-device-lab/run-service"
         elif a.mouse:
             a.output = ROOT / ("build/q35-device-lab/run-mouse-keyboard-first" if a.keyboard_first
                                else "build/q35-device-lab/run-mouse")
+        elif a.msc:
+            a.output = ROOT / ("build/q35-device-lab/run-msc-root-port" if a.root_port
+                               else "build/q35-device-lab/run-msc")
+        if a.hub_port is not None:
+            a.output = a.output.with_name(a.output.name + f"-hub-port-{a.hub_port}")
     a.output.mkdir(parents=True, exist_ok=True)
     iso = (a.output / "q35-device-lab.iso" if a.no_build else
-           build(a.output, a.seconds, a.service, a.mouse))
+           build(a.output, a.seconds, a.service, a.mouse, a.msc, a.fat))
+    if a.fat:
+        disk = a.output / "fat-disk.raw"
+        expect = write_fat_disk(disk)
+        usb = ["-drive", f"id=msc0,if=none,format=raw,readonly=on,file={disk}",
+               "-device", "usb-storage,id=msc,bus=xhci.0,port=1.1,drive=msc0"]
+    elif a.msc:
+        disk = a.output / "msc-disk.raw"
+        write_msc_disk(disk)
+        usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
+               if a.root_port or a.hub_port else []) + [
+            "-drive", f"id=msc0,if=none,format=raw,readonly=on,file={disk}",
+            "-device", "usb-storage,id=msc,bus=xhci.0,port="
+                       f"{2 if a.root_port else f'1.{a.hub_port or 1}'},drive=msc0"]
+    elif a.hub_port:
+        # The keyboard is bound to the display QMP types on, as elsewhere.
+        kbd, mouse = "usb-kbd,id=kbd0,bus=xhci.0,port=1.{},display=vga0", \
+            "usb-mouse,id=mouse0,bus=xhci.0,port=1.{}"
+        usb = (["-device", kbd.format(1), "-device", mouse.format(a.hub_port)] if a.mouse else
+               ["-device", mouse.format(1), "-device", kbd.format(a.hub_port)])
+    else:
+        usb = (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
+               if not a.mouse or a.keyboard_first else []) + (
+            ["-device", f"usb-mouse,id=mouse0,bus=xhci.0,port=1.{2 if a.keyboard_first else 1}"]
+            if a.mouse else [])
     serial = a.output / "serial.log"
     serial.unlink(missing_ok=True)
     qmp_path = Path(tempfile.mkdtemp()) / "qmp.sock"
@@ -235,15 +506,20 @@ def main() -> int:
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
         "-device", "qemu-xhci,id=xhci,bus=pcie.0,addr=0x2",
         "-device", "usb-hub,id=hub,bus=xhci.0,port=1",
-    ] + (["-device", "usb-kbd,id=kbd0,bus=xhci.0,port=1.1,display=vga0"]
-         if not a.mouse or a.keyboard_first else []) + (
-        ["-device", f"usb-mouse,id=mouse0,bus=xhci.0,port=1.{2 if a.keyboard_first else 1}"]
-        if a.mouse else []) + [
+    ] + usb + [
         "-drive", f"id=cd,if=none,format=raw,media=cdrom,readonly=on,file={iso}",
-        "-device", "ide-cd,drive=cd,bus=ide.0",
+        "-device", "ide-cd,drive=cd,bus=ide.0,bootindex=0",
     ], cwd=ROOT)
     try:
         qmp = Qmp(qmp_path)
+        if a.fat:
+            qemu.wait(timeout=180)
+            return check_fat(serial.read_text(errors="replace").replace("\r", ""), expect)
+        if a.msc:
+            # Nothing to send: the program reads the disk on its own.
+            qemu.wait(timeout=180)
+            return check_msc(serial.read_text(errors="replace").replace("\r", ""), a.root_port,
+                             a.hub_port)
         ready = "MOUSE ready" if a.mouse else "KBD ready"
         if not wait_for(serial, ready, 120):
             print(serial.read_text(errors="replace") if serial.exists() else "(no serial)")
@@ -252,6 +528,9 @@ def main() -> int:
         if a.mouse:
             for step in MOUSE_PLAN:
                 qmp.mouse(step)
+        elif a.locks:
+            for c in LOCKS_PLAN:
+                qmp.key("caps_lock" if c is None else QCODES[c])
         else:
             for c in a.text:
                 qmp.key(QCODES[c])
@@ -261,16 +540,29 @@ def main() -> int:
             qemu.kill()
     transcript = serial.read_text(errors="replace").replace("\r", "")
     if a.mouse:
-        return check_mouse(transcript, a.keyboard_first)
+        return check_mouse(transcript, a.keyboard_first, a.hub_port)
     prefix = "LEANOS-LAB/1 SERVICE subject=1 key=" if a.service else "LEANOS-LAB/1 KBD key="
     keys = [l.split("key=", 1)[1] for l in transcript.splitlines() if l.startswith(prefix)]
-    want = [RECORD.get(c, c) for c in a.text]
+    want = LOCKS_KEYS if a.locks else [RECORD.get(c, c) for c in a.text]
     print("\n".join(l for l in transcript.splitlines() if l.startswith("LEANOS-LAB/1")))
     if keys != want:
         print(f"error: typed {want}, driver reported {keys}", file=sys.stderr)
         return 1
+    if a.locks:
+        lines = transcript.splitlines()
+        locks = [l for l in lines if l.startswith("LEANOS-LAB/1 KBD locks ")]
+        done = [l for l in lines if l.startswith("LEANOS-LAB/1 HID control-done ")]
+        if locks != LOCKS_RECORDS:
+            print(f"error: lock records {locks}, expected {LOCKS_RECORDS}", file=sys.stderr)
+            return 1
+        if done != ["LEANOS-LAB/1 HID control-done cc=1"] * len(LOCKS_RECORDS):
+            print(f"error: LED SET_REPORT completions {done}, expected one Success per change",
+                  file=sys.stderr)
+            return 1
     if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
         print("error: device program did not end with status 0", file=sys.stderr)
+        return 1
+    if a.hub_port and check_hub(transcript.splitlines(), a.hub_port):
         return 1
     if a.service:
         lines = transcript.splitlines()
@@ -283,11 +575,70 @@ def main() -> int:
             print("error: service grant/deny/revoke records missing or out of order", file=sys.stderr)
             return 1
     via = "the device service (yield per key)" if a.service else "the Lean xHCI driver"
-    print(f"q35 device lab: {len(keys)} keys typed through QMP came back from {via}")
+    where = f" on hub port {a.hub_port}" if a.hub_port else ""
+    print(f"q35 device lab: {len(keys)} keys typed through QMP came back from {via}{where}")
     return 0
 
 
-def check_mouse(transcript: str, keyboard_first: bool) -> int:
+# QEMU's usb-hub: full speed, 8 ports, attached to qemu-xhci's USB 2 port 5
+# (QEMU port 1; ports 1-4 are the USB 3 halves).
+HUB_ROOT_PORT = 5
+HUB_PORTS = 8
+
+
+def check_hub(lines: list[str], port: int) -> list[str]:
+    """Errors in the HUB records of a --hub-port run (docs/usb-hub.md),
+    printed; an empty list if they are as required."""
+    errors = []
+    hub = [l for l in lines if l.startswith("LEANOS-LAB/1 HUB ")]
+    found = [l for l in hub if l.startswith("LEANOS-LAB/1 HUB found ")]
+    if len(found) != 1 or not found[0].startswith(
+            f"LEANOS-LAB/1 HUB found root-port={HUB_ROOT_PORT} speed=full slot="):
+        errors.append(f"hub found records {found}, expected one on root port {HUB_ROOT_PORT} "
+                      "at full speed")
+    # QEMU's hub reports a bPwrOn2PwrGood of at most 75 (150 ms), so the 250 ms
+    # floor applies; a full-speed hub has no TT think time.
+    want = (f"LEANOS-LAB/1 HUB configured ports={HUB_PORTS} power-on-wait-ms=250 "
+            "tt-think-time=0")
+    if want not in hub:
+        errors.append(f"no line {want!r}")
+    # Each port up to the device's: one status record when first read, and
+    # one more after the reset of each connected port.
+    status: dict[int, list[int]] = {}
+    for l in hub:
+        if l.startswith("LEANOS-LAB/1 HUB port=") and " status=" in l:
+            f = dict(x.split("=", 1) for x in l.split()[2:])
+            status.setdefault(int(f["port"]), []).append(int(f["status"], 16))
+    if sorted(status) != list(range(1, port + 1)):
+        errors.append(f"status records for hub ports {sorted(status)}, expected 1..{port}")
+    for k, words in sorted(status.items()):
+        connected = k in (1, port)
+        # first read: powered (bit 8), connected (bit 0) only where a device is
+        if not words or words[0] & 0x101 != (0x101 if connected else 0x100):
+            errors.append(f"hub port {k} first status {words[:1]}, expected "
+                          f"{'connected and ' if connected else ''}powered")
+        # after the reset: connected and enabled (bits 0, 1), full speed
+        if connected and (len(words) != 2 or words[1] & 0x603 != 0x003):
+            errors.append(f"hub port {k} statuses {words}, expected a second one "
+                          "connected, enabled, full speed")
+        if not connected and len(words) != 1:
+            errors.append(f"empty hub port {k} statuses {words}, expected one")
+    for k in (1, port):
+        want = (f"LEANOS-LAB/1 HUB device route=0x{k:05x} speed=full root-port={HUB_ROOT_PORT} "
+                "tt-slot=0 tt-port=0")
+        if want not in hub:
+            errors.append(f"no line {want!r}")
+    if any(" skipped=" in l for l in hub):
+        errors.append("a connected hub port was given up")
+    # The decoy on hub port 1 was addressed and passed over (Hid.Tag.rejected).
+    if "WIFI 2019 0x00000001" not in lines:
+        errors.append("the decoy on hub port 1 was not passed over")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    return errors
+
+
+def check_mouse(transcript: str, keyboard_first: bool, hub_port: int | None) -> int:
     lines = transcript.splitlines()
     print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
     records = [parse_mouse(l) for l in lines if l.startswith(MOUSE_RECORD)]
@@ -308,14 +659,119 @@ def check_mouse(transcript: str, keyboard_first: bool) -> int:
     if keyboard_first and "WIFI 2019 0x00000001" not in lines:
         print("error: the keyboard on hub port 1 was not rejected", file=sys.stderr)
         return 1
+    if hub_port and check_hub(lines, hub_port):
+        return 1
     if f"LEANOS-LAB/1 MOUSE session-end records={len(records)}" not in lines:
         print("error: session-end record count missing or wrong", file=sys.stderr)
         return 1
     if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
         print("error: device program did not end with status 0", file=sys.stderr)
         return 1
+    where = f" on hub port {hub_port}" if hub_port else ""
     print(f"q35 device lab: {len(MOUSE_PLAN)} mouse events through QMP came back from the "
-          f"Lean xHCI driver as {len(records)} MOUSE records in {len(want)} button runs")
+          f"Lean xHCI driver{where} as {len(records)} MOUSE records in {len(want)} button runs")
+    return 0
+
+
+def check_fat(transcript: str, expect: dict) -> int:
+    lines = transcript.splitlines()
+    print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
+    fat, found, chain = expect["fat"], expect["found"], expect["chain"]
+    data = fat_file()
+    want = [
+        f"LEANOS-LAB/1 MSC mbr partition=0 type=0x83 active=0 lba={FAT_OTHER_LBA} "
+        f"blocks={FAT_OTHER_BLOCKS}",
+        f"LEANOS-LAB/1 MSC mbr partition=1 type=0x0c active=1 lba={FAT_PART_LBA} "
+        f"blocks={FAT_PART_BLOCKS}",
+        f"LEANOS-LAB/1 MSC fat32 sectors-per-cluster={fat.spc} fats={fat.fats} "
+        f"reserved={fat.reserved} fat-blocks={fat.fat_blocks} root-cluster={fat.root}",
+    ] + [f"LEANOS-LAB/1 MSC fat found component={i} attr=0x{a:02x} cluster={c} bytes={n}"
+         for i, (a, c, n) in enumerate(found)] + [
+        f"LEANOS-LAB/1 MSC file bytes={len(data)} head={data[:16].hex()} "
+        f"fnv1a=0x{fnv1a32(data):08x} clusters={len(chain)}",
+    ]
+    got = [l for l in lines if l.startswith(("LEANOS-LAB/1 MSC mbr ", "LEANOS-LAB/1 MSC fat",
+                                             "LEANOS-LAB/1 MSC file "))]
+    errors = []
+    if got != want:
+        errors.append("records differ:\n  got  " + "\n       ".join(got) +
+                      "\n  want " + "\n       ".join(want))
+    if sorted(chain) == chain:
+        errors.append("the file's chain is contiguous: the image did not fragment it")
+    if any(l.startswith("LEANOS-LAB/1 MSC error=") for l in lines):
+        errors.append("the program stopped with an error record")
+    if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
+        errors.append("device program did not end with status 0")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    if errors:
+        return 1
+    print(f"q35 device lab: the Lean xHCI driver read {'/'.join(FAT_PATH)} ({len(data)} bytes, "
+          f"{len(chain)} clusters, chain {chain[:4]}…) from a FAT32 volume behind the hub")
+    return 0
+
+
+def check_msc(transcript: str, root_port: bool, hub_port: int | None) -> int:
+    lines = transcript.splitlines()
+    print("\n".join(l for l in lines if l.startswith("LEANOS-LAB/1")))
+    errors = []
+
+    def need(line: str, what: str) -> None:
+        if line not in lines:
+            errors.append(f"{what}: no line {line!r}")
+
+    # QEMU's usb-storage is 46f4:0001, its SCSI disk "QEMU" / "QEMU HARDDISK".
+    need("LEANOS-LAB/1 MSC ready vendor=0x46f4 product=0x0001", "device descriptor")
+    # Full speed behind QEMU's full-speed hub (bulk max packet 64); SuperSpeed
+    # (1024) on a root port, where qemu-xhci attaches it to the USB 3 port.
+    mps = 1024 if root_port else 64
+    need(f"LEANOS-LAB/1 MSC configured bulk-in=0x81 in-max-packet={mps} "
+         f"bulk-out=0x02 out-max-packet={mps}", "bulk endpoints")
+    inquiry = [l for l in lines if l.startswith("LEANOS-LAB/1 MSC inquiry ")]
+    if (len(inquiry) != 1 or not inquiry[0].startswith(
+            'LEANOS-LAB/1 MSC inquiry type=0x00 removable=0 vendor="QEMU" '
+            'product="QEMU HARDDISK" revision="')):
+        errors.append(f"INQUIRY record {inquiry} does not name QEMU's disk")
+    if not any(l.startswith("LEANOS-LAB/1 MSC unit-ready attempts=") for l in lines):
+        errors.append("no unit-ready record")
+    need(f"LEANOS-LAB/1 MSC capacity blocks={MSC_BLOCKS} block-bytes={MSC_BLOCK_BYTES}",
+         "capacity")
+    reads = []
+    for l in lines:
+        if l.startswith("LEANOS-LAB/1 MSC block "):
+            fields = dict(f.split("=", 1) for f in l.split()[3:])
+            reads.append((int(fields["lba"]), fields["head"], int(fields["fnv1a"], 16)))
+    if [r[0] for r in reads] != MSC_LBAS:
+        errors.append(f"blocks read {[r[0] for r in reads]}, expected {MSC_LBAS}")
+    for lba, head, fnv in reads:
+        block = msc_block(lba) if 0 <= lba < MSC_BLOCKS else b""
+        if head != block[:16].hex() or fnv != fnv1a32(block):
+            errors.append(f"block {lba}: head={head} fnv1a=0x{fnv:08x}, the image has "
+                          f"head={block[:16].hex()} fnv1a=0x{fnv1a32(block):08x}")
+    # READ(10) of LBA MSC_BLOCKS: a failed CSW, then ILLEGAL REQUEST, LBA out of range.
+    if not any(l.startswith("LEANOS-LAB/1 MSC csw step=read-past-end status=1 ") for l in lines):
+        errors.append("the read past the end did not report a failed CSW")
+    if not any(l.startswith("LEANOS-LAB/1 MSC sense after=read-past-end key=0x05 asc=0x21 ")
+               for l in lines):
+        errors.append("the read past the end did not report ILLEGAL REQUEST / LBA out of range")
+    need(f"LEANOS-LAB/1 MSC done blocks-read={len(MSC_LBAS)}", "done record")
+    if any(l.startswith("LEANOS-LAB/1 MSC error=") for l in lines):
+        errors.append("the program stopped with an error record")
+    # The keyboard behind the hub was addressed and passed over (Hid.Tag.rejected).
+    if root_port and "WIFI 2019 0x00000001" not in lines:
+        errors.append("the keyboard on hub port 1 was not rejected")
+    if "LEANOS-LAB/1 WIFI-END status=0 " not in transcript:
+        errors.append("device program did not end with status 0")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    if hub_port and check_hub(lines, hub_port):
+        return 1
+    if errors:
+        return 1
+    where = ("on root port 2" if root_port else f"on hub port {hub_port}" if hub_port
+             else "behind the hub")
+    print(f"q35 device lab: the Lean xHCI driver read {len(reads)} blocks of the usb-storage "
+          f"{where} through bulk-only transport, all matching the image")
     return 0
 
 

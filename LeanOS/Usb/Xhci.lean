@@ -48,6 +48,9 @@ class Layout where
   dataBuf : UInt32
   reportBuf : UInt32
   prevReport : UInt32
+  /-- Mass-storage bulk buffers (`LeanOS/Usb/MassStorage.lean`): CBW, CSW
+  and a 16 KiB data buffer, `0x4100` bytes in all. -/
+  bulkBuf : UInt32
   /-- Driver state words (never handed to the controller). -/
   vars : UInt32
   /-- Scratchpad buffers handed to the controller (HCSPARAMS2), 4 KiB each
@@ -74,6 +77,7 @@ class Layout where
   dataBuf := 0x25800
   reportBuf := 0x25C00
   prevReport := 0x25C40
+  bulkBuf := 0x8000
   vars := 0x26000
   scratchpads := 16
   spPages := 0x10000
@@ -100,6 +104,9 @@ CAPLENGTH 0x40, runtime registers at 0x1000, doorbells at 0x2000, 16 KiB. -/
   dataBuf := 0x3C00
   reportBuf := 0x3E00
   prevReport := 0x3E40
+  -- Mass storage only, beyond the four pages above (the q35 device service
+  -- does not run it).
+  bulkBuf := 0x8000
   vars := 0x4000
   scratchpads := 0
   spPages := 0
@@ -158,7 +165,7 @@ def erst : UInt32 := Layout.erst              -- one segment entry
 def inputCtx : UInt32 := Layout.inputCtx      -- 33 × 32
 def outCtxBase : UInt32 := Layout.outCtxBase  -- slot n: + 0x400 × (n - 1), 4 slots
 def ep0RingBase : UInt32 := Layout.ep0RingBase -- slot n: + 0x400 × (n - 1)
-def intRing : UInt32 := Layout.intRing        -- HID interrupt IN ring
+def intRing : UInt32 := Layout.intRing        -- HID interrupt IN ring, or the two bulk rings
 def dataBuf : UInt32 := Layout.dataBuf        -- control transfer data (512)
 def reportBuf : UInt32 := Layout.reportBuf    -- interrupt report (64)
 def prevReport : UInt32 := Layout.prevReport
@@ -237,15 +244,17 @@ def storePhys64 (at_ off : UInt32) (orBits : UInt32 := 0) : ProgM Unit := do
 
 /-! ## Rings -/
 
-/-- A TRB ring at scratch `base` whose state lives at `enqV`/`cycleV`. -/
+/-- A TRB ring of `trbs` TRBs (the last one the Link TRB) at scratch `base`
+whose state lives at `enqV`/`cycleV`. -/
 structure Ring where
   base : UInt32
   enqV : UInt32
   cycleV : UInt32
+  trbs : UInt32 := ringTrbs
 
 def commandRing : Ring := { base := cmdRing, enqV := Var.cmdEnq, cycleV := Var.cmdCycle }
-def transferRing (id : Nat) (base : UInt32) : Ring :=
-  { base, enqV := Var.ringEnq id, cycleV := Var.ringCycle id }
+def transferRing (id : Nat) (base : UInt32) (trbs : UInt32 := ringTrbs) : Ring :=
+  { base, enqV := Var.ringEnq id, cycleV := Var.ringCycle id, trbs }
 
 /-- Initialise a ring: every TRB's control dword cleared, enqueue 0, cycle
 1, last TRB a Link TRB (toggle cycle) back to the start. Clearing matters when
@@ -260,10 +269,10 @@ def ringInit (r : Ring) : ProgM Unit := do
   place clear
   emit (.memStore 4 1 (r.base + 12) (.imm 0))
   addi 1 16
-  emit (.branch .ltu 1 (.imm (16 * (ringTrbs - 1))) clear)
+  emit (.branch .ltu 1 (.imm (16 * (r.trbs - 1))) clear)
   st 4 r.enqV (.imm 0)
   st 4 r.cycleV (.imm 1)
-  let link := r.base + 16 * (ringTrbs - 1)
+  let link := r.base + 16 * (r.trbs - 1)
   storePhys64 link r.base
   st 4 (link + 8) (.imm 0)
   -- type 6 (Link) | TC; cycle bit written when the producer wraps
@@ -302,13 +311,13 @@ def enqueue (r : Ring) (p0 p1 status control : Operand) : ProgM Unit := do
   emit (.memStore 4 3 (r.base + 12) (.reg 4))
   addi 1 1
   let noWrap ← newLabel
-  emit (.branch .ne 1 (.imm (ringTrbs - 1)) noWrap)
+  emit (.branch .ne 1 (.imm (r.trbs - 1)) noWrap)
   -- hand the Link TRB to the consumer with the current cycle, then toggle
   li 5 0
-  emit (.memLoad 4 4 5 (r.base + 16 * (ringTrbs - 1) + 12))
+  emit (.memLoad 4 4 5 (r.base + 16 * (r.trbs - 1) + 12))
   andi 4 0xFFFFFFFE
   emit (.alu .or 4 (.reg 2))
-  emit (.memStore 4 5 (r.base + 16 * (ringTrbs - 1) + 12) (.reg 4))
+  emit (.memStore 4 5 (r.base + 16 * (r.trbs - 1) + 12) (.reg 4))
   li 1 0
   emit (.alu .xor 2 (.imm 1))
   st 4 r.cycleV (.reg 2)
@@ -323,7 +332,8 @@ the DCBAA (MaxSlotsEn + 1 entries: the scratchpad array, then each slot's
 output context), the scratchpad array, the ERST entry's segment base, the TR
 Dequeue Pointer of every endpoint context in the input context (contexts
 2–32), and every TRB of the command ring, the EP0 transfer rings and the
-HID device's (keyboard or mouse) interrupt ring (a TRB's parameter is a
+HID device's (keyboard or mouse) interrupt ring, whose region the mass-storage
+program splits into its bulk OUT and bulk IN rings (a TRB's parameter is a
 pointer unless the TRB type says otherwise, `Descriptor.trbParamIsPtr`). The
 event ring and the output contexts are written by the controller, not the
 driver. That this map lists every pointer field the controller follows
@@ -648,12 +658,12 @@ def enableAndAddress (slotIdx : Nat) (slotVar : UInt32)
 
 /-! ## Control transfers on EP0 -/
 
-/-- One control transfer on the slot in `slotVar`, driver context `slotIdx`.
-`setup0` = bmRequestType | bRequest << 8 | wValue << 16 (register or
-immediate), `setup1` = wIndex | wLength << 16; `dirIn` for device-to-host
-data. Data goes to/from `dataBuf`. On return r1 = completion code (fails
-unless Success or Short Packet). -/
-def control (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
+/-- Queue one control transfer (Setup, optional Data, Status with IOC) on the
+EP0 ring of driver context `slotIdx` and ring the doorbell of the slot in
+`slotVar`, without waiting. `setup0` = bmRequestType | bRequest << 8 | wValue
+<< 16 (register or immediate), `setup1` = wIndex | wLength << 16; `dirIn` for
+device-to-host data. Data goes to/from `dataBuf`. -/
+def controlQueue (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
     (length : UInt32) (dirIn : Bool) : ProgM Unit := do
   let ring := ep0Ring slotIdx
   let trt : UInt32 := if length == 0 then 0 else if dirIn then 3 else 2
@@ -669,6 +679,13 @@ def control (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
   ld 4 1 slotVar
   shli 1 2
   emit (.write32At 1 (doorbell 0) (.imm 1))
+
+/-- One control transfer (`controlQueue`), then its completion: the next
+transfer event must be Success or Short Packet, or the program fails. On
+return r1 = completion code. -/
+def control (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
+    (length : UInt32) (dirIn : Bool) : ProgM Unit := do
+  controlQueue slotIdx slotVar setup0 setup1 length dirIn
   waitEvent 32 20000 Fail.transfer
   ld 4 1 Var.ev2
   shri 1 24

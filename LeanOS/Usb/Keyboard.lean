@@ -23,7 +23,22 @@ def sessionEnd : UInt32 := 0x2102
 def reports : UInt32 := 0x2103
 /-- Diagnostic: a non-empty raw report (first and second dwords). -/
 def rawReport : UInt32 := 0x2104
+/-- The lock state changed: Num Lock bit 0, Caps Lock bit 1, Scroll Lock bit
+2, as in the boot keyboard's LED output report (HID 1.11 §B.1). -/
+def locks : UInt32 := 0x2105
 end Tag
+
+namespace K
+/-- The lock state (`Tag.locks` bits), and 1 when it changed in this report. -/
+def locks : UInt32 := vars + 0x180
+def locksChanged : UInt32 := vars + 0x184
+end K
+
+/-- Lock-key usages (HID usage tables, keyboard page) and their state bits. -/
+def lockKeys : List (UInt32 × UInt32) := [(0x53, 1), (0x39, 2), (0x47, 4)]
+/-- Usages of the letters a–z. -/
+def firstLetter : UInt32 := 0x04
+def lastLetter : UInt32 := 0x1D
 
 namespace Fail
 def noKeyboard : UInt32 := 0x7F20
@@ -69,18 +84,46 @@ def setupKeyboard (idle : UInt32 := 0) : ProgM Unit := do
     delay 250000
 
 /-- Report `reportBuf` against `prevReport`: every newly pressed usage in
-bytes 2–7 becomes one character (tag 0x2100), counted in `V.records`. -/
+bytes 2–7 becomes one character (tag 0x2100), counted in `V.records`. A
+newly pressed Num, Caps or Scroll Lock toggles its bit of `K.locks` instead;
+Caps Lock inverts Shift for the letters. When the state changed, it is
+printed (`Tag.locks`) and sent to the keyboard's LEDs with SET_REPORT(Output),
+queued on EP0 without waiting (the session reports its completion). -/
 def decodeReport (tableOff : UInt32) (yieldKeys : Bool := false) : ProgM Unit := do
-  ld 1 8 reportBuf                              -- modifiers
-  andi 8 0x22                                   -- either Shift
+  st 4 K.locksChanged (.imm 0)
   for i in [2:8] do
     let skip ← newLabel
     ld 1 1 (reportBuf + i.toUInt32)
     emit (.branch .ltu 1 (.imm 4) skip)
-    emit (.branch .geu 1 (.imm 64) skip)
     for j in [2:8] do
       ld 1 2 (prevReport + j.toUInt32)
       emit (.branch .eq 1 (.reg 2) skip)
+    -- a lock key toggles its state bit
+    for (usage, bit) in lockKeys do
+      let other ← newLabel
+      emit (.branch .ne 1 (.imm usage) other)
+      ld 4 2 K.locks
+      emit (.alu .xor 2 (.imm bit))
+      st 4 K.locks (.reg 2)
+      st 4 K.locksChanged (.imm 1)
+      emit (.jump skip)
+      place other
+    emit (.branch .geu 1 (.imm 64) skip)
+    -- Shift (either; r8 := 0 or 1), inverted by Caps Lock for a letter
+    ld 1 8 reportBuf
+    andi 8 0x22
+    let unshifted ← newLabel
+    emit (.branch .eq 8 (.imm 0) unshifted)
+    li 8 1
+    place unshifted
+    let letterDone ← newLabel
+    emit (.branch .ltu 1 (.imm firstLetter) letterDone)
+    emit (.branch .geu 1 (.imm (lastLetter + 1)) letterDone)
+    ld 4 2 K.locks
+    andi 2 2
+    emit (.branch .eq 2 (.imm 0) letterDone)
+    emit (.alu .xor 8 (.imm 1))
+    place letterDone
     mov 3 1
     let noShift ← newLabel
     emit (.branch .eq 8 (.imm 0) noShift)
@@ -97,6 +140,16 @@ def decodeReport (tableOff : UInt32) (yieldKeys : Bool := false) : ProgM Unit :=
   for i in [0:8] do
     ld 1 1 (reportBuf + i.toUInt32)
     st 1 (prevReport + i.toUInt32) (.reg 1)
+  let unchanged ← newLabel
+  ld 4 1 K.locksChanged
+  emit (.branch .eq 1 (.imm 0) unchanged)
+  ld 4 1 K.locks
+  print Tag.locks 1
+  st 1 dataBuf (.reg 1)
+  ld 4 1 V.iface
+  ori 1 ((1 : UInt32) <<< 16)
+  controlQueue 1 V.hidSlot (.imm ((0x21 : UInt32) ||| ((0x09 : UInt32) <<< 8) ||| ((0x0200 : UInt32) <<< 16))) (.reg 1) 1 false
+  place unchanged
 
 /-- Echo keys for `seconds` of controller time (MFINDEX, 125 µs units). -/
 def session (seconds : UInt32) (tableOff : UInt32) (yieldKeys : Bool := false)
@@ -123,6 +176,7 @@ def program (seconds : UInt32) (idle : UInt32 := 0) (yieldKeys : Bool := false)
   let tableOff ← addBlob "hid-us-ascii" tableBytes
   attach Protocol.keyboard Fail.noKeyboard
   setupKeyboard idle
+  st 4 K.locks (.imm 0)                         -- the sweep ends with all off
   session seconds tableOff yieldKeys trace
   halt
 
