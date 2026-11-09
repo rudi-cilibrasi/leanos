@@ -138,6 +138,26 @@ results are in the experiment's README.
    that those words are `FrameCopyWindow.windowRoot` over a `Closed` root.
    The trusted step is again reading two printed definitions as the same.
 
+   **Amendment (#604).** The first refactor landed for the PCI capability
+   walker: `pci_collect_capabilities` returns its status and writes the
+   result through an optional pointer, and nothing else changes. The third
+   project,
+   [`experiments/quickproof/pci-capabilities`](../../experiments/quickproof/pci-capabilities/README.md),
+   proves two laws:
+   - `capabilities_adversarial`: against a device that may fail any read or
+     answer anything, the walker reads only the function's conventional
+     space, at most 4 + 48 times, rejects exactly the invalid arguments,
+     names every failure, and on OK publishes exactly the list it read;
+   - `capabilities_complete`: a fixed, well-formed list of up to 48 headers
+     is published whole.
+
+   The walker's specification is parameterized by an abstract device
+   protocol, so one proof serves both laws. Its seam is with the callers, not
+   with Lean: they consume the published headers as the observations
+   describe. The other helpers of refactor 1 still return structs:
+   enumeration, the command executor, the power, AF and express
+   observations, the final admission check and the MADT consumer.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain

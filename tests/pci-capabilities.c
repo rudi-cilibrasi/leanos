@@ -13,21 +13,21 @@ int main(void) {
     struct pci_enumeration_header h={.bus=3,.device=2,.function=1};
     memcpy(h.words,s.words,sizeof(h.words));
     struct pci_capability_snapshot snap;
-    struct pci_capability_result r=pci_collect_capabilities(read_config,&s,&h,&snap);
+    struct pci_capability_result r;pci_collect_capabilities(read_config,&s,&h,&snap,&r);
     assert(r.status==PCI_CAPABILITY_OK && snap.count==48 && s.reads==52);
     for(unsigned i=0;i<48;++i)assert(snap.headers[i].offset==64+4*i && snap.headers[i].raw==s.words[16+i]);
     for(unsigned i=16;i<64;++i){
         uint32_t saved=s.words[i];s.words[i]=(saved&0xffff00ff)|64<<8;s.reads=0;
-        r=pci_collect_capabilities(read_config,&s,&h,&snap);
+        pci_collect_capabilities(read_config,&s,&h,&snap,&r);
         assert(r.status==PCI_CAPABILITY_CYCLE && r.offset==64 && !snap.count && s.reads==i-16+5);
         s.words[i]=saved;
-        s.fail=i*4;s.reads=0;r=pci_collect_capabilities(read_config,&s,&h,&snap);
+        s.fail=i*4;s.reads=0;pci_collect_capabilities(read_config,&s,&h,&snap,&r);
         assert(r.status==PCI_CAPABILITY_READ_FAILED && r.offset==i*4 && !snap.count && s.reads==i-16+5);
         s.fail=-1;
     }
     for(unsigned offset=1;offset<256;++offset){
         if(offset>=64 && !(offset&3))continue;
-        h.words[13]=s.words[13]=offset;s.reads=0;r=pci_collect_capabilities(read_config,&s,&h,&snap);
+        h.words[13]=s.words[13]=offset;s.reads=0;pci_collect_capabilities(read_config,&s,&h,&snap,&r);
         assert(r.status==PCI_CAPABILITY_POINTER && r.offset==offset && !snap.count && s.reads==4);
     }
     h.words[13]=s.words[13]=64;
@@ -35,24 +35,24 @@ int main(void) {
     const uint32_t changes[]={1,0x00100000,0x00800000,4};
     for(unsigned i=0;i<4;++i){
         s.words[initial_offsets[i]/4]^=changes[i];s.reads=0;
-        r=pci_collect_capabilities(read_config,&s,&h,&snap);
+        pci_collect_capabilities(read_config,&s,&h,&snap,&r);
         assert(r.status==PCI_CAPABILITY_HEADER_CHANGED && !snap.count && s.reads==i+1);
         s.words[initial_offsets[i]/4]^=changes[i];
     }
-    s.words[16]=UINT32_MAX;r=pci_collect_capabilities(read_config,&s,&h,&snap);
+    s.words[16]=UINT32_MAX;pci_collect_capabilities(read_config,&s,&h,&snap,&r);
     assert(r.status==PCI_CAPABILITY_ABSENT && r.offset==64 && !snap.count);
     /* Acyclic backward links are valid: the FreeBSD Broadcom report lists
        PM at40, vendor at58, MSI at48, then PCIe atd0. Payloads here are synthetic. */
     s.words[0x40/4]=0x5801;s.words[0x58/4]=0x4809;
     s.words[0x48/4]=0xd005;s.words[0xd0/4]=0x10;s.reads=0;
-    r=pci_collect_capabilities(read_config,&s,&h,&snap);
+    pci_collect_capabilities(read_config,&s,&h,&snap,&r);
     assert(r.status==PCI_CAPABILITY_OK && snap.count==4 && s.reads==8);
     assert(snap.headers[0].offset==0x40 && snap.headers[1].offset==0x58 &&
         snap.headers[2].offset==0x48 && snap.headers[3].offset==0xd0);
     h.words[1]=s.words[1]=7;s.reads=0;
-    r=pci_collect_capabilities(read_config,&s,&h,&snap);
+    pci_collect_capabilities(read_config,&s,&h,&snap,&r);
     assert(r.status==PCI_CAPABILITY_OK && !snap.count && s.reads==4);
-    snap.count=99;r=pci_collect_capabilities(0,&s,&h,&snap);
+    snap.count=99;pci_collect_capabilities(0,&s,&h,&snap,&r);
     assert(r.status==PCI_CAPABILITY_ARGUMENT && !snap.count);
     /* Keep the complete-segment collector compiled in this translation unit. */
     struct pci_enumeration_snapshot enumeration;

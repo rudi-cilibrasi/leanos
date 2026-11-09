@@ -92,7 +92,7 @@ take a few lines each. Both use only `propext`, `Classical.choice` and
 | Code | Lines | As written | What would open it |
 | --- | --- | --- | --- |
 | `include/boot_text_console.h` | 111 | proved here | `-Dvolatile=` (D1) |
-| PCI enumeration, capabilities, command executor, express/pending observation, MADT consumer | about 650 | `clightgen` refuses 11 functions that return structs by value | results through out-parameters |
+| PCI enumeration, capabilities, command executor, express/pending observation, MADT consumer | about 650 | `clightgen` refuses 11 functions that return structs by value | results through out-parameters; the capability walker done in #604 and proved in [`pci-capabilities`](../pci-capabilities/README.md) |
 | `include/qotom_copy_root_builder.h`, `include/frame_copy_window.h` | 318 | 13 pointer-to-integer casts (each table entry embeds the next table's address) and 3 struct assignments | done in #599: physical addresses are integers, fields are copied; proved in [`copy-roots`](../copy-roots/README.md) |
 | `boot/kernel.c` | 11,254 | 135 inline-assembly sites, 225 `volatile`, MMIO and port I/O on globals | out of scope beyond extracted helpers |
 
