@@ -208,7 +208,9 @@ cannot make otherwise valid changes unmergeable.
 
 ## Boot media
 
-The same ISO boots from three kinds of media, on both firmware families:
+LeanOS boots from three kinds of media, on both firmware families. A CD-ROM,
+a disk and a USB stick boot the canonical ISO; the network boots the netboot
+image, the canonical image with the boot NIC admitted (see **Network** below):
 
 | Medium | BIOS | UEFI | Checked by |
 | --- | --- | --- | --- |
@@ -249,16 +251,33 @@ dnsmasq --no-daemon --port=0 --dhcp-range=192.168.6.0,proxy \
   --pxe-service=X86-64_EFI,"LeanOS",boot/grub/x86_64-efi/core.efi
 ```
 
-`scripts/check-netboot.sh` boots the canonical ISO's tree on the pinned q35
-platform through QEMU's user network. Its only boot device is a transitional
-virtio-net function at 00:03.0, the q35 manifest's optional network slot. The
-admitted q35 topology has that slot empty, as under `-nic none`. A netbooted
-kernel therefore clears the boot NIC's Command word with every other
-function's, then stops at platform admission with `FINAL status=FAIL
-reason=dma-q35-nic-none`. The check requires exactly that, after the kernel's
-BOOT record, for both firmware families. It shows the network path delivers the
-ISO's kernel and the kernel refuses a topology it has not admitted. A topology
-that admits a quarantined boot NIC is #601. Real hardware boots over the
+`scripts/check-netboot.sh` boots such trees on the pinned q35 platform through
+QEMU's user network (the netboot construction in `scripts/q35-platform.sh`).
+Its only boot device is a transitional virtio-net function at 00:03.0, the q35
+manifest's optional network slot.
+
+- **The canonical image refuses the boot NIC.** It admits that slot empty, as
+  under `-nic none`. A netbooted canonical kernel clears the NIC's Command word
+  with every other function's, then stops at platform admission with `FINAL
+  status=FAIL reason=dma-q35-nic-none`.
+- **The netboot image admits it, quarantined** (#601). `build-image.sh` builds
+  `leanos-0.1.0-x86_64-netboot.iso` whenever it builds the canonical image.
+  Its kernel is the canonical one with the NIC present, unassigned and at
+  Command 0, like every other function. Every CPL3 gate rechecks it, and
+  LeanOS never uses it: it only carried the boot. The admitted snapshot is
+  `DMAQuarantine.q35OptionalNetworkPresentSnapshot`, construction
+  `0001000800020006`. Its own generated boundary,
+  `leanos_validate_q35_netboot_dma_snapshot`, accepts that snapshot and no
+  other (`validate_q35_netboot_dma_snapshot_eq_zero_iff`). The production
+  boundary and image are unchanged (`q35_dma_boundaries_disjoint`).
+
+The check requires, under both firmware families, the netboot image's PASS
+and the canonical image's refusal after its BOOT record. Under SeaBIOS the
+netboot run is `scripts/run-image.sh`'s `netboot` scenario, with the complete
+serial protocol and the DMA and VT-d snapshots. OVMF prints its console before
+the kernel, reports another memory map and leaves every function
+bus-mastering. Under OVMF the check therefore requires the PASS exit, `FINAL
+status=PASS` and the six exact DMA records. Real hardware boots over the
 network only when its admitted profile includes the NIC that carried the boot.
 
 ## Image-build phase timing evidence

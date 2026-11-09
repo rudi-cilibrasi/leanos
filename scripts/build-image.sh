@@ -536,6 +536,15 @@ declare -A selected_final_lookup=()
     # perform their final link below. Index the resulting scenario ELF too so
     # validation, staging, packaging, and checksums share one selection gate.
     case "$plan_id" in
+      blocking-ipc)
+        # scripts/check-netboot.sh boots the netboot image (issue #601), the
+        # canonical image with the quarantined boot NIC admitted, beside the
+        # canonical one, so every selection of the canonical image builds it.
+        selected_prelink_targets+=("$build/leanos-netboot-prelink.elf")
+        selected_final_targets+=("$build/leanos-netboot.elf")
+        selected_prelink_lookup["$build/leanos-netboot-prelink.elf"]=1
+        selected_final_lookup["$build/leanos-netboot.elf"]=1
+        ;;
       assigned-edu-inventory)
         selected_final_lookup["$build/leanos-assigned-edu.elf"]=1
         ;;
@@ -1236,6 +1245,12 @@ if ! grep -q ' T leanos_validate_vtd_activation$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_validate_vtd_activation" >&2
   exit 1
 fi
+# Each image reaches only the q35 DMA boundary pinned to its own admitted
+# snapshot: the canonical image never links the netboot one (issue #601).
+if grep -q ' T leanos_validate_q35_netboot_dma_snapshot$' <<<"$symbols"; then
+  echo "error: canonical image retains the netboot q35 DMA boundary" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
@@ -1246,6 +1261,32 @@ objdump -d --no-show-raw-insn "$build/leanos.elf" \
 LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
+fi
+# The netboot image (issue #601) is the canonical kernel with the boot NIC
+# admitted: it validates its PCI snapshot through its own generated boundary
+# and never links the production one, and its CPL3 entry paths stay under the
+# canonical reviewed entry-stack manifest.
+if selected_final_enabled "$build/leanos-netboot.elf"; then
+  netboot_symbols="$(nm "$build/leanos-netboot.elf")"
+  if ! grep -q ' T leanos_validate_q35_netboot_dma_snapshot$' <<<"$netboot_symbols"; then
+    echo "error: netboot image does not retain leanos_validate_q35_netboot_dma_snapshot" >&2
+    exit 1
+  fi
+  if grep -q ' T leanos_validate_q35_dma_snapshot$' <<<"$netboot_symbols"; then
+    echo "error: netboot image retains the production q35 DMA boundary" >&2
+    exit 1
+  fi
+  if [[ -n "$(nm -u "$build/leanos-netboot.elf")" ]]; then
+    echo "error: netboot image has unexpected undefined symbols" >&2
+    exit 1
+  fi
+  if ! grub-file --is-x86-multiboot2 "$build/leanos-netboot.elf"; then
+    echo "error: netboot kernel ELF has no valid Multiboot2 header" >&2
+    exit 1
+  fi
+  LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-netboot-final-elf-edges.tsv" \
+    ./scripts/check-entry-stack-budget.sh "$build/leanos-netboot.elf" \
+    | tee "$build/entry-stack-netboot-final-elf.txt"
 fi
 # Handwritten assembly windows at the CPL boundary (issue #477): every
 # privileged window in boot.S has an inventory row with its size in this lane.

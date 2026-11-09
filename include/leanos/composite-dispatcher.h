@@ -94,7 +94,9 @@
  * leanos_validate_q35_dma_snapshot is the allocation-free generated
  * validation of the exact canonical q35 DMA snapshot; each manifest slot
  * supplies identity and control words in the compact format documented by
- * LeanOS.CompositeDispatcher.
+ * LeanOS.CompositeDispatcher. leanos_validate_q35_netboot_dma_snapshot is the
+ * same check pinned to the netboot image's exact snapshot, the boot NIC at
+ * 00:03.0 present and quarantined (issue #601); each admits only its own.
  */
 
 #endif

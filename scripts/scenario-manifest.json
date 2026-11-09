@@ -224,6 +224,11 @@
         "-DLEANOS_AHCI_SERVICE_SCENARIO=1",
         "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-ahci-service.h\""
       ],
+      "kernel-netboot": [
+        "-DLEANOS_ENTRY_HIGH_WATER=1",
+        "-DLEANOS_NETBOOT_SCENARIO=1",
+        "-DLEANOS_BOOT_PAGE_PLAN_HEADER=\"boot-page-plan-netboot.h\""
+      ],
       "kernel-example-subject": [
         "-DLEANOS_THREE_SUBJECT_SCENARIO=1",
         "-DLEANOS_EXAMPLE_SUBJECT_SCENARIO=1",
@@ -1048,6 +1053,14 @@
         "prelink_plan": "boot-page-plan-ahci-service.h",
         "plan_equal_to": null
       },
+      "leanos-netboot": {
+        "boot": "boot",
+        "kernel": "kernel-netboot",
+        "extra_objects": [],
+        "final_link": true,
+        "prelink_plan": "boot-page-plan-netboot.h",
+        "plan_equal_to": null
+      },
       "leanos-example-subject": {
         "boot": "boot-example-subject",
         "kernel": "kernel-example-subject",
@@ -1540,6 +1553,13 @@
           "key": "ahci-service"
         }
       },
+      "leanos-netboot": {
+        "iso": "leanos-@VERSION@-x86_64-netboot.iso",
+        "grub": "boot/grub.cfg",
+        "policy": {
+          "key": "netboot"
+        }
+      },
       "leanos-example-subject": {
         "iso": "leanos-@VERSION@-x86_64-example-subject.iso",
         "grub": "boot/grub.cfg",
@@ -1961,6 +1981,16 @@
         "description": "ahci-service",
         "targets": [
           "leanos-ahci-service"
+        ]
+      },
+      {
+        "image": "leanos-netboot",
+        "check": "converge",
+        "expected": "boot-page-plan-netboot.h",
+        "final": "boot-page-plan-netboot.final.h",
+        "description": "netboot",
+        "targets": [
+          "leanos-netboot"
         ]
       },
       {
@@ -3843,6 +3873,32 @@
         "SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS"
       ],
       "does_not_prove": "Not a refinement of SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS: one finite QEMU run reading one fixed sector of a generated disk image; the kernel checks each device invocation against the generated witness leanos_device_authorize and each exchange against leanos_blocking_ipc_event, but its device table, the release scrub, the executor hooks, the generated C, compiler, boot assembly and QEMU's AHCI and VT-d stay trusted, and that the descriptor map lists every AHCI pointer field is assumed"
+    },
+    "netboot": {
+      "release_artifacts": [
+        "iso",
+        "elf",
+        "map",
+        "serial-log"
+      ],
+      "expectations": "scripts/expectations/netboot.transcript",
+      "tier": "evidence",
+      "row": {
+        "runner": "boot",
+        "timeout": "180",
+        "image": "leanos-@VERSION@-x86_64-netboot.iso",
+        "elf": "leanos-netboot.elf",
+        "serial_log": "netboot.serial.log",
+        "scenario": "netboot",
+        "mode": "-",
+        "reason": "-"
+      },
+      "negative_evidence": null,
+      "reproducibility_artifacts": [],
+      "claims": [
+        "SC-DMA-QUARANTINE"
+      ],
+      "does_not_prove": "Not a refinement of SC-DMA-QUARANTINE: one finite QEMU run booted over PXE/TFTP through QEMU's user network and a transitional virtio-net at 00:03.0; the kernel quarantines that boot NIC to Command 0 and checks the snapshot against the generated leanos_validate_q35_netboot_dma_snapshot, but firmware PXE (SeaBIOS iPXE, OVMF), GRUB's network loaders, the NIC's obedience to its Command word, the generated C, compiler, boot assembly and QEMU stay trusted"
     },
     "example-subject": {
       "release_artifacts": [

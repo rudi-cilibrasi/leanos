@@ -843,6 +843,154 @@ theorem validate_q35_dma_snapshot_bus_master_correspondence :
         (DMAQuarantine.validate DMAQuarantine.q35BusMasterBitFlipSnapshot)).head! := by
   native_decide
 
+/-!
+The netboot image (issue #601) is booted over PXE through a virtio-net
+function at 00:03.0, the manifest's optional network slot, so its admitted
+snapshot is `DMAQuarantine.q35OptionalNetworkPresentSnapshot`: that NIC
+present, unassigned and quarantined to Command 0 like every other function.
+The kernel never uses it. It has its own generated boundary, pinned to that
+one snapshot as `validateQ35DMASnapshot` is pinned to `q35Snapshot`; the
+production boundary and image are unchanged and still refuse the NIC.
+-/
+
+/-- The netboot inventory with the boot NIC still bus-mastering, as a PXE
+client can leave it before the kernel's quarantine write. -/
+def q35NetbootNicBusMasterSnapshot : DMAQuarantine.Snapshot :=
+  let functions := DMAQuarantine.q35OptionalNetworkPresentFunctions
+  { DMAQuarantine.q35OptionalNetworkPresentSnapshot with
+    functions := functions.set 2 { functions[2]! with command := 4 } }
+
+/-- Checked source of the netboot export's literal table: the production
+table with the NIC slot's identity and present, Command-0, unassigned control
+word, bound field by field and in slot order to the rich
+`q35OptionalNetworkPresentSnapshot`. -/
+theorem q35_netboot_scalar_projection_matches_canonical_snapshot :
+    DMAQuarantine.q35OptionalNetworkPresentSnapshot.functions.map
+        (fun function => (function.bdf, q35IdentityWord function, q35ControlWord function)) =
+      [ (⟨0, 0, 0⟩, 0x0006000029c08086, 0x0001),
+        (⟨0, 1, 0⟩, 0x0003000011111234, 0x0001),
+        (⟨0, 3, 0⟩, 0x0002000010001af4, 0x0001),
+        (⟨0, 31, 0⟩, 0x0006010029188086, 0xc001),
+        (⟨0, 31, 2⟩, 0x0001060129228086, 0x8001),
+        (⟨0, 31, 3⟩, 0x000c050029308086, 0x8001) ] := by
+  native_decide
+
+/-- Generated, allocation-free validation of the exact netboot snapshot
+`DMAQuarantine.q35OptionalNetworkPresentSnapshot`, in the scalar format and
+with the stable result tags of `validateQ35DMASnapshot`. -/
+@[export leanos_validate_q35_netboot_dma_snapshot]
+def validateQ35NetbootDMASnapshot
+    (version topology
+      identity0 control0 identity1 control1 identity2 control2
+      identity3 control3 identity4 control4 identity5 control5 : UInt64) : UInt64 :=
+  if version != DMAQuarantine.snapshotVersion then
+    1
+  else if topology != DMAQuarantine.q35TopologyVersion then
+    2
+  else if identity0 != 0x0006000029c08086 ||
+      identity1 != 0x0003000011111234 ||
+      identity2 != 0x0002000010001af4 ||
+      identity3 != 0x0006010029188086 ||
+      identity4 != 0x0001060129228086 ||
+      identity5 != 0x000c050029308086 then
+    5
+  else if control0 = 0x0011 || control1 = 0x0011 ||
+      control2 = 0x0011 || control3 = 0xc011 ||
+      control4 = 0x8011 || control5 = 0x8011 then
+    8
+  else if control0 != 0x0001 || control1 != 0x0001 ||
+      control2 != 0x0001 || control3 != 0xc001 ||
+      control4 != 0x8001 || control5 != 0x8001 then
+    4
+  else
+    0
+
+/-- The netboot boundary and the canonical rich validator agree on the
+netboot snapshot selected by the checked projection table above. -/
+theorem validate_q35_netboot_dma_snapshot_canonical_correspondence :
+    validateQ35NetbootDMASnapshot
+        DMAQuarantine.snapshotVersion DMAQuarantine.q35TopologyVersion
+        0x0006000029c08086 0x0001
+        0x0003000011111234 0x0001
+        0x0002000010001af4 0x0001
+        0x0006010029188086 0xc001
+        0x0001060129228086 0x8001
+        0x000c050029308086 0x8001 =
+      (DMAQuarantine.encodeValidationResult
+        (DMAQuarantine.validate DMAQuarantine.q35OptionalNetworkPresentSnapshot)).head! := by
+  native_decide
+
+/-- The netboot boundary's fast rejection of a still-bus-mastering boot NIC
+is the canonical validator's rejection of the corresponding rich snapshot. -/
+theorem validate_q35_netboot_dma_snapshot_bus_master_correspondence :
+    validateQ35NetbootDMASnapshot
+        DMAQuarantine.snapshotVersion DMAQuarantine.q35TopologyVersion
+        0x0006000029c08086 0x0001
+        0x0003000011111234 0x0001
+        0x0002000010001af4 0x0011
+        0x0006010029188086 0xc001
+        0x0001060129228086 0x8001
+        0x000c050029308086 0x8001 =
+      (DMAQuarantine.encodeValidationResult
+        (DMAQuarantine.validate q35NetbootNicBusMasterSnapshot)).head! := by
+  native_decide
+
+/-- The netboot boundary accepts exactly one input: the versions and the
+checked projection table of `q35OptionalNetworkPresentSnapshot`. Every other
+word vector, including any other NIC Command word, is rejected. -/
+theorem validate_q35_netboot_dma_snapshot_eq_zero_iff
+    version topology identity0 control0 identity1 control1 identity2 control2
+      identity3 control3 identity4 control4 identity5 control5 :
+    validateQ35NetbootDMASnapshot version topology identity0 control0 identity1 control1
+        identity2 control2 identity3 control3 identity4 control4 identity5 control5 = 0 ↔
+      [version, topology, identity0, control0, identity1, control1, identity2, control2,
+        identity3, control3, identity4, control4, identity5, control5] =
+      [DMAQuarantine.snapshotVersion, DMAQuarantine.q35TopologyVersion,
+        0x0006000029c08086, 0x0001, 0x0003000011111234, 0x0001,
+        0x0002000010001af4, 0x0001, 0x0006010029188086, 0xc001,
+        0x0001060129228086, 0x8001, 0x000c050029308086, 0x8001] := by
+  simp only [List.cons.injEq, and_true]
+  constructor
+  · intro h
+    unfold validateQ35NetbootDMASnapshot at h
+    split at h
+    · contradiction
+    split at h
+    · contradiction
+    split at h
+    · contradiction
+    split at h
+    · contradiction
+    split at h
+    · contradiction
+    simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at *
+    simp_all
+  · rintro ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    rfl
+
+/-- The two generated boundaries admit disjoint inventories: the production
+boundary refuses the netboot projection (the boot NIC present) and the netboot
+boundary the production projection (the slot empty), both as inventory
+mismatches. Neither image admits the other's topology. -/
+theorem q35_dma_boundaries_disjoint :
+    validateQ35DMASnapshot
+        DMAQuarantine.snapshotVersion DMAQuarantine.q35TopologyVersion
+        0x0006000029c08086 0x0001
+        0x0003000011111234 0x0001
+        0x0002000010001af4 0x0001
+        0x0006010029188086 0xc001
+        0x0001060129228086 0x8001
+        0x000c050029308086 0x8001 = DMAQuarantine.rejectReasonTag .inventoryMismatch ∧
+    validateQ35NetbootDMASnapshot
+        DMAQuarantine.snapshotVersion DMAQuarantine.q35TopologyVersion
+        0x0006000029c08086 0x0001
+        0x0003000011111234 0x0001
+        0 0
+        0x0006010029188086 0xc001
+        0x0001060129228086 0x8001
+        0x000c050029308086 0x8001 = DMAQuarantine.rejectReasonTag .inventoryMismatch := by
+  native_decide
+
 /-- The scalar export and the logical adapter use one canonical edge table. -/
 theorem dispatch_canonical state command :
     let words := encodeCommand command
@@ -3719,6 +3867,23 @@ example : validateQ35DMASnapshot
     0x0006000029c08086 0x0001
     0x0003000011111234 0x0011
     0 0
+    0x0006010029188086 0xc001
+    0x0001060129228086 0x8001
+    0x000c050029308086 0x8001 =
+      DMAQuarantine.rejectReasonTag .busMasterEnabled := by native_decide
+example : validateQ35NetbootDMASnapshot
+    1 0x0001000800020002
+    0x0006000029c08086 0x0001
+    0x0003000011111234 0x0001
+    0x0002000010001af4 0x0001
+    0x0006010029188086 0xc001
+    0x0001060129228086 0x8001
+    0x000c050029308086 0x8001 = 0 := by native_decide
+example : validateQ35NetbootDMASnapshot
+    1 0x0001000800020002
+    0x0006000029c08086 0x0001
+    0x0003000011111234 0x0001
+    0x0002000010001af4 0x0011
     0x0006010029188086 0xc001
     0x0001060129228086 0x8001
     0x000c050029308086 0x8001 =

@@ -266,6 +266,23 @@ bus-master bit after boot acceptance and immediately before the production
 return validator; the same validator must emit typed `dma-live-command`
 failure before `iretq` or any CPL3 record.
 
+The netboot image (issue #601, `docs/boot-image.md` "Boot media") is the one
+construction that fills the optional network slot. Booted over PXE through a
+transitional virtio-net at `00:03.0`, its kernel quarantines that NIC with
+every other function: six present functions, none absent, six writes and six
+exact Command-word read-backs (construction `0001000800020006`). Its admitted
+snapshot is `q35OptionalNetworkPresentSnapshot`, the NIC present, unassigned
+and at Command 0. It passes that projection to its own generated boundary,
+`leanos_validate_q35_netboot_dma_snapshot`. The theorem
+`q35_netboot_scalar_projection_matches_canonical_snapshot` binds that
+boundary's literal table to the snapshot, and
+`validate_q35_netboot_dma_snapshot_eq_zero_iff` shows the boundary accepts
+that one input and nothing else. Every later CPL3 gate requires the same six
+functions and the NIC's Command word still zero. The production image and its
+boundary are unchanged: `q35_dma_boundaries_disjoint` shows that each
+boundary refuses the other's inventory, and a netbooted canonical kernel stops
+at `dma-q35-nic-none`.
+
 This adapter intentionally treats an all-ones vendor read as architectural
 absence. A missing required function is fatal; for the optional network slot,
 distinguishing genuine absence from an underlying read transport failure is a

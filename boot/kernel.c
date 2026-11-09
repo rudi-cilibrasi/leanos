@@ -171,6 +171,11 @@ extern uint64_t page_directory_b[], page_table_b[];
 #if defined(LEANOS_FRAME_WINDOW_SCENARIO) && !defined(LEANOS_DHCP_SUBJECT_SCENARIO)
 #error "the frame-window image is the dhcp-subject image with frames copied through per-subject copy windows"
 #endif
+#if defined(LEANOS_NETBOOT_SCENARIO) && \
+    (defined(LEANOS_ASSIGNED_EDU_SCENARIO) || defined(LEANOS_DEVICE_SERVICE_SCENARIO) || \
+     defined(LEANOS_THREE_SUBJECT_SCENARIO) || defined(LEANOS_CONSOLE_SERVER_SCENARIO))
+#error "the netboot image is the canonical image with the quarantined boot NIC admitted"
+#endif
 #ifdef LEANOS_THREE_SUBJECT_SCENARIO
 /* Third subject C (issue #472), linked only into the three-subject image. */
 extern char user_c_entry[], user_c_stack[], user_c_stack_top[];
@@ -2525,9 +2530,32 @@ struct pci_manifest_entry {
 #elif defined(LEANOS_DEVICE_SERVICE_SCENARIO)
 #define Q35_TOPOLOGY_TEXT "0001000800020004"
 #define Q35_EXPECTED_PRESENT 6u
+#elif defined(LEANOS_NETBOOT_SCENARIO)
+/* The netboot construction (issue #601): the production inventory plus the
+   transitional virtio-net function in the optional network slot 00:03.0 that
+   carried the PXE boot. The kernel never uses it: it is quarantined to
+   Command=0 and unassigned like every other function, and its admitted
+   snapshot is DMAQuarantine.q35OptionalNetworkPresentSnapshot. */
+#define Q35_TOPOLOGY_TEXT "0001000800020006"
+#define Q35_EXPECTED_PRESENT 6u
+#define Q35_EXPECTED_OPTIONAL_ABSENT 0u
+#define Q35_EXPECTED_OPTIONAL_ABSENT_TEXT "0"
 #else
 #define Q35_TOPOLOGY_TEXT "0001000800020002"
 #define Q35_EXPECTED_PRESENT 5u
+#endif
+/* Every other construction leaves exactly the optional network slot empty. */
+#ifndef Q35_EXPECTED_OPTIONAL_ABSENT
+#define Q35_EXPECTED_OPTIONAL_ABSENT 1u
+#define Q35_EXPECTED_OPTIONAL_ABSENT_TEXT "1"
+#endif
+/* The generated boundary pinned to the construction's one admitted snapshot:
+   DMAQuarantine.q35OptionalNetworkPresentSnapshot for netboot, q35Snapshot
+   for every other image. */
+#ifdef LEANOS_NETBOOT_SCENARIO
+#define LEANOS_VALIDATE_Q35_DMA_SNAPSHOT leanos_validate_q35_netboot_dma_snapshot
+#else
+#define LEANOS_VALIDATE_Q35_DMA_SNAPSHOT leanos_validate_q35_dma_snapshot
 #endif
 
 /* This is the C rendering of DMAQuarantine.q35Manifest for topology version
@@ -2698,7 +2726,8 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         ++optional_absent;
     }
     if (present == 0) pre_admission_fail("dma-empty-inventory");
-    if (present != Q35_EXPECTED_PRESENT || optional_absent != 1 ||
+    if (present != Q35_EXPECTED_PRESENT ||
+        optional_absent != Q35_EXPECTED_OPTIONAL_ABSENT ||
         writes != present || readbacks != present)
         pre_admission_fail("dma-q35-nic-none");
 
@@ -2706,9 +2735,11 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
        projection itself through the generated q35Snapshot boundary.  The
        assigned image keeps the first six production entries byte-identical.
        Its seventh EDU entry is independently bound by the exact generated
-       assigned-authority projection before assigned tables can be installed. */
+       assigned-authority projection before assigned tables can be installed.
+       The netboot image's six entries are q35OptionalNetworkPresentSnapshot's,
+       which only its own generated boundary admits. */
     q35_live_pci_snapshot.generated_result =
-        leanos_validate_q35_dma_snapshot(
+        LEANOS_VALIDATE_Q35_DMA_SNAPSHOT(
             1, UINT64_C(0x0001000800020002),
             pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[0]),
             pci_snapshot_control_word(&q35_live_pci_snapshot.functions[0]),
@@ -2756,7 +2787,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     serial_puts(LEANOS_SERIAL_15_DMA " snapshot=1 topology=" Q35_TOPOLOGY_TEXT
         " bus=0 scanned=256 present=");
     serial_u64(present);
-    serial_puts(" optional-absent=1 writes=");
+    serial_puts(" optional-absent=" Q35_EXPECTED_OPTIONAL_ABSENT_TEXT " writes=");
     serial_u64(writes);
     serial_puts(" readbacks=");
     serial_u64(readbacks);
