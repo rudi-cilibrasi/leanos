@@ -227,13 +227,19 @@ All of them still pass `DeviceProgramConfinement.admissible` under
   ([observation](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md))
   went through a high-speed hub's TT. It used the earlier code, which put
   the same values in these fields for that case (hub slot | port << 8).
-  This code has not run on hardware.
-- **The Qotom keyboard path is changed code.** That path is the Genesys
-  high-speed hub with the low-speed keyboard on its port 3, TT word 0x0301.
-  The port loop, the power-on wait, the debounce, the C_PORT_RESET wait,
-  the hub's slot speed and the TT condition are all new on it. It has not
-  been rerun on hardware, and a Qotom keyboard run needs its own
-  go-ahead.
+  This code has since run on the Qotom (2026-11-08,
+  [observation](../hardware/lab/observations/qotom-usb-20261108/README.md)),
+  with the Genesys hub on root port 4:
+  - `HUB configured ports=4 power-on-wait-ms=250 tt-think-time=3`;
+  - each port's status;
+  - two low-speed devices behind its TT, a mouse on port 3
+    (`tt-slot=1 tt-port=3`) and a keyboard on port 4 (`tt-port=4`), and a
+    high-speed flash drive on port 3 in a later run (`tt-slot=0 tt-port=0`).
+
+  A person typed through the keyboard, and the mass-storage program read the
+  flash drive. So the port loop, the power-on wait, the debounce, the
+  C_PORT_RESET wait, the hub's slot speed and the TT condition have run on a
+  real high-speed hub.
 - **More than one hub level.** A hub behind the hub is addressed like any
   device and passed over: it has no interface the programs accept. Only the
   first hub is used: a hub on another root port is passed over too.

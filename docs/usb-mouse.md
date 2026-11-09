@@ -85,15 +85,30 @@ its GET_DESCRIPTOR(configuration) after the next device's first request and
 the ready record showed `vendor=0x0932 product=0x0004`; `Xhci.ringInit` now
 clears every TRB's control dword.
 
-On the Qotom the `mouse` image would be built and booted like the keyboard's
+On the Qotom the `mouse` image is built and booted like the keyboard's
 ([usb-keyboard.md](usb-keyboard.md), "Trying it"), with
 `LEANOS_MOUSE_SECONDS=60 lake exe leanos-wifi-gen mouse build/wifi/mouse.bin`
-and `--lab-program build/wifi/mouse.bin`; it has not been run there yet.
+and `--lab-program build/wifi/mouse.bin`.
+
+It ran there on 2026-11-08 with an HP 310 mouse (PixArt `0461:4ef3`, low speed,
+max packet 4) on a root port
+([observation](../hardware/lab/observations/qotom-usb-20261108/README.md)):
+
+- **Motion.** The unchanged program printed 442 motion records while a person
+  moved the mouse.
+- **Buttons.** In a second session, left, right and middle came back as
+  `buttons=1`, `2` and `4`.
+- **No wheel.** A real mouse in boot protocol sends 3-byte reports (buttons,
+  X, Y; HID 1.11 Appendix B.2), each completing as a Short Packet, so
+  `wheel` is 0 there. QEMU's `usb-mouse` sends the wheel byte even in boot
+  protocol. A real mouse's wheel needs report protocol and its report
+  descriptor.
 
 The mass-storage reader shares the same enumeration with a different
 interface match ([usb-mass-storage.md](usb-mass-storage.md)).
 
-Not covered: hardware evidence, and a device-service (yield) form. Absolute
+Not covered: mouse motion through a hub's TT on hardware, the wheel of a real
+mouse (report protocol), and a device-service (yield) form. Absolute
 pointers (tablets), report-protocol features, more than one mouse and the
 limitations of the shared enumeration (one level of hub, polling;
 [usb-hub.md](usb-hub.md)) are out

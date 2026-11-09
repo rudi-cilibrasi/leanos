@@ -218,12 +218,26 @@ QEMU's `usb-storage` passes the first TEST UNIT READY, so the retry path
 the end it completes the data stage without a stall and then reports the
 failed CSW with dCSWDataResidue 512, so no stall needs clearing.
 
-On the Qotom the `msc` image would be built and booted like the keyboard's
+On the Qotom the `msc` image is built and booted like the keyboard's
 ([usb-keyboard.md](usb-keyboard.md), "Trying it") with
 `lake exe leanos-wifi-gen msc build/wifi/msc.bin` and
-`--lab-program build/wifi/msc.bin`; it has not been run there.
+`--lab-program build/wifi/msc.bin`.
 
-Not covered: hardware evidence, writing, other transports (UAS, CBI),
+It ran there on 2026-11-08, on the old lab stick (Alcor `058f:6387`,
+122880000 blocks of 512 bytes) on a root port, through the hub search
+([observation](../hardware/lab/observations/qotom-usb-20261108/README.md)):
+
+* **INQUIRY, capacity and blocks.** INQUIRY and the capacity matched FreeBSD's
+  view of the same stick. All seven `MSC block` records were byte-identical to
+  FreeBSD's `dd` of the same LBAs.
+* **The retry path.** The first TEST UNIT READY failed with UNIT ATTENTION
+  (06/28/00), and the second passed. This was the first run of the retry path.
+* **The read past the end.** The stick STALLs the bulk-IN endpoint in the data
+  stage, and the program stops with
+  `MSC error=read-past-end stage=data reason=stall`. Stall recovery is issue
+  #631.
+
+Not covered: writing, other transports (UAS, CBI),
 READ CAPACITY(16), more than LUN 0, BOT reset recovery and stall recovery, a
 device-service (yield) form and file systems; the enumeration's limits (one
 level of hub, polling; [usb-hub.md](usb-hub.md)) are the HID programs'. The shared Address Device gives
