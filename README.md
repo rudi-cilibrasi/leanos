@@ -381,6 +381,25 @@ that may answer every call with any value. Against every such Lean, it:
 What the answers mean is what the Lean theorems of `LeanOS.BootTopology`
 state.
 
+The eighth is the Multiboot2 handoff copy and decoder of `boot_allocate`
+(`include/boot_handoff_decode.h`), the first C that reads memory the
+bootloader wrote. It is proved against a bootloader whose every read may
+answer any bytes and a Lean that may answer every call with any value.
+Against every such pair, it:
+
+- reads the information's first eight bytes once, then each 8-byte chunk of
+  the extent they give once and in order;
+- copies a chunk only once the copy stream accepts it;
+- replays the copy through the generated decoder with exactly the state,
+  offset and chunk each transition carries, and stops at the first rejection;
+- accepts a handoff, or a candidate frame, only when the decoder's final state
+  does.
+
+([The project](experiments/quickproof/boot-handoff-decode/README.md).) What
+the answers mean is what the Lean theorems of
+`LeanOS.BootMemoryMapStreaming` and `LeanOS.BootMemoryMapStreamAuthority`
+state.
+
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy
 is proved about the reference simulator while the C executor is tested against

@@ -39,9 +39,35 @@ mkdir -p "$build"
 production_allocate="$(
   sed -n '/^static void boot_allocate(/,/^}/p' boot/kernel.c
 )"
-production_decode="$(
-  sed -n '/^static struct boot_decode_state decode_boot_projection(/,/^}/p' boot/kernel.c
+# The handoff copy and decoder live in include/boot_handoff_decode.h (#624):
+# boot_allocate checks the extent, observes the executing APIC ID, then copies
+# and decodes the handoff through the header, and maps each status to the
+# reason of its check.
+handoff_decode=include/boot_handoff_decode.h
+handoff_function() {
+  sed -n "/^static inline [a-z_ ]* $1(/,/^}/p" "$handoff_decode"
+}
+production_extent="$(handoff_function boot_handoff_extent)"
+production_handoff_copy="$(handoff_function boot_handoff_stream_copy)"
+production_transition="$(handoff_function boot_decode_transition)"
+production_decode="$(handoff_function boot_handoff_decode_projection)"
+production_authority="$(handoff_function boot_handoff_decode_candidate)"
+production_project="$(handoff_function boot_handoff_project)"
+production_handoff_read="$(
+  sed -n '/^static uint64_t boot_handoff_physical_read(/,/^}/p' boot/kernel.c
 )"
+for function in boot_handoff_extent boot_handoff_stream_copy \
+  boot_decode_transition boot_handoff_decode_projection \
+  boot_handoff_decode_candidate boot_handoff_project; do
+  [[ -n "$(handoff_function "$function")" ]] || {
+    echo "error: $handoff_decode does not define $function" >&2
+    exit 1
+  }
+done
+[[ -n "$production_handoff_read" ]] || {
+  echo "error: boot/kernel.c does not define the handoff's physical read" >&2
+  exit 1
+}
 # The root and table copy pipeline lives in include/acpi_table_copy.h (#614);
 # boot_allocate calls it once and maps each status to its reason.
 acpi_copy=include/acpi_table_copy.h
@@ -143,7 +169,8 @@ done
   echo "error: the ACPI copy statuses and their reasons are not one to one" >&2
   exit 1
 }
-for required in decode_boot_projection leanos_boot_projection_manifest \
+for required in 'boot_handoff_require(boot_handoff_project(' \
+  leanos_boot_projection_manifest \
   leanos_boot_projection_free projection_finish_query \
   decode_boot_candidate_authority leanos_boot_manifest_candidate \
   leanos_boot_consume_exact_projection leanos_boot_authority_result \
@@ -336,10 +363,8 @@ if grep -Eq 'mb2_(tag|mmap)|boot_frames|reserve_byte_range|allocation_check' \
   echo "error: production allocation retained a C handoff policy authority" >&2
   exit 1
 fi
-production_authority="$(
-  sed -n '/^static struct boot_decode_state decode_boot_candidate_authority(/,/^}/p' boot/kernel.c
-)"
-for required in 'query < 41' 'state.word[16] != candidate' \
+for required in 'states[0][16] != candidate' 'states[at][16] != candidate' \
+  'decode_boot_candidate_authority(' \
   'candidate_authority.word[14]' 'candidate_authority.word[15]' \
   'selected_authority.word[14] != 1' \
   'selected_authority.word[15] != 0'; do
@@ -348,18 +373,189 @@ for required in 'query < 41' 'state.word[16] != candidate' \
     exit 1
   }
 done
-grep -Fq 'struct boot_decode_state { uint64_t word[41]; };' boot/kernel.c || {
+grep -Fq 'struct boot_decode_state { uint64_t word[41]; };' boot/kernel.c &&
+  grep -Fxq '#define BOOT_DECODE_WORDS 41' "$handoff_decode" || {
   echo "error: production decoder does not retain parser, typed entry, and ACPI root state" >&2
   exit 1
 }
-for required in 'query < 41' 'state.word[0] != 5' \
-  'state.word[38],' 'info_address, offset, chunk, terminal, query' \
+for required in 'query < BOOT_DECODE_WORDS' 'state[18], state[23],' \
+  'state[38],' 'info_address, offset, chunk, terminal, query' \
   'leanos_boot_decode_step_v5('; do
-  grep -Fq "$required" <<<"$production_decode" || {
+  grep -Fq "$required" <<<"$production_transition" || {
     echo "error: production decoder omits scalar ABI v5 ACPI-root state: $required" >&2
     exit 1
   }
 done
+for required in 'states[0][0] != 5' 'states[0][16] != 0' 'states[0][30] != 0' \
+  'boot_decode_transition(states[at], info_address, offset,' \
+  'info[offset / 8], terminal, states[1u - at]);' 'at = 1u - at;' \
+  'if (state[2] != 0) break;' 'if (state[19] == 1) {' \
+  'state[11] > BOOT_PROJECTION_ENTRIES' \
+  'projection->record(projection->context, state[11] - 1, state[20],' \
+  'leanos_boot_projection_entry(' \
+  'projection->usable[block], projection->blocked[block], 4);' \
+  'return BOOT_HANDOFF_DECODE_INCOMPLETE_PHASE;'; do
+  grep -Fq "$required" <<<"$production_decode" || {
+    echo "error: the production projection omits $required" >&2
+    exit 1
+  }
+done
+for required in 'boot_decode_transition(states[at], info_address, offset,' \
+  'if (states[at][2] != 0) break;' \
+  'return BOOT_HANDOFF_AUTHORITY_REJECTED_TARGET;'; do
+  grep -Fq "$required" <<<"$production_authority" || {
+    echo "error: the production candidate authority omits $required" >&2
+    exit 1
+  }
+done
+# The extent: the magic and the address are checked before total_size is
+# read, through the kernel's identity-mapped read, and its bounds after.
+for required in \
+  'if (magic != BOOT_HANDOFF_MULTIBOOT2_MAGIC) return BOOT_HANDOFF_MAGIC;' \
+  'if ((info_address & 7u) != 0) return BOOT_HANDOFF_POINTER_ALIGNMENT;' \
+  'if (info_address < BOOT_HANDOFF_PAGE_BYTES) return BOOT_HANDOFF_POINTER_LOW;' \
+  'if (info_address >= BOOT_HANDOFF_ACCESSIBLE_LIMIT)' \
+  'const uint32_t size = (uint32_t)read(context, info_address);' \
+  'if (size < 16u) return BOOT_HANDOFF_BOUNDS_SMALL;' \
+  'if (size > BOOT_HANDOFF_MAX_BYTES) return BOOT_HANDOFF_BOUNDS_LARGE;' \
+  'if ((size & 7u) != 0) return BOOT_HANDOFF_BOUNDS_ALIGNMENT;' \
+  'if (size > BOOT_HANDOFF_ACCESSIBLE_LIMIT - info_address)'; do
+  grep -Fq "$required" <<<"$production_extent" || {
+    echo "error: the production handoff extent omits $required" >&2
+    exit 1
+  }
+done
+pointer_line="$(grep -n 'info_address >= BOOT_HANDOFF_ACCESSIBLE_LIMIT' <<<"$production_extent" | cut -d: -f1)"
+size_line="$(grep -n 'read(context, info_address)' <<<"$production_extent" | cut -d: -f1)"
+bounds_line="$(grep -n 'size > BOOT_HANDOFF_ACCESSIBLE_LIMIT - info_address' <<<"$production_extent" | cut -d: -f1)"
+[[ "$(grep -c 'read(' <<<"$production_extent")" -eq 1 && -n "$pointer_line" &&
+   "$pointer_line" -lt "$size_line" && "$size_line" -lt "$bounds_line" ]] || {
+  echo "error: the handoff extent must check the address before reading total_size once" >&2
+  exit 1
+}
+grep -Fq 'uint64_t word = *(const uint64_t *)(uintptr_t)physical_address;' \
+    <<<"$production_handoff_read" &&
+  grep -Fq 'if (physical_address == *(const uint32_t *)context) word |= 1ull << 32;' \
+    <<<"$production_handoff_read" || {
+  echo "error: the handoff's physical read is not the identity-mapped load with its malformed-handoff fixture" >&2
+  exit 1
+}
+# The copy: each chunk is read once and replayed through the generated
+# stream, and enters the copy only once every word of its transition is
+# accepted.
+for required in \
+  'leanos_boot_handoff_stream_init(' \
+  'magic, info_address, total, info_address, query);' \
+  'const uint64_t chunk = read(context, (uint64_t)info_address + offset);' \
+  'leanos_boot_handoff_stream_step(' \
+  'state[6], info_address, offset, 8, chunk, terminal, query);' \
+  'if (answer[5] != offset + 8) return BOOT_HANDOFF_STREAM_STEP_OFFSET;' \
+  'if (answer[8] != 8) return BOOT_HANDOFF_STREAM_STEP_COUNT;' \
+  'if (answer[7] != chunk) return BOOT_HANDOFF_STREAM_STEP_EXPOSED;' \
+  'if (answer[1] != (terminal ? 1u : 0u))' \
+  'copy[offset / 8] = answer[7];' \
+  'if (state[5] != total) return BOOT_HANDOFF_STREAM_INCOMPLETE_OFFSET;'; do
+  grep -Fq "$required" <<<"$production_handoff_copy" || {
+    echo "error: the production handoff copy omits generated stream binding: $required" >&2
+    exit 1
+  }
+done
+status_check_line="$(grep -n 'return BOOT_HANDOFF_STREAM_STEP_STATUS;' <<<"$production_handoff_copy" | cut -d: -f1)"
+store_line="$(grep -n 'copy\[offset / 8\] = answer\[7\];' <<<"$production_handoff_copy" | cut -d: -f1)"
+[[ "$(grep -c 'read(' <<<"$production_handoff_copy")" -eq 1 &&
+   -n "$status_check_line" && "$status_check_line" -lt "$store_line" ]] || {
+  echo "error: the handoff copy must read each chunk once and store it only after its transition is accepted" >&2
+  exit 1
+}
+# boot_handoff_project: the copy, its length, the projection, then the
+# decoder's acceptance.
+project_copy_line="$(grep -n 'boot_handoff_stream_copy(' <<<"$production_project" | cut -d: -f1)"
+project_length_line="$(grep -n 'if (length != total) return BOOT_HANDOFF_COPY_LENGTH;' <<<"$production_project" | cut -d: -f1)"
+project_decode_line="$(grep -n 'boot_handoff_decode_projection(' <<<"$production_project" | cut -d: -f1)"
+project_rejected_line="$(grep -n 'return BOOT_HANDOFF_DECODE_REJECTED_ERROR;' <<<"$production_project" | cut -d: -f1)"
+[[ -n "$project_copy_line" && -n "$project_length_line" &&
+   -n "$project_decode_line" && -n "$project_rejected_line" &&
+   "$project_copy_line" -lt "$project_length_line" &&
+   "$project_length_line" -lt "$project_decode_line" &&
+   "$project_decode_line" -lt "$project_rejected_line" ]] &&
+  grep -Fq 'magic, info_address, total, copy, projection, states, &decoded);' \
+    <<<"$production_project" || {
+  echo "error: boot_handoff_project must copy, check the length, decode the copy, then require acceptance" >&2
+  exit 1
+}
+# boot_allocate: the extent, the APIC observation, the copy and projection,
+# all before the ACPI copy, through the kernel's read and storage.
+for required in \
+  'boot_handoff_require(boot_handoff_extent(' \
+  'boot_handoff_physical_read, &info_address, magic, info_address,' \
+  'const uint32_t executing_apic_id = observe_executing_apic_id();' \
+  'total, (uint64_t *)boot_handoff_copy, &boot_projection,' \
+  'load_boot_decode_state(&decoded, decode_states[decoded_state]);'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production allocation omits the handoff header's sequence: $required" >&2
+    exit 1
+  }
+done
+extent_line="$(grep -n 'boot_handoff_require(boot_handoff_extent(' <<<"$production_allocate" | cut -d: -f1)"
+apic_line="$(grep -n 'observe_executing_apic_id()' <<<"$production_allocate" | cut -d: -f1)"
+project_line="$(grep -n 'boot_handoff_require(boot_handoff_project(' <<<"$production_allocate" | cut -d: -f1)"
+acpi_line="$(grep -n 'acpi_table_copy_require(acpi_copy_root_and_tables(' <<<"$production_allocate" | cut -d: -f1)"
+[[ -n "$extent_line" && -n "$apic_line" && -n "$project_line" && -n "$acpi_line" &&
+   "$extent_line" -lt "$apic_line" && "$apic_line" -lt "$project_line" &&
+   "$project_line" -lt "$acpi_line" ]] || {
+  echo "error: production must check the extent, observe the APIC ID, then copy and decode the handoff before the ACPI copy" >&2
+  exit 1
+}
+# The projection's entries go to the kernel's bounded table.
+grep -Fq 'boot_projection_entries[slot].kind = kind;' \
+    <<<"$(sed -n '/^static void boot_projection_record_entry(/,/^}/p' boot/kernel.c)" &&
+  grep -Fq '.record = boot_projection_record_entry,' boot/kernel.c || {
+  echo "error: the projection's entries are not recorded in boot_projection_entries" >&2
+  exit 1
+}
+# boot_handoff_require, one line per status: "status reason".  Each status
+# takes the reason of the check it splits.
+handoff_reasons="$(
+  sed -n '/^static inline __attribute__((always_inline)) void boot_handoff_require(/,/^}/p' boot/kernel.c |
+    tr '\n' ' ' | tr -s ' ' |
+    grep -o 'if (status == BOOT_HANDOFF_[A-Z_]*) handoff_fail("[a-z0-9-]*")' |
+    sed 's/if (status == \(BOOT_HANDOFF_[A-Z_]*\)) handoff_fail("\([a-z0-9-]*\)")/\1 \2/'
+)"
+mapfile -t handoff_statuses < <(
+  sed -n '/^enum boot_handoff_status {/,/^};/p' "$handoff_decode" |
+    grep -o 'BOOT_HANDOFF_[A-Z_]*' | grep -vx BOOT_HANDOFF_OK
+)
+[[ ${#handoff_statuses[@]} -gt 0 ]] || {
+  echo "error: $handoff_decode declares no failure status" >&2; exit 1;
+}
+for handoff_status in "${handoff_statuses[@]}"; do
+  case "$handoff_status" in
+    BOOT_HANDOFF_MAGIC) handoff_reason=magic ;;
+    BOOT_HANDOFF_POINTER_*) handoff_reason=pointer ;;
+    BOOT_HANDOFF_BOUNDS_*) handoff_reason=bounds ;;
+    BOOT_HANDOFF_STREAM_INIT_*) handoff_reason=stream-init ;;
+    BOOT_HANDOFF_STREAM_STEP_*) handoff_reason=stream-step ;;
+    BOOT_HANDOFF_STREAM_INCOMPLETE_*) handoff_reason=stream-incomplete ;;
+    BOOT_HANDOFF_COPY_LENGTH) handoff_reason=topology-handoff-length ;;
+    BOOT_HANDOFF_DECODE_INIT_*) handoff_reason=decode-init ;;
+    BOOT_HANDOFF_PROJECTION_COUNT_*) handoff_reason=projection-entry-count ;;
+    BOOT_HANDOFF_PROJECTION_ENTRY_*) handoff_reason=projection-entry ;;
+    BOOT_HANDOFF_DECODE_INCOMPLETE_*) handoff_reason=decode-incomplete ;;
+    BOOT_HANDOFF_DECODE_REJECTED_*) handoff_reason=decode-rejected ;;
+    BOOT_HANDOFF_AUTHORITY_INIT_*) handoff_reason=authority-init ;;
+    BOOT_HANDOFF_AUTHORITY_REJECTED_*) handoff_reason=authority-rejected ;;
+    *) echo "error: $handoff_status belongs to no handoff check" >&2; exit 1 ;;
+  esac
+  [[ "$(grep -c "^$handoff_status " <<<"$handoff_reasons")" -eq 1 ]] &&
+    grep -Fxq "$handoff_status $handoff_reason" <<<"$handoff_reasons" || {
+    echo "error: boot_allocate does not map $handoff_status to $handoff_reason, or maps it more than once" >&2
+    exit 1
+  }
+done
+[[ "$(wc -l <<<"$handoff_reasons")" -eq ${#handoff_statuses[@]} ]] || {
+  echo "error: boot_handoff_require maps a status the header does not declare" >&2
+  exit 1
+}
 grep -Fq \
   'def entryLimit : UInt64 := UInt64.ofNat LeanOS.BootMemoryMap.maxEntries' \
   LeanOS/BootMemoryMapStreamAuthority.lean || {
