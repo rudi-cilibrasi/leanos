@@ -75,6 +75,7 @@ import LeanOS.Refinement.ChildLoaderC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
 import LeanOS.Refinement.SpawnAllocatorC
+import LeanOS.Refinement.BootTextConsoleC
 import LeanOS.LifetimeIssuer
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation

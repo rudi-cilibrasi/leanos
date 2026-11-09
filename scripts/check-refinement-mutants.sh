@@ -92,6 +92,7 @@ claim_theorem() {
     leanos_loader_decide) echo loader_decide_refinement ;;
     leanos_frame_copy_check) echo frame_copy_check_refinement ;;
     leanos_frame_port_check) echo frame_port_check_refinement ;;
+    leanos_boot_text_surface) echo boot_text_surface_refinement ;;
     # A claim over several exports is named directly (issue #593).
     spawn_allocator_refinement|spawn_allocator_spec_refinement) echo "$1" ;;
     *) echo "error: no refinement claim for $1" >&2; exit 1 ;;

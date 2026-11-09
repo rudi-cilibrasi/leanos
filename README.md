@@ -258,7 +258,7 @@ full implementation refinement remain outside
 the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
-Twelve generated exports have a proved refinement edge. For each, the C that
+Thirteen generated exports have a proved refinement edge. For each, the C that
 the pinned toolchain emits computes the Lean definition on every input, under a
 reviewed C-subset semantics with a build-time drift check:
 
@@ -268,12 +268,40 @@ reviewed C-subset semantics with a build-time drift check:
 - the spawn allocator's seven exports, with the 31 emitted helpers they call.
   Called as the kernel calls them, they compute the allocator's
   decode–step–encode specification
-  ([ADR 0029](docs/adr/0029-refinement-spawn-loader-frame-exports.md), #593).
+  ([ADR 0029](docs/adr/0029-refinement-spawn-loader-frame-exports.md), #593);
+- the early text console's geometry selector `leanos_boot_text_surface`
+  (#597). Its answer is the predicate the console's QuickProof theorem
+  assumes; see below.
 
 The claims are the `*-REFINEMENT` rows of
 [docs/security-claims.md](docs/security-claims.md). Each edge stops at the
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
+
+One handwritten C component has a machine-checked theorem of a different kind:
+**proved under CompCert's C semantics** with
+[QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
+Lean (issue #597,
+[ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
+component is the early boot text console
+(`include/boot_text_console.h`). For every Multiboot2 buffer of up to 16 MiB and
+every sequence of printed bytes:
+
+- the parser reads only inside the buffer, and accepts only a geometry that
+  the Lean selector accepts and that fits the 32 KiB aperture;
+- the VGA writer writes only inside the advertised surface and keeps its
+  cursor inside it;
+- each byte other than CR/LF is shown in the cell just before the cursor;
+- CR and LF move the cursor as specified.
+
+A second theorem shows that the parser accepts a supported surface in
+well-formed buffers of a fixed shape: up to two other tags before the
+framebuffer tag, then the end tag. The selector's Lean refinement theorem and the
+VST model it is linked as state the same conjunction. QuickProof is
+noncommercial software, so this lane is optional and outside the merge gate.
+`scripts/check-quickproof-pins.sh` fails when the proved header changes.
+[The pilot](experiments/quickproof/boot-text-console/README.md) has the laws,
+deviations, costs and a survey of the remaining handwritten C.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy

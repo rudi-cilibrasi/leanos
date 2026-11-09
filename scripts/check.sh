@@ -213,6 +213,9 @@ python3 ./scripts/test-intel-entry-qemu.py
 
 ./scripts/check-security-claims.sh
 
+# The handwritten C a QuickProof theorem covers is unchanged (ADR 0030).
+./scripts/check-quickproof-pins.sh
+
 ./scripts/check-iotlb-authority-front-door.sh
 
 ./scripts/test-generate-invariants.sh
