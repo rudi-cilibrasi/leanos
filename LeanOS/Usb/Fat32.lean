@@ -48,7 +48,8 @@ def badCluster : UInt32 := 18
 /-- A path component before the last is not a directory, or the last one is
 (detail: the component). -/
 def wrongKind : UInt32 := 19
-/-- A cluster chain longer than `maxChain` (detail: the cluster). -/
+/-- A directory's cluster chain past FAT's 65,536-entry directory limit, or a
+file's past the volume's clusters (detail: the next cluster). -/
 def chainTooLong : UInt32 := 20
 /-- The file's cluster chain ended before its size (detail: bytes left). -/
 def chainShort : UInt32 := 21
@@ -100,15 +101,19 @@ def clustersRead : UInt32 := vars + 0x290
 def head : UInt32 := vars + 0x294             -- 16 bytes
 /-- The step the block-read subroutine reports (`readOne`). -/
 def readStep : UInt32 := vars + 0x2A4
+/-- The most clusters a directory may span: `dirBlocks / spc`. -/
+def dirLimit : UInt32 := vars + 0x2A8
 end F
 
 /-- Bytes per block (and per sector) this reader handles. -/
 def sectorBytes : UInt32 := 512
 /-- FAT entries per FAT sector (4 bytes each). -/
 def entriesPerFatSector : UInt32 := sectorBytes / 4
-/-- Clusters followed in one chain at most: 1 GiB of 512-byte clusters is far
-beyond any file or directory this reader is for. -/
-def maxChain : UInt32 := 0x200000
+/-- The most blocks a directory may span: FAT allows at most 65,536 32-byte
+entries in one directory (2 MiB), as Linux's `FAT_MAX_DIR_SIZE` does. A
+directory chain that loops back is cut off here, after at most this many
+block reads and as many FAT reads, rather than followed on. -/
+def dirBlocks : UInt32 := 65536 * 32 / sectorBytes
 /-- End-of-chain marks are 0x0FFFFFF8 and above (FAT entries keep 28 bits). -/
 def endOfChain : UInt32 := 0x0FFFFFF8
 /-- The directory-entry attribute bits used here. -/
@@ -188,8 +193,11 @@ def sectorLba : ProgM Unit := do
 
 /-- Follow the FAT from `F.cluster`: read the FAT sector that holds its entry
 and either jump to `done` (end of chain) or store the next cluster, which
-must lie in the volume, and count the step (at most `maxChain`). -/
-def nextCluster (err rd : Nat) (step : UInt32) (done : Nat) : ProgM Unit := do
+must lie in the volume, and count the step: a chain may follow fewer steps
+than the word at `limit` (`F.dirLimit` for a directory, `F.clusterLimit` for
+a file). -/
+def nextCluster (err rd : Nat) (step : UInt32) (limit : UInt32) (done : Nat) :
+    ProgM Unit := do
   ld 4 1 F.cluster
   shri 1 7                                       -- / entriesPerFatSector
   ld 4 2 F.fatStart
@@ -207,8 +215,9 @@ def nextCluster (err rd : Nat) (step : UInt32) (done : Nat) : ProgM Unit := do
   ld 4 2 F.steps
   addi 2 1
   st 4 F.steps (.reg 2)
+  ld 4 4 limit
   let more ← newLabel
-  emit (.branch .ltu 2 (.imm maxChain) more)
+  emit (.branch .ltu 2 (.reg 4) more)
   stop err MassStorage.Stage.data FReason.chainTooLong (.reg 1)
   place more
 
@@ -283,6 +292,9 @@ def readVolume (err rd : Nat) : ProgM Unit := do
   emit (.alu .and 2 (.reg 1))
   check .eq 2 (.imm 0) 13                        -- a power of two
   st 4 F.spc (.reg 1)
+  li 2 dirBlocks
+  emit (.alu .udiv 2 (.reg 1))
+  st 4 F.dirLimit (.reg 2)
   ld 2 1 (xferBuf + 14)                          -- BPB_RsvdSecCnt
   check .ne 1 (.imm 0) 14
   ld 4 2 F.partStart
@@ -377,7 +389,7 @@ def lookup (err rd : Nat) (index : Nat) (name : Array UInt8) (directory : Bool) 
   st 4 F.sector (.reg 1)
   ld 4 2 F.spc
   emit (.branch .ltu 1 (.reg 2) sectorTop)
-  nextCluster err rd FStep.lookup missing
+  nextCluster err rd FStep.lookup F.dirLimit missing
   emit (.jump clusterTop)
   place missing
   stop err MassStorage.Stage.data FReason.notFound (.imm index.toUInt32)
@@ -469,7 +481,7 @@ def readFile (err rd : Nat) : ProgM Unit := do
   st 4 F.sector (.reg 1)
   ld 4 2 F.spc
   emit (.branch .ltu 1 (.reg 2) sectorTop)
-  nextCluster err rd FStep.file ended
+  nextCluster err rd FStep.file F.clusterLimit ended
   emit (.jump clusterTop)
   place ended
   ld 4 1 F.left

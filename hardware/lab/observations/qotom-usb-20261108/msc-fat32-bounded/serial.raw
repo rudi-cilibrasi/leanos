@@ -1,0 +1,68 @@
+"k2_º,'š,ÿ[H[J[1;1Herror: disk `hd0,gpt2' not found.
+error: hd2 cannot get C/H/S values.
+error: hd3 cannot get C/H/S values.
+LEANOS-LAB/1 DEFAULT request=none
+error: disk `hd0,gpt2' not found.
+LEANOS-LAB/1 CHAIN freebsd disk=hd1
+[H[J[1;1HLEANOS-DISK/1 CORE root=hd1,gpt1 prefix=(hd1,gpt1)/leanos/grub
+LEANOS-DISK/1 REQUEST consumed=1
+LEANOS-DISK/1 MENU disk=hd1 default=leanos timeout=0
+
+LEANOS-DISK/1 LEANOS load=1
+leanos-qotom-lab.elf: OK
+LEANOS-LAB/1 MODE qotom-reset-after-final seconds=30
+LEANOS/24 BOOT target=qotom-j1900-candidate phase=cpu-diagnostic platform-admitted=0 cpl3=0
+LEANOS/24 CPU profile=j1900-cpu-v1 codec=1 width=22 words=1,31,11,1970169159,1818588270,1231384169,198264,1050624,1104733119,3219913727,0,8834,0,0,2147483656,0,0,0,0,0,257,672139264 selection=65536
+LEANOS/24 CONTROL profile=j1900-cpu-v1 codec=1 width=8 words=3328,0,0,0,0,0,0,0 readback=1
+LEANOS-LAB/1 WIFI-BEGIN id=0x0f358086 bar0=0xd0900004
+WIFI 2000 0x0f358086
+WIFI 2001 0x00008460
+WIFI 2001 0x00010801
+WIFI 2001 0x01000801
+WIFI 2001 0x00000000
+WIFI 2002 0x00000000
+WIFI 2003 0x000002a0
+WIFI 2003 0x000002a0
+WIFI 2003 0x000002a0
+WIFI 2003 0x000206e1
+WIFI 2003 0x00000e03
+WIFI 2004 0x00000022
+WIFI 2004 0x00000022
+WIFI 2009 0x00000001
+WIFI 2005 0x00000001
+WIFI 2009 0x00000001
+WIFI 2006 0x00000001
+WIFI 2007 0x061005e3
+WIFI 2013 0x00000009
+LEANOS-LAB/1 HUB found root-port=4 speed=high slot=1
+WIFI 2009 0x00000001
+LEANOS-LAB/1 HUB configured ports=4 power-on-wait-ms=250 tt-think-time=3
+LEANOS-LAB/1 HUB port=1 status=0x0100 change=0x00
+LEANOS-LAB/1 HUB port=2 status=0x0100 change=0x00
+LEANOS-LAB/1 HUB port=3 status=0x0101 change=0x01
+LEANOS-LAB/1 HUB port=3 status=0x0503 change=0x10
+LEANOS-LAB/1 HUB device route=0x00003 speed=high root-port=4 tt-slot=0 tt-port=0
+WIFI 2009 0x00000001
+WIFI 2005 0x00000002
+WIFI 2009 0x00000001
+WIFI 2006 0x00000002
+WIFI 2007 0x6387058f
+WIFI 2014 0x00000000
+WIFI 2015 0x00000001
+WIFI 2015 0x00000082
+LEANOS-LAB/1 MSC ready vendor=0x058f product=0x6387
+WIFI 2009 0x00000001
+LEANOS-LAB/1 MSC configured bulk-in=0x82 in-max-packet=512 bulk-out=0x01 out-max-packet=512
+LEANOS-LAB/1 MSC inquiry type=0x00 removable=1 vendor="Generic" product="Flash Disk" revision="8.07"
+LEANOS-LAB/1 MSC csw step=unit-ready status=1 residue=0
+LEANOS-LAB/1 MSC sense after=unit-ready key=0x06 asc=0x28 ascq=0x00
+LEANOS-LAB/1 MSC unit-ready attempts=2
+LEANOS-LAB/1 MSC capacity blocks=122880000 block-bytes=512
+LEANOS-LAB/1 MSC mbr partition=0 type=0x0c active=1 lba=2048 blocks=194560
+LEANOS-LAB/1 MSC fat32 sectors-per-cluster=1 fats=2 reserved=32 fat-blocks=1497 root-cluster=2
+LEANOS-LAB/1 MSC fat found component=0 attr=0x10 cluster=3 bytes=0
+LEANOS-LAB/1 MSC fat found component=1 attr=0x10 cluster=4 bytes=0
+LEANOS-LAB/1 MSC fat found component=2 attr=0x20 cluster=189179 bytes=7725
+LEANOS-LAB/1 MSC file bytes=7725 head=23204c61622d6f6e6c792042494f532f fnv1a=0x407c2dba clusters=16
+LEANOS-LAB/1 WIFI-END status=0 code=0x00000000
+LEANOS/3 FINAL status=FAIL 
