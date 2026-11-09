@@ -3,8 +3,10 @@
 
    The instruction set and its encoding are defined by
    LeanOS/Wifi/Bytecode.lean. This file parses an image (`wifi_image_header`,
-   `wifi_start`) and declares the executor state and the device-effect hooks;
-   it no longer contains an interpreter. Instructions are executed by the
+   `wifi_start`), admits its declared policy against a kernel's profile
+   (`wifi_policy_within` and the two admission shapes below it) and declares
+   the executor state and the device-effect hooks; it no longer contains an
+   interpreter. Instructions are executed by the
    generated executor of wifi-gen-exec.h: `leanos_device_program_step`, the
    compiled `LeanOS.Wifi.Exec.step`, proved equal to `Sim.step` (issue #494,
    ADR 0020). It is shared by the FreeBSD userland development runner, the
@@ -102,6 +104,52 @@ static inline int wifi_is_sink(const struct wifi_policy *p, uint32_t off) {
     for (uint32_t i = 0; i < p->sink_count; ++i)
         if (p->sinks[i] == off) return 1;
     return 0;
+}
+
+/* Policy admission: a kernel binds an image only when the policy it declares
+   is no wider than the profile its subject may hold. Both policies have at
+   most WIFI_MAX_SINKS sinks and WIFI_MAX_DESCS descriptors (the image parser
+   guarantees it of a declared policy; a profile is a kernel constant).
+
+   `p` lies within `max` when it declares every address sink and every
+   descriptor region of `max` (each restricts what a program may write, so
+   declaring more only narrows `p`), a window no larger, DMA only if `max`
+   admits it, and configuration bitmaps and command masks inside `max`'s.
+   The device service and the Qotom lab (`lab_dev_policy_admitted`) use it. */
+static inline int wifi_policy_within(const struct wifi_policy *p, const struct wifi_policy *max) {
+    for (uint32_t k = 0; k < max->sink_count; ++k)
+        if (!wifi_is_sink(p, max->sinks[k])) return 0;
+    for (uint32_t k = 0; k < max->desc_count; ++k)
+        if (!wifi_has_desc(p, &max->descs[k])) return 0;
+    return p->window <= max->window && p->dma <= max->dma &&
+        !(p->cfg_read & ~max->cfg_read) && !(p->cfg_write & ~max->cfg_write) &&
+        !(p->cmd_clear & ~max->cmd_clear) && !(p->cmd_set & ~max->cmd_set);
+}
+
+/* The device service of boot/kernel.c: the image names exactly the function
+   `want` (bus, device, function, identity, window and BAR offset) and
+   declares a policy within `max`. */
+static inline int wifi_service_admitted(const struct wifi_target *t, const struct wifi_policy *p,
+                                        const struct wifi_target *want,
+                                        const struct wifi_policy *max) {
+    if (t->bus != want->bus || t->dev != want->dev || t->fn != want->fn || t->id != want->id ||
+        t->window != want->window || t->bar != want->bar || !p->present)
+        return 0;
+    return wifi_policy_within(p, max);
+}
+
+/* A frame source (the network and DHCP subjects of boot/kernel.c), a program
+   that drives no device: the image names the reserved identity 0xffffffff at
+   0:0.0 with `max`'s window, and declares a policy with no address sink, no
+   descriptor, no DMA, no configuration access and no command change, and a
+   window no larger than `max`'s. */
+static inline int wifi_source_admitted(const struct wifi_target *t, const struct wifi_policy *p,
+                                       const struct wifi_policy *max) {
+    if (t->bus != 0 || t->dev != 0 || t->fn != 0 || t->id != UINT32_C(0xffffffff) ||
+        t->window != max->window || !p->present || p->sink_count != 0 || p->desc_count != 0)
+        return 0;
+    return p->window <= max->window && !p->dma && p->cfg_read == 0 &&
+        p->cfg_write == 0 && p->cmd_clear == 0 && p->cmd_set == 0;
 }
 
 /* With WIFI_HOOKS_DIRECT the executor calls fixed hook functions by name
