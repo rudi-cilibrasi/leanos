@@ -191,7 +191,164 @@ static void lab_signed8(uint32_t value) {
     serial_u64(b);
 }
 
+/* USB mass storage (LeanOS/Usb/MassStorage.lean, docs/usb-mass-storage.md).
+   A record may span several prints: each part prints its text and only the
+   last ends the line, so none of them adds the raw "WIFI" line. */
+static const char *const lab_msc_steps[] = {
+    "attach", "configure", "inquiry", "unit-ready", "capacity", "read", "read-past-end", "sense",
+};
+static const char *const lab_msc_stages[] = { "none", "cbw", "data", "csw" };
+static const char *const lab_msc_reasons[] = {
+    "none", "no-device", "timeout", "stall", "transfer", "csw-length", "csw-signature",
+    "csw-tag", "phase-error", "csw-status", "failed", "not-ready", "capacity", "short-read",
+    "passed-past-end",
+};
+#define LAB_MSC_NAME(names, i) \
+    lab_msc_name(names, sizeof names / sizeof names[0], i)
+
+static void lab_msc_name(const char *const *names, unsigned count, uint32_t i) {
+    if (i < count) serial_puts(names[i]);
+    else serial_u64(i);
+}
+
+/* The INQUIRY string field being collected: printed without SCSI's space
+   padding when it ends. */
+static char lab_msc_text[16];
+static unsigned lab_msc_text_len;
+
+static void lab_msc_text_flush(void) {
+    unsigned n = lab_msc_text_len;
+    while (n && lab_msc_text[n - 1] == ' ')
+        --n;
+    for (unsigned i = 0; i < n; ++i)
+        serial_putc(lab_msc_text[i]);
+    lab_msc_text_len = 0;
+}
+
+static void lab_msc_byte_hex(uint32_t value) {
+    serial_puts("0x");
+    lab_wifi_hex(value & 0xffu, 2);
+}
+
+/* 1 if `tag` is a mass-storage record part (rendered), else 0. */
+static int lab_msc_print(uint32_t tag, uint32_t value) {
+    switch (tag) {
+    case 0x2300:
+        serial_puts("LEANOS-LAB/1 MSC ready vendor=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" product=0x");
+        lab_wifi_hex(value >> 16, 4);
+        serial_putc('\n');
+        break;
+    case 0x2301:
+    case 0x2302:
+        serial_puts(tag == 0x2301 ? "LEANOS-LAB/1 MSC configured bulk-in=" : " bulk-out=");
+        lab_msc_byte_hex(value);
+        serial_puts(tag == 0x2301 ? " in-max-packet=" : " out-max-packet=");
+        serial_u64(value >> 16);
+        if (tag == 0x2302) serial_putc('\n');
+        break;
+    case 0x2310:
+        serial_puts("LEANOS-LAB/1 MSC inquiry type=");
+        lab_msc_byte_hex(value);
+        serial_puts(" removable=");
+        serial_u64((value >> 8) & 1u);
+        break;
+    case 0x2311:
+        if (value > 0) {
+            lab_msc_text_flush();
+            serial_putc('"');
+        }
+        serial_puts(value == 0 ? " vendor=\"" : value == 1 ? " product=\"" :
+                    value == 2 ? " revision=\"" : "\n");
+        lab_msc_text_len = 0;
+        break;
+    case 0x2312:
+        for (unsigned i = 0; i < 4; ++i) {
+            unsigned c = (value >> (8 * i)) & 0xffu;
+            if (c == 0) c = ' ';
+            else if (c < 0x20 || c > 0x7e || c == '"' || c == '\\') c = '.';
+            if (lab_msc_text_len < sizeof lab_msc_text)
+                lab_msc_text[lab_msc_text_len++] = (char)c;
+        }
+        break;
+    case 0x2320:
+        serial_puts("LEANOS-LAB/1 MSC unit-ready attempts=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2321:
+        serial_puts("LEANOS-LAB/1 MSC sense after=");
+        LAB_MSC_NAME(lab_msc_steps, value >> 24);
+        serial_puts(" key=");
+        lab_msc_byte_hex(value);
+        serial_puts(" asc=");
+        lab_msc_byte_hex(value >> 8);
+        serial_puts(" ascq=");
+        lab_msc_byte_hex(value >> 16);
+        serial_putc('\n');
+        break;
+    case 0x2322:
+        serial_puts("LEANOS-LAB/1 MSC csw step=");
+        LAB_MSC_NAME(lab_msc_steps, value & 0xffu);
+        serial_puts(" status=");
+        serial_u64((value >> 8) & 0xffu);
+        break;
+    case 0x2323:
+        serial_puts(" residue=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2330:
+        serial_puts("LEANOS-LAB/1 MSC capacity blocks=");
+        serial_u64(value);
+        break;
+    case 0x2331:
+        serial_puts(" block-bytes=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2340:
+        serial_puts("LEANOS-LAB/1 MSC block lba=");
+        serial_u64(value);
+        serial_puts(" head=");
+        break;
+    case 0x2341:
+        for (unsigned i = 0; i < 4; ++i)
+            lab_wifi_hex((value >> (8 * i)) & 0xffu, 2);
+        break;
+    case 0x2342:
+        serial_puts(" fnv1a=0x");
+        lab_wifi_hex(value, 8);
+        serial_putc('\n');
+        break;
+    case 0x2350:
+        serial_puts("LEANOS-LAB/1 MSC done blocks-read=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x23E0:
+        serial_puts("LEANOS-LAB/1 MSC error=");
+        LAB_MSC_NAME(lab_msc_steps, value & 0xffu);
+        serial_puts(" stage=");
+        LAB_MSC_NAME(lab_msc_stages, (value >> 8) & 0xffu);
+        serial_puts(" reason=");
+        LAB_MSC_NAME(lab_msc_reasons, (value >> 16) & 0xffu);
+        break;
+    case 0x23E1:
+        serial_puts(" detail=0x");
+        lab_wifi_hex(value, 8);
+        serial_putc('\n');
+        break;
+    default:
+        return 0;
+    }
+    return 1;
+}
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
+    if ((tag >> 8) == 0x23u && lab_msc_print(tag, value))
+        return;
     /* Lease records from LeanOS/Wifi/Connect.lean (Tag.leasedIp, router,
        subnet, lease) are also rendered as a readable boot message. */
     if (tag == 0x0E05 || tag == 0x0E07 || tag == 0x0E08) {
