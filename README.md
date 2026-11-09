@@ -278,10 +278,10 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-Five handwritten C components have machine-checked theorems of a different
+Nine handwritten C components have machine-checked theorems of a different
 kind: **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean (issues #597, #599, #604, #606 and #608,
+Lean (issues #597, #599, #604, #606, #608, #614, #617, #624 and #627,
 [ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
 first is the early boot text console (`include/boot_text_console.h`). For every
 Multiboot2 buffer of up to 16 MiB and every sequence of printed bytes:
@@ -399,6 +399,25 @@ Against every such pair, it:
 the answers mean is what the Lean theorems of
 `LeanOS.BootMemoryMapStreaming` and `LeanOS.BootMemoryMapStreamAuthority`
 state.
+
+The ninth is the frame selection, scrub and publication of `boot_allocate`
+(`include/boot_frame_selection.h`), which turns the decoder's answers into
+the one frame the boot allocator publishes. With the sixth to eighth, it
+covers `boot_allocate` from the handoff to the published frame. It is proved
+against a candidate decoder that may write any state and answer any status, a
+scrub that may answer anything, and a Lean that may answer every call with
+any value. Against every such triple, it:
+
+- selects exactly the first candidate every answer accepts, and stops at the
+  first decoder rejection;
+- scrubs once, exactly the selected frame, and only after every cross-check
+  accepted it;
+- asks for the authority result only after the scrub succeeded;
+- returns the status of the first failed check, and writes only its results.
+
+([The project](experiments/quickproof/boot-frame-selection/README.md).) What
+the answers mean is what the Lean theorems of
+`LeanOS.BootMemoryMapStreamAuthority` state.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy

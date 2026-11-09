@@ -6,6 +6,7 @@
 #include "acpi_table_copy.h"
 #include "madt_generated_admission.h"
 #include "boot_handoff_decode.h"
+#include "boot_frame_selection.h"
 #ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
 #include "qotom-platform-admission-state.h"
 #endif
@@ -2054,27 +2055,23 @@ _Static_assert(sizeof(struct boot_decode_state) ==
                    BOOT_DECODE_WORDS * sizeof(uint64_t),
                "the kernel's decoder state is the header's");
 
-static void zero_boot_decode_state(struct boot_decode_state *state) {
-    volatile uint64_t *words = state->word;
-    for (unsigned query = 0; query < 41; ++query)
-        words[query] = 0;
-}
-
 /* Keep fixed-width decoder-state transport explicit in the freestanding
    kernel. Clang may otherwise lower these aggregate copies to a hosted
    memcpy call, which is not part of the boot image's runtime contract.
    include/boot_handoff_decode.h copies no state: its transitions alternate
-   between two states, and the kernel loads the final one from there. */
-static void load_boot_decode_state(struct boot_decode_state *destination,
+   between two states, and the kernel loads the final one from there.
+   include/boot_frame_selection.h copies none either: it keeps the selected
+   candidate's state where its decoder wrote it. */
+static void load_boot_decode_words(uint64_t *destination,
                                    const uint64_t *source) {
-    volatile uint64_t *words = destination->word;
+    volatile uint64_t *words = destination;
     for (unsigned query = 0; query < BOOT_DECODE_WORDS; ++query)
         words[query] = source[query];
 }
 
-static void copy_boot_decode_state(struct boot_decode_state *destination,
-                                   const struct boot_decode_state *source) {
-    load_boot_decode_state(destination, source->word);
+static void load_boot_decode_state(struct boot_decode_state *destination,
+                                   const uint64_t *source) {
+    load_boot_decode_words(destination->word, source);
 }
 
 /* The CPU page-table block ends after the last linked subject's tables: B's
@@ -2103,24 +2100,6 @@ static void copy_boot_decode_state(struct boot_decode_state *destination,
     (uint64_t)BOOT_EMBEDDED_USERS_END - (uint64_t)__user_a_text_start, \
     (uint64_t)(info_address), (uint64_t)(total)
 
-#define BOOT_BITMAP_ARGS(words) \
-    (words)[0], (words)[1], (words)[2], (words)[3], \
-    (words)[4], (words)[5], (words)[6], (words)[7], \
-    (words)[8], (words)[9], (words)[10], (words)[11], \
-    (words)[12], (words)[13], (words)[14], (words)[15], \
-    (words)[16], (words)[17], (words)[18], (words)[19], \
-    (words)[20], (words)[21], (words)[22], (words)[23], \
-    (words)[24], (words)[25], (words)[26], (words)[27], \
-    (words)[28], (words)[29], (words)[30], (words)[31], \
-    (words)[32], (words)[33], (words)[34], (words)[35], \
-    (words)[36], (words)[37], (words)[38], (words)[39], \
-    (words)[40], (words)[41], (words)[42], (words)[43], \
-    (words)[44], (words)[45], (words)[46], (words)[47], \
-    (words)[48], (words)[49], (words)[50], (words)[51], \
-    (words)[52], (words)[53], (words)[54], (words)[55], \
-    (words)[56], (words)[57], (words)[58], (words)[59], \
-    (words)[60], (words)[61], (words)[62], (words)[63]
-
 /* Parse the immutable copy exactly once (include/boot_handoff_decode.h).  The
    lab capture (hardware/lab/qotom-acpi.c.inc) decodes the handoff itself
    through this, and boot_allocate through boot_handoff_project.  It fails
@@ -2139,34 +2118,144 @@ static __attribute__((unused)) struct boot_decode_state decode_boot_projection(
     return decoded;
 }
 
-/* Re-run the same generated decoder for the candidate selected from the
-   bounded projection (include/boot_handoff_decode.h).  This scalar terminal
-   state is the authorization gate: caller-owned projection storage may
-   suggest a candidate, but cannot grant usable-frame or non-overlap
-   authority. */
-static struct boot_decode_state decode_boot_candidate_authority(
-        uint32_t magic, uint32_t info_address, uint32_t total,
-        uint64_t candidate, const uint8_t *info) {
-    uint64_t states[2][BOOT_DECODE_WORDS];
-    uint32_t current = 0;
-    boot_handoff_require(boot_handoff_decode_candidate(
-        magic, info_address, total, candidate, (const uint64_t *)info, states,
-        &current));
-    struct boot_decode_state authority;
-    load_boot_decode_state(&authority, states[current]);
-    return authority;
-}
-
 struct boot_terminal_result { uint64_t word[9]; };
 
-static uint64_t projection_finish_query(
-        const struct boot_decode_state *decoded, uint64_t owner,
-        uint64_t manifest_status, uint64_t manifest_error,
-        uint64_t query, const uint64_t *free_words) {
-    return leanos_boot_projection_finish(
-        decoded->word[1], decoded->word[2], manifest_status, manifest_error,
-        decoded->word[11], decoded->word[17], owner, query,
-        BOOT_BITMAP_ARGS(free_words));
+_Static_assert(BOOT_FRAME_DECODE_WORDS == BOOT_DECODE_WORDS &&
+                   BOOT_FRAME_BLOCKS == BOOT_PROJECTION_BLOCKS &&
+                   BOOT_HANDOFF_OK == 0,
+               "the frame selection's decoder state, bitmaps and acceptance "
+               "are the handoff decoder's");
+
+/* The handoff a candidate is decoded from: its magic, address and extent and
+   the immutable copy. */
+struct boot_frame_handoff {
+    uint32_t magic, info_address, total;
+    const uint64_t *copy;
+};
+
+/* The candidate decoder of include/boot_frame_selection.h.  Re-run the same
+   generated decoder for the candidate selected from the bounded projection
+   (boot_handoff_decode_candidate, include/boot_handoff_decode.h).  This
+   scalar terminal state is the authorization gate: caller-owned projection
+   storage may suggest a candidate, but cannot grant usable-frame or
+   non-overlap authority.  It loads the decoder's final state into `state`
+   and returns the decoder's status, which boot_frame_require maps to its
+   reason. */
+static uint32_t boot_frame_decode_candidate(void *context, uint64_t candidate,
+                                            uint64_t *state) {
+    const struct boot_frame_handoff *handoff = context;
+    uint64_t states[2][BOOT_DECODE_WORDS];
+    uint32_t current = 0;
+    const enum boot_handoff_status status = boot_handoff_decode_candidate(
+        handoff->magic, handoff->info_address, handoff->total, candidate,
+        handoff->copy, states, &current);
+    if (status != BOOT_HANDOFF_OK) return (uint32_t)status;
+    load_boot_decode_words(state, states[current]);
+    return (uint32_t)BOOT_HANDOFF_OK;
+}
+
+/* The scrub of include/boot_frame_selection.h: zero the selected frame
+   through the boot identity map, then read every byte back.  Physical memory
+   access is the explicit TCB boundary. */
+static uint32_t boot_frame_physical_scrub(void *context, uint64_t selected) {
+    (void)context;
+    volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);
+    for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;
+    for (uint64_t i = 0; i < PAGE_BYTES; ++i)
+        if (frame[i] != 0) return 0;
+    return 1;
+}
+
+/* The frame-budget scenario selects the next accepted frame as well, and
+   rescans it after the publication. */
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+#define BOOT_FRAME_TAKE_NEXT 1u
+#else
+#define BOOT_FRAME_TAKE_NEXT 0u
+#endif
+
+/* Fail the authority cross-check: the raw-selection mutation fixture, which
+   must fail it, names its own reason.  Each reason is a literal handoff_fail
+   argument, as scripts/test-generate-serial-protocol.sh requires of every
+   boot-allocation reason. */
+static inline __attribute__((always_inline, noreturn)) void
+boot_frame_authority_fail(void) {
+#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE
+    handoff_fail("raw-selection-authority");
+#else
+    handoff_fail("projection-authority");
+#endif
+}
+
+/* Fail the handoff with the reason of a status of
+   include/boot_frame_selection.h; return on BOOT_FRAME_OK.  Each group of
+   statuses is one check of the code before the header, and takes its
+   reason.  A candidate the decoder rejected takes the reason of the
+   decoder's own status, `decoder_status` (boot_handoff_require), as when
+   boot_allocate decoded each candidate itself.  Inlined at each call site,
+   where the header's statuses are constants, as boot_handoff_require is. */
+static inline __attribute__((always_inline)) void boot_frame_require(
+        enum boot_frame_status status, uint32_t decoder_status) {
+    if (status == BOOT_FRAME_OK) return;
+    if (status == BOOT_FRAME_TERMINAL_VERSION)
+        handoff_fail("projection-terminal");
+    if (status == BOOT_FRAME_TERMINAL_STATUS)
+        handoff_fail("projection-terminal");
+    if (status == BOOT_FRAME_TERMINAL_ERROR)
+        handoff_fail("projection-terminal");
+    if (status == BOOT_FRAME_TERMINAL_FRAME)
+        handoff_fail("projection-terminal");
+    if (status == BOOT_FRAME_TERMINAL_OWNER)
+        handoff_fail("projection-terminal");
+    if (status == BOOT_FRAME_TERMINAL_ENTRY_COUNT)
+        handoff_fail("projection-terminal");
+    /* The decoder's status is never BOOT_HANDOFF_OK here; fail closed if it
+       were. */
+    if (status == BOOT_FRAME_DECODER)
+        boot_handoff_require((enum boot_handoff_status)decoder_status);
+    if (status == BOOT_FRAME_DECODER) handoff_fail("authority-rejected");
+    if (status == BOOT_FRAME_AUTHORITY_NONE)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_NOMINATION)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_TARGET)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_ENTRY_COUNT)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_HIGHEST)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_USABLE)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_BLOCKED)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_AUTHORITY_MANIFEST)
+        boot_frame_authority_fail();
+    if (status == BOOT_FRAME_SCRUB) handoff_fail("scrub");
+    if (status == BOOT_FRAME_PUBLICATION_VERSION) handoff_fail("publication");
+    if (status == BOOT_FRAME_PUBLICATION_STATUS) handoff_fail("publication");
+    if (status == BOOT_FRAME_PUBLICATION_ERROR) handoff_fail("publication");
+    if (status == BOOT_FRAME_PUBLICATION_FRAME) handoff_fail("publication");
+    if (status == BOOT_FRAME_PUBLICATION_OBJECT) handoff_fail("publication");
+    if (status == BOOT_FRAME_UNPUBLISHED_LIMIT)
+        handoff_fail("frame-budget-unpublished-frame");
+    if (status == BOOT_FRAME_UNPUBLISHED_ORDER)
+        handoff_fail("frame-budget-unpublished-frame");
+    if (status == BOOT_FRAME_RESCAN_ENTRY_COUNT)
+        handoff_fail("frame-budget-projection-authority");
+    if (status == BOOT_FRAME_RESCAN_HIGHEST)
+        handoff_fail("frame-budget-projection-authority");
+    if (status == BOOT_FRAME_RESCAN_TARGET)
+        handoff_fail("frame-budget-projection-authority");
+    if (status == BOOT_FRAME_RESCAN_STATUS)
+        handoff_fail("frame-budget-projection-authority");
+    if (status == BOOT_FRAME_RESCAN_USABLE)
+        handoff_fail("frame-budget-projection-authority");
+    if (status == BOOT_FRAME_RESCAN_BLOCKED)
+        handoff_fail("frame-budget-projection-authority");
+    if (status == BOOT_FRAME_RESCAN_MANIFEST)
+        handoff_fail("frame-budget-projection-authority");
+    /* The header returns no other value; fail closed regardless. */
+    handoff_fail("projection-authority");
 }
 
 /* The generated raw-word decoder is the sole tag walker and classifier.  Its
@@ -2238,68 +2327,36 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
 #endif
     if (published_apic_id != handoff.executing_apic_id)
         handoff_fail("topology-admission-publication");
-    uint64_t free_words[64];
-    uint64_t manifest_status = 1, manifest_error = 0;
-    for (uint64_t block = 0; block < 64; ++block) {
-        uint64_t status = leanos_boot_projection_manifest(
-            block, BOOT_MANIFEST_ARGS(info_address, total), 1);
-        uint64_t error = leanos_boot_projection_manifest(
-            block, BOOT_MANIFEST_ARGS(info_address, total), 2);
-        uint64_t reserved = leanos_boot_projection_manifest(
-            block, BOOT_MANIFEST_ARGS(info_address, total), 3);
-        if (status != 1 || error != 0) {
-            manifest_status = status;
-            manifest_error = error;
-        }
-        boot_projection_reserved[block] = reserved;
-        free_words[block] = leanos_boot_projection_free(
-            boot_projection_usable[block], boot_projection_blocked[block],
-            boot_projection_reserved[block]);
-    }
+    /* Overlay the reservation manifest on the bounded projection, require
+       its terminal result, then select the frame from target-specific
+       replays of the immutable raw handoff, cross-check it, scrub it and
+       publish it (include/boot_frame_selection.h).  The projection bitmap
+       remains a complete cross-check, but it no longer gets to nominate the
+       frame consumed by production. */
+    const uint64_t manifest[BOOT_FRAME_MANIFEST_WORDS] = {
+        BOOT_MANIFEST_ARGS(info_address, total)
+    };
     struct boot_terminal_result authority;
-    for (uint64_t query = 0; query < 9; ++query)
-        authority.word[query] =
-            projection_finish_query(
-                &decoded, 1, manifest_status, manifest_error, query, free_words);
-    if (authority.word[0] != 1 || authority.word[1] != 1 ||
-        authority.word[2] != 0 || authority.word[3] >= 4096 ||
-        authority.word[4] != 1 || authority.word[5] != decoded.word[11])
-        handoff_fail("projection-terminal");
-    /* Select from target-specific replays of the immutable raw handoff.  The
-       projection bitmap remains a complete cross-check, but it no longer gets
-       to nominate the frame consumed by production. */
-    uint64_t selected = 4096;
-    uint64_t selected_manifest = 0;
-    struct boot_decode_state selected_authority;
-    zero_boot_decode_state(&selected_authority);
-#ifdef LEANOS_FRAME_BUDGET_SCENARIO
-    uint64_t next_selected = 4096;
-#endif
-    for (uint64_t candidate = 0; candidate < 4096; ++candidate) {
-        struct boot_decode_state candidate_authority =
-            decode_boot_candidate_authority(
-                magic, info_address, total, candidate, info);
-        uint64_t candidate_manifest = leanos_boot_manifest_candidate(
-            candidate, BOOT_MANIFEST_ARGS(info_address, total));
-        uint64_t exact_candidate = leanos_boot_consume_exact_projection(
-            4096, candidate, candidate_authority.word[1],
-            candidate_authority.word[14], candidate_authority.word[15],
-            candidate_manifest);
-        if (exact_candidate >= 4096) continue;
-        if (selected >= 4096) {
-            selected = exact_candidate;
-            copy_boot_decode_state(&selected_authority, &candidate_authority);
-            selected_manifest = candidate_manifest;
-#ifndef LEANOS_FRAME_BUDGET_SCENARIO
-            break;
-#endif
-#ifdef LEANOS_FRAME_BUDGET_SCENARIO
-        } else {
-            next_selected = exact_candidate;
-            break;
-#endif
-        }
-    }
+    boot_frame_require(boot_frame_terminal(
+        manifest, decoded.word, boot_projection_usable,
+        boot_projection_blocked, boot_projection_reserved, authority.word), 0);
+    struct boot_frame_handoff candidates = {
+        .magic = magic,
+        .info_address = info_address,
+        .total = total,
+        .copy = (const uint64_t *)info
+    };
+    /* The selected candidate's decoded state stays in selection_states[0];
+       the frame-budget scenario decodes later candidates into the other. */
+    uint64_t selection_states[2][BOOT_FRAME_DECODE_WORDS];
+    uint64_t *const selected_authority = selection_states[0];
+    uint64_t selected = 4096, selected_manifest = 0, next_selected = 4096;
+    uint32_t decoder_status = 0;
+    const enum boot_frame_status selection = boot_frame_select(
+        boot_frame_decode_candidate, &candidates, manifest,
+        BOOT_FRAME_TAKE_NEXT, selection_states, &selected,
+        &selected_manifest, &next_selected, &decoder_status);
+    boot_frame_require(selection, decoder_status);
     /* Production mutation fixture: corrupt only the complete-projection
        nomination after the immutable-byte replay has selected its frame.
        The comparison below must reject before either scrub or publication. */
@@ -2318,62 +2375,36 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     selected = selected == 4095 ? selected - 1 : selected + 1;
 #endif
 #ifdef LEANOS_RAW_CLASSIFICATION_MUTATION_FIXTURE
-    selected_authority.word[14] = 0;
+    selected_authority[14] = 0;
 #endif
-    if (selected >= 4096 || authority.word[3] != selected ||
-        selected_authority.word[16] != selected ||
-        selected_authority.word[11] != decoded.word[11] ||
-        selected_authority.word[17] != decoded.word[17] ||
-        selected_authority.word[14] != 1 ||
-        selected_authority.word[15] != 0 || selected_manifest != 1) {
-#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE
-        handoff_fail("raw-selection-authority");
-#else
-        handoff_fail("projection-authority");
-#endif
-    }
-
-    volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);
-    for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;
-    for (uint64_t i = 0; i < PAGE_BYTES; ++i)
-        if (frame[i] != 0) handoff_fail("scrub");
+    boot_frame_require(boot_frame_cross_check(
+        authority.word, decoded.word, selected, selected_authority,
+        selected_manifest), 0);
+    boot_frame_require(boot_frame_scrub_selected(
+        boot_frame_physical_scrub, 0, selected), 0);
     struct boot_terminal_result publication = {0};
-    for (uint64_t query = 0; query < 5; ++query)
-        publication.word[query] = leanos_boot_authority_result(
-            selected, selected_authority.word[16], selected_authority.word[1],
-            selected_authority.word[14], selected_authority.word[15],
-            selected_manifest, 1, query);
+    boot_frame_publication_result(selected, selected_authority,
+                                  selected_manifest, publication.word);
 #ifdef LEANOS_PUBLICATION_RESULT_MUTATION_FIXTURE
     publication.word[3] = selected == 4095 ? selected - 1 : selected + 1;
 #endif
-    if (publication.word[0] != 1 || publication.word[1] != 1 ||
-        publication.word[2] != 0 || publication.word[3] != selected ||
-        publication.word[4] != selected + 1)
-        handoff_fail("publication");
+    boot_frame_require(boot_frame_publication_check(
+        selected, publication.word), 0);
     published_boot_object = publication.word[4];
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
     frame_budget_boot_published_frame = selected;
     frame_budget_physical_frame = next_selected;
-    if (frame_budget_physical_frame >= 4096 ||
-        frame_budget_physical_frame <= frame_budget_boot_published_frame)
-        handoff_fail("frame-budget-unpublished-frame");
-    struct boot_decode_state frame_budget_authority =
-        decode_boot_candidate_authority(
-            magic, info_address, total, frame_budget_physical_frame, info);
-    frame_budget_rescanned_frame = frame_budget_authority.word[16];
-    frame_budget_rescan_status = frame_budget_authority.word[1];
-    frame_budget_rescan_usable = frame_budget_authority.word[14];
-    frame_budget_rescan_blocked = frame_budget_authority.word[15];
-    frame_budget_rescan_manifest = leanos_boot_manifest_candidate(
-        frame_budget_physical_frame, BOOT_MANIFEST_ARGS(info_address, total));
-    if (frame_budget_authority.word[11] != decoded.word[11] ||
-        frame_budget_authority.word[17] != decoded.word[17] ||
-        frame_budget_rescanned_frame != frame_budget_physical_frame ||
-        frame_budget_rescan_status != 1 ||
-        frame_budget_rescan_usable != 1 ||
-        frame_budget_rescan_blocked != 0 ||
-        frame_budget_rescan_manifest != 1)
-        handoff_fail("frame-budget-projection-authority");
+    uint64_t frame_budget_rescan[BOOT_FRAME_RESCAN_WORDS];
+    const enum boot_frame_status rescan = boot_frame_rescan(
+        boot_frame_decode_candidate, &candidates, manifest, decoded.word,
+        frame_budget_boot_published_frame, frame_budget_physical_frame,
+        selection_states[1], frame_budget_rescan, &decoder_status);
+    boot_frame_require(rescan, decoder_status);
+    frame_budget_rescanned_frame = frame_budget_rescan[0];
+    frame_budget_rescan_status = frame_budget_rescan[1];
+    frame_budget_rescan_usable = frame_budget_rescan[2];
+    frame_budget_rescan_blocked = frame_budget_rescan[3];
+    frame_budget_rescan_manifest = frame_budget_rescan[4];
 #endif
 
     serial_puts(LEANOS_SERIAL_7_HANDOFF " magic=valid info-bytes="); serial_u64(total);
