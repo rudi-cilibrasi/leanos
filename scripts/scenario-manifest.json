@@ -1948,10 +1948,13 @@
       },
       {
         "image": "leanos-ipc-stream",
-        "check": "validate",
+        "check": "converge",
         "expected": "boot-page-plan-ipc-stream.h",
         "final": "boot-page-plan-ipc-stream.final.h",
-        "description": "ipc-stream"
+        "description": "ipc-stream",
+        "targets": [
+          "leanos-ipc-stream"
+        ]
       },
       {
         "image": "leanos-device-service",

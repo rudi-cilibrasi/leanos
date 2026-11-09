@@ -2,11 +2,12 @@ import LeanOS.Refinement.ChildLoaderC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
 import LeanOS.Refinement.SpawnAllocatorC
+import LeanOS.Refinement.BootTextConsoleC
 
 /-!
-# Negative fixtures for the #570 and #593 refinement theorems
+# Negative fixtures for the #570, #593 and #597 refinement theorems
 
-Each rung-3 theorem of issues #570 and #593 states that a checked-in C AST
+Each rung-3 theorem of issues #570, #593 and #597 states that a checked-in C AST
 computes a Lean witness. These fixtures show the statements have teeth on both sides:
 
 * **a mutated export (C side):** the emitted AST with one constant or one
@@ -202,6 +203,52 @@ is false
 #guard_msgs in
 example : call framePortCheckC [2, 0x03020101, 0, 100, 0, 1000] =
     some (ownerlessFramePortCheck 2 0x03020101 0 100 0 1000) := by
+  decide
+
+/-! ## `leanos_boot_text_surface` (#597) -/
+
+open LeanOS.BootTextConsole LeanOS.Refinement.BootTextConsoleC in
+/-- The emitted selector with its aperture bound, the pitch limit `512`
+(literal 11), raised to `514`; `513` would be equivalent, since an accepted
+pitch is even. -/
+def bootTextSurfaceMutantC : Func := mutateLiteral bootTextSurfaceC 11 fun _ => 514
+
+open LeanOS.BootTextConsole LeanOS.Refinement.BootTextConsoleC in
+/- 64 rows of a 514-byte pitch span 32,896 bytes, more than the 32 KiB
+aperture: the mutant accepts that surface. -/
+/--
+error: Tactic `decide` proved that the proposition
+  call bootTextSurfaceMutantC [2, 16, 753664, 514, 80, 64] = some (checkRaw 2 16 753664 514 80 64)
+is false
+-/
+#guard_msgs in
+example : call bootTextSurfaceMutantC [2, 16, 753664, 514, 80, 64] =
+    some (checkRaw 2 16 753664 514 80 64) := by
+  decide
+
+open LeanOS.BootTextConsole LeanOS.Refinement.BootTextConsoleC in
+/-- The emitted selector agrees on the same input, and on the standard 80x25
+surface. -/
+example : call bootTextSurfaceC [2, 16, 753664, 514, 80, 64] = some (checkRaw 2 16 753664 514 80 64) ∧
+    call bootTextSurfaceC [2, 16, 753664, 160, 80, 25] = some 1 := by
+  decide
+
+open LeanOS.BootTextConsole in
+/-- A Lean selector that forgets the aperture bound on the pitch. -/
+def unboundedCheckRaw (kind bits address pitch width height : UInt64) : UInt64 :=
+  if kind == 2 && bits == 16 && address == 0xb8000 && 0 < width && width ≤ 160 &&
+      0 < height && height ≤ 64 && pitch % 2 == 0 && 2 * width ≤ pitch then 1 else 0
+
+open LeanOS.BootTextConsole LeanOS.Refinement.BootTextConsoleC in
+/- The emitted C refuses that surface, the mutated witness accepts it. -/
+/--
+error: Tactic `decide` proved that the proposition
+  call bootTextSurfaceC [2, 16, 753664, 514, 80, 64] = some (unboundedCheckRaw 2 16 753664 514 80 64)
+is false
+-/
+#guard_msgs in
+example : call bootTextSurfaceC [2, 16, 753664, 514, 80, 64] =
+    some (unboundedCheckRaw 2 16 753664 514 80 64) := by
   decide
 
 /-! ## The spawn allocator's exports (#593)

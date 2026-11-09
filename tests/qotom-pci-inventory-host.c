@@ -58,21 +58,21 @@ static uint64_t check_collected(const struct pci_enumeration_snapshot *snapshot)
 static void test_collected_inventory(void) {
     struct pci_enumeration_snapshot snapshot;
     struct collection_fixture fixture = {-1, -1, 0, 0, 0};
-    assert(pci_enumerate_segment(read_capture, &fixture, &snapshot).status == PCI_ENUMERATION_OK);
+    assert(pci_enumerate_segment(read_capture, &fixture, &snapshot, 0) == PCI_ENUMERATION_OK);
     assert(fixture.reads == 65761 && snapshot.count == 15 && check_collected(&snapshot) == 1);
     for (int i = 0; i < 15; ++i) {
         fixture = (struct collection_fixture){i, -1, 0, 0, 0};
-        assert(pci_enumerate_segment(read_capture, &fixture, &snapshot).status == PCI_ENUMERATION_OK);
+        assert(pci_enumerate_segment(read_capture, &fixture, &snapshot, 0) == PCI_ENUMERATION_OK);
         assert(snapshot.count == 14 && check_collected(&snapshot) == UINT64_C(0x10000));
         fixture = (struct collection_fixture){-1, i, 0, 0, 0};
-        assert(pci_enumerate_segment(read_capture, &fixture, &snapshot).status == PCI_ENUMERATION_OK);
+        assert(pci_enumerate_segment(read_capture, &fixture, &snapshot, 0) == PCI_ENUMERATION_OK);
         assert(check_collected(&snapshot) == UINT64_C(0x40000) + (unsigned)i);
     }
     fixture = (struct collection_fixture){-1, -1, 1, 0, 0};
-    assert(pci_enumerate_segment(read_capture, &fixture, &snapshot).status == PCI_ENUMERATION_OK);
+    assert(pci_enumerate_segment(read_capture, &fixture, &snapshot, 0) == PCI_ENUMERATION_OK);
     assert(snapshot.count == 16 && check_collected(&snapshot) == UINT64_C(0x10000));
     fixture = (struct collection_fixture){-1, -1, 0, 1, 0};
-    assert(pci_enumerate_segment(read_capture, &fixture, &snapshot).status == PCI_ENUMERATION_READ_FAILED);
+    assert(pci_enumerate_segment(read_capture, &fixture, &snapshot, 0) == PCI_ENUMERATION_READ_FAILED);
     assert(snapshot.count == 0); /* Never pass a failed collection to admission. */
     puts("Collected PCI snapshots passed generated inventory admission and 32 negative cases");
 }

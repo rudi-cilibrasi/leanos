@@ -60,7 +60,8 @@ static void reset(uint32_t mismatch) {
 int main(void) {
     struct pci_enumeration_snapshot snapshot;
     reset(0);
-    struct pci_enumeration_result result = pci_enumerate_segment(lab_pci_read, 0, &snapshot);
+    struct pci_enumeration_result result;
+    pci_enumerate_segment(lab_pci_read, 0, &snapshot, &result);
     assert(result.status == PCI_ENUMERATION_OK && snapshot.count == 16);
     assert(data_reads == 65536 + 16*15 && selector_reads == data_reads);
     assert(lab_pci_trace.mismatches == 0);
@@ -69,7 +70,7 @@ int main(void) {
        not capacity overflow or a partially published inventory. */
     reset(UINT32_C(0x80001000));
     snapshot.count = 99;
-    result = pci_enumerate_segment(lab_pci_read, 0, &snapshot);
+    pci_enumerate_segment(lab_pci_read, 0, &snapshot, &result);
     assert(result.status == PCI_ENUMERATION_READ_FAILED && snapshot.count == 0);
     assert(result.bus == 0 && result.device == 2 && result.function == 0 && result.offset == 0);
     assert(data_reads == 16*16 + 1 && selector_reads == data_reads);
@@ -88,7 +89,7 @@ int main(void) {
 
     /* A mismatch while reading a present function's header stops immediately. */
     reset(UINT32_C(0x80000008));
-    result = pci_enumerate_segment(lab_pci_read, 0, &snapshot);
+    pci_enumerate_segment(lab_pci_read, 0, &snapshot, &result);
     assert(result.status == PCI_ENUMERATION_READ_FAILED && snapshot.count == 0);
     assert(result.bus == 0 && result.device == 0 && result.function == 0 && result.offset == 8);
     assert(data_reads == 3 && selector_reads == 3 && lab_pci_trace.first_value == 8);

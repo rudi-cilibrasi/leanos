@@ -49,7 +49,7 @@ static void zero(const struct qotom_hda_state *out) {
     const struct qotom_hda_state z={0};assert(!memcmp(out,&z,sizeof z));
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_hda_state out;
     for(unsigned off=0;off<16384;++off)for(unsigned width=0;width<=8;++width) {
         int valid=((off==0x4c || off==0x5c) && width==1) || (off==0x70 && width==4) ||

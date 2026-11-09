@@ -44,3 +44,6 @@ spawn-refusal-helper-drift	l_LeanOS_SpawnAllocatorBoot_refusal	drift	= 65057ULL;
 spawn-step-next-helper-unsupported	l_LeanOS_SpawnAllocatorWords_stepNextWord	drift	lean_uint64_add(	lean_uint64_mul(	unsupported
 spawn-allocator-claim-weakened	spawn_allocator_refinement	claim	(∀ index : UInt64,	(∀ index : UInt64, index < 13 →	error
 spawn-allocator-spec-claim-weakened	spawn_allocator_spec_refinement	claim	(∀ (words : SpawnAllocatorWords.Words) (actor number rbx rcx rdx : UInt64),	(∀ (words : SpawnAllocatorWords.Words) (actor number rbx rcx rdx : UInt64), actor = 2 →	error
+# Issue #597: the early text console's geometry selector.
+boot-text-surface-drift	leanos_boot_text_surface	drift	v___x_235_ = 512ULL;	v___x_235_ = 514ULL;	drifted
+boot-text-surface-claim-weakened	leanos_boot_text_surface	claim	(∀ kind bits address pitch width height : UInt64,\n      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC\n          [kind, bits, address, pitch, width, height] =\n        some (BootTextConsole.checkRaw	(∀ kind bits address pitch width height : UInt64, kind = 2 →\n      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC\n          [kind, bits, address, pitch, width, height] =\n        some (BootTextConsole.checkRaw	error

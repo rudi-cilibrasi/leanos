@@ -52,12 +52,14 @@ import LeanOS.Refinement.ChildLoaderC
 import LeanOS.Refinement.NetworkSubjectC
 import LeanOS.Refinement.DhcpSubjectC
 import LeanOS.Refinement.SpawnAllocatorC
+import LeanOS.Refinement.BootTextConsoleC
 import LeanOS.ConsoleServer
 import LeanOS.EndpointDirectory
 import LeanOS.KeyboardEcho
 import LeanOS.NetworkSubject
 import LeanOS.DhcpSubject
 import LeanOS.FrameCopyWindow
+import LeanOS.FrameWindowWords
 import LeanOS.GtkRekey
 import LeanOS.TimingBudget
 
@@ -4052,6 +4054,33 @@ theorem spawn_allocator_spec_refinement (ext : Refinement.CSubset.Ext) :
     Refinement.SpawnAllocatorC.kernelWordsC_spec ext,
     Refinement.SpawnAllocatorC.seedWordsC_eq ext⟩
 
+/-- SC-BOOT-TEXT-SURFACE-REFINEMENT: the C function `leanos_boot_text_surface`,
+as emitted by the pinned toolchain (with `valid` inlined) and interpreted by
+the `Refinement.CSubset` semantics, computes `BootTextConsole.checkRaw` on
+every six words; over the naturals it answers 1 exactly on the geometries the
+QuickProof model of the export assumes (#597), and every cell of an accepted
+geometry lies in the 32 KiB colour-text aperture. -/
+theorem boot_text_surface_refinement :
+    (∀ kind bits address pitch width height : UInt64,
+      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] =
+        some (BootTextConsole.checkRaw kind bits address pitch width height)) ∧
+    (∀ kind bits address pitch width height : UInt64,
+      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] =
+        some (if kind.toNat = 2 ∧ bits.toNat = 16 ∧ address.toNat = 753664 ∧
+                 0 < width.toNat ∧ width.toNat ≤ 160 ∧ 0 < height.toNat ∧ height.toNat ≤ 64 ∧
+                 pitch.toNat % 2 = 0 ∧ 2 * width.toNat ≤ pitch.toNat ∧ pitch.toNat ≤ 512
+              then 1 else 0)) ∧
+    (∀ (kind bits address pitch width height : UInt64) (row column : Nat),
+      Refinement.CSubset.call Refinement.BootTextConsoleC.bootTextSurfaceC
+          [kind, bits, address, pitch, width, height] = some 1 →
+      row < height.toNat → column < width.toNat →
+      row * pitch.toNat + 2 * column + 2 ≤ 32768) :=
+  ⟨Refinement.BootTextConsoleC.bootTextSurfaceC_refines,
+    Refinement.BootTextConsoleC.bootTextSurfaceC_spec,
+    Refinement.BootTextConsoleC.bootTextSurfaceC_cell_inside_aperture⟩
+
 /-- SC-CONSOLE-INTEGRITY: a subject holding neither the console capability nor
 an endpoint capability that reaches the console server cannot change the
 console trace: two scripts that differ only in its actions produce equal
@@ -4479,6 +4508,54 @@ theorem frame_copy_window :
    FrameCopyWindow.fetch_refines, FrameCopyWindow.fetch_footprint,
    FrameCopyWindow.send_refines, FrameCopyWindow.frameWindowOperand_ne_zero_iff,
    FrameCopyWindow.frameWindowOperand_alias⟩
+
+/-- SC-FRAME-WINDOW-WORDS: the window roots in the form the C builder
+leaves them meet SC-FRAME-COPY-WINDOW's hypotheses (#599). The QuickProof
+law `window_roots_isolated` (`experiments/quickproof/copy-roots`) proves,
+under CompCert's C semantics, that an accepted `frame_window_build` leaves a
+reviewed geometry, closed leaves `closedWord` of the source leaves, and fetch
+and send leaves `windowWord` of the closed leaves. Read as 4 KiB leaves,
+such words form a closed root that is `Closed` for the inventory and window
+roots that are exactly its `windowRoot`, writable and read-only. So such a
+window root maps a frame of the inventory only at an alias slot, as a
+supervisor no-execute alias of one of the window's own frames, writable
+exactly in the fetch root. -/
+theorem frame_window_words :
+    (∀ (frames : List UInt64) (source closed fetch send : Nat → UInt64)
+        (base limit slot : UInt64),
+      FrameCopyWindow.geometryOk base limit slot = true →
+      (∀ p < FrameCopyWindow.arenaPages,
+        closed p = FrameWindowWords.closedWord frames (source p)) →
+      (∀ p < FrameCopyWindow.arenaPages,
+        fetch p = FrameWindowWords.windowWord closed base limit slot true p) →
+      (∀ p < FrameCopyWindow.arenaPages,
+        send p = FrameWindowWords.windowWord closed base limit slot false p) →
+        FrameCopyWindow.Closed (FrameWindowWords.decodeRoot closed)
+            (FrameWindowWords.Protected frames) ∧
+          FrameWindowWords.decodeRoot fetch =
+            FrameCopyWindow.windowRoot (FrameWindowWords.decodeRoot closed)
+              (FrameCopyWindow.geometryOf base limit slot) true ∧
+          FrameWindowWords.decodeRoot send =
+            FrameCopyWindow.windowRoot (FrameWindowWords.decodeRoot closed)
+              (FrameCopyWindow.geometryOf base limit slot) false) ∧
+    (∀ (frames : List UInt64) (source closed fetch send : Nat → UInt64)
+        (base limit slot : UInt64),
+      FrameCopyWindow.geometryOk base limit slot = true →
+      (∀ p < FrameCopyWindow.arenaPages,
+        closed p = FrameWindowWords.closedWord frames (source p)) →
+      (∀ p < FrameCopyWindow.arenaPages,
+        fetch p = FrameWindowWords.windowWord closed base limit slot true p) →
+      (∀ p < FrameCopyWindow.arenaPages,
+        send p = FrameWindowWords.windowWord closed base limit slot false p) →
+      ∀ (w : Bool) (p : Nat) (l : FrameCopyWindow.Leaf),
+        FrameWindowWords.decodeRoot (if w then fetch else send) p = some l →
+        FrameWindowWords.Protected frames l.frame →
+          ((FrameCopyWindow.geometryOf base limit slot).slot ≤ p ∧
+              p < (FrameCopyWindow.geometryOf base limit slot).slot +
+                (FrameCopyWindow.geometryOf base limit slot).pages) ∧
+            (FrameCopyWindow.geometryOf base limit slot).owns l.frame ∧ l.user = false ∧
+            l.nx = true ∧ l.writable = w) :=
+  ⟨FrameWindowWords.window_roots_of_words, FrameWindowWords.window_roots_protected⟩
 
 /-- SC-WIFI-GROUP-KEY-ROTATION: the BCM43224 driver keeps a session across
 the access point's group-key rotation without accepting replays. No frame

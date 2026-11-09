@@ -79,7 +79,7 @@ static void check(enum qotom_xhci_handoff_status expected) {
     else assert(!out.verify_kind && !out.verify_index && !out.verify_expected && !out.verify_observed);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     for(unsigned i=1;i<=100;++i) {
         reset();release_at=i;check(QOTOM_XHCI_HANDOFF_OBSERVED);
         assert(out.polls==i && delays==i && out.last_support==0x1000801 && out.final_control==0x2000);

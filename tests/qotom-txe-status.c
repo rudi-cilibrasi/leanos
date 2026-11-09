@@ -29,7 +29,7 @@ static void zero(const struct qotom_txe_status_observation *out) {
     assert(out->firmware0==0 && out->firmware1==0);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_txe_status_observation out;
     setup();assert(collect(&out)==QOTOM_TXE_OK && reads==10);
     assert(out.firmware0==0x12345678 && out.firmware1==0x87654321);

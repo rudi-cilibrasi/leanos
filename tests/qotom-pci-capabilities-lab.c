@@ -35,7 +35,7 @@ static void pre_admission_fail(const char *s) {
 }
 #include "../hardware/lab/qotom-pci-capabilities.c.inc"
 int main(void) {
-    assert(pci_enumerate_segment(NULL, NULL, NULL).status == PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL, NULL, NULL, 0) == PCI_ENUMERATION_INVALID_ARGUMENT);
     struct pci_enumeration_snapshot snapshot = {.count=1};
 #ifdef LEANOS_QOTOM_AF_OBSERVATION
     config[0] = 0x12348086; config[1] = 0x100000; config[13] = 88;

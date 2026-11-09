@@ -29,7 +29,7 @@ static void check(enum qotom_ehci_status expected) {
     else assert(!out.capbase && !out.structural && !out.capability);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     check(QOTOM_EHCI_OK);assert(config_calls==5 && mmio_calls==3);
     for (int i=0;i<5;++i) {fail_config=i;check(QOTOM_EHCI_CONFIG_READ);assert(!mmio_calls);}
     fail_config=-1;

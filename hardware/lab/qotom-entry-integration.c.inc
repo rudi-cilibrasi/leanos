@@ -72,7 +72,7 @@ uint64_t qotom_entry_dispatch(uint64_t *saved) {
         (active_root!=qotom_entry_closed_root?UINT64_C(1):0) |
         ((qotom_entry_observed_root&QOTOM_ROOT_ADDRESS_MASK)!=qotom_entry_subject_root?UINT64_C(2):0) |
         (qotom_entry_subject_root!=(uint64_t)page_map_level_4_a?UINT64_C(4):0) |
-        (qotom_entry_closed_root!=(uint64_t)qotom_closed_root.pml4?UINT64_C(8):0) |
+        (qotom_entry_closed_root!=qotom_root_phys(&qotom_closed_root)?UINT64_C(8):0) |
         ((flags&((UINT64_C(1)<<9)|(UINT64_C(1)<<10)|(UINT64_C(1)<<18)))!=0?UINT64_C(16):0) |
         (!qotom_entry_registers_exact(saved)?UINT64_C(32):0) |
         (saved[14]!=expected_call?UINT64_C(64):0) |
@@ -139,7 +139,7 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_entry_integration(v
     __asm__ volatile("pushfq; pop %0":"=r"(flags)::"memory");
     __asm__ volatile("mov %%cr4,%0":"=r"(cr4));
     active_root&=QOTOM_ROOT_ADDRESS_MASK;
-    qotom_entry_closed_root=(uint64_t)qotom_closed_root.pml4;
+    qotom_entry_closed_root=qotom_root_phys(&qotom_closed_root);
     qotom_entry_subject_root=(uint64_t)page_map_level_4_a;
     qotom_entry_observed_root=0;
     qotom_entry_completed_returns=0;

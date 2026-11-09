@@ -26,6 +26,16 @@ new subset construct was needed. All 38 functions have drift rows. The proof
 is compositional: one theorem per C function, each callee resolved by the
 theorem of its own AST (see "Composing many emitted helpers" below).
 
+Amended 2026-11-03 (#597): `Refinement.BootTextConsoleC` adds the early text
+console's geometry selector `leanos_boot_text_surface`
+(`BootTextConsole.checkRaw`, with `valid` inlined) by the same method. Its
+emitted C is inside the subset, so the proof is one `csym_refine` call, with
+one rewrite for the emitter's `width <<< 1` in place of `2 * width`.
+`bootTextSurfaceC_spec` restates the answer over the naturals, conjunct by
+conjunct. That is the predicate the console's QuickProof theorem assumes of
+the export (ADR 0030). SC-BOOT-TEXT-SURFACE-REFINEMENT pins the claim, with
+one drift row, two negative fixtures and two mutants.
+
 ## Context
 
 ADR 0023 proved one rung-3 refinement: the C that the pinned toolchain emits
@@ -85,6 +95,7 @@ The kernel re-checks every proof, so they add no trust (as with `kernel_rfl`).
 | `Refinement.NetworkSubjectC` | `leanos_frame_copy_check`, helper `l_LeanOS_NetworkSubject_frameCopyDecide` |
 | `Refinement.DhcpSubjectC` | `leanos_frame_port_check` (with `framePortDecide` inlined) |
 | `Refinement.SpawnAllocatorC` (#593) | `leanos_spawn_allocator_seed`, `_syscall`, `_syscall_value`, `_syscall_next`, `_kernel`, `_kernel_value`, `_kernel_next`, and the 31 helpers they call (`l_LeanOS_SpawnAllocatorWords_*`, `l_LeanOS_SpawnAllocatorBoot_*`) |
+| `Refinement.BootTextConsoleC` (#597) | `leanos_boot_text_surface` (with `valid` inlined) |
 
 `scripts/refinement-exports.tsv` lists every proved C function and its AST.
 `build-image.sh` re-extracts each one from `build/boot/<module>.c`, the files

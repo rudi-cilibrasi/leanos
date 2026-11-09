@@ -37,7 +37,7 @@ static inline struct pci_express_observation pci_observe_express(
     if (!read || !initial || !previous || previous->count>PCI_CAPABILITY_CAPACITY)
         return out;
     struct pci_capability_snapshot fresh, final;
-    if (pci_collect_capabilities(read,context,initial,&fresh).status != PCI_CAPABILITY_OK) {
+    if (pci_collect_capabilities(read,context,initial,&fresh,0) != PCI_CAPABILITY_OK) {
         out.status=PCI_EXPRESS_COLLECTION_FAILED; return out;
     }
     if (!pci_express_same_list(&fresh,previous)) {
@@ -73,7 +73,7 @@ static inline struct pci_express_observation pci_observe_express(
         }
         if (payload[i]==UINT32_MAX) {out.status=PCI_EXPRESS_ABSENT; return out;}
     }
-    if (pci_collect_capabilities(read,context,initial,&final).status != PCI_CAPABILITY_OK ||
+    if (pci_collect_capabilities(read,context,initial,&final,0) != PCI_CAPABILITY_OK ||
         !pci_express_same_list(&fresh,&final)) {
         out.status=PCI_EXPRESS_FINAL_FAILED; return out;
     }

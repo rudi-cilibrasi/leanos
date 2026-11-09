@@ -158,7 +158,7 @@ static inline enum qotom_broadcom_d3_status qotom_broadcom_enter_d3hot(
     struct pci_enumeration_header current=*endpoint;
     current.words[1]=(current.words[1]&UINT32_C(0xffff0000));
     struct pci_capability_snapshot final;
-    if(pci_collect_capabilities(read,context,&current,&final).status!=PCI_CAPABILITY_OK ||
+    if(pci_collect_capabilities(read,context,&current,&final,0)!=PCI_CAPABILITY_OK ||
        !qotom_broadcom_same_list(caps,&final) ||
        !read(context,2,0,0,4,&value) || (value&0xffff)!=0 ||
        !read(context,2,0,0,0x44,&value) || (value&0xffff)!=QOTOM_BROADCOM_PMCSR_D3HOT)

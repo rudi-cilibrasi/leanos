@@ -35,6 +35,32 @@ The kernel checks each root leaf by leaf (`frame_window_root_exact` in
 the closed root. The closed root maps no user frame. Each alias slot maps
 exactly its window frame, with the expected permissions.
 
+Each root is named by its storage and its physical address, the address CR3
+selects and the root's own table entries hold (#599). The builders compute
+every entry from those integers. They reject storage that is misaligned,
+zero, above 2^52, or that overlaps another root in physical memory. The
+kernel passes `qotom_root_phys(&root)`, the root's address under its identity
+map, and gives `frame_window_transfer` the same `fetch_phys` or `send_phys`.
+So CR3 selects exactly the tables the builder wrote.
+
+QuickProof proves the construction and the scan
+(`experiments/quickproof/copy-roots`, ADR 0030). The proof is under
+CompCert's C semantics, for every source root, inventory, window and
+physical placement:
+
+- an accepted `qotom_build_copy_roots` writes a closed root that is the
+  source with every present protected leaf removed, and a copy root that
+  differs only at its aliases;
+- an accepted `frame_window_build` writes a fetch root and a send root
+  that are that closed root plus exactly the holder's supervisor no-execute
+  aliases;
+- a rejected build writes nothing;
+- `frame_window_root_exact` accepts exactly such roots.
+
+`LeanOS.FrameWindowWords` (claim SC-FRAME-WINDOW-WORDS) proves those leaf
+words are the model's `Closed` root and `windowRoot` below, so the
+isolation theorems apply to the roots the C builds.
+
 A copy request (syscall 64 fetch, 65 send) runs in this order:
 
 1. The kernel decides it with the frame port witness
@@ -110,9 +136,13 @@ the copy returns there.
 
 ## Not covered
 
-- The construction of the roots from the boot page tables is checked by
-  the kernel's scans, not proved. The kernel names the protected inventory
-  and the alias slot; nothing proves the inventory complete.
+- The roots' construction is proved under CompCert's C semantics
+  (QuickProof), not in Lean. The kernel's GCC build is not that program
+  byte for byte (`experiments/quickproof/copy-roots/project/DEVIATIONS.md`).
+  Two steps are trusted: that each physical address is where its storage
+  is, and that the C law's leaf expressions are `FrameWindowWords`'
+  definitions. The kernel names the protected inventory and the alias slot;
+  nothing proves the inventory complete.
 - The string move, the CR3 loads and their readback, and the TLB are
   trusted. Interrupts are disabled, but an NMI or a fault during the move is
   not modelled.

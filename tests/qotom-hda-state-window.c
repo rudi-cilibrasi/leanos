@@ -61,7 +61,7 @@ static void reset(void) {
 }
 
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();
     assert(lab_hda_state_window_read(&window, 0xd0910070, 4, &output));
     assert(output == 0x12345678 && leaf == saved && control_calls == 2 && !faults);
