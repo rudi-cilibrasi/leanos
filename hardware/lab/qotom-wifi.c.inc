@@ -196,12 +196,14 @@ static void lab_signed8(uint32_t value) {
    last ends the line, so none of them adds the raw "WIFI" line. */
 static const char *const lab_msc_steps[] = {
     "attach", "configure", "inquiry", "unit-ready", "capacity", "read", "read-past-end", "sense",
+    "mbr", "volume", "lookup", "file",
 };
 static const char *const lab_msc_stages[] = { "none", "cbw", "data", "csw" };
 static const char *const lab_msc_reasons[] = {
     "none", "no-device", "timeout", "stall", "transfer", "csw-length", "csw-signature",
     "csw-tag", "phase-error", "csw-status", "failed", "not-ready", "capacity", "short-read",
-    "passed-past-end",
+    "passed-past-end", "no-partition", "not-fat32", "not-found", "bad-cluster", "wrong-kind",
+    "chain-too-long", "chain-short",
 };
 #define LAB_MSC_NAME(names, i) \
     lab_msc_name(names, sizeof names / sizeof names[0], i)
@@ -333,6 +335,77 @@ static int lab_msc_print(uint32_t tag, uint32_t value) {
         break;
     case 0x2350:
         serial_puts("LEANOS-LAB/1 MSC done blocks-read=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2360:
+        /* LeanOS/Usb/Fat32.lean: an MBR partition entry, then its first LBA
+           and its blocks. */
+        serial_puts("LEANOS-LAB/1 MSC mbr partition=");
+        serial_u64(value & 0xffu);
+        serial_puts(" type=");
+        lab_msc_byte_hex(value >> 8);
+        serial_puts(" active=");
+        serial_u64((value >> 16) & 1u);
+        break;
+    case 0x2361:
+        serial_puts(" lba=");
+        serial_u64(value);
+        break;
+    case 0x2362:
+        serial_puts(" blocks=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2370:
+        serial_puts("LEANOS-LAB/1 MSC fat32 sectors-per-cluster=");
+        serial_u64(value & 0xffu);
+        serial_puts(" fats=");
+        serial_u64((value >> 8) & 0xffu);
+        break;
+    case 0x2371:
+        serial_puts(" reserved=");
+        serial_u64(value);
+        break;
+    case 0x2372:
+        serial_puts(" fat-blocks=");
+        serial_u64(value);
+        break;
+    case 0x2373:
+        serial_puts(" root-cluster=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2380:
+        serial_puts("LEANOS-LAB/1 MSC fat found component=");
+        serial_u64(value & 0xffu);
+        serial_puts(" attr=");
+        lab_msc_byte_hex(value >> 8);
+        break;
+    case 0x2381:
+        serial_puts(" cluster=");
+        serial_u64(value);
+        break;
+    case 0x2382:
+        serial_puts(" bytes=");
+        serial_u64(value);
+        serial_putc('\n');
+        break;
+    case 0x2390:
+        serial_puts("LEANOS-LAB/1 MSC file bytes=");
+        serial_u64(value);
+        serial_puts(" head=");
+        break;
+    case 0x2391:
+        for (unsigned i = 0; i < 4; ++i)
+            lab_wifi_hex((value >> (8 * i)) & 0xffu, 2);
+        break;
+    case 0x2392:
+        serial_puts(" fnv1a=0x");
+        lab_wifi_hex(value, 8);
+        break;
+    case 0x2393:
+        serial_puts(" clusters=");
         serial_u64(value);
         serial_putc('\n');
         break;

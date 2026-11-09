@@ -488,10 +488,10 @@ through `err`. A CSW with failed status (1) is reported
 (`Tag.csw`). On return r1 = bCSWStatus (0 passed, 1 failed), also in
 `M.status`; `M.residual` holds the bytes the data stage did not transfer,
 `M.residue` the CSW's dCSWDataResidue. `dataLen` may not be r9. -/
-def botCommand (err : Nat) (step : UInt32) (dataLen : Operand) (dataIn : Bool)
+def botCommand (err : Nat) (step : Operand) (dataLen : Operand) (dataIn : Bool)
     (cdbLen : UInt32) (cdb : ProgM Unit) : ProgM Unit := do
   st 4 M.dataLen dataLen
-  st 4 M.step (.imm step)
+  st 4 M.step step
   st 4 M.residual (.imm 0)
   for k in [0:8] do
     st 4 (cbwBuf + 4 * k.toUInt32) (.imm 0)
@@ -592,7 +592,7 @@ reply leaves the rest zero. -/
 def inquiry (err : Nat) : ProgM Unit := do
   for k in [0:9] do
     st 4 (xferBuf + 4 * k.toUInt32) (.imm 0)
-  botCommand err Step.inquiry (.imm 36) true 6 do
+  botCommand err (.imm Step.inquiry) (.imm 36) true 6 do
     st 1 (cdbAt 0) (.imm 0x12)
     st 1 (cdbAt 4) (.imm 36)                       -- allocation length
   passed err
@@ -622,7 +622,7 @@ explains `after`: key, ASC and ASCQ from fixed-format data (response code
 def requestSense (err : Nat) (after : UInt32) : ProgM Unit := do
   for k in [0:5] do
     st 4 (xferBuf + 4 * k.toUInt32) (.imm 0)
-  botCommand err Step.sense (.imm 18) true 6 do
+  botCommand err (.imm Step.sense) (.imm 18) true 6 do
     st 1 (cdbAt 0) (.imm 0x03)
     st 1 (cdbAt 4) (.imm 18)
   passed err
@@ -665,7 +665,7 @@ def unitReady (err : Nat) (attempts : UInt32) : ProgM Unit := do
   ld 4 1 M.tries
   addi 1 1
   st 4 M.tries (.reg 1)
-  botCommand err Step.unitReady (.imm 0) false 6 (pure ())   -- opcode 0x00
+  botCommand err (.imm Step.unitReady) (.imm 0) false 6 (pure ())   -- opcode 0x00
   emit (.branch .eq 1 (.imm 0) ready)
   requestSense err Step.unitReady
   ld 4 1 M.tries
@@ -682,7 +682,7 @@ def unitReady (err : Nat) (attempts : UInt32) : ProgM Unit := do
 /-- READ CAPACITY(10) (SBC-3 §5.15): `M.blocks` := last LBA + 1,
 `M.blockBytes` := the block length (both big-endian in the reply). -/
 def readCapacity (err : Nat) : ProgM Unit := do
-  botCommand err Step.capacity (.imm 8) true 10 (st 1 (cdbAt 0) (.imm 0x25))
+  botCommand err (.imm Step.capacity) (.imm 8) true 10 (st 1 (cdbAt 0) (.imm 0x25))
   passed err
   ld 4 1 M.residual
   let whole ← newLabel
@@ -711,8 +711,9 @@ def readCapacity (err : Nat) : ProgM Unit := do
   print Tag.blockBytes 1
 
 /-- READ(10) (SBC-3 §5.11) of `count` blocks (1 ≤ count ≤ `maxCount`) from
-the LBA in `M.lba` into `xferBuf`; returns the CSW status in r1. -/
-def read10 (err : Nat) (step count : UInt32) : ProgM Unit := do
+the LBA in `M.lba` into `xferBuf`; returns the CSW status in r1. `step` (the
+`Step` for the records) may not be r1, r2 or r7. -/
+def read10 (err : Nat) (step : Operand) (count : UInt32) : ProgM Unit := do
   ld 4 7 M.blockBytes
   if count > 1 then emit (.alu .mul 7 (.imm count))
   botCommand err step (.reg 7) true 10 do
@@ -765,7 +766,7 @@ def reportBlocks (count : UInt32) : ProgM Unit := do
 /-- READ(10) of `count` blocks from the LBA in `M.lba`, which must pass and
 transfer every byte, then their records. -/
 def readBlocks (err : Nat) (count : UInt32) : ProgM Unit := do
-  read10 err Step.read count
+  read10 err (.imm Step.read) count
   passed err
   ld 4 1 M.residual
   let moved ← newLabel
@@ -785,7 +786,7 @@ out of range, on a conforming device). -/
 def readPastEnd (err : Nat) : ProgM Unit := do
   ld 4 1 M.blocks
   st 4 M.lba (.reg 1)
-  read10 err Step.readPastEnd 1
+  read10 err (.imm Step.readPastEnd) 1
   let failedOk ← newLabel
   emit (.branch .ne 1 (.imm 0) failedOk)
   stop err Stage.csw Reason.passedPastEnd (.reg 1)

@@ -14,6 +14,7 @@ the HID programs. The other block reader, AHCI, is
 | `LeanOS/Usb/Xhci.lean` | Controller, command and event rings, transfer rings (`Ring`, with a TRB count), Enable Slot / Address Device, control transfers; `Layout.bulkBuf`, the scratch of the bulk buffers |
 | `LeanOS/Usb/Hid.lean` | Shared: root port scan, USB 2.0 hub support ([usb-hub.md](usb-hub.md)), `findInterface` (the configuration-descriptor walk by interface class, subclass and protocol, with per-class endpoint handling), `attachWith` (bring-up and enumeration with a per-class acceptance routine) |
 | `LeanOS/Usb/MassStorage.lean` | Interface match, bulk endpoints, BOT, the SCSI commands, the `MSC` records, the `program` entry point |
+| `LeanOS/Usb/Fat32.lean` | One file from a FAT32 volume: the MBR, the BPB, the 8.3 path through the directories and the file's cluster chain (`fileProgram`; [below](#reading-a-file-fat32)) |
 
 ## What the program does
 
@@ -260,10 +261,73 @@ It ran there on 2026-11-08, on the old lab stick (Alcor `058f:6387`,
   failed CSW (`status=1 residue=512`), then sense 05/21/00 (ILLEGAL REQUEST,
   LBA out of range), and `MSC done blocks-read=7`.
 
+## Reading a file (FAT32)
+
+`LeanOS/Usb/Fat32.lean` builds on the program above. It reuses the same
+enumeration, endpoints, INQUIRY, TEST UNIT READY and READ CAPACITY(10), then
+reads one file from the device's first FAT32 partition, one 512-byte block at
+a time:
+
+1. **MBR.** LBA 0 must end in 0x55 0xAA. Each used entry of the four is
+   printed, and the first of type 0x0B or 0x0C is the volume.
+2. **BPB.** The partition's first block must be a FAT32 BPB with 512-byte
+   sectors (the device's block length too), a power-of-two cluster size, one
+   or two FATs, FATSz16 = 0 and FATSz32 ≠ 0. The cluster limit is
+   (TotSec32 − blocks before the data) / SecPerClus + 2, and at most what the
+   FAT can describe. The root cluster must be inside it.
+3. **Path.** Each component of `LEANOS_MSC_FILE` (8.3 short names, matched as
+   the directory entry stores them, upper case and space-padded) is searched
+   along its directory's cluster chain. Deleted, long-name and volume-label
+   entries are skipped. All components but the last must be directories, and
+   the last must be a file.
+4. **File.** The file's chain is followed, and exactly its size is hashed with
+   FNV-1a (as the `block` records). The record gives the size, the first 16
+   bytes, the hash and the clusters read.
+
+**Bounds.** Every cluster number, in a directory entry or the FAT, is checked
+against the volume before it is used. A chain stops at 0x0FFFFFF8 or after
+`maxChain` clusters, so a corrupt volume ends in an `MSC error=` record (steps
+`mbr`, `volume`, `lookup`, `file`; reasons `no-partition`, `not-fat32`,
+`not-found`, `bad-cluster`, `wrong-kind`, `chain-too-long`, `chain-short`)
+instead of a read outside it.
+
+**One subroutine for every block read.** The ten block reads call a single
+copy of the BOT READ(10) (`call`/`ret`). One inlined BOT command, with its
+stall recovery, is hundreds of instructions.
+
+```text
+LEANOS-LAB/1 MSC mbr partition=<n> type=0x<2 hex> active=<0|1> lba=<dec> blocks=<dec>
+LEANOS-LAB/1 MSC fat32 sectors-per-cluster=<n> fats=<n> reserved=<n> fat-blocks=<n> root-cluster=<n>
+LEANOS-LAB/1 MSC fat found component=<i> attr=0x<2 hex> cluster=<dec> bytes=<dec>
+LEANOS-LAB/1 MSC file bytes=<dec> head=<32 hex> fnv1a=0x<8 hex> clusters=<dec>
+```
+
+The generator targets are `msc-fat` and `msc-fat-q35`, with
+`LEANOS_MSC_FILE=BOOT/GRUB/GRUB.CFG` by default. Both are admitted under the
+unchanged xHCI policies.
+
+`python3 scripts/run-q35-device-lab.py --fat`, in `scripts/check.sh`, builds
+the disk with mtools: a non-FAT partition first, a 30-entry long-name
+directory spanning several clusters, and the file's chain made
+non-contiguous. It requires every record to equal the script's own reading of
+the image.
+
+**On the Qotom** (2026-11-08,
+[observation](../hardware/lab/observations/qotom-usb-20261108/README.md),
+`msc-fat32/`), the program read `/boot/grub/grub.cfg` from the old lab stick's
+FAT32 partition, through the hub:
+
+```text
+MSC file bytes=7725 head=23204c61622d6f6e6c792042494f532f fnv1a=0x407c2dba clusters=16
+```
+
+That is the size, head and hash of FreeBSD's copy of the same file.
+
 Not covered: writing, other transports (UAS, CBI),
 READ CAPACITY(16), more than LUN 0, BOT reset recovery, a stall in QEMU
 (its `usb-storage` never stalls, so recovery runs only on hardware), a
-device-service (yield) form and file systems; the enumeration's limits (one
+device-service (yield) form, long file names, FAT12/16, exFAT and other file
+systems, GPT disks; the enumeration's limits (one
 level of hub, polling; [usb-hub.md](usb-hub.md)) are the HID programs'. The shared Address Device gives
 EP0 a max packet size of 8 at every speed but high speed (64); QEMU accepts
 that at SuperSpeed, where a real device needs 512.
