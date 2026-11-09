@@ -57,6 +57,9 @@ Update an image from FreeBSD with `hardware/wifi/install-ssd.sh <sha256>`
 image in `/leanos/previous/`), then run
 `scripts/run-qotom-recovery-lab.py --image-on-ssd ...`.
 
+Without the stick, GRUB on the FreeBSD disk itself boots the same `/leanos`
+image, beside FreeBSD ([issue #620](qotom-internal-boot.md)).
+
 Program images for `connect` embed the network PMK (from `LEANOS_WIFI_PSK`)
 and must never be committed.
 

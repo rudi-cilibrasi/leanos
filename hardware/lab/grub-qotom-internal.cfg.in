@@ -1,0 +1,73 @@
+# Qotom internal disk (issue #620): i386-pc GRUB in ada0's MBR, its core.img
+# in the bios-boot partition, and this file in /leanos/grub on the disk's EFI
+# system partition (gpt1), so the machine boots LeanOS without the lab stick.
+#
+# FreeBSD stays the default. Its entry chainloads the disk's original MBR,
+# FreeBSD's pmbr, saved as /leanos/grub/freebsd-mbr.bin, so FreeBSD boots
+# through its own pmbr, gptzfsboot and loader exactly as before. LeanOS is the
+# entry beside it: the image that hardware/wifi/install-ssd.sh installs in
+# /leanos, booted only if its SHA-256 list checks. A one-shot request in
+# /leanos/grub/grubenv (hardware/lab/leanos-next-boot.sh) selects it once; it
+# is consumed before the image is loaded, so the next boot is FreeBSD again.
+#
+# When the lab stick is plugged in and boots first, its GRUB chainloads this
+# disk's MBR (hardware/lab/grub-qotom-ssd.cfg.in) and so reaches this file.
+serial --unit=0 --speed=38400 --word=8 --parity=no --stop=1
+terminal_input console serial
+terminal_output console serial
+# The prefix device is this disk's EFI system partition: (hdN,gpt1).
+set esp=$root
+set disk=none
+regexp --set=1:disk '^(hd[0-9]+),gpt1$' "$root"
+set leanos_digest=missing
+if [ -f ($esp)/leanos/leanos-digest.cfg ]; then
+    source ($esp)/leanos/leanos-digest.cfg
+fi
+export esp disk leanos_digest
+set request=none
+load_env --file=($esp)/leanos/grub/grubenv request
+set selected=$request
+if [ "$selected" != "none" ]; then
+    # Disarm before loading anything: a request boots at most once.
+    set request=none
+    if save_env --file=($esp)/leanos/grub/grubenv request; then
+        echo 'LEANOS-DISK/1 REQUEST consumed=1'
+    else
+        echo 'LEANOS-DISK/1 DISARM-FAILED request-ignored=1'
+        set selected=none
+    fi
+fi
+set default=freebsd
+set timeout=@MENU_TIMEOUT@
+if [ "$selected" = "leanos-${leanos_digest}" ]; then
+    set default=leanos
+    set timeout=0
+fi
+echo "LEANOS-DISK/1 MENU disk=$disk default=$default timeout=$timeout"
+
+# GRUB wraps echo at 80 columns from the cursor, which the menu leaves mid-line:
+# each record starts on a line of its own and is shorter than 80 characters.
+function chain_freebsd {
+    echo
+    echo "LEANOS-DISK/1 CHAIN freebsd disk=$disk"
+    set root=($disk)
+    chainloader ($esp)/leanos/grub/freebsd-mbr.bin
+    boot
+    echo 'LEANOS-DISK/1 CHAIN-FAILED'
+}
+
+menuentry 'FreeBSD' --id freebsd {
+    chain_freebsd
+}
+
+menuentry "LeanOS (lab image ${leanos_digest})" --id leanos {
+    echo
+    echo 'LEANOS-DISK/1 LEANOS load=1'
+    if hashsum --hash sha256 --prefix ($esp)/leanos --check ($esp)/leanos/leanos.sha256; then
+        if multiboot2 ($esp)/leanos/leanos-qotom-lab.elf; then
+            boot
+        fi
+    fi
+    echo 'LEANOS-DISK/1 LOAD-FAILED fallback=freebsd'
+    chain_freebsd
+}

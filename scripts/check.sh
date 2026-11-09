@@ -229,8 +229,28 @@ phase_device_program_lab() {
 ensure_lean_build
 
 ./scripts/check-device-programs.sh
+lake build leanos-usb-kbd-decode leanos-usb-mouse-decode leanos-usb-msc-report leanos-usb-hub-slot
+.lake/build/bin/leanos-usb-kbd-decode
+.lake/build/bin/leanos-usb-mouse-decode
+.lake/build/bin/leanos-usb-msc-report
+.lake/build/bin/leanos-usb-hub-slot
 python3 scripts/run-q35-device-lab.py
 python3 scripts/run-q35-device-lab.py --service
+# Lock keys (#632): Caps Lock flips letters only, prints the lock state and
+# sets the keyboard LEDs with a SET_REPORT queued without waiting.
+python3 scripts/run-q35-device-lab.py --locks
+python3 scripts/run-q35-device-lab.py --mouse
+python3 scripts/run-q35-device-lab.py --mouse --keyboard-first
+python3 scripts/run-q35-device-lab.py --msc
+python3 scripts/run-q35-device-lab.py --msc --root-port
+# One file from a FAT32 volume: MBR, BPB, a multi-cluster directory and a
+# fragmented cluster chain, against the script's own reading of the image.
+python3 scripts/run-q35-device-lab.py --fat
+# Hubs (docs/usb-hub.md): each program's device on a hub port past the
+# fourth, a decoy on hub port 1.
+python3 scripts/run-q35-device-lab.py --hub-port 8
+python3 scripts/run-q35-device-lab.py --mouse --hub-port 5
+python3 scripts/run-q35-device-lab.py --msc --hub-port 7
 }
 
 phase_security_and_platform_contracts() {
@@ -308,6 +328,10 @@ ensure_canonical_image
 ./scripts/test-run-malformed-handoff.sh
 
 ./scripts/test-run-image.sh
+# The Qotom's internal-disk GRUB (#620), booted from a disk laid out like the
+# Qotom's: FreeBSD by default, a one-shot LeanOS boot of build/boot/leanos.elf,
+# stale and failed requests, and the lab stick chaining in.
+./scripts/test-qotom-internal-grub.py
 ./scripts/check-expectation-templates.sh
 # The ahci-service transcript (issue #496) must carry exactly the generated
 # disk's sector at the program's LBA and its digest.
