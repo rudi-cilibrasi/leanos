@@ -64,6 +64,7 @@ import LeanOS.Net.EchoC
 import LeanOS.Net.FrameSource
 import LeanOS.DhcpSubject
 import LeanOS.FrameCopyWindow
+import LeanOS.FrameWindowWords
 import LeanOS.Net.DhcpClient
 import LeanOS.Net.DhcpClientC
 import LeanOS.Net.DhcpSource

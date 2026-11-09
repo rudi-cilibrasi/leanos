@@ -18668,6 +18668,60 @@
       "kind": "theorem"
     },
     {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.aliasWord_flags",
+      "display": "aliasWord_flags",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.aliasWord_frame",
+      "display": "aliasWord_frame",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.closedWord_closed",
+      "display": "closedWord_closed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.decode_aliasWord",
+      "display": "decode_aliasWord",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.high_bits_clear",
+      "display": "high_bits_clear",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.windowWord_decode",
+      "display": "windowWord_decode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.window_roots_of_words",
+      "display": "window_roots_of_words",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.window_roots_other_absent",
+      "display": "window_roots_other_absent",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FrameWindowWords.lean",
+      "qualified": "LeanOS.FrameWindowWords.window_roots_protected",
+      "display": "window_roots_protected",
+      "kind": "theorem"
+    },
+    {
       "source": "LeanOS/GtkRekey.lean",
       "qualified": "LeanOS.GtkRekey.deliver_pn",
       "display": "deliver_pn",
@@ -25613,6 +25667,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.frame_server_scrub",
       "display": "frame_server_scrub",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.frame_window_words",
+      "display": "frame_window_words",
       "kind": "theorem"
     },
     {

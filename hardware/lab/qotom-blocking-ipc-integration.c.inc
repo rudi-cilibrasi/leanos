@@ -160,7 +160,7 @@ static void qotom_blocking_copy_in(uint64_t address,uint64_t count) {
         qotom_alias_address(address+i,qotom_aliases),
         (uint64_t)&qotom_blocking_copy_buffer[i]};
     if(leanos_copy_root_transfer(qotom_entry_closed_root,
-            (uint64_t)qotom_copy_root.pml4,operands,4)!=4)
+            qotom_root_phys(&qotom_copy_root),operands,4)!=4)
         qotom_blocking_fail("qotom-blocking-copy-in");
     if(qotom_blocking_copy_buffer[0]!=0x5a ||
        qotom_blocking_copy_buffer[1]!=0xa5 ||
@@ -179,7 +179,7 @@ static void qotom_blocking_copy_out(uint64_t address,uint64_t count) {
         (uint64_t)&qotom_blocking_copy_buffer[i],
         qotom_alias_address(address+i,qotom_copy_out_aliases)};
     if(leanos_copy_root_transfer(qotom_entry_closed_root,
-            (uint64_t)qotom_copy_out_root.pml4,operands,4)!=4)
+            qotom_root_phys(&qotom_copy_out_root),operands,4)!=4)
         qotom_blocking_fail("qotom-blocking-copy-out");
 }
 
@@ -540,7 +540,7 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
     uint64_t pic_masked=in8(0x21)==0xff && in8(0xa1)==0xff;
     uint64_t admitted=leanos_qotom_blocking_ipc_integration_query(
         1,1,entry_checkpoint,qotom_entry_closed_root,
-        (uint64_t)qotom_copy_root.pml4,(uint64_t)qotom_copy_out_root.pml4,
+        qotom_root_phys(&qotom_copy_root),qotom_root_phys(&qotom_copy_out_root),
         qotom_closed_root_exact(qotom_root_result.protected_count),
         qotom_copy_root_exact(qotom_root_result.protected_count),
         qotom_alias_root_exact(&qotom_copy_out_root,qotom_copy_out_aliases,
@@ -548,11 +548,11 @@ static __attribute__((noreturn,noinline)) void lab_run_qotom_blocking_ipc(
         syscall_gate,page_fault_gate,timer_gate_absent,pic_masked,2,1,1);
     uint64_t errors=leanos_qotom_blocking_ipc_integration_query(
         1,1,entry_checkpoint,qotom_entry_closed_root,
-        (uint64_t)qotom_copy_root.pml4,(uint64_t)qotom_copy_out_root.pml4,
+        qotom_root_phys(&qotom_copy_root),qotom_root_phys(&qotom_copy_out_root),
         1,1,1,syscall_gate,page_fault_gate,timer_gate_absent,pic_masked,2,1,2);
     uint64_t authority=leanos_qotom_blocking_ipc_integration_query(
         1,1,entry_checkpoint,qotom_entry_closed_root,
-        (uint64_t)qotom_copy_root.pml4,(uint64_t)qotom_copy_out_root.pml4,
+        qotom_root_phys(&qotom_copy_root),qotom_root_phys(&qotom_copy_out_root),
         1,1,1,syscall_gate,page_fault_gate,timer_gate_absent,pic_masked,2,1,3);
     if(admitted!=1 || errors!=0 || authority!=1)
         qotom_blocking_fail("qotom-blocking-profile");

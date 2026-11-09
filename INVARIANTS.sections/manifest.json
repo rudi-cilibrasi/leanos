@@ -108,6 +108,7 @@
     "LeanOS/FrameCopyWindow.lean",
     "LeanOS/FrameScrub.lean",
     "LeanOS/FrameServer.lean",
+    "LeanOS/FrameWindowWords.lean",
     "LeanOS/GtkRekey.lean",
     "LeanOS/IOMMU.lean",
     "LeanOS/IOTLB.lean",

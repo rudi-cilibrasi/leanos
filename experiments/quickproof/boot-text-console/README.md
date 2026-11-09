@@ -93,15 +93,15 @@ take a few lines each. Both use only `propext`, `Classical.choice` and
 | --- | --- | --- | --- |
 | `include/boot_text_console.h` | 111 | proved here | `-Dvolatile=` (D1) |
 | PCI enumeration, capabilities, command executor, express/pending observation, MADT consumer | about 650 | `clightgen` refuses 11 functions that return structs by value | results through out-parameters |
-| `include/qotom_copy_root_builder.h`, `include/frame_copy_window.h` | 318 | 13 pointer-to-integer casts (each table entry embeds the next table's address) and 3 struct assignments | take the tables' physical addresses as integers; copy fields |
+| `include/qotom_copy_root_builder.h`, `include/frame_copy_window.h` | 318 | 13 pointer-to-integer casts (each table entry embeds the next table's address) and 3 struct assignments | done in #599: physical addresses are integers, fields are copied; proved in [`copy-roots`](../copy-roots/README.md) |
 | `boot/kernel.c` | 11,254 | 135 inline-assembly sites, 225 `volatile`, MMIO and port I/O on globals | out of scope beyond extracted helpers |
 
 CompCert's reference interpreter, without any proof, runs four of LeanOS's
 existing hosted tests (`pci-capabilities`, `pci-power-observation`,
 `qotom-pcie-pending`, `qotom-broadcom-d3`) to their end with no undefined
 behaviour in CompCert's semantics (`scripts/check-compcert-interp.sh`). On
-`qotom-copy-root-builder` it stops at `<ptr source+4096> | 7U`, which is the
-idiom the audit names.
+`qotom-copy-root-builder` it stopped at `<ptr source+4096> | 7U`, the idiom the
+audit names, until #599 made the builder take physical addresses as integers.
 
 ## Reproducing
 

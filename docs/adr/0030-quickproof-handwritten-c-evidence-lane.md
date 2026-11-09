@@ -118,6 +118,26 @@ results are in the experiment's README.
 
    Each needs its own issue and review. #597 changes no production C.
 
+   **Amendment (#599).** The second refactor landed. The copy-root builder,
+   the source check and the window builder take each root's physical address
+   as an integer, check storage on physical ranges and copy their inputs
+   before writing. The values are unchanged on the identity-mapped kernel,
+   which passes `qotom_root_phys(&root)`. The second project,
+   [`experiments/quickproof/copy-roots`](../../experiments/quickproof/copy-roots/README.md),
+   proves three laws:
+   - `copy_roots_exact`: the builder's whole contract, accepting exactly the
+     valid arguments, writing nothing on rejection, and the exact roots and
+     counts on acceptance;
+   - `window_roots_isolated`: `frame_window_build`, with the same
+     exactness;
+   - `window_scan_exact`: the kernel's leaf-by-leaf scan accepts exactly the
+     right roots.
+
+   Its seam with Lean is not a scalar export. The law states the leaf words of
+   the roots, and `LeanOS.FrameWindowWords` (SC-FRAME-WINDOW-WORDS) proves
+   that those words are `FrameCopyWindow.windowRoot` over a `Closed` root.
+   The trusted step is again reading two printed definitions as the same.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain

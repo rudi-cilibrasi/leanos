@@ -278,14 +278,13 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-One handwritten C component has a machine-checked theorem of a different kind:
-**proved under CompCert's C semantics** with
+Two handwritten C components have machine-checked theorems of a different
+kind: **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean (issue #597,
+Lean (issues #597 and #599,
 [ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
-component is the early boot text console
-(`include/boot_text_console.h`). For every Multiboot2 buffer of up to 16 MiB and
-every sequence of printed bytes:
+first is the early boot text console (`include/boot_text_console.h`). For every
+Multiboot2 buffer of up to 16 MiB and every sequence of printed bytes:
 
 - the parser reads only inside the buffer, and accepts only a geometry that
   the Lean selector accepts and that fits the 32 KiB aperture;
@@ -302,6 +301,25 @@ noncommercial software, so this lane is optional and outside the merge gate.
 `scripts/check-quickproof-pins.sh` fails when the proved header changes.
 [The pilot](experiments/quickproof/boot-text-console/README.md) has the laws,
 deviations, costs and a survey of the remaining handwritten C.
+
+The second is the page-table builders that keep every subject's frames out of
+the kernel's closed root on the J1900, which has no SMAP
+(`include/qotom_copy_root_builder.h`, `include/frame_copy_window.h`). The
+theorems hold for every source root, inventory, window and physical
+placement:
+
+- the copy-root builder accepts exactly the valid arguments and writes
+  nothing otherwise;
+- an accepted build is exactly the source with every protected leaf removed,
+  plus exactly the requested supervisor no-execute aliases;
+- the window builder and the kernel's leaf-by-leaf scan are exact in the
+  same way.
+
+`LeanOS.FrameWindowWords` (SC-FRAME-WINDOW-WORDS) proves in Lean that the
+page-table words the C is proved to write are the model's `windowRoot` over a
+`Closed` root. So the frame-window isolation theorems apply to the roots the
+kernel builds
+([the project](experiments/quickproof/copy-roots/README.md)).
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy

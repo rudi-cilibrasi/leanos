@@ -92,7 +92,8 @@ static int qotom_root_storage_mapped(
 
 static __attribute__((noinline,noipa)) int qotom_closed_root_exact(
         size_t protected_count) {
-    if(!qotom_root_source_ancestors(&qotom_closed_root))return 0;
+    if(!qotom_root_source_ancestors(&qotom_closed_root,
+            qotom_root_phys(&qotom_closed_root)))return 0;
     for(size_t page=0;page<QOTOM_ROOT_LEAVES;++page) {
         uint64_t leaf=qotom_closed_root.pt[page];
         if((leaf&QOTOM_ROOT_PRESENT) && qotom_root_protected_frame(
@@ -105,7 +106,7 @@ static __attribute__((noinline,noipa)) int qotom_closed_root_exact(
 static __attribute__((noinline,noipa)) int qotom_alias_root_exact(
         const struct qotom_root_pages *root,
         const struct qotom_copy_alias *aliases,size_t protected_count) {
-    if(!qotom_root_source_ancestors(root))return 0;
+    if(!qotom_root_source_ancestors(root,qotom_root_phys(root)))return 0;
     for(size_t page=0;page<QOTOM_ROOT_LEAVES;++page) {
         uint64_t leaf=root->pt[page];
         int alias=-1;
@@ -137,7 +138,7 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     if((const uint64_t *)source->pdpt!=page_directory_pointer_a ||
        (const uint64_t *)source->pd!=page_directory_a ||
        (const uint64_t *)source->pt!=page_table_a ||
-       !qotom_root_source_ancestors(source))
+       !qotom_root_source_ancestors(source,qotom_root_phys(source)))
         pre_admission_fail("qotom-root-source");
     size_t protected_count=0;
     qotom_add_protected_range((uintptr_t)__user_a_text_start,
@@ -186,8 +187,10 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     qotom_aliases[1]=(struct qotom_copy_alias){
         (uintptr_t)__user_b_stack_start>>12,
         ((uintptr_t)__user_a_stack_start>>12)+1u,0};
-    enum qotom_root_build_status build=qotom_build_copy_roots(source,
-        &qotom_closed_root,&qotom_copy_root,qotom_protected_frames,
+    enum qotom_root_build_status build=qotom_build_copy_roots(
+        source,qotom_root_phys(source),
+        &qotom_closed_root,qotom_root_phys(&qotom_closed_root),
+        &qotom_copy_root,qotom_root_phys(&qotom_copy_root),qotom_protected_frames,
         protected_count,qotom_aliases,QOTOM_ROOT_MAX_ALIASES,
         &qotom_root_result);
 #ifdef LEANOS_QOTOM_BLOCKING_IPC_INTEGRATION
@@ -195,8 +198,10 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     qotom_copy_out_aliases[1]=qotom_aliases[1];
     qotom_copy_out_aliases[0].writable=1;
     qotom_copy_out_aliases[1].writable=1;
-    enum qotom_root_build_status copy_out_build=qotom_build_copy_roots(source,
-        &qotom_closed_root,&qotom_copy_out_root,qotom_protected_frames,
+    enum qotom_root_build_status copy_out_build=qotom_build_copy_roots(
+        source,qotom_root_phys(source),
+        &qotom_closed_root,qotom_root_phys(&qotom_closed_root),
+        &qotom_copy_out_root,qotom_root_phys(&qotom_copy_out_root),qotom_protected_frames,
         protected_count,qotom_copy_out_aliases,QOTOM_ROOT_MAX_ALIASES,
         &qotom_copy_out_result);
     /* The second construction rewrites the same closed root from the same
@@ -225,8 +230,8 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     uint64_t transferred=0;
     if(build==QOTOM_ROOT_BUILD_OK && closed_scan && copy_scan)
         transferred=leanos_copy_root_transfer(
-            (uintptr_t)qotom_closed_root.pml4,
-            (uintptr_t)qotom_copy_root.pml4,qotom_operands,16);
+            qotom_root_phys(&qotom_closed_root),
+            qotom_root_phys(&qotom_copy_root),qotom_operands,16);
     uint64_t active_root;
     __asm__ volatile("mov %%cr3,%0":"=r"(active_root));
     active_root&=QOTOM_ROOT_ADDRESS_MASK;
@@ -237,13 +242,13 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
-        (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
+        qotom_root_phys(&qotom_closed_root),qotom_root_phys(&qotom_copy_root),
         closed_scan,copy_scan,transferred,bytes_match,active_root,1);
     uint64_t errors=leanos_qotom_copy_root_publication_query(
         QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
-        (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
+        qotom_root_phys(&qotom_closed_root),qotom_root_phys(&qotom_copy_root),
         closed_scan,copy_scan,transferred,bytes_match,active_root,2);
     serial_puts("LEANOS-LAB/1 COPY-ROOTS profile=qotom-copy-roots-v1 status=");
     serial_u64(accepted==1?0:1);
@@ -251,8 +256,8 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
     serial_puts(" removed-aliases=");serial_u64(qotom_root_result.removed_aliases);
     serial_puts(" retained-present=");serial_u64(qotom_root_result.retained_present);
     serial_puts(" aliases=");serial_u64(qotom_root_result.alias_count);
-    serial_puts(" closed-root=");serial_u64((uintptr_t)qotom_closed_root.pml4);
-    serial_puts(" copy-root=");serial_u64((uintptr_t)qotom_copy_root.pml4);
+    serial_puts(" closed-root=");serial_u64(qotom_root_phys(&qotom_closed_root));
+    serial_puts(" copy-root=");serial_u64(qotom_root_phys(&qotom_copy_root));
     serial_puts(" closed-scan=");serial_u64(closed_scan);
     serial_puts(" copy-scan=");serial_u64(copy_scan);
     serial_puts(" transferred=");serial_u64(transferred);
@@ -264,14 +269,14 @@ static __attribute__((noreturn,noinline)) void lab_publish_qotom_copy_roots(void
         QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
-        (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
+        qotom_root_phys(&qotom_closed_root),qotom_root_phys(&qotom_copy_root),
         closed_scan,copy_scan,transferred,bytes_match,active_root,3));
     serial_puts(" copy-root-published=");
     serial_u64(leanos_qotom_copy_root_publication_query(
         QOTOM_ROOT_INVENTORY_VARIANT,
         build,qotom_root_result.protected_count,qotom_root_result.removed_aliases,
         qotom_root_result.retained_present,qotom_root_result.alias_count,
-        (uintptr_t)qotom_closed_root.pml4,(uintptr_t)qotom_copy_root.pml4,
+        qotom_root_phys(&qotom_closed_root),qotom_root_phys(&qotom_copy_root),
         closed_scan,copy_scan,transferred,bytes_match,active_root,4));
     serial_puts(" cpl3-authority=0\n");
     if(accepted!=1 || errors!=0)pre_admission_fail("qotom-copy-root-publication");
