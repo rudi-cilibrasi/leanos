@@ -138,6 +138,182 @@ results are in the experiment's README.
    that those words are `FrameCopyWindow.windowRoot` over a `Closed` root.
    The trusted step is again reading two printed definitions as the same.
 
+   **Amendment (#604).** The first refactor landed for the PCI capability
+   walker: `pci_collect_capabilities` returns its status and writes the
+   result through an optional pointer, and nothing else changes. The third
+   project,
+   [`experiments/quickproof/pci-capabilities`](../../experiments/quickproof/pci-capabilities/README.md),
+   proves two laws:
+   - `capabilities_adversarial`: against a device that may fail any read or
+     answer anything, the walker reads only the function's conventional
+     space, at most 4 + 48 times, rejects exactly the invalid arguments,
+     names every failure, and on OK publishes exactly the list it read;
+   - `capabilities_complete`: a fixed, well-formed list of up to 48 headers
+     is published whole.
+
+   The walker's specification is parameterized by an abstract device
+   protocol, so one proof serves both laws. Its seam is with the callers, not
+   with Lean: they consume the published headers as the observations
+   describe. The other helpers of refactor 1 still return structs:
+   enumeration, the command executor, the power, AF and express
+   observations, the final admission check and the MADT consumer.
+
+   **Amendment (#606).** Enumeration got the same refactor:
+   `pci_enumerate_segment` returns its status and writes the result through
+   an optional pointer, and nothing else changes. The fourth project,
+   [`experiments/quickproof/pci-enumeration`](../../experiments/quickproof/pci-enumeration/README.md),
+   proves one law, `enumeration_exact`. Against a device that may fail any
+   read or answer anything, the scan reads exactly in bus, device, function
+   order: each identity dword, then the other fifteen dwords of each of the
+   first sixteen functions found. It rejects exactly a NULL callback or
+   snapshot, names the first failed read or the seventeenth function, and
+   on OK publishes exactly the functions found as the device answered them.
+   The law's device keeps its own copy of what it answered, so the one law
+   gives both safety and completeness. The capability project, which pins
+   the enumeration header too, was re-verified at the refactor. The other
+   helpers of refactor 1 still return structs: the command executor, the
+   power, AF and express observations, the final admission check and the
+   MADT consumer.
+
+   **Amendment (#608).** The MADT consumer got the same refactor:
+   `qotom_bind_validated_madt_entries` returns its status and writes the
+   result through a pointer, every exit through one publishing helper, and
+   nothing else changes. The fifth project,
+   [`experiments/quickproof/madt-consumer`](../../experiments/quickproof/madt-consumer/README.md),
+   has its seam with the Lean code the consumer calls. Its law,
+   `consumer_obligations`, replaces the three Lean exports the consumer calls
+   with an adversarial Lean that answers anything and checks every call. The
+   consumer meets the caller obligations of the MADT review against every
+   such Lean: the exact calls in order, the answers carried unchanged, the
+   first rejection final, and a topology published only on the finish's
+   acceptance. The specification is parameterized by an abstract oracle,
+   like the device protocols of the PCI projects. The trusted step is
+   reading the law's protocol, the review table and the Lean theorems of
+   `LeanOS.QotomMadtStream` as the same. The other helpers of refactor 1,
+   none of them in a booted kernel, still return structs: the command
+   executor, the power, AF and express observations and the final admission
+   check.
+
+   **Amendment (#614).** The ACPI root and table copy of `boot_allocate`
+   got refactor 1. It ended every check in the `noreturn` `handoff_fail`,
+   returned structs by value and used kernel globals. Now it is
+   `include/acpi_table_copy.h`:
+   - the physical copy is a callback;
+   - the storage comes in as arguments;
+   - each check returns its own status, which `acpi_table_copy_require`
+     maps to the reason the check gave before.
+
+   The sixth project,
+   [`experiments/quickproof/acpi-table-copy`](../../experiments/quickproof/acpi-table-copy/README.md),
+   has two adversaries in its law, `table_copy_exact`: a firmware whose
+   every copy may fail or write any bytes, and a Lean that answers anything.
+   Both check every call. Against all of them, the pipeline:
+   - copies only within its storage, at most 64 KiB per table;
+   - replays every copied byte through the generated copy stream;
+   - meets the copy sequence's caller obligations;
+   - publishes a MADT only from complete copies whose envelopes and checksums
+     pass.
+
+   The aperture copy itself stays a trusted boundary. The proof also shows
+   that eight of the pipeline's checks cannot fail, because each tests what
+   the pipeline itself just computed. They stay in the code as defense in
+   depth.
+
+   **Amendment (#617).** The canonical MADT admission of `boot_allocate`
+   got the same refactor. Three kernel helpers called `handoff_fail`
+   directly and read the copy through the kernel's `struct copied_acpi_sdt`.
+   They moved into `include/madt_generated_admission.h`. Each check now
+   returns its own status, which `madt_generated_require` maps to the reason
+   the check gave before.
+
+   The seventh project,
+   [`experiments/quickproof/madt-generated-admission`](../../experiments/quickproof/madt-generated-admission/README.md),
+   has an adversarial Lean in its law, `admission_exact`, that answers
+   anything and checks every call. Against every such Lean, each of the
+   header's four functions:
+   - makes exactly the envelope, entry-stream and admission calls the exports
+     require, in order;
+   - carries the answers unchanged;
+   - returns the status that the first rejecting answer decides;
+   - writes the APIC ID only on OK.
+
+   With the sixth project, both headers between the firmware's tables and
+   the admitted APIC ID are now proved against any firmware and any Lean.
+   Two parts stay outside the proofs:
+   - the aperture copy;
+   - the kernel's calls of the two headers and its mapping from statuses to
+     reasons, which `scripts/check-boot-handoff-stream.sh` checks on the
+     source.
+
+   **Amendment (#624).** The Multiboot2 handoff copy and decoder of
+   `boot_allocate` got the same refactor. The copy read physical memory
+   through the identity map, every check ended in `handoff_fail`, the
+   decoder copied 41-word states by value, and the projection wrote kernel
+   globals. They moved into `include/boot_handoff_decode.h`:
+   - the physical read and the projection's entry record are callbacks;
+   - the decoder alternates between two caller states, so no state is copied
+     and the header has no `volatile` access;
+   - each check returns its own status, which `boot_handoff_require` maps to
+     the reason the check gave before.
+
+   The eighth project,
+   [`experiments/quickproof/boot-handoff-decode`](../../experiments/quickproof/boot-handoff-decode/README.md),
+   has an adversarial bootloader and an adversarial Lean in its law,
+   `handoff_decode_exact`. Each answers anything and checks every call.
+   Against every such pair, the header:
+   - reads the information's first eight bytes once, and each chunk of the
+     extent once and in order;
+   - copies a chunk only once the copy stream accepts it;
+   - asks each decoder transition about exactly the state, offset and chunk
+     it carries;
+   - returns the status that the first rejecting answer decides;
+   - writes only the copy's accepted chunks, the bitmaps, the two states and
+     its records.
+
+   Three parts stay outside the proof:
+   - the physical read and the entry record themselves;
+   - the kernel's mapping from statuses to reasons, which
+     `scripts/check-boot-handoff-stream.sh` checks on the source;
+   - the frame selection after the decoder, which is the ninth project's
+     (#627).
+
+   **Amendment (#627).** The frame selection, scrub and publication of
+   `boot_allocate` got the same refactor. Every check ended in
+   `handoff_fail`, each candidate's decoded state was returned by value and
+   copied with volatile loads, and the scrub was a volatile zero-then-read
+   loop over physical memory. They moved into
+   `include/boot_frame_selection.h`, as seven steps:
+   - the candidate decoder and the scrub are callbacks, so the header has no
+     physical access and no `volatile`;
+   - the selection decodes candidates into one caller state until one is
+     accepted, and the frame-budget scan into a second, so no state is
+     copied;
+   - each condition of each check returns its own status, which
+     `boot_frame_require` maps to the reason the check gave before;
+   - the production mutation fixtures keep their places between the steps.
+
+   The ninth project,
+   [`experiments/quickproof/boot-frame-selection`](../../experiments/quickproof/boot-frame-selection/README.md),
+   has an adversarial candidate decoder, scrub and Lean in its law,
+   `frame_selection_exact`. Each answers anything and checks every call.
+   Against every such triple, the header:
+   - selects exactly the first candidate every answer accepts, and stops at
+     the first decoder rejection;
+   - scrubs once, exactly the selected frame, and only after every
+     cross-check accepted it;
+   - asks for the authority result only after the scrub succeeded;
+   - returns the status of the first failed check;
+   - writes only its results, and every other word keeps its value.
+
+   With projects 6 to 8, this covers `boot_allocate` from the handoff to the
+   published frame. Three parts stay outside the proof:
+   - that the kernel's decoder is project 8's, and what its scrub does to
+     physical memory;
+   - the kernel's mapping from statuses to reasons and the fixtures' places,
+     which `scripts/check-boot-handoff-stream.sh` checks on the source;
+   - what the Lean answers mean, which the theorems of
+     `LeanOS.BootMemoryMapStreamAuthority` state.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain

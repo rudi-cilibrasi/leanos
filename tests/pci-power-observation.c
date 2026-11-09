@@ -23,7 +23,7 @@ static void setup(void) {
     cfg[0x58/4]=UINT32_C(0x00000009);
     cfg[0x44/4]=UINT32_C(0x00004008);
     reads=fail_at=change_at=0;
-    assert(pci_collect_capabilities(read_config,cfg,&header,&prior).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(read_config,cfg,&header,&prior,0)==PCI_CAPABILITY_OK);
     reads=0;
 }
 int main(void) {

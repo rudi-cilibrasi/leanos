@@ -180,6 +180,7 @@ index current:
 | `device-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT |
 | `keyboard-echo` | evidence | SC-DEVICE-CONSOLE-SEPARATION, SC-CONSOLE-INTEGRITY, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
 | `ahci-service` | evidence | SC-IPC-EVENT-STREAM, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-DEVICE-PROGRAM-DESCRIPTOR-POINTERS |
+| `netboot` | evidence | SC-DMA-QUARANTINE |
 | `example-subject` | evidence | none (integration only) |
 | `network-subject` | evidence | SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT, SC-IPC-EVENT-STREAM |
 | `gtk-rekey` | evidence | SC-WIFI-GROUP-KEY-ROTATION, SC-NETWORK-SUBJECT-CONFINEMENT, SC-DEVICE-CAPABILITY-CONFINEMENT |
@@ -278,10 +279,10 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-Two handwritten C components have machine-checked theorems of a different
+Nine handwritten C components have machine-checked theorems of a different
 kind: **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean (issues #597 and #599,
+Lean (issues #597, #599, #604, #606, #608, #614, #617, #624 and #627,
 [ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
 first is the early boot text console (`include/boot_text_console.h`). For every
 Multiboot2 buffer of up to 16 MiB and every sequence of printed bytes:
@@ -320,6 +321,104 @@ page-table words the C is proved to write are the model's `windowRoot` over a
 `Closed` root. So the frame-window isolation theorems apply to the roots the
 kernel builds
 ([the project](experiments/quickproof/copy-roots/README.md)).
+
+The third is the PCI capability walker (`boot/pci-capabilities.h`), whose
+pointers come from the device. Against a device that may fail any read or
+answer anything, also differently each time, the walker reads only the
+function's conventional configuration space, at most 52 times. It names
+every failure and publishes nothing then. On success it publishes exactly the
+list it read, at distinct aligned offsets. A fixed, well-formed list of up to
+48 headers is published whole
+([the project](experiments/quickproof/pci-capabilities/README.md)).
+
+The fourth is the PCI segment scan (`boot/pci-enumeration.h`), which reads
+every function's header from the device. Against a device that may fail any
+read or answer anything, also differently each time, the scan reads exactly
+in bus, device, function order and only conventional space, at most
+65536 + 16 × 15 times. It names the first failed read or the seventeenth
+function found and publishes nothing then. Otherwise it publishes exactly the
+functions found, each with the sixteen dwords the device answered
+([the project](experiments/quickproof/pci-enumeration/README.md)).
+
+The fifth is the Qotom MADT consumer (`include/qotom_bsp_consumer.h`), the C
+between three Lean exports that the Qotom production candidate calls from
+`boot_allocate`. Against a Lean that may answer every call with any value, the
+consumer reads only the entry span and the observation and writes only the
+result. It asks exactly the calls the
+[review](docs/qotom-madt-consumer-review.md) requires, in order, with one
+unchanged old state per byte. It carries the answers unchanged and stops at
+the first rejection. It publishes an APIC ID, processor count and APIC base
+only when the finish accepts
+([the project](experiments/quickproof/madt-consumer/README.md)). What the
+answers mean is what the Lean theorems of `LeanOS.QotomMadtStream` state.
+
+The sixth is the ACPI copy pipeline of `boot_allocate`
+(`include/acpi_table_copy.h`), the C between the firmware's tables and two
+Lean exports. It is proved against two adversaries: a firmware whose every
+copy may fail or write any bytes, and a Lean that may answer every call with
+any value. Against both, the pipeline:
+
+- copies only within its two arenas, at most 64 KiB per table;
+- replays every copied byte through the generated copy stream;
+- stops at the first check that fails;
+- publishes the tables and the one MADT only when every table was copied,
+  replayed and sequenced, and each envelope and checksum it checks passes.
+
+([The project](experiments/quickproof/acpi-table-copy/README.md).) What the
+answers mean is what the Lean theorems of `LeanOS.BootTopology` state.
+
+The seventh is the canonical MADT admission of `boot_allocate`
+(`include/madt_generated_admission.h`). This is the C between the MADT copy
+that the sixth selects and three Lean exports. It is proved against a Lean
+that may answer every call with any value. Against every such Lean, it:
+
+- asks exactly the envelope, entry-stream and admission calls the exports
+  require, in order, with one unchanged old state per byte;
+- carries the answers unchanged;
+- stops at the first rejection;
+- writes the APIC ID only when it returns OK.
+
+([The project](experiments/quickproof/madt-generated-admission/README.md).)
+What the answers mean is what the Lean theorems of `LeanOS.BootTopology`
+state.
+
+The eighth is the Multiboot2 handoff copy and decoder of `boot_allocate`
+(`include/boot_handoff_decode.h`), the first C that reads memory the
+bootloader wrote. It is proved against a bootloader whose every read may
+answer any bytes and a Lean that may answer every call with any value.
+Against every such pair, it:
+
+- reads the information's first eight bytes once, then each 8-byte chunk of
+  the extent they give once and in order;
+- copies a chunk only once the copy stream accepts it;
+- replays the copy through the generated decoder with exactly the state,
+  offset and chunk each transition carries, and stops at the first rejection;
+- accepts a handoff, or a candidate frame, only when the decoder's final state
+  does.
+
+([The project](experiments/quickproof/boot-handoff-decode/README.md).) What
+the answers mean is what the Lean theorems of
+`LeanOS.BootMemoryMapStreaming` and `LeanOS.BootMemoryMapStreamAuthority`
+state.
+
+The ninth is the frame selection, scrub and publication of `boot_allocate`
+(`include/boot_frame_selection.h`), which turns the decoder's answers into
+the one frame the boot allocator publishes. With the sixth to eighth, it
+covers `boot_allocate` from the handoff to the published frame. It is proved
+against a candidate decoder that may write any state and answer any status, a
+scrub that may answer anything, and a Lean that may answer every call with
+any value. Against every such triple, it:
+
+- selects exactly the first candidate every answer accepts, and stops at the
+  first decoder rejection;
+- scrubs once, exactly the selected frame, and only after every cross-check
+  accepted it;
+- asks for the authority result only after the scrub succeeded;
+- returns the status of the first failed check, and writes only its results.
+
+([The project](experiments/quickproof/boot-frame-selection/README.md).) What
+the answers mean is what the Lean theorems of
+`LeanOS.BootMemoryMapStreamAuthority` state.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy
@@ -399,9 +498,9 @@ tools, debug artifacts, and added trusted boundary are documented in
 The ISO boots under BIOS and UEFI from a CD-ROM, and from a disk or USB stick
 it is written to raw. Its kernel and `grub.cfg` also boot over the network
 (PXE/TFTP) from a tree that `scripts/build-netboot-tree.sh` makes from the ISO.
-CI boots all of these on q35. On q35 a netbooted kernel then refuses the boot
-NIC, which the admitted topology leaves out (#601). See "Boot media" in the
-guide.
+CI boots all of these on q35. Netbooted, the canonical kernel refuses the boot
+NIC, which its admitted topology leaves out; the netboot image admits that NIC
+quarantined and passes (#601). See "Boot media" in the guide.
 
 The same unchanged image also boots in a browser: the
 [in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical

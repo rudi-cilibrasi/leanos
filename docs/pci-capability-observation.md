@@ -31,6 +31,18 @@ header contents. This is an OS-derived survey, not native LeanOS capability
 bytes. FreeBSD's list also lacks the EHCI function present in the retained
 native boot, so it cannot replace the native sixteen-function baseline.
 
+The walker also has a QuickProof theorem under CompCert's C semantics
+([`experiments/quickproof/pci-capabilities`](../experiments/quickproof/pci-capabilities/README.md),
+ADR 0030, #604). It holds against a device that may fail any read or return
+any value, also a different one each time. The walker asks only for the
+initial header's function, only for aligned offsets up to 0xfc, and at most
+4 + 48 times. It returns ARGUMENT exactly on invalid arguments and names every
+other failure, publishing count zero. On success it publishes exactly the
+headers it read, linked from the list head, at distinct aligned offsets of at
+least 0x40. A second law shows that a fixed, well-formed list of up to 48
+headers is published whole. The kernel's ECAM and mechanism #1 readers are
+outside it: each law brings its own device.
+
 `check-pci-capabilities.sh` checks maximum-length lists, every cycle/failure
 position in that list, every invalid nonzero pointer, initial-header drift,
 absent capabilities, no-list status and the backward-link example in ordinary

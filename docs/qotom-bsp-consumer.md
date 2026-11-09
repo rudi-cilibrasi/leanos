@@ -21,6 +21,16 @@ CPU; accepting supplied register values cannot establish their provenance.
 These are the preconditions of the existing stream/finish proofs, not new
 exceptions to platform admission.
 
+The consumer has a QuickProof theorem under CompCert's C semantics against
+any answers of the three exports
+([`experiments/quickproof/madt-consumer`](../experiments/quickproof/madt-consumer/README.md),
+ADR 0030, #608). It reads only the span and the observation and writes only
+the result. It makes exactly the calls of the
+[review's obligations](qotom-madt-consumer-review.md), in order, and stops at
+the first rejection. It publishes no APIC ID, processor count or APIC base on
+any status but success. The kernel's Lean-compiled exports are outside it: the
+law brings its own.
+
 The hosted scalar runner executes this same consumer across every existing
 entry-mutation and compatible BSP-observation pair and compares its result
 with the independent scalar projections. Wrong inventories, malformed entries,

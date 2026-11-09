@@ -30,8 +30,8 @@ void fixture_main(void) {
         field(identity);
         put('\n');
     }
-    struct pci_enumeration_result result =
-        pci_enumerate_segment(pci_config_read, 0, &snapshot);
+    struct pci_enumeration_result result;
+    pci_enumerate_segment(pci_config_read, 0, &snapshot, &result);
     put('S');
     field(result.status);
     field(snapshot.count);

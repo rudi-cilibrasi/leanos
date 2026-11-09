@@ -41,12 +41,23 @@ int main(void) {
         (void *)(uintptr_t)&leanos_qotom_machine_topology_admission_result_query);
     const struct qotom_bsp_observation empty_observation = {0};
     const uint8_t one_byte = 0;
-    if (qotom_bind_validated_madt_entries(NULL,1,&empty_observation).status != 1 ||
-        qotom_bind_validated_madt_entries(&one_byte,1,NULL).status != 1 ||
-        qotom_bind_validated_madt_entries(&one_byte,0,&empty_observation).status != 1 ||
-        qotom_bind_validated_madt_entries(&one_byte,65536-43,&empty_observation).status != 1 ||
-        qotom_bind_validated_madt_entries(&one_byte,SIZE_MAX,&empty_observation).status != 1)
+    struct qotom_bsp_result bounds;
+    if (qotom_bind_validated_madt_entries(&one_byte,1,&empty_observation,NULL) != 1)
         return 14;
+    const struct {const uint8_t *entries; size_t length;
+                  const struct qotom_bsp_observation *observation;} bad[5] = {
+        {NULL,1,&empty_observation}, {&one_byte,1,NULL},
+        {&one_byte,0,&empty_observation}, {&one_byte,65536-43,&empty_observation},
+        {&one_byte,SIZE_MAX,&empty_observation}};
+    for (size_t b = 0; b < 5; ++b) {
+        memset(&bounds,0xaa,sizeof bounds);
+        /* Input-bounds rejection: status 1, offset 44, nothing accepted. */
+        if (qotom_bind_validated_madt_entries(bad[b].entries,bad[b].length,
+                bad[b].observation,&bounds) != 1 || bounds.status != 1 ||
+            bounds.detail || bounds.offset != 44 || bounds.apic_id ||
+            bounds.processor_count || bounds.apic_base)
+            return 14;
+    }
     const uint64_t native_nmi[6] = {
         4,UINT64_C(0x0000f751dc010604),UINT64_C(0x0000a67499020604),
         UINT64_C(0x0000ce213a030604),UINT64_C(0x0000279e9d040604),0
@@ -137,8 +148,10 @@ int main(void) {
             }
             struct qotom_bsp_observation obs = {cases[c].executing,
                 bound[16],bound[17],bound[18],bound[19],0};
-            struct qotom_bsp_result candidate = qotom_bind_validated_madt_entries(
-                cases[c].bytes,cases[c].length,&obs);
+            struct qotom_bsp_result candidate;
+            if (qotom_bind_validated_madt_entries(
+                    cases[c].bytes,cases[c].length,&obs,&candidate) != candidate.status)
+                return 11;
             uint64_t want_status = status != 3 ? 2 :
                 finish_cases[observation].words[1] == 1 ? 0 : 4;
             if (candidate.status != want_status) return 11;
@@ -177,8 +190,9 @@ int main(void) {
             uint8_t changed[256];
             memcpy(changed,cases[0].bytes,cases[0].length);
             changed[nmi_offsets[record]+byte] ^= 1;
-            struct qotom_bsp_result result = qotom_bind_validated_madt_entries(
-                changed,cases[0].length,&native_observation);
+            struct qotom_bsp_result result;
+            qotom_bind_validated_madt_entries(
+                changed,cases[0].length,&native_observation,&result);
             if (result.status != 5 || result.detail != 88 ||
                 result.offset != 44u+cases[0].length) return 23;
         }
@@ -188,14 +202,15 @@ int main(void) {
     memcpy(missing,cases[0].bytes,removed);
     memcpy(missing+removed,cases[0].bytes+removed+6,
            cases[0].length-removed-6);
-    struct qotom_bsp_result result = qotom_bind_validated_madt_entries(
-        missing,cases[0].length-6,&native_observation);
+    struct qotom_bsp_result result;
+    qotom_bind_validated_madt_entries(
+        missing,cases[0].length-6,&native_observation,&result);
     if (result.status != 5 || result.detail != 87 ||
         result.offset != 44u+cases[0].length-6u) return 24;
     struct qotom_bsp_observation routing_observation = native_observation;
     routing_observation.interrupt_routing_authority = 1;
-    result = qotom_bind_validated_madt_entries(
-        cases[0].bytes,cases[0].length,&routing_observation);
+    qotom_bind_validated_madt_entries(
+        cases[0].bytes,cases[0].length,&routing_observation,&result);
     if (result.status != 5 || result.detail != 89 ||
         result.offset != 44u+cases[0].length) return 25;
     for (size_t p = 0; p < sizeof(probes)/sizeof(probes[0]); ++p) {

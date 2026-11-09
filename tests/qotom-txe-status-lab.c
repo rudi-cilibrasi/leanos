@@ -35,7 +35,7 @@ static void setup(void) {
     cfg[16]=17;cfg[18]=29;reads=fail_at=used=0;output[0]=0;lab_ecam_window.armed=1;
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     setup();lab_capture_txe_status(&snapshot);
     assert(reads==10 && !lab_ecam_window.armed);
     assert(!strcmp(output,"LEANOS-LAB/1 TXE-STATUS profile=qotom-txe-status-v1 index=4 status=0 firmware0=17 firmware1=29\n"));

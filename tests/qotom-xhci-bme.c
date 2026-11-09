@@ -79,7 +79,7 @@ static void check(enum qotom_xhci_bme_status status) {
     else assert(out.before_command==6);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();check(QOTOM_XHCI_BME_OK);assert(reads==189 && writes==1 && out.after_command==2 && command_word==0x02900002);
     maximum();check(QOTOM_XHCI_BME_OK);assert(reads==357);
     for(unsigned i=1;i<=357;++i) {

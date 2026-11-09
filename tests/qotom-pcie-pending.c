@@ -36,7 +36,7 @@ static void setup_realtek(void) {
     cfg[0x74/4]=UINT32_C(0x05908cc0);
     cfg[0x78/4]=UINT32_C(0x00192000);
     reads=delays=fail_read=fail_delay=pending_polls=0;drift_poll=UINT32_MAX;
-    assert(pci_collect_capabilities(config_read,NULL,&header,&caps).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(config_read,NULL,&header,&caps,0)==PCI_CAPABILITY_OK);
     prior=pci_observe_express(config_read,NULL,&header,&caps);
     assert(qotom_realtek_pending_sample_valid(&prior));
     cfg[1]=(cfg[1]&UINT32_C(0xffff0000))|3;
@@ -54,7 +54,7 @@ static void setup_rootport(void) {
     cfg[0x44/4]=UINT32_C(0x00008000);
     cfg[0x48/4]=UINT32_C(0x00110000);
     reads=delays=fail_read=fail_delay=pending_polls=0;drift_poll=UINT32_MAX;
-    assert(pci_collect_capabilities(config_read,NULL,&header,&caps).status==PCI_CAPABILITY_OK);
+    assert(pci_collect_capabilities(config_read,NULL,&header,&caps,0)==PCI_CAPABILITY_OK);
     prior=pci_observe_express(config_read,NULL,&header,&caps);
     assert(qotom_rootport_sample_valid(&prior));
     cfg[1]=(cfg[1]&UINT32_C(0xffff0000))|3;
@@ -64,7 +64,7 @@ static void clear_result(struct qotom_pcie_pending_result result) {
     assert(!result.polls && !result.device_status);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct qotom_pcie_pending_result result;
     struct qotom_realtek_state state={UINT32_C(0x2f900d00),0,0,UINT32_C(0x2ff0e),0,UINT32_C(0x2f900d00)};
     struct qotom_realtek_bme_result rbme={1,7,3};

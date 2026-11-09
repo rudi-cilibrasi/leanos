@@ -28,7 +28,7 @@ static void check(enum qotom_ehci_legacy_status status) {
     if(status!=QOTOM_EHCI_LEGACY_OK)assert(!out.count && !out.legacy_offset && !out.control_status);
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     memcpy(words,initial.words,sizeof initial.words);
     words[0x68/4]=0x01010001;words[0x6c/4]=0x12340000;
     check(QOTOM_EHCI_LEGACY_OK);

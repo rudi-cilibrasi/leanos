@@ -5637,6 +5637,18 @@
     },
     {
       "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.q35_dma_boundaries_disjoint",
+      "display": "q35_dma_boundaries_disjoint",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.q35_netboot_scalar_projection_matches_canonical_snapshot",
+      "display": "q35_netboot_scalar_projection_matches_canonical_snapshot",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.q35_scalar_projection_matches_canonical_snapshot",
       "display": "q35_scalar_projection_matches_canonical_snapshot",
       "kind": "theorem"
@@ -5699,6 +5711,24 @@
       "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.validate_q35_dma_snapshot_canonical_correspondence",
       "display": "validate_q35_dma_snapshot_canonical_correspondence",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.validate_q35_netboot_dma_snapshot_bus_master_correspondence",
+      "display": "validate_q35_netboot_dma_snapshot_bus_master_correspondence",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.validate_q35_netboot_dma_snapshot_canonical_correspondence",
+      "display": "validate_q35_netboot_dma_snapshot_canonical_correspondence",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.validate_q35_netboot_dma_snapshot_eq_zero_iff",
+      "display": "validate_q35_netboot_dma_snapshot_eq_zero_iff",
       "kind": "theorem"
     },
     {

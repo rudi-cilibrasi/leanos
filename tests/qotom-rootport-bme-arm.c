@@ -14,7 +14,7 @@ static void invalidate(void *ctx,uint64_t a){(void)ctx;(void)a;++invalidations;}
 static int store(void *ctx,uint64_t a,uint16_t value){(void)ctx;(void)a;(void)value;++stores;return 0;}
 static void fault(void *ctx){(void)ctx;assert(0);}
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     struct lab_ecam_root_view v={root,pdpt,pd,pt,0x100000,0x101000,0x102000,0x103000};
     root[0]=v.pdpt_address|7;pdpt[0]=v.pd_address|7;
     for(unsigned i=0;i<8;++i)pd[i]=(v.pt_address+i*4096)|7;

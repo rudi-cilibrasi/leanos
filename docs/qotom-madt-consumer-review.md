@@ -14,7 +14,7 @@ whole platform admission issue #291.
 | Fail on rejection or inconsistent ABI/status | Check version 1, zero error, active status on intermediate bytes, terminal status on the final byte, exact next offset and consumed-byte echo. Rejected state cannot be reused. The C replay checks these conditions, including unsupported projections. |
 | Preserve the terminal result into BSP binding | Pass actual status/error and all twelve final words to finish. The theorem derives count, offset, cleared partial state, admitted ID and all bitset limbs; C must not replace them with expected constants. The harness copies `result+3` into the finish input. |
 | Supply a physical BSP observation | Use the observed CPUID EDX, MSR-read availability, IA32_APIC_BASE and sampled executing ID from the same executing CPU. The scalar interface checks widths and binding predicates; it does not make an unsafe MSR read safe or prove that supplied observations were obtained from hardware. The captured observation is manifest-hash pinned in replay. |
-| Preserve profile separation | `boot/kernel.c:validate_generated_madt_entries` currently calls the existing singleton export and requires count one. The new Qotom exports have separate generated ABI rows; no runtime profile switch or kernel call was introduced. Integrating them requires an explicit Qotom platform path, rather than weakening the singleton policy. |
+| Preserve profile separation | `include/madt_generated_admission.h:madt_generated_entries` (in `boot/kernel.c` before #617) currently calls the existing singleton export and requires count one. The new Qotom exports have separate generated ABI rows; no runtime profile switch or kernel call was introduced. Integrating them requires an explicit Qotom platform path, rather than weakening the singleton policy. |
 | Retain freestanding closure | The object probe retains both new exports and checks the exact symbol set with no unresolved Lean-runtime dependencies. Hosted ordinary and pinned ASan/UBSan builds check generated ABI use and function-entry coverage. Production must repeat closure checks on the actual linked kernel. |
 | Treat candidate success as one part of platform admission | The stream checks non-processor framing; the composed consumer additionally requires the four exact malformed NMI records and zero routing authority. Inherited LVT state, AP dormancy, DMA quarantine, no-SMAP isolation and the bounded CPL3 scenario remain unresolved physical obligations. No topology success may bypass those checks. |
 
@@ -33,6 +33,19 @@ standalone terminal-field mutation probes remain independent negative checks.
 No production source or hardware state was changed by this review. Kernel
 integration needs its own profile, final-object, emulator and physical evidence;
 it is not a reason to describe this candidate interface as full Qotom admission.
+
+The C consumer's side of the table above is also a QuickProof theorem under
+CompCert's C semantics
+([`experiments/quickproof/madt-consumer`](../experiments/quickproof/madt-consumer/README.md),
+ADR 0030, #608). Against a Lean that answers every call with any value, a
+different one each time, `qotom_bind_validated_madt_entries` initializes the
+stream state, steps each byte with sixteen projections of one unchanged old
+state, and checks ABI, status, error, next offset and byte echo before
+replacing it. It rejects malformed record walks and NMI records itself, and
+passes the actual terminal status, error and twelve final words to the
+finish. It publishes a topology only when the finish accepts. Envelope
+validation, the copy's immutability and the observation's provenance stay
+the caller's obligations, outside that theorem.
 
 The reusable bounded C caller is now described in
 [qotom-bsp-consumer.md](qotom-bsp-consumer.md). It carries actual stream outputs

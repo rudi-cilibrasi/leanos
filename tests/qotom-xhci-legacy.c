@@ -45,7 +45,7 @@ static void maximum(void) {
     ext[47]=1;ext[48]=0x2000;
 }
 int main(void) {
-    assert(pci_enumerate_segment(NULL,NULL,NULL).status==PCI_ENUMERATION_INVALID_ARGUMENT);
+    assert(pci_enumerate_segment(NULL,NULL,NULL, 0)==PCI_ENUMERATION_INVALID_ARGUMENT);
     reset();check(QOTOM_XHCI_LEGACY_OK);assert(reads==41 && out.count==2 && out.legacy_offset==0x8000 && out.control_status==0x2000);
     maximum();check(QOTOM_XHCI_LEGACY_OK);assert(reads==87 && out.count==48);
     for(unsigned i=1;i<=87;++i){maximum();failed=i;check(i<=19?QOTOM_XHCI_LEGACY_REFRESH:i<=68?QOTOM_XHCI_LEGACY_READ:QOTOM_XHCI_LEGACY_FINAL);}
