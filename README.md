@@ -339,9 +339,9 @@ function found and publishes nothing then. Otherwise it publishes exactly the
 functions found, each with the sixteen dwords the device answered
 ([the project](experiments/quickproof/pci-enumeration/README.md)).
 
-The lab kernel's Lean device programs (WiFi, USB keyboard) add their own
-boundary: they run in ring 0, and their confinement to a per-device policy is
-proved about the reference simulator while the C executor is tested against
+The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
+own boundary: they run in ring 0, and their confinement to a per-device policy
+is proved about the reference simulator while the C executor is tested against
 it ([ADR 0020](docs/adr/0020-device-program-executor-assurance.md)). On the
 Qotom J1900, which has no IOMMU, **where a DMA-capable device writes is only
 partly proved**: the root address registers of the xHCI, AHCI and RTL8168
@@ -413,6 +413,13 @@ The Phase 1 image can be built with `./scripts/build-image.sh` and exercised
 headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
 tools, debug artifacts, and added trusted boundary are documented in
 [the boot-image guide](docs/boot-image.md).
+
+The ISO boots under BIOS and UEFI from a CD-ROM, and from a disk or USB stick
+it is written to raw. Its kernel and `grub.cfg` also boot over the network
+(PXE/TFTP) from a tree that `scripts/build-netboot-tree.sh` makes from the ISO.
+CI boots all of these on q35. On q35 a netbooted kernel then refuses the boot
+NIC, which the admitted topology leaves out (#601). See "Boot media" in the
+guide.
 
 The same unchanged image also boots in a browser: the
 [in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical

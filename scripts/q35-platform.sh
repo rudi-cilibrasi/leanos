@@ -31,6 +31,21 @@ leanos_qemu_accelerator() {
 # OVMF (EDK II UEFI, El Torito EFI boot).  Both reach the same GRUB
 # configuration and the same Multiboot2 kernel entry.  OVMF is loaded as the
 # pinned read-only code flash plus a private copy of the variable store.
+# Boot medium: the ISO as an IDE CD-ROM (El Torito, the default), or the same
+# image as an IDE hard disk, as it boots once written to a USB stick or an
+# internal disk (its MBR for BIOS, its GPT EFI system partition for UEFI).
+# The disk is opened with snapshot=on, so the image is never written.
+leanos_qemu_medium() {
+  local medium="${LEANOS_QEMU_MEDIUM:-cdrom}"
+  case "$medium" in
+    cdrom|disk) printf '%s\n' "$medium" ;;
+    *)
+      echo "error: QEMU boot medium must be exactly 'cdrom' or 'disk'" >&2
+      return 1
+      ;;
+  esac
+}
+
 readonly LEANOS_OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
 readonly LEANOS_OVMF_VARS=/usr/share/OVMF/OVMF_VARS_4M.fd
 
@@ -70,10 +85,12 @@ leanos_validate_q35_command() {
   local machine=0 nodefaults=0 iommu=0 vga=0 cdrom=0 cdrom_drive=0
   local debug_exit=0 devices=0 cpu_options=0 smp_options=0
   local ovmf_code=0 ovmf_vars=0 pflash=0 expected_pflash=0
-  local argument previous= first_device= accelerator firmware
+  local hard_disk=0 hard_disk_drive=0
+  local argument previous= first_device= accelerator firmware medium
 
   accelerator="$(leanos_qemu_accelerator)" || return 1
   firmware="$(leanos_qemu_firmware)" || return 1
+  medium="$(leanos_qemu_medium)" || return 1
   [[ "$firmware" == ovmf ]] && expected_pflash=2
 
   for argument in "${q35_command[@]}"; do
@@ -114,6 +131,8 @@ leanos_validate_q35_command() {
       id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=*)
         ((cdrom_drive += 1))
         ;;
+      ide-hd,drive=leanos-disk,bus=ide.0) ((hard_disk += 1)) ;;
+      id=leanos-disk,if=none,format=raw,snapshot=on,file=*) ((hard_disk_drive += 1)) ;;
       isa-debug-exit,iobase=0xf4,iosize=0x04) ((debug_exit += 1)) ;;
       if=pflash,format=raw,readonly=on,file="$LEANOS_OVMF_CODE")
         ((ovmf_code += 1))
@@ -132,8 +151,12 @@ leanos_validate_q35_command() {
     echo "error: q35 platform requires the exact q35/$accelerator machine and -nodefaults" >&2
     return 1
   }
-  [[ $devices -eq 4 && $iommu -eq 1 && $vga -eq 1 && $cdrom -eq 1 &&
-     $cdrom_drive -eq 1 && $debug_exit -eq 1 && $cpu_options -eq 1 &&
+  # The caller's array is reached by name: keep these locals' names distinct.
+  local expected_cd=1 expected_hard_disk=0
+  [[ "$medium" == disk ]] && { expected_cd=0; expected_hard_disk=1; }
+  [[ $devices -eq 4 && $iommu -eq 1 && $vga -eq 1 && $cdrom -eq $expected_cd &&
+     $cdrom_drive -eq $expected_cd && $hard_disk -eq $expected_hard_disk &&
+     $hard_disk_drive -eq $expected_hard_disk && $debug_exit -eq 1 && $cpu_options -eq 1 &&
      $smp_options -eq 1 ]] || {
     echo "error: q35 platform device topology drifted" >&2
     return 1
@@ -179,9 +202,18 @@ leanos_q35_command() {
     -device intel-iommu,intremap=off,pt=off,caching-mode=off,device-iotlb=off,aw-bits=39,dma-translation=on,snoop-control=off
     -device VGA,bus=pcie.0,addr=0x1
     -device isa-debug-exit,iobase=0xf4,iosize=0x04
-    -drive "id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=$image"
-    -device ide-cd,drive=leanos-cd,bus=ide.0
   )
+  if [[ "$(leanos_qemu_medium)" == disk ]]; then
+    q35_command+=(
+      -drive "id=leanos-disk,if=none,format=raw,snapshot=on,file=$image"
+      -device ide-hd,drive=leanos-disk,bus=ide.0
+    )
+  else
+    q35_command+=(
+      -drive "id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=$image"
+      -device ide-cd,drive=leanos-cd,bus=ide.0
+    )
+  fi
   if [[ "$(leanos_qemu_firmware)" == ovmf ]]; then
     # UEFI writes boot variables, so each run gets a fresh private store
     # next to its serial log; the pinned code flash stays read-only.

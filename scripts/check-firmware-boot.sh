@@ -6,6 +6,12 @@
 # through Multiboot2, so this is the end-to-end check that the handoff
 # decoder admits either firmware's boot information.
 #
+# Each firmware also boots the same image as a hard disk, as it boots once
+# written to a USB stick or an internal disk: SeaBIOS from the image's MBR,
+# OVMF from its GPT EFI system partition (LEANOS_QEMU_MEDIUM=disk).  From a
+# disk, UEFI GRUB's prefix device is the EFI partition, so only its embedded
+# configuration, which searches for the ISO tree, reaches grub.cfg.
+#
 # usage: check-firmware-boot.sh [<iso>] [<output-dir>]
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$repo_root"
@@ -27,21 +33,25 @@ readonly pass_exit=33
 mkdir -p "$output"
 
 failed=0
-for firmware in seabios ovmf; do
-  log="$output/serial-$firmware.log"
-  rm -f "$log"
-  command=()
-  LEANOS_QEMU_FIRMWARE="$firmware" \
-    leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
-  status=0
-  timeout "$limit" "${command[@]}" || status=$?
-  final="$(grep -a -m1 '^LEANOS/[0-9]* FINAL ' "$log" || true)"
-  if [[ $status -eq $pass_exit && "$final" == *' FINAL status=PASS'* ]]; then
-    echo "firmware-boot $firmware PASS exit=$status"
-  else
-    echo "firmware-boot $firmware FAIL exit=$status final='${final:-none}'" >&2
-    grep -a 'status=FAIL\|reason=' "$log" | tail -3 >&2 || true
-    failed=1
-  fi
+for medium in cdrom disk; do
+  for firmware in seabios ovmf; do
+    # The CD-ROM logs keep their earlier names.
+    log="$output/serial-$firmware.log"
+    [[ "$medium" == cdrom ]] || log="$output/serial-$firmware-$medium.log"
+    rm -f "$log"
+    command=()
+    LEANOS_QEMU_FIRMWARE="$firmware" LEANOS_QEMU_MEDIUM="$medium" \
+      leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+    status=0
+    timeout "$limit" "${command[@]}" || status=$?
+    final="$(grep -a -m1 '^LEANOS/[0-9]* FINAL ' "$log" || true)"
+    if [[ $status -eq $pass_exit && "$final" == *' FINAL status=PASS'* ]]; then
+      echo "firmware-boot $firmware $medium PASS exit=$status"
+    else
+      echo "firmware-boot $firmware $medium FAIL exit=$status final='${final:-none}'" >&2
+      grep -a 'status=FAIL\|reason=' "$log" | tail -3 >&2 || true
+      failed=1
+    fi
+  done
 done
 exit "$failed"

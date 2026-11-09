@@ -10,7 +10,14 @@ hooks of `hardware/wifi/wifi-gen-exec.h`).
 | Module | Contents |
 | --- | --- |
 | `LeanOS/Usb/Xhci.lean` | BIOS handoff (extended capability walk), controller reset and start, command/event rings, root port reset, Enable Slot / Address Device, control transfers |
-| `LeanOS/Usb/Keyboard.lean` | Root port scan, USB 2.0 hub support (hub descriptor, port power/reset, transaction translator), boot-keyboard interface discovery, interrupt IN endpoint, HID boot protocol, LED sweep, US-layout decoding, timed session |
+| `LeanOS/Usb/Hid.lean` | Shared with the mouse: root port scan, USB 2.0 hub support (hub descriptor, port power, debounce and reset, the hub's and the device's slot contexts with route string and transaction translator; [usb-hub.md](usb-hub.md)), boot interface discovery by protocol, interrupt IN endpoint, HID boot protocol, timed session loop; the enumeration and interface discovery also serve mass storage |
+| `LeanOS/Usb/Keyboard.lean` | Boot-keyboard program: LED sweep, US-layout decoding, the session's key records |
+
+The boot-protocol mouse program (`LeanOS/Usb/Mouse.lean`) reuses everything
+but the decoder; see [usb-mouse.md](usb-mouse.md). The mass-storage reader
+(`LeanOS/Usb/MassStorage.lean`) reuses the controller, hub and enumeration
+code; see [usb-mass-storage.md](usb-mass-storage.md). The hub handling
+the three share, its records and its tests are in [usb-hub.md](usb-hub.md).
 
 The executor gained what DMA-based controllers need: version-2 program
 images that name their PCI target and register window (up to 64 KiB), a
@@ -42,7 +49,11 @@ record, in order. With `--service` the `kbd-q35-service` program yields each
 key instead of printing it and runs through the lab device service
 (ADR 0022): subject 1 is granted the controller, an ungranted subject is
 denied, the driver runs in fixed step budgets with one key per yield, and
-after revocation the former holder is denied. `scripts/check.sh` runs both.
+after revocation the former holder is denied. `scripts/check.sh` runs both,
+then the mouse scenario ([usb-mouse.md](usb-mouse.md)) and the
+mass-storage scenario ([usb-mass-storage.md](usb-mass-storage.md)), and
+the hub scenarios, `--hub-port 8` among them: the keyboard on the hub's last
+port, a decoy mouse on port 1 ([usb-hub.md](usb-hub.md)).
 
 ## Trying it
 
@@ -63,12 +74,37 @@ all, off) and `LEANOS-LAB/1 KBD ready ... type-now` appears on COM1 and the
 screen. For the session length, each new key press prints
 `LEANOS-LAB/1 KBD key=<char>`; the session ends with the key count and
 LeanOS then returns to FreeBSD through the usual recovery path.
+
+Num Lock, Caps Lock and Scroll Lock (usages 0x53, 0x39, 0x47) each toggle a
+lock bit instead of printing a key. Caps Lock inverts Shift for the letters
+only, so Caps Lock with Shift gives lower case and digits ignore it. Each
+change prints `LEANOS-LAB/1 KBD locks num=<0|1> caps=<0|1> scroll=<0|1>`
+and is sent to the keyboard's LEDs: a boot keyboard does not light them
+itself (HID 1.11 §B.1).
+
+The SET_REPORT(Output) is queued on EP0 without waiting, because a control
+transfer that waited could consume a key report's transfer event. The session
+counts only its interrupt endpoint's events. A completed EP0 transfer prints
+`LEANOS-LAB/1 HID control-done cc=<code>`, where 1 is Success.
 `LEANOS_KBD_IDLE=125` makes the keyboard repeat its report every 500 ms, which
 verifies the interrupt path without anyone typing.
 
 Hardware evidence:
-[qotom-usb-keyboard-20260927](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md).
-Report decoding is checked by `lake exe leanos-usb-kbd-decode`.
+[qotom-usb-keyboard-20260927](../hardware/lab/observations/qotom-usb-keyboard-20260927/README.md)
+(idle reports), and
+[qotom-usb-20261108](../hardware/lab/observations/qotom-usb-20261108/README.md):
+a person typed `Hi LeanOS!`, Enter and Backspace, and 14 keys came back with
+Shift applied, through the hub code of [usb-hub.md](usb-hub.md). Caps Lock
+then neither toggled nor lit its LED, which is what led to the lock keys
+(issue #632).
+On the Qotom the lock keys work end to end: Caps Lock lit and cleared the
+keyboard's LED, and `a` came back as `A` in between
+([observation](../hardware/lab/observations/qotom-usb-20261108/README.md),
+`keyboard-locks/`).
+Report decoding is checked by `lake exe leanos-usb-kbd-decode` (in `scripts/check.sh`),
+lock keys included. `python3 scripts/run-q35-device-lab.py --locks` types
+with Caps Lock presses through QEMU, and requires the case to flip, both lock
+records, and a Success completion for each LED SET_REPORT.
 
-Limitations: one level of hub, one boot keyboard, polling (no interrupts),
+Limitations: one level of hub ([usb-hub.md](usb-hub.md)), one boot keyboard, polling (no interrupts),
 US layout, no key repeat, no USB 3 devices beyond port handling.
