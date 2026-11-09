@@ -181,6 +181,16 @@ static void lab_kbd_render(uint32_t value) {
     else { serial_puts("0x"); lab_wifi_hex(value, 2); }
 }
 
+/* A two's-complement byte (mouse motion) as a signed decimal. */
+static void lab_signed8(uint32_t value) {
+    uint32_t b = value & 0xffu;
+    if (b & 0x80u) {
+        serial_putc('-');
+        b = 0x100u - b;
+    }
+    serial_u64(b);
+}
+
 void wifi_hook_print(uint32_t tag, uint32_t value) {
     /* Lease records from LeanOS/Wifi/Connect.lean (Tag.leasedIp, router,
        subnet, lease) are also rendered as a readable boot message. */
@@ -239,6 +249,34 @@ void wifi_hook_print(uint32_t tag, uint32_t value) {
         serial_putc('\n');
     } else if (tag == 0x2102) {
         serial_puts("LEANOS-LAB/1 KBD session-end keys=");
+        serial_u64(value);
+        serial_putc('\n');
+    } else if (tag == 0x2200) {
+        /* USB mouse (LeanOS/Usb/Mouse.lean): one report that moves or
+           changes the buttons, buttons | dx << 8 | dy << 16 | wheel << 24
+           with two's-complement motion bytes. */
+        serial_puts("LEANOS-LAB/1 MOUSE buttons=");
+        serial_u64(value & 0xffu);
+        serial_puts(" dx=");
+        lab_signed8(value >> 8);
+        serial_puts(" dy=");
+        lab_signed8(value >> 16);
+        serial_puts(" wheel=");
+        lab_signed8(value >> 24);
+        serial_putc('\n');
+        return;
+    } else if (tag == 0x2201) {
+        serial_puts("LEANOS-LAB/1 MOUSE ready vendor=0x");
+        lab_wifi_hex(value & 0xffffu, 4);
+        serial_puts(" product=0x");
+        lab_wifi_hex(value >> 16, 4);
+        serial_puts(" move-now\n");
+    } else if (tag == 0x2203) {
+        serial_puts("LEANOS-LAB/1 MOUSE reports=");
+        serial_u64(value);
+        serial_putc('\n');
+    } else if (tag == 0x2202) {
+        serial_puts("LEANOS-LAB/1 MOUSE session-end records=");
         serial_u64(value);
         serial_putc('\n');
     }
