@@ -219,6 +219,32 @@ results are in the experiment's README.
    the pipeline itself just computed. They stay in the code as defense in
    depth.
 
+   **Amendment (#617).** The canonical MADT admission of `boot_allocate`
+   got the same refactor. Three kernel helpers called `handoff_fail`
+   directly and read the copy through the kernel's `struct copied_acpi_sdt`.
+   They moved into `include/madt_generated_admission.h`. Each check now
+   returns its own status, which `madt_generated_require` maps to the reason
+   the check gave before.
+
+   The seventh project,
+   [`experiments/quickproof/madt-generated-admission`](../../experiments/quickproof/madt-generated-admission/README.md),
+   has an adversarial Lean in its law, `admission_exact`, that answers
+   anything and checks every call. Against every such Lean, each of the
+   header's four functions:
+   - makes exactly the envelope, entry-stream and admission calls the exports
+     require, in order;
+   - carries the answers unchanged;
+   - returns the status that the first rejecting answer decides;
+   - writes the APIC ID only on OK.
+
+   With the sixth project, both headers between the firmware's tables and
+   the admitted APIC ID are now proved against any firmware and any Lean.
+   Two parts stay outside the proofs:
+   - the aperture copy;
+   - the kernel's calls of the two headers and its mapping from statuses to
+     reasons, which `scripts/check-boot-handoff-stream.sh` checks on the
+     source.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain
