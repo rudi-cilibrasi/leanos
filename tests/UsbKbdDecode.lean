@@ -31,6 +31,7 @@ def expected : List UInt32 :=
 def prog : ProgM Unit := do
   let tableOff ← addBlob "hid-us-ascii" tableBytes
   st 4 V.records (.imm 0)
+  st 4 K.locks (.imm 0)
   for r in reports do
     for h : i in [0:r.length] do
       st 1 (reportBuf + i.toUInt32) (.imm r[i].toUInt32)
