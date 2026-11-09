@@ -277,6 +277,43 @@ results are in the experiment's README.
    - the frame selection after the decoder, which is the ninth project's
      (#627).
 
+   **Amendment (#627).** The frame selection, scrub and publication of
+   `boot_allocate` got the same refactor. Every check ended in
+   `handoff_fail`, each candidate's decoded state was returned by value and
+   copied with volatile loads, and the scrub was a volatile zero-then-read
+   loop over physical memory. They moved into
+   `include/boot_frame_selection.h`, as seven steps:
+   - the candidate decoder and the scrub are callbacks, so the header has no
+     physical access and no `volatile`;
+   - the selection decodes candidates into one caller state until one is
+     accepted, and the frame-budget scan into a second, so no state is
+     copied;
+   - each condition of each check returns its own status, which
+     `boot_frame_require` maps to the reason the check gave before;
+   - the production mutation fixtures keep their places between the steps.
+
+   The ninth project,
+   [`experiments/quickproof/boot-frame-selection`](../../experiments/quickproof/boot-frame-selection/README.md),
+   has an adversarial candidate decoder, scrub and Lean in its law,
+   `frame_selection_exact`. Each answers anything and checks every call.
+   Against every such triple, the header:
+   - selects exactly the first candidate every answer accepts, and stops at
+     the first decoder rejection;
+   - scrubs once, exactly the selected frame, and only after every
+     cross-check accepted it;
+   - asks for the authority result only after the scrub succeeded;
+   - returns the status of the first failed check;
+   - writes only its results, and every other word keeps its value.
+
+   With projects 6 to 8, this covers `boot_allocate` from the handoff to the
+   published frame. Three parts stay outside the proof:
+   - that the kernel's decoder is project 8's, and what its scrub does to
+     physical memory;
+   - the kernel's mapping from statuses to reasons and the fixtures' places,
+     which `scripts/check-boot-handoff-stream.sh` checks on the source;
+   - what the Lean answers mean, which the theorems of
+     `LeanOS.BootMemoryMapStreamAuthority` state.
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain
