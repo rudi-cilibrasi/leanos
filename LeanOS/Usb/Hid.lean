@@ -117,6 +117,9 @@ def report : UInt32 := 0x2018
 /-- The device on this (hub or root) port has no boot interface of the
 protocol sought; its slot is disabled again. -/
 def rejected : UInt32 := 0x2019
+/-- A control transfer queued during the session (`controlQueue`) completed:
+its completion code. -/
+def controlDone : UInt32 := 0x201A
 end Tag
 
 /-! ## Helpers -/
@@ -778,9 +781,12 @@ structure Records where
   sessionEnd : UInt32
 
 /-- Poll the device for `seconds` of controller time (MFINDEX, 125 µs units):
-each report the endpoint completes (Success or Short Packet; the transfer
-event stays in `Var.ev0..ev3`) goes to `onReport`, which counts what it hands
-on in `V.records`, and the transfer is queued again. -/
+each report the interrupt endpoint completes (Success or Short Packet; the
+transfer event stays in `Var.ev0..ev3`) goes to `onReport`, which counts what
+it hands on in `V.records`, and the transfer is queued again. A completed
+control transfer that `onReport` queued (EP0, `controlQueue`) prints
+`Tag.controlDone` with its completion code; other endpoints' events are
+ignored. -/
 def session (seconds : UInt32) (records : Records) (onReport : ProgM Unit) : ProgM Unit := do
   st 4 V.elapsed (.imm 0)
   st 4 V.records (.imm 0)
@@ -812,6 +818,20 @@ def session (seconds : UInt32) (records : Records) (onReport : ProgM Unit) : Pro
   shri 1 24
   ld 4 2 V.hidSlot
   emit (.branch .ne 1 (.reg 2) top)
+  -- on our interrupt endpoint? EP0 (endpoint id 1) completes queued control
+  -- transfers
+  ld 4 1 Var.ev3
+  shri 1 16
+  andi 1 0x1F
+  let ours ← newLabel
+  ld 4 2 V.dci
+  emit (.branch .eq 1 (.reg 2) ours)
+  emit (.branch .ne 1 (.imm 1) top)
+  ld 4 1 Var.ev2
+  shri 1 24
+  print Tag.controlDone 1
+  emit (.jump top)
+  place ours
   ld 4 1 Var.ev2
   shri 1 24
   let good ← newLabel

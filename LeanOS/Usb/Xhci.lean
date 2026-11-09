@@ -658,12 +658,12 @@ def enableAndAddress (slotIdx : Nat) (slotVar : UInt32)
 
 /-! ## Control transfers on EP0 -/
 
-/-- One control transfer on the slot in `slotVar`, driver context `slotIdx`.
-`setup0` = bmRequestType | bRequest << 8 | wValue << 16 (register or
-immediate), `setup1` = wIndex | wLength << 16; `dirIn` for device-to-host
-data. Data goes to/from `dataBuf`. On return r1 = completion code (fails
-unless Success or Short Packet). -/
-def control (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
+/-- Queue one control transfer (Setup, optional Data, Status with IOC) on the
+EP0 ring of driver context `slotIdx` and ring the doorbell of the slot in
+`slotVar`, without waiting. `setup0` = bmRequestType | bRequest << 8 | wValue
+<< 16 (register or immediate), `setup1` = wIndex | wLength << 16; `dirIn` for
+device-to-host data. Data goes to/from `dataBuf`. -/
+def controlQueue (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
     (length : UInt32) (dirIn : Bool) : ProgM Unit := do
   let ring := ep0Ring slotIdx
   let trt : UInt32 := if length == 0 then 0 else if dirIn then 3 else 2
@@ -679,6 +679,13 @@ def control (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
   ld 4 1 slotVar
   shli 1 2
   emit (.write32At 1 (doorbell 0) (.imm 1))
+
+/-- One control transfer (`controlQueue`), then its completion: the next
+transfer event must be Success or Short Packet, or the program fails. On
+return r1 = completion code. -/
+def control (slotIdx : Nat) (slotVar : UInt32) (setup0 setup1 : Operand)
+    (length : UInt32) (dirIn : Bool) : ProgM Unit := do
+  controlQueue slotIdx slotVar setup0 setup1 length dirIn
   waitEvent 32 20000 Fail.transfer
   ld 4 1 Var.ev2
   shri 1 24
