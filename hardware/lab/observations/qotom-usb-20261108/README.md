@@ -113,6 +113,20 @@ FreeBSD mounted the same partition read-only (`mount -t msdosfs -o ro
 SHA-256
 `9e56eb78a05cabbfdc23de87d6a124c1d028dbdd2422505bffa482e4f32f0bac`.
 
+### The same file with directory chains bounded (`msc-fat32-bounded/`, 2026-11-09)
+
+| | |
+| --- | --- |
+| Program | `msc-fat`, with a directory's chain cut off at FAT's 65,536-entry limit and a file's at the volume's clusters, SHA-256 `6e7d0d10ce902ff94991a727d4dfa410073ef584416d167a900b57989f9edacc` |
+| Lab ELF | `c0f7c266a3e2e48d8ffab5f43f776caf1a591bed6b68efe438a3fd5dc94813e1` |
+| Capture | `msc-fat32-bounded/serial.raw`, SHA-256 `1ad50fce99229f3f9f682f7daab8519babb04a2a9ccbbf95d2d2da835061c168` |
+
+Its MBR, volume, path and file records are identical to `msc-fat32/`'s, and
+the program ended with `WIFI-END status=0`. The bounds change nothing on a
+well-formed volume. What they stop, a looping directory chain among others,
+is tested in QEMU (`run-q35-device-lab.py --fat-hostile`), since this stick
+is only read.
+
 ## Keyboard (`keyboard/`)
 
 | | |
