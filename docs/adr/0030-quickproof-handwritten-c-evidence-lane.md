@@ -245,6 +245,38 @@ results are in the experiment's README.
      reasons, which `scripts/check-boot-handoff-stream.sh` checks on the
      source.
 
+   **Amendment (#624).** The Multiboot2 handoff copy and decoder of
+   `boot_allocate` got the same refactor. The copy read physical memory
+   through the identity map, every check ended in `handoff_fail`, the
+   decoder copied 41-word states by value, and the projection wrote kernel
+   globals. They moved into `include/boot_handoff_decode.h`:
+   - the physical read and the projection's entry record are callbacks;
+   - the decoder alternates between two caller states, so no state is copied
+     and the header has no `volatile` access;
+   - each check returns its own status, which `boot_handoff_require` maps to
+     the reason the check gave before.
+
+   The eighth project,
+   [`experiments/quickproof/boot-handoff-decode`](../../experiments/quickproof/boot-handoff-decode/README.md),
+   has an adversarial bootloader and an adversarial Lean in its law,
+   `handoff_decode_exact`. Each answers anything and checks every call.
+   Against every such pair, the header:
+   - reads the information's first eight bytes once, and each chunk of the
+     extent once and in order;
+   - copies a chunk only once the copy stream accepts it;
+   - asks each decoder transition about exactly the state, offset and chunk
+     it carries;
+   - returns the status that the first rejecting answer decides;
+   - writes only the copy's accepted chunks, the bitmaps, the two states and
+     its records.
+
+   Three parts stay outside the proof:
+   - the physical read and the entry record themselves;
+   - the kernel's mapping from statuses to reasons, which
+     `scripts/check-boot-handoff-stream.sh` checks on the source;
+   - the frame selection after the decoder, which is the ninth project's
+     (#627).
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain
