@@ -350,6 +350,13 @@ headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
 tools, debug artifacts, and added trusted boundary are documented in
 [the boot-image guide](docs/boot-image.md).
 
+The ISO boots under BIOS and UEFI from a CD-ROM, and from a disk or USB stick
+it is written to raw. Its kernel and `grub.cfg` also boot over the network
+(PXE/TFTP) from a tree that `scripts/build-netboot-tree.sh` makes from the ISO.
+CI boots all of these on q35. On q35 a netbooted kernel then refuses the boot
+NIC, which the admitted topology leaves out (#601). See "Boot media" in the
+guide.
+
 The same unchanged image also boots in a browser: the
 [in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical
 ISO in a pinned, unforked qemu-wasm WebAssembly runtime and requires the

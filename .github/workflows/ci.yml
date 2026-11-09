@@ -443,11 +443,17 @@ jobs:
             2>&1 | tee build/ci/clang-canonical-boot.log
           test -s build/boot/serial.log
 
-      - name: Boot the canonical image under SeaBIOS and OVMF
+      - name: Boot the canonical image under SeaBIOS and OVMF, from CD-ROM and disk
         run: |
           set -o pipefail
           ./scripts/check-firmware-boot.sh build/boot/leanos-0.1.0-x86_64.iso \
             build/ci/firmware-boot 2>&1 | tee build/ci/firmware-boot.log
+
+      - name: Boot the canonical image's kernel over the network (PXE)
+        run: |
+          set -o pipefail
+          ./scripts/check-netboot.sh build/boot/leanos-0.1.0-x86_64.iso \
+            build/ci/netboot 2>&1 | tee build/ci/netboot.log
 
       - name: Preserve Clang compiler and canonical boot evidence
         if: always()
