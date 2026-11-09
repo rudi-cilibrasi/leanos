@@ -5,7 +5,9 @@ import LeanOS.Wifi.Sim
 reports (modifiers, reserved, six usages) go through `decodeReport` and the
 emitted characters are compared with the expected text. -/
 
-open LeanOS.Wifi.Bytecode LeanOS.Wifi LeanOS.Usb.Keyboard LeanOS.Usb.Xhci
+open LeanOS.Wifi.Bytecode LeanOS.Wifi LeanOS.Usb.Keyboard LeanOS.Usb.Xhci LeanOS.Usb.Hid
+
+attribute [local instance] LeanOS.Usb.Xhci.qemu
 
 /-- A report: modifier byte and up to six pressed usages. -/
 def rep (mods : UInt8) (keys : List UInt8) : List UInt8 :=
@@ -28,7 +30,7 @@ def expected : List UInt32 :=
 
 def prog : ProgM Unit := do
   let tableOff ← addBlob "hid-us-ascii" tableBytes
-  st 4 V.keys (.imm 0)
+  st 4 V.records (.imm 0)
   for r in reports do
     for h : i in [0:r.length] do
       st 1 (reportBuf + i.toUInt32) (.imm r[i].toUInt32)
