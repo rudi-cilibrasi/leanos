@@ -91,9 +91,10 @@ Not claimed (`project/DEVIATIONS.md`):
 
 - what a policy permits (`LeanOS.DeviceProgramConfinement`) and what the
   executor does after the start (`ExecRefinement`);
-- that each kernel profile is the Lean policy its comment names, and that
-  the format the law states is the one `Program.image` writes, both checked
-  by reading;
+- that each kernel profile is the Lean policy its comment names, which
+  `scripts/check-device-policies.py` checks mechanically (#642), and that
+  the format the law states is the one `Program.image` writes, checked by
+  reading;
 - a NULL or overlapping argument, or a policy of more than 8 sinks or 16
   descriptors passed to an admission (the kernel passes its program array
   and static objects, and the parser never builds such a policy);

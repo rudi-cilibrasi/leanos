@@ -344,9 +344,10 @@ results are in the experiment's README.
    (`ExecRefinement.step_eq`, ADR 0020) assumes `WF`: the program is one the
    C image parser accepts. That the parser accepts only such programs was
    fuzzed; it is now proved of the C. Three parts stay outside the proof:
-   - that the format the law states is the one `Program.image` writes, and
-     that each kernel profile is the Lean policy its comment names, both
-     checked by reading;
+   - that the format the law states is the one `Program.image` writes,
+     checked by reading, and that each kernel profile is the Lean policy its
+     comment names, which `scripts/check-device-policies.py` checks
+     mechanically (#642);
    - what a policy permits, which `LeanOS.DeviceProgramConfinement` states;
    - the scratch's `volatile` qualifier, which the proof defines away
      (`DEVIATIONS.md` D2).

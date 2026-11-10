@@ -21,7 +21,13 @@ out=build/ci/device-programs
 rm -rf "$out"
 mkdir -p "$out"
 
-lake build leanos-wifi-gen leanos-wifi-xcheck leanos-wifi-fuzz LeanOS.Wifi.Exec
+lake build leanos-wifi-gen leanos-wifi-xcheck leanos-wifi-fuzz leanos-device-policies LeanOS.Wifi.Exec
+
+# The kernel's and the lab kernel's C profiles equal the Lean policies their
+# comments name (issue #642), and the check rejects a perturbed profile.
+.lake/build/bin/leanos-device-policies >"$out/policies.txt"
+python3 scripts/check-device-policies.py "$out/policies.txt"
+python3 scripts/test-check-device-policies.py "$out/policies.txt" 2>&1 | tail -1
 prefix="$(lake env lean --print-prefix)"
 for program in probe sprom tables kbd mouse msc msc-fat ahci-identify rtl8168-arp; do
   .lake/build/bin/leanos-wifi-gen "$program" "$out/$program.bin" >/dev/null

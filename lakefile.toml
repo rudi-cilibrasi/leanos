@@ -82,6 +82,11 @@ root = "tests.WifiGen"
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_exe]]
+name = "leanos-device-policies"
+root = "tests.DevicePolicies"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-net-echo-vectors"
 root = "tests.NetEchoVectors"
 moreLeanArgs = ["-DwarningAsError=true"]

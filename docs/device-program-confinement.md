@@ -50,8 +50,13 @@ confined to a **policy** (`Policy` in `LeanOS/Wifi/Bytecode.lean`):
    descriptor map holds only scratch pointers in every reachable state.
 3. **Admitted profile.** The lab kernel runs only version-3 images whose
    declared policy is no wider than its `lab_dev_profiles` entry for the target
-   function (`hardware/lab/qotom-wifi.c.inc`); `qotom*Policy_bits` pins the
-   Lean policies to that table.
+   function (`hardware/lab/qotom-wifi.c.inc`).
+   `scripts/check-device-policies.py`, run by `scripts/check-device-programs.sh`,
+   requires every entry of that table, and the kernel's own profiles in
+   `boot/kernel.c`, to equal the Lean policy its comment names, field by field:
+   window, configuration bitmaps, command masks, DMA, address sinks and
+   descriptor map (issue #642). A self-test shows it rejects a perturbed
+   profile.
 
 Negative fixtures (`LeanOS/NegativeFixtures/DeviceProgramConfinement.lean`)
 show that writing the command register or a BAR directly, setting Bus Master
