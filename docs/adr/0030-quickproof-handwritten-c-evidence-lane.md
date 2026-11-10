@@ -314,6 +314,43 @@ results are in the experiment's README.
    - what the Lean answers mean, which the theorems of
      `LeanOS.BootMemoryMapStreamAuthority` state.
 
+   **Amendment (#638).** The device-program image parser and `wifi_start`
+   in `hardware/wifi/wifi-exec.h` were provable as written: they take the
+   image, its length and caller objects and return a status. The policy
+   admission was not in the header. The kernel's device service and the lab
+   kernel each wrote out the subset test, and the network and DHCP sources
+   each wrote out the frame-source shape. Issue #638 moved them into the
+   header as `wifi_policy_within`, `wifi_service_admitted` and
+   `wifi_source_admitted`. The callers keep their names and call these.
+
+   The tenth project,
+   [`experiments/quickproof/device-program-image`](../../experiments/quickproof/device-program-image/README.md),
+   proves the law `image_exact` for any image of any 32-bit length and any
+   bytes, and any targets and policies an admission compares:
+   - the header returns 0 exactly when the image has the format
+     `LeanOS.Wifi.Bytecode.Program.image` writes and every field the format
+     bounds is in range: at most 8 sinks, at most 16 descriptors, each
+     descriptor's limit, computed without overflow, inside the 256 KiB
+     scratch;
+   - it then writes exactly the target, header length and policy the image
+     encodes;
+   - `wifi_start` accepts exactly the images whose instruction count and
+     blob fit the rest of the image, points the code and the blob at exactly
+     those bytes, zeroes the registers and the scratch, and on failure
+     leaves the scratch and the executor state unchanged;
+   - each admission function returns exactly the subset test it states.
+
+   The Lean refinement of the generated executor
+   (`ExecRefinement.step_eq`, ADR 0020) assumes `WF`: the program is one the
+   C image parser accepts. That the parser accepts only such programs was
+   fuzzed; it is now proved of the C. Three parts stay outside the proof:
+   - that the format the law states is the one `Program.image` writes, and
+     that each kernel profile is the Lean policy its comment names, both
+     checked by reading;
+   - what a policy permits, which `LeanOS.DeviceProgramConfinement` states;
+   - the scratch's `volatile` qualifier, which the proof defines away
+     (`DEVIATIONS.md` D2).
+
 ## License
 
 QuickProof is under the PolyForm Noncommercial License 1.0.0. Its toolchain
