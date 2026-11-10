@@ -71,6 +71,9 @@ structure Machine (σ : Type) where
   dev : σ
   prints : Array (UInt32 × UInt32) := #[]
   steps : Nat := 0
+  /-- The `Policy.armBits` of every admitted write to an address sink so far:
+  which sink dwords hold a value the program wrote (issue #644). -/
+  armed : UInt32 := 0
 
 instance {σ} [Inhabited σ] : Inhabited (Machine σ) := ⟨{ dev := default }⟩
 
@@ -157,6 +160,8 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
   let sinkW (off v : UInt32) := match p.policy with
     | some π => π.sinkOk (d.phys m.dev 0).1 off v | none => true
   let sinkT (off : UInt32) := match p.policy with | some π => π.sinkTouch off | none => false
+  -- The Bus Master gate: which sink dwords an admitted write fills.
+  let armB (off : UInt32) := match p.policy with | some π => π.armBits off | none => 0
   -- Descriptor map: scratch after a store must keep every pointer field in
   -- scratch (the C executor re-checks only stores that touch a region, which
   -- is equivalent while the map holds); FIFO input never lands in a region.
@@ -192,7 +197,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     if srcBad w.b then bad "bad-opcode" else
     if !mmioOk window w.a 4 then bad "bad-offset" else
     if !sinkW w.a (val w.b) then bad "policy" else
-    .next { m with dev := d.write32 m.dev w.a (val w.b) }
+    .next { m with dev := d.write32 m.dev w.a (val w.b), armed := m.armed ||| armB w.a }
   | 7 =>
     if srcBad w.b then bad "bad-opcode" else
     if !mmioOk window w.a 2 then bad "bad-offset" else
@@ -209,7 +214,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
     let off := m.reg w.a + w.b
     if !mmioOk window off 4 then bad "bad-offset" else
     if !sinkW off (val w.c) then bad "policy" else
-    .next { m with dev := d.write32 m.dev off (val w.c) }
+    .next { m with dev := d.write32 m.dev off (val w.c), armed := m.armed ||| armB off }
   | 10 =>
     if regBad w.a || regBad w.b then bad "bad-opcode" else
     let off := m.reg w.b + w.c
@@ -298,6 +303,7 @@ def exec {σ} (p : Program) (d : Device σ) (w : Word4) (m : Machine σ) : Step 
   | 26 =>
     if !cfgOffOk w.a then bad "bad-offset" else
     if !(p.policy.map (·.updateOk w.a w.b w.c)).getD true then bad "policy" else
+    if !(p.policy.map (·.busMasterOk m.armed w.a w.c)).getD true then bad "policy" else
     .next { m with dev := d.cfgUpdate32 m.dev w.a w.b w.c }
   | 28 =>
     if regBad w.a then bad "bad-opcode" else

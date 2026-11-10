@@ -116,6 +116,10 @@ class Hooks (τ : Type) where
   physBase : τ → τ
   delay : τ → UInt32 → τ
   print : τ → UInt32 → UInt32 → τ
+  /-- The Bus Master gate's written-sink bits (issue #644): deliver them, and
+  or bits into them (`Sim.Machine.armed`). -/
+  armedGet : τ → τ
+  armedOr : τ → UInt32 → τ
   /-- End of the step: status and its code (fail code, yielded value). -/
   done : τ → UInt32 → UInt32 → τ
 
@@ -212,6 +216,25 @@ decreasing_by exact succ_toNat_lt h
   else false
 termination_by (polSinks t).toNat - i.toNat
 decreasing_by exact succ_toNat_lt h
+
+/-- The index of the first sink from `i` on that is `off`, or the sink count
+when none is (`List.idxOf?`). -/
+@[specialize] def sinkIdxFrom (t : τ) (off i : UInt32) : UInt32 :=
+  if h : i < polSinks t then
+    if polSink t i == off then i else sinkIdxFrom t off (i + 1)
+  else polSinks t
+termination_by (polSinks t).toNat - i.toNat
+decreasing_by exact succ_toNat_lt h
+
+/-- `Policy.armBits`: the written-sink bit of a 32-bit write to `off`. -/
+@[inline] def armBits (t : τ) (off : UInt32) : UInt32 :=
+  let i := sinkIdxFrom t off 0
+  if i < polSinks t then (1 : UInt32) <<< (2 * i) else
+  let j := sinkIdxFrom t (off - 4) 0
+  if j < polSinks t then (1 : UInt32) <<< (2 * j + 1) else 0
+
+/-- `Policy.armedAll`. -/
+@[inline] def armedAll (t : τ) : UInt32 := ((1 : UInt32) <<< (2 * polSinks t)) - 1
 
 /-- `Policy.sinkOk`: base is the bus address of scratch byte 0. -/
 @[inline] def sinkOk (t : τ) (base off v : UInt32) : Bool :=
@@ -385,7 +408,8 @@ decreasing_by exact succ_toNat_lt h
   let v := operandVal t (immOf op) b
   if (polPresent t != 0) then
     let t := physBase t
-    if !sinkOk t (word t) a v then done t stPolicy 0 else next (mmioWrite32 t a v)
+    if !sinkOk t (word t) a v then done t stPolicy 0 else
+    next (armedOr (mmioWrite32 t a v) (armBits t a))
   else next (mmioWrite32 t a v)
 
 @[inline] def exec7 (t : τ) (op a b _c : UInt32) : τ :=
@@ -415,7 +439,8 @@ decreasing_by exact succ_toNat_lt h
   let v := operandVal t (immOf op) c
   if (polPresent t != 0) then
     let t := physBase t
-    if !sinkOk t (word t) off v then done t stPolicy 0 else next (mmioWrite32 t off v)
+    if !sinkOk t (word t) off v then done t stPolicy 0 else
+    next (armedOr (mmioWrite32 t off v) (armBits t off))
   else next (mmioWrite32 t off v)
 
 @[inline] def exec10 (t : τ) (_op a b c : UInt32) : τ :=
@@ -556,7 +581,11 @@ decreasing_by exact succ_toNat_lt h
   
   if !cfgOffOk a then done t stBadOffset 0 else
   if (polPresent t != 0) && !updateOk t a b c then done t stPolicy 0 else
-  next (cfgUpdate t a b c)
+  -- The Bus Master gate (`Policy.busMasterOk`, issue #644).
+  if (polPresent t != 0) && (a == 0x04 && c &&& 0x4 != 0) then
+    let t := armedGet t
+    if word t &&& armedAll t != armedAll t then done t stPolicy 0 else next (cfgUpdate t a b c)
+  else next (cfgUpdate t a b c)
 
 @[inline] def exec27 (t : τ) (op a _b _c : UInt32) : τ :=
   
@@ -779,6 +808,8 @@ theorem exec_tree (t : τ) (op a b c : UInt32) : exec t op a b c = execMatch t o
 @[extern "wifi_gen_cfg_update"] opaque cCfgUpdate (t : UInt64) (off clr set : UInt32) : UInt64
 @[extern "wifi_gen_phys"] opaque cPhys (t : UInt64) (off : UInt32) : UInt64
 @[extern "wifi_gen_phys_base"] opaque cPhysBase (t : UInt64) : UInt64
+@[extern "wifi_gen_armed_get"] opaque cArmedGet (t : UInt64) : UInt64
+@[extern "wifi_gen_armed_or"] opaque cArmedOr (t : UInt64) (bits : UInt32) : UInt64
 @[extern "wifi_gen_delay"] opaque cDelay (t : UInt64) (us : UInt32) : UInt64
 @[extern "wifi_gen_print"] opaque cPrint (t : UInt64) (tag v : UInt32) : UInt64
 @[extern "wifi_gen_done"] opaque cDone (t : UInt64) (st code : UInt32) : UInt64
@@ -828,6 +859,8 @@ instance instHooksC : Hooks UInt64 where
   physBase := cPhysBase
   delay := cDelay
   print := cPrint
+  armedGet := cArmedGet
+  armedOr := cArmedOr
   done := cDone
 
 /-- The generated executor step: `step` at the C hooks. The argument is the

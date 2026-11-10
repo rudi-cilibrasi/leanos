@@ -315,6 +315,31 @@ theorem Policy.sinkTouch_of_nil {π : Policy} {off : UInt32} (h : π.addrSinks =
 def Policy.updateOk (π : Policy) (off clr set : UInt32) : Bool :=
   off == 0x04 && clr &&& ~~~π.cmdClear == 0 && set &&& ~~~π.cmdSet == 0
 
+/-- The written-sink bits a 32-bit write to `off` adds (issue #644): bit `2i`
+when `off` is sink `i`'s low dword, bit `2i + 1` when it is its high dword
+(the lookup order of `sinkOk`). `Sim` counts only writes `sinkOk` admits, so
+a set bit means that dword holds a value the program wrote: a bus address
+inside scratch (low) or zero (high). The executor allows at most 8 sinks, so
+the bits fit. -/
+def Policy.armBits (π : Policy) (off : UInt32) : UInt32 :=
+  match π.addrSinks.idxOf? off with
+  | some i => (1 : UInt32) <<< (2 * i.toUInt32)
+  | none =>
+    match π.addrSinks.idxOf? (off - 4) with
+    | some i => (1 : UInt32) <<< (2 * i.toUInt32 + 1)
+    | none => 0
+
+/-- Every sink's low and high dword written. -/
+def Policy.armedAll (π : Policy) : UInt32 :=
+  ((1 : UInt32) <<< (2 * π.addrSinks.length.toUInt32)) - 1
+
+/-- The Bus Master gate (issue #644): a command-register update that sets
+Bus Master (bit 2) is admitted only once every sink's low and high dword has
+been written (`armed` holds the `armBits` of the admitted writes so far).
+Clearing Bus Master, or any other update, is not gated. -/
+def Policy.busMasterOk (π : Policy) (armed off set : UInt32) : Bool :=
+  !(off == 0x04 && set &&& 0x4 != 0) || armed &&& π.armedAll == π.armedAll
+
 structure BuildState where
   code : Array Instr := #[]
   /-- label id ↦ instruction index (filled when placed). -/
