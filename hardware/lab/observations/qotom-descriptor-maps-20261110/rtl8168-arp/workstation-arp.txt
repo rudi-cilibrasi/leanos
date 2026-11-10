@@ -1,0 +1,6 @@
+03:58:43.318738 00:0e:c4:cc:a2:94 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 74: Request who-has 192.168.6.1 tell 0.0.0.0, length 60
+03:59:49.984828 00:0e:c4:cc:a2:94 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 74: Request who-has 192.168.6.21 tell 192.168.6.21, length 60
+04:00:17.393149 00:0e:c4:cc:a2:94 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 74: Request who-has 192.168.6.62 tell 192.168.6.21, length 60
+04:01:01.443225 00:0e:c4:cc:a2:94 > 1c:69:7a:a8:9b:1e, ethertype ARP (0x0806), length 60: Reply 192.168.6.21 is-at 00:0e:c4:cc:a2:94, length 46
+04:01:47.671823 00:0e:c4:cc:a2:94 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), length 74: Request who-has 192.168.6.40 tell 192.168.6.21, length 60
+

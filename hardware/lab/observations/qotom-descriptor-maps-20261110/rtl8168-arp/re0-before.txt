@@ -1,0 +1,11 @@
+Tue Nov 10 11:59:10 UTC 2026
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94      107     0     0      14811       47     0      12200     0
+re0       - 192.168.6.0/24  192.168.6.21            49     -     -      10266       43     -      11130     -
+re0: flags=1008843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST,LOWER_UP> metric 0 mtu 1500
+	options=8209b<RXCSUM,TXCSUM,VLAN_MTU,VLAN_HWTAGGING,VLAN_HWCSUM,WOL_MAGIC,LINKSTATE>
+	ether 00:0e:c4:cc:a2:94
+	inet 192.168.6.21 netmask 0xffffff00 broadcast 192.168.6.255
+	media: Ethernet autoselect (1000baseT <full-duplex>)
+	status: active
+	nd6 options=29<PERFORMNUD,IFDISABLED,AUTO_LINKLOCAL>

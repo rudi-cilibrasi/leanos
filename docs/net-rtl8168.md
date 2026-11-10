@@ -281,6 +281,11 @@ teardown are rejected.
 
 ### Maintainer hardware steps
 
+**Result (2026-11-10, issue #640):** the steps below passed on the Qotom
+with the #577 program. After the run, FreeBSD's `re0` answered 400 of 400
+pings and counted 646 input frames without `down up`, and SSH worked
+([observation](../hardware/lab/observations/qotom-descriptor-maps-20261110/README.md)).
+
 These steps run the new program once and check FreeBSD afterwards without
 `down up`. Work on the serial console (ttyu0, 38400 8N1), because `re0` may be
 stalled. Ping from the wired workstation (192.168.6.62).

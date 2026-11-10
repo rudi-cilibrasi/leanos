@@ -178,7 +178,10 @@ descriptor region.
 * That every reachable run of the keyboard program passes the descriptor
   check is not proved; the `device-service` QEMU scenario runs it under the
   check, and the Qotom keyboard lab exercises the Bay Trail layout.
-* The Qotom AHCI identify and RTL8168 ARP programs run on the hardware
-  under their maps (issue #640; `hardware/lab/observations`).
+* The Qotom AHCI identify and RTL8168 ARP programs ran on the hardware
+  under their maps with unchanged results (issue #640,
+  [`qotom-descriptor-maps-20261110`](../../hardware/lab/observations/qotom-descriptor-maps-20261110/README.md)).
+  The RTL8168's after-run dump shows its ring bases at exactly the mapped
+  rings.
 * Next: an IOMMU platform, or pinning each ring and command-list base to its
   mapped structure rather than to scratch.
