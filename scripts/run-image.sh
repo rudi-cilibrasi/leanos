@@ -14,6 +14,7 @@ fault_scenario=0
 stale_translation_scenario=0
 device_service_scenario=0
 ahci_service_scenario=0
+netboot_scenario=0
 extended_instruction=x87
 extended_vector=7
 if [[ "$scenario" == fast-entry-syscall ]]; then
@@ -92,6 +93,12 @@ elif [[ "$scenario" == ahci-service ]]; then
   ahci_service_scenario=1
   expectation_q35_topology=ahci-service
   default_image="build/boot/leanos-${version}-x86_64-ahci-service.iso"
+elif [[ "$scenario" == netboot ]]; then
+  # The netboot image (issue #601) boots over PXE/TFTP from a tree made from
+  # its own ISO; its admitted q35 inventory adds the quarantined boot NIC.
+  netboot_scenario=1
+  expectation_q35_topology=netboot
+  default_image="build/boot/leanos-${version}-x86_64-netboot.iso"
 elif [[ "$scenario" == stale-translation-denial ]]; then
   stale_translation_scenario=1
   default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"
@@ -221,7 +228,15 @@ mkdir -p "$(dirname "$log")"; : > "$log"
 command=()
 qmp_dir=
 disk_dir=
-if (( ahci_service_scenario )); then
+netboot_dir=
+if (( netboot_scenario )); then
+  # A fresh TFTP tree per run: the image's own /boot and GRUB's network
+  # loaders. LEANOS_QEMU_FIRMWARE selects the loader DHCP names.
+  netboot_dir="$(mktemp -d)"
+  ./scripts/build-netboot-tree.sh "$image" "$netboot_dir/tree" >&2
+  leanos_q35_netboot_command command "$netboot_dir/tree" \
+    "$qemu" "$memory_mib" "$log"
+elif (( ahci_service_scenario )); then
   # A fresh copy of the generated disk per run; QEMU opens it snapshot=on.
   disk_dir="$(mktemp -d)"
   ./scripts/generate-ahci-service-disk.py --output "$disk_dir/ahci-service-disk.img"
@@ -247,6 +262,7 @@ if (( device_service_scenario )); then
 fi
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
 [[ -z "$disk_dir" ]] || rm -rf "$disk_dir"
+[[ -z "$netboot_dir" ]] || rm -rf "$netboot_dir"
 typist_status=0
 if [[ -n "$typist" ]]; then
   set +e; wait "$typist"; typist_status=$?; set -e
@@ -400,7 +416,8 @@ if (( fault_scenario )); then
   fi
   sed -i "/^$(leanos_serial_re 14 PF-SNAPSHOT) /d" "$without_allocation"
 fi
-if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
+if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ||
+      "$scenario" == netboot ]]; then
   final_high_water_path="syscall"
   [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"
   mkdir -p "$(dirname "$high_water_artifact")"
@@ -450,6 +467,7 @@ if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-p
 snapshot_profile=production
 (( device_service_scenario )) && snapshot_profile=device-service
 (( ahci_service_scenario )) && snapshot_profile=ahci-service
+(( netboot_scenario )) && snapshot_profile=netboot
 if ! ./scripts/write-dma-snapshot.py --profile "$snapshot_profile" \
     --serial-log "$log" \
     --source-revision "$source_revision_file" \

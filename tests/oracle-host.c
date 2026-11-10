@@ -55,6 +55,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_composite_dispatch);
     REGISTER_BOUNDARY(leanos_composite_dispatch_value);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
+    REGISTER_BOUNDARY(leanos_validate_q35_netboot_dma_snapshot);
     REGISTER_BOUNDARY(leanos_validate_vtd_activation);
     REGISTER_BOUNDARY(leanos_validate_assigned_edu_projection);
     REGISTER_BOUNDARY(leanos_validate_assigned_edu_transfer);
@@ -185,6 +186,50 @@ int main(void) {
             UINT64_C(0x0001060129228086), UINT64_C(0x8001),
             UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 8) {
         fputs("bus-master-enabled q35 DMA snapshot was not rejected\n", stderr);
+        return 1;
+    }
+    /* The netboot boundary admits exactly the boot NIC quarantined at 00:03.0
+       and refuses the production inventory; the production boundary refuses
+       the boot NIC. */
+    if (leanos_validate_q35_netboot_dma_snapshot(
+            1, UINT64_C(0x0001000800020002),
+            UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
+            UINT64_C(0x0003000011111234), UINT64_C(0x0001),
+            UINT64_C(0x0002000010001af4), UINT64_C(0x0001),
+            UINT64_C(0x0006010029188086), UINT64_C(0xc001),
+            UINT64_C(0x0001060129228086), UINT64_C(0x8001),
+            UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 0) {
+        fputs("canonical q35 netboot DMA snapshot was rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_q35_netboot_dma_snapshot(
+            1, UINT64_C(0x0001000800020002),
+            UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
+            UINT64_C(0x0003000011111234), UINT64_C(0x0001),
+            UINT64_C(0x0002000010001af4), UINT64_C(0x0011),
+            UINT64_C(0x0006010029188086), UINT64_C(0xc001),
+            UINT64_C(0x0001060129228086), UINT64_C(0x8001),
+            UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 8) {
+        fputs("bus-mastering boot NIC was not rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_q35_netboot_dma_snapshot(
+            1, UINT64_C(0x0001000800020002),
+            UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
+            UINT64_C(0x0003000011111234), UINT64_C(0x0001),
+            0, 0,
+            UINT64_C(0x0006010029188086), UINT64_C(0xc001),
+            UINT64_C(0x0001060129228086), UINT64_C(0x8001),
+            UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 5 ||
+        leanos_validate_q35_dma_snapshot(
+            1, UINT64_C(0x0001000800020002),
+            UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
+            UINT64_C(0x0003000011111234), UINT64_C(0x0001),
+            UINT64_C(0x0002000010001af4), UINT64_C(0x0001),
+            UINT64_C(0x0006010029188086), UINT64_C(0xc001),
+            UINT64_C(0x0001060129228086), UINT64_C(0x8001),
+            UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 5) {
+        fputs("a q35 DMA boundary admitted the other image's inventory\n", stderr);
         return 1;
     }
     if (leanos_validate_vtd_activation(

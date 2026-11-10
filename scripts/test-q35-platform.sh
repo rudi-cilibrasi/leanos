@@ -184,6 +184,104 @@ if leanos_validate_q35_ahci_service_command negative 2>/dev/null; then
   exit 1
 fi
 
+# The netboot construction (issue #601): no boot medium, the pinned TFTP
+# network and the boot NIC at 00:03.0, with the firmware's own loader.
+netboot_tree="$(mktemp -d)"
+trap 'rm -rf "$netboot_tree"' EXIT
+mkdir -p "$netboot_tree/boot/grub/i386-pc" "$netboot_tree/boot/grub/x86_64-efi"
+: >"$netboot_tree/boot/grub/i386-pc/core.0"
+: >"$netboot_tree/boot/grub/x86_64-efi/core.efi"
+netboot=()
+leanos_q35_netboot_command netboot "$netboot_tree" qemu-system-x86_64 128 \
+  build/evidence/netboot.serial.log
+leanos_validate_q35_netboot_command netboot
+[[ " ${netboot[*]} " == *" -netdev user,id=leanos-net,restrict=on,tftp=$netboot_tree,bootfile=boot/grub/i386-pc/core.0 "* &&
+   " ${netboot[*]} " == *" -device $LEANOS_Q35_NETBOOT_NIC "* &&
+   " ${netboot[*]} " == *" -nic none "* &&
+   " ${netboot[*]} " != *" ide-cd,"* && " ${netboot[*]} " != *" ide-hd,"* ]] || {
+  echo "error: q35 netboot construction did not attach exactly the TFTP network and boot NIC" >&2
+  exit 1
+}
+[[ "$LEANOS_Q35_NETBOOT_TOPOLOGY_VERSION" != "$LEANOS_Q35_TOPOLOGY_VERSION" &&
+   "$LEANOS_Q35_NETBOOT_TOPOLOGY_VERSION" != "$LEANOS_Q35_ASSIGNED_EDU_TOPOLOGY_VERSION" &&
+   "$LEANOS_Q35_NETBOOT_TOPOLOGY_VERSION" != "$LEANOS_Q35_DEVICE_SERVICE_TOPOLOGY_VERSION" &&
+   "$LEANOS_Q35_NETBOOT_TOPOLOGY_VERSION" != "$LEANOS_Q35_AHCI_SERVICE_TOPOLOGY_VERSION" ]] || {
+  echo "error: netboot construction reused another topology version" >&2
+  exit 1
+}
+netboot_ovmf=()
+LEANOS_QEMU_FIRMWARE=ovmf leanos_q35_netboot_command netboot_ovmf "$netboot_tree" \
+  qemu-system-x86_64 128 "$netboot_tree/ovmf.serial.log"
+LEANOS_QEMU_FIRMWARE=ovmf leanos_validate_q35_netboot_command netboot_ovmf
+[[ " ${netboot_ovmf[*]} " == *",bootfile=boot/grub/x86_64-efi/core.efi "* ]] || {
+  echo "error: q35 OVMF netboot construction did not name the UEFI loader" >&2
+  exit 1
+}
+if LEANOS_QEMU_FIRMWARE=ovmf leanos_validate_q35_netboot_command netboot 2>/dev/null; then
+  echo "error: netboot platform accepted the BIOS loader under OVMF" >&2
+  exit 1
+fi
+if leanos_validate_q35_command netboot 2>/dev/null ||
+   LEANOS_QEMU_MEDIUM=disk leanos_validate_q35_command netboot 2>/dev/null; then
+  echo "error: production q35 platform accepted the netboot construction" >&2
+  exit 1
+fi
+if leanos_validate_q35_netboot_command command 2>/dev/null; then
+  echo "error: netboot platform accepted the CD-ROM construction" >&2
+  exit 1
+fi
+if LEANOS_QEMU_MEDIUM=disk leanos_q35_netboot_command negative "$netboot_tree" \
+    qemu-system-x86_64 128 build/evidence/netboot.serial.log 2>/dev/null ||
+   LEANOS_QEMU_MEDIUM=disk leanos_validate_q35_netboot_command netboot 2>/dev/null; then
+  echo "error: netboot platform accepted an explicit boot medium" >&2
+  exit 1
+fi
+if LEANOS_QEMU_MEDIUM=network leanos_q35_command negative qemu-system-x86_64 128 \
+    build/evidence/network.serial.log build/boot/leanos.iso 2>/dev/null; then
+  echo "error: q35 platform accepted the network medium outside the netboot construction" >&2
+  exit 1
+fi
+negative=("${netboot[@]}")
+negative[-1]="${LEANOS_Q35_NETBOOT_NIC/addr=0x3/addr=0x4}"
+if leanos_validate_q35_netboot_command negative 2>/dev/null; then
+  echo "error: netboot platform accepted a drifted boot NIC BDF" >&2
+  exit 1
+fi
+negative=("${netboot[@]}")
+negative[-3]="user,id=leanos-net,tftp=$netboot_tree,bootfile=boot/grub/i386-pc/core.0"
+if leanos_validate_q35_netboot_command negative 2>/dev/null; then
+  echo "error: netboot platform accepted an unrestricted user network" >&2
+  exit 1
+fi
+negative=("${netboot[@]:0:${#netboot[@]}-4}")
+if leanos_validate_q35_netboot_command negative 2>/dev/null; then
+  echo "error: netboot platform accepted a missing boot NIC" >&2
+  exit 1
+fi
+negative=("${netboot[@]:0:${#netboot[@]}-4}" -device edu,bus=pcie.0,addr=0x2 "${netboot[@]: -4}")
+if leanos_validate_q35_netboot_command negative 2>/dev/null; then
+  echo "error: netboot platform accepted an extra function" >&2
+  exit 1
+fi
+negative=("${netboot[@]:0:${#netboot[@]}-4}" -netdev user,id=other "${netboot[@]: -4}")
+if leanos_validate_q35_netboot_command negative 2>/dev/null; then
+  echo "error: netboot platform accepted a second network" >&2
+  exit 1
+fi
+negative=("${netboot[@]:0:${#netboot[@]}-4}"
+  -drive "id=leanos-cd,if=none,format=raw,media=cdrom,readonly=on,file=build/boot/leanos.iso"
+  -device ide-cd,drive=leanos-cd,bus=ide.0 "${netboot[@]: -4}")
+if leanos_validate_q35_netboot_command negative 2>/dev/null; then
+  echo "error: netboot platform accepted a boot CD beside the network" >&2
+  exit 1
+fi
+rm -f "$netboot_tree/boot/grub/i386-pc/core.0"
+if leanos_q35_netboot_command negative "$netboot_tree" qemu-system-x86_64 128 \
+    build/evidence/netboot.serial.log 2>/dev/null; then
+  echo "error: netboot platform accepted a tree without the firmware's loader" >&2
+  exit 1
+fi
+
 negative=("${command[@]}")
 for index in "${!negative[@]}"; do
   if [[ "${negative[$index]}" == -nodefaults ]]; then
