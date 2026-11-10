@@ -378,7 +378,10 @@ def qotomXhciPolicy : Policy where
 /-- Intel AHCI at 00:13.0 (ABAR, 2 KiB): identity and command reads, no
 configuration writes, Memory Space and Bus Master (and clearing Bus Master
 again), DMA into scratch. Port 1's command-list and FIS base registers
-(PxCLB 0x180, PxFB 0x188) are address sinks. -/
+(PxCLB 0x180, PxFB 0x188) are address sinks, and the descriptor map is the
+identify program's (`LeanOS.Storage.Ahci.descriptorMap`, issue #640): the
+CTBA of all 32 command headers and the data base of the 120 PRD slots before
+the IDENTIFY buffer only ever hold zero or a bus address inside scratch. -/
 def qotomAhciPolicy : Policy where
   window := 0x800
   cfgRead := cfgBits [0x00, 0x04]
@@ -387,6 +390,9 @@ def qotomAhciPolicy : Policy where
   cmdSet := 0x6
   dma := true
   addrSinks := [0x180, 0x188]
+  descriptors := [
+    { trb := false, start := 0x0008, count := 32, stride := 32 },   -- command-header CTBA
+    { trb := false, start := 0x0880, count := 120, stride := 16 }]  -- PRD data base
 
 theorem qotomAhciPolicy_sane : qotomAhciPolicy.sane = true := by decide
 
@@ -394,7 +400,11 @@ theorem qotomAhciPolicy_sane : qotomAhciPolicy.sane = true := by decide
 no configuration writes, Memory Space and Bus Master (and clearing Bus
 Master), DMA into scratch. The transmit and high-priority ring bases (TNPDS
 0x20, THPDS 0x28), the receive ring base (RDSAR 0xE4) and the tally-counter
-dump address (DTCCR 0x10) are address sinks. -/
+dump address (DTCCR 0x10) are address sinks, and the descriptor map is the
+ARP program's (`LeanOS.Net.Rtl8168.descriptorMap`, issue #640): the buffer
+address of every descriptor slot of the receive ring area (16 slots) and the
+transmit ring area (240 slots) only ever holds zero or a bus address inside
+scratch. -/
 def qotomRtl8168Policy : Policy where
   window := 0x1000
   cfgRead := cfgBits [0x00, 0x04]
@@ -403,6 +413,9 @@ def qotomRtl8168Policy : Policy where
   cmdSet := 0x6
   dma := true
   addrSinks := [0x10, 0x20, 0x28, 0xE4]
+  descriptors := [
+    { trb := false, start := 0x0008, count := 16, stride := 16 },   -- receive ring buffers
+    { trb := false, start := 0x0108, count := 240, stride := 16 }]  -- transmit ring buffers
 
 theorem qotomRtl8168Policy_sane : qotomRtl8168Policy.sane = true := by decide
 

@@ -15,7 +15,9 @@ list and received-FIS area at executor scratch, issues one IDENTIFY DEVICE
 through command slot 0 with a single 512-byte PRD, and prints the identify
 words that name the drive (serial, firmware, model, capacity). It then stops
 the engines again and clears Bus Master. PxCLB and PxFB are address sinks of
-its policy; the command-table and PRD pointers live in scratch (ADR 0021).
+its policy, and the command headers' CTBA fields and the PRD data-base fields
+form its descriptor map (`descriptorMap`), so `run_admissible_descriptors`
+covers them (ADR 0021, issue #640).
 -/
 namespace LeanOS.Storage.Ahci
 
@@ -59,6 +61,20 @@ def cmdList : UInt32 := 0x0000     -- 32 headers × 32 bytes, 1 KiB aligned
 def rfis : UInt32 := 0x0400        -- received FIS area, 256 bytes
 def cmdTable : UInt32 := 0x0800    -- CFIS at +0, PRDT at +0x80; 128-byte aligned
 def idBuf : UInt32 := 0x1000       -- 512-byte IDENTIFY data
+def prdt : UInt32 := cmdTable + 0x80
+/-- The PRD slots of the command table's PRDT before the IDENTIFY buffer
+(`(idBuf - prdt) / 16`). -/
+def prdSlots : UInt32 := 120
+
+/-- The pointer fields the controller follows inside scratch: the
+command-table base (CTBA, CTBAU) of every one of the 32 command headers, and
+the data base (DBA, DBAU) of every PRD slot before the IDENTIFY buffer. That
+this lists every scratch pointer the controller dereferences for the command
+this program issues (one header, PRDTL 1) is an assumption about the AHCI
+specification (§4.2.2, §4.2.3), as for `LeanOS.Storage.AhciRead`. -/
+def descriptorMap : List Descriptor :=
+  [{ trb := false, start := cmdList + 8, count := 32, stride := 32 },
+   { trb := false, start := prdt, count := prdSlots, stride := 16 }]
 
 namespace Tag
 def pciId : UInt32 := 0x3100

@@ -73,10 +73,10 @@ Hardware: `hardware/lab/observations/qotom-device-confinement-20260929`.
   self-test check as a regression test
   ([ADR 0020](adr/0020-device-program-executor-assurance.md)).
 * Where a DMA-capable device writes beyond the root registers and the
-  descriptor map: the AHCI and RTL8168 descriptor pointers are a trusted
-  assumption on the IOMMU-less J1900, and that the xHCI map lists every
-  pointer field the controller follows is an assumption about the xHCI
-  specification ([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
+  descriptor maps: that each map (xHCI, AHCI, RTL8168) lists every pointer
+  field its controller follows is an assumption about the controller's
+  specification, and the root registers are bounded to scratch, not to the
+  mapped structures ([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
 * What an allowed register write does inside the device, e.g. the BCM43224
   backplane windows reach every core on the chip.
 * The programs still run in ring 0 of the lab kernel, not as kernel subjects

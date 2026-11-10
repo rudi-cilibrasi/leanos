@@ -5,7 +5,10 @@
 Accepted. Resolves issue #448 through its fallback: a partial, proved
 mitigation plus a recorded assumption. Amended for issue #495: the xHCI
 descriptor pointers are now proved under a named assumption about the xHCI
-specification.
+specification. Amended for issue #640: so are the Qotom AHCI identify and
+RTL8168 programs' descriptor pointers, so no DMA pointer of a Qotom device
+program is an unproved trusted assumption any more; each map's completeness
+is a named assumption about its controller.
 
 ## Context
 
@@ -111,43 +114,63 @@ an effect-level checker, from one writing an ordinary parameter.
    proved. So is the controller's behaviour: the output contexts and event
    ring, which the controller itself writes, are outside the map, and a
    controller that DMA-writes into the map is not modelled.
-4. **AHCI and RTL8168 descriptors: assumed on the Qotom, proved for the q35
-   AHCI read program.** The q35 one-sector program of the `ahci-service`
-   image (`LeanOS.Storage.AhciRead`, issue #496) declares
-   `q35AhciPolicy`, whose descriptor map names the CTBA of all 32 command
-   headers and the data base of the 40 PRDs before its data buffer, so
-   `run_admissible_descriptors` covers its command-table and PRD pointers.
-   Its named assumption is that this map lists every pointer the controller
-   follows for the commands it issues (AHCI 1.3.1 §4.2.2–4.2.3; one header,
-   PRDTL 1); a program that wrote a larger PRDTL could point the controller
-   at PRDs past the map. On q35 the VT-d grant (one scratch page) bounds the
-   controller independently. The Qotom identify program's and the RTL8168
-   program's policies carry no descriptor map yet. That the AHCI command header's CTBA and the PRD's
-   data-buffer address, and the RTL8168 transmit and receive descriptors'
-   buffer addresses, hold scratch bus addresses is an **unproved trusted
-   assumption**, mitigated by the programs' structure (every such pointer is
-   written from `physAddr`) and by review, and listed in the README's
-   trusted-boundary paragraph. The same pattern (a descriptor map naming the
-   command header and PRD, or the descriptor rings) closes them later.
+4. **AHCI and RTL8168 descriptors: proved (issues #496 and #640).** The q35
+   one-sector program of the `ahci-service` image (`LeanOS.Storage.AhciRead`,
+   issue #496) declares `q35AhciPolicy`, whose descriptor map names the CTBA
+   of all 32 command headers and the data base of the 40 PRDs before its data
+   buffer. On the Qotom (issue #640):
+   * `qotomAhciPolicy` carries the identify program's map
+     (`LeanOS.Storage.Ahci.descriptorMap`): the CTBA of all 32 command headers
+     and the data base of the 120 PRD slots between the PRDT and the IDENTIFY
+     buffer;
+   * `qotomRtl8168Policy` carries the ARP program's map
+     (`LeanOS.Net.Rtl8168.descriptorMap`): the buffer address of every
+     16-byte descriptor slot of the receive ring area (16 slots, up to the
+     transmit ring) and of the transmit ring area (240 slots, up to the
+     receive buffers). Each ring holds one descriptor carrying EOR; the other
+     slots are mapped so that a descriptor written without EOR still leads
+     the controller only to checked buffer fields within those areas.
+
+   Each map equals its driver's by `decide`, both programs are admissible
+   under the policies they declare, and `run_admissible_descriptors` covers
+   their command-table, PRD and ring buffer pointers. The lab kernel's
+   profiles carry the same maps, so it refuses an image that declares less.
+   The negative fixtures show that the drivers' own descriptor stores pass,
+   and that a forged CTBA in the first or last command header, a forged PRD
+   data base in the first or last slot, a forged receive or transmit buffer
+   in descriptor 0 or the last slot of either ring area, and a nonzero high
+   dword all stop with `policy`.
+
+   **Named assumptions.** Each map lists every scratch pointer its controller
+   follows: for AHCI, for the commands the program issues (AHCI 1.3.1
+   §4.2.2–4.2.3; one header, PRDTL 1), so a program that wrote a larger
+   PRDTL could point the controller at PRDs past the map; for the RTL8168,
+   the descriptor format of `RL_RDESC_*`/`RL_TDESC_*` (a command/status
+   dword, a VLAN dword, then the 64-bit buffer address), and that the
+   controller walks no further than the mapped slots from the ring bases the
+   program programs. As for xHCI, the sinks bound the ring and command-list
+   bases to scratch, not to the mapped structures, so a hostile program that
+   moved them elsewhere in scratch would leave the map; and a controller that
+   DMA-writes into a mapped field is not modelled. On q35 the VT-d grant (one
+   scratch page) bounds the AHCI controller independently.
 
 ## Residual risk
 
-A defect in the AHCI or RTL8168 program, or a hostile program admitted under
-their policies, can store any 32-bit address in a descriptor and make the
-controller read or write that physical memory, including kernel memory. For
-xHCI that is now refused, provided the descriptor map matches the
-specification; a pointer field the map misses would reopen it. The sinks and
-maps narrow DMA to data the program itself places in scratch, they say
-nothing about what a controller does with it. The lab kernel only runs images
-whose declared policy fits its profile table, which for xHCI includes every
-profile sink and descriptor region.
+A store of an address outside scratch into a mapped descriptor field is now
+refused for the xHCI, AHCI and RTL8168 programs, provided each map matches its
+controller; a pointer field a map misses, or a structure a hostile program
+moves elsewhere in scratch, would reopen it. The sinks and maps narrow DMA to
+data the program itself places in scratch, they say nothing about what a
+controller does with it. The lab kernel only runs images whose declared
+policy fits its profile table, which includes every profile sink and
+descriptor region.
 
 ## Consequences and follow-up
 
 * The negative fixtures reject a forged DCBAAP address, register-indirect and
   off-by-one variants, a nonzero high dword and partial or streamed sink
   writes, prove the policy sinks equal the driver's register constants and
-  the xHCI descriptor maps equal the driver's, and reject the descriptor
+  every descriptor map equals its driver's, and reject the descriptor
   mutants listed above.
 * Differential fuzzing covers the sink and descriptor checks (random policies
   carry random descriptor maps), and the mutation set includes sink and
@@ -155,5 +178,7 @@ profile sink and descriptor region.
 * That every reachable run of the keyboard program passes the descriptor
   check is not proved; the `device-service` QEMU scenario runs it under the
   check, and the Qotom keyboard lab exercises the Bay Trail layout.
-* Next: descriptor maps for the Qotom AHCI program (the q35 one has one) and
-  the RTL8168 (descriptor rings), or an IOMMU platform.
+* The Qotom AHCI identify and RTL8168 ARP programs run on the hardware
+  under their maps (issue #640; `hardware/lab/observations`).
+* Next: an IOMMU platform, or pinning each ring and command-list base to its
+  mapped structure rather than to scratch.

@@ -61,17 +61,19 @@ static const struct lab_dev_profile lab_dev_profiles[] = {
           { 1, 0x25000u, 64, 16 } } } },
     /* AHCI at 00:13.0 (ABAR, 2 KiB): identity/command reads, no configuration
        writes, Memory Space and Bus Master, DMA into scratch; port 1 PxCLB and
-       PxFB are sinks. Mirrors `qotomAhciPolicy`. */
+       PxFB are sinks; the descriptor map (the 32 command headers' CTBA and
+       the 120 PRD slots' data base) mirrors `qotomAhciPolicy`. */
     { 0, 19, 0, UINT32_C(0x0f238086),
       { 1, 1, 0x800u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 2, { 0x180, 0x188 },
-        0, { { 0, 0, 0, 0 } } } },
+        2, { { 0, 0x0008u, 32, 32 }, { 0, 0x0880u, 120, 16 } } } },
     /* RTL8168E-VL at 01:00.0 (BAR2, 4 KiB): identity/command reads, no
        configuration writes, Memory Space and Bus Master, DMA into scratch;
-       the ring bases and the tally dump address are sinks. Mirrors
+       the ring bases and the tally dump address are sinks; the descriptor map
+       (the buffer address of every receive and transmit ring slot) mirrors
        `qotomRtl8168Policy`. */
     { 1, 0, 0, UINT32_C(0x816810ec),
       { 1, 1, 0x1000u, UINT64_C(0x3), 0, UINT32_C(0xffff0004), UINT32_C(0x6), 4,
-        { 0x10, 0x20, 0x28, 0xE4 }, 0, { { 0, 0, 0, 0 } } } },
+        { 0x10, 0x20, 0x28, 0xE4 }, 2, { { 0, 0x0008u, 16, 16 }, { 0, 0x0108u, 240, 16 } } } },
 };
 
 /* The declared policy is present and no wider than the target's profile. */

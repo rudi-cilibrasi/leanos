@@ -439,16 +439,20 @@ is the C side of the `WF` assumption of the executor's Lean refinement
 (ADR 0020); that the law's format is `Program.image`'s is checked by reading.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
-own boundary: they run in ring 0, and their confinement to a per-device policy
-is proved about the reference simulator while the C executor is tested against
-it ([ADR 0020](docs/adr/0020-device-program-executor-assurance.md)). On the
-Qotom J1900, which has no IOMMU, **where a DMA-capable device writes is only
-partly proved**: the root address registers of the xHCI, AHCI and RTL8168
-programs provably receive only addresses inside the executor's scratch, and so
-do the xHCI descriptors in scratch (TRBs, input-context dequeue pointers,
-DCBAA, scratchpad and ERST entries), assuming the descriptor map matches the
-xHCI specification; the AHCI and RTL8168 descriptors are still trusted to hold
-only scratch addresses
+own boundary: they run in ring 0. Their confinement to a per-device policy is
+proved about the reference simulator, and the generated C executor is proved
+equal to it, up to the compilers and its C hooks
+([ADR 0020](docs/adr/0020-device-program-executor-assurance.md)). On the
+Qotom J1900, which has no IOMMU, **where a DMA-capable device writes is
+proved up to named assumptions about each controller**. The root address
+registers of the xHCI, AHCI and RTL8168 programs provably receive only
+addresses inside the executor's scratch. So do the descriptor pointers in
+scratch: the xHCI TRBs, input-context dequeue pointers, DCBAA, scratchpad and
+ERST entries; the AHCI command headers' CTBA and PRD data bases; and the
+RTL8168 ring descriptors' buffer addresses. The assumptions are that each
+descriptor map lists every pointer its controller follows, and that the
+programs point the root registers at the mapped structures, which the proofs
+bound only to scratch
 ([ADR 0021](docs/adr/0021-j1900-device-dma-destinations.md)).
 
 ## Why LeanOS?

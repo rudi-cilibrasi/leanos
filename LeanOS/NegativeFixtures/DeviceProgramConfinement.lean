@@ -357,6 +357,102 @@ example : admissible (oneA (.write32 (pxClb 2) (.imm 0))) q35AhciPolicy = true :
 
 end AhciReadFragments
 
+/-! ## The Qotom AHCI identify program (issue #640) -/
+
+section AhciIdentifyFragments
+open LeanOS.Storage.Ahci
+
+/-- The Qotom AHCI policy's descriptor map is the identify program's. -/
+example : qotomAhciPolicy.descriptors = descriptorMap := by
+  decide
+
+/-- The PRD slots end exactly at the IDENTIFY buffer. -/
+example : prdt + 16 * prdSlots = idBuf := by
+  decide
+
+/-- A fragment declaring the Qotom AHCI target and policy, as the generator
+emits it. -/
+private def identifyFrag (body : ProgM Unit) : Program :=
+  match build (do body; halt) with
+  | .ok p => { p with target := some target, policy := some qotomAhciPolicy }
+  | .error _ => { words := #[], blob := .empty, sections := #[] }
+
+private def identifyStatus (body : ProgM Unit) : Sim.Status :=
+  (Sim.run (identifyFrag body) Sim.Device.none () 2000).1
+
+/- The program itself is admissible under the policy it declares. -/
+#guard match build program with
+  | .ok p => admissible { p with target := some target, policy := some qotomAhciPolicy }
+      qotomAhciPolicy
+  | .error _ => false
+
+/- The program's own descriptor stores (the command-table and IDENTIFY
+buffer pointers from `physAddr`, zero high dwords, the PRD's byte count) are
+accepted. -/
+#guard identifyStatus (do
+  emit (.physAddr 0 cmdTable); st 4 (cmdList + 8) (.reg 0); st 4 (cmdList + 12) (.imm 0)
+  emit (.physAddr 0 idBuf); st 4 prdt (.reg 0); st 4 (prdt + 4) (.imm 0)
+  st 4 (prdt + 8) (.imm 0); st 4 (prdt + 12) (.imm 511)) == .halt
+
+/- Mutants: a forged command-table base (1 MiB, outside scratch) in command
+header 0 or in the last header, a forged PRD data base in the first or the
+last slot, and a nonzero high dword stop with a policy violation. -/
+#guard identifyStatus (st 4 (cmdList + 8) (.imm 0x00100000)) == .error "policy"
+#guard identifyStatus (st 4 (cmdList + 31 * 32 + 8) (.imm 0x00100000)) == .error "policy"
+#guard identifyStatus (st 4 prdt (.imm 0x00100000)) == .error "policy"
+#guard identifyStatus (st 4 (prdt + 119 * 16) (.imm 0x00100000)) == .error "policy"
+#guard identifyStatus (st 4 (cmdList + 12) (.imm 1)) == .error "policy"
+
+end AhciIdentifyFragments
+
+/-! ## The Qotom RTL8168 ARP program (issue #640) -/
+
+section Rtl8168Fragments
+open LeanOS.Net.Rtl8168
+
+/-- The RTL8168 policy's descriptor map is the ARP program's. -/
+example : qotomRtl8168Policy.descriptors = descriptorMap := by
+  decide
+
+/-- The two ring areas end exactly at the next structure. -/
+example : rxRing + 16 * rxRingSlots = txRing ∧ txRing + 16 * txRingSlots = rxBufs := by
+  decide
+
+private def rtlFrag (body : ProgM Unit) : Program :=
+  match build (do body; halt) with
+  | .ok p => { p with target := some target, policy := some qotomRtl8168Policy }
+  | .error _ => { words := #[], blob := .empty, sections := #[] }
+
+private def rtlStatus (body : ProgM Unit) : Sim.Status :=
+  (Sim.run (rtlFrag body) Sim.Device.none () 2000).1
+
+/- The program itself is admissible under the policy it declares. -/
+#guard match build program with
+  | .ok p => admissible { p with target := some target, policy := some qotomRtl8168Policy }
+      qotomRtl8168Policy
+  | .error _ => false
+
+/- The program's own descriptor stores (status words, buffer pointers from
+`physAddr`, zero high dwords, and the teardown's zeroed buffer pointer) are
+accepted. -/
+#guard rtlStatus (do
+  st 4 rxRing (.imm eor); st 4 (rxRing + 4) (.imm 0)
+  emit (.physAddr 0 rxBufs); st 4 (rxRing + 8) (.reg 0); st 4 (rxRing + 12) (.imm 0)
+  emit (.physAddr 0 txBuf); st 4 (txRing + 8) (.reg 0)
+  st 4 txRing (.imm (own ||| eor ||| sof ||| eof ||| 60)); st 4 (txRing + 4) (.imm 0)
+  st 4 (txRing + 8) (.imm 0)) == .halt
+
+/- Mutants: a forged receive or transmit buffer (1 MiB, outside scratch), in
+descriptor 0 or in the last slot of either ring area, and a nonzero high
+dword stop with a policy violation. -/
+#guard rtlStatus (st 4 (rxRing + 8) (.imm 0x00100000)) == .error "policy"
+#guard rtlStatus (st 4 (rxRing + 15 * 16 + 8) (.imm 0x00100000)) == .error "policy"
+#guard rtlStatus (st 4 (txRing + 8) (.imm 0x00100000)) == .error "policy"
+#guard rtlStatus (st 4 (txRing + 239 * 16 + 8) (.imm 0x00100000)) == .error "policy"
+#guard rtlStatus (st 4 (txRing + 12) (.imm 1)) == .error "policy"
+
+end Rtl8168Fragments
+
 /- A policy with a descriptor map admits a program only if its image declares
 that policy, so the executor checks the map. -/
 /--

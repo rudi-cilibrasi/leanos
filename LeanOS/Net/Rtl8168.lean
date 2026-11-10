@@ -32,8 +32,9 @@ controller's registers before it touches it (tags 0x41xx, xx the register
 offset) and after the teardown (0x42xx) for the maintainer's comparison.
 
 The descriptor-ring base registers (TNPDS 0x20, THPDS 0x28, RDSAR 0xE4) and
-the tally-counter dump address (0x10) are address sinks of its policy; the
-buffer pointers inside the descriptors live in scratch (ADR 0021).
+the tally-counter dump address (0x10) are address sinks of its policy, and
+the descriptors' buffer addresses form its descriptor map (`descriptorMap`),
+so `run_admissible_descriptors` covers them (ADR 0021, issue #640).
 -/
 namespace LeanOS.Net.Rtl8168
 
@@ -103,6 +104,25 @@ def rxBufBytes : UInt32 := 0x800
 every frame, so the ring position it keeps is always descriptor 0 (issue
 #577, `Ring.next_one`). The 2026-09-29 program used 16. -/
 def rxCount : Nat := 1
+/-- The 16-byte descriptor slots of the receive ring area, up to the transmit
+ring (`(txRing - rxRing) / 16`), and of the transmit ring area, up to the
+receive buffers (`(rxBufs - txRing) / 16`). -/
+def rxRingSlots : UInt32 := 16
+def txRingSlots : UInt32 := 240
+
+/-- The pointer fields the controller follows inside scratch: the 64-bit
+buffer address (at +8) of every descriptor slot of both ring areas. Each ring
+holds one descriptor carrying EOR, so the controller only uses descriptor 0.
+The map still covers every slot up to the next structure, so a descriptor
+written without EOR can name only a checked buffer. That this lists every
+scratch pointer the controller dereferences (the descriptor format of
+`RL_RDESC_*`/`RL_TDESC_*`: a command/status dword, a VLAN dword, then the
+buffer address; the ring bases are the address sinks TNPDS and RDSAR) is an
+assumption about the controller, as for the other maps (ADR 0021,
+issue #640). -/
+def descriptorMap : List Descriptor :=
+  [{ trb := false, start := rxRing + 8, count := rxRingSlots, stride := 16 },
+   { trb := false, start := txRing + 8, count := txRingSlots, stride := 16 }]
 def txBuf : UInt32 := 0xA000
 def vars : UInt32 := 0xB000
 
