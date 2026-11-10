@@ -42,7 +42,8 @@ static const struct lab_dev_profile lab_dev_profiles[] = {
           { 1, 0x0400u, 64, 16 }, { 1, 0x2800u, 256, 16 }, { 1, 0x3800u, 64, 16 } } } },
 #endif
     /* BCM43224 at 02:00.0: identity/command reads, the two BAR0 core windows,
-       Memory Space set and Bus Master cleared (PIO only), no DMA. */
+       Memory Space set and Bus Master cleared (PIO only), no DMA. Mirrors
+       `qotomBcm43224Policy`. */
     { 2, 0, 0, UINT32_C(0x435314e4),
       { 1, 0, 0x4000u, UINT64_C(0x3), (UINT64_C(1) << (0x80 / 4)) | (UINT64_C(1) << (0xAC / 4)),
         UINT32_C(0xffff0004), UINT32_C(0x2), 0, { 0 }, 0, { { 0, 0, 0, 0 } } } },

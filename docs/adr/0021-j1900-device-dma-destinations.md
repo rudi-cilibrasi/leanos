@@ -134,7 +134,9 @@ an effect-level checker, from one writing an ordinary parameter.
    Each map equals its driver's by `decide`, both programs are admissible
    under the policies they declare, and `run_admissible_descriptors` covers
    their command-table, PRD and ring buffer pointers. The lab kernel's
-   profiles carry the same maps, so it refuses an image that declares less.
+   profiles carry the same maps, so it refuses an image that declares less;
+   `scripts/check-device-policies.py` requires each C profile to equal its
+   Lean policy (issue #642).
    The negative fixtures show that the drivers' own descriptor stores pass,
    and that a forged CTBA in the first or last command header, a forged PRD
    data base in the first or last slot, a forged receive or transmit buffer
