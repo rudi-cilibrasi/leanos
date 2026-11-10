@@ -279,10 +279,10 @@ The claims are the `*-REFINEMENT` rows of
 export: the C compiler, linker, calling convention and every other export stay
 trusted.
 
-Nine handwritten C components have machine-checked theorems of a different
+Ten handwritten C components have machine-checked theorems of a different
 kind: **proved under CompCert's C semantics** with
 [QuickProof](https://github.com/genproof/quickproof-public) (Coq, VST), not in
-Lean (issues #597, #599, #604, #606, #608, #614, #617, #624 and #627,
+Lean (issues #597, #599, #604, #606, #608, #614, #617, #624, #627 and #638,
 [ADR 0030](docs/adr/0030-quickproof-handwritten-c-evidence-lane.md)). The
 first is the early boot text console (`include/boot_text_console.h`). For every
 Multiboot2 buffer of up to 16 MiB and every sequence of printed bytes:
@@ -419,6 +419,24 @@ any value. Against every such triple, it:
 ([The project](experiments/quickproof/boot-frame-selection/README.md).) What
 the answers mean is what the Lean theorems of
 `LeanOS.BootMemoryMapStreamAuthority` state.
+
+The tenth is the device-program image parser and policy admission
+(`hardware/wifi/wifi-exec.h`), which every kernel that runs a Lean device
+program uses to bind it. For every image of any length and any bytes, and
+any targets and policies an admission compares:
+
+- the parser accepts exactly the images of the format
+  `LeanOS.Wifi.Bytecode.Program.image` writes, with at most 8 sinks and 16
+  descriptors whose regions, computed without overflow, lie inside the
+  256 KiB scratch, and returns exactly the target and policy they encode;
+- `wifi_start` points the code and the blob at exactly the bytes after the
+  header, zeroes the registers and the scratch, and on failure changes
+  neither;
+- each admission function returns exactly the subset test it states.
+
+([The project](experiments/quickproof/device-program-image/README.md).) This
+is the C side of the `WF` assumption of the executor's Lean refinement
+(ADR 0020); that the law's format is `Program.image`'s is checked by reading.
 
 The lab kernel's Lean device programs (WiFi, USB keyboard, mouse and mass storage) add their
 own boundary: they run in ring 0, and their confinement to a per-device policy

@@ -3618,23 +3618,16 @@ static __attribute__((noinline)) void device_service_assign(void) {
 #endif
 }
 
+/* The function the device service drives (`wifi_service_admitted` requires
+   the image to name exactly it). Static: off the syscall entry stack. */
+static const struct wifi_target device_service_target = {
+    0, DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, DEVICE_SERVICE_ID,
+    DEVICE_SERVICE_WINDOW, DEVICE_SERVICE_BAR_OFFSET };
+
 static int device_service_admitted(const struct wifi_target *target,
                                    const struct wifi_policy *policy) {
-    const struct wifi_policy *max = &device_service_profile;
-    if (target->bus != 0 || target->dev != DEVICE_SERVICE_DEV ||
-        target->fn != DEVICE_SERVICE_FN || target->id != DEVICE_SERVICE_ID ||
-        target->window != DEVICE_SERVICE_WINDOW ||
-        target->bar != DEVICE_SERVICE_BAR_OFFSET || !policy->present)
-        return 0;
-    for (uint32_t k = 0; k < max->sink_count; ++k)
-        if (!wifi_is_sink(policy, max->sinks[k])) return 0;
-    for (uint32_t k = 0; k < max->desc_count; ++k)
-        if (!wifi_has_desc(policy, &max->descs[k])) return 0;
-    return policy->window <= max->window && policy->dma <= max->dma &&
-        !(policy->cfg_read & ~max->cfg_read) &&
-        !(policy->cfg_write & ~max->cfg_write) &&
-        !(policy->cmd_clear & ~max->cmd_clear) &&
-        !(policy->cmd_set & ~max->cmd_set);
+    return wifi_service_admitted(target, policy, &device_service_target,
+                                 &device_service_profile);
 }
 
 static void device_service_bind(void) {
@@ -6392,13 +6385,7 @@ static void network_ipc_edge(uint64_t caller) {
 
 static int network_source_admitted(const struct wifi_target *target,
                                    const struct wifi_policy *policy) {
-    const struct wifi_policy *max = &network_source_profile;
-    if (target->bus != 0 || target->dev != 0 || target->fn != 0 ||
-        target->id != UINT32_C(0xffffffff) || target->window != max->window ||
-        !policy->present || policy->sink_count != 0 || policy->desc_count != 0)
-        return 0;
-    return policy->window <= max->window && !policy->dma && policy->cfg_read == 0 &&
-        policy->cfg_write == 0 && policy->cmd_clear == 0 && policy->cmd_set == 0;
+    return wifi_source_admitted(target, policy, &network_source_profile);
 }
 
 static void network_bind(void) {
@@ -7121,13 +7108,7 @@ static void dhcp_ipc_edge(uint64_t *cycle, uint64_t role) {
 
 static int dhcp_source_admitted(const struct wifi_target *target,
                                 const struct wifi_policy *policy) {
-    const struct wifi_policy *max = &dhcp_source_profile;
-    if (target->bus != 0 || target->dev != 0 || target->fn != 0 ||
-        target->id != UINT32_C(0xffffffff) || target->window != max->window ||
-        !policy->present || policy->sink_count != 0 || policy->desc_count != 0)
-        return 0;
-    return policy->window <= max->window && !policy->dma && policy->cfg_read == 0 &&
-        policy->cfg_write == 0 && policy->cmd_clear == 0 && policy->cmd_set == 0;
+    return wifi_source_admitted(target, policy, &dhcp_source_profile);
 }
 
 static void dhcp_bind(void) {

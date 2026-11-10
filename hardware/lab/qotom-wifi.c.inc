@@ -82,17 +82,9 @@ static int lab_dev_policy_admitted(const struct wifi_target *t, const struct wif
         const struct lab_dev_profile *q = &lab_dev_profiles[i];
         if (q->bus != t->bus || q->dev != t->dev || q->fn != t->fn || q->id != t->id)
             continue;
-        /* Address sinks restrict: the image must declare every profile sink. */
-        for (uint32_t k = 0; k < q->max.sink_count; ++k)
-            if (!wifi_is_sink(p, q->max.sinks[k]))
-                return 0;
-        /* So does the descriptor map: every profile region is declared. */
-        for (uint32_t k = 0; k < q->max.desc_count; ++k)
-            if (!wifi_has_desc(p, &q->max.descs[k]))
-                return 0;
-        return p->window <= q->max.window && (p->dma <= q->max.dma) &&
-               !(p->cfg_read & ~q->max.cfg_read) && !(p->cfg_write & ~q->max.cfg_write) &&
-               !(p->cmd_clear & ~q->max.cmd_clear) && !(p->cmd_set & ~q->max.cmd_set);
+        /* Address sinks and descriptor regions restrict: the image must
+           declare every one of the profile's (wifi-exec.h). */
+        return wifi_policy_within(p, &q->max);
     }
     return 0;
 }

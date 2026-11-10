@@ -5,7 +5,9 @@
 Accepted. Resolves the research question in issue #451. Amended by
 issue #494 (below): option 1 is implemented, the booted executor is the
 generated one (the handwritten interpreter is deleted), and the assurance
-argument no longer rests on fuzzing.
+argument no longer rests on fuzzing. Amended by issue #638: the C image
+parser, `wifi_start` and the policy admission are proved under CompCert's
+semantics (ADR 0030, QuickProof project 10).
 
 ## Context
 
@@ -146,6 +148,13 @@ implemented, as the design option 1 sketched: a Lean step function over an
   regions inside scratch) and every machine a run reaches (`Inv`: scratch of
   the executor's size and, under a declared policy, a descriptor map that
   holds only scratch pointers), `decode (Exec.step …) = Sim.step p d m`.
+  That the C parser accepts only such programs, and fills the executor
+  state with exactly the fields the image encodes, is proved of the C by
+  the QuickProof law `image_exact`
+  ([`experiments/quickproof/device-program-image`](../../experiments/quickproof/device-program-image/README.md),
+  #638): at most 8 sinks and 16 descriptors, every descriptor limit inside
+  scratch, and a blob length that fits 32 bits. That the format the law
+  states is the one `Program.image` writes is checked by reading.
 * `run_eq` lifts this to whole runs (on devices whose bus address of
   scratch is fixed, as on every executor), so `run_confined`,
   `run_declared_confined` and `run_declared_descriptors` hold of the
