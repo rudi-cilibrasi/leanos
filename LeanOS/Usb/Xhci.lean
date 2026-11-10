@@ -543,12 +543,19 @@ def bringUp : ProgM Unit := do
   st 4 Var.evCycle (.imm 1)
   storePhys64 erst evRing
   st 4 (erst + 8) (.imm ringTrbs)
-  w32 erstsz 1
   writePhys64 erdpLo erdpHi evRing
+  -- ERSTBA while ERSTSZ still holds its reset value 0: the event ring stays
+  -- disabled, so the controller fetches nothing yet (qemu-xhci fetches the
+  -- ERST entry when ERSTBA's high dword is written). This fills the last DMA
+  -- root register.
   writePhys64 erstbaLo erstbaHi erst
   -- every DMA root register now holds a scratch address (DCBAAP, CRCR, ERDP,
-  -- ERSTBA): Bus Master on, before the controller runs (issue #644)
+  -- ERSTBA): Bus Master on, before any DMA (issue #644)
   emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
+  -- size the table, then write ERSTBA's high dword again: that starts the
+  -- event ring, whose ERST entry the controller now fetches by DMA
+  w32 erstsz 1
+  w32 erstbaHi 0
   -- run (interrupts stay disabled; the driver polls)
   w32 usbCmd cmdRun
   poll32 usbSts stsHalted 0 1000 100 Fail.notRunning
