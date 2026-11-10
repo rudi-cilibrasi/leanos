@@ -21,9 +21,12 @@ The program is admitted under `qotomAhciPolicy`
 window, configuration reads of identity and command only, no configuration
 writes, Memory Space and Bus Master (and clearing Bus Master), DMA into
 scratch, and PxCLB/PxFB as address sinks, so both can only ever point into
-scratch. The command-table and PRD pointers live in scratch and fall under
-the J1900 DMA assumption of
-[ADR 0021](adr/0021-j1900-device-dma-destinations.md).
+scratch. Its descriptor map (`LeanOS.Storage.Ahci.descriptorMap`, issue #640)
+names the CTBA of all 32 command headers and the data base of the 120 PRD
+slots before the IDENTIFY buffer, so the command-table and PRD pointers also
+provably hold only zero or scratch addresses, assuming the map lists every
+pointer the controller follows
+([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
 
 ## Trying it
 

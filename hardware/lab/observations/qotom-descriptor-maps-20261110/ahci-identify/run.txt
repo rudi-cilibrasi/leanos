@@ -1,0 +1,6 @@
+elf ahci-identify.elf sha256 38709d3167d15048821cf05dcc1228e4059d9496e78a02fffa574283c9dd5f2c
+installed 38709d3167d15048821cf05dcc1228e4059d9496e78a02fffa574283c9dd5f2c in /boot/efi/leanos
+next boot: request=leanos-38709d3167d15048821cf05dcc1228e4059d9496e78a02fffa574283c9dd5f2c
+reboot requested 2026-11-10T11:56:07Z
+FreeBSD login prompt after the run (90s)
+capture sha256 7ab1668a3f58ea69926827a0809cd125ebe4c44f5604a6de8c195f7406143453

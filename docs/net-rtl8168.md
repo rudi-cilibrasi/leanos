@@ -104,8 +104,12 @@ window, configuration reads of identity and command only, no configuration
 writes, Memory Space and Bus Master (and clearing Bus Master), and DMA into
 scratch. The transmit, high-priority and receive ring bases and the
 tally-counter dump address are address sinks, so each can only point into
-scratch. The buffer pointers inside the descriptors fall under the J1900 DMA
-assumption of [ADR 0021](adr/0021-j1900-device-dma-destinations.md).
+scratch. Its descriptor map (`LeanOS.Net.Rtl8168.descriptorMap`, issue #640)
+names the buffer address of every descriptor slot of the receive ring area
+(16 slots) and the transmit ring area (240 slots), so the buffer pointers
+inside the descriptors also provably hold only zero or scratch addresses,
+assuming the map lists every pointer the controller follows
+([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
 
 ## Trying it
 
@@ -276,6 +280,11 @@ Negative fixtures show that the pre-#577 stop and an exit that skips the
 teardown are rejected.
 
 ### Maintainer hardware steps
+
+**Result (2026-11-10, issue #640):** the steps below passed on the Qotom
+with the #577 program. After the run, FreeBSD's `re0` answered 400 of 400
+pings and counted 646 input frames without `down up`, and SSH worked
+([observation](../hardware/lab/observations/qotom-descriptor-maps-20261110/README.md)).
 
 These steps run the new program once and check FreeBSD afterwards without
 `down up`. Work on the serial console (ttyu0, 38400 8N1), because `re0` may be
