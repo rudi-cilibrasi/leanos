@@ -82,10 +82,11 @@ Hardware: `hardware/lab/observations/qotom-device-confinement-20260929`.
   field its controller follows is an assumption about the controller's
   specification, and the root registers are bounded to scratch, not to the
   mapped structures ([ADR 0021](adr/0021-j1900-device-dma-destinations.md)).
-  Only the values a program writes to a root register are bounded: a
-  register it never writes keeps the value firmware or the previous OS left
-  there, and a program that has the controller use it gets DMA there (issue
-  #644).
+  A root register's earlier value, left by firmware or the previous OS, is
+  out of reach: the kernel clears Bus Master at bind, and the executor's Bus
+  Master gate lets a program set it only after it has written both dwords of
+  every root register (`run_declared_busmaster`, issue #644). That a device
+  register holds the last value written to it is assumed.
 * What an allowed register write does inside the device, e.g. the BCM43224
   backplane windows reach every core on the chip.
 * The programs still run in ring 0 of the lab kernel, not as kernel subjects

@@ -1,0 +1,4 @@
+Tue Nov 10 20:47:28 UTC 2026
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94       61     0     0       7932       22     0       5873     0
+re0       - 192.168.6.0/24  192.168.6.21            23     -     -       4961       18     -       5153     -

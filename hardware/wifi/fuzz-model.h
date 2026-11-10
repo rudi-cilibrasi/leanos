@@ -37,7 +37,7 @@ static void dl(void *c, uint32_t u) { (void)c; (void)u; }
 static void pr(void *c, uint32_t t, uint32_t v) { struct model *m = c; m->prints = mix(mix(m->prints, t), v); }
 static uint32_t ph(void *c, uint32_t o) { (void)c; return 0x01000000u + o; }
 
-typedef int (*fuzz_resume_fn)(struct wifi_vm *, const struct wifi_hooks *, uint64_t, uint32_t *);
+typedef int (*fuzz_resume_fn)(struct wifi_gen_vm *, const struct wifi_hooks *, uint64_t, uint32_t *);
 
 /* Run one image with `resume` (resuming after every yield; the step budget
    is shared) and write its summary line, without the newline, to `out`. */
@@ -45,18 +45,19 @@ static void fuzz_summary(const uint8_t *image, uint32_t len, fuzz_resume_fn resu
                          char *out, size_t size) {
     struct model m = { 0, 0, 0 };
     struct wifi_hooks h = { r32, r16, w32, w16, cr, cw, dl, pr, &m, ph, r8, w8 };
-    static struct wifi_vm vm;
+    static struct wifi_gen_vm g;
+    struct wifi_vm *const vmp = &g.vm;
     uint32_t code = 0, yields = 0;
-    int s = wifi_start(&vm, image, len);
+    int s = wifi_gen_start(&g, image, len);
     if (s) { snprintf(out, size, "%d", s); return; }
-    while ((s = resume(&vm, &h, FUZZ_MAX_STEPS, &code)) == WIFI_YIELD)
+    while ((s = resume(&g, &h, FUZZ_MAX_STEPS, &code)) == WIFI_YIELD)
         yields = mix(yields, code);
     uint32_t scratch = 0x811c9dc5u;
     for (uint32_t i = 0; i < WIFI_SCRATCH_BYTES; ++i)
         scratch = (scratch ^ wifi_scratch[i]) * 0x01000193u;
     int at = snprintf(out, size, "%d %u", s, code);
     for (int i = 0; i < 16 && at > 0 && (size_t)at < size; ++i)
-        at += snprintf(out + at, size - (size_t)at, " %u", vm.r[i]);
+        at += snprintf(out + at, size - (size_t)at, " %u", vmp->r[i]);
     if (at > 0 && (size_t)at < size)
         snprintf(out + at, size - (size_t)at, " %u %u %u %u %u", m.prints, m.acc, m.n, scratch, yields);
 }

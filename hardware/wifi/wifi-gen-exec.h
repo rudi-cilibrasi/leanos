@@ -14,7 +14,11 @@
    * `wifi_gen_resume`, the step loop (`Sim.loop`/`Sim.resume`), and
      `wifi_exec`, start-and-run.
 
-   Image parsing and `wifi_start` are those of `wifi-exec.h`. Include this
+   Image parsing and `wifi_start` are those of `wifi-exec.h`. A bound
+   program's state is a `struct wifi_gen_vm`: `wifi-exec.h`'s state, which
+   QuickProof project 10 proves `wifi_start` fills, and the Bus Master gate's
+   written-sink bits (issue #644, `Sim.Machine.armed`), which `wifi_gen_start`
+   clears. Include this
    file in exactly one translation unit and link the generated C of
    LeanOS/Wifi/Exec.lean: the hooks have external linkage because the
    generated step calls them by name. The generated step ignores the token a
@@ -31,7 +35,23 @@
 /* The generated step (LeanOS.Wifi.Exec.deviceProgramStep). */
 uint64_t leanos_device_program_step(uint64_t);
 
+/* One bound program: the executor state of wifi-exec.h and the Bus Master
+   gate's written-sink bits (issue #644): bit 2i once the program wrote sink
+   i's low dword, bit 2i+1 its high dword, each with a value the policy
+   admits. */
+struct wifi_gen_vm {
+    struct wifi_vm vm;
+    uint32_t armed;
+};
+
+/* Start `image` in `g` (`wifi_start`) with no sink written yet. */
+static int wifi_gen_start(struct wifi_gen_vm *g, const uint8_t *image, uint32_t image_len) {
+    g->armed = 0;
+    return wifi_start(&g->vm, image, image_len);
+}
+
 /* The executor the hooks act on: set by wifi_gen_resume for one call. */
+static struct wifi_gen_vm *wifi_gen_g;
 static struct wifi_vm *wifi_gen_vm;
 static const struct wifi_hooks *wifi_gen_h;
 static uint32_t wifi_gen_status, wifi_gen_code;
@@ -170,6 +190,12 @@ uint64_t wifi_gen_delay(uint64_t t, uint32_t us) { (void)t; WG_HOOKS; WH_DELAY(u
 uint64_t wifi_gen_print(uint64_t t, uint32_t tag, uint32_t v) {
     (void)t; WG_HOOKS; WH_PRINT(tag, v); return 0;
 }
+uint64_t wifi_gen_armed_get(uint64_t t) { (void)t; return wifi_gen_g->armed; }
+uint64_t wifi_gen_armed_or(uint64_t t, uint32_t bits) {
+    (void)t;
+    wifi_gen_g->armed |= bits;
+    return 0;
+}
 uint64_t wifi_gen_done(uint64_t t, uint32_t st, uint32_t code) {
     (void)t;
     wifi_gen_status = st;
@@ -179,10 +205,12 @@ uint64_t wifi_gen_done(uint64_t t, uint32_t st, uint32_t code) {
 
 /* Run a started program with the generated step until it stops or the step
    count reaches `step_limit` (`Sim.resume`): the total steps since
-   `wifi_start`. `code` receives the fail code, the yielded value or the
+   `wifi_gen_start`. `code` receives the fail code, the yielded value or the
    offending pc. */
-static int wifi_gen_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
+static int wifi_gen_resume(struct wifi_gen_vm *g, const struct wifi_hooks *h,
                            uint64_t step_limit, uint32_t *code) {
+    struct wifi_vm *const vm = &g->vm;
+    wifi_gen_g = g;
     wifi_gen_vm = vm;
     wifi_gen_h = h;
     while (vm->steps < step_limit) {
@@ -205,10 +233,10 @@ static int wifi_gen_resume(struct wifi_vm *vm, const struct wifi_hooks *h,
 static inline int wifi_exec(const uint8_t *image, uint32_t image_len,
                             const struct wifi_hooks *h, uint64_t max_steps,
                             uint32_t *code) {
-    static struct wifi_vm vm;
-    if (wifi_start(&vm, image, image_len))
+    static struct wifi_gen_vm g;
+    if (wifi_gen_start(&g, image, image_len))
         return WIFI_BAD_IMAGE;
-    return wifi_gen_resume(&vm, h, max_steps, code);
+    return wifi_gen_resume(&g, h, max_steps, code);
 }
 
 #endif

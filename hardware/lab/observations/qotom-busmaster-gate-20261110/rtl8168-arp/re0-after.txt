@@ -1,0 +1,8 @@
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94       51     0     0       8409       22     0       6081     0
+re0       - 192.168.6.0/24  192.168.6.21            22     -     -       4905       17     -       5033     -
+400 packets transmitted, 400 received, 0% packet loss, time 82718ms
+rtt min/avg/max/mdev = 0.330/0.543/2.179/0.313 ms
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94      625     0     0      62482      445     0      51412     0
+re0       - 192.168.6.0/24  192.168.6.21           454     -     -      44106      439     -      44414     -

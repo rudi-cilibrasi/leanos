@@ -29,3 +29,6 @@ return k < wifi_gen_vm->pol.desc_count ? wifi_gen_vm->pol.descs[k].count : 0;@re
 uint64_t wifi_gen_mmio_read16(uint64_t t, uint32_t off) { (void)t; WG_HOOKS; return WH_R16(off); }@uint64_t wifi_gen_mmio_read16(uint64_t t, uint32_t off) { (void)t; WG_HOOKS; return WH_R16(off) & 0xff; }
 (void)t; WG_HOOKS; WH_W8(off, (uint8_t)v); return 0;@(void)t; WG_HOOKS; WH_W8(off ^ 1, (uint8_t)v); return 0;
 (void)t; WG_HOOKS; WH_PRINT(tag, v); return 0;@(void)t; WG_HOOKS; WH_PRINT(tag, v + 1); return 0;
+wifi_gen_g->armed |= bits;@wifi_gen_g->armed = bits;
+uint64_t wifi_gen_armed_get(uint64_t t) { (void)t; return wifi_gen_g->armed; }@uint64_t wifi_gen_armed_get(uint64_t t) { (void)t; return 0xffffffffu; }
+g->armed = 0;@g->armed = 0xffffffffu;

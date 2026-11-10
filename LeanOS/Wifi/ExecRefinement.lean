@@ -112,6 +112,8 @@ instance instHooksSt : Hooks (St σ) where
   physBase s := { s with v := (s.d.phys s.m.dev 0).1.toUInt64 }
   delay s _ := s
   print s tag x := { s with m := { s.m with prints := s.m.prints.push (tag, x) } }
+  armedGet s := { s with v := s.m.armed.toUInt64 }
+  armedOr s bits := { s with m := { s.m with armed := s.m.armed ||| bits } }
   done s st code := { s with st, code }
 
 /-! ### The hooks unfolded -/
@@ -254,6 +256,12 @@ instance instHooksSt : Hooks (St σ) where
 
 @[simp] theorem hook_print (s : St σ) (tag : UInt32) (x : UInt32) :
     Hooks.print s tag x = { s with m := { s.m with prints := s.m.prints.push (tag, x) } } := rfl
+
+@[simp] theorem hook_armedGet (s : St σ) :
+    Hooks.armedGet s = { s with v := s.m.armed.toUInt64 } := rfl
+
+@[simp] theorem hook_armedOr (s : St σ) (bits : UInt32) :
+    Hooks.armedOr s bits = { s with m := { s.m with armed := s.m.armed ||| bits } } := rfl
 
 theorem hook_done (s : St σ) (st : UInt32) (code : UInt32) :
     Hooks.done s st code = { s with st, code } := rfl
@@ -415,6 +423,34 @@ theorem sinkIsFrom_eq (s : St σ) (off : UInt32) (h : (sinks s.p).length < 2 ^ 3
     rw [hook_polSinks, lt_len h] at hi
     rw [List.drop_eq_nil_of_le (by omega)]
     rfl
+
+theorem sinkIdxFrom_eq (s : St σ) (off : UInt32) (h : (sinks s.p).length < 2 ^ 32) (i : UInt32) :
+    Exec.sinkIdxFrom s off i =
+      (match ((sinks s.p).drop i.toNat).idxOf? off with
+       | some j => i + j.toUInt32
+       | none => (sinks s.p).length.toUInt32) := by
+  fun_induction Exec.sinkIdxFrom s off i with
+  | case1 i hi hc =>
+    rw [hook_polSinks, lt_len h] at hi
+    rw [hook_polSink, getD_lt hi] at hc
+    rw [List.drop_eq_getElem_cons hi, List.idxOf?_cons]
+    simp [hc]
+  | case2 i hi hc ih =>
+    have hs := toNat_succ hi
+    rw [hook_polSinks, lt_len h] at hi
+    rw [hook_polSink, getD_lt hi] at hc
+    rw [List.drop_eq_getElem_cons hi, List.idxOf?_cons, ih, hs]
+    simp only [hc, Bool.false_eq_true, ↓reduceIte]
+    rcases (List.drop (i.toNat + 1) (sinks s.p)).idxOf? off with _ | j
+    · rfl
+    · simp only [Option.map_some]
+      apply UInt32.toNat.inj
+      simp only [UInt32.toNat_add, UInt32.toNat_one, Nat.toUInt32, UInt32.toNat_ofNat']
+      omega
+  | case3 i hi =>
+    rw [hook_polSinks, lt_len h] at hi
+    rw [List.drop_eq_nil_of_le (by omega)]
+    simp
 
 /-- `Descriptor.limit` in 64-bit arithmetic. -/
 def limit64 (d : Descriptor) : UInt64 :=
@@ -956,6 +992,34 @@ theorem sinkTouch_eq (s : St σ) {π : Policy} (hpol : s.p.policy = some π)
   rw [sinkTouchFrom_eq s off h, sinks_some hpol]
   rfl
 
+theorem armBits_eq (s : St σ) {π : Policy} (hpol : s.p.policy = some π)
+    (h : (sinks s.p).length < 2 ^ 32) (off : UInt32) :
+    Exec.armBits s off = π.armBits off := by
+  have hs := sinks_some hpol
+  unfold Exec.armBits Policy.armBits
+  simp only [sinkIdxFrom_eq s _ h, UInt32.toNat_zero, List.drop_zero, hook_polSinks]
+  rw [hs] at h ⊢
+  have hlt (k : Nat) (hk : k < π.addrSinks.length) :
+      (k.toUInt32 < π.addrSinks.length.toUInt32) = True := by
+    have hk' : k.toUInt32.toNat = k := by
+      rw [Nat.toUInt32, UInt32.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
+    rw [eq_iff_iff, iff_true, lt_len h, hk']
+    exact hk
+  simp only [UInt32.zero_add]
+  rcases h1 : π.addrSinks.idxOf? off with _ | i
+  · simp only [UInt32.lt_irrefl, ↓reduceIte]
+    rcases h2 : π.addrSinks.idxOf? (off - 4) with _ | j
+    · simp
+    · have hj := (List.idxOf?_eq_some_iff.mp h2).1
+      simp only [hlt j hj, ↓reduceIte]
+  · have hi := (List.idxOf?_eq_some_iff.mp h1).1
+    simp only [hlt i hi, ↓reduceIte]
+
+theorem armedAll_eq (s : St σ) {π : Policy} (hpol : s.p.policy = some π) :
+    Exec.armedAll s = π.armedAll := by
+  unfold Exec.armedAll Policy.armedAll
+  rw [hook_polSinks, sinks_some hpol]
+
 theorem sinkOk_eq (s : St σ) {π : Policy} (hpol : s.p.policy = some π)
     (h : (sinks s.p).length < 2 ^ 32) (base off v : UInt32) :
     Exec.sinkOk s base off v = π.sinkOk base off v := by
@@ -1027,7 +1091,7 @@ macro "exec_norm" : tactic => `(tactic| simp only [Exec.next, Exec.word, Exec.fl
     hook_stackFull, hook_stackEmpty, hook_call, hook_ret, hook_regGet, hook_regSet, hook_memLoad,
     hook_memStore, hook_mmioRead32, hook_mmioRead16, hook_mmioRead8, hook_mmioWrite32,
     hook_mmioWrite16, hook_mmioWrite8, hook_cfgRead, hook_cfgWrite, hook_cfgUpdate, hook_phys,
-    hook_physBase, hook_delay, hook_print, hook_polDescs, hook_polSinks, decode_next, decode_halt, decode_fail, decode_yield,
+    hook_physBase, hook_delay, hook_print, hook_armedGet, hook_armedOr, hook_polDescs, hook_polSinks, decode_next, decode_halt, decode_fail, decode_yield,
     decode_badPc, decode_badOffset, decode_badOpcode, decode_stack, decode_badBlob,
     decode_badMem, decode_policy, flag_ne, flag64_ne, boolVal_ne])
 
@@ -1048,10 +1112,11 @@ theorem exec_eq (s : St σ) (op a b c : UInt32) (hW : WF s.p) (hI : Inv s.p s.d 
   all_goals (try rfl)
   all_goals (rcases hpol : s.p.policy with _ | π)
   all_goals (try (simp only [hpol, Option.isSome_none, Option.map_none, Option.getD_none,
-    Bool.false_and, Bool.not_true, Bool.false_eq_true, ↓reduceIte]))
+    Bool.false_and, Bool.not_true, Bool.false_eq_true, ↓reduceIte, UInt32.or_zero]))
   all_goals (try rfl)
   all_goals (try (simp only [hpol, Option.isSome_some, Option.map_some, Option.getD_some,
     Bool.true_and, Bool.false_eq_true, ↓reduceIte, sinkOk_eq (π := π), sinkTouch_eq (π := π),
+    armBits_eq (π := π), armedAll_eq (π := π), Policy.busMasterOk,
     Exec.updateOk, hook_polCmdClear, hook_polCmdSet, Policy.updateOk, hsinks]))
   all_goals (try rfl)
   -- ALU and branch: the sub-operation tables
@@ -1070,6 +1135,11 @@ theorem exec_eq (s : St σ) (op a b c : UInt32) (hW : WF s.p) (hI : Inv s.p s.d 
     rcases hst : s.m.stack with _ | ⟨r, rest⟩ <;>
       simp only [hst, List.isEmpty_nil, List.isEmpty_cons, ↓reduceIte, Bool.false_eq_true,
         decode_stack, decode_next] <;> rfl
+  -- cfgUpdate32: the Bus Master gate (issue #644)
+  case h_27.some =>
+    by_cases h4 : a = 4 <;> by_cases hc : c &&& 4 = 0 <;>
+      by_cases ha : s.m.armed &&& π.armedAll = π.armedAll <;>
+      simp [h4, hc, ha]
   -- physAddr
   case h_26.some =>
     simp only [gt_iff_lt, UInt32.lt_iff_toNat_lt, scratch32_toNat, flag_beq]

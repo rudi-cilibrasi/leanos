@@ -3437,7 +3437,7 @@ static unsigned vtd_journal_steps;
 #define DEVICE_SERVICE_DMA_PAGES 4u
 #endif
 
-static struct wifi_vm device_service_vm;
+static struct wifi_gen_vm device_service_vm;
 static unsigned device_service_bound, device_service_ended;
 
 #ifdef LEANOS_AHCI_SERVICE_SCENARIO
@@ -3640,7 +3640,14 @@ static void device_service_bind(void) {
             (uint32_t)sizeof device_service_program, &target, &policy, &header))
         fail("service-image");
     if (!device_service_admitted(&target, &policy)) fail("service-policy");
-    if (wifi_start(&device_service_vm, device_service_program,
+    /* Bus Master off before the program starts (issue #644): firmware may
+       have left it on (SeaBIOS does for qemu-xhci), and the executor's Bus
+       Master gate governs only setting it, once the program has written
+       every DMA root register. The status half is written as zero, which
+       clears no RW1C bit. Through the executor's own reviewed configuration
+       hooks, so the syscall path gains no direct PCI access site. */
+    wifi_hook_cfg_write32(0x04, wifi_hook_cfg_read32(0x04) & UINT32_C(0x0000fffb));
+    if (wifi_gen_start(&device_service_vm, device_service_program,
             (uint32_t)sizeof device_service_program))
         fail("service-bind");
     device_service_bound = 1;
@@ -3701,7 +3708,7 @@ static uint64_t device_service_next_key(void) {
     for (;;) {
         uint32_t code = 0;
         int status = wifi_gen_resume(&device_service_vm, 0,
-            device_service_vm.steps + DEVICE_SERVICE_BUDGET, &code);
+            device_service_vm.vm.steps + DEVICE_SERVICE_BUDGET, &code);
         device_service_observe_command();
 #ifdef LEANOS_AHCI_SERVICE_SCENARIO
         /* The sequence number (from 1) in the high half keeps a zero sector
@@ -3712,7 +3719,7 @@ static uint64_t device_service_next_key(void) {
         if (status == WIFI_YIELD) return code;
 #endif
         if (status == WIFI_STEP_LIMIT &&
-            device_service_vm.steps < DEVICE_SERVICE_STEP_LIMIT)
+            device_service_vm.vm.steps < DEVICE_SERVICE_STEP_LIMIT)
             continue;
         device_service_ended = 1;
         serial_puts(LEANOS_SERIAL_10_DEVICE " event=end subject=1 status=");
@@ -6206,7 +6213,7 @@ static const uint64_t network_ipc_words[4] = {
     0x0000000200020303ull, 0x0001000200020404ull,
 };
 
-static struct wifi_vm network_vm;
+static struct wifi_gen_vm network_vm;
 static unsigned network_bound, network_ended;
 /* 0 C runs, 1 B runs, 2 A runs fresh, 3 C serves, 4 A resumed. */
 static unsigned network_phase;
@@ -6397,7 +6404,7 @@ static void network_bind(void) {
             (uint32_t)sizeof network_subject_program, &target, &policy, &header))
         fail("network-source-image");
     if (!network_source_admitted(&target, &policy)) fail("network-source-policy");
-    if (wifi_start(&network_vm, network_subject_program,
+    if (wifi_gen_start(&network_vm, network_subject_program,
             (uint32_t)sizeof network_subject_program))
         fail("network-source-bind");
     network_bound = 1;
@@ -6421,7 +6428,7 @@ static uint64_t network_next_frame(void) {
     for (;;) {
         uint32_t code = 0;
         int status = wifi_gen_resume(&network_vm, 0,
-            network_vm.steps + NETWORK_BUDGET, &code);
+            network_vm.vm.steps + NETWORK_BUDGET, &code);
         if (status == WIFI_YIELD) {
             if (*tx_len != 0) fail("network-transmit-not-taken");
             if (network_seq == 0 ? code != NETWORK_CONFIG_BYTES
@@ -6438,7 +6445,7 @@ static uint64_t network_next_frame(void) {
             serial_puts(network_seq == 1 ? " kind=host-configuration\n" : " kind=ethernet\n");
             return network_seq << 32 | code;
         }
-        if (status == WIFI_STEP_LIMIT && network_vm.steps < NETWORK_STEP_LIMIT)
+        if (status == WIFI_STEP_LIMIT && network_vm.vm.steps < NETWORK_STEP_LIMIT)
             continue;
         network_ended = 1;
         serial_puts(LEANOS_SERIAL_10_DEVICE " event=end subject=1 status=");
@@ -6793,7 +6800,7 @@ static const uint64_t dhcp_ipc_words[4] = {
     0x0000000200020303ull, 0x0001000200020404ull,
 };
 
-static struct wifi_vm dhcp_vm;
+static struct wifi_gen_vm dhcp_vm;
 static unsigned dhcp_bound, dhcp_ended, dhcp_phase;
 /* The port the endpoint serves: B's until the hand-off, then C's. */
 static uint64_t dhcp_route = DHCP_CLIENT;
@@ -7120,7 +7127,7 @@ static void dhcp_bind(void) {
             (uint32_t)sizeof dhcp_subject_program, &target, &policy, &header))
         fail("dhcp-source-image");
     if (!dhcp_source_admitted(&target, &policy)) fail("dhcp-source-policy");
-    if (wifi_start(&dhcp_vm, dhcp_subject_program, (uint32_t)sizeof dhcp_subject_program))
+    if (wifi_gen_start(&dhcp_vm, dhcp_subject_program, (uint32_t)sizeof dhcp_subject_program))
         fail("dhcp-source-bind");
     dhcp_bound = 1;
     serial_puts(LEANOS_SERIAL_10_DEVICE " event=bind subject=1 device=frame-source image-bytes=");
@@ -7141,7 +7148,7 @@ static uint64_t dhcp_next_record(void) {
     dhcp_tx_pending = 0;
     for (;;) {
         uint32_t code = 0;
-        int status = wifi_gen_resume(&dhcp_vm, 0, dhcp_vm.steps + DHCP_BUDGET, &code);
+        int status = wifi_gen_resume(&dhcp_vm, 0, dhcp_vm.vm.steps + DHCP_BUDGET, &code);
         if (status == WIFI_YIELD) {
             if (*tx_len != 0) fail("dhcp-transmit-not-taken");
             if (dhcp_seq == 0 ? code != DHCP_LINK_BYTES
@@ -7162,7 +7169,7 @@ static uint64_t dhcp_next_record(void) {
             serial_puts(dhcp_route == DHCP_CLIENT ? " port=2\n" : " port=3\n");
             return dhcp_seq << 32 | code;
         }
-        if (status == WIFI_STEP_LIMIT && dhcp_vm.steps < DHCP_STEP_LIMIT)
+        if (status == WIFI_STEP_LIMIT && dhcp_vm.vm.steps < DHCP_STEP_LIMIT)
             continue;
         dhcp_ended = 1;
         serial_puts(LEANOS_SERIAL_10_DEVICE " event=end subject=1 status=");

@@ -31,12 +31,13 @@ int main(void) {
         'L', 'W', 'I', 'F', 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
-    static struct wifi_vm halt_vm;
-    if (wifi_start(&halt_vm, halt_image, (uint32_t)sizeof halt_image)) return 2;
-    wifi_gen_vm = &halt_vm;
+    static struct wifi_gen_vm halt_g;
+    if (wifi_gen_start(&halt_g, halt_image, (uint32_t)sizeof halt_image)) return 2;
+    wifi_gen_g = &halt_g;
+    wifi_gen_vm = &halt_g.vm;
     wifi_gen_h = 0;
     if (leanos_device_program_step(0) != WIFI_HALT || wifi_gen_status != WIFI_HALT ||
-        halt_vm.pc != 1 || halt_vm.steps != 1) {
+        halt_g.vm.pc != 1 || halt_g.vm.steps != 1) {
         fprintf(stderr, "error: the generated step did not halt the one-instruction image\n");
         return 1;
     }

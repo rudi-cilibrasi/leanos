@@ -185,7 +185,7 @@ programs executes them with `leanos_device_program_step`:
   `wifi_start`, the executor state and the device-hook interface.
 * The entry-stack manifests of `device-service` and `keyboard-echo` review
   the new syscall-path contributors: the generated step, its specialized
-  loops (optimizer-optional, since a compiler may inline them) and the 43
+  loops (optimizer-optional, since a compiler may inline them) and the 45
   `wifi_gen_*` hooks. The generated dispatcher and its descriptor-map scan
   pass a seventh scalar argument on the stack, which GCC reports as
   `dynamic,bounded`; `check-entry-stack-budget.sh` admits exactly these two

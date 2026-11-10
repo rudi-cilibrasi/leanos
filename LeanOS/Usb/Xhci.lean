@@ -453,9 +453,11 @@ def bringUp : ProgM Unit := do
   emit (.cfgRead32 0 0)
   print Tag.begin 0
   -- Memory Space only; zeros to the RW1C status half. Bus Master waits
-  -- until the controller is reset: firmware may leave it running with ring
-  -- pointers into its own memory, which an IOMMU (the q35 device service's
-  -- VT-d window) would fault.
+  -- until the controller is reset and every DMA root register holds a
+  -- scratch address: firmware may leave it running with ring pointers into
+  -- its own memory, which an IOMMU (the q35 device service's VT-d window)
+  -- would fault, and the executor's Bus Master gate (issue #644) refuses it
+  -- earlier. The kernel clears a Bus Master firmware left on at bind.
   emit (.cfgUpdate32 0x04 0xFFFF0000 0x0002)
   -- Bay Trail port routing: route every routable USB 2 port to xHCI
   -- (XUSB2PR := XUSB2PRM) and enable SuperSpeed (USB3_PSSEN := USB3PRM).
@@ -527,8 +529,6 @@ def bringUp : ProgM Unit := do
   delay 1000
   poll32 usbCmd cmdReset 0 1000 100 Fail.resetStuck
   poll32 usbSts stsNotReady 0 1000 100 Fail.resetStuck
-  -- the reset controller holds no stale DMA pointers: Bus Master on
-  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
   w32 config maxSlots
   -- scratchpad buffers and DCBAA
   for i in [0:(Layout.scratchpads : Nat)] do
@@ -543,9 +543,19 @@ def bringUp : ProgM Unit := do
   st 4 Var.evCycle (.imm 1)
   storePhys64 erst evRing
   st 4 (erst + 8) (.imm ringTrbs)
-  w32 erstsz 1
   writePhys64 erdpLo erdpHi evRing
+  -- ERSTBA while ERSTSZ still holds its reset value 0: the event ring stays
+  -- disabled, so the controller fetches nothing yet (qemu-xhci fetches the
+  -- ERST entry when ERSTBA's high dword is written). This fills the last DMA
+  -- root register.
   writePhys64 erstbaLo erstbaHi erst
+  -- every DMA root register now holds a scratch address (DCBAAP, CRCR, ERDP,
+  -- ERSTBA): Bus Master on, before any DMA (issue #644)
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
+  -- size the table, then write ERSTBA's high dword again: that starts the
+  -- event ring, whose ERST entry the controller now fetches by DMA
+  w32 erstsz 1
+  w32 erstbaHi 0
   -- run (interrupts stay disabled; the driver polls)
   w32 usbCmd cmdRun
   poll32 usbSts stsHalted 0 1000 100 Fail.notRunning

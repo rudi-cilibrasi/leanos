@@ -28,7 +28,9 @@ from any initial registers or scratch, for any number of steps:
 
 Version-3 images also carry the policy, and both the simulator and the C
 executor enforce it dynamically; `run_declared_confined` shows that this
-alone confines *any* program to its declared policy.
+alone confines *any* program to its declared policy, and
+`run_declared_busmaster` that such a program sets Bus Master only after it
+has written every address sink (issue #644).
 
 These theorems are stated over `Sim`; the executor that runs is the
 generated C of `LeanOS.Wifi.Exec.step`, which `LeanOS.Wifi.ExecRefinement`
@@ -524,5 +526,165 @@ theorem qotomBcm43224Policy_bits :
 theorem qotomXhciPolicy_bits :
     qotomXhciPolicy.cfgRead = 0xA0000000000003 ∧ qotomXhciPolicy.cfgWrite = 0x50000000000000 := by
   decide
+
+/-! ## The Bus Master gate (issue #644)
+
+A device dereferences its address sinks only while it may master the bus.
+The simulator records in `Machine.armed` the `Policy.armBits` of every
+32-bit write `sinkOk` admits and refuses a `cfgUpdate32` that sets Bus Master
+until every sink's low and high dword has been written (`busMasterOk`).
+`armGuard` watches the same thing from the device side, independently of
+`armed`: it computes the bits from the writes the device receives and latches
+a flag when Bus Master is set too early, whether by `cfgUpdate32` or by a
+direct write of the command register. -/
+
+/-- `d` with the Bus Master gate's view (issue #644): the `armBits` of every
+32-bit write `sinkOk` admits, and a latched flag that becomes `true` when a
+command-register update or write sets Bus Master (bit 2 of offset 0x04)
+before every sink's low and high dword has been written. -/
+def armGuard {σ} (π : Policy) (d : Device σ) : Device (σ × UInt32 × Bool) where
+  read32 s off := let r := d.read32 s.1 off; (r.1, (r.2, s.2))
+  read16 s off := let r := d.read16 s.1 off; (r.1, (r.2, s.2))
+  write32 s off v :=
+    (d.write32 s.1 off v,
+      if π.sinkOk (d.phys s.1 0).1 off v then s.2.1 ||| π.armBits off else s.2.1, s.2.2)
+  write16 s off v := (d.write16 s.1 off v, s.2)
+  cfgRead32 s off := let r := d.cfgRead32 s.1 off; (r.1, (r.2, s.2))
+  cfgWrite32 s off v :=
+    (d.cfgWrite32 s.1 off v, s.2.1,
+      s.2.2 || (off == 0x04 && v &&& 0x4 != 0 && s.2.1 &&& π.armedAll != π.armedAll))
+  cfgUpdate32 s off c t :=
+    (d.cfgUpdate32 s.1 off c t, s.2.1, s.2.2 || !π.busMasterOk s.2.1 off t)
+  phys s off := let r := d.phys s.1 off; (r.1, (r.2, s.2))
+  read8 s off := let r := d.read8 s.1 off; (r.1, (r.2, s.2))
+  write8 s off v := (d.write8 s.1 off v, s.2)
+
+/-- A configuration write bitmap without bit 1 does not admit the command
+register (offset 0x04). -/
+theorem cfgAllowed_cmd {bits : UInt64} (h : bits &&& 0x2 = 0) :
+    cfgAllowed bits 0x04 = false := by
+  have h1 := congrArg (fun x => (UInt64.toNat x).testBit 1) h
+  simp only [UInt64.toNat_and, Nat.testBit_and, UInt64.toNat_zero, Nat.zero_testBit] at h1
+  have h2 : (2 : UInt64).toNat.testBit 1 = true := by decide
+  rw [h2, Bool.and_true, Nat.testBit_eq_decide_div_mod_eq, decide_eq_false_iff_not] at h1
+  have h3 : ((4 : UInt32) / 4).toUInt64 = 1 := by decide
+  simp only [cfgAllowed, h3, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
+  right
+  intro he
+  have := congrArg UInt64.toNat he
+  simp only [UInt64.toNat_and, UInt64.toNat_shiftRight] at this
+  simp at h1 this
+  omega
+
+theorem cfgAllowed_ne_cmd {bits : UInt64} {off : UInt32} (hb : bits &&& 0x2 = 0)
+    (h : cfgAllowed bits off = true) : (off == 0x04) = false := by
+  rw [beq_eq_false_iff_ne]
+  rintro rfl
+  rw [cfgAllowed_cmd hb] at h
+  cases h
+
+/-- A sane policy never lets a program write the command register directly. -/
+theorem sane_cfgWrite_cmd (π : Policy) (hπ : π.sane = true) : π.cfgWrite &&& 0x2 = 0 := by
+  simp only [Policy.sane, Bool.and_eq_true, beq_iff_eq] at hπ
+  rw [show (0x2 : UInt64) = 0xFFFF &&& 0x2 by decide, ← UInt64.and_assoc, hπ.1, UInt64.zero_and]
+
+/-- Every named DMA policy satisfies the hypothesis of `run_declared_busmaster`. -/
+theorem dmaPolicies_cmd_not_writable :
+    qotomXhciPolicy.cfgWrite &&& 0x2 = 0 ∧ qotomAhciPolicy.cfgWrite &&& 0x2 = 0 ∧
+      qotomRtl8168Policy.cfgWrite &&& 0x2 = 0 ∧ q35XhciPolicy.cfgWrite &&& 0x2 = 0 ∧
+      q35AhciPolicy.cfgWrite &&& 0x2 = 0 :=
+  ⟨sane_cfgWrite_cmd _ qotomXhciPolicy_sane, sane_cfgWrite_cmd _ qotomAhciPolicy_sane,
+    sane_cfgWrite_cmd _ qotomRtl8168Policy_sane, sane_cfgWrite_cmd _ q35XhciPolicy_sane,
+    sane_cfgWrite_cmd _ q35AhciPolicy_sane.1⟩
+
+/-- A write that touches no sink fills no sink bit: `off - s < 8` holds for
+`off = s` and for `off = s + 4`. -/
+theorem armBits_of_not_touch {π : Policy} {off : UInt32} (h : π.sinkTouch off = false) :
+    π.armBits off = 0 := by
+  simp only [Policy.sinkTouch, List.any_eq_false, decide_eq_true_eq] at h
+  have h0 : List.idxOf? off π.addrSinks = none :=
+    List.idxOf?_eq_none_iff.mpr fun hm => h off hm (by rw [UInt32.sub_self]; decide)
+  have h4 : List.idxOf? (off - 4) π.addrSinks = none :=
+    List.idxOf?_eq_none_iff.mpr fun hm => h _ hm (by rw [show off - (off - 4) = 4 by grind]; decide)
+  simp [Policy.armBits, h0, h4]
+
+@[simp] theorem setReg_armed {σ} (m : Machine σ) (r v : UInt32) :
+    (m.setReg r v).armed = m.armed := rfl
+
+/-- One instruction of a program that declares `π` keeps the monitor's bits
+equal to the simulator's `armed` and its flag clear, whatever the
+instruction. -/
+theorem exec_declared_armed {σ} (π : Policy) (d : Device σ) (p : Program)
+    (hpol : p.policy = some π) (hcfg : π.cfgWrite &&& 0x2 = 0)
+    (w : Word4) (m : Machine (σ × UInt32 × Bool)) (hm : m.dev.2 = (m.armed, false)) :
+    (exec p (armGuard π d) w m).machine.dev.2 =
+      ((exec p (armGuard π d) w m).machine.armed, false) := by
+  have hne : ∀ {off}, cfgAllowed π.cfgWrite off = true → (off == 0x04) = false :=
+    fun h => cfgAllowed_ne_cmd hcfg h
+  unfold exec
+  dsimp only
+  generalize w.op &&& 0xFF = b
+  split
+  all_goals (try simp_all [armGuard, Policy.sinkOk_of_not_touch, armBits_of_not_touch])
+  all_goals (repeat' split)
+  all_goals (try simp_all)
+  all_goals first
+    | exact iter_preserve (fun (s : σ × UInt32 × Bool) => s.2 = (m.armed, false)) _
+        (fun _ _ h => by simp [h]) _ _ _ hm
+    | exact iter_preserve (fun (a : ByteArray × σ × UInt32 × Bool) => a.2.2 = (m.armed, false)) _
+        (fun _ _ h => by simp [h]) _ _ _ hm
+
+/-- Lift a per-instruction machine invariant to whole runs. -/
+theorem loop_preserve {σ} (P : Machine σ → Prop) (d : Device σ) (p : Program)
+    (hstep : ∀ m, P m → P (step p d m).machine) :
+    ∀ fuel (m : Machine σ), P m → P (loop p d fuel m).2
+  | 0, _, hm => hm
+  | fuel + 1, m, hm => by
+    have hs := hstep m hm
+    simp only [loop]
+    split <;> rename_i heq <;> rw [heq] at hs
+    · exact loop_preserve P d p hstep fuel _ hs
+    · exact hs
+
+/-- In every run of a program that declares `π`, the simulator's `armed` is
+exactly the monitor's record of admitted sink writes, and the monitor's flag
+stays clear. -/
+theorem run_declared_armed {σ} (π : Policy) (p : Program) (hpol : p.policy = some π)
+    (hcfg : π.cfgWrite &&& 0x2 = 0)
+    (d : Device σ) (s0 : σ) (fuel : Nat)
+    (init : Machine (σ × UInt32 × Bool) → Machine (σ × UInt32 × Bool))
+    (hinit : ∀ m, (init m).dev = m.dev) (harmed : ∀ m, (init m).armed = m.armed) :
+    (run p (armGuard π d) (s0, 0, false) fuel init).2.dev.2 =
+      ((run p (armGuard π d) (s0, 0, false) fuel init).2.armed, false) := by
+  refine loop_preserve (fun (m : Machine (σ × UInt32 × Bool)) => m.dev.2 = (m.armed, false)) _ p
+    (fun m hm => ?_) fuel _ (by simp [hinit, harmed])
+  unfold step
+  split
+  · exact exec_declared_armed π d p hpol hcfg _ _ hm
+  · simpa using hm
+
+/-- **The Bus Master gate.** A program whose image declares `π`, under a
+policy that does not let it write the command register directly (every sane
+policy, `sane_cfgWrite_cmd`; every named DMA policy,
+`dmaPolicies_cmd_not_writable`), run by the simulator on any device model
+from any initial registers and scratch, for any number of steps, never sets
+Bus Master — by `cfgUpdate32` or by a configuration write — before every
+address sink's low and high dword has received a 32-bit write `sinkOk`
+admits.
+
+With the kernel clearing Bus Master when it binds the device (outside this
+theorem), the device can therefore master the bus only after every sink
+register holds a value the program wrote, which `sinkOk` bounds to a bus
+address inside scratch (low dword) or zero (high dword): whatever a sink held
+when the program started has been overwritten first. (`armedAll` has a
+bit for each sink's two dwords while the policy names fewer than 16 sinks;
+the executor accepts at most 8.) -/
+theorem run_declared_busmaster {σ} (π : Policy) (p : Program) (hpol : p.policy = some π)
+    (hcfg : π.cfgWrite &&& 0x2 = 0)
+    (d : Device σ) (s0 : σ) (fuel : Nat)
+    (init : Machine (σ × UInt32 × Bool) → Machine (σ × UInt32 × Bool))
+    (hinit : ∀ m, (init m).dev = m.dev) (harmed : ∀ m, (init m).armed = m.armed) :
+    (run p (armGuard π d) (s0, 0, false) fuel init).2.dev.2.2 = false := by
+  rw [run_declared_armed π p hpol hcfg d s0 fuel init hinit harmed]
 
 end LeanOS.DeviceProgramConfinement

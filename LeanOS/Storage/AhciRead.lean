@@ -174,15 +174,20 @@ def program : ProgM Unit := do
   r32 0 (pxSsts dataPort)
   andi 0 0xF
   expectEq 0 0x3 Fail.noDevice             -- DET = device present, PHY up
-  -- Only now may the controller master the bus; zeros to the RW1C status half.
+  -- Point the data port, and the stopped port 0, at scratch (address sinks:
+  -- low dword in scratch, high 0). Port 0's engines stay off; it names the
+  -- same structures only so that every declared sink holds a scratch address
+  -- before Bus Master (the executor's Bus Master gate, issue #644).
+  for n in [dataPort, 0] do
+    emit (.physAddr 0 cmdList)
+    emit (.write32 (pxClb n) (.reg 0))
+    w32 (pxClbu n) 0
+    emit (.physAddr 0 rfis)
+    emit (.write32 (pxFb n) (.reg 0))
+    w32 (pxFbu n) 0
+  -- Every sink written: only now may the controller master the bus; zeros to
+  -- the RW1C status half.
   emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
-  -- Point the port at scratch (address sinks: low dword in scratch, high 0).
-  emit (.physAddr 0 cmdList)
-  emit (.write32 (pxClb dataPort) (.reg 0))
-  w32 (pxClbu dataPort) 0
-  emit (.physAddr 0 rfis)
-  emit (.write32 (pxFb dataPort) (.reg 0))
-  w32 (pxFbu dataPort) 0
   w32 (pxSerr dataPort) 0xFFFFFFFF
   w32 (pxIs dataPort) 0xFFFFFFFF
   maskSet32 (pxCmd dataPort) 0xFFFFFFFF cmdFre

@@ -127,8 +127,10 @@ def program : ProgM Unit := do
   emit (.branch .ne 0 (.imm 0) dmaOk)
   fail Fail.noDma
   place dmaOk
-  -- Memory Space + Bus Master; zeros to the RW1C status half.
-  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
+  -- Memory Space on, Bus Master off until both DMA root registers hold
+  -- scratch addresses (the executor's Bus Master gate, issue #644); zeros to
+  -- the RW1C status half.
+  emit (.cfgUpdate32 0x04 0xFFFF0004 0x0002)
   r32 0 cap; print Tag.cap 0
   r32 0 ghc; print Tag.ghc 0
   r32 0 vs; print Tag.vs 0
@@ -149,6 +151,8 @@ def program : ProgM Unit := do
   emit (.physAddr 0 rfis)
   emit (.write32 pFb (.reg 0))
   w32 pFbu 0
+  -- Both sinks written: Bus Master on, before the FIS-receive engine starts.
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
   w32 pSerr 0xFFFFFFFF
   w32 pIs 0xFFFFFFFF
   maskSet32 pCmd 0xFFFFFFFF cmdFre
