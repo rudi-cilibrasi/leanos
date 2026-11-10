@@ -653,15 +653,15 @@ static void lab_dev_restore(unsigned pages) {
 #define LAB_SERVICE_BUDGET 200000u
 static uint32_t lab_service_holder;       /* subject holding the device; 0 = none */
 
-static int lab_service_invoke(struct wifi_vm *vm, uint32_t subject, uint32_t *code) {
+static int lab_service_invoke(struct wifi_gen_vm *g, uint32_t subject, uint32_t *code) {
     if (subject == 0 || subject != lab_service_holder)
         return -1;
-    return wifi_gen_resume(vm, 0, vm->steps + LAB_SERVICE_BUDGET, code);
+    return wifi_gen_resume(g, 0, g->vm.steps + LAB_SERVICE_BUDGET, code);
 }
 
 static int lab_dev_execute(const uint8_t *image, uint32_t image_len, uint32_t *code) {
-    static struct wifi_vm vm;
-    if (wifi_start(&vm, image, image_len))
+    static struct wifi_gen_vm vm;
+    if (wifi_gen_start(&vm, image, image_len))
         return WIFI_BAD_IMAGE;
     lab_service_holder = 1;
     serial_puts("LEANOS-LAB/1 SERVICE grant subject=1 bind=accepted\n");
@@ -676,7 +676,7 @@ static int lab_dev_execute(const uint8_t *image, uint32_t image_len, uint32_t *c
             serial_puts("LEANOS-LAB/1 SERVICE subject=1 key=");
             lab_kbd_render(*code);
             serial_putc('\n');
-        } else if (!(status == WIFI_STEP_LIMIT && vm.steps < LAB_DEV_STEP_LIMIT)) {
+        } else if (!(status == WIFI_STEP_LIMIT && vm.vm.steps < LAB_DEV_STEP_LIMIT)) {
             break;
         }
     }
@@ -694,6 +694,14 @@ static int lab_dev_execute(const uint8_t *image, uint32_t image_len, uint32_t *c
     return wifi_exec(image, image_len, 0, LAB_DEV_STEP_LIMIT, code);
 }
 #endif
+
+/* Bus Master off before the program starts (issue #644): firmware or the
+   previous OS may have left it on, and the executor's Bus Master gate governs
+   only setting it, once the program has written every DMA root register.
+   The status half is written as zero, which clears no RW1C bit. */
+static void lab_dev_bus_master_off(void) {
+    wifi_hook_cfg_write32(0x04, wifi_hook_cfg_read32(0x04) & UINT32_C(0x0000fffb));
+}
 
 static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
     uint32_t hdr = 0;
@@ -737,6 +745,7 @@ static void lab_dev_program_run(const uint8_t *image, uint32_t image_len) {
         lab_wifi_invlpg(lab_dev_window + 4096 * i);
     }
     uint32_t code = 0;
+    lab_dev_bus_master_off();
     int status = lab_dev_execute(image, image_len, &code);
     lab_dev_restore(pages);
     serial_puts("LEANOS-LAB/1 WIFI-END status=");
@@ -762,7 +771,7 @@ static void lab_wifi_run(void) {
 #ifndef LAB_SERVICE_BUDGET
 #define LAB_SERVICE_BUDGET 200000u
 #endif
-static struct wifi_vm lab_stream_vm;
+static struct wifi_gen_vm lab_stream_vm;
 static uint64_t *lab_stream_leaf_table;
 static uint32_t lab_stream_bar, lab_stream_pages, lab_stream_ended;
 static uint64_t lab_stream_invocations;
@@ -805,7 +814,8 @@ static __attribute__((noinline, unused)) void lab_stream_bind(uint64_t *leaf_tab
         if ((leaf_table[window / 4096 + i] & ~UINT64_C(0x60)) !=
             (((uint64_t)window + 4096u * i) | UINT64_C(0x8000000000000003)))
             pre_admission_fail("qotom-stream-window");
-    if (wifi_start(&lab_stream_vm, lab_dev_programs[0], lab_dev_program_lengths[0]))
+    lab_dev_bus_master_off();
+    if (wifi_gen_start(&lab_stream_vm, lab_dev_programs[0], lab_dev_program_lengths[0]))
         pre_admission_fail("qotom-stream-image");
     lab_stream_leaf_table = leaf_table;
     lab_stream_bar = bar0;
@@ -832,10 +842,10 @@ static __attribute__((noinline, unused)) uint64_t lab_stream_next_key(void) {
     for (;;) {
         uint32_t code = 0;
         int status = wifi_gen_resume(&lab_stream_vm, 0,
-            lab_stream_vm.steps + LAB_SERVICE_BUDGET, &code);
+            lab_stream_vm.vm.steps + LAB_SERVICE_BUDGET, &code);
         ++lab_stream_invocations;
         if (status == WIFI_YIELD) { key = code; break; }
-        if (status == WIFI_STEP_LIMIT && lab_stream_vm.steps < LAB_DEV_STEP_LIMIT)
+        if (status == WIFI_STEP_LIMIT && lab_stream_vm.vm.steps < LAB_DEV_STEP_LIMIT)
             continue;
         lab_stream_ended = 1;
         serial_puts("LEANOS-LAB/1 SERVICE end subject=1 status=");

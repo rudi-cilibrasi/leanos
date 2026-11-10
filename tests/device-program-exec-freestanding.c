@@ -33,9 +33,9 @@ static const uint8_t image[] = {
 
 void _start(void);
 void _start(void) {
-    static struct wifi_vm vm;
+    static struct wifi_gen_vm vm;
     uint32_t code = 0;
-    if (!wifi_start(&vm, image, (uint32_t)sizeof image))
+    if (!wifi_gen_start(&vm, image, (uint32_t)sizeof image))
         sink = (uint32_t)wifi_gen_resume(&vm, 0, 1, &code) ^ code;
     for (;;) {
     }
