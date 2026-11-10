@@ -1,0 +1,6 @@
+Tue Nov 10 15:00:08 UTC 2026
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94    20183     0     0    1308852     1339     0     118581     0
+re0       - 192.168.6.0/24  192.168.6.21          1466     -     -     124234      901     -      87271     -
+	media: Ethernet autoselect (1000baseT <full-duplex>)
+	status: active

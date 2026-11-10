@@ -1,0 +1,15 @@
+Tue Nov 10 03:01:05 PM UTC 2026
+ 7:02AM  up 36 secs, 0 users, load averages: 0.16, 0.04, 0.01
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94       69     0     0       8422       22     0       5905     0
+re0       - 192.168.6.0/24  192.168.6.21            23     -     -       4981       18     -       5185     -
+--- ping 400 from the workstation
+--- 192.168.6.21 ping statistics ---
+400 packets transmitted, 400 received, 0% packet loss, time 82795ms
+rtt min/avg/max/mdev = 0.370/0.661/2.197/0.228 ms
+--- after
+Name    Mtu Network         Address              Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+re0    1500 <Link#1>        00:0e:c4:cc:a2:94      644     0     0      62589      446     0      51302     0
+re0       - 192.168.6.0/24  192.168.6.21           455     -     -      44222      441     -      44618     -
+	media: Ethernet autoselect (1000baseT <full-duplex>)
+	status: active

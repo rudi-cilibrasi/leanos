@@ -124,6 +124,15 @@ def descriptorMap : List Descriptor :=
   [{ trb := false, start := rxRing + 8, count := rxRingSlots, stride := 16 },
    { trb := false, start := txRing + 8, count := txRingSlots, stride := 16 }]
 def txBuf : UInt32 := 0xA000
+/-- The high-priority transmit ring that THPDS names: one zeroed, 256-byte
+aligned descriptor slot inside the transmit ring area, so the descriptor map
+covers it too. The program never polls the high-priority queue; it writes
+THPDS only so that every DMA root register holds a scratch address before
+Bus Master is set (issue #644). -/
+def hpRing : UInt32 := 0x0200
+/-- The 64-byte aligned tally-counter dump area that DTCCR names, for the
+same reason; the program never requests a dump (DTCCR's Cmd bit stays 0). -/
+def tally : UInt32 := 0xB100
 def vars : UInt32 := 0xB000
 
 namespace Var
@@ -419,7 +428,9 @@ def program : ProgM Unit := do
   emit (.branch .ne 0 (.imm 0) dmaOk)
   fail Fail.noDma
   place dmaOk
-  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
+  -- Memory Space on, Bus Master off (the previous owner may have left it on)
+  -- until every DMA root register holds a scratch address (issue #644).
+  emit (.cfgUpdate32 0x04 0xFFFF0004 0x0002)
   r32 0 txcfg
   print Tag.txcfg 0
   andi 0 txcfgHwrev
@@ -468,6 +479,16 @@ def program : ProgM Unit := do
   w32 (tnpds + 4) 0
   emit (.physAddr 0 txRing)
   emit (.write32 tnpds (.reg 0))
+  -- The two root registers the program does not use otherwise: a register it
+  -- never writes would keep the previous owner's address (issue #644).
+  w32 (thpds + 4) 0
+  emit (.physAddr 0 hpRing)
+  emit (.write32 thpds (.reg 0))
+  w32 (dtccr + 4) 0
+  emit (.physAddr 0 tally)
+  emit (.write32 dtccr (.reg 0))
+  -- Every DMA root register now holds a scratch address: Bus Master on.
+  emit (.cfgUpdate32 0x04 0xFFFF0000 0x0006)
   -- From here on, every exit goes through `exitBlock` (the teardown).
   emit (.write8 command (.imm cmdTxRx))
   w32 txcfg txcfgConfig
