@@ -1,0 +1,6 @@
+elf kbd-gate.elf sha256 392d7b4552c896dcb9e500fc5d18055fb54830ebcc1c2e51770a0131db502b32
+installed 392d7b4552c896dcb9e500fc5d18055fb54830ebcc1c2e51770a0131db502b32 in /boot/efi/leanos
+next boot: request=leanos-392d7b4552c896dcb9e500fc5d18055fb54830ebcc1c2e51770a0131db502b32
+reboot requested 2026-11-10T20:51:55Z
+FreeBSD login prompt after the run (105s)
+capture sha256 bbbb7b0858f124192262138ef37ef0cd7e66f47d745538541d740097b65d0d57

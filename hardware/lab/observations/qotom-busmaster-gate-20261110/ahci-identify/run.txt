@@ -1,0 +1,6 @@
+elf ahci-identify-gate.elf sha256 20b15266f6c50d6b755990644a64cf5d5e32e6db1a9c3ab95e3a9abc6cf09358
+installed 20b15266f6c50d6b755990644a64cf5d5e32e6db1a9c3ab95e3a9abc6cf09358 in /boot/efi/leanos
+next boot: request=leanos-20b15266f6c50d6b755990644a64cf5d5e32e6db1a9c3ab95e3a9abc6cf09358
+reboot requested 2026-11-10T20:44:38Z
+FreeBSD login prompt after the run (90s)
+capture sha256 c7adad8aa6c31e7e72dff8b89ac4dd1b3a3543b2515799020f13265f526cfcc4

@@ -107,6 +107,13 @@ an effect-level checker, from one writing an ordinary parameter.
      checks the order statically for all of them and runs the gate in the
      simulator.
 
+   On the Qotom the AHCI identify, RTL8168 and xHCI keyboard programs run
+   under the gate with unchanged results
+   ([`qotom-busmaster-gate-20261110`](../../hardware/lab/observations/qotom-busmaster-gate-20261110/README.md)),
+   and in QEMU so do the device-service, keyboard-echo and ahci-service
+   scenarios and the q35 device lab's keyboard, mouse, mass-storage, FAT32
+   and hostile-FAT runs.
+
    So the device can master the bus only while every sink holds an address
    inside scratch (low dword) and zero (high dword), assuming that a device
    register holds the last value written to it and that Bus Master is the
