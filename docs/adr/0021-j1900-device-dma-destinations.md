@@ -8,7 +8,9 @@ descriptor pointers are now proved under a named assumption about the xHCI
 specification. Amended for issue #640: so are the Qotom AHCI identify and
 RTL8168 programs' descriptor pointers, so no DMA pointer of a Qotom device
 program is an unproved trusted assumption any more; each map's completeness
-is a named assumption about its controller.
+is a named assumption about its controller. Amended for issue #644: the
+executor's Bus Master gate makes every sink hold a value the program wrote
+before the device may master the bus.
 
 ## Context
 
@@ -70,21 +72,42 @@ an effect-level checker, from one writing an ordinary parameter.
    TNPDS, THPDS and RDSAR. The lab kernel refuses an image that declares
    fewer sinks than its profile.
 
-   **Not covered: a sink the program never writes (issue #644).** The proof
-   bounds the values a program writes to a sink, not the value the register
-   already holds when the program starts, which firmware or the previous OS
-   left there. A program that never writes a sink and then makes the
-   controller use it gets DMA at that stale address. Every Qotom program
-   writes every sink it declares. The RTL8168 program does so since #644: it
-   uses neither DTCCR nor THPDS, but it points both into scratch, and it
-   sets Bus Master only after all four sinks hold scratch addresses
-   (`LeanOS/NegativeFixtures/Rtl8168Teardown.lean` checks the order; on the
-   Qotom, [`qotom-rtl8168-sinks-20261110`](../../hardware/lab/observations/qotom-rtl8168-sinks-20261110/README.md)
-   shows all four in scratch after the run, where DTCCR and THPDS had
-   stayed at physical address 0 before). A
-   hostile program need not do either. The planned fix is a Bus Master
-   gate: the executor refuses to set Bus Master until every declared sink
-   has been written.
+   **The Bus Master gate (issue #644).** A sink check bounds the values a
+   program writes to a sink, not the value the register already holds when
+   the program starts, which firmware or the previous OS left there. Before
+   the gate, a program that never wrote a sink and then made the controller
+   use it got DMA at that stale address. On the Qotom, THPDS and DTCCR read
+   physical address 0 before the RTL8168 program ran, and RDSAR held
+   FreeBSD's receive ring
+   ([`qotom-rtl8168-sinks-20261110`](../../hardware/lab/observations/qotom-rtl8168-sinks-20261110/README.md)).
+   Now:
+   * the simulator and the generated executor record which sink dwords an
+     admitted `write32`/`write32At` has filled (`Sim.Machine.armed`,
+     `Policy.armBits`), and stop with `policy` a `cfgUpdate32` that sets
+     Bus Master (bit 2) before both dwords of every sink are filled
+     (`Policy.busMasterOk`). Clearing Bus Master is never gated, and a sane
+     policy keeps the command register out of `cfgWrite32`;
+   * the kernel's device-service bind and the lab's bind paths clear Bus
+     Master before the program starts, so firmware that left it on (SeaBIOS
+     does for qemu-xhci) cannot defeat the gate;
+   * `run_declared_busmaster` (SC-DEVICE-PROGRAM-BUSMASTER-GATE) proves, for
+     any program that declares its policy, that an independent monitor of
+     the device's writes never sees Bus Master set before every sink is
+     filled, and `run_declared_armed` that the executor's record equals the
+     monitor's;
+   * every DMA program now writes both dwords of every sink before Bus
+     Master: the xHCI programs (moved after the four ring registers), the
+     Qotom and q35 AHCI programs (after PxCLB/PxFB; the q35 program also
+     points the stopped port 0's sinks into scratch) and the RTL8168 (which
+     also points THPDS and DTCCR into scratch). `LeanOS/NegativeFixtures/BusMasterGate.lean`
+     checks the order statically for all of them and runs the gate in the
+     simulator.
+
+   So the device can master the bus only while every sink holds an address
+   inside scratch (low dword) and zero (high dword), assuming that a device
+   register holds the last value written to it and that Bus Master is the
+   only way the device masters the bus. The record covers fewer than 16
+   sinks; the executor admits at most 8.
 3. **xHCI descriptors: proved (issue #495).** A policy may carry a typed
    *descriptor map* (`Policy.descriptors`): scratch regions of 64-bit pointer
    fields, or of 16-byte TRBs whose parameter is a pointer unless the TRB
@@ -176,9 +199,10 @@ an effect-level checker, from one writing an ordinary parameter.
 
 A store of an address outside scratch into a mapped descriptor field is now
 refused for the xHCI, AHCI and RTL8168 programs, provided each map matches its
-controller; a pointer field a map misses, a structure a hostile program
-moves elsewhere in scratch, or a sink register the program never writes and
-then has the controller use (issue #644), would reopen it. The sinks and maps narrow DMA to
+controller; a pointer field a map misses, or a structure a hostile program
+moves elsewhere in scratch, would reopen it. A sink register's earlier value
+can no longer be used: Bus Master waits until the program has written every
+sink (issue #644). The sinks and maps narrow DMA to
 data the program itself places in scratch, they say nothing about what a
 controller does with it. The lab kernel only runs images whose declared
 policy fits its profile table, which includes every profile sink and
@@ -203,4 +227,5 @@ descriptor region.
   The RTL8168's after-run dump shows its ring bases at exactly the mapped
   rings.
 * Next: an IOMMU platform, or pinning each ring and command-list base to its
-  mapped structure rather than to scratch.
+  mapped structure rather than to scratch, so a hostile program cannot move
+  a structure outside the descriptor map.

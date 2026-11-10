@@ -451,9 +451,10 @@ scratch: the xHCI TRBs, input-context dequeue pointers, DCBAA, scratchpad and
 ERST entries; the AHCI command headers' CTBA and PRD data bases; and the
 RTL8168 ring descriptors' buffer addresses. The assumptions are that each
 descriptor map lists every pointer its controller follows, and that the
-programs point the root registers at the mapped structures. The proofs bound
-the values a program writes to a root register to scratch, but not the value
-a register it never writes still holds from firmware or the previous OS
+programs point the root registers at the mapped structures. A register's
+earlier value, left by firmware or the previous OS, cannot be used: the
+kernel clears Bus Master at bind, and the executor lets a program set it only
+after it has written every root register
 ([ADR 0021](docs/adr/0021-j1900-device-dma-destinations.md), #644).
 
 ## Why LeanOS?

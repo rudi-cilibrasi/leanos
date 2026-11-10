@@ -9255,14 +9255,44 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.armBits_of_not_touch",
+      "display": "armBits_of_not_touch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.cfgAllowed_cmd",
+      "display": "cfgAllowed_cmd",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.cfgAllowed_ne_cmd",
+      "display": "cfgAllowed_ne_cmd",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.descOk_zero",
       "display": "descOk_zero",
       "kind": "theorem"
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.dmaPolicies_cmd_not_writable",
+      "display": "dmaPolicies_cmd_not_writable",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.exec_confined",
       "display": "exec_confined",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.exec_declared_armed",
+      "display": "exec_declared_armed",
       "kind": "theorem"
     },
     {
@@ -9305,6 +9335,12 @@
       "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.loop_flag",
       "display": "loop_flag",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.loop_preserve",
+      "display": "loop_preserve",
       "kind": "theorem"
     },
     {
@@ -9399,6 +9435,18 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.run_declared_armed",
+      "display": "run_declared_armed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.run_declared_busmaster",
+      "display": "run_declared_busmaster",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.run_declared_confined",
       "display": "run_declared_confined",
       "kind": "theorem"
@@ -9411,6 +9459,12 @@
     },
     {
       "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.sane_cfgWrite_cmd",
+      "display": "sane_cfgWrite_cmd",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.sane_cfgWrite_outside_header",
       "display": "sane_cfgWrite_outside_header",
       "kind": "theorem"
@@ -9419,6 +9473,12 @@
       "source": "LeanOS/DeviceProgramConfinement.lean",
       "qualified": "LeanOS.DeviceProgramConfinement.sane_update_bus_master",
       "display": "sane_update_bus_master",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/DeviceProgramConfinement.lean",
+      "qualified": "LeanOS.DeviceProgramConfinement.setReg_armed",
+      "display": "setReg_armed",
       "kind": "theorem"
     },
     {
@@ -25499,6 +25559,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.device_console_separation",
       "display": "device_console_separation",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.device_program_busmaster_gate",
+      "display": "device_program_busmaster_gate",
       "kind": "theorem"
     },
     {

@@ -125,7 +125,7 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
            "$function_name" == leanos_page_fault_dispatch_transition ||
            "$function_name" == frame_budget_require_publication_authority ||
            "$function_name" == l_LeanOS_Wifi_Exec_exec___at___00LeanOS_Wifi_Exec_step___at___00LeanOS_Wifi_Exec_deviceProgramStep_spec__0_spec__0 ||
-           "$function_name" == l_LeanOS_Wifi_Exec_scanDescs___at___00LeanOS_Wifi_Exec_exec___at___00LeanOS_Wifi_Exec_step___at___00LeanOS_Wifi_Exec_deviceProgramStep_spec__0_spec__0_spec__5 ) ]] || {
+           "$function_name" == l_LeanOS_Wifi_Exec_scanDescs___at___00LeanOS_Wifi_Exec_exec___at___00LeanOS_Wifi_Exec_step___at___00LeanOS_Wifi_Exec_deviceProgramStep_spec__0_spec__0_spec__6 ) ]] || {
         echo "error: path=$path function=$function_name stack-usage=${usage_kind[$function_name]}" >&2
         exit 1
       }

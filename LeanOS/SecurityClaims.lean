@@ -3781,6 +3781,23 @@ theorem device_program_descriptor_pointers {σ : Type} (π : Wifi.Bytecode.Polic
     Wifi.Sim.descOk π base (Wifi.Sim.run p d s0 fuel).2.mem = true :=
   DeviceProgramConfinement.run_admissible_descriptors π p hp d base hphys s0 fuel
 
+/-- SC-DEVICE-PROGRAM-BUSMASTER-GATE: a device program whose version-3 image
+declares a sane policy, run by the reference simulator, never sets its
+device's Bus Master (by an update or a write of the command register) before
+it has written both dwords of every address sink of that policy with values
+the policy admits; an independent monitor of the device's writes witnesses
+it. With the kernel clearing Bus Master at bind, a root register's earlier
+value can therefore never be used for DMA (issue #644). -/
+theorem device_program_busmaster_gate {σ : Type} (π : Wifi.Bytecode.Policy)
+    (p : Wifi.Bytecode.Program) (hpol : p.policy = some π) (hsane : π.sane = true)
+    (d : Wifi.Sim.Device σ) (s0 : σ) (fuel : Nat)
+    (init : Wifi.Sim.Machine (σ × UInt32 × Bool) → Wifi.Sim.Machine (σ × UInt32 × Bool))
+    (hinit : ∀ m, (init m).dev = m.dev) (harmed : ∀ m, (init m).armed = m.armed) :
+    (Wifi.Sim.run p (DeviceProgramConfinement.armGuard π d) (s0, 0, false) fuel init).2.dev.2.2 =
+      false :=
+  DeviceProgramConfinement.run_declared_busmaster π p hpol
+    (DeviceProgramConfinement.sane_cfgWrite_cmd π hsane) d s0 fuel init hinit harmed
+
 /-- SC-DEVICE-CAPABILITY-CONFINEMENT: in the device-capability kernel
 service, no sequence of capability operations, grants, binds, invocations and
 revocations makes any device act outside its policy, and only an invocation by
