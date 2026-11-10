@@ -160,4 +160,52 @@ private def oldStop : Log :=
 #guard !disarmed (memStore (ByteArray.mk (Array.replicate scratchBytes 0)) rxRing.toNat 4
   (own ||| eor ||| rxBufBytes))
 
+/-! ## Bus Master only after every DMA root register holds a scratch address (issue #644)
+
+An address sink bounds only the values a program writes: a sink register the
+program never writes keeps the previous owner's address. The program
+therefore clears Bus Master first and sets it only after it has written
+every sink of its policy, including THPDS and DTCCR, which it does not use
+otherwise. This is checked statically over the encoded words: the program's
+setup up to Bus Master is straight-line code, so word order is run order. -/
+
+private def cmdUpdate (w : Word4) : Bool := w.op &&& 0xFF == 26 && w.a == 0x04
+
+/-- The first word that sets Bus Master. -/
+def busMasterOnAt (ws : Array Word4) : Option Nat :=
+  (List.range ws.size).find? fun i => cmdUpdate ws[i]! && ws[i]!.c &&& 0x4 != 0
+
+/-- Before the first word that sets Bus Master, some word clears it and a
+`write32` names each of `sinks`. -/
+def sinksBeforeBusMaster (ws : Array Word4) (sinks : List UInt32) : Bool :=
+  match busMasterOnAt ws with
+  | none => false
+  | some e =>
+    let before := (List.range e).map (ws[·]!)
+    before.any (fun w => cmdUpdate w && w.b &&& 0x4 != 0) &&
+    sinks.all fun s => before.any fun w => w.op &&& 0xFF == 6 && w.a == s
+
+#guard sinksBeforeBusMaster arp.words qotomRtl8168Policy.addrSinks
+
+private def sinkWrites : List Instr :=
+  [.write32 rdsar (.reg 0), .write32 tnpds (.reg 0), .write32 thpds (.reg 0),
+   .write32 dtccr (.reg 0)]
+
+/- The shape itself passes. -/
+#guard sinksBeforeBusMaster (words ([.cfgUpdate32 0x04 0xFFFF0004 0x0002] ++ sinkWrites ++
+  [.cfgUpdate32 0x04 0xFFFF0000 0x0006, .halt])) qotomRtl8168Policy.addrSinks
+
+/- The pre-#644 program: Bus Master set before any sink was written. -/
+#guard !sinksBeforeBusMaster (words ([.cfgUpdate32 0x04 0xFFFF0000 0x0006] ++ sinkWrites ++
+  [.halt])) qotomRtl8168Policy.addrSinks
+
+/- THPDS left unwritten. -/
+#guard !sinksBeforeBusMaster (words ([.cfgUpdate32 0x04 0xFFFF0004 0x0002] ++
+  [.write32 rdsar (.reg 0), .write32 tnpds (.reg 0), .write32 dtccr (.reg 0)] ++
+  [.cfgUpdate32 0x04 0xFFFF0000 0x0006, .halt])) qotomRtl8168Policy.addrSinks
+
+/- Bus Master never cleared first, so a previous owner's setting stays. -/
+#guard !sinksBeforeBusMaster (words ([.cfgUpdate32 0x04 0xFFFF0000 0x0002] ++ sinkWrites ++
+  [.cfgUpdate32 0x04 0xFFFF0000 0x0006, .halt])) qotomRtl8168Policy.addrSinks
+
 end LeanOS.NegativeFixtures.Rtl8168Teardown

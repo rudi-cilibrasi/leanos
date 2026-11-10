@@ -74,11 +74,17 @@ an effect-level checker, from one writing an ordinary parameter.
    bounds the values a program writes to a sink, not the value the register
    already holds when the program starts, which firmware or the previous OS
    left there. A program that never writes a sink and then makes the
-   controller use it gets DMA at that stale address. The xHCI and AHCI
-   programs write every sink they declare. The RTL8168 program never writes
-   DTCCR or THPDS: it never requests a tally dump or polls the
-   high-priority queue, so it does not use them, but a hostile program
-   admitted under `qotomRtl8168Policy` could do either with Bus Master on.
+   controller use it gets DMA at that stale address. Every Qotom program
+   writes every sink it declares. The RTL8168 program does so since #644: it
+   uses neither DTCCR nor THPDS, but it points both into scratch, and it
+   sets Bus Master only after all four sinks hold scratch addresses
+   (`LeanOS/NegativeFixtures/Rtl8168Teardown.lean` checks the order; on the
+   Qotom, [`qotom-rtl8168-sinks-20261110`](../../hardware/lab/observations/qotom-rtl8168-sinks-20261110/README.md)
+   shows all four in scratch after the run, where DTCCR and THPDS had
+   stayed at physical address 0 before). A
+   hostile program need not do either. The planned fix is a Bus Master
+   gate: the executor refuses to set Bus Master until every declared sink
+   has been written.
 3. **xHCI descriptors: proved (issue #495).** A policy may carry a typed
    *descriptor map* (`Policy.descriptors`): scratch regions of 64-bit pointer
    fields, or of 16-byte TRBs whose parameter is a pointer unless the TRB

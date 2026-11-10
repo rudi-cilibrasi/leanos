@@ -1,0 +1,6 @@
+elf rtl8168-arp-644.elf sha256 a10953a2ee9f22b0afd4d5ff34aaa44a19ad2994238cafd2c9a46824fc753c1b
+installed a10953a2ee9f22b0afd4d5ff34aaa44a19ad2994238cafd2c9a46824fc753c1b in /boot/efi/leanos
+next boot: request=leanos-a10953a2ee9f22b0afd4d5ff34aaa44a19ad2994238cafd2c9a46824fc753c1b
+reboot requested 2026-11-10T14:59:18Z
+FreeBSD login prompt after the run (90s)
+capture sha256 630f3989d925e8856e010e731ca9f7d0ded331e16925b788674160b71a91e734

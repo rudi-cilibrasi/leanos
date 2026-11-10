@@ -8,14 +8,20 @@ RTL8168E-VL controllers (PCI `10ec:8168`). It drives the controller at
 
 The program:
 
-1. checks the controller identity and the 8168E-VL hardware revision in
-   `TXCFG`, prints the controller's registers as the previous owner left them
-   (the *before* dump, below), and reads the station address;
+1. turns Memory Space on and Bus Master off (the previous owner may have left
+   it on), checks the controller identity and the 8168E-VL hardware revision
+   in `TXCFG`, prints the controller's registers as the previous owner left
+   them (the *before* dump, below), and reads the station address;
 2. resets the MAC and applies the `re_init_locked` settings for this revision:
    C+ command (`PCI_MRW | MACSTAT_DIS | 1`), station address under the config
-   unlock, receive and transmit ring bases, transmit/receive enable,
-   `TXCFG_CONFIG`, early-transmit threshold 16, and a receive filter of
-   individual and broadcast frames with `EARLYOFF`; interrupts stay masked;
+   unlock, and receive and transmit ring bases. It also points the
+   high-priority ring base (THPDS) at a zeroed scratch slot and the
+   tally-dump address (DTCCR) at a scratch area, though it never polls that
+   queue or requests a dump: a DMA root register the program never wrote
+   would keep the previous owner's address (issue #644). Only then does it
+   set Bus Master, and go on with transmit/receive enable, `TXCFG_CONFIG`,
+   early-transmit threshold 16, and a receive filter of individual and
+   broadcast frames with `EARLYOFF`; interrupts stay masked;
 3. waits for link (the PHY autonegotiates by itself);
 4. sends an ARP probe for the router 192.168.6.1 — sender address 0.0.0.0, as
    RFC 5227 prescribes for probes, so the program claims no address — up to
