@@ -129,6 +129,21 @@ def preamble (win : Nat) : GenM (Array Word4) := do
 /-- `mov r, v` as a raw word. -/
 def movW (r v : UInt32) : Word4 := ⟨12 ||| 0x100, r, v, 0⟩
 
+/-- The Bus Master gate (issue #644): write both dwords of every sink (modes
+0 and 3), of a random subset (1), or only the low dwords (2), then update
+the command register with Bus Master in the set mask (mostly). -/
+def gateGadget (sinks : List UInt32) : GenM (Array Word4) := do
+  let r := (← below 16).toUInt32
+  let mode ← below 4
+  let mut ws : Array Word4 := #[⟨25, r, ((← below 64) * 16).toUInt32, 0⟩]
+  for s in sinks do
+    let take ← if mode == 1 then chance 50 else pure true
+    if take then
+      ws := ws.push ⟨6, s, r, 0⟩
+      if mode != 2 then ws := ws.push ⟨6 ||| 0x100, s + 4, 0, 0⟩
+  let set : UInt32 ← pick #[6, 6, 4, 2]
+  return ws.push ⟨26, 0x04, 0xFFFF0000, set⟩
+
 /-- Short sequences that set a register to a boundary value and use it at
 once, so exact edges (last scratch byte, `INT32_MIN / -1`, shift by 31) are
 reached far more often than by independent random words. -/
@@ -256,8 +271,13 @@ def genPolicy (win : Nat) : GenM Policy := do
            cmdSet := ← pick #[2, 6, 0, ← rand]
            dma := ← chance 50 }
 
-def genProgram : GenM Program := do
+/-- One random program. `gate` programs (issue #644) always declare a policy
+with address sinks whose command masks let Bus Master be set, and often run
+`gateGadget`; with `gate := false` the generator draws exactly what it did
+before the gate, so the seeded corpus is unchanged. -/
+def genProgram (gate : Bool := false) : GenM Program := do
   let version ← below 3
+  let version := if gate then 2 else version
   let win ← if version == 0 then pure 0x4000 else pick #[0x1000, 0x4000, 0x10000]
   let target : Option Target := if version == 0 then none else
     some { bus := 0, dev := 20, fn := 0, id := 0x0f358086, windowBytes := win.toUInt32 }
@@ -266,6 +286,10 @@ def genProgram : GenM Program := do
     let π ← genPolicy win
     -- The executor rejects a target window wider than the policy window.
     policy := some { π with window := max π.window win.toUInt32 }
+  if gate then
+    policy := policy.map fun π =>
+      { π with addrSinks := if π.addrSinks.isEmpty then [0x10, 0x98] else π.addrSinks,
+               cmdClear := π.cmdClear ||| 0xFFFF0000, cmdSet := π.cmdSet ||| 0x6 }
   let sinks := (policy.map (·.addrSinks)).getD []
   let descs := (policy.map (·.descriptors)).getD []
   let blobLen := (← below 16) * 4
@@ -277,6 +301,10 @@ def genProgram : GenM Program := do
   let mut words := pre
   for _ in [0:body] do
     if !descs.isEmpty && (← chance 8) then words := words ++ (← descGadget win descs)
+    else if gate && !sinks.isEmpty then
+      if ← chance 25 then words := words ++ (← gateGadget sinks)
+      else if ← chance 12 then words := words ++ (← gadget win sinks)
+      else words := words.push (← genWord n win blobLen)
     else if ← chance 12 then words := words ++ (← gadget win sinks)
     else words := words.push (← genWord n win blobLen)
   return { words, blob, sections := #[], target, policy }
@@ -350,6 +378,18 @@ def main (args : List String) : IO UInt32 := do
     lines := lines.push line
     let s := (line.splitOn " ").head!.toNat!
     statuses := statuses.modify (min s 11) (· + 1)
+  -- Bus Master gate programs (issue #644), from their own stream so that the
+  -- programs above stay those of the seed.
+  let mut g2 : Rng := ⟨(if seed == 0 then 1 else seed.toUInt32) ^^^ 0x9E3779B9⟩
+  for k in [count:count + count / 6] do
+    let (p, g') := (genProgram (gate := true)).run g2
+    g2 := g'
+    let name := s!"{dir}/{String.ofList (Nat.toDigits 10 (10000 + k)) |>.drop 1}.bin"
+    IO.FS.writeBinFile name p.image
+    let line := summary p
+    lines := lines.push line
+    let s := (line.splitOn " ").head!.toNat!
+    statuses := statuses.modify (min s 11) (· + 1)
   IO.FS.writeFile s!"{dir}/expected.txt" ("\n".intercalate lines.toList ++ "\n")
-  IO.println s!"wrote {count} programs; status histogram {statuses}"
+  IO.println s!"wrote {count} programs and {count / 6} Bus Master gate programs; status histogram {statuses}"
   return 0

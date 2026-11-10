@@ -19,6 +19,7 @@ import LeanOS.NegativeFixtures.PageFaultError
 import LeanOS.NegativeFixtures.PageFaultAgreement
 import LeanOS.NegativeFixtures.PageFaultProvenance
 import LeanOS.NegativeFixtures.Rtl8168Teardown
+import LeanOS.NegativeFixtures.BusMasterGate
 import LeanOS.NegativeFixtures.SecurityClaims
 import LeanOS.NegativeFixtures.SharedContainment
 import LeanOS.NegativeFixtures.SpawnAccounting
