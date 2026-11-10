@@ -3644,9 +3644,9 @@ static void device_service_bind(void) {
        have left it on (SeaBIOS does for qemu-xhci), and the executor's Bus
        Master gate governs only setting it, once the program has written
        every DMA root register. The status half is written as zero, which
-       clears no RW1C bit. */
-    pci_config_write_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04,
-        pci_config_dword(DEVICE_SERVICE_DEV, DEVICE_SERVICE_FN, 0x04) & UINT32_C(0x0000fffb));
+       clears no RW1C bit. Through the executor's own reviewed configuration
+       hooks, so the syscall path gains no direct PCI access site. */
+    wifi_hook_cfg_write32(0x04, wifi_hook_cfg_read32(0x04) & UINT32_C(0x0000fffb));
     if (wifi_gen_start(&device_service_vm, device_service_program,
             (uint32_t)sizeof device_service_program))
         fail("service-bind");
