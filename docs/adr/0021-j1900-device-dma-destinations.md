@@ -96,7 +96,11 @@ an effect-level checker, from one writing an ordinary parameter.
      filled, and `run_declared_armed` that the executor's record equals the
      monitor's;
    * every DMA program now writes both dwords of every sink before Bus
-     Master: the xHCI programs (moved after the four ring registers), the
+     Master: the xHCI programs (moved after the four ring registers; ERSTBA
+     is written while ERSTSZ is still 0, and the event ring is started by
+     writing ERSTSZ and ERSTBA's high dword again after Bus Master, because
+     qemu-xhci fetches the segment table entry by DMA when ERSTBA is written
+     and fails the controller if that DMA is refused), the
      Qotom and q35 AHCI programs (after PxCLB/PxFB; the q35 program also
      points the stopped port 0's sinks into scratch) and the RTL8168 (which
      also points THPDS and DTCCR into scratch). `LeanOS/NegativeFixtures/BusMasterGate.lean`
